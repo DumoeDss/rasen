@@ -20,16 +20,26 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 11 workflows', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(11);
+    it('should contain all 17 workflows (11 base + 5 OPSX fusion + 1 review-cycle)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(17);
     });
 
     it('should contain expected workflow IDs', () => {
       const expected = [
         'propose', 'explore', 'new', 'continue', 'apply',
         'ff', 'sync', 'archive', 'bulk-archive', 'verify', 'onboard',
+        // OPSX fusion workflow commands
+        'office-hours-command', 'verify-enhanced-command', 'ship-command',
+        'retro-command', 'auto-command',
+        // Iterative review loop (opt-in)
+        'review-cycle',
       ];
       expect([...ALL_WORKFLOWS]).toEqual(expected);
+    });
+
+    it('should NOT include review-cycle in CORE_WORKFLOWS (opt-in only)', () => {
+      expect(ALL_WORKFLOWS).toContain('review-cycle');
+      expect([...CORE_WORKFLOWS]).not.toContain('review-cycle');
     });
   });
 

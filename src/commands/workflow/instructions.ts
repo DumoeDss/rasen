@@ -105,6 +105,10 @@ export function printInstructionsText(instructions: ArtifactInstructions, isBloc
     instruction,
     context,
     rules,
+    qualityRules,
+    enhance,
+    provider,
+    structuredContext,
     template,
     dependencies,
     unlocks,
@@ -148,6 +152,40 @@ export function printInstructionsText(instructions: ArtifactInstructions, isBloc
       console.log(`- ${rule}`);
     }
     console.log('</rules>');
+    console.log();
+  }
+
+  // Quality rules (AI constraint - do not include in output)
+  if (qualityRules && qualityRules.length > 0) {
+    console.log('<quality-rules>');
+    for (const rule of qualityRules) {
+      console.log(`- ${rule}`);
+    }
+    console.log('</quality-rules>');
+    console.log();
+  }
+
+  // Enhance directive
+  if (enhance) {
+    console.log('<enhance>');
+    console.log(`After creating this artifact, invoke the built-in expert skill "/${enhance}" to review and enhance the content with expert perspective.`);
+    console.log('</enhance>');
+    console.log();
+  }
+
+  // Provider directive
+  if (provider) {
+    console.log('<provider>');
+    console.log(`This artifact is provided by the built-in expert skill "/${provider}". Invoke the skill and save its output to ${path.join(changeDir, outputPath)}.`);
+    console.log('</provider>');
+    console.log();
+  }
+
+  // Structured context from referenced artifact
+  if (structuredContext) {
+    console.log('<structured-context>');
+    console.log(structuredContext.trim());
+    console.log('</structured-context>');
     console.log();
   }
 

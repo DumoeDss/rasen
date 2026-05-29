@@ -15,7 +15,7 @@ export const GlobalConfigSchema = z
       .optional()
       .default('core'),
     delivery: z
-      .enum(['both', 'skills', 'commands'])
+      .enum(['both', 'skills', 'commands', 'skills-first', 'commands-first'])
       .optional()
       .default('both'),
     workflows: z

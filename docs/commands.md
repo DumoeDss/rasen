@@ -26,6 +26,7 @@ For workflow patterns and when to use each command, see [Workflows](workflows.md
 | `/opsx:sync` | Merge delta specs into main specs |
 | `/opsx:bulk-archive` | Archive multiple changes at once |
 | `/opsx:onboard` | Guided tutorial through the complete workflow |
+| `/opsx:review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
 
 The default global profile is `core`. To enable expanded workflow commands, run `openspec config profile`, select workflows, then run `openspec update` in your project.
 
@@ -380,6 +381,54 @@ AI:  Verifying add-dark-mode...
 - Warnings don't block archive but indicate potential issues
 - Good for reviewing AI's work before committing
 - Can reveal drift between artifacts and implementation
+
+---
+
+### `/opsx:review-cycle`
+
+Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `openspec-gstack-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
+
+**Syntax:**
+```
+/opsx:review-cycle [change-name]
+```
+
+**Arguments:**
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `change-name` | No | Which change to run the loop on (inferred from context if not provided) |
+
+**What it does:**
+- Runs a review pass via `openspec-gstack-review`, then triages each finding by fix size
+- Routes fixes: trivial → orchestrator inline; non-trivial → the implementing agent; design-level → a separate fix agent
+- Re-reviews only the fix delta and marks a finding resolved only when a non-author confirms it against the original finding (author ≠ verifier)
+- Caps the loop at max rounds (default 3); on the cap with unresolved Blocker/Major findings it escalates to a human — never silently passes
+- Records the round history and each non-author confirmation in `review-cycle-report.md`
+
+**Author ≠ verifier invariant:**
+A finding is resolved only when a reviewer who did NOT author the fix confirms it. For a trivial inline fix done by the orchestrator, the equivalent non-author check is an independent gate-run (tests/lint/build) plus a diff-read of the exact change — and that check must be recorded in the cycle report.
+
+**Re-review paths:**
+- **Claude Code acceleration (optional):** with agent-teams enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), the lead MAY resume the original reviewer via `SendMessage` to re-review only the delta (only the lead may originate `SendMessage`).
+- **Tool-agnostic fallback (mandatory):** otherwise, run a fresh delta review, passing the prior findings and the fix diff through a shared file. Equivalent outcome, just costlier.
+
+**Example:**
+```
+You: /opsx:review-cycle add-dark-mode
+
+AI:  Review Cycle: add-dark-mode (round 1/3)
+     Findings: 1 Blocker, 2 Major
+       - [Blocker] missing null guard → trivial → orchestrator inline
+       - [Major]   race in toggle      → non-trivial → implementing agent
+       - [Major]   contract changed     → design-level → separate fix agent
+     Fixes applied → re-reviewing delta (fresh non-author review)...
+     Round 2/3: 0 Blocker, 0 Major → CLEAN
+     Report: review-cycle-report.md
+```
+
+**Tips:**
+- Use AFTER implementation, against the live diff; for a single verification gate use `/opsx:verify` instead
+- The loop is bounded — if it escalates, the open findings and round history go to a human, not to a silent pass
 
 ---
 

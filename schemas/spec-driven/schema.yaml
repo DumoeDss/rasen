@@ -1,5 +1,5 @@
 name: spec-driven
-version: 1
+version: 2
 description: Default OpenSpec workflow - proposal → specs → design → tasks
 artifacts:
   - id: proposal
@@ -25,6 +25,7 @@ artifacts:
       implementation details belong in design.md.
 
       This is the foundation - specs, design, and tasks all build on this.
+    enhance: plan-ceo-review
     requires: []
 
   - id: specs
@@ -79,6 +80,7 @@ artifacts:
       ```
 
       Specs should be testable - each scenario is a potential test case.
+    enhance: plan-design-review
     requires:
       - proposal
 
@@ -107,6 +109,7 @@ artifacts:
       Reference the proposal for motivation and specs for requirements.
 
       Good design docs explain the "why" behind technical decisions.
+    enhance: plan-eng-review
     requires:
       - proposal
 

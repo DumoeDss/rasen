@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
 export interface RequirementBlock {
   headerLine: string; // e.g., '### Requirement: Something'
   name: string; // e.g., 'Something'
@@ -231,4 +234,79 @@ function parseRenamedPairs(sectionBody: string): Array<{ from: string; to: strin
     }
   }
   return pairs;
+}
+
+/**
+ * A single test case extracted from a spec scenario.
+ */
+export interface TestCase {
+  name: string;
+  preconditions: string[];  // GIVEN lines
+  actions: string[];        // WHEN lines
+  expectations: string[];   // THEN/AND lines
+}
+
+/**
+ * Structured test plan extracted from spec scenarios.
+ */
+export interface TestPlan {
+  specName: string;
+  testCases: TestCase[];
+}
+
+/**
+ * Parse spec content into a structured TestPlan.
+ * Extracts GIVEN/WHEN/THEN/AND lines from #### Scenario: blocks.
+ */
+export function parseTestPlan(specContent: string, specName: string = 'unknown'): TestPlan {
+  const testCases: TestCase[] = [];
+  // Split into lines, find #### Scenario: blocks
+  const lines = specContent.split('\n');
+  let currentCase: TestCase | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const scenarioMatch = trimmed.match(/^####\s+Scenario:\s*(.+)/);
+    if (scenarioMatch) {
+      if (currentCase) testCases.push(currentCase);
+      currentCase = { name: scenarioMatch[1].trim(), preconditions: [], actions: [], expectations: [] };
+      continue;
+    }
+    if (!currentCase) continue;
+    // Match - **GIVEN/WHEN/THEN/AND** patterns
+    const givenMatch = trimmed.match(/^-\s+\*\*GIVEN\*\*\s+(.*)/i);
+    const whenMatch = trimmed.match(/^-\s+\*\*WHEN\*\*\s+(.*)/i);
+    const thenMatch = trimmed.match(/^-\s+\*\*THEN\*\*\s+(.*)/i);
+    const andMatch = trimmed.match(/^-\s+\*\*AND\*\*\s+(.*)/i);
+
+    if (givenMatch) currentCase.preconditions.push(givenMatch[1]);
+    else if (whenMatch) currentCase.actions.push(whenMatch[1]);
+    else if (thenMatch) currentCase.expectations.push(thenMatch[1]);
+    else if (andMatch) {
+      // AND continues the previous type (GIVEN/WHEN/THEN)
+      // Usually it's THEN continuation
+      currentCase.expectations.push(andMatch[1]);
+    }
+    // New section heading ends current scenario
+    if (trimmed.startsWith('### ') || trimmed.startsWith('## ')) {
+      if (currentCase) { testCases.push(currentCase); currentCase = null; }
+    }
+  }
+  if (currentCase) testCases.push(currentCase);
+
+  return { specName, testCases };
+}
+
+export function parseTestPlanFromFiles(specPaths: string[]): TestPlan {
+  const allCases: TestCase[] = [];
+  for (const specPath of specPaths) {
+    try {
+      const content = fs.readFileSync(specPath, 'utf-8');
+      const plan = parseTestPlan(content, path.basename(path.dirname(specPath)));
+      allCases.push(...plan.testCases);
+    } catch {
+      // Skip unreadable files
+    }
+  }
+  return { specName: 'aggregated', testCases: allCases };
 }

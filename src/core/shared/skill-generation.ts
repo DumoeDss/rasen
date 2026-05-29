@@ -27,9 +27,50 @@ import {
   getOpsxVerifyCommandTemplate,
   getOpsxOnboardCommandTemplate,
   getOpsxProposeCommandTemplate,
+  // OPSX fusion workflow commands
+  getOfficeHoursCommandSkillTemplate,
+  getOpsxOfficeHoursCommandTemplate,
+  getVerifyEnhancedSkillTemplate,
+  getOpsxVerifyEnhancedCommandTemplate,
+  getShipCommandSkillTemplate,
+  getOpsxShipCommandTemplate,
+  getRetroCommandSkillTemplate,
+  getOpsxRetroCommandTemplate,
+  getAutoCommandSkillTemplate,
+  getOpsxAutoCommandTemplate,
+  getReviewCycleSkillTemplate,
+  getOpsxReviewCycleCommandTemplate,
+  // Expert skill templates (from gstack)
+  getAutoplanSkillTemplate,
+  getBenchmarkSkillTemplate,
+  getBrowseSkillTemplate,
+  getCanarySkillTemplate,
+  getCarefulSkillTemplate,
+  getCodexSkillTemplate,
+  getCsoSkillTemplate,
+  getDesignConsultationSkillTemplate,
+  getDesignReviewSkillTemplate,
+  getDocumentReleaseSkillTemplate,
+  getFreezeSkillTemplate,
+  getGuardSkillTemplate,
+  getInvestigateSkillTemplate,
+  getLandAndDeploySkillTemplate,
+  getOfficeHoursSkillTemplate,
+  getPlanCeoReviewSkillTemplate,
+  getPlanDesignReviewSkillTemplate,
+  getPlanEngReviewSkillTemplate,
+  getQaOnlySkillTemplate,
+  getQaSkillTemplate,
+  getRetroSkillTemplate,
+  getReviewSkillTemplate,
+  getSetupBrowserCookiesSkillTemplate,
+  getSetupDeploySkillTemplate,
+  getShipSkillTemplate,
+  getUnfreezeSkillTemplate,
   type SkillTemplate,
 } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
+import type { Delivery } from '../global-config.js';
 
 /**
  * Skill template with directory name and workflow ID mapping.
@@ -54,7 +95,7 @@ export interface CommandTemplateEntry {
  * @param workflowFilter - If provided, only return templates whose workflowId is in this array
  */
 export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemplateEntry[] {
-  const all: SkillTemplateEntry[] = [
+  const workflowSkills: SkillTemplateEntry[] = [
     { template: getExploreSkillTemplate(), dirName: 'openspec-explore', workflowId: 'explore' },
     { template: getNewChangeSkillTemplate(), dirName: 'openspec-new-change', workflowId: 'new' },
     { template: getContinueChangeSkillTemplate(), dirName: 'openspec-continue-change', workflowId: 'continue' },
@@ -66,12 +107,51 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     { template: getVerifyChangeSkillTemplate(), dirName: 'openspec-verify-change', workflowId: 'verify' },
     { template: getOnboardSkillTemplate(), dirName: 'openspec-onboard', workflowId: 'onboard' },
     { template: getOpsxProposeSkillTemplate(), dirName: 'openspec-propose', workflowId: 'propose' },
+    // OPSX fusion workflow commands
+    { template: getOfficeHoursCommandSkillTemplate(), dirName: 'openspec-opsx-office-hours', workflowId: 'office-hours-command' },
+    { template: getVerifyEnhancedSkillTemplate(), dirName: 'openspec-verify-enhanced', workflowId: 'verify-enhanced-command' },
+    { template: getShipCommandSkillTemplate(), dirName: 'openspec-opsx-ship', workflowId: 'ship-command' },
+    { template: getRetroCommandSkillTemplate(), dirName: 'openspec-opsx-retro', workflowId: 'retro-command' },
+    { template: getAutoCommandSkillTemplate(), dirName: 'openspec-opsx-auto', workflowId: 'auto-command' },
+    { template: getReviewCycleSkillTemplate(), dirName: 'openspec-review-cycle', workflowId: 'review-cycle' },
   ];
 
-  if (!workflowFilter) return all;
+  // Expert skills are always installed regardless of workflowFilter
+  const expertSkills: SkillTemplateEntry[] = [
+    { template: getAutoplanSkillTemplate(), dirName: 'openspec-gstack-autoplan', workflowId: 'autoplan' },
+    { template: getBenchmarkSkillTemplate(), dirName: 'openspec-gstack-benchmark', workflowId: 'benchmark' },
+    { template: getBrowseSkillTemplate(), dirName: 'openspec-gstack-browse', workflowId: 'browse' },
+    { template: getCanarySkillTemplate(), dirName: 'openspec-gstack-canary', workflowId: 'canary' },
+    { template: getCarefulSkillTemplate(), dirName: 'openspec-gstack-careful', workflowId: 'careful' },
+    { template: getCodexSkillTemplate(), dirName: 'openspec-gstack-codex', workflowId: 'codex' },
+    { template: getCsoSkillTemplate(), dirName: 'openspec-gstack-cso', workflowId: 'cso' },
+    { template: getDesignConsultationSkillTemplate(), dirName: 'openspec-gstack-design-consultation', workflowId: 'design-consultation' },
+    { template: getDesignReviewSkillTemplate(), dirName: 'openspec-gstack-design-review', workflowId: 'design-review' },
+    { template: getDocumentReleaseSkillTemplate(), dirName: 'openspec-gstack-document-release', workflowId: 'document-release' },
+    { template: getFreezeSkillTemplate(), dirName: 'openspec-gstack-freeze', workflowId: 'freeze' },
+    { template: getGuardSkillTemplate(), dirName: 'openspec-gstack-guard', workflowId: 'guard' },
+    { template: getInvestigateSkillTemplate(), dirName: 'openspec-gstack-investigate', workflowId: 'investigate' },
+    { template: getLandAndDeploySkillTemplate(), dirName: 'openspec-gstack-land-and-deploy', workflowId: 'land-and-deploy' },
+    { template: getOfficeHoursSkillTemplate(), dirName: 'openspec-gstack-office-hours', workflowId: 'office-hours' },
+    { template: getPlanCeoReviewSkillTemplate(), dirName: 'openspec-gstack-plan-ceo-review', workflowId: 'plan-ceo-review' },
+    { template: getPlanDesignReviewSkillTemplate(), dirName: 'openspec-gstack-plan-design-review', workflowId: 'plan-design-review' },
+    { template: getPlanEngReviewSkillTemplate(), dirName: 'openspec-gstack-plan-eng-review', workflowId: 'plan-eng-review' },
+    { template: getQaSkillTemplate(), dirName: 'openspec-gstack-qa', workflowId: 'qa' },
+    { template: getQaOnlySkillTemplate(), dirName: 'openspec-gstack-qa-only', workflowId: 'qa-only' },
+    { template: getRetroSkillTemplate(), dirName: 'openspec-gstack-retro', workflowId: 'retro' },
+    { template: getReviewSkillTemplate(), dirName: 'openspec-gstack-review', workflowId: 'review' },
+    { template: getSetupBrowserCookiesSkillTemplate(), dirName: 'openspec-gstack-setup-browser-cookies', workflowId: 'setup-browser-cookies' },
+    { template: getSetupDeploySkillTemplate(), dirName: 'openspec-gstack-setup-deploy', workflowId: 'setup-deploy' },
+    { template: getShipSkillTemplate(), dirName: 'openspec-gstack-ship', workflowId: 'ship' },
+    { template: getUnfreezeSkillTemplate(), dirName: 'openspec-gstack-unfreeze', workflowId: 'unfreeze' },
+  ];
 
+  if (!workflowFilter) return [...workflowSkills, ...expertSkills];
+
+  // Only filter workflow skills; expert skills are always included
   const filterSet = new Set(workflowFilter);
-  return all.filter(entry => filterSet.has(entry.workflowId));
+  const filteredWorkflows = workflowSkills.filter(entry => filterSet.has(entry.workflowId));
+  return [...filteredWorkflows, ...expertSkills];
 }
 
 /**
@@ -92,6 +172,13 @@ export function getCommandTemplates(workflowFilter?: readonly string[]): Command
     { template: getOpsxVerifyCommandTemplate(), id: 'verify' },
     { template: getOpsxOnboardCommandTemplate(), id: 'onboard' },
     { template: getOpsxProposeCommandTemplate(), id: 'propose' },
+    // OPSX fusion workflow commands
+    { template: getOpsxOfficeHoursCommandTemplate(), id: 'office-hours-command' },
+    { template: getOpsxVerifyEnhancedCommandTemplate(), id: 'verify-enhanced-command' },
+    { template: getOpsxShipCommandTemplate(), id: 'ship-command' },
+    { template: getOpsxRetroCommandTemplate(), id: 'retro-command' },
+    { template: getOpsxAutoCommandTemplate(), id: 'auto-command' },
+    { template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' },
   ];
 
   if (!workflowFilter) return all;
@@ -115,6 +202,29 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
     tags: template.tags,
     body: template.content,
   }));
+}
+
+/**
+ * Applies deduplication for *-first delivery modes.
+ *
+ * - skills-first: keep all skills, remove commands that have a skill counterpart
+ * - commands-first: keep all commands, remove skills that have a command counterpart
+ * - other modes: no change
+ */
+export function deduplicateForDelivery(
+  delivery: Delivery,
+  skills: SkillTemplateEntry[],
+  commands: CommandContent[]
+): { skills: SkillTemplateEntry[]; commands: CommandContent[] } {
+  if (delivery === 'commands-first') {
+    const commandIds = new Set(commands.map(c => c.id));
+    return { skills: skills.filter(s => !commandIds.has(s.workflowId)), commands };
+  }
+  if (delivery === 'skills-first') {
+    const skillIds = new Set(skills.map(s => s.workflowId));
+    return { skills, commands: commands.filter(c => !skillIds.has(c.id)) };
+  }
+  return { skills, commands };
 }
 
 /**

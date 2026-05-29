@@ -8,6 +8,9 @@ export const ArtifactSchema = z.object({
   template: z.string().min(1, { error: 'template field is required' }),
   instruction: z.string().optional(),
   requires: z.array(z.string()).default([]),
+  enhance: z.string().optional(),
+  provider: z.string().optional(),
+  'context-from': z.string().optional(),
 });
 
 // Apply phase configuration for schema-aware apply instructions

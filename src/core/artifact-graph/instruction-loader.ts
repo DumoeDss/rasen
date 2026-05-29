@@ -5,6 +5,7 @@ import { ArtifactGraph } from './graph.js';
 import { detectCompleted } from './state.js';
 import { resolveSchemaForChange } from '../../utils/change-metadata.js';
 import { readProjectConfig, validateConfigRules } from '../project-config.js';
+import { parseTestPlan } from '../parsers/requirement-blocks.js';
 import type { Artifact, CompletedSet } from './types.js';
 
 // Session-level cache for validation warnings (avoid repeating same warnings)
@@ -63,6 +64,16 @@ export interface ArtifactInstructions {
   context: string | undefined;
   /** Artifact-specific rules from config (constraints for AI, not to be included in output) */
   rules: string[] | undefined;
+  /** Global quality rules from config (constraints for AI, not to be included in output) */
+  qualityRules: string[] | undefined;
+  /** Enhance skill to invoke after creating this artifact */
+  enhance: string | undefined;
+  /** Provider skill that generates this artifact */
+  provider: string | undefined;
+  /** Artifact ID to read structured context from */
+  contextFrom: string | undefined;
+  /** Structured context content from referenced artifact (if available) */
+  structuredContext: string | undefined;
   /** Template content (structure to follow - this IS the output format) */
   template: string;
   /** Dependencies with completion status and paths */
@@ -200,7 +211,11 @@ export function loadChangeContext(
  * Instruction injection order:
  * 1. <context> - Project context from config (if present)
  * 2. <rules> - Artifact-specific rules from config (if present)
- * 3. <template> - Schema's template content
+ * 3. <quality-rules> - Global quality rules from config (if present)
+ * 4. <enhance> - Enhance skill directive (if artifact has enhance field)
+ * 5. <provider> - Provider skill directive (if artifact has provider field)
+ * 6. <structured-context> - Content from referenced artifact (if context-from is set and artifact is done)
+ * 7. <template> - Schema's template content
  *
  * @param context - Change context
  * @param artifactId - Artifact ID to generate instructions for
@@ -258,6 +273,39 @@ export function generateInstructions(
   const rulesForArtifact = projectConfig?.rules?.[artifactId];
   const configRules = rulesForArtifact && rulesForArtifact.length > 0 ? rulesForArtifact : undefined;
 
+  // Extract quality-rules from config
+  const qualityRules = projectConfig?.['quality-rules'] && projectConfig['quality-rules'].length > 0
+    ? projectConfig['quality-rules']
+    : undefined;
+
+  // Extract enhance, provider, context-from from artifact definition
+  const enhance = artifact.enhance || undefined;
+  const provider = artifact.provider || undefined;
+  const contextFrom = artifact['context-from'] || undefined;
+
+  // Load structured context from referenced artifact if available
+  let structuredContext: string | undefined;
+  if (contextFrom && context.completed.has(contextFrom)) {
+    const refArtifact = context.graph.getArtifact(contextFrom);
+    if (refArtifact) {
+      const refPath = path.join(context.changeDir, refArtifact.generates);
+      try {
+        if (fs.existsSync(refPath)) {
+          const content = fs.readFileSync(refPath, 'utf-8');
+          // If referenced artifact generates specs (glob pattern), parse as test plan
+          if (refArtifact.generates.includes('specs')) {
+            const plan = parseTestPlan(content, refArtifact.id);
+            structuredContext = JSON.stringify(plan, null, 2);
+          } else {
+            structuredContext = content;
+          }
+        }
+      } catch {
+        // If reading fails, continue without structured context
+      }
+    }
+  }
+
   return {
     changeName: context.changeName,
     artifactId: artifact.id,
@@ -268,6 +316,11 @@ export function generateInstructions(
     instruction: artifact.instruction,
     context: configContext,
     rules: configRules,
+    qualityRules,
+    enhance,
+    provider,
+    contextFrom,
+    structuredContext,
     template: templateContent,
     dependencies,
     unlocks,

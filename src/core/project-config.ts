@@ -38,6 +38,12 @@ export const ProjectConfigSchema = z.object({
     )
     .optional()
     .describe('Per-artifact rules, keyed by artifact ID'),
+
+  // Optional: global quality rules applied to all artifacts
+  'quality-rules': z
+    .array(z.string())
+    .optional()
+    .describe('Global quality rules applied to all artifacts'),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
@@ -149,6 +155,25 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
         }
       } else {
         console.warn(`Invalid 'rules' field in config (must be object)`);
+      }
+    }
+
+    // Parse quality-rules field using Zod
+    if (raw['quality-rules'] !== undefined) {
+      const qualityRulesField = z.array(z.string());
+      const qualityRulesResult = qualityRulesField.safeParse(raw['quality-rules']);
+
+      if (qualityRulesResult.success) {
+        // Filter out empty strings
+        const validRules = qualityRulesResult.data.filter((r) => r.length > 0);
+        if (validRules.length > 0) {
+          config['quality-rules'] = validRules;
+        }
+        if (validRules.length < qualityRulesResult.data.length) {
+          console.warn(`Some quality-rules are empty strings, ignoring them`);
+        }
+      } else {
+        console.warn(`Invalid 'quality-rules' field in config (must be array of strings)`);
       }
     }
 

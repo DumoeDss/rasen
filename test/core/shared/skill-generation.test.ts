@@ -8,9 +8,17 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all 11 skill templates', () => {
+    it('should return all skill templates (17 workflow + 26 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(11);
+      expect(templates).toHaveLength(43);
+    });
+
+    it('should include the opt-in review-cycle workflow skill', () => {
+      const templates = getSkillTemplates();
+      const reviewCycle = templates.find(t => t.workflowId === 'review-cycle');
+      expect(reviewCycle).toBeDefined();
+      expect(reviewCycle?.dirName).toBe('openspec-review-cycle');
+      expect(reviewCycle?.template.name).toBe('openspec-review-cycle');
     });
 
     it('should have unique directory names', () => {
@@ -56,9 +64,10 @@ describe('skill-generation', () => {
       expect(uniqueIds.size).toBe(templates.length);
     });
 
-    it('should filter by workflow IDs when provided', () => {
+    it('should filter workflow skills by IDs (expert skills always included)', () => {
       const filtered = getSkillTemplates(['propose', 'explore', 'apply', 'archive']);
-      expect(filtered).toHaveLength(4);
+      // 4 workflow + 26 expert skills
+      expect(filtered).toHaveLength(30);
       const ids = filtered.map(t => t.workflowId);
       expect(ids).toContain('propose');
       expect(ids).toContain('explore');
@@ -74,23 +83,34 @@ describe('skill-generation', () => {
       expect(noFilter).toHaveLength(all.length);
     });
 
-    it('should return empty array when filter matches nothing', () => {
+    it('should return only expert skills when filter matches no workflows', () => {
       const filtered = getSkillTemplates(['nonexistent']);
-      expect(filtered).toHaveLength(0);
+      // 0 workflow + 26 expert skills
+      expect(filtered).toHaveLength(26);
     });
 
-    it('should return single template when filter has one workflow', () => {
+    it('should return single workflow template plus expert skills when filter has one workflow', () => {
       const filtered = getSkillTemplates(['propose']);
-      expect(filtered).toHaveLength(1);
-      expect(filtered[0].workflowId).toBe('propose');
-      expect(filtered[0].dirName).toBe('openspec-propose');
+      // 1 workflow + 26 expert skills
+      expect(filtered).toHaveLength(27);
+      const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
+      expect(workflowTemplates).toHaveLength(1);
+      expect(workflowTemplates[0].dirName).toBe('openspec-propose');
     });
   });
 
   describe('getCommandTemplates', () => {
-    it('should return all 11 command templates', () => {
+    it('should return all 17 command templates', () => {
       const templates = getCommandTemplates();
-      expect(templates).toHaveLength(11);
+      expect(templates).toHaveLength(17);
+    });
+
+    it('should include the review-cycle command with a clean (no -command suffix) id', () => {
+      const templates = getCommandTemplates();
+      const reviewCycle = templates.find(t => t.id === 'review-cycle');
+      expect(reviewCycle).toBeDefined();
+      expect(reviewCycle?.template.name).toBe('OPSX: Review Cycle');
+      expect(reviewCycle?.template.category).toBe('Workflow');
     });
 
     it('should have unique IDs', () => {
@@ -142,9 +162,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandContents', () => {
-    it('should return all 11 command contents', () => {
+    it('should return all 17 command contents', () => {
       const contents = getCommandContents();
-      expect(contents).toHaveLength(11);
+      expect(contents).toHaveLength(17);
     });
 
     it('should have valid content structure', () => {

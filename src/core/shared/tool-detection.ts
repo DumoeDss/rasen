@@ -42,6 +42,14 @@ export const COMMAND_IDS = [
   'verify',
   'onboard',
   'propose',
+  // OPSX fusion workflow commands
+  'office-hours-command',
+  'verify-enhanced-command',
+  'ship-command',
+  'retro-command',
+  'auto-command',
+  // Iterative review loop (opt-in)
+  'review-cycle',
 ] as const;
 
 export type CommandId = (typeof COMMAND_IDS)[number];

@@ -275,6 +275,23 @@ AI:  Verifying add-auth...
 
 Verify won't block archive, but it surfaces issues you might want to address first.
 
+#### Review Cycle: Loop Until Clean (opt-in)
+
+`/opsx:verify` is a single pass. `/opsx:review-cycle` is the **loop** that wraps a reviewer and keeps going until the change is actually clean:
+
+```text
+review ──► triage ──► fix ──► re-review(Δ) ──► { pass | loop | escalate }
+```
+
+Each review pass delegates to the always-installed `openspec-gstack-review` engine — the loop does not reimplement review heuristics. It adds four things on top:
+
+- **Fix-size triage.** Each finding is routed by the size of its fix: **trivial** → orchestrator inline; **non-trivial** → the implementing agent that wrote the code; **design-level** → a separate fix agent (not the original author).
+- **Author ≠ verifier.** A finding is resolved only when a reviewer who did NOT author the fix confirms it against the original finding. For a trivial inline fix, an independent gate-run (tests/lint/build) plus a diff-read of the exact change is the equivalent non-author check — and it must be recorded in the cycle report.
+- **Re-review only the delta.** On Claude Code with agent-teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) the lead may resume the original reviewer via `SendMessage` to re-review just the delta (only the lead may originate `SendMessage`). Otherwise it falls back to a fresh delta review with the prior findings and the fix diff passed through a shared file — equivalent outcome, just costlier.
+- **Bounded termination.** The loop caps at max rounds (default 3). On the cap with unresolved Blocker/Major findings it escalates to a human with the open findings and round history — it never silently reports a clean pass.
+
+Use it AFTER implementation, against the live diff. It is opt-in: enable it via a custom profile (it is not in `core`). The round history and each non-author confirmation are recorded in `review-cycle-report.md` in the change directory.
+
 #### Archive: Finalize the Change
 
 `/opsx:archive` completes the change and moves it to the archive:

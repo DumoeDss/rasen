@@ -27,7 +27,8 @@
     }
   },
   "bin": {
-    "openspec": "./bin/openspec.js"
+    "openspec": "./bin/openspec.js",
+    "browse": "./browse/dist/browse"
   },
   "files": [
     "dist",
@@ -54,7 +55,10 @@
     "check:pack-version": "node scripts/pack-version-check.mjs",
     "release": "pnpm run release:ci",
     "release:ci": "pnpm run check:pack-version && pnpm exec changeset publish",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "build:browse": "bun build --compile browse/src/cli.ts --outfile browse/dist/browse && bun build --compile browse/src/find-browse.ts --outfile browse/dist/find-browse",
+    "gen:skill-docs": "bun run scripts/gen-skill-docs.ts",
+    "skill:check": "bun run scripts/gen-skill-docs.ts --dry-run"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -67,6 +71,7 @@
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.50.1",
+    "diff": "^7.0.0",
     "vitest": "^3.2.4"
   },
   "dependencies": {
@@ -79,5 +84,8 @@
     "posthog-node": "^5.20.0",
     "yaml": "^2.8.2",
     "zod": "^4.0.17"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.58.2"
   }
 }

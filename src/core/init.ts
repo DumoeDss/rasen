@@ -39,9 +39,10 @@ import {
   getSkillTemplates,
   getCommandContents,
   generateSkillContent,
+  deduplicateForDelivery,
   type ToolSkillStatus,
 } from './shared/index.js';
-import { getGlobalConfig, type Delivery, type Profile } from './global-config.js';
+import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
 import { getProfileWorkflows, CORE_WORKFLOWS, ALL_WORKFLOWS } from './profiles.js';
 import { getAvailableTools } from './available-tools.js';
 import { migrateIfNeeded } from './migration.js';
@@ -72,6 +73,13 @@ const WORKFLOW_TO_SKILL_DIR: Record<string, string> = {
   'verify': 'openspec-verify-change',
   'onboard': 'openspec-onboard',
   'propose': 'openspec-propose',
+  // OPSX fusion workflow commands
+  'office-hours-command': 'openspec-opsx-office-hours',
+  'verify-enhanced-command': 'openspec-verify-enhanced',
+  'ship-command': 'openspec-opsx-ship',
+  'retro-command': 'openspec-opsx-retro',
+  'auto-command': 'openspec-opsx-auto',
+  'review-cycle': 'openspec-review-cycle',
 };
 
 // -----------------------------------------------------------------------------
@@ -514,12 +522,17 @@ export class InitCommand {
     const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'core';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
     const workflows = getProfileWorkflows(profile, globalConfig.workflows);
+    const proactive = globalConfig.proactive ?? true;
+    const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
     // Get skill and command templates filtered by profile workflows
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
-    const skillTemplates = shouldGenerateSkills ? getSkillTemplates(workflows) : [];
-    const commandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
+    const allSkillTemplates = shouldGenerateSkills ? getSkillTemplates(workflows) : [];
+    const allCommandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
+    // Deduplicate for *-first modes (prefer one mechanism when both exist)
+    const { skills: skillTemplates, commands: commandContents } =
+      deduplicateForDelivery(delivery, allSkillTemplates, allCommandContents);
 
     // Process each tool
     for (const tool of tools) {
@@ -537,8 +550,14 @@ export class InitCommand {
             const skillFile = path.join(skillDir, 'SKILL.md');
 
             // Generate SKILL.md content with YAML frontmatter including generatedBy
-            // Use hyphen-based command references for OpenCode
-            const transformer = tool.value === 'opencode' ? transformToHyphenCommands : undefined;
+            // Chain transformers: embed config values, then tool-specific transforms
+            const configTransform = (text: string) => text
+              .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+              .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+            const toolTransform = tool.value === 'opencode' ? transformToHyphenCommands : undefined;
+            const transformer = toolTransform
+              ? (text: string) => toolTransform(configTransform(text))
+              : configTransform;
             const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
 
             // Write the skill file
@@ -546,6 +565,11 @@ export class InitCommand {
           }
         }
         if (!shouldGenerateSkills) {
+          const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+          removedSkillCount += await this.removeSkillDirs(skillsDir);
+        }
+        // commands-first: remove workflow skill dirs replaced by commands
+        if (delivery === 'commands-first') {
           const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
           removedSkillCount += await this.removeSkillDirs(skillsDir);
         }
@@ -565,6 +589,10 @@ export class InitCommand {
           }
         }
         if (!shouldGenerateCommands) {
+          removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
+        }
+        // skills-first: remove command files replaced by skills
+        if (delivery === 'skills-first') {
           removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
         }
 
@@ -656,8 +684,13 @@ export class InitCommand {
       const delivery: Delivery = globalConfig.delivery ?? 'both';
       const workflows = getProfileWorkflows(profile, globalConfig.workflows);
       const toolDirs = [...new Set(successfulTools.map((t) => t.skillsDir))].join(', ');
-      const skillCount = delivery !== 'commands' ? getSkillTemplates(workflows).length : 0;
-      const commandCount = delivery !== 'skills' ? getCommandContents(workflows).length : 0;
+      const { skills: effectiveSkills, commands: effectiveCommands } = deduplicateForDelivery(
+        delivery,
+        delivery !== 'commands' ? getSkillTemplates(workflows) : [],
+        delivery !== 'skills' ? getCommandContents(workflows) : []
+      );
+      const skillCount = effectiveSkills.length;
+      const commandCount = effectiveCommands.length;
       if (skillCount > 0 && commandCount > 0) {
         console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}/`);
       } else if (skillCount > 0) {
@@ -710,6 +743,12 @@ export class InitCommand {
     } else {
       console.log("Done. Run 'openspec config profile' to configure your workflows.");
     }
+
+    // Safety hook configuration hint
+    console.log();
+    console.log(chalk.bold('Safety Hook (optional):'));
+    console.log('  Add to .claude/settings.json to detect destructive commands:');
+    console.log(chalk.dim('  "hooks": { "PreToolUse": [{ "type": "command", "command": "bash hooks/safety-check.sh" }] }'));
 
     // Links
     console.log();

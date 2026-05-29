@@ -28,6 +28,13 @@ export const ALL_WORKFLOWS = [
   'bulk-archive',
   'verify',
   'onboard',
+  // OPSX fusion workflow commands
+  'office-hours-command',
+  'verify-enhanced-command',
+  'ship-command',
+  'retro-command',
+  'auto-command',
+  'review-cycle',
 ] as const;
 
 export type WorkflowId = (typeof ALL_WORKFLOWS)[number];

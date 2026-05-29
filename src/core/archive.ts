@@ -1,7 +1,10 @@
 import { promises as fs } from 'fs';
+import { readFileSync, existsSync, writeFileSync } from 'fs';
 import path from 'path';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { Validator } from './validation/validator.js';
+import { readProjectConfig } from './project-config.js';
 import chalk from 'chalk';
 import {
   findSpecUpdates,
@@ -284,7 +287,123 @@ export class ArchiveCommand {
     // Move change to archive (uses copy+remove on EPERM/EXDEV, e.g. Windows)
     await moveDirectory(changeDir, archivePath);
 
+    // Quality capture: scan archived directory for quality artifact files
+    await this.captureQuality(archivePath, targetPath);
+
     console.log(`Change '${changeName}' archived as '${archiveName}'.`);
+  }
+
+  /**
+   * Scan archived change directory for quality artifact files and capture metrics/rules.
+   * Quality files are those matching *-review.md, *-report.md, *-audit.md.
+   */
+  private async captureQuality(archivePath: string, projectRoot: string): Promise<void> {
+    try {
+      const entries = await fs.readdir(archivePath, { withFileTypes: true });
+      const qualityFiles = entries
+        .filter(e => !e.isDirectory())
+        .filter(e => {
+          const base = e.name.toLowerCase();
+          return base.endsWith('-review.md') || base.endsWith('-report.md') || base.endsWith('-audit.md');
+        });
+
+      if (qualityFiles.length === 0) return;
+
+      const qualityMetrics: Record<string, number> = {};
+      const extractedRules: string[] = [];
+
+      for (const qf of qualityFiles) {
+        const filePath = path.join(archivePath, qf.name);
+        try {
+          const content = await fs.readFile(filePath, 'utf-8');
+          const lines = content.split('\n');
+
+          // Count lines matching metric patterns
+          let findings = 0;
+          let issues = 0;
+          let scenarios = 0;
+
+          for (const line of lines) {
+            const trimmed = line.trim().toLowerCase();
+            if (trimmed.match(/findings:/i)) findings++;
+            if (trimmed.match(/issues:/i)) issues++;
+            if (trimmed.match(/scenarios:/i)) scenarios++;
+
+            // Extract lines starting with [RULE] as reusable rules
+            const ruleMatch = line.trim().match(/^\[RULE\]\s*(.*)/);
+            if (ruleMatch && ruleMatch[1].trim()) {
+              extractedRules.push(ruleMatch[1].trim());
+            }
+          }
+
+          qualityMetrics[qf.name] = findings + issues + scenarios;
+        } catch {
+          // Skip unreadable files
+        }
+      }
+
+      // Write quality summary to .openspec.yaml in the archive directory
+      const metaPath = path.join(archivePath, '.openspec.yaml');
+      let metaData: Record<string, unknown> = {};
+      try {
+        if (existsSync(metaPath)) {
+          const existing = readFileSync(metaPath, 'utf-8');
+          metaData = (parseYaml(existing) as Record<string, unknown>) || {};
+        }
+      } catch {
+        // Start fresh if can't read
+      }
+
+      metaData.quality = {
+        files: qualityFiles.map(f => f.name),
+        metrics: qualityMetrics,
+        rulesExtracted: extractedRules.length,
+      };
+
+      writeFileSync(metaPath, stringifyYaml(metaData), 'utf-8');
+
+      // Append extracted rules to project config.yaml's quality-rules array (no duplicates)
+      if (extractedRules.length > 0) {
+        try {
+          const config = readProjectConfig(projectRoot);
+          const existingRules = config?.['quality-rules'] ?? [];
+          const existingSet = new Set(existingRules);
+          const newRules = extractedRules.filter(r => !existingSet.has(r));
+
+          if (newRules.length > 0) {
+            // Read raw config yaml to preserve other fields
+            let configPath = path.join(projectRoot, 'openspec', 'config.yaml');
+            if (!existsSync(configPath)) {
+              configPath = path.join(projectRoot, 'openspec', 'config.yml');
+            }
+            if (existsSync(configPath)) {
+              const rawContent = readFileSync(configPath, 'utf-8');
+              const rawConfig = (parseYaml(rawContent) as Record<string, unknown>) || {};
+              const allRules = [...existingRules, ...newRules];
+              rawConfig['quality-rules'] = allRules;
+              writeFileSync(configPath, stringifyYaml(rawConfig), 'utf-8');
+              console.log(chalk.green(`  Added ${newRules.length} new quality rule(s) to config.yaml`));
+            }
+          }
+        } catch {
+          // Non-fatal: config update is best-effort
+        }
+      }
+
+      // Display quality summary
+      console.log(chalk.cyan(`\nQuality capture:`));
+      console.log(chalk.cyan(`  Files scanned: ${qualityFiles.map(f => f.name).join(', ')}`));
+      for (const [file, count] of Object.entries(qualityMetrics)) {
+        if (count > 0) {
+          console.log(chalk.cyan(`  ${file}: ${count} metric line(s)`));
+        }
+      }
+      if (extractedRules.length > 0) {
+        console.log(chalk.cyan(`  Rules extracted: ${extractedRules.length}`));
+      }
+    } catch {
+      // Quality capture is non-fatal - don't block archive
+    }
   }
 
   private async selectChange(changesDir: string): Promise<string | null> {

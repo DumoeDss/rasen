@@ -19,6 +19,16 @@ if (existsSync('dist')) {
   rmSync('dist', { recursive: true, force: true });
 }
 
+// Generate skill docs from .tmpl templates (if bun is available and skills/ exists)
+if (existsSync('skills')) {
+  try {
+    console.log('Generating skill docs from templates...');
+    execFileSync('bun', ['run', 'scripts/gen-skill-docs.ts'], { stdio: 'inherit' });
+  } catch {
+    console.log('⚠️  Skipping skill doc generation (bun not available or gen-skill-docs failed)');
+  }
+}
+
 // Run TypeScript compiler (use local version explicitly)
 console.log('Compiling TypeScript...');
 try {

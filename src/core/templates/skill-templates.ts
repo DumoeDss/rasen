@@ -18,3 +18,41 @@ export { getVerifyChangeSkillTemplate, getOpsxVerifyCommandTemplate } from './wo
 export { getOnboardSkillTemplate, getOpsxOnboardCommandTemplate } from './workflows/onboard.js';
 export { getOpsxProposeSkillTemplate, getOpsxProposeCommandTemplate } from './workflows/propose.js';
 export { getFeedbackSkillTemplate } from './workflows/feedback.js';
+
+// OPSX fusion workflow commands
+export { getOfficeHoursCommandSkillTemplate, getOpsxOfficeHoursCommandTemplate } from './workflows/office-hours.js';
+export { getVerifyEnhancedSkillTemplate, getOpsxVerifyEnhancedCommandTemplate } from './workflows/verify-enhanced.js';
+export { getShipCommandSkillTemplate, getOpsxShipCommandTemplate } from './workflows/ship.js';
+export { getRetroCommandSkillTemplate, getOpsxRetroCommandTemplate } from './workflows/retro.js';
+export { getAutoCommandSkillTemplate, getOpsxAutoCommandTemplate } from './workflows/auto.js';
+export { getReviewCycleSkillTemplate, getOpsxReviewCycleCommandTemplate } from './workflows/review-cycle.js';
+
+// Expert skill templates (migrated from gstack)
+export {
+  getAutoplanSkillTemplate,
+  getBenchmarkSkillTemplate,
+  getBrowseSkillTemplate,
+  getCanarySkillTemplate,
+  getCarefulSkillTemplate,
+  getCodexSkillTemplate,
+  getCsoSkillTemplate,
+  getDesignConsultationSkillTemplate,
+  getDesignReviewSkillTemplate,
+  getDocumentReleaseSkillTemplate,
+  getFreezeSkillTemplate,
+  getGuardSkillTemplate,
+  getInvestigateSkillTemplate,
+  getLandAndDeploySkillTemplate,
+  getOfficeHoursSkillTemplate,
+  getPlanCeoReviewSkillTemplate,
+  getPlanDesignReviewSkillTemplate,
+  getPlanEngReviewSkillTemplate,
+  getQaOnlySkillTemplate,
+  getQaSkillTemplate,
+  getRetroSkillTemplate,
+  getReviewSkillTemplate,
+  getSetupBrowserCookiesSkillTemplate,
+  getSetupDeploySkillTemplate,
+  getShipSkillTemplate,
+  getUnfreezeSkillTemplate,
+} from './experts/index.js';

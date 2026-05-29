@@ -9,7 +9,8 @@ export const GLOBAL_DATA_DIR_NAME = 'openspec';
 
 // TypeScript types
 export type Profile = 'core' | 'custom';
-export type Delivery = 'both' | 'skills' | 'commands';
+export type Delivery = 'both' | 'skills' | 'commands' | 'skills-first' | 'commands-first';
+export type RepoMode = 'solo' | 'collaborative';
 
 // TypeScript interfaces
 export interface GlobalConfig {
@@ -17,12 +18,16 @@ export interface GlobalConfig {
   profile?: Profile;
   delivery?: Delivery;
   workflows?: string[];
+  proactive?: boolean;
+  repoMode?: RepoMode;
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
   profile: 'core',
   delivery: 'both',
+  proactive: true,
+  repoMode: 'collaborative',
 };
 
 /**
@@ -126,6 +131,12 @@ export function getGlobalConfig(): GlobalConfig {
     }
     if (parsed.delivery === undefined) {
       merged.delivery = DEFAULT_CONFIG.delivery;
+    }
+    if (parsed.proactive === undefined) {
+      merged.proactive = DEFAULT_CONFIG.proactive;
+    }
+    if (parsed.repoMode === undefined) {
+      merged.repoMode = DEFAULT_CONFIG.repoMode;
     }
 
     return merged;

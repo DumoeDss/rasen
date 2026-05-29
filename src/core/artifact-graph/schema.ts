@@ -38,6 +38,9 @@ export function parseSchema(yamlContent: string): SchemaYaml {
   // Check that all requires references are valid
   validateRequiresReferences(schema.artifacts);
 
+  // Check that context-from references are valid
+  validateContextFromReferences(schema.artifacts);
+
   // Check for cycles
   validateNoCycles(schema.artifacts);
 
@@ -70,6 +73,31 @@ function validateRequiresReferences(artifacts: Artifact[]): void {
           `Invalid dependency reference in artifact '${artifact.id}': '${req}' does not exist`
         );
       }
+    }
+  }
+}
+
+/**
+ * Validates that all `context-from` references point to valid artifact IDs
+ * and that the referenced ID is also listed in the artifact's `requires` array.
+ */
+function validateContextFromReferences(artifacts: Artifact[]): void {
+  const validIds = new Set(artifacts.map(a => a.id));
+
+  for (const artifact of artifacts) {
+    const contextFrom = artifact['context-from'];
+    if (!contextFrom) continue;
+
+    if (!validIds.has(contextFrom)) {
+      throw new SchemaValidationError(
+        `Invalid context-from reference in artifact '${artifact.id}': '${contextFrom}' does not exist`
+      );
+    }
+
+    if (!artifact.requires.includes(contextFrom)) {
+      throw new SchemaValidationError(
+        `context-from reference '${contextFrom}' in artifact '${artifact.id}' must also be listed in requires`
+      );
     }
   }
 }

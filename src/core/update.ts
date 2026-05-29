@@ -22,6 +22,7 @@ import {
   getSkillTemplates,
   getCommandContents,
   generateSkillContent,
+  deduplicateForDelivery,
   getToolsWithSkillsDir,
   type ToolVersionStatus,
 } from './shared/index.js';
@@ -166,9 +167,11 @@ export class UpdateCommand {
     }
     console.log();
 
-    // 9. Determine what to generate based on delivery
-    const skillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
-    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
+    // 9. Determine what to generate based on delivery (with deduplication for *-first modes)
+    const allSkillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
+    const allCommandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
+    const { skills: skillTemplates, commands: commandContents } =
+      deduplicateForDelivery(delivery, allSkillTemplates, allCommandContents);
 
     // 10. Update tools (all if force, otherwise only those needing update)
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
@@ -207,6 +210,10 @@ export class UpdateCommand {
         if (!shouldGenerateSkills) {
           removedSkillCount += await this.removeSkillDirs(skillsDir);
         }
+        // commands-first: remove workflow skill dirs replaced by commands
+        if (delivery === 'commands-first') {
+          removedSkillCount += await this.removeSkillDirs(skillsDir);
+        }
 
         // Generate commands if delivery includes commands
         if (shouldGenerateCommands) {
@@ -229,6 +236,10 @@ export class UpdateCommand {
 
         // Delete command files if delivery is skills-only
         if (!shouldGenerateCommands) {
+          removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
+        }
+        // skills-first: remove command files replaced by skills
+        if (delivery === 'skills-first') {
           removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
         }
 
@@ -647,8 +658,11 @@ export class UpdateCommand {
     const newlyConfigured: string[] = [];
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
-    const skillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
-    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
+    const { skills: skillTemplates, commands: commandContents } = deduplicateForDelivery(
+      delivery,
+      shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [],
+      shouldGenerateCommands ? getCommandContents(desiredWorkflows) : []
+    );
 
     for (const toolId of selectedTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);

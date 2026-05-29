@@ -1,0 +1,237 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { promises as fs } from 'fs';
+import path from 'path';
+import os from 'os';
+
+import { InitCommand } from '../../src/core/init.js';
+import { saveGlobalConfig } from '../../src/core/global-config.js';
+import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../src/core/profiles.js';
+import {
+  getSkillTemplates,
+  getCommandTemplates,
+  getCommandContents,
+} from '../../src/core/shared/skill-generation.js';
+import {
+  getReviewCycleSkillTemplate,
+  getOpsxReviewCycleCommandTemplate,
+} from '../../src/core/templates/skill-templates.js';
+
+const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
+  confirmMock: vi.fn(),
+  showWelcomeScreenMock: vi.fn().mockResolvedValue(undefined),
+  searchableMultiSelectMock: vi.fn(),
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  confirm: confirmMock,
+}));
+
+vi.mock('../../src/ui/welcome-screen.js', () => ({
+  showWelcomeScreen: showWelcomeScreenMock,
+}));
+
+vi.mock('../../src/prompts/searchable-multi-select.js', () => ({
+  searchableMultiSelect: searchableMultiSelectMock,
+}));
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe('review-cycle workflow', () => {
+  describe('registration', () => {
+    it('appears in ALL_WORKFLOWS but is opt-in (not in CORE_WORKFLOWS)', () => {
+      expect(ALL_WORKFLOWS).toContain('review-cycle');
+      expect([...CORE_WORKFLOWS]).not.toContain('review-cycle');
+    });
+
+    it('is registered as a skill template with the expected dirName and name', () => {
+      const skill = getSkillTemplates().find(s => s.workflowId === 'review-cycle');
+      expect(skill).toBeDefined();
+      expect(skill?.dirName).toBe('openspec-review-cycle');
+      expect(skill?.template.name).toBe('openspec-review-cycle');
+    });
+
+    it('is registered as a command template with a clean (no -command suffix) id', () => {
+      const command = getCommandTemplates().find(c => c.id === 'review-cycle');
+      expect(command).toBeDefined();
+      expect(command?.template.name).toBe('OPSX: Review Cycle');
+      expect(command?.template.category).toBe('Workflow');
+
+      // The command id becomes the generated slash command: /opsx:review-cycle
+      const content = getCommandContents().find(c => c.id === 'review-cycle');
+      expect(content).toBeDefined();
+    });
+  });
+
+  describe('instruction content', () => {
+    const skillText = getReviewCycleSkillTemplate().instructions;
+    const commandText = getOpsxReviewCycleCommandTemplate().content;
+
+    it('skill and command share the same instruction body', () => {
+      expect(commandText).toBe(skillText);
+    });
+
+    it('delegates each review pass to the openspec-gstack-review engine (does not fork it)', () => {
+      expect(skillText).toContain('openspec-gstack-review');
+    });
+
+    it('encodes the review -> triage -> fix -> re-review(delta) loop', () => {
+      expect(skillText).toContain('review -> triage -> fix -> re-review(delta)');
+    });
+
+    it('encodes the author != verifier invariant', () => {
+      expect(skillText).toContain('Author != Verifier');
+      // self-certification by the fixer is rejected
+      expect(skillText.toLowerCase()).toContain('self-certification');
+      // a non-author must confirm
+      expect(skillText).toContain('did NOT author the fix');
+    });
+
+    it('records the trivial-fix non-author equivalent (gate-run + diff-read, must be recorded)', () => {
+      expect(skillText).toContain('gate-run');
+      expect(skillText).toContain('diff-read');
+      expect(skillText).toContain('MUST be recorded');
+    });
+
+    it('encodes the fix-size triage routing (trivial / non-trivial / design-level)', () => {
+      expect(skillText).toContain('trivial');
+      expect(skillText).toContain('non-trivial');
+      expect(skillText).toContain('design-level');
+      expect(skillText).toContain('separate fix agent');
+      expect(skillText).toContain('implementing agent');
+    });
+
+    it('encodes BOTH the Claude SendMessage resume path AND the tool-agnostic fallback', () => {
+      // Claude acceleration: lead-only SendMessage resume of the original reviewer
+      expect(skillText).toContain('SendMessage');
+      expect(skillText).toContain('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1');
+      // Only the lead may originate SendMessage (lead-only constraint).
+      expect(skillText.toLowerCase()).toContain('only the lead may originate');
+      // Mandatory tool-agnostic fallback: fresh delta review via a shared file
+      expect(skillText).toContain('fallback');
+      expect(skillText.toLowerCase()).toContain('fresh delta review');
+      expect(skillText.toUpperCase()).toContain('SHARED FILE');
+    });
+
+    it('encodes the max-rounds / escalation termination rule (never silently pass)', () => {
+      expect(skillText).toContain('max-rounds');
+      expect(skillText).toContain('default 3');
+      expect(skillText).toContain('escalate to the human');
+      expect(skillText).toContain('never silently pass');
+    });
+  });
+
+  describe('generation for the claude tool', () => {
+    let testDir: string;
+    let configTempDir: string;
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(async () => {
+      testDir = path.join(os.tmpdir(), `openspec-review-cycle-test-${Date.now()}`);
+      await fs.mkdir(testDir, { recursive: true });
+      originalEnv = { ...process.env };
+      configTempDir = path.join(os.tmpdir(), `openspec-review-cycle-config-${Date.now()}`);
+      await fs.mkdir(configTempDir, { recursive: true });
+      process.env.XDG_CONFIG_HOME = configTempDir;
+
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      confirmMock.mockReset();
+      confirmMock.mockResolvedValue(true);
+      showWelcomeScreenMock.mockClear();
+      searchableMultiSelectMock.mockReset();
+    });
+
+    afterEach(async () => {
+      process.env = originalEnv;
+      await fs.rm(testDir, { recursive: true, force: true });
+      await fs.rm(configTempDir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    it('generates the review-cycle skill + command for claude when opted in', async () => {
+      // Opt in via a custom profile that includes review-cycle (plus a core anchor).
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'custom',
+        delivery: 'both',
+        workflows: ['propose', 'review-cycle'],
+      });
+
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      const skillFile = path.join(testDir, '.claude', 'skills', 'openspec-review-cycle', 'SKILL.md');
+      const commandFile = path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle.md');
+
+      expect(await fileExists(skillFile)).toBe(true);
+      expect(await fileExists(commandFile)).toBe(true);
+
+      const skillContent = await fs.readFile(skillFile, 'utf-8');
+      expect(skillContent).toContain('name: openspec-review-cycle');
+      expect(skillContent).toContain('openspec-gstack-review');
+
+      const commandContent = await fs.readFile(commandFile, 'utf-8');
+      expect(commandContent).toContain('name: "OPSX: Review Cycle"');
+      // No ugly -command suffix in the generated slash command file name.
+      const suffixed = path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle-command.md');
+      expect(await fileExists(suffixed)).toBe(false);
+    });
+
+    it('does NOT generate review-cycle under the core profile', async () => {
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'core',
+        delivery: 'both',
+        workflows: ['propose', 'explore', 'apply', 'archive'],
+      });
+
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      // A core skill IS generated (sanity that generation ran)...
+      const coreSkill = path.join(testDir, '.claude', 'skills', 'openspec-propose', 'SKILL.md');
+      expect(await fileExists(coreSkill)).toBe(true);
+
+      // ...but review-cycle is opt-in and must be absent.
+      const skillFile = path.join(testDir, '.claude', 'skills', 'openspec-review-cycle', 'SKILL.md');
+      const commandFile = path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle.md');
+      expect(await fileExists(skillFile)).toBe(false);
+      expect(await fileExists(commandFile)).toBe(false);
+    });
+
+    it('cleans up the review-cycle skill dir on a commands-only re-init (regression: init.ts WORKFLOW_TO_SKILL_DIR must map review-cycle)', async () => {
+      // 1) Generate skills (delivery: both), creating the review-cycle skill dir.
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'custom',
+        delivery: 'both',
+        workflows: ['propose', 'review-cycle'],
+      });
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+      const skillDir = path.join(testDir, '.claude', 'skills', 'openspec-review-cycle');
+      expect(await fileExists(path.join(skillDir, 'SKILL.md'))).toBe(true);
+
+      // 2) Re-init with commands-only delivery: skills are removed via
+      //    removeSkillDirs(), which looks up WORKFLOW_TO_SKILL_DIR in init.ts.
+      //    If 'review-cycle' is missing from that (untyped) local map, the dir
+      //    leaks. This asserts it is cleaned up.
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'custom',
+        delivery: 'commands',
+        workflows: ['propose', 'review-cycle'],
+      });
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      expect(await fileExists(skillDir)).toBe(false);
+      // The command file replaces it.
+      expect(
+        await fileExists(path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle.md')),
+      ).toBe(true);
+    });
+  });
+});

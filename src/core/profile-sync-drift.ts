@@ -23,6 +23,14 @@ export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
   'verify': 'openspec-verify-change',
   'onboard': 'openspec-onboard',
   'propose': 'openspec-propose',
+  // OPSX fusion workflow commands
+  'office-hours-command': 'openspec-opsx-office-hours',
+  'verify-enhanced-command': 'openspec-verify-enhanced',
+  'ship-command': 'openspec-opsx-ship',
+  'retro-command': 'openspec-opsx-retro',
+  'auto-command': 'openspec-opsx-auto',
+  // Iterative review loop (opt-in)
+  'review-cycle': 'openspec-review-cycle',
 };
 
 function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {
@@ -98,8 +106,9 @@ export function hasToolProfileOrDeliveryDrift(
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
   const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
   const adapter = CommandAdapterRegistry.get(toolId);
-  const shouldGenerateSkills = delivery !== 'commands';
-  const shouldGenerateCommands = delivery !== 'skills';
+  // For *-first modes, only the preferred mechanism is expected for workflows
+  const shouldGenerateSkills = delivery !== 'commands' && delivery !== 'commands-first';
+  const shouldGenerateCommands = delivery !== 'skills' && delivery !== 'skills-first';
 
   if (shouldGenerateSkills) {
     for (const workflow of knownDesiredWorkflows) {
@@ -226,8 +235,8 @@ export function hasProjectConfigDrift(
   }
 
   const desiredSet = new Set(toKnownWorkflows(desiredWorkflows));
-  const includeSkills = delivery !== 'commands';
-  const includeCommands = delivery !== 'skills';
+  const includeSkills = delivery !== 'commands' && delivery !== 'commands-first';
+  const includeCommands = delivery !== 'skills' && delivery !== 'skills-first';
 
   for (const toolId of configuredTools) {
     const installed = getInstalledWorkflowsForTool(projectPath, toolId, { includeSkills, includeCommands });
