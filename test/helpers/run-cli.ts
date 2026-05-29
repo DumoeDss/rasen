@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, mkdtempSync } from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,6 +9,14 @@ const __dirname = path.dirname(__filename);
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 const cliEntry = path.join(projectRoot, 'dist', 'cli', 'index.js');
+
+// Isolate global-config / data reads from the developer's machine. Otherwise a
+// spawned CLI reads ~/.config|%APPDATA%/openspec/config.json, so a local custom
+// profile/delivery (e.g. `delivery: commands-first`) makes skill-generation e2e
+// tests fail (commands generated instead of skills). XDG_CONFIG_HOME and
+// XDG_DATA_HOME take precedence on all platforms (see getGlobalConfigDir), so
+// pointing them at an empty temp dir yields the default config + built-in schemas.
+const isolatedConfigHome = mkdtempSync(path.join(os.tmpdir(), 'openspec-test-config-'));
 
 let buildPromise: Promise<void> | undefined;
 
@@ -83,6 +92,8 @@ export async function runCLI(args: string[] = [], options: RunCLIOptions = {}): 
       cwd: options.cwd ?? projectRoot,
       env: {
         ...process.env,
+        XDG_CONFIG_HOME: isolatedConfigHome,
+        XDG_DATA_HOME: isolatedConfigHome,
         OPEN_SPEC_INTERACTIVE: '0',
         ...options.env,
       },
