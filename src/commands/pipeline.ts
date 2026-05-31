@@ -11,13 +11,14 @@
  * not own any pipeline parsing/graph logic of its own.
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   loadPipelineByName,
   listPipelines,
   listPipelinesWithInfo,
   PipelineGraph,
+  readRunState,
+  completedStages,
   type PipelineInfo,
   type Stage,
 } from '../core/pipeline-registry/index.js';
@@ -187,10 +188,11 @@ export class PipelineCommand {
     const projectRoot = this.resolveProjectRoot();
     const changeName = await validateChangeExists(change, projectRoot);
 
-    const runState = this.readRunState(projectRoot, changeName);
+    const changeDir = path.join(projectRoot, 'openspec', 'changes', changeName);
+    const runState = readRunState(changeDir);
 
     // No run-state recorded yet (or not in usable form).
-    if (!runState || typeof runState.pipeline !== 'string' || runState.pipeline.length === 0) {
+    if (!runState || runState.pipeline.length === 0) {
       const result = {
         change: changeName,
         hasRunState: false as const,
@@ -212,9 +214,7 @@ export class PipelineCommand {
     const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const completed = Array.isArray(runState.completed)
-      ? runState.completed.filter((id): id is string => typeof id === 'string')
-      : [];
+    const completed = completedStages(runState);
     const completedSet = new Set(completed);
     const next = graph.getNextStages(completedSet)[0] ?? null;
     const remaining = buildOrder.filter((id) => !completedSet.has(id));
@@ -257,33 +257,6 @@ export class PipelineCommand {
       leadReview: stage.leadReview,
       verifyPolicy: stage.verifyPolicy ?? null,
     };
-  }
-
-  private readRunState(
-    projectRoot: string,
-    changeName: string
-  ): { pipeline?: unknown; completed?: unknown } | null {
-    const runStatePath = path.join(
-      projectRoot,
-      'openspec',
-      'changes',
-      changeName,
-      'auto-run.json'
-    );
-    if (!fs.existsSync(runStatePath)) {
-      return null;
-    }
-    try {
-      const raw = fs.readFileSync(runStatePath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        return parsed as { pipeline?: unknown; completed?: unknown };
-      }
-      return null;
-    } catch {
-      // Malformed run-state is treated as "no usable run-state".
-      return null;
-    }
   }
 
   private printPipelineTable(pipelines: PipelineInfo[]): void {

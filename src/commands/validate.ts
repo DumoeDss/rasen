@@ -82,6 +82,15 @@ export class ValidateCommand {
       return;
     }
 
+    // `--type pipeline` with no item name => validate all pipelines.
+    if (!itemName && this.normalizeType(options.type) === 'pipeline') {
+      await this.runBulkValidation(
+        { changes: false, specs: false, pipelines: true },
+        { strict: !!options.strict, json: !!options.json, concurrency: options.concurrency, noInteractive: resolveNoInteractive(options) }
+      );
+      return;
+    }
+
     // No item and no flags
     if (!itemName) {
       if (interactive) {
@@ -110,22 +119,26 @@ export class ValidateCommand {
     const choice = await select({
       message: 'What would you like to validate?',
       choices: [
-        { name: 'All (changes + specs)', value: 'all' },
+        { name: 'All (changes + specs + pipelines)', value: 'all' },
         { name: 'All changes', value: 'changes' },
         { name: 'All specs', value: 'specs' },
-        { name: 'Pick a specific change or spec', value: 'one' },
+        { name: 'All pipelines', value: 'pipelines' },
+        { name: 'Pick a specific change, spec, or pipeline', value: 'one' },
       ],
     });
 
-    if (choice === 'all') return this.runBulkValidation({ changes: true, specs: true }, opts);
-    if (choice === 'changes') return this.runBulkValidation({ changes: true, specs: false }, opts);
-    if (choice === 'specs') return this.runBulkValidation({ changes: false, specs: true }, opts);
+    if (choice === 'all') return this.runBulkValidation({ changes: true, specs: true, pipelines: true }, opts);
+    if (choice === 'changes') return this.runBulkValidation({ changes: true, specs: false, pipelines: false }, opts);
+    if (choice === 'specs') return this.runBulkValidation({ changes: false, specs: true, pipelines: false }, opts);
+    if (choice === 'pipelines') return this.runBulkValidation({ changes: false, specs: false, pipelines: true }, opts);
 
     // one
     const [changes, specs] = await Promise.all([getActiveChangeIds(), getSpecIds()]);
+    const pipelines = listPipelines(process.cwd());
     const items: { name: string; value: { type: ItemType; id: string } }[] = [];
     items.push(...changes.map(id => ({ name: `change/${id}`, value: { type: 'change' as const, id } })));
     items.push(...specs.map(id => ({ name: `spec/${id}`, value: { type: 'spec' as const, id } })));
+    items.push(...pipelines.map(id => ({ name: `pipeline/${id}`, value: { type: 'pipeline' as const, id } })));
     if (items.length === 0) {
       console.error('No items found to validate.');
       process.exitCode = 1;
@@ -140,6 +153,7 @@ export class ValidateCommand {
     console.error('  openspec validate --all');
     console.error('  openspec validate --changes');
     console.error('  openspec validate --specs');
+    console.error('  openspec validate --pipelines');
     console.error('  openspec validate <item-name>');
     console.error('Or run in an interactive terminal.');
   }

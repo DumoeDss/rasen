@@ -33,6 +33,23 @@ export {
   isStageCompleted,
 } from './state.js';
 
+// Run-state (auto-run.json) — typed contract for resume/observability
+export {
+  RUN_STATE_FILENAME,
+  RunStateSchema,
+  RunStateStageSchema,
+  StageStatusSchema,
+  RunStateValidationError,
+  runStatePath,
+  parseRunState,
+  readRunState,
+  writeRunState,
+  completedStages,
+  type RunState,
+  type RunStateStage,
+  type StageStatus,
+} from './run-state.js';
+
 // Pipeline resolution
 export {
   loadPipelineByName,

@@ -193,6 +193,15 @@ describe('top-level validate command (pipelines)', () => {
     expect(json.summary.byType.pipeline).toBeDefined();
   });
 
+  it('validates all pipelines with `--type pipeline` and no item name', async () => {
+    const result = await runCLI(['validate', '--type', 'pipeline', '--json'], { cwd: testDir });
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout.trim());
+    expect(json.items.length).toBeGreaterThanOrEqual(3);
+    expect(json.items.every((i: any) => i.type === 'pipeline')).toBe(true);
+    expect(json.summary.totals.failed).toBe(0);
+  });
+
   it('reports valid:false for a pipeline with a dangling requires reference', async () => {
     await writeProjectPipeline(
       'broken-deps',
