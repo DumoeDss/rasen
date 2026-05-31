@@ -86,11 +86,11 @@ describe('review-cycle workflow', () => {
     });
 
     it('encodes the author != verifier invariant', () => {
-      expect(skillText).toContain('Author != Verifier');
+      expect(skillText.toLowerCase()).toContain('author != verifier');
       // self-certification by the fixer is rejected
       expect(skillText.toLowerCase()).toContain('self-certification');
-      // a non-author must confirm
-      expect(skillText).toContain('did NOT author the fix');
+      // the re-reviewer must be a different worker than the fix author
+      expect(skillText.toLowerCase()).toContain('must not be the worker that authored the fix');
     });
 
     it('records the trivial-fix non-author equivalent (gate-run + diff-read, must be recorded)', () => {
@@ -103,8 +103,9 @@ describe('review-cycle workflow', () => {
       expect(skillText).toContain('trivial');
       expect(skillText).toContain('non-trivial');
       expect(skillText).toContain('design-level');
-      expect(skillText).toContain('separate fix agent');
-      expect(skillText).toContain('implementing agent');
+      // routed to role-isolated workers (orchestration vocabulary)
+      expect(skillText.toLowerCase()).toContain('separate fixer worker');
+      expect(skillText.toLowerCase()).toContain('implementer worker');
     });
 
     it('encodes BOTH the Claude SendMessage resume path AND the tool-agnostic fallback', () => {
@@ -115,7 +116,7 @@ describe('review-cycle workflow', () => {
       expect(skillText.toLowerCase()).toContain('only the lead may originate');
       // Mandatory tool-agnostic fallback: fresh delta review via a shared file
       expect(skillText).toContain('fallback');
-      expect(skillText.toLowerCase()).toContain('fresh delta review');
+      expect(skillText.toLowerCase()).toContain('fresh reviewer over just the delta');
       expect(skillText.toUpperCase()).toContain('SHARED FILE');
     });
 
@@ -124,6 +125,41 @@ describe('review-cycle workflow', () => {
       expect(skillText).toContain('default 3');
       expect(skillText).toContain('escalate to the human');
       expect(skillText).toContain('never silently pass');
+    });
+  });
+
+  describe('shared orchestration playbook', () => {
+    const skillText = getReviewCycleSkillTemplate().instructions;
+
+    it('embeds the LEAD-as-sole-orchestrator flat hierarchy', () => {
+      expect(skillText).toContain('LEAD');
+      expect(skillText.toLowerCase()).toContain('sole orchestrator');
+      expect(skillText.toLowerCase()).toContain('leaf worker');
+      // multi-agent path is primary, single-context is the explicit fallback
+      expect(skillText).toContain('PRIMARY');
+      expect(skillText.toLowerCase()).toContain('explicit fallback');
+    });
+
+    it('declares the three capability tiers', () => {
+      expect(skillText).toContain('Tier A');
+      expect(skillText).toContain('Tier B');
+      expect(skillText).toContain('Tier C');
+    });
+
+    it('dispatches role-isolated workers that invoke existing skills via the Task tool', () => {
+      expect(skillText.toLowerCase()).toContain('role-isolated');
+      expect(skillText).toContain('Task tool');
+      expect(skillText).toContain('Skill tool');
+    });
+
+    it('uses the change directory as the blackboard and records run-state', () => {
+      expect(skillText.toLowerCase()).toContain('change directory');
+      expect(skillText).toContain('run-state');
+    });
+
+    it('shares the playbook with /opsx:auto (it is auto\'s loop stage)', () => {
+      expect(skillText.toLowerCase()).toContain('shares the orchestration playbook with');
+      expect(skillText).toContain('/opsx:auto');
     });
   });
 

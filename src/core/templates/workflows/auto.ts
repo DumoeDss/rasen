@@ -1,210 +1,128 @@
 /**
  * Auto OPSX Workflow Command
  *
- * Autopilot mode — dispatch agent analyzes task complexity, selects
- * experts, and drives the full OPSX workflow end-to-end. Includes
- * dispatch agent logic for task classification and expert selection.
+ * Autopilot mode — the LEAD classifies the task, selects a pipeline, and drives
+ * it end-to-end by orchestrating role-isolated subagents (see the shared
+ * orchestration playbook). Pipelines are expressed inline as stage DAGs today
+ * (full-feature / small-feature / bug-fix); a later change sources them from the
+ * data-driven pipeline registry without touching the orchestration playbook.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
-const AUTO_INSTRUCTIONS = `Autopilot mode — drives the full OPSX workflow end-to-end.
+const AUTO_INSTRUCTIONS = `Autopilot — drive the full OPSX workflow end-to-end.
 
-The dispatch agent analyzes tasks, selects experts on demand, drives the DAG pipeline, and pauses for confirmation at stage transitions. User can interrupt and switch to manual mode at any time.
+You are the **LEAD**. You classify the task, select a pipeline, and drive it by orchestrating role-isolated subagents (you do not do the stage work yourself). You pause at gates and the user can switch to manual at any time.
 
 ## When to Use
 
 Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
-## Dispatch Agent Logic
+## 1. Classify the task and select a pipeline
 
-### Task Complexity Classification
-
-Analyze the task description to classify complexity:
+Classify the task to a pipeline, then DISPLAY the classification and let the user override before proceeding.
 
 | Classification | Indicators | Pipeline |
-|---------------|------------|----------|
-| **Full Feature** | New feature, multi-component, significant scope, "add system", "implement module" | office-hours → propose → expert reviews → apply → verify → ship → archive → retro |
-| **Small Feature** | Single-purpose addition, enhancement, "add button", "update form" | propose → apply → verify → ship → archive |
-| **Bug Fix** | Bug fix, error correction, regression, "fix", "broken", "doesn't work" | propose (simplified) → apply → verify → ship → archive |
+|----------------|------------|----------|
+| **Full Feature** | New feature, multi-component, significant scope, "add system", "implement module" | \`full-feature\` |
+| **Small Feature** | Single-purpose addition, enhancement, "add button", "update form" | \`small-feature\` |
+| **Bug Fix** | Bug fix, error correction, regression, "fix", "broken", "doesn't work" | \`bug-fix\` |
 
-Display the classification and allow user to override before proceeding.
+The three pipelines are defined inline in section 2. (A later change sources them from \`openspec pipeline classify "<task>" --json\` and \`openspec pipeline show <name> --json\`; the orchestration in section 3 stays the same.)
 
-### Expert Selection Matrix
+## 2. Pipelines (stage DAGs)
 
-Select experts based on change characteristics:
+Each stage carries metadata the LEAD interprets via the playbook in section 3: **role** (worker isolation), **gate** (human pause after), **loop** (bounded review->fix), **parallelGroup** (concurrent), **condition** (run only if), **leadReview** (LEAD checks output for drift), **verifyPolicy**.
 
-| Condition | Expert | When |
-|-----------|--------|------|
-| Full Feature | /autoplan | During planning phase — comprehensive task generation |
-| Security-relevant (auth, crypto, input validation, data handling) | /cso | During verify phase — security audit |
-| Performance-sensitive (DB queries, API endpoints, rendering, algorithms) | /benchmark | During verify phase — performance analysis |
-| UI changes (.tsx/.jsx/.vue/.svelte) | /design-review | During verify phase — visual audit |
-| Always for Full/Standard | /review | During verify phase — code review |
-| Full Feature with UI | /qa | During verify phase — browser testing |
-| Standard/Small Feature | /qa-only | During verify phase — abbreviated QA |
+### full-feature
 
-## Pipeline Execution
+| Stage | role | metadata |
+|-------|------|----------|
+| office-hours | planner | gate after |
+| propose | planner | leadReview (if \`--review-plan\`); gate after |
+| apply | implementer | gate after |
+| verify | reviewer | parallelGroup=experts (fans out into one concurrent reviewer worker per condition-met expert); conditions: review (always), cso (security-relevant), benchmark (performance-sensitive), design-review (UI), and exactly one of qa (if UI) / qa-only (if non-UI) |
+| review-loop | fixer | loop=review-cycle (cap 3) |
+| ship | shipper | gate after |
+| archive | shipper | — |
+| retro | reviewer | — |
 
-### Full Feature Pipeline
+### small-feature
 
-\`\`\`
-Stage 1: Office Hours
-  └─ /opsx:office-hours (Startup or Builder mode)
-  └─ Output: office-hours-design.md
+| Stage | role | metadata |
+|-------|------|----------|
+| propose | planner | gate after |
+| apply | implementer | gate after |
+| verify | reviewer | condition: review (always); standard depth |
+| review-loop | fixer | loop=review-cycle (cap 3) |
+| ship | shipper | gate after |
+| archive | shipper | — |
 
-Stage 2: Propose
-  └─ /opsx:propose (consumes office-hours-design.md)
-  └─ Output: proposal.md, design.md, specs/, tasks.md
+### bug-fix
 
-  ⏸ PAUSE POINT 1: "Plan complete. Review proposal and tasks before implementation?"
+| Stage | role | metadata |
+|-------|------|----------|
+| propose | planner | simplified (bug description + fix approach); gate after |
+| apply | implementer | gate after |
+| verify | reviewer | verifyPolicy=adaptive (see section 5) |
+| ship | shipper | gate after |
+| archive | shipper | — |
 
-Stage 3: Expert Reviews (if Full Feature)
-  └─ /autoplan (comprehensive planning)
-  └─ /cso (if security-relevant)
-  └─ /benchmark (if performance-sensitive)
+## 3. Execute the pipeline as the LEAD
 
-Stage 4: Apply
-  └─ /opsx:apply (implement all tasks)
-  └─ Output: code changes, tasks marked complete
+${ORCHESTRATION_PLAYBOOK}
 
-  ⏸ PAUSE POINT 2: "Implementation complete. Proceed to verification?"
+## 4. Propose direction-review gate (optional)
 
-Stage 5: Verify
-  └─ /opsx:verify (auto-scaled based on scope)
-  └─ Output: review-report.md, cso-report.md, qa-report.md
+When the \`propose\` stage has **leadReview** enabled (via the \`--review-plan\` argument or the stage flag): after the propose worker returns and BEFORE \`apply\`, you (the LEAD) review proposal.md / design.md / specs / tasks.md against the user's ORIGINAL intent for direction drift. You hold the original intent and did NOT author the proposal, so this is a legitimate non-author check.
+- Aligned -> continue to apply.
+- Drifted -> bounce back to a fresh planner worker with the drift notes, or surface it to the user at the gate.
+- **Tier C exception:** under the single-context fallback the LEAD itself authored the proposal, so leadReview would be a self-review. There, do NOT count it as a non-author check — degrade it to an explicit human-confirmation gate before apply, and record it as a fallback in run-state.
+When leadReview is not enabled, proceed from propose to the next stage without the extra review.
 
-  ⏸ PAUSE POINT 3: "Verification complete. Proceed to ship?"
-  └─ If critical issues found, recommend resolving first
+## 5. Adaptive Bug-Fix verify
 
-Stage 6: Ship
-  └─ /opsx:ship (test, push, PR)
-  └─ Output: ship-log.md
+For a \`verify\` stage with **verifyPolicy=adaptive**:
+- Run the unit-test gate first.
+- **Simple** fix (single file / non-core path / tests sufficient) AND tests green -> verify passes; skip the review loop.
+- **Complex** fix (multiple files / core paths / insufficient coverage) -> spawn a dedicated test/verification worker for deeper checking AND enter the review-cycle loop.
+Compute the simple/complex determination from the diff and record it in run-state.
 
-Stage 7: Archive
-  └─ /opsx:archive
-  └─ Output: archived change
+## Resume
 
-Stage 8: Retro
-  └─ /opsx:retro <change-name>
-  └─ Output: retro.md
-\`\`\`
-
-### Small Feature Pipeline
-
-\`\`\`
-Stage 1: Propose
-  └─ /opsx:propose
-  └─ Output: proposal.md, design.md, tasks.md
-
-  ⏸ PAUSE POINT 1: "Plan complete. Proceed to implementation?"
-
-Stage 2: Apply
-  └─ /opsx:apply
-
-  ⏸ PAUSE POINT 2: "Implementation complete. Proceed to verification?"
-
-Stage 3: Verify
-  └─ /opsx:verify (Standard depth)
-
-  ⏸ PAUSE POINT 3: "Verification complete. Proceed to ship?"
-
-Stage 4: Ship
-  └─ /opsx:ship
-
-Stage 5: Archive
-  └─ /opsx:archive
-\`\`\`
-
-### Bug Fix Pipeline
-
-\`\`\`
-Stage 1: Propose (simplified)
-  └─ /opsx:propose (focus on bug description and fix approach)
-
-  ⏸ PAUSE POINT 1: "Fix planned. Proceed to implementation?"
-
-Stage 2: Apply
-  └─ /opsx:apply
-
-  ⏸ PAUSE POINT 2: "Fix applied. Proceed to verification?"
-
-Stage 3: Verify
-  └─ /opsx:verify (Light depth — review only)
-
-  ⏸ PAUSE POINT 3: "Verification complete. Ship the fix?"
-
-Stage 4: Ship
-  └─ /opsx:ship
-
-Stage 5: Archive
-  └─ /opsx:archive
-\`\`\`
-
-## DAG State Resume
-
-On invocation, read current state to determine where to resume:
-
-\`\`\`bash
-openspec status --change "<name>" --json
-\`\`\`
-
-Map artifact presence to pipeline stage completion:
-- \`office-hours-design.md\` exists → office-hours complete
-- \`proposal.md\` exists → propose complete
-- \`tasks.md\` exists with all tasks checked → apply complete
-- \`review-report.md\` exists → verify complete
-- \`ship-log.md\` exists → ship complete
-
-Resume from the next incomplete stage.
-
-If no change exists yet, start from the beginning — create a new change first.
-
-## Pause Points
-
-At each pause point:
-1. Display a summary of what was accomplished in the completed stage
-2. Show what the next stage will do
-3. If critical issues were found, recommend resolution before continuing
-4. Wait for user confirmation:
-   - **Continue** → proceed to next stage
-   - **Stop** → save progress, user can resume later with \`/opsx:auto\`
-   - **Manual** → exit autopilot, user takes over with individual commands
+On invocation for an existing change, determine the next incomplete stage from the change's run-state AND artifacts (later: \`openspec pipeline resume <change> --json\`), then resume from there rather than restarting. The run-state per-stage status is AUTHORITATIVE; artifact presence is a heuristic to seed or cross-check it, and run-state wins on any conflict. Artifact signals: office-hours-design.md -> office-hours done; proposal.md -> propose done; tasks.md all checked -> apply done; review-report.md -> verify done; review-cycle-report.md -> review-loop done; ship-log.md -> ship done; change moved to archive -> archive done; retro.md -> retro done. If neither run-state nor any artifact exists yet, start from the pipeline's first stage.
 
 ## Output Format
 
 \`\`\`
 ## Auto: <change-name>
 
-**Classification:** Full Feature | Small Feature | Bug Fix
-**Pipeline:** <stage list>
-**Current Stage:** <stage name>
+Classification: Full Feature | Small Feature | Bug Fix      Tier: A | B | C
 
 ### Progress
-- [x] Office Hours — design doc created
-- [x] Propose — 7 tasks generated
-- [ ] Apply — implementing...
-- [ ] Verify
-- [ ] Ship
-- [ ] Archive
+- [x] propose      — planner worker; 7 tasks generated
+- [ ] apply        — implementer worker; in progress
+- [ ] verify       — reviewer worker(s)
+- [ ] review-loop
+- [ ] ship
 
-### Experts Selected
-- /review (always)
-- /cso (security-relevant)
-- /benchmark (performance-sensitive)
+### Workers / experts
+- review (always), cso (security), benchmark (perf), qa (UI) / qa-only (non-UI)
 \`\`\`
 
 ## Guardrails
 
-- Always pause at the 3 defined pause points — never skip user confirmation
-- If any stage fails, stop and report the failure — do not continue
-- User can interrupt at any time by typing "stop" or pressing Ctrl+C
-- Save progress so the pipeline can be resumed from where it left off
-- Do not run /ship if verification found critical issues — warn the user first`;
+- Always pause at gate stages — never skip human confirmation.
+- If any stage fails, stop and report the failure — do not continue.
+- The user can interrupt at any time and switch to manual.
+- Save run-state so the pipeline can be resumed from where it left off.
+- Do not run \`ship\` if verification has unresolved Blocker/Major findings — escalate first.
+- Enforce author != verifier across stages (reviewer != implementer; design-level fixer != author; re-reviewer != fixer).`;
 
 export function getAutoCommandSkillTemplate(): SkillTemplate {
   return {
     name: 'openspec-opsx-auto',
-    description: 'Autopilot mode — dispatch agent drives the full OPSX workflow end-to-end with task classification, expert selection, and pause points.',
+    description: 'Autopilot mode — the LEAD classifies the task, selects a pipeline, and drives it end-to-end by orchestrating role-isolated subagents with gates, the review-cycle loop, and human escalation.',
     instructions: AUTO_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires openspec CLI.',
@@ -215,9 +133,9 @@ export function getAutoCommandSkillTemplate(): SkillTemplate {
 export function getOpsxAutoCommandTemplate(): CommandTemplate {
   return {
     name: 'OPSX: Auto',
-    description: 'Autopilot mode — dispatch agent drives the full OPSX workflow end-to-end',
+    description: 'Autopilot mode — LEAD orchestrates role-isolated subagents to drive the full OPSX workflow end-to-end',
     category: 'Workflow',
-    tags: ['workflow', 'autopilot', 'dispatch'],
+    tags: ['workflow', 'autopilot', 'dispatch', 'orchestration'],
     content: AUTO_INSTRUCTIONS,
   };
 }
