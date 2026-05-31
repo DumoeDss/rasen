@@ -59,7 +59,9 @@ Output SHALL be dual-written: gstack default location AND `openspec/changes/<nam
 
 - **WHEN** office-hours completes
 - **AND** no active change exists
-- **THEN** the output SHALL go to `openspec/office-hours-design-latest.md`
+- **THEN** the output SHALL go to `openspec/office-hours/<topic-slug>.md`, where `<topic-slug>` is a kebab-case slug derived from the session topic (the same way `/opsx:propose` derives a change name)
+- **AND** the filename SHALL NOT be a single fixed name, so that separate validation sessions do not overwrite one another
+- **AND** if the derived filename already exists for an unrelated topic, the agent SHALL disambiguate with a short suffix rather than overwriting
 
 ### Requirement: Downstream Consumption by Propose
 

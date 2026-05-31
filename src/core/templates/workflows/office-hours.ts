@@ -71,11 +71,14 @@ Generate a design document with sections:
 
 **If an active OpenSpec change context exists:**
 - Write output to \`openspec/changes/<name>/office-hours-design.md\`
+- This is the change's single validation doc — a stable name within the task directory, just like \`proposal.md\`. Re-running office-hours on the same change refines this file in place.
 - This document will be automatically consumed by \`/opsx:propose\` as input context
 
 **If no active change exists:**
-- Write output to \`openspec/office-hours-design-latest.md\`
-- Inform the user they can reference this when creating a new change
+- Derive a descriptive kebab-case slug from the topic (e.g. "real-time collaboration" → \`real-time-collaboration\`), exactly the way \`/opsx:propose\` derives a change name from a description
+- Write output to \`openspec/office-hours/<topic-slug>.md\` — **one file per topic**, so separate validation sessions never overwrite each other (do NOT use a single fixed filename)
+- If that exact filename already exists for an UNRELATED topic, disambiguate with a short suffix (\`-2\`, \`-alt\`, …) rather than overwriting
+- Inform the user of the path and that they can reference it when creating a new change
 
 ### 6. Next Steps
 
