@@ -45,6 +45,7 @@ import {
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
 import { getProfileWorkflows, CORE_WORKFLOWS, ALL_WORKFLOWS } from './profiles.js';
 import { getAvailableTools } from './available-tools.js';
+import { ensureClaudeAgentTeams } from './claude-settings.js';
 import { migrateIfNeeded } from './migration.js';
 
 const require = createRequire(import.meta.url);
@@ -594,6 +595,11 @@ export class InitCommand {
         // skills-first: remove command files replaced by skills
         if (delivery === 'skills-first') {
           removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
+        }
+
+        // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
+        if (tool.value === 'claude') {
+          ensureClaudeAgentTeams(projectPath, tool.skillsDir);
         }
 
         spinner.succeed(`Setup complete for ${tool.name}`);

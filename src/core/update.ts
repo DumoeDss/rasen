@@ -11,6 +11,7 @@ import ora from 'ora';
 import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
+import { ensureClaudeAgentTeams } from './claude-settings.js';
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import { AI_TOOLS, OPENSPEC_DIR_NAME } from './config.js';
 import {
@@ -241,6 +242,11 @@ export class UpdateCommand {
         // skills-first: remove command files replaced by skills
         if (delivery === 'skills-first') {
           removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
+        }
+
+        // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
+        if (tool.value === 'claude') {
+          ensureClaudeAgentTeams(resolvedProjectPath, tool.skillsDir);
         }
 
         spinner.succeed(`Updated ${tool.name}`);

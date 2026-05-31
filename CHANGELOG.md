@@ -1,5 +1,11 @@
 # @fission-ai/openspec
 
+## 1.2.3
+
+### Minor Changes
+
+- **Auto-enable agent-teams for Claude Code** — `openspec init` / `openspec update` now merge `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"` into the project's `.claude/settings.json` when Claude Code is configured, so the orchestrated `/opsx:auto` and `/opsx:review-cycle` run at Tier A (the LEAD resumes a worker via `SendMessage` for a warm delta re-review) out of the box. The merge preserves existing keys and other env vars, is idempotent, and never clobbers a settings.json that is not valid JSON.
+
 ## 1.2.2
 
 ### Minor Changes
