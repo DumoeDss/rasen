@@ -12,11 +12,13 @@
 OPSX 把「一个需求 → 已实现、已审查、已验证、已交付、已归档」拆成若干阶段。每个阶段既可以由 autopilot 自动串起来，也可以单独手动调用。
 
 ```
- explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ review-cycle ─▶ verify(-enhanced) ─▶ ship ─▶ archive ─▶ retro
- (想清楚)   (验证需求)      (写计划)   (实现)   (评审→修→复审)   (深度验证)          (交付)   (归档合并)  (复盘)
-   │            │             │          │           │               │                  │         │
-  可选        可选          产出契约    勾选tasks   迭代直到干净     专家审/安全/QA      PR/部署   合并spec  学习沉淀
+ explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ verify ─▶ review-cycle ─▶ ship ─▶ archive ─▶ retro
+ (想清楚)   (验证需求)      (写计划)   (实现)  (专家评审) (评审环:修→复审Δ) (交付)  (归档合并)  (复盘)
+   │            │             │          │        │            │           │         │
+  可选         可选         产出契约   勾选tasks 专家/安全/QA  迭代直到干净  PR/部署  合并spec  学习沉淀
 ```
+
+> 注：在 autopilot 流水线里，`verify`（专家评审，可并行 review/cso/benchmark/design-review/qa）先跑出 findings，再由 `review-cycle`（=`review-loop` 阶段）驱动「triage→修→复审Δ」直到干净。bug-fix 走自适应 verify、不带 review-loop。
 
 - **契约在哪**：`propose` 在 `openspec/changes/<id>/` 产出 `proposal.md` / `design.md` / `specs/<cap>/spec.md` / `tasks.md`。这就是各阶段之间传递的「真相」。
 - **完成的定义**：每条 `### Requirement` 至少要有一个 `#### Scenario`（`openspec validate` 强制）。验证/审查阶段拿 scenario 对照实现。
@@ -90,9 +92,9 @@ openspec pipeline list --json                     # 列出 package/user/project 
 | 立项 | `/opsx:propose [name-or-desc]` | 一步建 change + 生成全部规划产物 | proposal/design/specs/tasks |
 | 立项（细粒度）| `/opsx:new` → `/opsx:continue` → `/opsx:ff` | 逐个产物 / 按依赖生成下一个 / 一次性全生成 | 同上，分步 |
 | 实现 | `/opsx:apply` | 按 `tasks.md` 实现，逐条勾选 | 代码 + 勾选的 tasks |
-| **迭代评审（新增）** | `/opsx:review-cycle` | review→triage→fix→re-review(Δ)→{pass\|循环\|升级} | 评审/修复记录 |
 | 验证 | `/opsx:verify` | 校验实现是否匹配产物（spec scenario）| 验证结论 |
 | 深度验证 | `/opsx:verify-enhanced` | 产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查（按改动规模自动伸缩）| 各类 report |
+| **迭代评审环** | `/opsx:review-cycle` | review→triage→fix→re-review(Δ)→{pass\|循环\|升级}；也是 `auto` 的 `review-loop` 阶段 | `review-cycle-report.md` |
 | 交付 | `/opsx:ship` | 测试、push、建 PR、可选合并 & 部署；PR 正文取自 proposal | `ship-log.md` |
 | 归档 | `/opsx:archive` / `/opsx:bulk-archive` | 归档 change，把 delta spec 合并进 canonical specs | 归档目录 + 更新的 specs |
 | 合并 spec | `/opsx:sync` | 把 delta specs 合并进主 specs | 更新的 specs |
@@ -113,7 +115,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
 ### 3.4 `/opsx:apply` — 实现
 按 `tasks.md` 逐条实现并勾选复选框。实现中可随时回头改任何产物（无 phase gate）。
 
-### 3.5 `/opsx:review-cycle` — 迭代评审环（本仓新增）
+### 3.5 `/opsx:review-cycle` — 迭代评审环（也是 `/opsx:auto` 的 review-loop 阶段）
 实现之后的**迭代**循环：调用 `openspec-gstack-review` 做评审 → 按修复体量分级（trivial / non-trivial / design-level）→ 修复 → **只复审增量** → 直到无 Blocker/Major 或达上限升级人工。
 
 要点（详见 [设计文档](./review-cycle-workflow-design.md)）：
@@ -168,25 +170,27 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
   openspec update              # 在项目里重新生成对应的 skills/commands
   ```
 - **Delivery = 生成 skill 还是 command 还是都生成**：`both`（默认）/ `skills` / `commands` / `skills-first` / `commands-first`。在全局配置（`openspec config`）里设。
-  - ⚠️ 注意：若全局设了 `delivery: commands-first`，`openspec init` 会生成 commands 并清掉对应的 workflow skill 目录——这会让"断言生成了 skill 文件"的测试在该机器上失败（已知点，测试侧需隔离全局配置）。
+  - ⚠️ **编排靠 skill**：`/opsx:auto` 与 `/opsx:review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-gstack-review`）。模型能调 skill、**不能**调 command——所以 `commands` / `commands-first`（会删掉有 command 对应物的 skill）会**打断编排**。要编排正常就保 skill：用 `both`（默认）或 `skills` / `skills-first`。
+  - ⚠️ 注意：若全局设了 `delivery: commands-first`，`openspec init` 会生成 commands 并清掉对应的 workflow skill 目录——这也会让"断言生成了 skill 文件"的测试在该机器上失败（已知点，测试侧需隔离全局配置）。
 
 ---
 
 ## 6. 完整示例
 
-### 6.1 一键（autopilot）
+### 6.1 一键（autopilot，编排式）
 ```text
 You: /opsx:auto 给设置页加一个"导出全部数据"的功能
 
-AI:  分类：Small Feature → 流水线 propose → apply → verify → ship → archive
-     （可覆盖；回车确认）
-     Stage propose … 生成 proposal/specs/tasks
-     ⏸ 计划完成，先看一眼再实现？ → 你：继续
-     Stage apply … 实现 + 勾选 tasks
-     ⏸ 实现完成，进入验证？ → 你：继续
-     Stage verify … /review 通过，无 Blocker
-     ⏸ 验证完成，进入交付？ → 你：先不 ship
-     （停在 archive 前，按需手动 ship/archive）
+AI:  openspec pipeline classify → suggested: small-feature（可覆盖；回车确认）
+     探测档位：Tier A（agent-teams 开）→ LEAD 编排角色隔离子 agent
+     从注册表取 DAG：propose → apply → verify → review-loop → ship → archive
+     ▸ planner worker → 生成 proposal/specs/tasks
+     ⏸ gate：计划完成，先看一眼再实现？ → 你：继续
+     ▸ implementer worker（≠planner）→ 实现 + 勾选 tasks
+     ⏸ gate：实现完成，进入验证？ → 你：继续
+     ▸ reviewer worker（≠implementer）→ /review 出 1 个 Major
+     ▸ review-loop：派 fixer 修 → SendMessage 唤醒原评审员只复审增量 → 干净
+     ⏸ gate：进入交付？ → 你：先不 ship（run-state 已存，可 `pipeline resume` 续）
 ```
 
 ### 6.2 手动逐阶段（细粒度控制）
@@ -201,7 +205,7 @@ openspec status --change add-jwt-auth        # 看产物完成度
 # 3) 实现
 /opsx:apply
 
-# 4) 迭代评审（新增）：评审→修→只复审增量
+# 4) 迭代评审环：评审→修→只复审增量（= auto 的 review-loop，手动单跑）
 /opsx:review-cycle
 
 # 5) 深度验证（按规模自动伸缩）
