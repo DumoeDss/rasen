@@ -58,14 +58,14 @@ openspec pipeline list --json                     # 列出 package/user/project 
 | 流水线 | 阶段（buildOrder 概要）|
 |---|---|
 | **full-feature** | office-hours → propose(可方向复审) → apply → 并行专家评审(review / cso / benchmark / design-review / qa\|qa-only) → review-loop(评审环) → ship → archive → retro |
-| **small-feature** | propose → apply → verify → review-loop → ship → archive |
+| **small-feature** _(默认)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → 自适应 verify → ship → archive |
 
-**怎么选流水线**（显式优先，否则自动分类）：
-- **显式指定**：`/opsx:auto --pipeline <名字> <任务>`，或**直接把流水线名放最前面**——`/opsx:auto small-feature 给设置页加一个导出按钮`（首个 token 是已知流水线名就直接用、跳过分类）。
-- **自动分类**：`/opsx:auto <任务>` → LEAD 用 `classify` 建议一个 → 显示出来，你可在确认时改成 `available` 里任意一个（含 user/project 自定义）。
+**怎么选流水线**（显式优先，否则默认 `small-feature`）：
+- **显式指定**：`/opsx:auto --pipeline <名字> <任务>`，或**直接把流水线名放最前面**——`/opsx:auto full-feature 重构鉴权子系统`（首个 token 是已知流水线名就直接用）。
+- **默认**：`/opsx:auto <任务>`（不带显式选择）→ 直接用 **`small-feature`**，不自动升级到 full-feature/bug-fix。
 
-显式选择始终覆盖分类建议；分类只是 advisory。
+可选：`openspec pipeline classify "<任务>"` 给个建议，或 `openspec pipeline list` 选别的——但显式选择始终覆盖，没有显式选择就走 `small-feature` 默认。
 
 每个阶段带元数据，LEAD 据此执行：**role**（隔离）、**gate**（人类暂停）、**loop**（评审环）、**parallelGroup**（并发扇出，如 verify 的专家组）、**condition**（满足才跑；ui / non-ui 等互斥条件择一）、**leadReview**（LEAD 查方向漂移，§2.3）、**verifyPolicy**（adaptive / standard / light，§2.3）。
 
@@ -230,7 +230,7 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
 ```text
 You: /opsx:auto 给设置页加一个"导出全部数据"的功能
 
-AI:  openspec pipeline classify → suggested: small-feature（可覆盖；回车确认）
+AI:  默认流水线 small-feature（未显式指定；可覆盖；回车确认）
      探测档位：Tier A（agent-teams 开）→ LEAD 编排角色隔离子 agent
      从注册表取 DAG：propose → apply → verify → review-loop → ship → archive
      ▸ planner worker → 生成 proposal/specs/tasks
@@ -277,7 +277,7 @@ openspec archive add-jwt-auth
 
 | 我想… | 用 |
 |---|---|
-| 一条命令端到端跑完 | `/opsx:auto <任务>`（自动分类流水线）|
+| 一条命令端到端跑完 | `/opsx:auto <任务>`（默认 small-feature 流水线）|
 | 指定用某条流水线 | `/opsx:auto --pipeline <名> <任务>` 或 `/opsx:auto <名> <任务>` |
 | 看有哪些流水线 | `openspec pipeline list` |
 | 先想清楚再动 | `/opsx:explore` |

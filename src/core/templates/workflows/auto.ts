@@ -12,31 +12,26 @@ import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const AUTO_INSTRUCTIONS = `Autopilot — drive the full OPSX workflow end-to-end.
 
-You are the **LEAD**. You classify the task, select a pipeline, and drive it by orchestrating role-isolated subagents (you do not do the stage work yourself). You pause at gates and the user can switch to manual at any time.
+You are the **LEAD**. You select a pipeline (default \`small-feature\`) and drive it by orchestrating role-isolated subagents (you do not do the stage work yourself). You pause at gates and the user can switch to manual at any time.
 
 ## When to Use
 
 Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
-## 1. Select the pipeline (explicit selection wins; else classify)
+## 1. Select the pipeline (explicit wins; default = small-feature)
 
 **Input**: \`/opsx:auto [--pipeline <name>] [--review-plan] <task description>\`.
 
 Choose the pipeline in this order:
-1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`openspec pipeline list --json\` (e.g. \`/opsx:auto small-feature 给设置页加一个导出按钮\`), use THAT pipeline and SKIP classification. Strip the selector token; the rest is the task description.
-2. **Else classify** the task and DISPLAY the suggestion:
-   \`\`\`bash
-   openspec pipeline classify "<task description>" --json   # -> { suggested, matched, available }
-   \`\`\`
+1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`openspec pipeline list --json\` (e.g. \`/opsx:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description.
+2. **Default** — otherwise use **\`small-feature\`** (the default pipeline). Do NOT auto-escalate to full-feature/bug-fix.
 
-In both cases, DISPLAY the chosen pipeline and let the user change it before proceeding.
+You MAY run \`openspec pipeline classify "<task>" --json\` for a suggestion, or pick any pipeline from \`openspec pipeline list\` (including project/user-defined ones) — but an explicit selection always wins, and absent one the default is \`small-feature\`. DISPLAY the chosen pipeline and let the user change it before proceeding.
 
 Built-in pipelines (see \`openspec pipeline list --json\`):
 - **full-feature** — office-hours -> propose -> apply -> parallel expert reviews -> review-loop -> ship -> archive -> retro
-- **small-feature** — propose -> apply -> verify -> review-loop -> ship -> archive
+- **small-feature** — propose -> apply -> verify -> review-loop -> ship -> archive  _(default)_
 - **bug-fix** — propose -> apply -> adaptive verify -> ship -> archive
-
-You MAY pick any pipeline from \`available\`, including project/user-defined ones. Classification is advisory; an explicit \`--pipeline\` / leading-name selection always wins.
 
 ## 2. Fetch the selected pipeline's stage DAG
 

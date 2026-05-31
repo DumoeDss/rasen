@@ -47,19 +47,20 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('Tier C');
     });
 
-    it('classifies to a registry pipeline (full-feature / small-feature / bug-fix)', () => {
-      expect(skillText.toLowerCase()).toContain('classify');
+    it('defaults to the small-feature pipeline (no auto-escalation)', () => {
+      expect(skillText).toContain('default = small-feature');
+      expect(skillText.toLowerCase()).toContain('do not auto-escalate');
+      // built-ins still listed for reference
       expect(skillText).toContain('full-feature');
       expect(skillText).toContain('small-feature');
       expect(skillText).toContain('bug-fix');
     });
 
-    it('supports explicit pipeline selection (--pipeline or a leading pipeline name)', () => {
+    it('supports explicit pipeline selection (--pipeline or a leading name) over the default', () => {
       expect(skillText).toContain('--pipeline');
-      // a bare leading pipeline name selects directly and skips classification
+      // a bare leading pipeline name selects directly
       expect(skillText.toLowerCase()).toContain('first token is a known pipeline name');
-      expect(skillText.toLowerCase()).toContain('skip classification');
-      // explicit selection wins over the advisory classifier
+      // explicit selection beats the small-feature default
       expect(skillText.toLowerCase()).toContain('always wins');
     });
 
