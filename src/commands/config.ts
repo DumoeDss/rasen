@@ -622,7 +622,14 @@ export function registerConfigCommand(program: Command): void {
 
           if (applyNow) {
             try {
-              execSync('npx openspec update', { stdio: 'inherit', cwd: projectDir });
+              // Re-invoke the SAME binary that is currently running rather than
+              // `npx openspec`, which resolves the nearest local node_modules and
+              // can hit a stale/broken install (e.g. a leftover symlink). Running
+              // the current entry guarantees the CLI the user invoked applies the change.
+              execSync(`"${process.execPath}" "${process.argv[1]}" update`, {
+                stdio: 'inherit',
+                cwd: projectDir,
+              });
               console.log('Run `openspec update` in your other projects to apply.');
             } catch {
               console.error('`openspec update` failed. Please run it manually to apply the profile changes.');
