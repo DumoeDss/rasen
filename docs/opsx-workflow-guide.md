@@ -67,7 +67,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
 
 ### 2.3 两个任务相关增强
 
-- **propose 方向复审门（可选，`--review-plan`）**：propose worker 返回后、apply 前，LEAD 拿着**原始意图**复审 proposal/design/specs/tasks 有无跑偏（LEAD 没写产物，是合法的非作者复核）。Tier C 下 LEAD 即作者，降级为显式人类确认门、**不**计为非作者复核。
+- **propose 方向复审门**：在 propose 阶段的 `leadReview` 为 ON 时触发——**两种开法**：① 调用时带参数 `/opsx:auto --review-plan <任务描述>`（本次强制开、不分流水线；注意 `/opsx:auto` 是 skill 不是 CLI 二进制，没有 flag 解析器——参数由 LEAD 按本节指令识别并遵守）；② pipeline.yaml 的 propose 阶段写 `leadReview: true`（该流水线永久开）。内置 **full-feature 默认带**（propose.leadReview: true），**small-feature / bug-fix 默认不带**（用 `--review-plan` 临时开）。触发后：propose worker 返回、apply 前，LEAD 拿**原始意图**复审 proposal/design/specs/tasks 有无跑偏（LEAD 没写产物，是合法非作者复核）→ 对齐则继续、跑偏则打回新 planner worker 或抛给你；不开则 propose 直接进下一阶段。Tier C 下 LEAD 即作者，降级为显式人类确认门、**不**计为非作者复核。
 - **Bug-Fix 自适应 verify**：简单改动（单文件 / 非核心路径 / 测试充分）单测绿即过、跳过评审环；复杂改动另派测试 worker 深查并进评审环。
 
 ### 2.4 review-cycle 就是 auto 的评审环
@@ -78,6 +78,34 @@ openspec pipeline list --json                     # 列出 package/user/project 
 
 - 标了 `gate` 的阶段之后 LEAD 暂停：显示已完成 + 下一步，等你 **Continue / Stop（存盘可续）/ 切手动**。
 - 续跑：`openspec pipeline resume <change> --json` 从 run-state + 工件推断下一个未完成阶段（run-state 的逐阶段状态为准，工件存在性是启发式 / 交叉校验）。
+
+### 2.6 加自定义流水线（从已有步骤拼）
+
+三步、零代码——把现有阶段 skill 重新编排成一条新流水线：
+
+1. **建文件**（解析优先级 project > user > package，**同名会覆盖内置**，可用来定制内置流水线而不改源码）：
+   - 项目级：`openspec/pipelines/<名字>/pipeline.yaml`
+   - 用户级：`<XDG_DATA_HOME 或 ~/.local/share>/openspec/pipelines/<名字>/pipeline.yaml`
+2. **写 stages，`skill` 从现有的挑**（这就是「从已有步骤选」）：
+   ```yaml
+   name: hotfix
+   description: Fast-track — propose, apply, review loop, ship.
+   stages:
+     - { id: propose,     skill: openspec-propose,      role: planner,     gate: true }
+     - { id: apply,       skill: openspec-apply-change, role: implementer, requires: [propose], gate: true }
+     - { id: review-loop, skill: openspec-review-cycle, role: fixer,       requires: [apply],
+         loop: { kind: review-cycle, maxRounds: 2 } }
+     - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop] }
+   ```
+   可挑的现成 skill：`openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`，专家 `gstack:review` / `gstack:cso` / `gstack:benchmark` / `gstack:design-review` / `gstack:qa` / `gstack:qa-only`。stage 字段同 §2.2；抄现成写法用 `openspec pipeline show full-feature`。
+3. **校验 + 用**：
+   ```bash
+   openspec validate <名字> --type pipeline   # 唯一id / requires可解析 / 无环 / skill存在 / parallelGroup独立
+   openspec pipeline show <名字>              # 看 buildOrder
+   ```
+   之后 `/opsx:auto` 会把它列进 `available`，你在分类后**覆盖**选它即可。
+
+> 两个真实约束：① **skill 名必须精确**——专家是 `gstack:xxx`（非 `openspec-gstack-xxx`）、apply 是 `openspec-apply-change`（非 `openspec-apply`），写错 `validate` 直接报 skill 不存在；② **classify 不会自动推荐自定义流水线**（它是内置关键词启发式，只在三个内置里建议）——自定义流水线一定在 `available` 里，但需你/用户在分类后**手动覆盖**选择。想让某关键词自动命中自定义流水线，目前要改 `src/commands/pipeline.ts` 的关键词表（可作后续增强）。
 
 ---
 
@@ -172,6 +200,23 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
 - **Delivery = 生成 skill 还是 command 还是都生成**：`both`（默认）/ `skills` / `commands` / `skills-first` / `commands-first`。在全局配置（`openspec config`）里设。
   - ⚠️ **编排靠 skill**：`/opsx:auto` 与 `/opsx:review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-gstack-review`）。模型能调 skill、**不能**调 command——所以 `commands` / `commands-first`（会删掉有 command 对应物的 skill）会**打断编排**。要编排正常就保 skill：用 `both`（默认）或 `skills` / `skills-first`。
   - ⚠️ 注意：若全局设了 `delivery: commands-first`，`openspec init` 会生成 commands 并清掉对应的 workflow skill 目录——这也会让"断言生成了 skill 文件"的测试在该机器上失败（已知点，测试侧需隔离全局配置）。
+
+### 升级已安装过的项目（拿到本次的编排 + pipeline）
+
+已经跑过旧版 `openspec init` 的项目，**不要**重跑 init —— 用 **`openspec update`**：
+
+1. **先升级 CLI 包本身**（`update` 不会升级自己）：
+   - 全局：`npm install -g @fission-ai/openspec@latest`（pnpm/yarn/bun 同理，见 [`installation.md`](./installation.md)）
+   - 本地 devDep：提升版本后重装（见 [`local-install.md`](./local-install.md)）
+2. **在项目里刷新生成物**：
+   ```bash
+   openspec update          # 按已配置的 工具/profile/delivery 重新生成 .claude/skills + commands；含 legacy 迁移
+   ```
+   这样就拿到本次更新的 `auto` / `review-cycle` 指令（编排式 + 档位 + run-state）。你的 `openspec/`（changes / specs）内容不受影响。
+3. **新的 `openspec pipeline` CLI 与内置流水线随包发布** —— 升级后的二进制里**立即可用**，不需要往项目里生成任何东西。
+4. 若之前是 `core` profile、想启用本次的 opt-in 工作流（`review-cycle` / fusion 的 `auto` 等）：先 `openspec config profile` 重选，再 `openspec update`。
+
+> `init` vs `update`：`init` 是**首次**搭建（建 `openspec/` 脚手架 + 选工具）；**已装过的项目升级用 `update`**。两者都会检测并引导清理 legacy 文件（见 [`migration-guide.md`](./migration-guide.md)）。
 
 ---
 
