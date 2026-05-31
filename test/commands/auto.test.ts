@@ -48,10 +48,19 @@ describe('auto workflow (orchestrated autopilot)', () => {
     });
 
     it('classifies to a registry pipeline (full-feature / small-feature / bug-fix)', () => {
-      expect(skillText).toContain('Classify');
+      expect(skillText.toLowerCase()).toContain('classify');
       expect(skillText).toContain('full-feature');
       expect(skillText).toContain('small-feature');
       expect(skillText).toContain('bug-fix');
+    });
+
+    it('supports explicit pipeline selection (--pipeline or a leading pipeline name)', () => {
+      expect(skillText).toContain('--pipeline');
+      // a bare leading pipeline name selects directly and skips classification
+      expect(skillText.toLowerCase()).toContain('first token is a known pipeline name');
+      expect(skillText.toLowerCase()).toContain('skip classification');
+      // explicit selection wins over the advisory classifier
+      expect(skillText.toLowerCase()).toContain('always wins');
     });
 
     it('sources the pipeline DAG from the registry CLI, not hard-coded inline', () => {

@@ -18,20 +18,25 @@ You are the **LEAD**. You classify the task, select a pipeline, and drive it by 
 
 Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
-## 1. Classify the task and select a pipeline
+## 1. Select the pipeline (explicit selection wins; else classify)
 
-Classify the task to a pipeline via the registry, DISPLAY the suggestion, and let the user override before proceeding:
+**Input**: \`/opsx:auto [--pipeline <name>] [--review-plan] <task description>\`.
 
-\`\`\`bash
-openspec pipeline classify "<task description>" --json   # -> { suggested, matched, available }
-\`\`\`
+Choose the pipeline in this order:
+1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`openspec pipeline list --json\` (e.g. \`/opsx:auto small-feature 给设置页加一个导出按钮\`), use THAT pipeline and SKIP classification. Strip the selector token; the rest is the task description.
+2. **Else classify** the task and DISPLAY the suggestion:
+   \`\`\`bash
+   openspec pipeline classify "<task description>" --json   # -> { suggested, matched, available }
+   \`\`\`
+
+In both cases, DISPLAY the chosen pipeline and let the user change it before proceeding.
 
 Built-in pipelines (see \`openspec pipeline list --json\`):
 - **full-feature** — office-hours -> propose -> apply -> parallel expert reviews -> review-loop -> ship -> archive -> retro
 - **small-feature** — propose -> apply -> verify -> review-loop -> ship -> archive
 - **bug-fix** — propose -> apply -> adaptive verify -> ship -> archive
 
-The user (or you) MAY pick any pipeline from \`available\`, including project/user-defined ones — the suggestion is advisory.
+You MAY pick any pipeline from \`available\`, including project/user-defined ones. Classification is advisory; an explicit \`--pipeline\` / leading-name selection always wins.
 
 ## 2. Fetch the selected pipeline's stage DAG
 
