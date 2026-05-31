@@ -1,0 +1,297 @@
+import { describe, it, expect } from 'vitest';
+import {
+  parsePipeline,
+  validatePipelineSkills,
+  PipelineValidationError,
+} from '../../../src/core/pipeline-registry/pipeline.js';
+
+describe('pipeline-registry/pipeline', () => {
+  describe('parsePipeline', () => {
+    it('should parse valid pipeline YAML', () => {
+      const yaml = `
+name: test-pipeline
+description: A test pipeline
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+    requires: []
+    gate: true
+  - id: apply
+    skill: openspec-apply-change
+    role: implementer
+    requires:
+      - propose
+`;
+      const pipeline = parsePipeline(yaml);
+
+      expect(pipeline.name).toBe('test-pipeline');
+      expect(pipeline.description).toBe('A test pipeline');
+      expect(pipeline.stages).toHaveLength(2);
+      expect(pipeline.stages[0].id).toBe('propose');
+      expect(pipeline.stages[0].role).toBe('planner');
+      expect(pipeline.stages[0].gate).toBe(true);
+      expect(pipeline.stages[1].requires).toEqual(['propose']);
+    });
+
+    it('should apply defaults for requires, gate, leadReview', () => {
+      const yaml = `
+name: defaults
+stages:
+  - id: only
+    skill: openspec-propose
+`;
+      const pipeline = parsePipeline(yaml);
+      const stage = pipeline.stages[0];
+
+      expect(stage.requires).toEqual([]);
+      expect(stage.gate).toBe(false);
+      expect(stage.leadReview).toBe(false);
+      expect(stage.role).toBeUndefined();
+      expect(stage.parallelGroup).toBeUndefined();
+      expect(stage.condition).toBeUndefined();
+      expect(stage.loop).toBeUndefined();
+      expect(stage.verifyPolicy).toBeUndefined();
+    });
+
+    it('should apply default maxRounds of 3 for review-cycle loop', () => {
+      const yaml = `
+name: loop-default
+stages:
+  - id: loop
+    skill: openspec-review-cycle
+    loop:
+      kind: review-cycle
+`;
+      const pipeline = parsePipeline(yaml);
+      expect(pipeline.stages[0].loop).toEqual({ kind: 'review-cycle', maxRounds: 3 });
+    });
+
+    it('should parse optional verifyPolicy, condition, parallelGroup', () => {
+      const yaml = `
+name: opts
+stages:
+  - id: a
+    skill: openspec-propose
+  - id: verify
+    skill: gstack:review
+    requires: [a]
+    condition: always
+    verifyPolicy: adaptive
+    parallelGroup: experts
+`;
+      const pipeline = parsePipeline(yaml);
+      const verify = pipeline.stages[1];
+      expect(verify.condition).toBe('always');
+      expect(verify.verifyPolicy).toBe('adaptive');
+      expect(verify.parallelGroup).toBe('experts');
+    });
+
+    it('should throw on missing pipeline name', () => {
+      const yaml = `
+stages:
+  - id: a
+    skill: openspec-propose
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/name/);
+    });
+
+    it('should throw on missing stage skill', () => {
+      const yaml = `
+name: no-skill
+stages:
+  - id: a
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/skill/);
+    });
+
+    it('should throw on empty stages array', () => {
+      const yaml = `
+name: empty
+stages: []
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/stage/i);
+    });
+
+    it('should throw on invalid role enum', () => {
+      const yaml = `
+name: bad-role
+stages:
+  - id: a
+    skill: openspec-propose
+    role: wizard
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+
+    it('should throw on invalid verifyPolicy enum', () => {
+      const yaml = `
+name: bad-policy
+stages:
+  - id: a
+    skill: gstack:review
+    verifyPolicy: extreme
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+  });
+
+  describe('validators', () => {
+    it('should throw on duplicate stage IDs', () => {
+      const yaml = `
+name: dup
+stages:
+  - id: apply
+    skill: openspec-propose
+  - id: apply
+    skill: openspec-apply-change
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/Duplicate stage ID: apply/);
+    });
+
+    it('should throw on dangling requires reference', () => {
+      const yaml = `
+name: dangling
+stages:
+  - id: apply
+    skill: openspec-apply-change
+    requires:
+      - nonexistent
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/Invalid dependency reference.*nonexistent/);
+    });
+
+    it('should detect self-referencing cycle', () => {
+      const yaml = `
+name: self
+stages:
+  - id: A
+    skill: openspec-propose
+    requires:
+      - A
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/Cyclic dependency detected/);
+    });
+
+    it('should detect simple A → B → A cycle', () => {
+      const yaml = `
+name: cycle2
+stages:
+  - id: A
+    skill: openspec-propose
+    requires:
+      - B
+  - id: B
+    skill: openspec-apply-change
+    requires:
+      - A
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/Cyclic dependency detected/);
+      expect(() => parsePipeline(yaml)).toThrow(/→/);
+    });
+
+    it('should detect longer A → B → C → A cycle and list IDs', () => {
+      const yaml = `
+name: cycle3
+stages:
+  - id: A
+    skill: openspec-propose
+    requires:
+      - C
+  - id: B
+    skill: openspec-apply-change
+    requires:
+      - A
+  - id: C
+    skill: gstack:review
+    requires:
+      - B
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      const error = (() => {
+        try {
+          parsePipeline(yaml);
+        } catch (e) {
+          return e;
+        }
+      })() as Error;
+      expect(error.message).toMatch(/A.*→.*B|B.*→.*C|C.*→.*A/);
+    });
+
+    it('should throw when parallelGroup members depend on each other', () => {
+      const yaml = `
+name: bad-parallel
+stages:
+  - id: root
+    skill: openspec-apply-change
+  - id: review
+    skill: gstack:review
+    requires: [root]
+    parallelGroup: experts
+  - id: cso
+    skill: gstack:cso
+    requires: [root, review]
+    parallelGroup: experts
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/parallelGroup 'experts' must be mutually independent/);
+    });
+
+    it('should allow parallelGroup members that share an external dependency', () => {
+      const yaml = `
+name: good-parallel
+stages:
+  - id: root
+    skill: openspec-apply-change
+  - id: review
+    skill: gstack:review
+    requires: [root]
+    parallelGroup: experts
+  - id: cso
+    skill: gstack:cso
+    requires: [root]
+    parallelGroup: experts
+`;
+      expect(() => parsePipeline(yaml)).not.toThrow();
+    });
+  });
+
+  describe('validatePipelineSkills', () => {
+    const yaml = `
+name: skills
+stages:
+  - id: a
+    skill: openspec-propose
+  - id: b
+    skill: gstack:review
+    requires: [a]
+`;
+
+    it('should pass when all skills are known', () => {
+      const pipeline = parsePipeline(yaml);
+      const known = new Set(['openspec-propose', 'gstack:review', 'extra']);
+      expect(() => validatePipelineSkills(pipeline, known)).not.toThrow();
+    });
+
+    it('should throw when a stage references an unknown skill', () => {
+      const pipeline = parsePipeline(yaml);
+      const known = new Set(['openspec-propose']); // missing gstack:review
+      expect(() => validatePipelineSkills(pipeline, known)).toThrow(PipelineValidationError);
+      expect(() => validatePipelineSkills(pipeline, known)).toThrow(
+        /Stage 'b' references unknown skill: 'gstack:review'/
+      );
+    });
+
+    it('should throw against an empty known set', () => {
+      const pipeline = parsePipeline(yaml);
+      expect(() => validatePipelineSkills(pipeline, new Set())).toThrow(PipelineValidationError);
+    });
+  });
+});

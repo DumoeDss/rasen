@@ -16,6 +16,7 @@ import { CompletionCommand } from '../commands/completion.js';
 import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
 import { registerSchemaCommand } from '../commands/schema.js';
+import { PipelineCommand } from '../commands/pipeline.js';
 import {
   statusCommand,
   instructionsCommand,
@@ -289,16 +290,17 @@ registerSchemaCommand(program);
 // Top-level validate command
 program
   .command('validate [item-name]')
-  .description('Validate changes and specs')
-  .option('--all', 'Validate all changes and specs')
+  .description('Validate changes, specs, and pipelines')
+  .option('--all', 'Validate all changes, specs, and pipelines')
   .option('--changes', 'Validate all changes')
   .option('--specs', 'Validate all specs')
-  .option('--type <type>', 'Specify item type when ambiguous: change|spec')
+  .option('--pipelines', 'Validate all pipelines')
+  .option('--type <type>', 'Specify item type when ambiguous: change|spec|pipeline')
   .option('--strict', 'Enable strict validation mode')
   .option('--json', 'Output validation results as JSON')
   .option('--concurrency <n>', 'Max concurrent validations (defaults to env OPENSPEC_CONCURRENCY or 6)')
   .option('--no-interactive', 'Disable interactive prompts')
-  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string }) => {
+  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string }) => {
     try {
       const validateCommand = new ValidateCommand();
       await validateCommand.execute(itemName, options);
@@ -500,6 +502,71 @@ newCmd
   .action(async (name: string, options: NewChangeOptions) => {
     try {
       await newChangeCommand(name, options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// Pipeline command group: inspect orchestration pipelines and run-state
+const pipelineCmd = program
+  .command('pipeline')
+  .description('Inspect orchestration pipelines (list, show, classify, resume)');
+
+pipelineCmd
+  .command('list')
+  .description('List available pipelines (project > user > package)')
+  .option('--json', 'Output as JSON')
+  .action(async (options?: { json?: boolean }) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.list(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+pipelineCmd
+  .command('show <name>')
+  .description('Show a pipeline stage DAG and build order')
+  .option('--json', 'Output as JSON')
+  .action(async (name: string, options?: { json?: boolean }) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.show(name, options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+pipelineCmd
+  .command('classify <task>')
+  .description('Suggest a pipeline for a task (advisory keyword heuristic)')
+  .option('--json', 'Output as JSON')
+  .action(async (task: string, options?: { json?: boolean }) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.classify(task, options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+pipelineCmd
+  .command('resume <change>')
+  .description("Show a change's pipeline run-state (next/remaining stages)")
+  .option('--json', 'Output as JSON')
+  .action(async (change: string, options?: { json?: boolean }) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.resume(change, options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

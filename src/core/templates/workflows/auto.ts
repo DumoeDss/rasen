@@ -3,9 +3,9 @@
  *
  * Autopilot mode — the LEAD classifies the task, selects a pipeline, and drives
  * it end-to-end by orchestrating role-isolated subagents (see the shared
- * orchestration playbook). Pipelines are expressed inline as stage DAGs today
- * (full-feature / small-feature / bug-fix); a later change sources them from the
- * data-driven pipeline registry without touching the orchestration playbook.
+ * orchestration playbook). Pipelines are sourced from the data-driven pipeline
+ * registry via the `openspec pipeline` CLI (classify / show / resume); the DAG
+ * is not hard-coded here, and the orchestration playbook is registry-agnostic.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
@@ -20,53 +20,28 @@ Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
 ## 1. Classify the task and select a pipeline
 
-Classify the task to a pipeline, then DISPLAY the classification and let the user override before proceeding.
+Classify the task to a pipeline via the registry, DISPLAY the suggestion, and let the user override before proceeding:
 
-| Classification | Indicators | Pipeline |
-|----------------|------------|----------|
-| **Full Feature** | New feature, multi-component, significant scope, "add system", "implement module" | \`full-feature\` |
-| **Small Feature** | Single-purpose addition, enhancement, "add button", "update form" | \`small-feature\` |
-| **Bug Fix** | Bug fix, error correction, regression, "fix", "broken", "doesn't work" | \`bug-fix\` |
+\`\`\`bash
+openspec pipeline classify "<task description>" --json   # -> { suggested, matched, available }
+\`\`\`
 
-The three pipelines are defined inline in section 2. (A later change sources them from \`openspec pipeline classify "<task>" --json\` and \`openspec pipeline show <name> --json\`; the orchestration in section 3 stays the same.)
+Built-in pipelines (see \`openspec pipeline list --json\`):
+- **full-feature** — office-hours -> propose -> apply -> parallel expert reviews -> review-loop -> ship -> archive -> retro
+- **small-feature** — propose -> apply -> verify -> review-loop -> ship -> archive
+- **bug-fix** — propose -> apply -> adaptive verify -> ship -> archive
 
-## 2. Pipelines (stage DAGs)
+The user (or you) MAY pick any pipeline from \`available\`, including project/user-defined ones — the suggestion is advisory.
 
-Each stage carries metadata the LEAD interprets via the playbook in section 3: **role** (worker isolation), **gate** (human pause after), **loop** (bounded review->fix), **parallelGroup** (concurrent), **condition** (run only if), **leadReview** (LEAD checks output for drift), **verifyPolicy**.
+## 2. Fetch the selected pipeline's stage DAG
 
-### full-feature
+Load the chosen pipeline's stages from the registry — do NOT hard-code them:
 
-| Stage | role | metadata |
-|-------|------|----------|
-| office-hours | planner | gate after |
-| propose | planner | leadReview (if \`--review-plan\`); gate after |
-| apply | implementer | gate after |
-| verify | reviewer | parallelGroup=experts (fans out into one concurrent reviewer worker per condition-met expert); conditions: review (always), cso (security-relevant), benchmark (performance-sensitive), design-review (UI), and exactly one of qa (if UI) / qa-only (if non-UI) |
-| review-loop | fixer | loop=review-cycle (cap 3) |
-| ship | shipper | gate after |
-| archive | shipper | — |
-| retro | reviewer | — |
+\`\`\`bash
+openspec pipeline show <name> --json   # -> { name, description, buildOrder, stages }
+\`\`\`
 
-### small-feature
-
-| Stage | role | metadata |
-|-------|------|----------|
-| propose | planner | gate after |
-| apply | implementer | gate after |
-| verify | reviewer | condition: review (always); standard depth |
-| review-loop | fixer | loop=review-cycle (cap 3) |
-| ship | shipper | gate after |
-| archive | shipper | — |
-
-### bug-fix
-
-| Stage | role | metadata |
-|-------|------|----------|
-| propose | planner | simplified (bug description + fix approach); gate after |
-| apply | implementer | gate after |
-| verify | reviewer | verifyPolicy=adaptive (see section 5) |
-| ship | shipper | gate after |
-| archive | shipper | — |
+Execute stages in \`buildOrder\`. Each stage carries the metadata the LEAD interprets via the playbook in section 3: **id**, **skill** (the OPSX skill the worker invokes), **role** (worker isolation), **requires** (DAG edges), **gate** (human pause after), **loop** (bounded review->fix), **parallelGroup** (concurrent fan-out — e.g. a \`verify\` stage's experts), **condition** (run only if met; mutually exclusive conditions like ui / non-ui pick exactly one), **leadReview** (LEAD checks the output for drift — section 4), **verifyPolicy** (section 5).
 
 ## 3. Execute the pipeline as the LEAD
 
@@ -90,7 +65,7 @@ Compute the simple/complex determination from the diff and record it in run-stat
 
 ## Resume
 
-On invocation for an existing change, determine the next incomplete stage from the change's run-state AND artifacts (later: \`openspec pipeline resume <change> --json\`), then resume from there rather than restarting. The run-state per-stage status is AUTHORITATIVE; artifact presence is a heuristic to seed or cross-check it, and run-state wins on any conflict. Artifact signals: office-hours-design.md -> office-hours done; proposal.md -> propose done; tasks.md all checked -> apply done; review-report.md -> verify done; review-cycle-report.md -> review-loop done; ship-log.md -> ship done; change moved to archive -> archive done; retro.md -> retro done. If neither run-state nor any artifact exists yet, start from the pipeline's first stage.
+On invocation for an existing change, determine the next incomplete stage from the change's run-state AND artifacts via \`openspec pipeline resume <change> --json\`, then resume from there rather than restarting. The run-state per-stage status is AUTHORITATIVE; artifact presence is a heuristic to seed or cross-check it, and run-state wins on any conflict. Artifact signals: office-hours-design.md -> office-hours done; proposal.md -> propose done; tasks.md all checked -> apply done; review-report.md -> verify done; review-cycle-report.md -> review-loop done; ship-log.md -> ship done; change moved to archive -> archive done; retro.md -> retro done. If neither run-state nor any artifact exists yet, start from the pipeline's first stage.
 
 ## Output Format
 

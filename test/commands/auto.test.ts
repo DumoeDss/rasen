@@ -54,6 +54,14 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('bug-fix');
     });
 
+    it('sources the pipeline DAG from the registry CLI, not hard-coded inline', () => {
+      expect(skillText).toContain('openspec pipeline classify');
+      expect(skillText).toContain('openspec pipeline show');
+      expect(skillText).toContain('openspec pipeline resume');
+      expect(skillText.toLowerCase()).toContain('do not hard-code');
+      expect(skillText).toContain('buildOrder');
+    });
+
     it('interprets stage metadata: gate / loop / parallelGroup / condition', () => {
       expect(skillText).toContain('gate');
       expect(skillText).toContain('loop');

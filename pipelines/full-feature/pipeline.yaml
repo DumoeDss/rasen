@@ -1,0 +1,90 @@
+name: full-feature
+description: >-
+  Full feature delivery pipeline: office hours validation, proposal with lead
+  review, apply, a parallel fan-out of conditional expert reviews, a review
+  cycle to drive fixes, then ship, archive, and retrospective.
+stages:
+  - id: office-hours
+    skill: openspec-opsx-office-hours
+    role: planner
+    requires: []
+    gate: true
+
+  - id: propose
+    skill: openspec-propose
+    role: planner
+    requires: [office-hours]
+    leadReview: true
+    gate: true
+
+  - id: apply
+    skill: openspec-apply-change
+    role: implementer
+    requires: [propose]
+    gate: true
+
+  - id: review
+    skill: gstack:review
+    role: reviewer
+    requires: [apply]
+    parallelGroup: experts
+    condition: always
+
+  - id: cso
+    skill: gstack:cso
+    role: reviewer
+    requires: [apply]
+    parallelGroup: experts
+    condition: security-relevant
+
+  - id: benchmark
+    skill: gstack:benchmark
+    role: reviewer
+    requires: [apply]
+    parallelGroup: experts
+    condition: performance-sensitive
+
+  - id: design-review
+    skill: gstack:design-review
+    role: reviewer
+    requires: [apply]
+    parallelGroup: experts
+    condition: ui
+
+  - id: qa
+    skill: gstack:qa
+    role: reviewer
+    requires: [apply]
+    parallelGroup: experts
+    condition: ui
+
+  - id: qa-only
+    skill: gstack:qa-only
+    role: reviewer
+    requires: [apply]
+    parallelGroup: experts
+    condition: non-ui
+
+  - id: review-loop
+    skill: openspec-review-cycle
+    role: fixer
+    requires: [review, cso, benchmark, design-review, qa, qa-only]
+    loop:
+      kind: review-cycle
+      maxRounds: 3
+
+  - id: ship
+    skill: openspec-opsx-ship
+    role: shipper
+    requires: [review-loop]
+    gate: true
+
+  - id: archive
+    skill: openspec-archive-change
+    role: shipper
+    requires: [ship]
+
+  - id: retro
+    skill: openspec-opsx-retro
+    role: reviewer
+    requires: [archive]

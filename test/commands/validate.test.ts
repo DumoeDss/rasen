@@ -145,3 +145,98 @@ describe('top-level validate command', () => {
     expect(result.stderr).not.toContain('What would you like to validate?');
   });
 });
+
+describe('top-level validate command (pipelines)', () => {
+  const projectRoot = process.cwd();
+  const testDir = path.join(projectRoot, 'test-validate-pipeline-tmp');
+  const pipelinesDir = path.join(testDir, 'openspec', 'pipelines');
+  const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'];
+
+  function writeProjectPipeline(name: string, content: string): Promise<void> {
+    const dir = path.join(pipelinesDir, name);
+    return fs
+      .mkdir(dir, { recursive: true })
+      .then(() => fs.writeFile(path.join(dir, 'pipeline.yaml'), content, 'utf-8'));
+  }
+
+  beforeEach(async () => {
+    await fs.mkdir(pipelinesDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  it('reports the three built-ins as valid with --type pipeline (bulk via --pipelines)', async () => {
+    const result = await runCLI(['validate', '--pipelines', '--json'], { cwd: testDir });
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout.trim());
+    const byId: Record<string, any> = {};
+    for (const item of json.items) byId[item.id] = item;
+
+    for (const name of BUILTIN_NAMES) {
+      expect(byId[name]).toBeDefined();
+      expect(byId[name].type).toBe('pipeline');
+      expect(byId[name].valid).toBe(true);
+      expect(byId[name].issues).toEqual([]);
+    }
+    expect(json.summary.byType.pipeline.passed).toBeGreaterThanOrEqual(3);
+    expect(json.version).toBe('1.0');
+  });
+
+  it('includes pipelines under --all', async () => {
+    const result = await runCLI(['validate', '--all', '--json'], { cwd: testDir });
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout.trim());
+    const hasPipeline = json.items.some((i: any) => i.type === 'pipeline');
+    expect(hasPipeline).toBe(true);
+    expect(json.summary.byType.pipeline).toBeDefined();
+  });
+
+  it('reports valid:false for a pipeline with a dangling requires reference', async () => {
+    await writeProjectPipeline(
+      'broken-deps',
+      [
+        'name: broken-deps',
+        'stages:',
+        '  - id: a',
+        '    skill: openspec-propose',
+        '    requires: [missing-stage]',
+      ].join('\n')
+    );
+
+    const result = await runCLI(['validate', 'broken-deps', '--type', 'pipeline', '--json'], {
+      cwd: testDir,
+    });
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout.trim());
+    const item = json.items[0];
+    expect(item.id).toBe('broken-deps');
+    expect(item.type).toBe('pipeline');
+    expect(item.valid).toBe(false);
+    expect(item.issues.length).toBeGreaterThan(0);
+    expect(item.issues[0].level).toBe('ERROR');
+    expect(item.issues[0].message).toMatch(/missing-stage|does not exist/);
+  });
+
+  it('reports valid:false for a pipeline referencing an unknown skill', async () => {
+    await writeProjectPipeline(
+      'unknown-skill',
+      [
+        'name: unknown-skill',
+        'stages:',
+        '  - id: a',
+        '    skill: this-skill-does-not-exist',
+      ].join('\n')
+    );
+
+    const result = await runCLI(['validate', 'unknown-skill', '--type', 'pipeline', '--json'], {
+      cwd: testDir,
+    });
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout.trim());
+    const item = json.items[0];
+    expect(item.valid).toBe(false);
+    expect(item.issues[0].message).toMatch(/unknown skill/);
+  });
+});

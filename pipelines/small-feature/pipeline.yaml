@@ -1,0 +1,42 @@
+name: small-feature
+description: >-
+  Lightweight feature pipeline: propose, apply, a single standard verification
+  with a review cycle, then ship and archive.
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+    requires: []
+    gate: true
+
+  - id: apply
+    skill: openspec-apply-change
+    role: implementer
+    requires: [propose]
+    gate: true
+
+  - id: verify
+    skill: gstack:review
+    role: reviewer
+    requires: [apply]
+    condition: always
+    verifyPolicy: standard
+
+  - id: review-loop
+    skill: openspec-review-cycle
+    role: fixer
+    requires: [verify]
+    loop:
+      kind: review-cycle
+      maxRounds: 3
+
+  - id: ship
+    skill: openspec-opsx-ship
+    role: shipper
+    requires: [review-loop]
+    gate: true
+
+  - id: archive
+    skill: openspec-archive-change
+    role: shipper
+    requires: [ship]

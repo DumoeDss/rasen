@@ -1,0 +1,33 @@
+name: bug-fix
+description: >-
+  Minimal bug-fix pipeline: propose, apply, an adaptive verification, then ship
+  and archive.
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+    requires: []
+    gate: true
+
+  - id: apply
+    skill: openspec-apply-change
+    role: implementer
+    requires: [propose]
+    gate: true
+
+  - id: verify
+    skill: gstack:review
+    role: reviewer
+    requires: [apply]
+    verifyPolicy: adaptive
+
+  - id: ship
+    skill: openspec-opsx-ship
+    role: shipper
+    requires: [verify]
+    gate: true
+
+  - id: archive
+    skill: openspec-archive-change
+    role: shipper
+    requires: [ship]
