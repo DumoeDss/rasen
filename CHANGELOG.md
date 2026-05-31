@@ -1,5 +1,22 @@
 # @fission-ai/openspec
 
+## 1.2.2
+
+### Minor Changes
+
+- **Orchestrated autopilot** — `/opsx:auto` now runs as a LEAD that orchestrates role-isolated subagents instead of a single-context recipe: capability tiers (A — Claude Code agent-teams with `SendMessage` warm-resume / B — spawn-only / C — single-context fallback), structural author≠verifier (reviewer ≠ implementer ≠ fixer), a change-directory blackboard plus `auto-run.json` run-state for resume/observability, and gate / loop / parallelGroup / condition stage handling with bounded loops that escalate to a human.
+- **Data-driven pipeline registry** — Pipelines are data (`pipelines/<name>/pipeline.yaml`, resolved project > user > package) instead of hard-coded recipes. New `openspec pipeline list | show <name> | classify "<task>" | resume <change>` (all `--json`), and `openspec validate` now covers pipeline definitions (unique ids, requires resolve, acyclic, skill/role existence, parallel-group independence). Adding a task type is a YAML file, not a code change. Ships built-in `full-feature`, `small-feature`, and `bug-fix`.
+- **`/opsx:auto` pipeline selection** — Explicit selection wins (`/opsx:auto --pipeline <name> <task>` or a leading pipeline name); with no explicit choice, `/opsx:auto` defaults to the `small-feature` pipeline (no auto-escalation).
+- **review-cycle workflow** — Iterative `review → triage → fix → re-review(Δ) → {pass | loop | escalate}` loop that delegates each pass to the `openspec-gstack-review` engine and shares the orchestration playbook (it is `auto`'s `review-loop` stage); the multi-agent path is primary with a single-context fallback, and a non-author must confirm every fix.
+- **propose direction-review gate** — Optional `--review-plan` (or a `leadReview` stage flag) has the LEAD check the proposal for direction drift before implementation; on by default for `full-feature`.
+- **Adaptive Bug-Fix verify** — the `bug-fix` verify stage passes on a green unit-test gate for simple fixes and spawns a dedicated verification worker for complex ones.
+
+### Patch Changes
+
+- **office-hours** — when no active change exists, output is written per-topic to `openspec/office-hours/<topic-slug>.md` instead of a single fixed file, so separate sessions no longer overwrite each other.
+- **config** — `openspec config profile`'s "apply now" re-invokes the currently-running CLI instead of `npx openspec update`, fixing a `MODULE_NOT_FOUND` crash when a stale/broken local `@fission-ai/openspec` install is present.
+- **docs** — added `docs/opsx-workflow-guide.md` covering the orchestrated workflow, the pipeline registry/CLI, profile/delivery, and upgrading an already-installed project.
+
 ## 1.2.0
 
 ### Minor Changes
