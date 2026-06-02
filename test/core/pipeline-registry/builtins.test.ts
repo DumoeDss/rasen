@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   loadPipelineByName,
   listPipelines,
+  resolveChildPipelineName,
+  validateDecomposeChildPipelines,
 } from '../../../src/core/pipeline-registry/resolver.js';
 import {
   validatePipelineSkills,
@@ -13,6 +15,9 @@ import { resolvePipelinePath } from '../../../src/core/pipeline-registry/resolve
 import { getSkillTemplates } from '../../../src/core/shared/skill-generation.js';
 
 const BUILTIN_NAMES = ['full-feature', 'small-feature', 'bug-fix'] as const;
+
+// Pipelines that must remain decompose-free so they are valid child pipelines.
+const DECOMPOSE_FREE_NAMES = ['small-feature', 'bug-fix'] as const;
 
 describe('pipeline-registry/built-ins', () => {
   const knownSkillNames = new Set(getSkillTemplates().map(t => t.template.name));
@@ -61,4 +66,40 @@ describe('pipeline-registry/built-ins', () => {
       });
     });
   }
+
+  for (const name of DECOMPOSE_FREE_NAMES) {
+    it(`${name} is decompose-free (valid as a child pipeline)`, () => {
+      const pipeline = loadPipelineByName(name);
+      expect(pipeline.stages.some(s => s.kind === 'decompose')).toBe(false);
+    });
+  }
+
+  describe('auto-decompose entry pipeline', () => {
+    it('is listed and parses with all validators', () => {
+      expect(listPipelines()).toContain('auto-decompose');
+      const pipeline = loadPipelineByName('auto-decompose');
+      expect(pipeline.name).toBe('auto-decompose');
+    });
+
+    it('has its decompose stage as the build-order entry point', () => {
+      const graph = PipelineGraph.fromPipeline(loadPipelineByName('auto-decompose'));
+      const order = graph.getBuildOrder();
+      const first = graph.getStage(order[0]);
+      expect(first?.kind).toBe('decompose');
+      expect(graph.getDecomposeStage()?.id).toBe(order[0]);
+    });
+
+    it('resolves to a decompose-free child pipeline (recursion guard passes)', () => {
+      const pipeline = loadPipelineByName('auto-decompose');
+      const decompose = pipeline.stages.find(s => s.kind === 'decompose')!;
+      expect(resolveChildPipelineName(decompose)).toBe('small-feature');
+      expect(() => validateDecomposeChildPipelines(pipeline)).not.toThrow();
+    });
+
+    it('its decompose stage is not a human gate', () => {
+      const pipeline = loadPipelineByName('auto-decompose');
+      const decompose = pipeline.stages.find(s => s.kind === 'decompose')!;
+      expect(decompose.gate).toBe(false);
+    });
+  });
 });

@@ -44,7 +44,43 @@ export function parsePipeline(yamlContent: string): PipelineYaml {
   // Check parallelGroup members are mutually independent
   validateParallelGroups(pipeline.stages);
 
+  // Check decompose stage constraints (at most one, must be the entry point)
+  validateDecomposeStages(pipeline.stages);
+
   return pipeline;
+}
+
+/**
+ * Validates the structural constraints on `decompose` stages (the registry-free
+ * subset; childPipeline resolution + the recursion guard need the registry and
+ * live in resolver.ts):
+ *  - at most ONE decompose stage per pipeline, and
+ *  - when present, it must be the pipeline's sole entry point — i.e. build-order
+ *    index 0. Since the build order (Kahn's algorithm) starts from the roots,
+ *    a stage is index 0 iff it is the UNIQUE root (the only stage with no
+ *    `requires`). This is checked here without building the graph to avoid a
+ *    circular import.
+ */
+function validateDecomposeStages(stages: Stage[]): void {
+  const decomposeStages = stages.filter(s => s.kind === 'decompose');
+  if (decomposeStages.length > 1) {
+    const names = decomposeStages.map(s => `'${s.id}'`).join(', ');
+    throw new PipelineValidationError(
+      `At most one decompose stage is allowed per pipeline; found ${decomposeStages.length} (${names})`
+    );
+  }
+  if (decomposeStages.length === 0) return;
+
+  const decompose = decomposeStages[0];
+  const roots = stages.filter(s => s.requires.length === 0);
+  const isUniqueRoot = roots.length === 1 && roots[0].id === decompose.id;
+  if (!isUniqueRoot) {
+    throw new PipelineValidationError(
+      `Decompose stage '${decompose.id}' must be the first stage (build-order index 0): ` +
+        `it must be the pipeline's sole entry point with no \`requires\`, and every other ` +
+        `stage must depend (directly or transitively) on it`
+    );
+  }
 }
 
 /**
@@ -168,9 +204,12 @@ export function validatePipelineSkills(
   knownSkillNames: Set<string>
 ): void {
   for (const stage of pipeline.stages) {
-    if (!knownSkillNames.has(stage.skill)) {
+    // decompose stages are LEAD-interpreted fan-out points, not leaf skill
+    // calls, so they carry no `skill` to validate.
+    if (stage.kind === 'decompose') continue;
+    if (!stage.skill || !knownSkillNames.has(stage.skill)) {
       throw new PipelineValidationError(
-        `Stage '${stage.id}' references unknown skill: '${stage.skill}'`
+        `Stage '${stage.id}' references unknown skill: '${stage.skill ?? '(missing)'}'`
       );
     }
   }

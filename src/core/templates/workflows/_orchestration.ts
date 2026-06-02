@@ -64,4 +64,26 @@ When a stage is a **loop**:
 
 ### Step F — Maintain run-state (observability + resume)
 
-Record in \`openspec/changes/<name>/auto-run\` (markdown now; JSON once formalized): the detected tier, classification, selected pipeline, per-stage status, which worker handled each stage, review rounds, open findings, and any skips/escalations. Subagent work is otherwise opaque; this record is what lets the run be observed, resumed after an interruption, and cold-reconstructed for Tier B fresh workers.`;
+Record in \`openspec/changes/<name>/auto-run\` (markdown now; JSON once formalized): the detected tier, classification, selected pipeline, per-stage status, which worker handled each stage, review rounds, open findings, and any skips/escalations. Subagent work is otherwise opaque; this record is what lets the run be observed, resumed after an interruption, and cold-reconstructed for Tier B fresh workers.
+
+### Step G — Portfolio orchestration (the \`decompose\` fan-out)
+
+A stage with **kind: decompose** is NOT a leaf skill call — it is a fan-out point you, the LEAD, interpret. It is always the pipeline's first stage. Evaluate its \`condition\` (e.g. \`needs-decomposition\`) against the task and either **skip** or **take** it:
+
+- **Skip** (single coherent, reviewable slice): record the decompose stage as \`skipped\` and run the parent's remaining stages on the ONE parent change exactly as a non-decomposed pipeline does. Zero behavior change.
+- **Take** (multiple independent deliverables / several distinct capabilities / a scope too large to review as one diff): the parent change becomes a **planning container** — mark its remaining stages \`delegated\` (do NOT run them at the parent level) and fan out into child changes.
+
+**1. Produce a decomposition plan.** A set of child changes — each an independently-shippable, reviewable slice — plus a **dependency DAG** declaring which children must land before which. Create each child with \`openspec new change <child-id>\` (name them with a parent-derived prefix, e.g. \`<parent>-<slice>\`, for traceability).
+
+**2. Self-audit the plan; proceed automatically (no human gate).** Before fanning out, audit your own plan: slice coherence, the independence basis behind any parallel cohort, and DAG correctness. If it is safe, proceed automatically — decompose is NOT a human gate (\`gate: false\`); do NOT pause for approval. Escalate to the human ONLY when you cannot produce a safe plan (you can neither establish independence NOR find a safe serial ordering). The user may still interrupt at any time, as in any auto run. Optionally you MAY dispatch an independent reviewer worker to audit the plan (author≠verifier) for extra assurance — not required.
+
+**3. Run each child through its childPipeline.** Each child runs the decompose stage's resolved \`childPipeline\` (default \`small-feature\`, always decompose-free) via the SAME per-change pipeline machinery (propose → apply → verify → review-loop → …). A child MAY override its pipeline (e.g. one child is \`bug-fix\` while a sibling is \`full-feature\`); record each child's actual pipeline in portfolio run-state.
+
+**4. Conservative serial/parallel policy (the safety core).**
+- **Dependency edge → strict serial, topological order.** A dependent child's pipeline MUST NOT begin until EVERY prerequisite child is implemented and review-clean (its review-loop passed); never run a prerequisite and its dependent concurrently. A **shared working tree + review-clean is sufficient** for a dependent to consume a prerequisite's code — do NOT force the prerequisite to ship/archive first; escalate to ship/archive only when the dependency is on landed/merged artifacts.
+- **Parallel ONLY when all hold:** (1) no dependency edge in either direction, (2) NO overlap in touched capabilities / spec folders / files, and (3) host is **Tier A**. Provably-independent children get separate worker teams and run concurrently with **no fixed cohort cap**. Under Tier B/C, run ALL children serially regardless of independence.
+- **Uncertain independence → serial.** Overlapping or ambiguous touch-sets are treated as a dependency. Parallelism requires a *positive* independence proof, never merely the absence of a declared edge — "宁可串行也不能乱并行".
+
+**5. Recursion guard.** Decompose happens at most once per portfolio, only at the top level. A child's \`childPipeline\` is decompose-free, so child runs NEVER decompose further.
+
+**6. Portfolio run-state.** Maintain a parent-level record at \`openspec/changes/<parent>/portfolio-run.json\`: the decomposition plan, child list, dependency DAG (each child's prerequisites), per-child execution mode (serial/parallel) + parallel cohort, per-child pipeline, per-child status, and the current runnable frontier. Each child keeps its OWN per-change \`auto-run.json\`. The portfolio record is AUTHORITATIVE for resume; child-directory/artifact presence is a cross-check. Resume via \`openspec pipeline resume <parent>\` (computes the next runnable child(ren) from the DAG). On **partial failure** (a child fails or escalates mid-run): stop that child's dependent chain, leave already-complete independent children intact, and escalate with the open frontier.`;

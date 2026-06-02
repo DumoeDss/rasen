@@ -11,8 +11,11 @@ import {
   getPackagePipelinesDir,
   getUserPipelinesDir,
   getProjectPipelinesDir,
+  resolveChildPipelineName,
+  validateDecomposeChildPipelines,
   PipelineLoadError,
 } from '../../../src/core/pipeline-registry/resolver.js';
+import { parsePipeline, PipelineValidationError } from '../../../src/core/pipeline-registry/pipeline.js';
 
 const VALID_PIPELINE = `name: NAME
 stages:
@@ -300,6 +303,63 @@ stages:
       const shared = infos.find(p => p.name === 'shared');
       expect(shared).toBeDefined();
       expect(shared!.source).toBe('project');
+    });
+  });
+
+  describe('decompose childPipeline resolution', () => {
+    const DECOMPOSE_PARENT = (child?: string) => `
+name: parent
+stages:
+  - id: decompose
+    kind: decompose
+${child ? `    childPipeline: ${child}\n` : ''}  - id: propose
+    skill: openspec-propose
+    requires: [decompose]
+`;
+
+    it('resolveChildPipelineName defaults to small-feature when omitted', () => {
+      const pipeline = parsePipeline(DECOMPOSE_PARENT());
+      expect(resolveChildPipelineName(pipeline.stages[0])).toBe('small-feature');
+    });
+
+    it('resolveChildPipelineName returns the explicit childPipeline', () => {
+      const pipeline = parsePipeline(DECOMPOSE_PARENT('bug-fix'));
+      expect(resolveChildPipelineName(pipeline.stages[0])).toBe('bug-fix');
+    });
+
+    it('passes when the omitted-default childPipeline (small-feature) resolves and is decompose-free', () => {
+      const pipeline = parsePipeline(DECOMPOSE_PARENT());
+      expect(() => validateDecomposeChildPipelines(pipeline)).not.toThrow();
+    });
+
+    it('throws when the childPipeline cannot be resolved', () => {
+      const pipeline = parsePipeline(DECOMPOSE_PARENT('no-such-pipeline'));
+      expect(() => validateDecomposeChildPipelines(pipeline)).toThrow(PipelineValidationError);
+      expect(() => validateDecomposeChildPipelines(pipeline)).toThrow(/cannot be resolved/);
+    });
+
+    it('throws a recursion-guard error when the childPipeline itself contains a decompose stage', () => {
+      process.env.XDG_DATA_HOME = tempDir;
+      writePipeline(
+        path.join(tempDir, 'openspec', 'pipelines'),
+        'recursive-child',
+        `name: recursive-child
+stages:
+  - id: decompose
+    kind: decompose
+  - id: propose
+    skill: openspec-propose
+    requires: [decompose]
+`
+      );
+      const pipeline = parsePipeline(DECOMPOSE_PARENT('recursive-child'));
+      expect(() => validateDecomposeChildPipelines(pipeline)).toThrow(/Recursion guard/);
+      expect(() => validateDecomposeChildPipelines(pipeline)).toThrow(/recursive-child/);
+    });
+
+    it('is a no-op for pipelines without a decompose stage', () => {
+      const pipeline = parsePipeline(VALID_PIPELINE.replace('NAME', 'plain'));
+      expect(() => validateDecomposeChildPipelines(pipeline)).not.toThrow();
     });
   });
 });

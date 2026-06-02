@@ -97,5 +97,18 @@ describe('auto workflow (orchestrated autopilot)', () => {
     it('enforces author != verifier across stages', () => {
       expect(skillText.toLowerCase()).toContain('author != verifier');
     });
+
+    it('covers decompose as the conditional first step and portfolio fan-out', () => {
+      // decompose stage kind + conditional first step
+      expect(skillText.toLowerCase()).toContain('kind: decompose');
+      expect(skillText).toContain('childPipeline');
+      expect(skillText).toContain('Portfolio orchestration');
+      // LEAD-audited, not a human gate
+      expect(skillText.toLowerCase()).toContain('no human gate');
+      // the conservative parallel safety rule
+      expect(skillText.toLowerCase()).toContain('cannot prove are independent');
+      // portfolio run-state + resume
+      expect(skillText).toContain('portfolio-run.json');
+    });
   });
 });

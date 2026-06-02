@@ -8,6 +8,7 @@ import {
   loadPipelineByName,
   listPipelines,
   validatePipelineSkills,
+  validateDecomposeChildPipelines,
   PipelineValidationError,
 } from '../core/pipeline-registry/index.js';
 import { PipelineLoadError } from '../core/pipeline-registry/index.js';
@@ -30,11 +31,13 @@ function validatePipelineByName(
   const issues: ValidationIssue[] = [];
   try {
     // parse + Zod + structural validators (duplicate ids, requires refs,
-    // cycles, parallel-group independence) all run here.
+    // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
     // skill-existence check against the known skill-template set.
     const knownSkillNames = new Set(getSkillTemplates().map((t) => t.template.name));
     validatePipelineSkills(pipeline, knownSkillNames);
+    // decompose childPipeline must resolve and be decompose-free (recursion guard).
+    validateDecomposeChildPipelines(pipeline, projectRoot);
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause

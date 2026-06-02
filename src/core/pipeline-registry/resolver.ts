@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getGlobalDataDir } from '../global-config.js';
 import { parsePipeline, PipelineValidationError } from './pipeline.js';
-import type { PipelineYaml } from './types.js';
+import { DEFAULT_CHILD_PIPELINE, type PipelineYaml, type Stage } from './types.js';
 
 /**
  * Error thrown when loading a pipeline fails.
@@ -245,6 +245,52 @@ function collectPipelineInfo(
       seenNames.add(entry.name);
     } catch {
       // Skip invalid pipelines
+    }
+  }
+}
+
+/**
+ * The pipeline name a decompose stage runs for each child change: the stage's
+ * explicit `childPipeline`, or the documented default when omitted.
+ */
+export function resolveChildPipelineName(stage: Stage): string {
+  return stage.childPipeline ?? DEFAULT_CHILD_PIPELINE;
+}
+
+/**
+ * Validates the registry-dependent constraints on every decompose stage in a
+ * pipeline: its `childPipeline` (explicit or defaulted) MUST resolve through the
+ * registry (project > user > package, never pattern matching) and the resolved
+ * child pipeline MUST itself be decompose-free — bounding fan-out to a single
+ * level (the recursion guard). Stage-level constraints (single, first) are
+ * checked in pipeline.ts; this is the part that needs registry access, so the
+ * CLI validate path and `pipeline show` call it with the project root.
+ *
+ * @throws PipelineValidationError when a child pipeline cannot be resolved or
+ *   would recurse.
+ */
+export function validateDecomposeChildPipelines(
+  pipeline: PipelineYaml,
+  projectRoot?: string
+): void {
+  for (const stage of pipeline.stages) {
+    if (stage.kind !== 'decompose') continue;
+    const childName = resolveChildPipelineName(stage);
+
+    let child: PipelineYaml;
+    try {
+      child = loadPipelineByName(childName, projectRoot);
+    } catch {
+      throw new PipelineValidationError(
+        `Decompose stage '${stage.id}' references childPipeline '${childName}' which cannot be resolved`
+      );
+    }
+
+    if (child.stages.some(s => s.kind === 'decompose')) {
+      throw new PipelineValidationError(
+        `Recursion guard: childPipeline '${childName}' (used by decompose stage '${stage.id}') ` +
+          `itself contains a decompose stage; child pipelines must be decompose-free`
+      );
     }
   }
 }

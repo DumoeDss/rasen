@@ -1,0 +1,54 @@
+name: auto-decompose
+description: >-
+  Decompose-enabled entry pipeline. The LEAD evaluates the leading decompose
+  stage first: skip it and the remaining stages run on a single change exactly
+  like small-feature; take it and the LEAD fans the task out into multiple child
+  changes, each driven through the decompose-free childPipeline (small-feature)
+  under the conservative serial/parallel policy. The decompose stage is
+  LEAD-audited, not a human gate.
+stages:
+  - id: decompose
+    kind: decompose
+    role: planner
+    requires: []
+    gate: false
+    childPipeline: small-feature
+    condition: needs-decomposition
+
+  - id: propose
+    skill: openspec-propose
+    role: planner
+    requires: [decompose]
+    gate: true
+
+  - id: apply
+    skill: openspec-apply-change
+    role: implementer
+    requires: [propose]
+    gate: true
+
+  - id: verify
+    skill: gstack:review
+    role: reviewer
+    requires: [apply]
+    condition: always
+    verifyPolicy: standard
+
+  - id: review-loop
+    skill: openspec-review-cycle
+    role: fixer
+    requires: [verify]
+    loop:
+      kind: review-cycle
+      maxRounds: 3
+
+  - id: ship
+    skill: openspec-opsx-ship
+    role: shipper
+    requires: [review-loop]
+    gate: true
+
+  - id: archive
+    skill: openspec-archive-change
+    role: shipper
+    requires: [ship]

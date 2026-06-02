@@ -59,6 +59,15 @@ export class PipelineGraph {
   }
 
   /**
+   * Returns the pipeline's decompose stage (the LEAD fan-out entry point), or
+   * undefined when the pipeline has none. Validation guarantees at most one and
+   * that it is the build-order entry point.
+   */
+  getDecomposeStage(): Stage | undefined {
+    return this.getAllStages().find(s => s.kind === 'decompose');
+  }
+
+  /**
    * Computes the topological build order using Kahn's algorithm.
    * Returns stage IDs in the order they should be executed.
    */

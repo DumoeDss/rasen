@@ -293,5 +293,121 @@ stages:
       const pipeline = parsePipeline(yaml);
       expect(() => validatePipelineSkills(pipeline, new Set())).toThrow(PipelineValidationError);
     });
+
+    it('should skip decompose stages (they carry no leaf skill)', () => {
+      const pipeline = parsePipeline(`
+name: dec
+stages:
+  - id: decompose
+    kind: decompose
+    childPipeline: small-feature
+  - id: propose
+    skill: openspec-propose
+    requires: [decompose]
+`);
+      // decompose stage has no skill but must NOT trip the unknown-skill check
+      expect(() => validatePipelineSkills(pipeline, new Set(['openspec-propose']))).not.toThrow();
+    });
+  });
+
+  describe('decompose stages', () => {
+    it('parses a decompose stage (no skill, with childPipeline)', () => {
+      const pipeline = parsePipeline(`
+name: dec
+stages:
+  - id: decompose
+    kind: decompose
+    childPipeline: small-feature
+  - id: propose
+    skill: openspec-propose
+    requires: [decompose]
+`);
+      const stage = pipeline.stages[0];
+      expect(stage.kind).toBe('decompose');
+      expect(stage.childPipeline).toBe('small-feature');
+      expect(stage.skill).toBeUndefined();
+    });
+
+    it('defaults a kind-less stage to standard and still requires skill', () => {
+      const pipeline = parsePipeline(`
+name: std
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      expect(pipeline.stages[0].kind).toBe('standard');
+
+      // a standard (kind-less) stage with no skill is rejected
+      expect(() =>
+        parsePipeline(`
+name: nope
+stages:
+  - id: a
+`)
+      ).toThrow(/skill/);
+    });
+
+    it('rejects more than one decompose stage', () => {
+      const yaml = `
+name: two-decompose
+stages:
+  - id: d1
+    kind: decompose
+  - id: d2
+    kind: decompose
+    requires: [d1]
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/At most one decompose stage/);
+    });
+
+    it('rejects a decompose stage that is not the build-order entry point', () => {
+      // decompose depends on propose -> propose is the root, decompose is not first
+      const yaml = `
+name: not-first
+stages:
+  - id: propose
+    skill: openspec-propose
+  - id: decompose
+    kind: decompose
+    requires: [propose]
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/must be the first stage/);
+    });
+
+    it('rejects a decompose stage when a second independent root exists', () => {
+      // decompose is a root, but so is `other` -> decompose is not the SOLE entry point
+      const yaml = `
+name: two-roots
+stages:
+  - id: decompose
+    kind: decompose
+  - id: other
+    skill: openspec-propose
+  - id: apply
+    skill: openspec-apply-change
+    requires: [decompose, other]
+`;
+      expect(() => parsePipeline(yaml)).toThrow(/must be the first stage/);
+    });
+
+    it('accepts a well-formed decompose-first pipeline', () => {
+      expect(() =>
+        parsePipeline(`
+name: ok
+stages:
+  - id: decompose
+    kind: decompose
+    childPipeline: small-feature
+  - id: propose
+    skill: openspec-propose
+    requires: [decompose]
+  - id: apply
+    skill: openspec-apply-change
+    requires: [propose]
+`)
+      ).not.toThrow();
+    });
   });
 });

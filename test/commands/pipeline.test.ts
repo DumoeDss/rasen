@@ -86,6 +86,17 @@ describe('pipeline command', () => {
       expect(result.stderr).toContain("Pipeline 'does-not-exist' not found");
       expect(result.stderr).toContain('bug-fix');
     });
+
+    it('surfaces a decompose stage with its kind and resolved childPipeline', async () => {
+      const result = await runCLI(['pipeline', 'show', 'auto-decompose', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.buildOrder[0]).toBe('decompose');
+      const dec = json.stages.find((s: any) => s.id === 'decompose');
+      expect(dec.kind).toBe('decompose');
+      expect(dec.childPipeline).toBe('small-feature');
+      expect(dec.skill).toBeNull();
+    });
   });
 
   describe('classify', () => {
@@ -178,6 +189,36 @@ describe('pipeline command', () => {
       const result = await runCLI(['pipeline', 'resume', 'nope-change', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("Change 'nope-change' not found");
+    });
+
+    it('resumes a decomposed parent from portfolio-run.json (frontier from the DAG)', async () => {
+      const changeDir = path.join(changesDir, 'big-feature');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify(
+          {
+            parent: 'big-feature',
+            children: [
+              { id: 'big-feature-api', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+              { id: 'big-feature-ui', pipeline: 'full-feature', dependsOn: ['big-feature-api'], status: 'pending' },
+              { id: 'big-feature-docs', pipeline: 'small-feature', dependsOn: [], status: 'pending' },
+            ],
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'big-feature', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBe(true);
+      expect(json.complete).toBe(false);
+      expect(json.completedChildren).toEqual(['big-feature-api']);
+      // -ui unblocked (its prereq is done) and -docs is an independent root
+      expect(json.runnableChildren).toEqual(['big-feature-docs', 'big-feature-ui']);
     });
   });
 });

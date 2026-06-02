@@ -19,6 +19,10 @@ import {
   PipelineGraph,
   readRunState,
   completedStages,
+  readPortfolioState,
+  runnableChildren,
+  isPortfolioComplete,
+  resolveChildPipelineName,
   type PipelineInfo,
   type Stage,
 } from '../core/pipeline-registry/index.js';
@@ -34,7 +38,9 @@ interface PipelineCommandOptions {
  */
 interface StageView {
   id: string;
-  skill: string;
+  kind: Stage['kind'];
+  skill: string | null;
+  childPipeline: string | null;
   role: Stage['role'] | null;
   requires: string[];
   gate: boolean;
@@ -189,6 +195,45 @@ export class PipelineCommand {
     const changeName = await validateChangeExists(change, projectRoot);
 
     const changeDir = path.join(projectRoot, 'openspec', 'changes', changeName);
+
+    // Portfolio parent? The portfolio record is authoritative — resume reports
+    // the next runnable child(ren) from the dependency DAG rather than stages.
+    const portfolio = readPortfolioState(changeDir);
+    if (portfolio) {
+      const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
+      const runnable = runnableChildren(portfolio);
+      const completedChildren = portfolio.children
+        .filter(c => isSatisfied(c.status))
+        .map(c => c.id);
+      const remainingChildren = portfolio.children
+        .filter(c => !isSatisfied(c.status))
+        .map(c => c.id);
+      const result = {
+        change: changeName,
+        isPortfolio: true as const,
+        hasRunState: true as const,
+        complete: isPortfolioComplete(portfolio),
+        completedChildren,
+        runnableChildren: runnable,
+        remainingChildren,
+        children: portfolio.children.map(c => ({
+          id: c.id,
+          pipeline: c.pipeline,
+          dependsOn: c.dependsOn,
+          status: c.status,
+        })),
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(`Change: ${changeName} (portfolio of ${portfolio.children.length} children)`);
+      console.log(`Completed: ${completedChildren.length > 0 ? completedChildren.join(', ') : '(none)'}`);
+      console.log(`Runnable now: ${runnable.length > 0 ? runnable.join(', ') : '(none)'}`);
+      console.log(`Remaining: ${remainingChildren.length > 0 ? remainingChildren.join(', ') : '(none)'}`);
+      return;
+    }
+
     const runState = readRunState(changeDir);
 
     // No run-state recorded yet (or not in usable form).
@@ -247,7 +292,11 @@ export class PipelineCommand {
   private toStageView(stage: Stage): StageView {
     return {
       id: stage.id,
-      skill: stage.skill,
+      kind: stage.kind,
+      skill: stage.skill ?? null,
+      // For a decompose stage, surface the RESOLVED child pipeline (default
+      // applied) so consumers see exactly what each child will run.
+      childPipeline: stage.kind === 'decompose' ? resolveChildPipelineName(stage) : null,
       role: stage.role ?? null,
       requires: stage.requires,
       gate: stage.gate,
@@ -295,7 +344,12 @@ export class PipelineCommand {
       if (stage.leadReview) meta.push('leadReview');
       if (stage.verifyPolicy) meta.push(`verifyPolicy=${stage.verifyPolicy}`);
       const suffix = meta.length > 0 ? `  (${meta.join('; ')})` : '';
-      console.log(`  ${id} -> ${stage.skill}${suffix}`);
+      // A decompose stage has no leaf skill; show its fan-out target instead.
+      const action =
+        stage.kind === 'decompose'
+          ? `decompose -> childPipeline=${resolveChildPipelineName(stage)}`
+          : stage.skill;
+      console.log(`  ${id} -> ${action}${suffix}`);
     }
   }
 }
