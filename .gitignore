@@ -156,3 +156,6 @@ opencode.json
 
 # Codex
 .codex/
+
+openspec/changes/**/auto-run.json
+openspec/changes/**/portfolio-run.json

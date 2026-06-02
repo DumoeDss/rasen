@@ -2,7 +2,6 @@
 
 ## Purpose
 Define how `openspec/config.yaml` is discovered, parsed, validated, and exposed to callers with safe fallbacks.
-
 ## Requirements
 ### Requirement: Load project config from openspec/config.yaml
 
@@ -37,8 +36,7 @@ The system SHALL accept both `.yaml` and `.yml` file extensions for the config f
 - **THEN** system prefers `openspec/config.yaml`
 
 ### Requirement: Use resilient field-by-field parsing
-
-The system SHALL parse each config field independently, collecting valid fields and warning about invalid ones without rejecting the entire config.
+The system SHALL parse each config field independently, collecting valid fields and warning about invalid ones without rejecting the entire config. This includes the `quality-rules` field.
 
 #### Scenario: Schema field is valid
 - **WHEN** config contains `schema: "spec-driven"`
@@ -79,6 +77,22 @@ The system SHALL parse each config field independently, collecting valid fields 
 #### Scenario: Mix of valid and invalid fields
 - **WHEN** config contains valid schema, invalid context type, valid rules
 - **THEN** config is returned with schema and rules fields, warning logged about context
+
+#### Scenario: Quality-rules field is valid string array
+- **WHEN** config contains `quality-rules: ["Avoid N+1 queries", "Check auth tokens"]`
+- **THEN** quality-rules field is included in returned config
+
+#### Scenario: Quality-rules field is invalid type
+- **WHEN** config contains `quality-rules: "not an array"`
+- **THEN** warning is logged and quality-rules field is not included in returned config
+
+#### Scenario: Quality-rules array contains non-string elements
+- **WHEN** config contains `quality-rules: ["Valid rule", 123]`
+- **THEN** only "Valid rule" is included, warning logged about invalid elements
+
+#### Scenario: Quality-rules field is missing
+- **WHEN** config lacks the `quality-rules` field
+- **THEN** no warning is logged (field is optional)
 
 ### Requirement: Enforce context size limit
 

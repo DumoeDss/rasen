@@ -2,7 +2,6 @@
 
 ## Purpose
 The instruction-loader loads instruction templates from schema directories, validates and enriches them with metadata and parameters (such as change context and dependency status), and exposes them for use by downstream services including template retrieval, parameter substitution, and enrichment.
-
 ## Requirements
 ### Requirement: Template Loading
 The system SHALL load templates from schema directories.
@@ -31,7 +30,7 @@ The system SHALL load change context combining graph and completion state.
 - **THEN** the system returns context with empty completed set
 
 ### Requirement: Template Enrichment
-The system SHALL enrich templates with change-specific context.
+The system SHALL enrich templates with change-specific context, quality rules, and extended field instructions.
 
 #### Scenario: Include artifact metadata
 - **WHEN** instructions are generated for an artifact
@@ -48,6 +47,26 @@ The system SHALL enrich templates with change-specific context.
 #### Scenario: Root artifact indicator
 - **WHEN** an artifact has no dependencies
 - **THEN** the dependency section indicates this is a root artifact
+
+#### Scenario: Include quality-rules section
+- **WHEN** project config contains non-empty `quality-rules` array
+- **THEN** instruction output includes `<quality-rules>` section after `<rules>` and before `<template>`, with each rule as a bullet point
+
+#### Scenario: Omit quality-rules when empty
+- **WHEN** project config has no `quality-rules` or the array is empty
+- **THEN** instruction output does not include `<quality-rules>` tags
+
+#### Scenario: Include enhance instruction
+- **WHEN** artifact has `enhance` field set to "plan-ceo-review"
+- **THEN** instruction output includes `<enhance>` section with the built-in skill name and path to `skills/plan-ceo-review/SKILL.md`
+
+#### Scenario: Include provider instruction
+- **WHEN** artifact has `provider` field set to "review"
+- **THEN** instruction output includes `<provider>` section with the built-in skill name and path to `skills/review/SKILL.md`
+
+#### Scenario: Include structured context from context-from
+- **WHEN** artifact has `context-from: "specs"` and specs artifact is done
+- **THEN** instruction output includes `<structured-context>` section with parsed content from the referenced artifact
 
 ### Requirement: Status Formatting
 The system SHALL format change status as readable output.

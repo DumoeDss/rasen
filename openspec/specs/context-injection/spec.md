@@ -2,7 +2,6 @@
 
 ## Purpose
 Define how project context from `openspec/config.yaml` is injected into workflow instructions while preserving source text and formatting.
-
 ## Requirements
 ### Requirement: Inject context into all artifact instructions
 
@@ -51,3 +50,15 @@ The system SHALL inject context content without modification, escaping, or inter
 #### Scenario: Context contains Markdown
 - **WHEN** context includes Markdown formatting like `**bold**` or `[links](url)`
 - **THEN** Markdown is preserved without rendering or escaping
+
+### Requirement: Quality-rules injection ordering
+The system SHALL inject quality-rules after rules and before template in the instruction output.
+
+#### Scenario: Full injection order
+- **WHEN** instructions are generated with context, rules, and quality-rules all present
+- **THEN** injection order is: `<context>` → `<rules>` → `<quality-rules>` → `<template>`
+
+#### Scenario: Quality-rules without rules
+- **WHEN** instructions are generated with context and quality-rules but no rules
+- **THEN** injection order is: `<context>` → `<quality-rules>` → `<template>`
+

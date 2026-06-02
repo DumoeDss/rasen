@@ -4,7 +4,7 @@ The init command SHALL provide a streamlined setup experience that auto-detects 
 
 ## MODIFIED Requirements
 
-### Requirement: Skill generation per tool (REPLACES fixed 9-skill mandate)
+### Requirement: Skill Generation
 The init command SHALL generate skills based on the active profile, not a fixed set.
 
 #### Scenario: Core profile skill generation
@@ -20,7 +20,7 @@ The init command SHALL generate skills based on the active profile, not a fixed 
 - **WHEN** generating skills
 - **THEN** the system SHALL include the `propose` workflow as an available skill template
 
-### Requirement: Command generation per tool (REPLACES fixed 9-command mandate)
+### Requirement: Slash Command Generation
 The init command SHALL generate commands based on profile AND delivery settings.
 
 #### Scenario: Skills-only delivery
@@ -38,6 +38,8 @@ The init command SHALL generate commands based on profile AND delivery settings.
 #### Scenario: Propose workflow included in command templates
 - **WHEN** generating commands
 - **THEN** the system SHALL include the `propose` workflow as an available command template
+
+## ADDED Requirements
 
 ### Requirement: Tool auto-detection
 The init command SHALL detect installed AI tools by scanning for their configuration directories in the project root.
@@ -197,3 +199,13 @@ The init command SHALL show detected tools and ask for confirmation.
 - **THEN** the system SHALL display: "Detected: Claude Code, Cursor"
 - **THEN** the system SHALL show pre-selected checkboxes for confirmation
 - **THEN** the system SHALL allow user to deselect unwanted tools
+
+## REMOVED Requirements
+
+### Requirement: AI Tool Configuration
+**Reason**: Superseded by profile-based generation plus the new auto-detection and confirmation flow ("Tool auto-detection", "Smart defaults init flow", "Init tool confirmation UX"). The searchable multi-select that generated a fixed skill/command set no longer reflects how init selects tools or generates files.
+**Migration**: Tool selection is now covered by "Tool auto-detection" + "Init tool confirmation UX"; skill/command generation is governed by the profile/delivery model in "Skill Generation" and "Slash Command Generation".
+
+### Requirement: Interactive Mode
+**Reason**: Superseded by "Smart defaults init flow" and "Init tool confirmation UX", which define the interactive experience around auto-detected tools and smart defaults rather than a looping toggle menu.
+**Migration**: Use the smart-defaults interactive flow (detected tools pre-selected, then confirmed) described in "Smart defaults init flow" and "Init tool confirmation UX".

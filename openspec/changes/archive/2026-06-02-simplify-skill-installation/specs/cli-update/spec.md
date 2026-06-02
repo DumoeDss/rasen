@@ -2,7 +2,7 @@
 
 The update command SHALL apply global configuration changes to existing projects, syncing profile and delivery preferences without requiring full re-initialization.
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Update respects global profile config
 The update command SHALL read global config and apply profile settings to the project.
@@ -175,3 +175,9 @@ The update command SHALL remove workflow files that are no longer selected in th
 - **AND** project has extra workflows not in current profile
 - **THEN** the system SHALL delete files for extra workflows that match the removed delivery type
 - **THEN** for example: if switching to `skills`, all command files are deleted (including for extra workflows)
+
+## REMOVED Requirements
+
+### Requirement: Prerequisites
+**Reason**: Superseded by "Update requires an OpenSpec project", which states the same precondition (update only runs inside an initialized OpenSpec project) in terms of the current profile/delivery-aware update flow.
+**Migration**: The OpenSpec-directory precondition and its exit-code-1 failure are now covered by "Update requires an OpenSpec project".
