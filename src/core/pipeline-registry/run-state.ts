@@ -23,9 +23,31 @@ export const StageStatusSchema = z.enum([
 ]);
 export type StageStatus = z.infer<typeof StageStatusSchema>;
 
+/**
+ * The worker that handled a stage. Two forms are accepted:
+ *  - a bare string — a human label / role (observability only); and
+ *  - the structured form — `role`, the spawn handle `agentId`, and the durable
+ *    `transcript` pointer to the worker's persisted conversation (e.g.
+ *    `agent-<agentId>.jsonl` under the project's Claude transcript directory).
+ *
+ * IMPORTANT: `agentId` is a LIVE handle — a valid `SendMessage` target ONLY
+ * within the session that spawned the worker; it is a dead handle after a
+ * restart. `transcript` is the cross-session asset: on resume the LEAD reads it
+ * back to WARM-SEED a fresh same-role worker (a new agentId primed with the
+ * prior worker's full context). Recording `agentId` still helps across a
+ * restart because it locates that transcript file. Resume itself only needs
+ * `status`; `worker` exists for warm-seed + isolation auditing.
+ */
+export const RunStateWorkerSchema = z.object({
+  role: z.string().optional(),
+  agentId: z.string().optional(),
+  transcript: z.string().optional(),
+});
+export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;
+
 export const RunStateStageSchema = z.object({
   status: StageStatusSchema,
-  worker: z.string().optional(),
+  worker: z.union([z.string(), RunStateWorkerSchema]).optional(),
   note: z.string().optional(),
 });
 export type RunStateStage = z.infer<typeof RunStateStageSchema>;
@@ -116,4 +138,48 @@ export function completedStages(state: RunState): string[] {
       .map(([id]) => id);
   }
   return state.completed ?? [];
+}
+
+/**
+ * Normalize a stage's `worker` (bare string or structured) to the structured
+ * shape. A bare string is treated as the worker's `role`. Returns undefined
+ * when no worker was recorded.
+ */
+export function normalizeWorker(
+  worker: RunStateStage['worker']
+): RunStateWorker | undefined {
+  if (worker === undefined) return undefined;
+  if (typeof worker === 'string') return { role: worker };
+  return worker;
+}
+
+/**
+ * Per-stage worker pointers that carry something reusable across a session
+ * boundary — an `agentId` (locates the transcript) or an explicit `transcript`
+ * path. These are what a resume warm-seeds a fresh worker from; stages with no
+ * such pointer are omitted. Bare-string (role-only) workers are omitted because
+ * they hold nothing to seed from.
+ */
+export function stageWorkers(state: RunState): Record<string, RunStateWorker> {
+  const out: Record<string, RunStateWorker> = {};
+  if (!state.stages) return out;
+  for (const [id, stage] of Object.entries(state.stages)) {
+    const w = normalizeWorker(stage.worker);
+    if (w && (w.agentId || w.transcript)) out[id] = w;
+  }
+  return out;
+}
+
+/**
+ * Stage ids currently in a given status, sorted. Empty when `stages` is absent
+ * (the `completed[]` convenience array carries no per-stage status). Used by
+ * resume to surface `escalated` (needs human) and `in_progress` (interrupted,
+ * re-engage) stages so neither is silently dropped.
+ */
+export function stagesWithStatus(state: RunState, status: StageStatus): string[] {
+  if (!state.stages) return [];
+  return Object.entries(state.stages)
+    .filter(([, s]) => s.status === status)
+    .map(([id]) => id)
+    .sort();
 }

@@ -134,6 +134,34 @@ export function runnableChildren(state: PortfolioState): string[] {
     .sort();
 }
 
+/**
+ * Children that were mid-flight when the run stopped (status `in_progress`).
+ * On resume these must be RE-ENGAGED — warm-seeded from their recorded
+ * transcript (or cold-reconstructed) and driven to completion — NOT left
+ * stranded. Their prerequisites are necessarily already satisfied (they had
+ * started), so this is the interrupted half of the runnable frontier. Kept
+ * separate from `runnableChildren` so a resumer can tell "start fresh" from
+ * "resume an interrupted one". Sorted for deterministic ordering.
+ */
+export function interruptedChildren(state: PortfolioState): string[] {
+  return state.children
+    .filter(c => c.status === 'in_progress')
+    .map(c => c.id)
+    .sort();
+}
+
+/**
+ * Children that failed/escalated (status `escalated`) and need human attention;
+ * their dependent chains stay blocked until they are resolved. Surfaced so a
+ * resume never silently drops them. Sorted.
+ */
+export function escalatedChildren(state: PortfolioState): string[] {
+  return state.children
+    .filter(c => c.status === 'escalated')
+    .map(c => c.id)
+    .sort();
+}
+
 /** True when every child has reached a terminal state (done | skipped). */
 export function isPortfolioComplete(state: PortfolioState): boolean {
   return state.children.every(c => isSatisfied(c.status));

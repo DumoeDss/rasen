@@ -22,8 +22,8 @@ You are the **LEAD**. You orchestrate; you do NOT author stage outputs yourself.
 
 ### Step A — Detect the capability tier (once, at start)
 
-- **Tier A (full):** Claude Code with agent-teams (\`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\`). You can spawn role workers AND resume a specific worker via \`SendMessage\` for warm-context continuation. Only the LEAD may originate \`SendMessage\` (that is you); it is within-session only.
-- **Tier B (multi-agent, no warm resume):** Subagent spawning is available but agent-teams is not. Spawn a FRESH worker per stage/round and reconstruct its context from the change directory + run-state.
+- **Tier A (full):** Claude Code with agent-teams (\`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\`). You can spawn role workers AND resume a specific worker via \`SendMessage\` for warm-context continuation. Only the LEAD may originate \`SendMessage\` (that is you); it is within-session only — a worker spawned in a previous session is gone (its agentId is a dead handle after a restart), so crossing a session boundary uses the transcript warm-seed of Step F.1, NOT \`SendMessage\`.
+- **Tier B (no \`SendMessage\` warm continuation):** Subagent spawning is available but agent-teams is not. Spawn a FRESH worker per stage/round and reconstruct its context from the change directory + run-state (and, when available, the prior worker's recorded transcript — Step F.1).
 - **Tier C (degraded fallback):** No subagent capability. Execute the pipeline sequentially in a single context. This is the explicit fallback, NOT the primary path.
 
 Record the detected tier in run-state. The pipeline definition is identical across tiers; only the mechanics below differ.
@@ -35,6 +35,8 @@ For each stage, spawn a worker of the stage's **role** and have it invoke the st
 > Task tool (subagent_type: "general-purpose", prompt: "You are the <role> for change '<name>'. Use the Skill tool to invoke <skill>. Read openspec/changes/<name>/ for context. <stage-specific instructions>. Return <what the LEAD needs back>. Do only this one unit of work — do NOT spawn subagents of your own; the LEAD owns all orchestration.")
 
 Isolation comes from the separate worker context — that is what keeps one stage's noise out of the next. Hand off between stages through the **change directory** (proposal.md, design.md, tasks.md, specs/, review-report.md, ship-log.md), never through shared memory. Use \`SendMessage\` only to continue a conversation with a worker you already spawned (Tier A), not as the inter-stage state channel.
+
+When you spawn a worker, record its identity in run-state (Step F): its **role** and its **agentId** (the agentId is returned with the spawn result, and is the durable key). On Claude Code each worker's conversation is persisted at \`<claude-projects>/<cwd-as-slug>/<session-id>/subagents/agent-<agentId>.jsonl\` (with an \`agent-<agentId>.meta.json\` sidecar naming the worker's role). The transcript is the only part of a worker that survives a restart. You MAY also cache the resolved transcript path, but the agentId is sufficient: on resume the file is LOCATED BY GLOB for \`agent-<agentId>.jsonl\` (Step F.1), because after a restart the session-id folder differs and a hard-coded path can go stale.
 
 ### Step C — Enforce author != verifier by role assignment
 
@@ -59,12 +61,41 @@ When a stage is a **loop**:
 1. **Review** — dispatch reviewer worker(s), delegating each pass to the \`openspec-gstack-review\` engine, over the current diff; collect findings with severity (Blocker / Major / Minor / Trivial). Do NOT fork or reimplement the review heuristics.
 2. **Triage by fix size** — trivial (you fix inline) / non-trivial (route to the implementer worker that wrote the code) / design-level (route to a SEPARATE fixer worker, never the author).
 3. **Fix** via the routed actor; capture the exact fix delta so re-review can target only the delta.
-4. **Re-review the delta with a non-author** — Tier A: resume the original reviewer via \`SendMessage\` to re-review only the delta against its prior findings. Tier B/C: a fresh reviewer over just the delta, with prior findings + fix diff passed through a shared file. A finding is resolved ONLY after a non-author confirms it; self-certification by the fixer is rejected.
+4. **Re-review the delta with a non-author** — Tier A, same session: resume the original reviewer via \`SendMessage\` to re-review only the delta against its prior findings. Across a session boundary (the original reviewer is gone): warm-seed a fresh reviewer from that reviewer's recorded transcript (Step F.1) so it carries the prior findings, then re-review only the delta. Tier B/C: a fresh reviewer over just the delta, with prior findings + fix diff passed through a shared file. A finding is resolved ONLY after a non-author confirms it; self-certification by the fixer is rejected.
 5. **Loop or terminate** — all Blocker/Major resolved (non-author confirmed) -> clean. Resolvable findings remain AND rounds < cap -> next round, re-review the new delta. Cap reached with any unresolved Blocker/Major -> STOP and escalate to the human (open findings + round history + recommendation). Default cap: 3. Never report clean while a Blocker or Major finding is open. Any open Minor/Trivial findings at clean-time MUST be recorded in run-state as accepted-known — never silently dropped.
 
 ### Step F — Maintain run-state (observability + resume)
 
-Record in \`openspec/changes/<name>/auto-run\` (markdown now; JSON once formalized): the detected tier, classification, selected pipeline, per-stage status, which worker handled each stage, review rounds, open findings, and any skips/escalations. Subagent work is otherwise opaque; this record is what lets the run be observed, resumed after an interruption, and cold-reconstructed for Tier B fresh workers.
+Record progress as JSON in \`openspec/changes/<name>/auto-run.json\` (this exact filename + JSON shape is what \`openspec pipeline resume\` reads — do NOT write markdown or a different name, or resume will not see it). Minimum shape the reader understands:
+
+\`\`\`json
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "stages": {
+    "propose": { "status": "done", "worker": { "role": "planner", "agentId": "<id>", "transcript": "<project>/<session-id>/subagents/agent-<id>.jsonl" } },
+    "verify":  { "status": "done", "worker": { "role": "reviewer", "agentId": "<id>", "transcript": "<project>/<session-id>/subagents/agent-<id>.jsonl" } },
+    "apply":   { "status": "in_progress", "worker": { "role": "implementer", "agentId": "<id>" } }
+  },
+  "rounds": 0,
+  "openFindings": []
+}
+\`\`\`
+
+\`status\` is one of pending | in_progress | done | skipped | escalated; a stage counts as complete for resume only when **done | skipped**. (A simpler \`"completed": ["propose","apply"]\` array is also accepted when you are not recording per-stage workers.) Record each dispatched worker's **role**, **agentId**, and **transcript** pointer (Step B). Also record review \`rounds\`, \`openFindings\`, and any skips/escalations. Subagent work is otherwise opaque; this record is what lets the run be observed and resumed.
+
+### Step F.1 — Resume a run (cold start, e.g. after a restart)
+
+A new session has NO live workers — \`SendMessage\` cannot reach a worker spawned in a previous session (agentIds are dead handles across a restart). To resume:
+
+1. Run \`openspec pipeline resume <name> --json\` → it returns \`completed\`, the next incomplete stage(s) (\`next\`/\`ready\`), \`remaining\`, \`workers\` (the per-stage \`agentId\`/\`transcript\` pointers worth warm-seeding from), and — so nothing is silently stranded — \`inProgressStages\` (interrupted; re-engage these), \`escalatedStages\`, and \`openFindings\` (unresolved Blocker/Major — never ship past them). For a decomposed parent it returns the per-child \`runnableChildren\` (start fresh), \`interruptedChildren\` (warm-seed-resume), \`escalatedChildren\` (human attention), and \`completedChildren\`. Run-state status is AUTHORITATIVE; artifact presence is a cross-check.
+2. **Warm-seed, don't cold-restart.** When you must re-engage a prior role (e.g. re-review a fix, or continue an interrupted stage), spawn a FRESH worker of that role and seed it with its predecessor's context: locate that worker's transcript — use the recorded path if present, else GLOB \`<claude-projects>/<cwd-as-slug>/**/subagents/agent-<agentId>.jsonl\` for the recorded agentId (the \`agent-<agentId>.meta.json\` sidecar confirms its role) — read it back, extract the relevant prior findings/reasoning, and pass them into the new worker's prompt ("Here is what your predecessor established: …"). The new worker has a new agentId but carries the prior context — functionally a resumed reviewer.
+3. **Fallback when the transcript is gone** (pruned / expired / unavailable): cold-reconstruct from the change directory + run-state alone (the Tier B path), and record in run-state that this resume was a cold reconstruction.
+
+Within a SINGLE live session, prefer the cheaper \`SendMessage\` warm continuation (Tier A); the transcript warm-seed is specifically for crossing a session boundary.
+
+> The two are the SAME mechanism. \`SendMessage\`-ing a completed worker is itself a resume-from-transcript (the harness re-engages it from its \`agent-<agentId>.jsonl\`); within a session the harness locates that transcript for you via the agentId, so it looks like "the same agent continued". After a restart that in-memory agentId→transcript bookkeeping is gone, so you locate the file yourself (glob) and seed a fresh worker. Same transcript-resume — the only difference is who finds the file.
 
 ### Step G — Portfolio orchestration (the \`decompose\` fan-out)
 
@@ -86,4 +117,4 @@ A stage with **kind: decompose** is NOT a leaf skill call — it is a fan-out po
 
 **5. Recursion guard.** Decompose happens at most once per portfolio, only at the top level. A child's \`childPipeline\` is decompose-free, so child runs NEVER decompose further.
 
-**6. Portfolio run-state.** Maintain a parent-level record at \`openspec/changes/<parent>/portfolio-run.json\`: the decomposition plan, child list, dependency DAG (each child's prerequisites), per-child execution mode (serial/parallel) + parallel cohort, per-child pipeline, per-child status, and the current runnable frontier. Each child keeps its OWN per-change \`auto-run.json\`. The portfolio record is AUTHORITATIVE for resume; child-directory/artifact presence is a cross-check. Resume via \`openspec pipeline resume <parent>\` (computes the next runnable child(ren) from the DAG). On **partial failure** (a child fails or escalates mid-run): stop that child's dependent chain, leave already-complete independent children intact, and escalate with the open frontier.`;
+**6. Portfolio run-state.** Maintain a parent-level record at \`openspec/changes/<parent>/portfolio-run.json\`: the decomposition plan, child list, dependency DAG (each child's prerequisites), per-child execution mode (serial/parallel) + parallel cohort, per-child pipeline, per-child status, and the current runnable frontier. Each child keeps its OWN per-change \`auto-run.json\`. The portfolio record is AUTHORITATIVE for resume; child-directory/artifact presence is a cross-check. Resume via \`openspec pipeline resume <parent>\` (computes the next runnable child(ren) from the DAG). It also reports \`interruptedChildren\` (were \`in_progress\` at stop — re-engage via warm-seed, do NOT leave stranded) and \`escalatedChildren\` (need human attention). On **partial failure** (a child fails or escalates mid-run): stop that child's dependent chain, leave already-complete independent children intact, and escalate with the open frontier.`;

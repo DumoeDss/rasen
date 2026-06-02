@@ -17,7 +17,7 @@ const REVIEW_CYCLE_INSTRUCTIONS = `Iterative review loop — drive a change to a
 
 This workflow does NOT reimplement the reviewer — each review pass delegates to the always-installed \`openspec-gstack-review\` engine. It does NOT reimplement the orchestration — it runs on the shared LEAD orchestration playbook below. It owns: change selection, the loop bound, fix-size triage, the author != verifier invariant, and the cycle report.
 
-**The multi-agent path is PRIMARY.** Review, fix, and re-review run as distinct role-isolated workers; on Claude Code with agent-teams (Tier A) the LEAD resumes the original reviewer via \`SendMessage\` to re-review only the delta. Single-context execution is the explicit FALLBACK (Tier C), used only when the tool has no subagent capability — NOT the baseline.
+**The multi-agent path is PRIMARY.** Review, fix, and re-review run as distinct role-isolated workers; on Claude Code with agent-teams (Tier A) the LEAD resumes the original reviewer via \`SendMessage\` to re-review only the delta — within the SAME session. Across a session boundary (\`SendMessage\` cannot reach a worker from a prior session) the LEAD instead warm-seeds a fresh reviewer from the original reviewer's recorded transcript (playbook Step F.1), so it still re-reviews only the delta with the prior findings in hand. Single-context execution is the explicit FALLBACK (Tier C), used only when the tool has no subagent capability — NOT the baseline.
 
 ## When to Use
 

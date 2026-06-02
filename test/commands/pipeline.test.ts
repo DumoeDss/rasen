@@ -182,7 +182,64 @@ describe('pipeline command', () => {
       expect(json.pipeline).toBe('bug-fix');
       expect(json.completed).toEqual(['propose', 'apply']);
       expect(json.next).toBe('verify');
+      expect(json.ready).toEqual(['verify']);
       expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
+    });
+
+    it('surfaces per-stage warm-seed worker pointers (agentId/transcript)', async () => {
+      const changeDir = path.join(changesDir, 'seeded-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          tier: 'A',
+          stages: {
+            propose: { status: 'done', worker: 'planner-1' }, // bare string → not warm-seedable
+            apply: {
+              status: 'done',
+              worker: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'seeded-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.completed.sort()).toEqual(['apply', 'propose']);
+      expect(json.next).toBe('verify');
+      // Only the structured worker with a reusable pointer is surfaced.
+      expect(json.workers).toEqual({
+        apply: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+      });
+    });
+
+    it('surfaces interrupted/escalated stages and open findings (P3)', async () => {
+      const changeDir = path.join(changesDir, 'stalled-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            propose: { status: 'done' },
+            apply: { status: 'in_progress' },
+            verify: { status: 'escalated' },
+          },
+          openFindings: [{ severity: 'major', summary: 'unhandled error path', stage: 'verify' }],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'stalled-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.inProgressStages).toEqual(['apply']);
+      expect(json.escalatedStages).toEqual(['verify']);
+      expect(json.openFindings).toHaveLength(1);
+      expect(json.openFindings[0].severity).toBe('major');
     });
 
     it('errors when the change does not exist', async () => {
@@ -219,6 +276,31 @@ describe('pipeline command', () => {
       expect(json.completedChildren).toEqual(['big-feature-api']);
       // -ui unblocked (its prereq is done) and -docs is an independent root
       expect(json.runnableChildren).toEqual(['big-feature-docs', 'big-feature-ui']);
+    });
+
+    it('surfaces interrupted and escalated children, not just the runnable frontier (P3)', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-mixed');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'portfolio-mixed',
+          children: [
+            { id: 'pm-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'pm-b', pipeline: 'small-feature', dependsOn: [], status: 'in_progress' },
+            { id: 'pm-c', pipeline: 'small-feature', dependsOn: [], status: 'escalated' },
+            { id: 'pm-d', pipeline: 'small-feature', dependsOn: [], status: 'pending' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-mixed', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.runnableChildren).toEqual(['pm-d']); // only fresh pending + deps satisfied
+      expect(json.interruptedChildren).toEqual(['pm-b']); // re-engage via warm-seed
+      expect(json.escalatedChildren).toEqual(['pm-c']); // human attention
     });
   });
 });

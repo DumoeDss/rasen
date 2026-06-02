@@ -8,6 +8,9 @@ import {
   readRunState,
   writeRunState,
   completedStages,
+  normalizeWorker,
+  stageWorkers,
+  stagesWithStatus,
   runStatePath,
   RunStateValidationError,
   RUN_STATE_FILENAME,
@@ -122,6 +125,90 @@ describe('pipeline run-state', () => {
 
     it('returns [] when neither stages nor completed is present', () => {
       expect(completedStages({ pipeline: 'bug-fix' })).toEqual([]);
+    });
+  });
+
+  describe('worker (warm-seed pointer)', () => {
+    it('accepts a bare-string worker (legacy / role label)', () => {
+      const s = parseRunState(
+        '{"pipeline":"small-feature","stages":{"propose":{"status":"done","worker":"planner-1"}}}'
+      );
+      expect(s.stages?.propose.worker).toBe('planner-1');
+    });
+
+    it('accepts a structured worker with agentId + transcript', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            verify: {
+              status: 'done',
+              worker: { role: 'reviewer', agentId: 'abc123', transcript: '/p/agent-abc123.jsonl' },
+            },
+          },
+        })
+      );
+      const w = s.stages?.verify.worker;
+      expect(typeof w).toBe('object');
+      expect((w as { transcript?: string }).transcript).toBe('/p/agent-abc123.jsonl');
+    });
+
+    it('round-trips a structured worker through write + read', () => {
+      const state: RunState = {
+        pipeline: 'small-feature',
+        stages: {
+          verify: { status: 'done', worker: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' } },
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      expect(back?.stages?.verify.worker).toEqual({
+        role: 'reviewer',
+        agentId: 'abc',
+        transcript: 'agent-abc.jsonl',
+      });
+    });
+
+    it('normalizeWorker coerces a bare string to { role }', () => {
+      expect(normalizeWorker('reviewer')).toEqual({ role: 'reviewer' });
+      expect(normalizeWorker(undefined)).toBeUndefined();
+      expect(normalizeWorker({ agentId: 'x' })).toEqual({ agentId: 'x' });
+    });
+
+    it('stageWorkers returns only stages with a reusable pointer (agentId/transcript)', () => {
+      const s: RunState = {
+        pipeline: 'small-feature',
+        stages: {
+          propose: { status: 'done', worker: 'planner-1' }, // bare string → nothing to seed from
+          verify: { status: 'done', worker: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' } },
+          apply: { status: 'in_progress' }, // no worker
+        },
+      };
+      expect(stageWorkers(s)).toEqual({
+        verify: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' },
+      });
+    });
+  });
+
+  describe('stagesWithStatus (P3: surface non-terminal stages)', () => {
+    const s: RunState = {
+      pipeline: 'small-feature',
+      stages: {
+        propose: { status: 'done' },
+        apply: { status: 'in_progress' },
+        verify: { status: 'escalated' },
+        review: { status: 'in_progress' },
+      },
+    };
+
+    it('returns the sorted stage ids in the requested status', () => {
+      expect(stagesWithStatus(s, 'in_progress')).toEqual(['apply', 'review']);
+      expect(stagesWithStatus(s, 'escalated')).toEqual(['verify']);
+      expect(stagesWithStatus(s, 'pending')).toEqual([]);
+    });
+
+    it('returns [] when stages is absent (completed[] carries no status)', () => {
+      expect(stagesWithStatus({ pipeline: 'bug-fix', completed: ['propose'] }, 'escalated')).toEqual([]);
     });
   });
 });

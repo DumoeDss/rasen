@@ -9,6 +9,8 @@ import {
   writePortfolioState,
   portfolioStatePath,
   runnableChildren,
+  interruptedChildren,
+  escalatedChildren,
   isPortfolioComplete,
   PortfolioStateValidationError,
   PORTFOLIO_STATE_FILENAME,
@@ -131,6 +133,39 @@ describe('portfolio run-state', () => {
       const s = chain();
       s.children[0].status = 'in_progress';
       expect(runnableChildren(s)).toEqual([]);
+    });
+  });
+
+  describe('interruptedChildren / escalatedChildren (P3: never strand)', () => {
+    const mixed = (): PortfolioState => ({
+      parent: 'p',
+      children: [
+        { id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+        { id: 'B', pipeline: 'small-feature', dependsOn: ['A'], status: 'in_progress' },
+        { id: 'C', pipeline: 'small-feature', dependsOn: [], status: 'escalated' },
+        { id: 'D', pipeline: 'small-feature', dependsOn: [], status: 'pending' },
+      ],
+    });
+
+    it('surfaces in_progress children separately from the runnable frontier', () => {
+      const s = mixed();
+      // B (in_progress) is NOT runnable (runnable = pending + deps satisfied)...
+      expect(runnableChildren(s)).toEqual(['D']);
+      // ...but it is re-offered as interrupted so resume does not strand it.
+      expect(interruptedChildren(s)).toEqual(['B']);
+    });
+
+    it('surfaces escalated children for human attention', () => {
+      expect(escalatedChildren(mixed())).toEqual(['C']);
+    });
+
+    it('return [] when there are none', () => {
+      const s: PortfolioState = {
+        parent: 'p',
+        children: [{ id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'done' }],
+      };
+      expect(interruptedChildren(s)).toEqual([]);
+      expect(escalatedChildren(s)).toEqual([]);
     });
   });
 

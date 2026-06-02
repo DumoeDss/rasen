@@ -19,8 +19,12 @@ import {
   PipelineGraph,
   readRunState,
   completedStages,
+  stageWorkers,
+  stagesWithStatus,
   readPortfolioState,
   runnableChildren,
+  interruptedChildren,
+  escalatedChildren,
   isPortfolioComplete,
   resolveChildPipelineName,
   type PipelineInfo,
@@ -202,6 +206,11 @@ export class PipelineCommand {
     if (portfolio) {
       const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
       const runnable = runnableChildren(portfolio);
+      // Interrupted (in_progress) and escalated children are NOT runnable, but
+      // must be surfaced so resume never silently strands them: interrupted →
+      // warm-seed-resume; escalated → human attention.
+      const interrupted = interruptedChildren(portfolio);
+      const escalated = escalatedChildren(portfolio);
       const completedChildren = portfolio.children
         .filter(c => isSatisfied(c.status))
         .map(c => c.id);
@@ -215,6 +224,8 @@ export class PipelineCommand {
         complete: isPortfolioComplete(portfolio),
         completedChildren,
         runnableChildren: runnable,
+        interruptedChildren: interrupted,
+        escalatedChildren: escalated,
         remainingChildren,
         children: portfolio.children.map(c => ({
           id: c.id,
@@ -230,6 +241,12 @@ export class PipelineCommand {
       console.log(`Change: ${changeName} (portfolio of ${portfolio.children.length} children)`);
       console.log(`Completed: ${completedChildren.length > 0 ? completedChildren.join(', ') : '(none)'}`);
       console.log(`Runnable now: ${runnable.length > 0 ? runnable.join(', ') : '(none)'}`);
+      if (interrupted.length > 0) {
+        console.log(`Interrupted (warm-seed resume): ${interrupted.join(', ')}`);
+      }
+      if (escalated.length > 0) {
+        console.log(`Escalated (needs attention): ${escalated.join(', ')}`);
+      }
       console.log(`Remaining: ${remainingChildren.length > 0 ? remainingChildren.join(', ') : '(none)'}`);
       return;
     }
@@ -261,8 +278,22 @@ export class PipelineCommand {
     const buildOrder = graph.getBuildOrder();
     const completed = completedStages(runState);
     const completedSet = new Set(completed);
-    const next = graph.getNextStages(completedSet)[0] ?? null;
+    // getNextStages can return several ready stages (parallel frontier); report
+    // the full set as `ready`, and keep `next` as its first member for callers
+    // that want a single cursor.
+    const ready = graph.getNextStages(completedSet);
+    const next = ready[0] ?? null;
     const remaining = buildOrder.filter((id) => !completedSet.has(id));
+    // Worker pointers recorded per stage. After a restart these agentIds are
+    // dead SendMessage handles, but their `transcript` paths let a resume
+    // WARM-SEED a fresh same-role worker from its predecessor's context.
+    const workers = stageWorkers(runState);
+    // Surface non-terminal stages so resume never hides them: in_progress was
+    // interrupted (re-engage), escalated needs human attention. openFindings
+    // carries unresolved Blocker/Major so a resumer does not ship past them.
+    const inProgressStages = stagesWithStatus(runState, 'in_progress');
+    const escalatedStages = stagesWithStatus(runState, 'escalated');
+    const openFindings = runState.openFindings ?? [];
 
     const result = {
       change: changeName,
@@ -270,7 +301,12 @@ export class PipelineCommand {
       hasRunState: true as const,
       completed,
       next,
+      ready,
       remaining,
+      workers,
+      inProgressStages,
+      escalatedStages,
+      openFindings,
     };
 
     if (options.json) {
@@ -278,11 +314,24 @@ export class PipelineCommand {
       return;
     }
 
+    const warmSeedable = Object.keys(workers);
     console.log(`Change: ${changeName}`);
     console.log(`Pipeline: ${runState.pipeline}`);
     console.log(`Completed: ${completed.length > 0 ? completed.join(', ') : '(none)'}`);
     console.log(`Next: ${next ?? '(complete)'}`);
     console.log(`Remaining: ${remaining.length > 0 ? remaining.join(', ') : '(none)'}`);
+    if (inProgressStages.length > 0) {
+      console.log(`Interrupted (warm-seed resume): ${inProgressStages.join(', ')}`);
+    }
+    if (escalatedStages.length > 0) {
+      console.log(`Escalated (needs attention): ${escalatedStages.join(', ')}`);
+    }
+    if (openFindings.length > 0) {
+      console.log(`Open findings: ${openFindings.length} (resolve before ship)`);
+    }
+    if (warmSeedable.length > 0) {
+      console.log(`Warm-seed available (prior worker transcripts): ${warmSeedable.join(', ')}`);
+    }
   }
 
   // ---------------------------------------------------------------------------
