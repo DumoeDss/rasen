@@ -29,7 +29,7 @@ If a change name is provided, use it. Otherwise:
 Run all checks before shipping:
 
 **a. Verification Status**
-- Check if \`openspec/changes/<name>/review-report.md\` exists
+- Check if \`openspec/changes/<name>/review-report.md\` exists (or \`review-cycle-report.md\` from the review loop, or any other expert \`*-report.md\` — any of these counts as verification evidence)
 - If no verification report found, warn: "No verification report found. Run /opsx:verify first."
 - Prompt user to confirm proceeding without verification
 
