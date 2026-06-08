@@ -21,6 +21,7 @@ import {
   completedStages,
   stageWorkers,
   stagesWithStatus,
+  normalizeWorker,
   readPortfolioState,
   runnableChildren,
   interruptedChildren,
@@ -211,6 +212,9 @@ export class PipelineCommand {
       // warm-seed-resume; escalated → human attention.
       const interrupted = interruptedChildren(portfolio);
       const escalated = escalatedChildren(portfolio);
+      // Run-level persistent planner pointer (one planner spans all children's
+      // proposes) — the resumer warm-seeds the next planner from it.
+      const planner = normalizeWorker(portfolio.planner) ?? null;
       const completedChildren = portfolio.children
         .filter(c => isSatisfied(c.status))
         .map(c => c.id);
@@ -226,6 +230,7 @@ export class PipelineCommand {
         runnableChildren: runnable,
         interruptedChildren: interrupted,
         escalatedChildren: escalated,
+        planner,
         remainingChildren,
         children: portfolio.children.map(c => ({
           id: c.id,
@@ -246,6 +251,11 @@ export class PipelineCommand {
       }
       if (escalated.length > 0) {
         console.log(`Escalated (needs attention): ${escalated.join(', ')}`);
+      }
+      if (planner) {
+        console.log(
+          `Planner (persistent, warm-seedable): ${planner.agentId ?? planner.role ?? 'recorded'}`
+        );
       }
       console.log(`Remaining: ${remainingChildren.length > 0 ? remainingChildren.join(', ') : '(none)'}`);
       return;

@@ -15,7 +15,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { StageStatusSchema } from './run-state.js';
+import { StageStatusSchema, RunStateWorkerSchema } from './run-state.js';
 
 export const PORTFOLIO_STATE_FILENAME = 'portfolio-run.json';
 
@@ -52,6 +52,14 @@ export const PortfolioStateSchema = z
     parent: z.string().min(1),
     childPipeline: z.string().optional(),
     tier: z.enum(['A', 'B', 'C']).optional(),
+    /**
+     * Run-level persistent planner pointer (playbook Step B.1): ONE planner is
+     * reused across every child's propose, so its identity lives here at the
+     * portfolio level, not on any single child. Same shapes as a per-stage
+     * worker record (bare string label, or {role, agentId, transcript}); the
+     * agentId/transcript is what a post-restart resume warm-seeds from.
+     */
+    planner: z.union([z.string(), RunStateWorkerSchema]).optional(),
     children: z.array(PortfolioChildSchema).default([]),
     updatedAt: z.string().optional(),
   })

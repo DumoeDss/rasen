@@ -65,6 +65,25 @@ describe('portfolio run-state', () => {
       expect(s.planSummary).toBe('split into 3');
     });
 
+    it('round-trips the run-level persistent planner pointer', () => {
+      const state: PortfolioState = {
+        parent: 'big-feature',
+        planner: { role: 'planner', agentId: 'plan-1', transcript: 'agent-plan-1.jsonl' },
+        children: [],
+      };
+      writePortfolioState(dir, state);
+      expect(readPortfolioState(dir)?.planner).toEqual({
+        role: 'planner',
+        agentId: 'plan-1',
+        transcript: 'agent-plan-1.jsonl',
+      });
+    });
+
+    it('accepts a bare-string planner label and absent planner', () => {
+      expect(parsePortfolioState('{"parent":"p","planner":"planner-1"}').planner).toBe('planner-1');
+      expect(parsePortfolioState('{"parent":"p"}').planner).toBeUndefined();
+    });
+
     it('readPortfolioState returns null when absent', () => {
       expect(readPortfolioState(dir)).toBeNull();
     });

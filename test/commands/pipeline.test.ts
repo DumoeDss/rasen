@@ -276,6 +276,7 @@ describe('pipeline command', () => {
       expect(json.completedChildren).toEqual(['big-feature-api']);
       // -ui unblocked (its prereq is done) and -docs is an independent root
       expect(json.runnableChildren).toEqual(['big-feature-docs', 'big-feature-ui']);
+      expect(json.planner).toBeNull(); // no persistent planner recorded
     });
 
     it('surfaces interrupted and escalated children, not just the runnable frontier (P3)', async () => {
@@ -285,6 +286,7 @@ describe('pipeline command', () => {
         path.join(changeDir, 'portfolio-run.json'),
         JSON.stringify({
           parent: 'portfolio-mixed',
+          planner: { role: 'planner', agentId: 'plan-9', transcript: 'agent-plan-9.jsonl' },
           children: [
             { id: 'pm-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
             { id: 'pm-b', pipeline: 'small-feature', dependsOn: [], status: 'in_progress' },
@@ -301,6 +303,8 @@ describe('pipeline command', () => {
       expect(json.runnableChildren).toEqual(['pm-d']); // only fresh pending + deps satisfied
       expect(json.interruptedChildren).toEqual(['pm-b']); // re-engage via warm-seed
       expect(json.escalatedChildren).toEqual(['pm-c']); // human attention
+      // Run-level persistent planner pointer surfaced for warm-seed reuse.
+      expect(json.planner).toEqual({ role: 'planner', agentId: 'plan-9', transcript: 'agent-plan-9.jsonl' });
     });
   });
 });
