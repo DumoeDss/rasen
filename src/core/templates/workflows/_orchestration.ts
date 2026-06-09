@@ -28,9 +28,23 @@ You are the **LEAD**. You orchestrate; you do NOT author stage outputs yourself.
 
 Record the detected tier in run-state. The pipeline definition is identical across tiers; only the mechanics below differ.
 
+### Step A.1 — Resolve each agent runtime (Claude or Codex)
+
+Each stage has an effective **runtime**. Resolve it in this order:
+
+1. Per-invocation role overrides from the user, e.g. \`--planner codex --reviewer claude --fixer codex\`.
+2. The registry output from \`openspec pipeline show <name> --json\`: stage-level \`runtime\` first, then \`agents.<role>\`.
+3. Default \`claude\`.
+
+Supported roles are \`planner\`, \`implementer\`, \`reviewer\`, \`fixer\`, and \`shipper\`. A single run may freely mix Claude and Codex workers by role or by stage.
+
+Claude workers use the existing Task/subagent path and record \`agentId\` plus \`transcript\`. Codex workers use Codex app-server threads through the installed Codex Claude Code plugin or the OpenSpec Codex bridge when available, and record \`threadId\` plus \`turnId\`. For Codex, \`threadId\` is the durable resume handle; do not store it as a Claude \`agentId\`.
+
 ### Step B — Dispatch a stage to a role-isolated worker
 
-For each stage, spawn a worker of the stage's **role** and have it invoke the stage's **skill** via the Task tool, e.g.:
+For each stage, dispatch a worker of the stage's **role** using the effective runtime from Step A.1.
+
+For a **Claude** stage, spawn a worker and have it invoke the stage's **skill** via the Task tool, e.g.:
 
 > Task tool (subagent_type: "general-purpose", prompt: "You are the <role> for change '<name>'. Use the Skill tool to invoke <skill>. Read openspec/changes/<name>/ for context. <stage-specific instructions>. Return <what the LEAD needs back>. Do only this one unit of work — do NOT spawn subagents of your own; the LEAD owns all orchestration.")
 
@@ -38,7 +52,13 @@ Isolation comes from the separate worker context — that is what keeps one stag
 
 A worker MUST leave its stage's durable artifact in the change directory before returning — its conversation output alone is NOT a handoff. In particular, the generic expert skills (review / cso / qa / qa-only / benchmark / design-review) print findings to the conversation and save NOTHING; the worker that invokes them is responsible for ALSO writing the findings to the canonical report file: \`review-report.md\` (code review), \`cso-report.md\` (security), \`qa-report.md\` (qa or qa-only), \`benchmark-report.md\` (performance), \`design-review-report.md\` (design). Include this in the dispatch prompt's stage-specific instructions. These files are what the resume artifact cross-check, \`ship\`'s verification pre-flight, and \`retro\` consume.
 
-When you spawn a worker, record its identity in run-state (Step F): its **role** and its **agentId** (the agentId is returned with the spawn result, and is the durable key). On Claude Code each worker's conversation is persisted at \`<claude-projects>/<cwd-as-slug>/<session-id>/subagents/agent-<agentId>.jsonl\` (with an \`agent-<agentId>.meta.json\` sidecar naming the worker's role). The transcript is the only part of a worker that survives a restart. You MAY also cache the resolved transcript path, but the agentId is sufficient: on resume the file is LOCATED BY GLOB for \`agent-<agentId>.jsonl\` (Step F.1), because after a restart the session-id folder differs and a hard-coded path can go stale.
+For Codex stages, use this prompt shape:
+
+> Codex prompt: "You are the <role> for change '<name>'. Execute the <stage-id> stage. Read openspec/changes/<name>/ for context. Follow the <skill> contract exactly. Write the required durable artifacts to the change directory before returning. Do not spawn other agents. Return a concise final summary plus written files / findings / validation status."
+
+Use Codex \`workspace-write\` only for artifact-writing roles such as planner or explicitly approved fixing work. Use \`read-only\` for reviewers, leadReview checks, and re-review. When using the Claude Code Codex plugin manually, the closest command path is \`/codex:rescue\` for a new persistent task and \`/codex:rescue --resume\` for the latest task thread; prefer a programmatic Codex bridge when available because it exposes \`threadId\`, \`turnId\`, status, cancellation, and structured results directly.
+
+When you spawn a worker, record its identity in run-state (Step F): Claude workers record **role**, **agentId**, and **transcript**; Codex workers record **runtime=codex**, **role**, **threadId**, **turnId** when available, and sandbox/model metadata. For Claude, transcript is the cross-session asset. For Codex, threadId is the cross-session asset.
 
 ### Step B.1 — Persistent planner: propose-only session reuse
 

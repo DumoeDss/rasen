@@ -153,6 +153,29 @@ describe('pipeline run-state', () => {
       expect((w as { transcript?: string }).transcript).toBe('/p/agent-abc123.jsonl');
     });
 
+    it('accepts a Codex worker with threadId + turnId', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            verify: {
+              status: 'done',
+              worker: {
+                runtime: 'codex',
+                role: 'reviewer',
+                threadId: 'thread-review-1',
+                turnId: 'turn-7',
+                sandbox: 'read-only',
+              },
+            },
+          },
+        })
+      );
+      const w = s.stages?.verify.worker;
+      expect(typeof w).toBe('object');
+      expect((w as { threadId?: string }).threadId).toBe('thread-review-1');
+    });
+
     it('round-trips a structured worker through write + read', () => {
       const state: RunState = {
         pipeline: 'small-feature',
@@ -175,16 +198,18 @@ describe('pipeline run-state', () => {
       expect(normalizeWorker({ agentId: 'x' })).toEqual({ agentId: 'x' });
     });
 
-    it('stageWorkers returns only stages with a reusable pointer (agentId/transcript)', () => {
+    it('stageWorkers returns only stages with a reusable pointer (agentId/transcript/threadId)', () => {
       const s: RunState = {
         pipeline: 'small-feature',
         stages: {
           propose: { status: 'done', worker: 'planner-1' }, // bare string → nothing to seed from
           verify: { status: 'done', worker: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' } },
+          reviewLoop: { status: 'done', worker: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' } },
           apply: { status: 'in_progress' }, // no worker
         },
       };
       expect(stageWorkers(s)).toEqual({
+        reviewLoop: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' },
         verify: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' },
       });
     });

@@ -64,6 +64,15 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText.toLowerCase()).toContain('always wins');
     });
 
+    it('allows per-role Claude/Codex runtime overrides', () => {
+      expect(skillText).toContain('--planner claude|codex');
+      expect(skillText).toContain('--reviewer claude|codex');
+      expect(skillText).toContain('planner=claude|codex');
+      expect(skillText).toContain('runtime');
+      expect(skillText).toContain('threadId');
+      expect(skillText).toContain('Codex');
+    });
+
     it('sources the pipeline DAG from the registry CLI, not hard-coded inline', () => {
       expect(skillText).toContain('openspec pipeline classify');
       expect(skillText).toContain('openspec pipeline show');

@@ -11,6 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
+import { AgentRuntimeSandboxSchema, AgentRuntimeSchema } from './types.js';
 
 export const RUN_STATE_FILENAME = 'auto-run.json';
 
@@ -39,10 +40,21 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
  * `status`; `worker` exists for warm-seed + isolation auditing.
  */
 export const RunStateWorkerSchema = z.object({
+  runtime: AgentRuntimeSchema.optional(),
   role: z.string().optional(),
   agentId: z.string().optional(),
   transcript: z.string().optional(),
-});
+  threadId: z.string().optional(),
+  turnId: z.string().optional(),
+  jobId: z.string().optional(),
+  threadName: z.string().optional(),
+  sandbox: AgentRuntimeSandboxSchema.optional(),
+  model: z.string().optional(),
+  effort: z.string().optional(),
+  resumeMode: z.string().optional(),
+  previousThreadId: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
 export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;
 
 export const RunStateStageSchema = z.object({
@@ -165,7 +177,7 @@ export function stageWorkers(state: RunState): Record<string, RunStateWorker> {
   if (!state.stages) return out;
   for (const [id, stage] of Object.entries(state.stages)) {
     const w = normalizeWorker(stage.worker);
-    if (w && (w.agentId || w.transcript)) out[id] = w;
+    if (w && (w.agentId || w.transcript || w.threadId)) out[id] = w;
   }
   return out;
 }

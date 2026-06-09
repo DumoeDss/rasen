@@ -4,6 +4,7 @@ import {
   validatePipelineSkills,
   PipelineValidationError,
 } from '../../../src/core/pipeline-registry/pipeline.js';
+import { resolveStageRuntimeConfig } from '../../../src/core/pipeline-registry/types.js';
 
 describe('pipeline-registry/pipeline', () => {
   describe('parsePipeline', () => {
@@ -85,6 +86,60 @@ stages:
       expect(verify.condition).toBe('always');
       expect(verify.verifyPolicy).toBe('adaptive');
       expect(verify.parallelGroup).toBe('experts');
+    });
+
+    it('should parse role-level and stage-level agent runtime selection', () => {
+      const yaml = `
+name: runtime-switch
+agents:
+  planner:
+    runtime: codex
+    sessionReuse: run-planner
+    sandbox: workspace-write
+    model: gpt-5.4-codex
+  reviewer: claude
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+  - id: verify
+    skill: gstack:review
+    role: reviewer
+    runtime: codex
+    sessionReuse: review-thread
+    sandbox: read-only
+    requires: [propose]
+`;
+      const pipeline = parsePipeline(yaml);
+      const propose = pipeline.stages[0];
+      const verify = pipeline.stages[1];
+
+      expect(resolveStageRuntimeConfig(propose, pipeline)).toMatchObject({
+        runtime: 'codex',
+        source: 'agent',
+        sessionReuse: 'run-planner',
+        sandbox: 'workspace-write',
+        model: 'gpt-5.4-codex',
+      });
+      expect(resolveStageRuntimeConfig(verify, pipeline)).toMatchObject({
+        runtime: 'codex',
+        source: 'stage',
+        sessionReuse: 'review-thread',
+        sandbox: 'read-only',
+      });
+    });
+
+    it('should reject invalid runtime selection', () => {
+      const yaml = `
+name: bad-runtime
+agents:
+  planner: llama
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
     });
 
     it('should throw on missing pipeline name', () => {

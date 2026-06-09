@@ -12,11 +12,16 @@
  */
 
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { stringify as stringifyYaml } from 'yaml';
 import {
+  AgentRuntimeSchema,
+  StageRoleSchema,
   loadPipelineByName,
   listPipelines,
   listPipelinesWithInfo,
   PipelineGraph,
+  parsePipeline,
   readRunState,
   completedStages,
   stageWorkers,
@@ -27,15 +32,31 @@ import {
   interruptedChildren,
   escalatedChildren,
   isPortfolioComplete,
+  getProjectPipelinesDir,
   resolveChildPipelineName,
+  resolveStageRuntimeConfig,
+  normalizeAgentRuntimeConfig,
+  type AgentRuntime,
   type PipelineInfo,
+  type PipelineYaml,
   type Stage,
+  type StageRole,
 } from '../core/pipeline-registry/index.js';
 import { validateChangeExists } from './workflow/shared.js';
 
 interface PipelineCommandOptions {
   json?: boolean;
 }
+
+interface PipelineAgentsOptions extends PipelineCommandOptions {
+  planner?: string;
+  implementer?: string;
+  reviewer?: string;
+  fixer?: string;
+  shipper?: string;
+}
+
+const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
 
 /**
  * Serialized form of a single stage in `show` output: every field, with
@@ -54,6 +75,12 @@ interface StageView {
   condition: string | null;
   leadReview: boolean;
   verifyPolicy: Stage['verifyPolicy'] | null;
+  runtime: 'claude' | 'codex';
+  runtimeSource: 'stage' | 'agent' | 'default';
+  sessionReuse: Stage['sessionReuse'] | null;
+  sandbox: Stage['sandbox'] | null;
+  model: string | null;
+  effort: string | null;
 }
 
 // Keyword heuristics for `classify`. Matched against the lowercased task string.
@@ -131,11 +158,12 @@ export class PipelineCommand {
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s));
+    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline));
 
     const result = {
       name: pipeline.name,
       description: pipeline.description ?? '',
+      agents: pipeline.agents ?? {},
       buildOrder,
       stages,
     };
@@ -146,6 +174,41 @@ export class PipelineCommand {
     }
 
     this.printPipelineDetail(result, graph);
+  }
+
+  /**
+   * Show or update role-level Claude/Codex runtime defaults for a pipeline.
+   *
+   * Updates are written as a project-local pipeline override, so package and
+   * user-level definitions stay untouched while registry precedence makes the
+   * new choices effective for this project.
+   */
+  async agents(name: string, options: PipelineAgentsOptions = {}): Promise<void> {
+    const projectRoot = this.resolveProjectRoot();
+    const normalizedName = name.replace(/\.ya?ml$/, '');
+    const pipeline = this.loadPipelineOrExplain(normalizedName, projectRoot);
+    const updates = this.runtimeUpdatesFromOptions(options);
+
+    if (Object.keys(updates).length === 0) {
+      const result = this.toAgentsResult(normalizedName, pipeline, null);
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      this.printAgentsDetail(result);
+      return;
+    }
+
+    const updatedPipeline = this.applyAgentRuntimeUpdates(pipeline, updates);
+    const overridePath = this.writeProjectPipelineOverride(projectRoot, normalizedName, updatedPipeline);
+    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath);
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    this.printAgentsDetail(result);
   }
 
   /**
@@ -253,8 +316,9 @@ export class PipelineCommand {
         console.log(`Escalated (needs attention): ${escalated.join(', ')}`);
       }
       if (planner) {
+        const plannerId = planner.threadId ?? planner.agentId ?? planner.transcript ?? planner.role ?? 'recorded';
         console.log(
-          `Planner (persistent, warm-seedable): ${planner.agentId ?? planner.role ?? 'recorded'}`
+          `Planner (persistent, resumable): ${plannerId}`
         );
       }
       console.log(`Remaining: ${remainingChildren.length > 0 ? remainingChildren.join(', ') : '(none)'}`);
@@ -340,7 +404,7 @@ export class PipelineCommand {
       console.log(`Open findings: ${openFindings.length} (resolve before ship)`);
     }
     if (warmSeedable.length > 0) {
-      console.log(`Warm-seed available (prior worker transcripts): ${warmSeedable.join(', ')}`);
+      console.log(`Resume handles available (worker sessions/transcripts): ${warmSeedable.join(', ')}`);
     }
   }
 
@@ -348,7 +412,111 @@ export class PipelineCommand {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private toStageView(stage: Stage): StageView {
+  private loadPipelineOrExplain(name: string, projectRoot: string): PipelineYaml {
+    try {
+      return loadPipelineByName(name, projectRoot);
+    } catch {
+      const available = listPipelines(projectRoot);
+      const list = available.length > 0 ? available.join('\n  ') : '(none)';
+      throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
+    }
+  }
+
+  private runtimeUpdatesFromOptions(options: PipelineAgentsOptions): Partial<Record<StageRole, AgentRuntime>> {
+    const updates: Partial<Record<StageRole, AgentRuntime>> = {};
+
+    for (const role of STAGE_ROLES) {
+      const value = options[role];
+      if (value === undefined) continue;
+
+      const parsedRole = StageRoleSchema.parse(role);
+      const parsedRuntime = AgentRuntimeSchema.safeParse(value);
+      if (!parsedRuntime.success) {
+        throw new Error(
+          `Invalid runtime '${value}' for ${role}. Expected one of: claude, codex`
+        );
+      }
+      updates[parsedRole] = parsedRuntime.data;
+    }
+
+    return updates;
+  }
+
+  private applyAgentRuntimeUpdates(
+    pipeline: PipelineYaml,
+    updates: Partial<Record<StageRole, AgentRuntime>>
+  ): PipelineYaml {
+    const agents: PipelineYaml['agents'] = { ...(pipeline.agents ?? {}) };
+
+    for (const role of STAGE_ROLES) {
+      const runtime = updates[role];
+      if (!runtime) continue;
+
+      const existing = pipeline.agents?.[role];
+      if (existing && typeof existing !== 'string') {
+        agents[role] = {
+          ...normalizeAgentRuntimeConfig(existing),
+          runtime,
+        };
+      } else {
+        agents[role] = runtime;
+      }
+    }
+
+    return {
+      ...pipeline,
+      agents,
+    };
+  }
+
+  private writeProjectPipelineOverride(
+    projectRoot: string,
+    name: string,
+    pipeline: PipelineYaml
+  ): string {
+    const pipelineDir = path.join(getProjectPipelinesDir(projectRoot), name);
+    const pipelinePath = path.join(pipelineDir, 'pipeline.yaml');
+    const yaml = stringifyYaml(pipeline, { lineWidth: 0 });
+
+    // Parse before writing so a serialization bug never leaves an invalid
+    // override in front of the package/user pipeline.
+    parsePipeline(yaml);
+
+    fs.mkdirSync(pipelineDir, { recursive: true });
+    fs.writeFileSync(pipelinePath, yaml, 'utf-8');
+
+    return pipelinePath;
+  }
+
+  private toAgentsResult(
+    name: string,
+    pipeline: PipelineYaml,
+    overridePath: string | null
+  ): {
+    name: string;
+    overridePath: string | null;
+    agents: PipelineYaml['agents'];
+    effectiveRoles: Record<StageRole, AgentRuntime>;
+    stages: StageView[];
+  } {
+    const effectiveRoles = Object.fromEntries(
+      STAGE_ROLES.map((role) => [
+        role,
+        normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ?? 'claude',
+      ])
+    ) as Record<StageRole, AgentRuntime>;
+
+    return {
+      name,
+      overridePath,
+      agents: pipeline.agents ?? {},
+      effectiveRoles,
+      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline)),
+    };
+  }
+
+  private toStageView(stage: Stage, pipeline: PipelineYaml): StageView {
+    const runtime = resolveStageRuntimeConfig(stage, pipeline);
     return {
       id: stage.id,
       kind: stage.kind,
@@ -364,6 +532,12 @@ export class PipelineCommand {
       condition: stage.condition ?? null,
       leadReview: stage.leadReview,
       verifyPolicy: stage.verifyPolicy ?? null,
+      runtime: runtime.runtime,
+      runtimeSource: runtime.source,
+      sessionReuse: runtime.sessionReuse ?? null,
+      sandbox: runtime.sandbox ?? null,
+      model: runtime.model ?? null,
+      effort: runtime.effort ?? null,
     };
   }
 
@@ -381,7 +555,13 @@ export class PipelineCommand {
   }
 
   private printPipelineDetail(
-    result: { name: string; description: string; buildOrder: string[]; stages: StageView[] },
+    result: {
+      name: string;
+      description: string;
+      agents?: PipelineYaml['agents'];
+      buildOrder: string[];
+      stages: StageView[];
+    },
     graph: PipelineGraph
   ): void {
     console.log(`Pipeline: ${result.name}`);
@@ -402,6 +582,15 @@ export class PipelineCommand {
       if (stage.condition) meta.push(`condition=${stage.condition}`);
       if (stage.leadReview) meta.push('leadReview');
       if (stage.verifyPolicy) meta.push(`verifyPolicy=${stage.verifyPolicy}`);
+      const runtime = resolveStageRuntimeConfig(stage, {
+        name: result.name,
+        description: result.description,
+        agents: result.agents,
+        stages: [],
+      });
+      meta.push(`runtime=${runtime.runtime}${runtime.source === 'default' ? '' : `(${runtime.source})`}`);
+      if (runtime.sessionReuse) meta.push(`sessionReuse=${runtime.sessionReuse}`);
+      if (runtime.sandbox) meta.push(`sandbox=${runtime.sandbox}`);
       const suffix = meta.length > 0 ? `  (${meta.join('; ')})` : '';
       // A decompose stage has no leaf skill; show its fan-out target instead.
       const action =
@@ -409,6 +598,30 @@ export class PipelineCommand {
           ? `decompose -> childPipeline=${resolveChildPipelineName(stage)}`
           : stage.skill;
       console.log(`  ${id} -> ${action}${suffix}`);
+    }
+  }
+
+  private printAgentsDetail(result: {
+    name: string;
+    overridePath: string | null;
+    effectiveRoles: Record<StageRole, AgentRuntime>;
+    stages: StageView[];
+  }): void {
+    console.log(`Pipeline: ${result.name}`);
+    if (result.overridePath) {
+      console.log(`Project override: ${result.overridePath}`);
+    }
+    console.log();
+    console.log('Role runtimes:');
+    for (const role of STAGE_ROLES) {
+      console.log(`  ${role}: ${result.effectiveRoles[role]}`);
+    }
+    console.log();
+    console.log('Stages:');
+    for (const stage of result.stages) {
+      const role = stage.role ?? '(none)';
+      const source = stage.runtimeSource === 'default' ? '' : ` (${stage.runtimeSource})`;
+      console.log(`  ${stage.id}: role=${role}; runtime=${stage.runtime}${source}`);
     }
   }
 }

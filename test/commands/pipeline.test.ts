@@ -70,6 +70,12 @@ describe('pipeline command', () => {
         'condition',
         'leadReview',
         'verifyPolicy',
+        'runtime',
+        'runtimeSource',
+        'sessionReuse',
+        'sandbox',
+        'model',
+        'effort',
       ]) {
         expect(Object.prototype.hasOwnProperty.call(stage, field)).toBe(true);
       }
@@ -78,6 +84,50 @@ describe('pipeline command', () => {
       expect(stage.gate).toBe(true);
       // build order length equals stage count
       expect(json.buildOrder.length).toBe(json.stages.length);
+    });
+
+    it('resolves role-level and stage-level Codex runtime choices via --json', async () => {
+      const pipelineDir = path.join(testDir, 'openspec', 'pipelines', 'codex-mix');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: codex-mix
+agents:
+  planner:
+    runtime: codex
+    sessionReuse: run-planner
+    sandbox: workspace-write
+  reviewer: claude
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+  - id: verify
+    skill: gstack:review
+    role: reviewer
+    runtime: codex
+    sessionReuse: review-thread
+    sandbox: read-only
+    requires: [propose]
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'codex-mix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      const propose = json.stages.find((s: any) => s.id === 'propose');
+      const verify = json.stages.find((s: any) => s.id === 'verify');
+
+      expect(propose.runtime).toBe('codex');
+      expect(propose.runtimeSource).toBe('agent');
+      expect(propose.sessionReuse).toBe('run-planner');
+      expect(propose.sandbox).toBe('workspace-write');
+      expect(verify.runtime).toBe('codex');
+      expect(verify.runtimeSource).toBe('stage');
+      expect(verify.sessionReuse).toBe('review-thread');
+      expect(verify.sandbox).toBe('read-only');
     });
 
     it('errors with available list on unknown name', async () => {
@@ -96,6 +146,64 @@ describe('pipeline command', () => {
       expect(dec.kind).toBe('decompose');
       expect(dec.childPipeline).toBe('small-feature');
       expect(dec.skill).toBeNull();
+    });
+  });
+
+  describe('agents', () => {
+    it('writes a project-local override and switches role runtimes', async () => {
+      const result = await runCLI(
+        ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--reviewer', 'codex', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+
+      expect(json.name).toBe('small-feature');
+      expect(json.overridePath).toContain(path.join('openspec', 'pipelines', 'small-feature', 'pipeline.yaml'));
+      expect(json.agents.planner).toBe('codex');
+      expect(json.agents.reviewer).toBe('codex');
+      expect(json.effectiveRoles.planner).toBe('codex');
+      expect(json.effectiveRoles.implementer).toBe('claude');
+
+      const overridePath = path.join(testDir, 'openspec', 'pipelines', 'small-feature', 'pipeline.yaml');
+      await expect(fs.stat(overridePath)).resolves.toBeDefined();
+
+      const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], { cwd: testDir });
+      expect(show.exitCode).toBe(0);
+      const shown = JSON.parse(show.stdout.trim());
+      const propose = shown.stages.find((s: any) => s.id === 'propose');
+      const verify = shown.stages.find((s: any) => s.id === 'verify');
+      const apply = shown.stages.find((s: any) => s.id === 'apply');
+
+      expect(propose.runtime).toBe('codex');
+      expect(propose.runtimeSource).toBe('agent');
+      expect(verify.runtime).toBe('codex');
+      expect(verify.runtimeSource).toBe('agent');
+      expect(apply.runtime).toBe('claude');
+      expect(apply.runtimeSource).toBe('default');
+    });
+
+    it('prints current effective role runtimes when no updates are passed', async () => {
+      const result = await runCLI(['pipeline', 'agents', 'bug-fix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+
+      expect(json.overridePath).toBeNull();
+      expect(json.effectiveRoles).toEqual({
+        planner: 'claude',
+        implementer: 'claude',
+        reviewer: 'claude',
+        fixer: 'claude',
+        shipper: 'claude',
+      });
+    });
+
+    it('rejects invalid role runtime values', async () => {
+      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--planner', 'gemini', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Invalid runtime 'gemini'");
     });
   });
 
@@ -213,6 +321,43 @@ describe('pipeline command', () => {
       // Only the structured worker with a reusable pointer is surfaced.
       expect(json.workers).toEqual({
         apply: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+      });
+    });
+
+    it('surfaces Codex threadId worker pointers for resume', async () => {
+      const changeDir = path.join(changesDir, 'codex-thread-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            propose: {
+              status: 'done',
+              worker: {
+                runtime: 'codex',
+                role: 'planner',
+                threadId: 'thread-propose-1',
+                turnId: 'turn-1',
+                sandbox: 'workspace-write',
+              },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'codex-thread-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.workers).toEqual({
+        propose: {
+          runtime: 'codex',
+          role: 'planner',
+          threadId: 'thread-propose-1',
+          turnId: 'turn-1',
+          sandbox: 'workspace-write',
+        },
       });
     });
 

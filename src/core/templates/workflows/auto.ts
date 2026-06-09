@@ -20,7 +20,7 @@ Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
 ## 1. Select the pipeline (explicit wins; default = small-feature)
 
-**Input**: \`/opsx:auto [--pipeline <name>] [--review-plan] <task description>\`.
+**Input**: \`/opsx:auto [--pipeline <name>] [--review-plan] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
 
 Choose the pipeline in this order:
 1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`openspec pipeline list --json\` (e.g. \`/opsx:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description.
@@ -44,6 +44,14 @@ openspec pipeline show <name> --json   # -> { name, description, buildOrder, sta
 Execute stages in \`buildOrder\`. Each stage carries the metadata the LEAD interprets via the playbook in section 3: **id**, **kind** (\`standard\` | \`decompose\`), **skill** (the OPSX skill the worker invokes; absent for a decompose stage), **childPipeline** (decompose only — the pipeline each child change runs), **role** (worker isolation), **requires** (DAG edges), **gate** (human pause after), **loop** (bounded review->fix), **parallelGroup** (concurrent fan-out — e.g. a \`verify\` stage's experts), **condition** (run only if met; mutually exclusive conditions like ui / non-ui pick exactly one), **leadReview** (LEAD checks the output for drift — section 4), **verifyPolicy** (section 5).
 
 **Decompose is the conditional FIRST step.** If \`buildOrder[0]\` is a stage with **kind: decompose** (e.g. the \`auto-decompose\` pipeline), evaluate run-or-skip from the task BEFORE any other stage — **skip** it and the remaining stages run on one change exactly as today; **take** it and fan the task out into multiple child changes. This is LEAD-audited and proceeds automatically (no human gate); see the playbook's **Step G — Portfolio orchestration**. Pipelines without a decompose first stage are unaffected.
+
+Before running stages, display the effective runtime table and let the user change it:
+
+\`\`\`
+planner=claude|codex  implementer=claude|codex  reviewer=claude|codex  fixer=claude|codex  shipper=claude|codex
+\`\`\`
+
+The user may freely mix runtimes. Example: Codex planner + Codex reviewer + Claude implementer/fixer. Pipeline stages may also set \`runtime\`, \`sessionReuse\`, \`sandbox\`, \`model\`, and \`effort\`; invocation role flags override those defaults for this run.
 
 ## 3. Execute the pipeline as the LEAD
 

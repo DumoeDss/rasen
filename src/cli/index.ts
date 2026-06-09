@@ -75,8 +75,12 @@ program.hook('preAction', async (thisCommand, actionCommand) => {
     process.env.NO_COLOR = '1';
   }
 
-  // Show first-run telemetry notice (if not seen)
-  await maybeShowTelemetryNotice();
+  // Do not print the first-run telemetry notice into machine-readable output.
+  // JSON commands must emit JSON only on stdout.
+  const actionOpts = actionCommand.opts();
+  if (!actionOpts.json) {
+    await maybeShowTelemetryNotice();
+  }
 
   // Track command execution (use actionCommand to get the actual subcommand)
   const commandPath = getCommandPath(actionCommand);
@@ -537,6 +541,36 @@ pipelineCmd
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+pipelineCmd
+  .command('agents <name>')
+  .description('Show or set per-role Claude/Codex runtimes for a pipeline')
+  .option('--planner <runtime>', 'Set planner runtime: claude or codex')
+  .option('--implementer <runtime>', 'Set implementer runtime: claude or codex')
+  .option('--reviewer <runtime>', 'Set reviewer runtime: claude or codex')
+  .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
+  .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
+  .option('--json', 'Output as JSON')
+  .action(async (
+    name: string,
+    options?: {
+      planner?: string;
+      implementer?: string;
+      reviewer?: string;
+      fixer?: string;
+      shipper?: string;
+      json?: boolean;
+    }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.agents(name, options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

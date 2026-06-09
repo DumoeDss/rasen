@@ -10,6 +10,53 @@ export const StageRoleSchema = z.enum([
   'fixer',
   'shipper',
 ]);
+export type StageRole = z.infer<typeof StageRoleSchema>;
+
+/**
+ * The agent runtime used to execute a pipeline role or stage.
+ *
+ * `claude` is the existing Claude Code subagent path. `codex` means the LEAD
+ * should dispatch the work through a Codex app-server thread and record the
+ * resulting threadId in run-state for direct resume.
+ */
+export const AgentRuntimeSchema = z.enum(['claude', 'codex']);
+export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
+
+export const AgentRuntimeSessionReuseSchema = z.enum([
+  'none',
+  'stage',
+  'run-planner',
+  'review-thread',
+]);
+export type AgentRuntimeSessionReuse = z.infer<typeof AgentRuntimeSessionReuseSchema>;
+
+export const AgentRuntimeSandboxSchema = z.enum(['read-only', 'workspace-write']);
+export type AgentRuntimeSandbox = z.infer<typeof AgentRuntimeSandboxSchema>;
+
+export const AgentRuntimeConfigSchema = z.object({
+  runtime: AgentRuntimeSchema.default('claude'),
+  sessionReuse: AgentRuntimeSessionReuseSchema.optional(),
+  sandbox: AgentRuntimeSandboxSchema.optional(),
+  model: z.string().min(1).optional(),
+  effort: z.string().min(1).optional(),
+});
+export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
+
+export const AgentRuntimeConfigValueSchema = z.union([
+  AgentRuntimeSchema,
+  AgentRuntimeConfigSchema,
+]);
+
+export const PipelineAgentRuntimeOverridesSchema = z
+  .object({
+    planner: AgentRuntimeConfigValueSchema.optional(),
+    implementer: AgentRuntimeConfigValueSchema.optional(),
+    reviewer: AgentRuntimeConfigValueSchema.optional(),
+    fixer: AgentRuntimeConfigValueSchema.optional(),
+    shipper: AgentRuntimeConfigValueSchema.optional(),
+  })
+  .strict();
+export type PipelineAgentRuntimeOverrides = z.infer<typeof PipelineAgentRuntimeOverridesSchema>;
 
 /**
  * Loop configuration for a stage that re-runs until a condition is met.
@@ -66,6 +113,13 @@ export const StageSchema = z
     condition: z.string().optional(),
     leadReview: z.boolean().default(false),
     verifyPolicy: VerifyPolicySchema.optional(),
+    // Optional runtime override for this single stage. When omitted, consumers
+    // use `pipeline.agents[role]` if present, otherwise `claude`.
+    runtime: AgentRuntimeSchema.optional(),
+    sessionReuse: AgentRuntimeSessionReuseSchema.optional(),
+    sandbox: AgentRuntimeSandboxSchema.optional(),
+    model: z.string().min(1).optional(),
+    effort: z.string().min(1).optional(),
   })
   .superRefine((stage, ctx) => {
     // skill is required for every non-decompose stage.
@@ -84,16 +138,74 @@ export const StageSchema = z
 export const PipelineYamlSchema = z.object({
   name: z.string().min(1, { error: 'Pipeline name is required' }),
   description: z.string().optional(),
+  agents: PipelineAgentRuntimeOverridesSchema.optional(),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 });
 
 // Derived TypeScript types
-export type StageRole = z.infer<typeof StageRoleSchema>;
 export type StageLoop = z.infer<typeof StageLoopSchema>;
 export type StageKind = z.infer<typeof StageKindSchema>;
 export type VerifyPolicy = z.infer<typeof VerifyPolicySchema>;
 export type Stage = z.infer<typeof StageSchema>;
 export type PipelineYaml = z.infer<typeof PipelineYamlSchema>;
+
+export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
+  source: 'stage' | 'agent' | 'default';
+}
+
+export function normalizeAgentRuntimeConfig(
+  value: z.infer<typeof AgentRuntimeConfigValueSchema> | undefined
+): AgentRuntimeConfig | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') return { runtime: value };
+  return AgentRuntimeConfigSchema.parse(value);
+}
+
+/**
+ * Resolve the runtime that should execute a stage.
+ *
+ * Precedence:
+ * 1. Stage-level override (`runtime`, `model`, etc.).
+ * 2. Pipeline role default (`agents.<role>`).
+ * 3. Existing Claude behavior.
+ */
+export function resolveStageRuntimeConfig(
+  stage: Stage,
+  pipeline: PipelineYaml
+): ResolvedStageRuntimeConfig {
+  const roleDefault = stage.role
+    ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
+    : undefined;
+  const stageHasOverride =
+    stage.runtime !== undefined ||
+    stage.sessionReuse !== undefined ||
+    stage.sandbox !== undefined ||
+    stage.model !== undefined ||
+    stage.effort !== undefined;
+
+  if (stageHasOverride) {
+    return {
+      runtime: stage.runtime ?? roleDefault?.runtime ?? 'claude',
+      sessionReuse: stage.sessionReuse ?? roleDefault?.sessionReuse,
+      sandbox: stage.sandbox ?? roleDefault?.sandbox,
+      model: stage.model ?? roleDefault?.model,
+      effort: stage.effort ?? roleDefault?.effort,
+      source: 'stage',
+    };
+  }
+
+  if (roleDefault) {
+    return {
+      ...roleDefault,
+      source: 'agent',
+    };
+  }
+
+  return {
+    runtime: 'claude',
+    source: 'default',
+  };
+}
 
 // Runtime state types (not Zod - internal only)
 

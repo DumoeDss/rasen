@@ -312,3 +312,74 @@ openspec archive add-jwt-auth
 | 看 change 完成度 | `openspec status --change <id>` |
 | 校验 | `openspec validate <id> --strict` |
 | 启用更多命令 | `openspec config profile` → `openspec update` |
+---
+
+## 8. Claude / Codex agent runtime 切换
+
+OPSX pipeline 现在支持把每个 role 单独切换到 `claude` 或 `codex`。可切换的 role 是：
+
+- `planner`
+- `implementer`
+- `reviewer`
+- `fixer`
+- `shipper`
+
+临时切换用于单次 `/opsx:auto` 调用：
+
+```text
+/opsx:auto --planner codex --reviewer codex --fixer claude <task>
+```
+
+固化到某条 pipeline，用 CLI 写入项目本地覆盖：
+
+```bash
+openspec pipeline agents small-feature --planner codex --reviewer codex
+openspec pipeline agents small-feature --json
+openspec pipeline show small-feature --json
+```
+
+这会创建或更新：
+
+```text
+openspec/pipelines/small-feature/pipeline.yaml
+```
+
+解析优先级仍然是 `project > user > package`，所以内置 pipeline 不会被改动；当前项目会优先使用本地覆盖。要切回 Claude：
+
+```bash
+openspec pipeline agents small-feature --planner claude --reviewer claude
+```
+
+也可以直接在 `pipeline.yaml` 中写 role 默认：
+
+```yaml
+agents:
+  planner:
+    runtime: codex
+    sessionReuse: run-planner
+    sandbox: workspace-write
+  reviewer:
+    runtime: codex
+    sessionReuse: review-thread
+    sandbox: read-only
+  fixer: claude
+```
+
+stage 级别仍可覆盖 role 默认：
+
+```yaml
+stages:
+  - id: verify
+    skill: gstack:review
+    role: reviewer
+    runtime: codex
+    sessionReuse: review-thread
+    sandbox: read-only
+```
+
+会话恢复语义不同：
+
+- Claude worker 记录 `agentId` / `transcript`，跨重启后用 transcript 暖播种新 worker。
+- Codex worker 记录 `threadId` / `turnId`，跨重启后优先用 `thread/resume(threadId)` 继续同一个 Codex thread。
+
+`openspec pipeline resume <change> --json` 会把两类恢复句柄都放在 `workers` 中，并用 `runtime` 区分。
