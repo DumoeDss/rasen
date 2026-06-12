@@ -63,13 +63,15 @@ openspec pipeline list --json                     # 列出 package/user/project 
 | **bug-fix** | propose → apply → 自适应 verify → ship → archive |
 | **auto-decompose** | **decompose**(条件性首步，LEAD 自审、非人类 gate) → propose → apply → verify → review-loop → ship → archive；取了 decompose 就扇出成多个子 change，每个子跑 `childPipeline`（默认 small-feature，见 §2.7）|
 
+> 全部内置流水线的 **ship 和 archive 阶段都显式指定 `model: sonnet`**——这两个阶段是机械执行（跑测试/push/建 PR、归档/合并 spec），不需要大模型推理；不指定 `model` 时 worker 会继承主 agent 的模型，平白多花成本。自定义流水线也建议照此为 ship/archive 写上 `model: sonnet`。
+
 **怎么选流水线**（显式优先，否则默认 `small-feature`）：
 - **显式指定**：`/opsx:auto --pipeline <名字> <任务>`，或**直接把流水线名放最前面**——`/opsx:auto full-feature 重构鉴权子系统`（首个 token 是已知流水线名就直接用）。
 - **默认**：`/opsx:auto <任务>`（不带显式选择）→ 直接用 **`small-feature`**，不自动升级到 full-feature/bug-fix。
 
 可选：`openspec pipeline classify "<任务>"` 给个建议，或 `openspec pipeline list` 选别的——但显式选择始终覆盖，没有显式选择就走 `small-feature` 默认。
 
-每个阶段带元数据，LEAD 据此执行：**kind**（`standard` 默认 / `decompose` 扇出点，§2.7）、**skill**（worker 调用的 OPSX skill；decompose 阶段无此字段）、**childPipeline**（仅 decompose——每个子 change 跑的流水线，默认 `small-feature`）、**role**（隔离）、**gate**（人类暂停）、**loop**（评审环）、**parallelGroup**（并发扇出，如 verify 的专家组）、**condition**（满足才跑；ui / non-ui 等互斥条件择一）、**leadReview**（LEAD 查方向漂移，§2.3）、**verifyPolicy**（adaptive / standard / light，§2.3）。
+每个阶段带元数据，LEAD 据此执行：**kind**（`standard` 默认 / `decompose` 扇出点，§2.7）、**skill**（worker 调用的 OPSX skill；decompose 阶段无此字段）、**childPipeline**（仅 decompose——每个子 change 跑的流水线，默认 `small-feature`）、**role**（隔离）、**gate**（人类暂停）、**loop**（评审环）、**parallelGroup**（并发扇出，如 verify 的专家组）、**condition**（满足才跑；ui / non-ui 等互斥条件择一）、**leadReview**（LEAD 查方向漂移，§2.3）、**verifyPolicy**（adaptive / standard / light，§2.3）、**model**（该阶段 worker 的模型覆盖；省略则继承主 agent 模型——内置流水线给 ship/archive 写了 `model: sonnet`）。
 
 ### 2.3 两个任务相关增强
 
@@ -102,7 +104,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
      - { id: apply,       skill: openspec-apply-change, role: implementer, requires: [propose], gate: true }
      - { id: review-loop, skill: openspec-review-cycle, role: fixer,       requires: [apply],
          loop: { kind: review-cycle, maxRounds: 2 } }
-     - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop] }
+     - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop], model: sonnet }
    ```
    可挑的现成 skill：`openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`，专家 `gstack:review` / `gstack:cso` / `gstack:benchmark` / `gstack:design-review` / `gstack:qa` / `gstack:qa-only`。stage 字段同 §2.2；抄现成写法用 `openspec pipeline show full-feature`。
 3. **校验 + 用**：
@@ -146,8 +148,8 @@ openspec pipeline list --json                     # 列出 package/user/project 
 | 验证 | `/opsx:verify` | 校验实现是否匹配产物（spec scenario）| 验证结论 |
 | 深度验证 | `/opsx:verify-enhanced` | 产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查（按改动规模自动伸缩）| 各类 report |
 | **迭代评审环** | `/opsx:review-cycle` | review→triage→fix→re-review(Δ)→{pass\|循环\|升级}；也是 `auto` 的 `review-loop` 阶段 | `review-cycle-report.md` |
-| 交付 | `/opsx:ship` | 测试、push、建 PR、可选合并 & 部署；PR 正文取自 proposal | `ship-log.md` |
-| 归档 | `/opsx:archive` / `/opsx:bulk-archive` | 归档 change，把 delta spec 合并进 canonical specs | 归档目录 + 更新的 specs |
+| 交付 | `/opsx:ship` | 测试、push、建 PR、可选合并 & 部署；PR 正文取自 proposal（流水线中固定用 `model: sonnet` 跑）| `ship-log.md` |
+| 归档 | `/opsx:archive` / `/opsx:bulk-archive` | 归档 change，把 delta spec 合并进 canonical specs（流水线中固定用 `model: sonnet` 跑）| 归档目录 + 更新的 specs |
 | 合并 spec | `/opsx:sync` | 把 delta specs 合并进主 specs | 更新的 specs |
 | 复盘 | `/opsx:retro [change]` | 工程复盘：分析交付内容、模式、学习（change/general/global 三种模式）| `retro.md` |
 | 引导 | `/opsx:onboard` | 走一遍完整工作流的教学 | （教学）|

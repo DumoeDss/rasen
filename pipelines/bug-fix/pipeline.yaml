@@ -26,8 +26,10 @@ stages:
     role: shipper
     requires: [verify]
     gate: true
+    model: sonnet
 
   - id: archive
     skill: openspec-archive-change
     role: shipper
     requires: [ship]
+    model: sonnet
