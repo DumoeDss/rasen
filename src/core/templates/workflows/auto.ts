@@ -18,6 +18,10 @@ You are the **LEAD**. You select a pipeline (default \`small-feature\`) and driv
 
 Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
+## 0. Pre-flight context probe (once, non-blocking)
+
+Before anything else run \`openspec agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), surface a one-line reminder — "context at <pct>% — consider /opsx:handoff before this run" — and proceed on the user's say-so. Below it, proceed silently. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
+
 ## 1. Select the pipeline (explicit wins; default = small-feature)
 
 **Input**: \`/opsx:auto [--pipeline <name>] [--review-plan] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
@@ -115,7 +119,7 @@ Frontier: <parent>-ui, <parent>-docs
 ## Guardrails
 
 - Always pause at gate stages — never skip human confirmation.
-- If any stage fails, stop and report the failure — do not continue.
+- If a stage is stuck (relay caps, stalled handoffs, exhausted review rounds), run the playbook's Step H escalation ladder — LEAD strategy review first, then park the stage as \`escalated\` and continue unblocked work; surface parked items at the next gate or the run-end report. Hard-stop only on failures the ladder cannot express (e.g. corrupted state).
 - The user can interrupt at any time and switch to manual.
 - Save run-state so the pipeline can be resumed from where it left off.
 - Do not run \`ship\` if verification has unresolved Blocker/Major findings — escalate first.

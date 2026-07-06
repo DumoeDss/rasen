@@ -17,6 +17,7 @@ import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
+import { AgentCommand } from '../commands/agent.js';
 import {
   statusCommand,
   instructionsCommand,
@@ -601,6 +602,36 @@ pipelineCmd
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// Agent command group: introspect an agent's own runtime state
+const agentCmd = program
+  .command('agent')
+  .description('Introspect agent runtime state (context)');
+
+agentCmd
+  .command('context')
+  .description('Report context-window occupancy of a transcript from its recorded usage')
+  .option('--transcript <path>', 'Path to a Claude Code transcript jsonl')
+  .option('--latest', 'Use the newest main-session transcript for the current directory')
+  .option('--dir <dir>', 'Override the Claude projects directory used by --latest')
+  .option('--limit <n>', 'Override the resolved context-window limit', (v) => parseInt(v, 10))
+  .option('--json', 'Output as JSON')
+  .action(async (options?: {
+    transcript?: string;
+    latest?: boolean;
+    dir?: string;
+    limit?: number;
+    json?: boolean;
+  }) => {
+    try {
+      const agentCommand = new AgentCommand();
+      await agentCommand.context(options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

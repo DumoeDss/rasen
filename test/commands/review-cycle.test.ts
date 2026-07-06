@@ -120,11 +120,15 @@ describe('review-cycle workflow', () => {
       expect(skillText.toUpperCase()).toContain('SHARED FILE');
     });
 
-    it('encodes the max-rounds / escalation termination rule (never silently pass)', () => {
+    it('encodes the max-rounds / escalation-ladder termination rule (never silently pass)', () => {
       expect(skillText).toContain('max-rounds');
       expect(skillText).toContain('default 3');
-      expect(skillText).toContain('escalate to the human');
-      expect(skillText).toContain('never silently pass');
+      // Round exhaustion routes through the LEAD-first ladder (Step H.5/H.6),
+      // then parks as escalated for the human at the next natural pause —
+      // never a silent pass.
+      expect(skillText).toContain('escalation ladder');
+      expect(skillText).toContain('do NOT silently pass');
+      expect(skillText).toContain('never a silent pass');
     });
   });
 

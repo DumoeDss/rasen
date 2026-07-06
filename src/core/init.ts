@@ -83,6 +83,7 @@ const WORKFLOW_TO_SKILL_DIR: Record<string, string> = {
   'retro-command': 'openspec-opsx-retro',
   'auto-command': 'openspec-opsx-auto',
   'review-cycle': 'openspec-review-cycle',
+  'handoff': 'openspec-handoff',
 };
 
 // -----------------------------------------------------------------------------

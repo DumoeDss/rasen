@@ -11,6 +11,7 @@ import {
   normalizeWorker,
   stageWorkers,
   stagesWithStatus,
+  latestStageHandoffs,
   runStatePath,
   RunStateValidationError,
   RUN_STATE_FILENAME,
@@ -234,6 +235,92 @@ describe('pipeline run-state', () => {
 
     it('returns [] when stages is absent (completed[] carries no status)', () => {
       expect(stagesWithStatus({ pipeline: 'bug-fix', completed: ['propose'] }, 'escalated')).toEqual([]);
+    });
+  });
+
+  describe('handoff records (backward compatible)', () => {
+    it('parses a top-level sessionHandoff and per-stage handoffs[]', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          sessionHandoff: { path: 'handoff/lead-1.md', pct: 0.52, afterStage: 'apply', at: '2026-01-01T00:00:00Z' },
+          stages: {
+            apply: {
+              status: 'in_progress',
+              handoffs: [
+                { n: 1, path: 'handoff/implementer-1.md', reason: 'compaction', completed: ['1.1'], remaining: ['1.2'], at: '2026-01-01T00:00:00Z' },
+              ],
+            },
+          },
+        })
+      );
+      expect(s.sessionHandoff?.path).toBe('handoff/lead-1.md');
+      expect(s.sessionHandoff?.pct).toBe(0.52);
+      expect(s.stages?.apply.handoffs?.[0].path).toBe('handoff/implementer-1.md');
+    });
+
+    it('parses a handoff record with only the required path field', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: { apply: { status: 'done', handoffs: [{ path: 'handoff/implementer-2.md' }] } },
+        })
+      );
+      expect(s.stages?.apply.handoffs?.[0].path).toBe('handoff/implementer-2.md');
+    });
+
+    it('old run-states without the new fields parse exactly as before', () => {
+      const s = parseRunState('{"pipeline":"bug-fix","stages":{"apply":{"status":"done"}}}');
+      expect(s.sessionHandoff).toBeUndefined();
+      expect(s.stages?.apply.handoffs).toBeUndefined();
+    });
+
+    it('round-trips handoff records through write + read', () => {
+      const state: RunState = {
+        pipeline: 'full-feature',
+        sessionHandoff: { path: 'handoff/lead-1.md', pct: 0.5 },
+        stages: { apply: { status: 'in_progress', handoffs: [{ n: 1, path: 'handoff/implementer-1.md' }] } },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      expect(back?.sessionHandoff?.path).toBe('handoff/lead-1.md');
+      expect(back?.stages?.apply.handoffs?.[0].path).toBe('handoff/implementer-1.md');
+    });
+
+    describe('latestStageHandoffs', () => {
+      it('returns the highest-n handoff path per stage', () => {
+        const s: RunState = {
+          pipeline: 'full-feature',
+          stages: {
+            apply: {
+              status: 'in_progress',
+              handoffs: [
+                { n: 1, path: 'handoff/implementer-1.md' },
+                { n: 2, path: 'handoff/implementer-2.md' },
+              ],
+            },
+            review: { status: 'done' }, // no handoffs → omitted
+          },
+        };
+        expect(latestStageHandoffs(s)).toEqual({ apply: 'handoff/implementer-2.md' });
+      });
+
+      it('falls back to the last array element when n is absent', () => {
+        const s: RunState = {
+          pipeline: 'bug-fix',
+          stages: {
+            apply: {
+              status: 'in_progress',
+              handoffs: [{ path: 'handoff/a.md' }, { path: 'handoff/b.md' }],
+            },
+          },
+        };
+        expect(latestStageHandoffs(s)).toEqual({ apply: 'handoff/b.md' });
+      });
+
+      it('returns {} when no stage has handoffs', () => {
+        expect(latestStageHandoffs({ pipeline: 'bug-fix', stages: { a: { status: 'done' } } })).toEqual({});
+      });
     });
   });
 });

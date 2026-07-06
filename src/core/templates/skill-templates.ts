@@ -26,6 +26,7 @@ export { getShipCommandSkillTemplate, getOpsxShipCommandTemplate } from './workf
 export { getRetroCommandSkillTemplate, getOpsxRetroCommandTemplate } from './workflows/retro.js';
 export { getAutoCommandSkillTemplate, getOpsxAutoCommandTemplate } from './workflows/auto.js';
 export { getReviewCycleSkillTemplate, getOpsxReviewCycleCommandTemplate } from './workflows/review-cycle.js';
+export { getHandoffSkillTemplate, getOpsxHandoffCommandTemplate } from './workflows/handoff.js';
 
 // Expert skill templates (migrated from gstack)
 export {

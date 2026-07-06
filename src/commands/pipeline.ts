@@ -26,6 +26,7 @@ import {
   completedStages,
   stageWorkers,
   stagesWithStatus,
+  latestStageHandoffs,
   normalizeWorker,
   readPortfolioState,
   runnableChildren,
@@ -35,13 +36,17 @@ import {
   getProjectPipelinesDir,
   resolveChildPipelineName,
   resolveStageRuntimeConfig,
+  resolveStageHandoffConfig,
   normalizeAgentRuntimeConfig,
   type AgentRuntime,
   type PipelineInfo,
   type PipelineYaml,
+  type ResolvedStageHandoffConfig,
+  type RunStateWorker,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
+import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 
 interface PipelineCommandOptions {
@@ -81,6 +86,7 @@ interface StageView {
   sandbox: Stage['sandbox'] | null;
   model: string | null;
   effort: string | null;
+  handoff: ResolvedStageHandoffConfig;
 }
 
 // Keyword heuristics for `classify`. Matched against the lowercased task string.
@@ -362,6 +368,22 @@ export class PipelineCommand {
     // dead SendMessage handles, but their `transcript` paths let a resume
     // WARM-SEED a fresh same-role worker from its predecessor's context.
     const workers = stageWorkers(runState);
+    // Enrich each worker whose recorded transcript is readable with a
+    // best-effort context estimate. A probe MUST NOT fail resume: any read
+    // error silently drops the estimate for that worker.
+    const workersWithContext: Record<
+      string,
+      RunStateWorker & { contextEstimate?: ContextEstimate }
+    > = {};
+    for (const [id, w] of Object.entries(workers)) {
+      const estimate = w.transcript ? tryContextEstimate(w.transcript) : undefined;
+      workersWithContext[id] = estimate ? { ...w, contextEstimate: estimate } : w;
+    }
+    // Handoff distillate pointers: session-level (whole-session handoff) and the
+    // latest per-stage handoff document. A resumer prefers these over raw
+    // transcript warm-seeding.
+    const sessionHandoff = runState.sessionHandoff;
+    const handoffs = latestStageHandoffs(runState);
     // Surface non-terminal stages so resume never hides them: in_progress was
     // interrupted (re-engage), escalated needs human attention. openFindings
     // carries unresolved Blocker/Major so a resumer does not ship past them.
@@ -377,10 +399,14 @@ export class PipelineCommand {
       next,
       ready,
       remaining,
-      workers,
+      workers: workersWithContext,
       inProgressStages,
       escalatedStages,
       openFindings,
+      // Handoff pointers are included only when present so existing callers see
+      // no new keys unless a run actually recorded handoffs.
+      ...(sessionHandoff ? { sessionHandoff } : {}),
+      ...(Object.keys(handoffs).length > 0 ? { handoffs } : {}),
     };
 
     if (options.json) {
@@ -538,6 +564,7 @@ export class PipelineCommand {
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
       effort: runtime.effort ?? null,
+      handoff: resolveStageHandoffConfig(stage, pipeline),
     };
   }
 

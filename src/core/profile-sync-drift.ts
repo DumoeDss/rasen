@@ -36,6 +36,8 @@ export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
   'auto-command': 'openspec-opsx-auto',
   // Iterative review loop (opt-in)
   'review-cycle': 'openspec-review-cycle',
+  // Context handoff (opt-in)
+  'handoff': 'openspec-handoff',
 };
 
 function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {

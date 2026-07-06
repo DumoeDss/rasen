@@ -152,6 +152,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
 | 归档 | `/opsx:archive` / `/opsx:bulk-archive` | 归档 change，把 delta spec 合并进 canonical specs（流水线中固定用 `model: sonnet` 跑）| 归档目录 + 更新的 specs |
 | 合并 spec | `/opsx:sync` | 把 delta specs 合并进主 specs | 更新的 specs |
 | 复盘 | `/opsx:retro [change]` | 工程复盘：分析交付内容、模式、学习（change/general/global 三种模式）| `retro.md` |
+| **交接** | `/opsx:handoff` | 探测上下文占用并写交接文档，供新会话/继任 worker 续作（opt-in）| `handoff/lead-<n>.md` + run-state 指针 |
 | 引导 | `/opsx:onboard` | 走一遍完整工作流的教学 | （教学）|
 
 ### 3.1 `/opsx:explore` — 先想清楚
@@ -180,7 +181,29 @@ openspec pipeline list --json                     # 列出 package/user/project 
 ### 3.6 `/opsx:verify` / `/opsx:verify-enhanced` — 验证
 `verify` 校验实现匹配产物；`verify-enhanced` 是多阶段深度验证（产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查），按改动规模自动伸缩，内部会调用相应 gstack 专家。
 
-### 3.7 gstack 专家技能（始终安装，按需调用）
+### 3.7 上下文感知与交接（`openspec agent context` + `/opsx:handoff`）
+
+Agent 感知不到自己的上下文占用——它只能**测量**。`openspec agent context` 从 transcript 里记录的 API usage 读出精确占用（`--latest` 测主会话自己，`--transcript <path>` 测某个 worker，`--json` 输出 `{ model, contextTokens, limit, pct }`）。整套交接机制建立在这个探针 + 「离散检查点、绝不注入持续倒计时」的原则上：
+
+- **Session 级（手动）**：`/opsx:handoff` 随时可调——探测、写 `openspec/changes/<id>/handoff/lead-<n>.md`（原始意图 / 关键决策 / 死胡同 / 下一步），并把 `sessionHandoff` 指针记入 `auto-run.json`。`/opsx:auto` 入口会做一次非阻塞预检（≥ 阈值只提醒一句，用户决定）。不交接也没关系——harness 的 auto-compact 是兜底。
+- **Worker 级（自动）**：每个派工 prompt 带交接条款——worker 察觉被压缩 / 达到软预算时，写 `handoff/<role>-<n>.md`（fixer/debugger 必须写「已排除假设及证据」节），返回结构化 `HANDOFF {path, reason, completed, remaining}`；LEAD 记账（stage 的 `handoffs[]`，单写者不变）并在同一会话派继任者续作，pipeline 不中断。LEAD 每次 `SendMessage` 续聊（复审/planner 复用）前也会先探测该 worker，超阈值则「写交接文档→退役换新」。
+- **接力上限与升级阶梯（LEAD 优先，最小化人工打断）**：`maxRelays`（默认 3，第 4 次触发 LEAD 审查）+ `stallLimit`（连续 2 次无进展提前触发；排除一个假设也算进展）。LEAD 审查按代价择策略：换打法/改播种 → 退回 planner 升维返工 → 拆解隔离，全部记入 `strategyAttempts`；策略预算（默认 3）耗尽才把 stage 标记 `escalated` **挂起**——继续其余工作，在下一个 gate 或 run 结束时集中呈报。绝不悄悄判过，也绝不因单个卡住的 stage 中断整个 run。review-loop 轮次耗尽同样走这个阶梯，不再立即中断叫人。
+- **配置**（pipeline.yaml，解析顺序 stage > `roles[role]`（仅阈值）> pipeline > 内置默认 `{threshold: 0.5, maxRelays: 3, stallLimit: 2}`）：
+
+  ```yaml
+  handoff:
+    threshold: 0.5
+    roles: { reviewer: 0.65, fixer: 0.65 }   # 装载成本高的角色给更多余量
+    maxRelays: 3
+    stallLimit: 2
+  stages:
+    - id: review-loop
+      handoff: { threshold: 0.7, maxRelays: 5 }   # 难题场景放宽容量维度；质量维度(maxRounds)不放宽
+  ```
+
+- **续跑消费**：`openspec pipeline resume --json` 输出 `sessionHandoff` / 各 stage 最新交接文档指针 / 各 worker 的 `contextEstimate`；新会话**先读交接文档**（蒸馏物），raw transcript 暖播种降级为兜底。
+
+### 3.8 gstack 专家技能（始终安装，按需调用）
 不论 profile 如何，`openspec init` 都会装上一组专家技能（生成为 `openspec-gstack-*`），可在验证/规划阶段单独调用：
 
 `/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/autoplan`（全面规划）、`/investigate` `/careful` `/guard`（排查/谨慎/护栏）、`/land-and-deploy` `/setup-deploy` `/canary`（部署）、`/freeze` `/unfreeze`、`/document-release`、`/codex`、`/cso`、`/plan-ceo-review` `/plan-design-review` `/plan-eng-review`、`/setup-browser-cookies` 等。
@@ -215,7 +238,7 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
 
 - **Profile = 装哪些 workflow 命令**：
   - `core`（默认）= `propose` / `explore` / `apply` / `archive`。
-  - `custom`（expanded）= 你勾选的集合，可含 `new` `continue` `ff` `verify` `sync` `bulk-archive` `onboard` `review-cycle` 以及 fusion 命令 `auto` `ship` `verify-enhanced` `office-hours` `retro`。
+  - `custom`（expanded）= 你勾选的集合，可含 `new` `continue` `ff` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` 以及 fusion 命令 `auto` `ship` `verify-enhanced` `office-hours` `retro`。
   - **gstack 专家技能与 profile 无关，始终安装**。
 - **启用 expanded / fusion 命令**：
   ```bash
@@ -311,6 +334,7 @@ openspec archive add-jwt-auth
 | 交付（测试/PR/部署）| `/opsx:ship` |
 | 归档并合并 spec | `/opsx:archive`（或 CLI `openspec archive`）|
 | 复盘 | `/opsx:retro` |
+| 测上下文占用 / 交接 | `openspec agent context --latest`；`/opsx:handoff` |
 | 看 change 完成度 | `openspec status --change <id>` |
 | 校验 | `openspec validate <id> --strict` |
 | 启用更多命令 | `openspec config profile` → `openspec update` |

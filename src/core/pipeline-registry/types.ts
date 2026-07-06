@@ -59,6 +59,62 @@ export const PipelineAgentRuntimeOverridesSchema = z
 export type PipelineAgentRuntimeOverrides = z.infer<typeof PipelineAgentRuntimeOverridesSchema>;
 
 /**
+ * A context-handoff threshold: a fraction of the context window in (0, 1] at or
+ * above which an agent should hand off before compaction degrades it.
+ */
+const HandoffThresholdSchema = z
+  .number()
+  .gt(0, { error: 'threshold must be in (0, 1]' })
+  .lte(1, { error: 'threshold must be in (0, 1]' });
+
+/**
+ * Per-role threshold overrides. Each role's value tunes only the handoff
+ * threshold for stages playing that role; relay/stall caps stay global.
+ */
+const HandoffRolesSchema = z
+  .object({
+    planner: HandoffThresholdSchema.optional(),
+    implementer: HandoffThresholdSchema.optional(),
+    reviewer: HandoffThresholdSchema.optional(),
+    fixer: HandoffThresholdSchema.optional(),
+    shipper: HandoffThresholdSchema.optional(),
+  })
+  .strict();
+
+/**
+ * Context-handoff tuning, accepted at pipeline level and per-stage.
+ *  - `threshold` — context-window fraction that triggers a handoff.
+ *  - `roles` — per-role threshold overrides (pipeline level only in practice).
+ *  - `maxRelays` — the (Nth+1) handoff request on one stage triggers LEAD review.
+ *  - `stallLimit` — consecutive no-progress handoffs that trigger LEAD review.
+ */
+export const HandoffConfigSchema = z
+  .object({
+    threshold: HandoffThresholdSchema.optional(),
+    roles: HandoffRolesSchema.optional(),
+    maxRelays: z
+      .number()
+      .int()
+      .positive({ error: 'maxRelays must be a positive integer' })
+      .optional(),
+    stallLimit: z
+      .number()
+      .int()
+      .positive({ error: 'stallLimit must be a positive integer' })
+      .optional(),
+  })
+  .strict();
+export type HandoffConfig = z.infer<typeof HandoffConfigSchema>;
+
+/**
+ * Stage-level handoff overrides. `roles` is pipeline-level only (a stage
+ * already has exactly one role), so it is rejected here rather than being
+ * accepted and silently ignored by resolveStageHandoffConfig.
+ */
+export const StageHandoffConfigSchema = HandoffConfigSchema.omit({ roles: true }).strict();
+export type StageHandoffConfig = z.infer<typeof StageHandoffConfigSchema>;
+
+/**
  * Loop configuration for a stage that re-runs until a condition is met.
  * Currently only the 'review-cycle' kind is supported.
  */
@@ -120,6 +176,10 @@ export const StageSchema = z
     sandbox: AgentRuntimeSandboxSchema.optional(),
     model: z.string().min(1).optional(),
     effort: z.string().min(1).optional(),
+    // Per-stage context-handoff overrides. Resolved against the pipeline block
+    // and built-in defaults by resolveStageHandoffConfig. `roles` is not
+    // accepted here — it is pipeline-level config.
+    handoff: StageHandoffConfigSchema.optional(),
   })
   .superRefine((stage, ctx) => {
     // skill is required for every non-decompose stage.
@@ -139,6 +199,7 @@ export const PipelineYamlSchema = z.object({
   name: z.string().min(1, { error: 'Pipeline name is required' }),
   description: z.string().optional(),
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
+  handoff: HandoffConfigSchema.optional(),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 });
 
@@ -205,6 +266,72 @@ export function resolveStageRuntimeConfig(
     runtime: 'claude',
     source: 'default',
   };
+}
+
+/**
+ * Built-in handoff defaults, applied when neither the stage nor the pipeline
+ * configures a field. `stallLimit` has no per-role loosening: hard problems slow
+ * progress, they don't zero it (eliminating a hypothesis counts as progress).
+ */
+export const DEFAULT_HANDOFF_CONFIG = {
+  threshold: 0.5,
+  maxRelays: 3,
+  stallLimit: 2,
+} as const;
+
+export interface ResolvedStageHandoffConfig {
+  threshold: number;
+  maxRelays: number;
+  stallLimit: number;
+  source: 'stage' | 'role' | 'pipeline' | 'default';
+}
+
+/**
+ * Resolve the effective handoff config for a stage.
+ *
+ * Precedence (field-wise):
+ * 1. Stage-level `handoff`.
+ * 2. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
+ * 3. Pipeline-level `handoff`.
+ * 4. Built-in defaults.
+ *
+ * `source` names the highest-precedence layer that contributed anything, so
+ * callers can report where the effective config came from.
+ */
+export function resolveStageHandoffConfig(
+  stage: Stage,
+  pipeline: PipelineYaml
+): ResolvedStageHandoffConfig {
+  const stageHandoff = stage.handoff;
+  const pipelineHandoff = pipeline.handoff;
+  const roleThreshold = stage.role ? pipelineHandoff?.roles?.[stage.role] : undefined;
+
+  const threshold =
+    stageHandoff?.threshold ??
+    roleThreshold ??
+    pipelineHandoff?.threshold ??
+    DEFAULT_HANDOFF_CONFIG.threshold;
+  const maxRelays =
+    stageHandoff?.maxRelays ?? pipelineHandoff?.maxRelays ?? DEFAULT_HANDOFF_CONFIG.maxRelays;
+  const stallLimit =
+    stageHandoff?.stallLimit ?? pipelineHandoff?.stallLimit ?? DEFAULT_HANDOFF_CONFIG.stallLimit;
+
+  const hasFields = (h: HandoffConfig | undefined): boolean =>
+    h !== undefined &&
+    (h.threshold !== undefined ||
+      h.maxRelays !== undefined ||
+      h.stallLimit !== undefined ||
+      h.roles !== undefined);
+
+  const source: ResolvedStageHandoffConfig['source'] = hasFields(stageHandoff)
+    ? 'stage'
+    : roleThreshold !== undefined
+      ? 'role'
+      : hasFields(pipelineHandoff)
+        ? 'pipeline'
+        : 'default';
+
+  return { threshold, maxRelays, stallLimit, source };
 }
 
 // Runtime state types (not Zod - internal only)

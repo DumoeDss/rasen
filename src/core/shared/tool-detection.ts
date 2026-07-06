@@ -50,6 +50,8 @@ export const COMMAND_IDS = [
   'auto-command',
   // Iterative review loop (opt-in)
   'review-cycle',
+  // Context handoff (opt-in)
+  'handoff',
 ] as const;
 
 export type CommandId = (typeof COMMAND_IDS)[number];

@@ -20,8 +20,8 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 17 workflows (11 base + 5 OPSX fusion + 1 review-cycle)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(17);
+    it('should contain all 18 workflows (11 base + 5 OPSX fusion + review-cycle + handoff)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(18);
     });
 
     it('should contain expected workflow IDs', () => {
@@ -33,6 +33,8 @@ describe('profiles', () => {
         'retro-command', 'auto-command',
         // Iterative review loop (opt-in)
         'review-cycle',
+        // Context handoff (opt-in)
+        'handoff',
       ];
       expect([...ALL_WORKFLOWS]).toEqual(expected);
     });

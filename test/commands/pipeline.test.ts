@@ -76,9 +76,17 @@ describe('pipeline command', () => {
         'sandbox',
         'model',
         'effort',
+        'handoff',
       ]) {
         expect(Object.prototype.hasOwnProperty.call(stage, field)).toBe(true);
       }
+      // handoff is the fully-resolved config (built-in defaults when unset).
+      expect(stage.handoff).toMatchObject({
+        threshold: 0.5,
+        maxRelays: 3,
+        stallLimit: 2,
+        source: 'default',
+      });
       expect(stage.id).toBe('propose');
       expect(stage.skill).toBe('openspec-propose');
       expect(stage.gate).toBe(true);
@@ -146,6 +154,49 @@ stages:
       expect(dec.kind).toBe('decompose');
       expect(dec.childPipeline).toBe('small-feature');
       expect(dec.skill).toBeNull();
+    });
+
+    it('surfaces the resolved per-stage handoff config (stage > role > pipeline)', async () => {
+      const pipelineDir = path.join(testDir, 'openspec', 'pipelines', 'handoff-mix');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: handoff-mix
+handoff:
+  threshold: 0.4
+  roles:
+    reviewer: 0.65
+  maxRelays: 4
+  stallLimit: 3
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+  - id: review
+    skill: gstack:review
+    role: reviewer
+    requires: [propose]
+  - id: fix
+    skill: openspec-apply-change
+    role: fixer
+    requires: [review]
+    handoff:
+      threshold: 0.8
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'handoff-mix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      const propose = json.stages.find((s: any) => s.id === 'propose');
+      const review = json.stages.find((s: any) => s.id === 'review');
+      const fix = json.stages.find((s: any) => s.id === 'fix');
+
+      expect(propose.handoff).toMatchObject({ threshold: 0.4, maxRelays: 4, stallLimit: 3, source: 'pipeline' });
+      expect(review.handoff).toMatchObject({ threshold: 0.65, source: 'role' });
+      expect(fix.handoff).toMatchObject({ threshold: 0.8, maxRelays: 4, source: 'stage' });
     });
   });
 
@@ -391,6 +442,97 @@ stages:
       const result = await runCLI(['pipeline', 'resume', 'nope-change', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("Change 'nope-change' not found");
+    });
+
+    it('surfaces sessionHandoff and per-stage latest handoff paths', async () => {
+      const changeDir = path.join(changesDir, 'handoff-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          sessionHandoff: { path: 'handoff/lead-1.md', pct: 0.52, afterStage: 'apply' },
+          stages: {
+            propose: { status: 'done' },
+            apply: {
+              status: 'in_progress',
+              handoffs: [
+                { n: 1, path: 'handoff/implementer-1.md', reason: 'compaction' },
+                { n: 2, path: 'handoff/implementer-2.md', reason: 'budget' },
+              ],
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'handoff-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.sessionHandoff).toMatchObject({ path: 'handoff/lead-1.md', pct: 0.52, afterStage: 'apply' });
+      // Latest handoff path per stage (highest n).
+      expect(json.handoffs).toEqual({ apply: 'handoff/implementer-2.md' });
+    });
+
+    it('omits handoff keys entirely when a run recorded none', async () => {
+      const changeDir = path.join(changesDir, 'no-handoff-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'no-handoff-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(Object.prototype.hasOwnProperty.call(json, 'sessionHandoff')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(json, 'handoffs')).toBe(false);
+    });
+
+    it('attaches a contextEstimate to a worker whose transcript is readable', async () => {
+      const changeDir = path.join(changesDir, 'ctx-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      // A real transcript on disk, referenced by absolute path from the worker.
+      const transcriptPath = path.join(changeDir, 'agent-imp-7.jsonl');
+      await fs.writeFile(
+        transcriptPath,
+        JSON.stringify({
+          type: 'assistant',
+          message: { role: 'assistant', model: 'claude-opus-4-8', usage: { input_tokens: 250000 } },
+        }) + '\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { role: 'implementer', agentId: 'imp-7', transcript: transcriptPath },
+            },
+            // A worker whose transcript does NOT exist → no contextEstimate, no failure.
+            verify: {
+              status: 'done',
+              worker: { role: 'reviewer', agentId: 'rev-9', transcript: path.join(changeDir, 'missing.jsonl') },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'ctx-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.workers.apply.contextEstimate).toEqual({
+        contextTokens: 250000,
+        limit: 1_000_000,
+        pct: 0.25,
+      });
+      // Unreadable transcript: worker still present, estimate silently omitted.
+      expect(json.workers.verify.agentId).toBe('rev-9');
+      expect(json.workers.verify.contextEstimate).toBeUndefined();
     });
 
     it('resumes a decomposed parent from portfolio-run.json (frontier from the DAG)', async () => {

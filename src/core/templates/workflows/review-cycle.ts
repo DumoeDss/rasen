@@ -31,7 +31,7 @@ Use this AFTER implementation, against the live diff. For a single one-shot veri
 review -> triage -> fix -> re-review(delta) -> { pass | loop | escalate }
 \`\`\`
 
-Run rounds until a review pass returns no unresolved Blocker or Major findings, OR the max-rounds cap is reached. Default cap: 3. On hitting the cap with unresolved Blocker/Major findings, STOP and escalate to the human — never silently pass.
+Run rounds until a review pass returns no unresolved Blocker or Major findings, OR the max-rounds cap is reached. Default cap: 3. On hitting the cap with unresolved Blocker/Major findings, do NOT loop further and do NOT silently pass — run the playbook's **Step H.5/H.6 escalation ladder**: a LEAD strategy review where each retry changes a material variable (different fix approach or seeding, design-level rework via the planner, isolating the stubborn finding), recorded in \`strategyAttempts\`; when the strategy budget is exhausted, park the change as \`escalated\` with the full history and surface it at the next natural pause point for the human.
 
 ### Select the change
 
@@ -52,7 +52,7 @@ Track everything in \`openspec/changes/<name>/review-cycle-report.md\`: each rou
 - Max rounds cap (default 3). The loop is bounded; no unbounded recursion / thrash.
 - Never report clean while any Blocker or Major finding is unresolved.
 - Author != verifier: the fixer cannot self-certify; an independent (non-author) confirmation is required for every resolution. Under Tier C the equivalent is an independent gate-run (tests/lint/build) plus a diff-read, which MUST be recorded in the report.
-- On the cap with open Blocker/Major findings: escalate to the human; the failure mode is loud and human-owned.
+- On the cap with open Blocker/Major findings: the LEAD-first escalation ladder (Step H.5/H.6) runs before any human is interrupted — strategy retries that each change a material variable, then a parked \`escalated\` state surfaced at the next natural pause. The failure mode stays loud and recorded; it is never a silent pass, and never a mid-run hard stop for a problem the LEAD can still re-strategize.
 
 ## Output
 

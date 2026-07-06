@@ -35,6 +35,7 @@ export const ALL_WORKFLOWS = [
   'retro-command',
   'auto-command',
   'review-cycle',
+  'handoff',
 ] as const;
 
 export type WorkflowId = (typeof ALL_WORKFLOWS)[number];

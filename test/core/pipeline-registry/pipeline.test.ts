@@ -4,7 +4,11 @@ import {
   validatePipelineSkills,
   PipelineValidationError,
 } from '../../../src/core/pipeline-registry/pipeline.js';
-import { resolveStageRuntimeConfig } from '../../../src/core/pipeline-registry/types.js';
+import {
+  resolveStageRuntimeConfig,
+  resolveStageHandoffConfig,
+  DEFAULT_HANDOFF_CONFIG,
+} from '../../../src/core/pipeline-registry/types.js';
 
 describe('pipeline-registry/pipeline', () => {
   describe('parsePipeline', () => {
@@ -463,6 +467,188 @@ stages:
     requires: [propose]
 `)
       ).not.toThrow();
+    });
+  });
+
+  describe('handoff config', () => {
+    it('accepts the (0,1] upper boundary threshold of exactly 1', () => {
+      const pipeline = parsePipeline(`
+name: hoff-max
+handoff:
+  threshold: 1
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      expect(pipeline.handoff?.threshold).toBe(1);
+    });
+
+    it('rejects roles at stage level (pipeline-level config only)', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-stage-roles
+stages:
+  - id: a
+    skill: openspec-propose
+    role: reviewer
+    handoff:
+      roles:
+        reviewer: 0.9
+`)
+      ).toThrow(PipelineValidationError);
+    });
+
+    it('parses a valid pipeline- and stage-level handoff block', () => {
+      const pipeline = parsePipeline(`
+name: hoff
+handoff:
+  threshold: 0.5
+  roles:
+    reviewer: 0.65
+  maxRelays: 3
+  stallLimit: 2
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+  - id: review
+    skill: gstack:review
+    role: reviewer
+    requires: [propose]
+    handoff:
+      threshold: 0.7
+      maxRelays: 5
+`);
+      expect(pipeline.handoff?.threshold).toBe(0.5);
+      expect(pipeline.handoff?.roles?.reviewer).toBe(0.65);
+      expect(pipeline.stages[1].handoff?.threshold).toBe(0.7);
+    });
+
+    it('rejects a threshold outside (0, 1]', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-hi
+handoff:
+  threshold: 1.5
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(PipelineValidationError);
+      expect(() =>
+        parsePipeline(`
+name: bad-zero
+handoff:
+  threshold: 0
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(/threshold must be in/);
+    });
+
+    it('rejects a non-positive maxRelays / stallLimit', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-relays
+handoff:
+  maxRelays: 0
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(/maxRelays must be a positive integer/);
+      expect(() =>
+        parsePipeline(`
+name: bad-stall
+handoff:
+  stallLimit: -1
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(/stallLimit must be a positive integer/);
+    });
+
+    it('rejects unknown keys in a handoff block (strict)', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-key
+handoff:
+  bogus: 1
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(PipelineValidationError);
+    });
+
+    it('resolves precedence: stage > roles[role] > pipeline > defaults', () => {
+      const pipeline = parsePipeline(`
+name: prec
+handoff:
+  threshold: 0.4
+  roles:
+    reviewer: 0.65
+  maxRelays: 4
+  stallLimit: 3
+stages:
+  - id: implement
+    skill: openspec-apply-change
+    role: implementer
+  - id: review
+    skill: gstack:review
+    role: reviewer
+    requires: [implement]
+  - id: fix
+    skill: openspec-apply-change
+    role: fixer
+    requires: [review]
+    handoff:
+      threshold: 0.8
+`);
+      const [implement, review, fix] = pipeline.stages;
+
+      // implementer: no role override, no stage override → pipeline threshold,
+      // pipeline relays/stall.
+      expect(resolveStageHandoffConfig(implement, pipeline)).toEqual({
+        threshold: 0.4,
+        maxRelays: 4,
+        stallLimit: 3,
+        source: 'pipeline',
+      });
+
+      // reviewer: role threshold wins for threshold, relays/stall from pipeline.
+      expect(resolveStageHandoffConfig(review, pipeline)).toEqual({
+        threshold: 0.65,
+        maxRelays: 4,
+        stallLimit: 3,
+        source: 'role',
+      });
+
+      // fixer: stage-level threshold wins; relays/stall still fall back.
+      expect(resolveStageHandoffConfig(fix, pipeline)).toEqual({
+        threshold: 0.8,
+        maxRelays: 4,
+        stallLimit: 3,
+        source: 'stage',
+      });
+    });
+
+    it('resolves to built-in defaults when nothing is configured', () => {
+      const pipeline = parsePipeline(`
+name: nodefaults
+stages:
+  - id: a
+    skill: openspec-propose
+    role: planner
+`);
+      expect(resolveStageHandoffConfig(pipeline.stages[0], pipeline)).toEqual({
+        threshold: DEFAULT_HANDOFF_CONFIG.threshold,
+        maxRelays: DEFAULT_HANDOFF_CONFIG.maxRelays,
+        stallLimit: DEFAULT_HANDOFF_CONFIG.stallLimit,
+        source: 'default',
+      });
     });
   });
 });

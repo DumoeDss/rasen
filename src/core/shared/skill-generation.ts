@@ -40,6 +40,8 @@ import {
   getOpsxAutoCommandTemplate,
   getReviewCycleSkillTemplate,
   getOpsxReviewCycleCommandTemplate,
+  getHandoffSkillTemplate,
+  getOpsxHandoffCommandTemplate,
   // Expert skill templates (from gstack)
   getAutoplanSkillTemplate,
   getBenchmarkSkillTemplate,
@@ -117,6 +119,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     { template: getRetroCommandSkillTemplate(), dirName: 'openspec-opsx-retro', workflowId: 'retro-command' },
     { template: getAutoCommandSkillTemplate(), dirName: 'openspec-opsx-auto', workflowId: 'auto-command' },
     { template: getReviewCycleSkillTemplate(), dirName: 'openspec-review-cycle', workflowId: 'review-cycle' },
+    { template: getHandoffSkillTemplate(), dirName: 'openspec-handoff', workflowId: 'handoff' },
   ];
 
   // Expert skills are always installed regardless of workflowFilter
@@ -185,6 +188,7 @@ export function getCommandTemplates(workflowFilter?: readonly string[]): Command
     { template: getOpsxRetroCommandTemplate(), id: 'retro-command' },
     { template: getOpsxAutoCommandTemplate(), id: 'auto-command' },
     { template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' },
+    { template: getOpsxHandoffCommandTemplate(), id: 'handoff' },
   ];
 
   if (!workflowFilter) return all;

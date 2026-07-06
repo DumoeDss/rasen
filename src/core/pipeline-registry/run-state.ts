@@ -57,12 +57,43 @@ export const RunStateWorkerSchema = z.object({
 }).passthrough();
 export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;
 
+/**
+ * A single mid-stage handoff: an exhausted worker distilled its state to a
+ * handoff document and returned, and the LEAD recorded the pointer here. `path`
+ * is the only required field (the distillate location); everything else is
+ * observability the LEAD fills in when known. Lenient by design so partial
+ * records from older runs still parse.
+ */
+export const StageHandoffRecordSchema = z.object({
+  n: z.number().int().positive().optional(),
+  path: z.string(),
+  reason: z.string().optional(),
+  completed: z.array(z.string()).optional(),
+  remaining: z.array(z.string()).optional(),
+  at: z.string().optional(),
+}).passthrough();
+export type StageHandoffRecord = z.infer<typeof StageHandoffRecordSchema>;
+
 export const RunStateStageSchema = z.object({
   status: StageStatusSchema,
   worker: z.union([z.string(), RunStateWorkerSchema]).optional(),
   note: z.string().optional(),
-});
+  handoffs: z.array(StageHandoffRecordSchema).optional(),
+}).passthrough();
 export type RunStateStage = z.infer<typeof RunStateStageSchema>;
+
+/**
+ * Session-level handoff pointer: written when a whole session (the LEAD)
+ * distills its state via `/opsx:handoff` so a fresh session reads the
+ * distillate before warm-seeding from raw transcripts.
+ */
+export const SessionHandoffSchema = z.object({
+  path: z.string(),
+  pct: z.number().optional(),
+  afterStage: z.string().optional(),
+  at: z.string().optional(),
+}).passthrough();
+export type SessionHandoff = z.infer<typeof SessionHandoffSchema>;
 
 /**
  * Canonical run-state shape. `passthrough()` lets the LEAD record extra context
@@ -76,6 +107,7 @@ export const RunStateSchema = z
     classification: z.string().optional(),
     tier: z.enum(['A', 'B', 'C']).optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),
+    sessionHandoff: SessionHandoffSchema.optional(),
     completed: z.array(z.string()).optional(),
     rounds: z.number().int().nonnegative().optional(),
     openFindings: z
@@ -178,6 +210,30 @@ export function stageWorkers(state: RunState): Record<string, RunStateWorker> {
   for (const [id, stage] of Object.entries(state.stages)) {
     const w = normalizeWorker(stage.worker);
     if (w && (w.agentId || w.transcript || w.threadId)) out[id] = w;
+  }
+  return out;
+}
+
+/**
+ * Latest handoff document path per stage, for resume. A stage contributes an
+ * entry only when it has a non-empty `handoffs[]`; the "latest" record is the
+ * one with the highest `n` (falling back to the last array element when `n` is
+ * absent). Stages without handoffs are omitted.
+ */
+export function latestStageHandoffs(state: RunState): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!state.stages) return out;
+  for (const [id, stage] of Object.entries(state.stages)) {
+    const handoffs = stage.handoffs;
+    if (!handoffs || handoffs.length === 0) continue;
+    let latest = handoffs[0];
+    for (const h of handoffs.slice(1)) {
+      const latestN = latest.n ?? -Infinity;
+      const hN = h.n ?? -Infinity;
+      // Highest n wins; when n is absent on both, later array position wins.
+      if (hN >= latestN) latest = h;
+    }
+    out[id] = latest.path;
   }
   return out;
 }
