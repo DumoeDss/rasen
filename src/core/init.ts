@@ -41,6 +41,7 @@ import {
   getSkillTemplates,
   getCommandContents,
   generateSkillContent,
+  copySkillSidecars,
   deduplicateForDelivery,
   type ToolSkillStatus,
 } from './shared/index.js';
@@ -549,7 +550,7 @@ export class InitCommand {
           const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
 
           // Create skill directories and SKILL.md files
-          for (const { template, dirName } of skillTemplates) {
+          for (const { template, dirName, workflowId } of skillTemplates) {
             const skillDir = path.join(skillsDir, dirName);
             const skillFile = path.join(skillDir, 'SKILL.md');
 
@@ -566,6 +567,10 @@ export class InitCommand {
 
             // Write the skill file
             await FileSystemUtils.writeFile(skillFile, skillContent);
+
+            // Copy the skill's sidecar reference files (checklists, references,
+            // scripts) so its relative-path references resolve at the install target.
+            copySkillSidecars(workflowId, skillDir);
           }
         }
         if (!shouldGenerateSkills) {

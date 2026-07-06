@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import {
   getSkillTemplates,
   getCommandTemplates,
   getCommandContents,
   generateSkillContent,
+  copySkillSidecars,
 } from '../../../src/core/shared/skill-generation.js';
 
 describe('skill-generation', () => {
@@ -201,6 +205,80 @@ describe('skill-generation', () => {
       const all = getCommandContents();
       const noFilter = getCommandContents(undefined);
       expect(noFilter).toHaveLength(all.length);
+    });
+  });
+
+  describe('copySkillSidecars', () => {
+    let target: string;
+
+    function allFiles(dir: string, prefix = ''): string[] {
+      if (!existsSync(dir)) return [];
+      const out: string[] = [];
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) out.push(...allFiles(join(dir, entry.name), rel));
+        else out.push(rel);
+      }
+      return out;
+    }
+
+    beforeEach(() => {
+      target = mkdtempSync(join(tmpdir(), 'openspec-sidecar-'));
+    });
+
+    afterEach(() => {
+      rmSync(target, { recursive: true, force: true });
+    });
+
+    it('copies root .md sidecars but never SKILL.md or *.tmpl', () => {
+      copySkillSidecars('review', target);
+      const files = allFiles(target);
+      // review/ has checklist.md, design-checklist.md, greptile-triage.md, TODOS-format.md
+      expect(files).toContain('checklist.md');
+      expect(files).toContain('design-checklist.md');
+      expect(files).toContain('TODOS-format.md');
+      // SKILL.md and SKILL.md.tmpl must be excluded
+      expect(files).not.toContain('SKILL.md');
+      expect(files.some(f => f.endsWith('.tmpl'))).toBe(false);
+    });
+
+    it('copies .sh sidecars preserving subdirectory structure', () => {
+      copySkillSidecars('investigate', target);
+      expect(existsSync(join(target, 'scripts', 'hitl-loop.template.sh'))).toBe(true);
+      // no SKILL.md leaked in
+      expect(existsSync(join(target, 'SKILL.md'))).toBe(false);
+    });
+
+    it('copies .md sidecars nested under references/ and templates/', () => {
+      copySkillSidecars('qa', target);
+      expect(existsSync(join(target, 'references', 'issue-taxonomy.md'))).toBe(true);
+      expect(existsSync(join(target, 'templates', 'qa-report-template.md'))).toBe(true);
+    });
+
+    it('copies hook bin/*.sh sidecars', () => {
+      copySkillSidecars('careful', target);
+      expect(existsSync(join(target, 'bin', 'check-careful.sh'))).toBe(true);
+    });
+
+    it('skips the browse skill entirely (no vendored .ts src/test trees)', () => {
+      copySkillSidecars('browse', target);
+      const files = allFiles(target);
+      expect(files).toHaveLength(0);
+      expect(existsSync(join(target, 'src'))).toBe(false);
+      expect(files.some(f => f.endsWith('.ts'))).toBe(false);
+    });
+
+    it('no-ops gracefully when the source skill dir is absent', () => {
+      expect(() => copySkillSidecars('does-not-exist-xyz', target)).not.toThrow();
+      expect(allFiles(target)).toHaveLength(0);
+    });
+
+    it('is idempotent across repeated runs', () => {
+      copySkillSidecars('review', target);
+      const first = allFiles(target).sort();
+      copySkillSidecars('review', target);
+      const second = allFiles(target).sort();
+      expect(second).toEqual(first);
     });
   });
 

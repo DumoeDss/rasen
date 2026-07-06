@@ -4,6 +4,9 @@
  * Shared utilities for generating skill and command files.
  */
 
+import { readdirSync, existsSync, mkdirSync, copyFileSync } from 'fs';
+import { resolve, dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import {
   getExploreSkillTemplate,
   getNewChangeSkillTemplate,
@@ -93,6 +96,60 @@ export interface SkillTemplateEntry {
 export interface CommandTemplateEntry {
   template: ReturnType<typeof getOpsxExploreCommandTemplate>;
   id: string;
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+/**
+ * A sidecar is a reference file that lives beside a skill's `SKILL.md` and is
+ * read by relative path from the skill body (e.g. `checklist.md`,
+ * `references/issue-taxonomy.md`, `scripts/hitl-loop.template.sh`). Only `.md`
+ * (except `SKILL.md`) and `.sh` files qualify; `.tmpl` sources are excluded.
+ */
+function isSidecarFile(fileName: string): boolean {
+  if (fileName === 'SKILL.md') return false;
+  if (fileName.endsWith('.tmpl')) return false;
+  return fileName.endsWith('.md') || fileName.endsWith('.sh');
+}
+
+function copySidecarTree(sourceDir: string, targetDir: string): void {
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = join(sourceDir, entry.name);
+    if (entry.isDirectory()) {
+      // Recurse to preserve subdir structure (references/ templates/ scripts/ bin/).
+      // Target subdirs are created lazily on first sidecar copy, so an all-filtered
+      // subtree (e.g. browse's .ts src/) leaves no empty target directory behind.
+      copySidecarTree(sourcePath, join(targetDir, entry.name));
+      continue;
+    }
+    if (!entry.isFile() || !isSidecarFile(entry.name)) continue;
+    mkdirSync(targetDir, { recursive: true });
+    copyFileSync(sourcePath, join(targetDir, entry.name));
+  }
+}
+
+/**
+ * Copies a skill's sidecar reference files (see {@link isSidecarFile}) from the
+ * packaged source skill dir into the installed skill directory, preserving
+ * subdirectory structure. Called by `init`/`update` after writing each `SKILL.md`.
+ *
+ * - The source dir is resolved the same way expert templates resolve their
+ *   `SKILL.md` (relative to the package root, at `skills/gstack/<workflowId>`).
+ * - The `browse` skill is skipped entirely: it is a vendored bun tool package
+ *   (heavy `.ts` src/test trees plus build scripts) whose runtime binary ships
+ *   separately via `{{BROWSE_SETUP}}`, not as skill sidecars.
+ * - No-ops gracefully if the source dir is absent (e.g. a published npm package
+ *   that does not bundle `skills/`), matching the expert-template `readFileSync`
+ *   try/catch behavior. Re-running overwrites in place (idempotent).
+ */
+export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
+  if (workflowId === 'browse') return;
+
+  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'gstack', workflowId);
+  if (!existsSync(sourceDir)) return;
+
+  copySidecarTree(sourceDir, targetSkillDir);
 }
 
 /**

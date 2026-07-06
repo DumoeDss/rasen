@@ -26,6 +26,7 @@ import {
   getSkillTemplates,
   getCommandContents,
   generateSkillContent,
+  copySkillSidecars,
   deduplicateForDelivery,
   getToolsWithSkillsDir,
   type ToolVersionStatus,
@@ -197,7 +198,7 @@ export class UpdateCommand {
 
         // Generate skill files if delivery includes skills
         if (shouldGenerateSkills) {
-          for (const { template, dirName } of skillTemplates) {
+          for (const { template, dirName, workflowId } of skillTemplates) {
             const skillDir = path.join(skillsDir, dirName);
             const skillFile = path.join(skillDir, 'SKILL.md');
 
@@ -205,6 +206,10 @@ export class UpdateCommand {
             const transformer = tool.value === 'opencode' ? transformToHyphenCommands : undefined;
             const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
             await FileSystemUtils.writeFile(skillFile, skillContent);
+
+            // Copy the skill's sidecar reference files so its relative-path
+            // references resolve at the install target (idempotent overwrite).
+            copySkillSidecars(workflowId, skillDir);
           }
 
           removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
@@ -697,7 +702,7 @@ export class UpdateCommand {
 
         // Create skill files when delivery includes skills
         if (shouldGenerateSkills) {
-          for (const { template, dirName } of skillTemplates) {
+          for (const { template, dirName, workflowId } of skillTemplates) {
             const skillDir = path.join(skillsDir, dirName);
             const skillFile = path.join(skillDir, 'SKILL.md');
 
@@ -705,6 +710,10 @@ export class UpdateCommand {
             const transformer = tool.value === 'opencode' ? transformToHyphenCommands : undefined;
             const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
             await FileSystemUtils.writeFile(skillFile, skillContent);
+
+            // Copy the skill's sidecar reference files so its relative-path
+            // references resolve at the install target (idempotent overwrite).
+            copySkillSidecars(workflowId, skillDir);
           }
         }
 
