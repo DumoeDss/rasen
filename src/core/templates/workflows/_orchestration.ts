@@ -101,7 +101,9 @@ When a stage is a **loop**:
 
 ### Step F — Maintain run-state (observability + resume)
 
-Record progress as JSON in \`openspec/changes/<name>/auto-run.json\` (this exact filename + JSON shape is what \`openspec pipeline resume\` reads — do NOT write markdown or a different name, or resume will not see it). Minimum shape the reader understands:
+First resolve the change's ABSOLUTE directory: run \`openspec status --change <name> --json\` and read the \`changeRoot\` field (NOT \`changeDir\`) — that is the change's directory under the SELECTED OpenSpec root, which for a \`--store\`-selected or non-cwd run is NOT under the current working directory. Every \`openspec/changes/<name>/\` path this workflow teaches (auto-run.json / portfolio-run.json, handoff documents, planning-context.md, and all blackboard artifacts) is relative to that \`changeRoot\` base — write and read them there, never at a cwd-relative \`openspec/changes/<name>/\`, or a store-selected run will strand its run-state where \`openspec pipeline resume\` (resolved to the same root) cannot find it.
+
+Record progress as JSON in \`<changeRoot>/auto-run.json\` (this exact filename + JSON shape is what \`openspec pipeline resume\` reads — do NOT write markdown or a different name, or resume will not see it). Minimum shape the reader understands:
 
 \`\`\`json
 {

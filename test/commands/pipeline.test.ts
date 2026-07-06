@@ -595,3 +595,70 @@ stages:
     });
   });
 });
+
+// The pipeline command group resolves its root through the shared root-selection
+// layer (parity with `validate --pipelines`): from a nested subdirectory it walks
+// up to the nearest qualifying OpenSpec root rather than treating the cwd as root.
+describe('pipeline command root selection (subdirectory)', () => {
+  const projectRoot = process.cwd();
+  const testDir = path.join(projectRoot, 'test-pipeline-root-selection-tmp');
+  const nestedDir = path.join(testDir, 'src', 'deeply', 'nested');
+  const PROJECT_PIPELINE = 'proj-only-pipeline';
+
+  beforeEach(async () => {
+    // A planning shape (specs/ + changes/) makes testDir a qualifying root; a
+    // bare openspec/pipelines/ dir alone does NOT qualify (see root-selection).
+    await fs.mkdir(path.join(testDir, 'openspec', 'specs'), { recursive: true });
+    await fs.mkdir(path.join(testDir, 'openspec', 'changes'), { recursive: true });
+    const pipelineDir = path.join(testDir, 'openspec', 'pipelines', PROJECT_PIPELINE);
+    await fs.mkdir(pipelineDir, { recursive: true });
+    await fs.writeFile(
+      path.join(pipelineDir, 'pipeline.yaml'),
+      [
+        `name: ${PROJECT_PIPELINE}`,
+        'stages:',
+        '  - id: propose',
+        '    skill: openspec-propose',
+        '    role: planner',
+      ].join('\n'),
+      'utf-8'
+    );
+    await fs.mkdir(nestedDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  it('resolves the ancestor root and lists the project pipeline from a subdirectory', async () => {
+    const result = await runCLI(['pipeline', 'list', '--json'], { cwd: nestedDir });
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout.trim());
+    const names = json.pipelines.map((p: any) => p.name);
+    expect(names).toContain(PROJECT_PIPELINE);
+    for (const name of BUILTIN_NAMES) {
+      expect(names).toContain(name);
+    }
+    const proj = json.pipelines.find((p: any) => p.name === PROJECT_PIPELINE);
+    expect(proj.source).toBe('project');
+  });
+
+  it('sees the same pipeline set as validate --pipelines from the same subdirectory', async () => {
+    const listResult = await runCLI(['pipeline', 'list', '--json'], { cwd: nestedDir });
+    expect(listResult.exitCode).toBe(0);
+    const listNames = new Set<string>(
+      JSON.parse(listResult.stdout.trim()).pipelines.map((p: any) => p.name)
+    );
+
+    const validateResult = await runCLI(['validate', '--pipelines', '--json'], { cwd: nestedDir });
+    expect(validateResult.exitCode).toBe(0);
+    const validateNames = new Set<string>(
+      JSON.parse(validateResult.stdout.trim()).items
+        .filter((i: any) => i.type === 'pipeline')
+        .map((i: any) => i.id)
+    );
+
+    expect(listNames).toEqual(validateNames);
+    expect(listNames.has(PROJECT_PIPELINE)).toBe(true);
+  });
+});

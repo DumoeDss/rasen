@@ -164,7 +164,15 @@ describe('command completion registry', () => {
     }
 
     walk(program, '');
-    expect(seen.sort()).toEqual([
+
+    // Two --store surfaces resolve through the same root-selection layer and
+    // both use the shared description (asserted above): the normal lifecycle
+    // commands, and the pipeline inspection group. Only the lifecycle set is
+    // enumerated in the agent-facing store-selection guidance.
+    const lifecycle = seen.filter((commandPath) => !commandPath.startsWith('pipeline '));
+    const pipelineStore = seen.filter((commandPath) => commandPath.startsWith('pipeline '));
+
+    expect(lifecycle.sort()).toEqual([
       'archive',
       'context',
       'doctor',
@@ -176,9 +184,21 @@ describe('command completion registry', () => {
       'validate',
     ]);
 
+    // The pipeline command group resolves its root identically to validate, so
+    // every subcommand accepts --store (opsx-pipeline-registry spec). It is a
+    // distinct inspection surface, carved out separately in the guidance.
+    expect(pipelineStore.sort()).toEqual([
+      'pipeline agents',
+      'pipeline classify',
+      'pipeline list',
+      'pipeline resume',
+      'pipeline show',
+    ]);
+
     // The store-selection guidance interpolated into every generated skill
-    // enumerates exactly these commands; drift here means agents are taught
-    // a stale flag surface.
+    // must name every --store-capable command — both the lifecycle set and the
+    // pipeline inspection group. Drift here means agents are taught a stale flag
+    // surface (the M1 finding: the guidance once denied pipeline --store).
     for (const commandPath of seen) {
       expect(STORE_SELECTION_GUIDANCE, `guidance names ${commandPath}`).toContain(
         `\`${commandPath}\``

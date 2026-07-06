@@ -594,7 +594,9 @@ pipelineCmd
   .command('list')
   .description('List available pipelines (project > user > package)')
   .option('--json', 'Output as JSON')
-  .action(async (options?: { json?: boolean }) => {
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (options?: { json?: boolean; store?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.list(options);
@@ -609,7 +611,9 @@ pipelineCmd
   .command('show <name>')
   .description('Show a pipeline stage DAG and build order')
   .option('--json', 'Output as JSON')
-  .action(async (name: string, options?: { json?: boolean }) => {
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);
@@ -629,6 +633,8 @@ pipelineCmd
   .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
   .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
   .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
   .action(async (
     name: string,
     options?: {
@@ -638,6 +644,8 @@ pipelineCmd
       fixer?: string;
       shipper?: string;
       json?: boolean;
+      store?: string;
+      storePath?: string;
     }
   ) => {
     try {
@@ -654,7 +662,9 @@ pipelineCmd
   .command('classify <task>')
   .description('Suggest a pipeline for a task (advisory keyword heuristic)')
   .option('--json', 'Output as JSON')
-  .action(async (task: string, options?: { json?: boolean }) => {
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (task: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.classify(task, options);
@@ -669,7 +679,9 @@ pipelineCmd
   .command('resume <change>')
   .description("Show a change's pipeline run-state (next/remaining stages)")
   .option('--json', 'Output as JSON')
-  .action(async (change: string, options?: { json?: boolean }) => {
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (change: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);

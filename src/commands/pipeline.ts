@@ -48,9 +48,15 @@ import {
 } from '../core/pipeline-registry/index.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
+import {
+  resolveRootForCommand,
+  type ResolvedOpenSpecRoot,
+} from '../core/root-selection.js';
 
 interface PipelineCommandOptions {
   json?: boolean;
+  store?: string;
+  storePath?: string;
 }
 
 interface PipelineAgentsOptions extends PipelineCommandOptions {
@@ -123,16 +129,27 @@ function matchesKeyword(keyword: string, lowercasedText: string): boolean {
 }
 
 export class PipelineCommand {
-  private resolveProjectRoot(): string {
-    return process.cwd();
+  /**
+   * Resolve the OpenSpec root through the shared root-selection layer, exactly
+   * as `openspec validate` does: `--store <id>` selects a registered store,
+   * otherwise the nearest ancestor root wins with an implicit-root fallback.
+   * Returns null only in `--json` mode when resolution failed — the resolver
+   * already printed a machine-readable diagnostic and set `process.exitCode`,
+   * so callers early-return without further output (mirrors validate.ts:86-89).
+   */
+  private async resolveRoot(
+    options: PipelineCommandOptions
+  ): Promise<ResolvedOpenSpecRoot | null> {
+    return resolveRootForCommand(options, { json: options.json });
   }
 
   /**
    * List available pipelines with metadata.
    */
   async list(options: PipelineCommandOptions = {}): Promise<void> {
-    const projectRoot = this.resolveProjectRoot();
-    const pipelines = listPipelinesWithInfo(projectRoot);
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    const pipelines = listPipelinesWithInfo(root.path);
 
     if (options.json) {
       console.log(JSON.stringify({ pipelines }, null, 2));
@@ -151,7 +168,9 @@ export class PipelineCommand {
    * Show a single pipeline's stage DAG and build order.
    */
   async show(name: string, options: PipelineCommandOptions = {}): Promise<void> {
-    const projectRoot = this.resolveProjectRoot();
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    const projectRoot = root.path;
 
     let pipeline;
     try {
@@ -190,7 +209,9 @@ export class PipelineCommand {
    * new choices effective for this project.
    */
   async agents(name: string, options: PipelineAgentsOptions = {}): Promise<void> {
-    const projectRoot = this.resolveProjectRoot();
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    const projectRoot = root.path;
     const normalizedName = name.replace(/\.ya?ml$/, '');
     const pipeline = this.loadPipelineOrExplain(normalizedName, projectRoot);
     const updates = this.runtimeUpdatesFromOptions(options);
@@ -222,8 +243,9 @@ export class PipelineCommand {
    * heuristics. Advisory only — callers may override.
    */
   async classify(task: string, options: PipelineCommandOptions = {}): Promise<void> {
-    const projectRoot = this.resolveProjectRoot();
-    const available = listPipelines(projectRoot);
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    const available = listPipelines(root.path);
     const lowered = (task ?? '').toLowerCase();
 
     const bugMatches = BUG_FIX_KEYWORDS.filter((kw) => matchesKeyword(kw, lowered));
@@ -265,10 +287,12 @@ export class PipelineCommand {
    * Resume a change: compute next/remaining stages from its run-state file.
    */
   async resume(change: string | undefined, options: PipelineCommandOptions = {}): Promise<void> {
-    const projectRoot = this.resolveProjectRoot();
-    const changeName = await validateChangeExists(change, projectRoot);
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    const projectRoot = root.path;
+    const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
 
-    const changeDir = path.join(projectRoot, 'openspec', 'changes', changeName);
+    const changeDir = path.join(root.changesDir, changeName);
 
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.

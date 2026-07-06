@@ -35,43 +35,43 @@ import {
 import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
 
 const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
-  getExploreSkillTemplate: '7d2f54e74fffcb36aaaa4498a4a8b033142bb25945fb9b2de532354acbe76b9c',
-  getNewChangeSkillTemplate: '39663a6d2037e6697020393a66f6327506e3e3bc573b7a3556dcb7f9457dc51d',
-  getContinueChangeSkillTemplate: '1bb28875d6e5946ea2ec5f12e90f55d9784c2fa1f6e4c4e2d0eda53d861d4c75',
-  getApplyChangeSkillTemplate: '0f5a15fc7fb9ad6059a5643d0e01365d27642637a4aaebf182f9eabb45348197',
-  getFfChangeSkillTemplate: '9f4c12a1c58c723c9c45a139307eb90caf39cedd93c435bc960d0817328875e2',
-  getSyncSpecsSkillTemplate: '75abb20572256e2b8a647e77befae99f109ab5c4dc954a9c3c184829b5fcaa40',
-  getOnboardSkillTemplate: 'e871d8ce172bb805ae62a7611aee7a3154d89414f427ad5ef31721c903f13002',
-  getOpsxExploreCommandTemplate: '37e53590aae7ac6621d4393aa80a5b8af21881323887fa924ed329199fda27e0',
-  getOpsxNewCommandTemplate: '57c600cce318d16b9b4308a18d0d983ea3c0673034e606a7cceec07b4c705e87',
-  getOpsxContinueCommandTemplate: '418108b417107a87019d4020b26c105792d2ef0110fe6920445e255889216716',
-  getOpsxApplyCommandTemplate: 'daeb507206707169de73c828e199648dde5732cbc17791ef2a027adffd028574',
-  getOpsxFfCommandTemplate: '36973ae0dd00ab169fbaaa42bf565f97e1bc97cf63ae7c07307734cc1ca8c1fd',
-  getArchiveChangeSkillTemplate: 'c511a1c943bcfc5f9f3833b8c0ff284b22d34864a08f5f553cec471ee485d38f',
-  getBulkArchiveChangeSkillTemplate: '0f635913757ae3d1609e111f4a8f699443ca47cbaaf8a1b21eb652f7b96a1d13',
-  getOpsxSyncCommandTemplate: '86cf706886d0f18069e2cfa16948b7357028fd348210efb58588c88c416d8622',
-  getVerifyChangeSkillTemplate: 'd718c79aad649223a73fdb11036c93fb3842ac5a780f4934d50bfa03c9692683',
-  getOpsxArchiveCommandTemplate: '6985bddb310cb45b6b50350bfcebe31bf67146135ca0084c94930920280970a4',
-  getOpsxOnboardCommandTemplate: '0673f34a0f81fd173bcfb8c3ac83e2b1c617f7b7564e24e5298d3bd5665a05a9',
-  getOpsxBulkArchiveCommandTemplate: '9f444fc7b27a5b788077b5e3aa4f61af45aa8c8004ac8d899d204fa362ff89b7',
-  getOpsxVerifyCommandTemplate: '011509480a20a60342c993906f0f9280c0e9ba5d019d335bdc1ef4d53213a5a8',
-  getOpsxProposeSkillTemplate: '8dfb5e9c719d5ba547aff0d3953c076dca6b33d7223be98cbffc396b8f1e0048',
-  getOpsxProposeCommandTemplate: '7cd569beb32d99cdabd0b49615a8245160a8e152b6ea67a99fc4dd71e3f39f50',
+  getExploreSkillTemplate: '8bb26001aae6e3c9ff3b7b4096a8004019b8906f080ac5b3755f5cc8bde41396',
+  getNewChangeSkillTemplate: 'e14a9cb7c7f990ed624086f3ce6547f9a7bce3e4f5bdf00e89676d82a37c349c',
+  getContinueChangeSkillTemplate: '03e05717ddd9d920c97fc3bd0a3342008ad66b4b9c581361fdc9dc9417e281f3',
+  getApplyChangeSkillTemplate: 'eca56e513a1478952a04ee0c281046bd5b1039f70c7e63ca993ddd3150de7bc3',
+  getFfChangeSkillTemplate: 'd4c2746c4f3bafc85fa924409b5ef1af1d364fd3e0f7dfc7479905994dd5fc30',
+  getSyncSpecsSkillTemplate: 'c58cd827c529bdb5f7aa4e528bcf3958feff9787546c932fbb476c55dce30785',
+  getOnboardSkillTemplate: '4cf45e460c725597ae71701eb753744eabeaa28a03e41fc19fa73c6613f759ba',
+  getOpsxExploreCommandTemplate: 'c121374e97c340efd35c6ea6ea5feb17a68157fa665de028ffa110cc9f9092c9',
+  getOpsxNewCommandTemplate: '1fb261c018eb7998dec9d5ed2208709ecf9ec73543c5cc719ab70f341207445b',
+  getOpsxContinueCommandTemplate: 'bebada98b3c6cc12af3df2d666f12b68ef28b043352cac8e77f2a60a2bc1d2ba',
+  getOpsxApplyCommandTemplate: 'f0484009088742ca1f1641177e3d683373297c5eb758ebb005a169ba45f3e65c',
+  getOpsxFfCommandTemplate: '0ffd348e0334d8ac09c2efb5df519d353a9d98ecdf54719693c3702dec7d7806',
+  getArchiveChangeSkillTemplate: '5df8da8228c8326d122c2d85f1690bc5ecb15a2a499e24a188a99162fdaa3c51',
+  getBulkArchiveChangeSkillTemplate: 'af53b3871db899f4839abfefb619a366e8a5d2b579c699424f562d0b0f0fdd11',
+  getOpsxSyncCommandTemplate: '75f4558c97e82ef1aac397b55a264ce37e713c24d5eb77b508683f5941c12495',
+  getVerifyChangeSkillTemplate: 'de76503551851541dabcf4363ea4f80e7ab6ec136bd1327039a57d3e2a49e1e8',
+  getOpsxArchiveCommandTemplate: '3a787bf6926eec692c8bef77650fe627df87e381cbd4c5d37be760130af29d74',
+  getOpsxOnboardCommandTemplate: '3b914879fd21b5a8627bf68bff5e328c5fdee6a6757fedd8fa244aca97f4a683',
+  getOpsxBulkArchiveCommandTemplate: '576bdb58fe5e63ad2dea4ad762ad60b3f7149c2cc5c342a65627d6963063911b',
+  getOpsxVerifyCommandTemplate: '70c8a55c185fe661d64500549ab5049dc775e484c7b48a5eaa93b0ff58549692',
+  getOpsxProposeSkillTemplate: 'e5ab3d5627266aceeae6c29b9f4601c3e6a87b64c58e5604183a633f2c940f79',
+  getOpsxProposeCommandTemplate: 'd9ae70e86a5e9c76a372c7e6ee47197fd6951ac4af6ce06373551ebb737dac2e',
   getFeedbackSkillTemplate: 'd7d83c5f7fc2b92fe8f4588a5bf2d9cb315e4c73ec19bcd5ef28270906319a0d',
 };
 
 const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
-  'openspec-explore': '08f905865f86e787262fed252c59ed343ac24db8befa31e5cf8fd99af947263b',
-  'openspec-new-change': 'bdb534d6d5a00b235f63852af089f904fd20df34be526ef67990ec3183829f33',
-  'openspec-continue-change': '5d2aea621310d74d89e547d705d2e08e6d5a44da7bca93ba049ed43ebf60295e',
-  'openspec-apply-change': '54cffa61274c6a499d2b3775e9f6db29255fd8e5ad99d7352c1e3bbe2edb45ed',
-  'openspec-ff-change': 'cbb7844c130bd188319ff2b3f0c0320243b5ae5b588a0f816cd4e29408f25676',
-  'openspec-sync-specs': 'a81fd87f5e871874eab72e57c10a1949fde46d1d07d95f8ea3bc1a52b4e78c43',
-  'openspec-archive-change': '833290ade47ddaed7f5e523d07437c7cef2497340021e944096bce449e290c22',
-  'openspec-bulk-archive-change': '244b195e53d3f010a99892c1922c800fd8f02e7745d0f34ec18b5fe9b5548706',
-  'openspec-verify-change': '97d1eed5b900788706c28339e27c1d2d9c548626316253f43ebd00d8d52d02d6',
-  'openspec-onboard': 'd136b6ab7134d6bceeca73bc2f6037624506587e8df99059f77fe88874256ed1',
-  'openspec-propose': '5c350d80247722489374a49ec9853d5fda55a827f421fbb32b6b6a078fcb69ee',
+  'openspec-explore': 'abdc6049dace1dc3f30f35a9be5a34f3c46b0d1b130c43b8f57845dda40a2506',
+  'openspec-new-change': 'd5940b3b0d7a5371fe2524003925d7c8cd886fc7839cf280c6fd14984aa3e149',
+  'openspec-continue-change': '614ce8bd6c122224cda932905635687d51fb0384a2c909ed558a874fbf79505d',
+  'openspec-apply-change': 'c8b1ca1bc86f39443a609e21aa8ca483f205febdac39c81587a5e935e5560205',
+  'openspec-ff-change': 'eef07229a7ef768c19e809d30be176c8e2f55e662b2d88ab380081258e224406',
+  'openspec-sync-specs': '39b8666ce58527c1a483252839e906c5c79f7149ecc001d062739a872f4f375b',
+  'openspec-archive-change': 'b73ad9ed46a752083e36c9c9dc187551e820fd6fe275074b6cc382b080c9a1e6',
+  'openspec-bulk-archive-change': 'dbee4e7d591c1abc601d44af7e83cded581b7ef8ef19fc0b4436fa3306e95555',
+  'openspec-verify-change': '89461b1bb7ccc75b77b1d8a4a17eabbd1832763094c8bf5cdc1759ed331fad8a',
+  'openspec-onboard': 'bfc9770068fb8efbbac12aaf042de9d76410160d606dafc1a301ced2e5cebd9e',
+  'openspec-propose': '0023a05ed3b313bde959c1bd55903b8a0160812281599cc7d42572bde6460551',
 };
 
 // Intentionally excludes getFeedbackSkillTemplate: this list only models templates
@@ -190,5 +190,24 @@ describe('skill templates split parity', () => {
       expect(content, dirName).not.toContain('workspace-planning');
       expect(content, dirName).not.toContain('Workspace guard');
     }
+  });
+
+  // The /opsx:auto skill embeds the orchestration playbook; its changeRoot
+  // blackboard teaching (tasks 3.1/3.2) and store-scoped resume teaching (M1)
+  // are otherwise unpinned by any hash (auto is not in the golden-master map),
+  // so a regression that dropped either would pass silently. Pin them here.
+  it('teaches changeRoot blackboard resolution and store-scoped resume in the generated opsx:auto skill', () => {
+    const autoSkill = getSkillTemplates().find(({ dirName }) => dirName === 'openspec-opsx-auto');
+    expect(autoSkill, 'openspec-opsx-auto skill template').toBeDefined();
+    const content = generateSkillContent(autoSkill!.template, 'PARITY-BASELINE');
+
+    // Step F: resolve the absolute change directory from the changeRoot field
+    // (NOT changeDir) before writing run-state.
+    expect(content).toContain('changeRoot');
+    expect(content).toContain('`changeRoot` field (NOT `changeDir`)');
+
+    // Resume must thread --store in a store-scoped run so it resolves the store
+    // root instead of the cwd (the headline break this change fixes).
+    expect(content).toContain('openspec pipeline resume <change> --store <id> --json');
   });
 });

@@ -771,14 +771,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'list',
         description: 'List available pipelines (project > user > package)',
-        flags: [COMMON_FLAGS.json],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
       },
       {
         name: 'show',
         description: 'Show a pipeline stage DAG and build order',
         acceptsPositional: true,
         positionals: [{ name: 'name' }],
-        flags: [COMMON_FLAGS.json],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
       },
       {
         name: 'agents',
@@ -812,6 +812,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
         ],
       },
       {
@@ -819,7 +820,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Suggest a pipeline for a task (advisory keyword heuristic)',
         acceptsPositional: true,
         positionals: [{ name: 'task' }],
-        flags: [COMMON_FLAGS.json],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
       },
       {
         name: 'resume',
@@ -827,7 +828,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         acceptsPositional: true,
         positionalType: 'change-id',
         positionals: [{ name: 'change', type: 'change-id' }],
-        flags: [COMMON_FLAGS.json],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
       },
     ],
   },
