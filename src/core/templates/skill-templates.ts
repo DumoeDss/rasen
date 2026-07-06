@@ -46,6 +46,7 @@ export {
   getGuardSkillTemplate,
   getInvestigateSkillTemplate,
   getLandAndDeploySkillTemplate,
+  getNavigatorSkillTemplate,
   getOfficeHoursSkillTemplate,
   getPlanCeoReviewSkillTemplate,
   getPlanDesignReviewSkillTemplate,

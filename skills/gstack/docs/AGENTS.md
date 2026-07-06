@@ -32,6 +32,7 @@ Skills live in `.agents/skills/`. Invoke them by name (e.g., `/office-hours`).
 | `/codebase-design` | Deep-module vocabulary (seam / depth / adapter / leverage) and the deletion test. |
 | `/tdd` | Test-driven development that produces tests worth keeping: seams, red→green, anti-patterns. |
 | `/prototype` | Throwaway code that answers one design question — a LOGIC or UI branch. |
+| `/navigator` | A map of the skills and OPSX workflows and when to reach for each. User-invoked. |
 
 ## Build commands
 

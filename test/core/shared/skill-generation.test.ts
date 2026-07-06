@@ -8,9 +8,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (17 workflow + 29 expert)', () => {
+    it('should return all skill templates (18 workflow + 30 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(46);
+      expect(templates).toHaveLength(48);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -66,8 +66,8 @@ describe('skill-generation', () => {
 
     it('should filter workflow skills by IDs (expert skills always included)', () => {
       const filtered = getSkillTemplates(['propose', 'explore', 'apply', 'archive']);
-      // 4 workflow + 29 expert skills
-      expect(filtered).toHaveLength(33);
+      // 4 workflow + 30 expert skills
+      expect(filtered).toHaveLength(34);
       const ids = filtered.map(t => t.workflowId);
       expect(ids).toContain('propose');
       expect(ids).toContain('explore');
@@ -85,14 +85,14 @@ describe('skill-generation', () => {
 
     it('should return only expert skills when filter matches no workflows', () => {
       const filtered = getSkillTemplates(['nonexistent']);
-      // 0 workflow + 29 expert skills
-      expect(filtered).toHaveLength(29);
+      // 0 workflow + 30 expert skills
+      expect(filtered).toHaveLength(30);
     });
 
     it('should return single workflow template plus expert skills when filter has one workflow', () => {
       const filtered = getSkillTemplates(['propose']);
-      // 1 workflow + 29 expert skills
-      expect(filtered).toHaveLength(30);
+      // 1 workflow + 30 expert skills
+      expect(filtered).toHaveLength(31);
       const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
       expect(workflowTemplates).toHaveLength(1);
       expect(workflowTemplates[0].dirName).toBe('openspec-propose');
@@ -274,6 +274,26 @@ describe('skill-generation', () => {
       const content = generateSkillContent(template, '0.23.0');
 
       expect(content).toMatch(/---\n\nBody content\n$/);
+    });
+
+    it('should emit disable-model-invocation when the flag is set, and omit it otherwise', () => {
+      const userInvoked = {
+        name: 'navigator-skill',
+        description: 'A map',
+        instructions: 'Map body',
+        disableModelInvocation: true,
+      };
+      const modelInvoked = {
+        name: 'normal-skill',
+        description: 'Normal',
+        instructions: 'Body',
+      };
+
+      const userInvokedContent = generateSkillContent(userInvoked, '0.23.0');
+      const modelInvokedContent = generateSkillContent(modelInvoked, '0.23.0');
+
+      expect(userInvokedContent).toContain('disable-model-invocation: true');
+      expect(modelInvokedContent).not.toContain('disable-model-invocation');
     });
 
     it('should apply transformInstructions callback when provided', () => {

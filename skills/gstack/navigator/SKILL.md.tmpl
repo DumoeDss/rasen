@@ -1,0 +1,78 @@
+---
+name: navigator
+version: 1.0.0
+disable-model-invocation: true
+description: A map of this repo's skills and OPSX workflows and when to reach for each.
+---
+
+<!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
+
+{{PREAMBLE}}
+
+# Navigator
+
+You don't remember every skill, so ask. This is the map: the OPSX **main flow** that most work travels, two **on-ramps** that merge onto it, a **vocabulary layer** that runs underneath, and **standalone** specialists off to the side. Each entry says *when to reach for it*.
+
+## The main flow: idea → ship
+
+The route most work travels. **`/opsx:auto`** drives this whole flow autonomously — classify the task, pick the pipeline, run the stages with gates. Reach for the individual commands below when you want to run one stage by hand.
+
+1. **`/opsx:explore`** — think a rough idea through before committing to it. (Not sure it's worth building at all? Start at `/opsx:office-hours` — see On-ramps.)
+2. **`/opsx:propose`** — turn the sharpened idea into a change: proposal, design, specs, and tasks.
+3. **`/opsx:apply`** — implement the tasks against the change.
+4. **`/opsx:review-cycle`** — iterate review → triage → fix → re-review the delta until it's clean or escalates. Lighter gate: **`/opsx:verify`** checks the implementation matches the artifacts. Heavier: **`/opsx:verify-enhanced`** adds code-review, security, and browser passes, auto-scaled to the change size.
+5. **`/opsx:ship`** — test, push, open the PR from the proposal.
+6. **`/opsx:archive`** — fold the delta specs into the main specs once the change has merged.
+7. **`/opsx:retro`** — look back at what shipped and what to learn from it.
+
+## On-ramps
+
+A starting situation that generates work, then merges onto the main flow.
+
+- **Something's broken** → **`/investigate`**. Systematic root-cause debugging. It **refuses to hypothesise until it has a red-capable feedback loop** — one command that already goes red on *this* bug — then fixes with a regression test. Reach for it on the hard ones: the bug that resists a first glance, the intermittent flake, the regression that crept in between two known-good states.
+- **Is this worth building** → **`/opsx:office-hours`**. YC-style demand validation before you write code. Reach for it when the idea's *value*, not its design, is the open question.
+
+## Vocabulary underneath
+
+Two references that run *beneath* the other skills — each the single source of truth for its vocabulary. Reach for them directly when the **words**, not the process, are the problem; the skills above also pull them in.
+
+- **`/domain-modeling`** — sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR.
+- **`/codebase-design`** — the deep-module vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing a module's *shape*: a lot of behaviour behind a small interface at a clean seam.
+
+## Standalone
+
+Off the main flow — reach for each by name when its situation comes up.
+
+- **`/tdd`** — build one concrete behaviour test-first, red → green, when you want a test worth keeping but not a full spec.
+- **`/prototype`** — throwaway code that answers one design question (does this state model feel right, what should this UI look like). Keep the answer, delete the code.
+- **`/review`** — a **two-axis** review of a diff: **Standards** (repo conventions + a code-smell baseline) and **Spec** (faithful to the originating proposal/tasks), reported side by side. Reach for it to review a branch or PR against a fixed point.
+- **`/qa`** — open a real browser, find bugs, fix them, re-verify.
+- **`/qa-only`** — the same browser sweep as `/qa`, but report-only — no code changes.
+- **`/design-review`** — design audit of the rendered UI with a fix loop and atomic commits.
+- **`/design-consultation`** — build a complete design system from scratch.
+- **`/benchmark`** — measure performance against a baseline.
+- **`/cso`** — security review from a chief-security-officer lens.
+- **`/codex`** — hand a task to Codex for an independent second opinion or a parallel implementation.
+- **`/browse`** — headless browser (real Chromium, real clicks) for scripted page interaction.
+- **`/document-release`** — update the docs to match what you just shipped.
+- **`/retro`** — a standalone retrospective when you want the look-back outside the OPSX flow.
+
+**Deploy family** — getting a change out to production.
+
+- **`/land-and-deploy`** — merge and deploy in one guided pass.
+- **`/setup-deploy`** — configure the deploy pipeline the first time.
+- **`/canary`** — roll out behind a canary and watch it before going wide.
+
+**Plan family** — reviewing a plan before you build it.
+
+- **`/autoplan`** — run the full plan-review pipeline (CEO + eng + design) at once.
+- **`/plan-ceo-review`** — scope and strategy: is this the right thing to build?
+- **`/plan-eng-review`** — architecture, data flow, edge cases, and tests (the required gate).
+- **`/plan-design-review`** — rate each design dimension and say what a 10 looks like.
+
+**Security family** — guarding edits during risky work.
+
+- **`/careful`** — warn before destructive commands (rm -rf, DROP TABLE, force-push).
+- **`/freeze`** — hard-lock edits to one directory.
+- **`/guard`** — activate `careful` + `freeze` together.
+- **`/unfreeze`** — remove the directory lock.

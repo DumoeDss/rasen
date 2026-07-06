@@ -9,6 +9,8 @@ export interface SkillTemplate {
   license?: string;
   compatibility?: string;
   metadata?: Record<string, string>;
+  /** When true, the generated skill is installed user-invoked: its frontmatter carries `disable-model-invocation: true` so only a human typing its name can invoke it. */
+  disableModelInvocation?: boolean;
 }
 
 export interface CommandTemplate {

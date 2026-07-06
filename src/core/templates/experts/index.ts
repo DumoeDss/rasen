@@ -20,6 +20,7 @@ export { getFreezeSkillTemplate } from './freeze.js';
 export { getGuardSkillTemplate } from './guard.js';
 export { getInvestigateSkillTemplate } from './investigate.js';
 export { getLandAndDeploySkillTemplate } from './land-and-deploy.js';
+export { getNavigatorSkillTemplate } from './navigator.js';
 export { getOfficeHoursSkillTemplate } from './office-hours.js';
 export { getPlanCeoReviewSkillTemplate } from './plan-ceo-review.js';
 export { getPlanDesignReviewSkillTemplate } from './plan-design-review.js';

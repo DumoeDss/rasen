@@ -59,6 +59,7 @@ import {
   getGuardSkillTemplate,
   getInvestigateSkillTemplate,
   getLandAndDeploySkillTemplate,
+  getNavigatorSkillTemplate,
   getOfficeHoursSkillTemplate,
   getPlanCeoReviewSkillTemplate,
   getPlanDesignReviewSkillTemplate,
@@ -140,6 +141,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     { template: getGuardSkillTemplate(), dirName: 'openspec-gstack-guard', workflowId: 'guard' },
     { template: getInvestigateSkillTemplate(), dirName: 'openspec-gstack-investigate', workflowId: 'investigate' },
     { template: getLandAndDeploySkillTemplate(), dirName: 'openspec-gstack-land-and-deploy', workflowId: 'land-and-deploy' },
+    { template: getNavigatorSkillTemplate(), dirName: 'openspec-gstack-navigator', workflowId: 'navigator' },
     { template: getOfficeHoursSkillTemplate(), dirName: 'openspec-gstack-office-hours', workflowId: 'office-hours' },
     { template: getPlanCeoReviewSkillTemplate(), dirName: 'openspec-gstack-plan-ceo-review', workflowId: 'plan-ceo-review' },
     { template: getPlanDesignReviewSkillTemplate(), dirName: 'openspec-gstack-plan-design-review', workflowId: 'plan-design-review' },
@@ -253,10 +255,14 @@ export function generateSkillContent(
     ? transformInstructions(template.instructions)
     : template.instructions;
 
+  const disableModelInvocationLine = template.disableModelInvocation
+    ? 'disable-model-invocation: true\n'
+    : '';
+
   return `---
 name: ${template.name}
 description: ${template.description}
-license: ${template.license || 'MIT'}
+${disableModelInvocationLine}license: ${template.license || 'MIT'}
 compatibility: ${template.compatibility || 'Requires openspec CLI.'}
 metadata:
   author: ${template.metadata?.author || 'openspec'}
