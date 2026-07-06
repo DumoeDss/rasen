@@ -1,8 +1,5 @@
-# remove-gstack-upgrade-skill Specification
+## MODIFIED Requirements
 
-## Purpose
-Remove the deprecated `gstack-upgrade` expert skill.
-## Requirements
 ### Requirement: gstack-upgrade expert skill removed
 The gstack-upgrade expert skill SHALL be fully removed. The expert template and registrations were removed by a prior change; this change removes the remaining source and references, by explicit file lookup:
 - `src/core/templates/experts/gstack-upgrade.ts` SHALL NOT exist (already removed)
@@ -34,4 +31,3 @@ The gstack-upgrade expert skill SHALL be fully removed. The expert template and 
 #### Scenario: No gstack-upgrade references in docs
 - **WHEN** `skills/gstack/docs/AGENTS.md` and `skills/gstack/docs/ARCHITECTURE.md` are inspected
 - **THEN** neither SHALL contain `/gstack-upgrade` or `gstack-update-check`
-

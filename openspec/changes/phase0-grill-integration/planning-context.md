@@ -71,3 +71,29 @@
 
 ### 0a 产物（已 validate --strict 通过）
 - proposal.md / design.md / specs（4 capability：MODIFIED `branding-migration` + ADDED `ship-portability`/`eureka-telemetry-removal`/`dead-stub-removal`）/ tasks.md（9 组，按文件分，§9 重渲染+验证收尾）。4/4 artifacts complete。
+
+## planner 调研纪要（0b）
+
+> APPEND 于 2026-07-06（0a 已归档 commit 0deed40 后、0b propose 完成）。**核心：实地核查发现现状与原始规划模型有两处 load-bearing 偏差，已在 0b design.md 的 D1/D2 落定并在 proposal「Scope reconciliation」flag。**
+
+### ⚠️ 两处偏差（务必知悉，影响 0b 及后续对「preamble」的理解）
+1. **ETHOS 不是文件注入，是 inline**：`skills/gstack/docs/ETHOS.md` 自称「injected into every skill preamble automatically」——**过时**。`gen-skill-docs.ts` 里**零** ETHOS 引用（grep 证实）。ETHOS 内容早已 inline 进两个子 generator：`generateCompletenessSection`（=ETHOS §1「Boil the Lake」/Completeness Principle）+ `generateSearchBeforeBuildingSection`（=ETHOS §2「Search Before Building」/三层/eureka）。所以「删 ETHOS preamble 注入」= 删这两个子 generator + 删 ETHOS.md 冗余 doc + 清 office-hours/plan-ceo-review/ARCHITECTURE.md 三处「Read ETHOS.md」文字引用。**`{{PREAMBLE}}` 占位符/机制不整删**（preamble-migration 早已把它 minimize 过）。原 planning-context「preamble 占位符改为空/移除」的表述基于 ETHOS=注入 的旧模型，不准确。
+2. **LEAD 任务里的 `generateCompletionStatus` 疑为口误**：真正的 ethos 段是 `generateCompletenessSection`（Completeness/Boil-the-Lake），而 `generateCompletionStatus` 是功能性 DONE/BLOCKED 状态协议（非 builder-creed）。0b 采语义正确解：删 `generateCompletenessSection`+`generateSearchBeforeBuildingSection`，**保留** `generateCompletionStatus`/`generateAskUserFormat`/`generatePreambleBash`/`generateRepoModeSection`。已 flag LEAD 确认；若要更素的 preamble（连状态协议/AskUser 格式也删）是后续决定。
+
+### 现状核查（prior changes 已部分施工）
+- 既有 capability `preamble-migration`/`remove-gstack-features`/`remove-gstack-upgrade-skill` **已同步进 main specs 且已施工**：`generateUpgradeCheck`/`generateLakeIntro`/`generateContributorMode` 早删（gen-skill-docs 里是 `// REMOVED` 注释）；preamble 已 minimize；**`gstack-upgrade` expert `.ts` + 4 处 registration 已删**——但 `skills/gstack/gstack-upgrade/` 源目录、`scripts/skill-check.ts` 条目、docs 引用**仍残留**（半删状态）。
+- `setup-browser-cookies` **完全在册**（与 gstack-upgrade 不同）：expert `src/core/templates/experts/setup-browser-cookies.ts` 存在 + 4 处 wiring（experts/index.ts:29、skill-templates.ts:54、skill-generation.ts:66 import+143 registration）+ gen-skill-docs.ts:831（design-review auth 提示 `/setup-browser-cookies`）+ skill-check.ts:29 + AGENTS.md:27。删它须四处 wiring 同删否则 **tsc 编译失败** → build check 是必需 gate。
+- `conductor.json`：**零代码引用**（grep 空），直接删。
+- `scripts/skill-check.ts` 有**显式 expected-skill 列表**（29 setup-browser-cookies、32 gstack-upgrade）；删目录不删列表条目 → `skill:check` 失败，须同改。
+- 无任何 test 引用这些删除项或 ethos 段（grep test/ 空）→ 删除安全。两个 vitest skill-gen 套件仍只覆盖 OPSX-core，不含 gstack。
+
+### 关键行号（post-0a 快照，编辑前复核）
+- gen-skill-docs.ts：`generateCompletenessSection` 171-197、`generateSearchBeforeBuildingSection` 310-327、`generatePreamble` 380-388（drop 384/386 两 call）、AskUserFormat「(see Completeness Principle)」交叉引用 163、design-review `/setup-browser-cookies` 831。
+- ETHOS 文字引用：office-hours.tmpl 295、plan-ceo-review.tmpl 210、docs/ARCHITECTURE.md 219。
+- 删除项引用：skill-check.ts 29/32、AGENTS.md 27/32、ARCHITECTURE.md 215。
+- **browse/test/gstack-update-check.test.ts 出 0b 范围**：测的是 browse 的 update-check 模块（≠gstack-upgrade expert skill），browse 属 productization adapter 重写，0b 不碰。
+
+### 0b 产物（已 validate --strict 通过）
+- proposal.md / design.md（D1 ETHOS inline、D2 命名 reconciliation、D3 两 skill 两删除态、D4 须编译+skill-check 同步、D5 显式 lookup、D6 AGENTS/ARCHITECTURE 处置）/ specs（4：MODIFIED `preamble-migration`+`remove-gstack-upgrade-skill`，ADDED `remove-setup-browser-cookies-skill`+`remove-conductor-config`）/ tasks.md（5 组，§5 render+build+skill-check+grep+vitest+validate 收尾）。4/4 complete。
+- **未删**：deploy 三件套（land-and-deploy/setup-deploy/canary）、plan 四件套（autoplan/plan-ceo/plan-eng/plan-design）——项目类型覆盖储备，确认保留。
+- **LEAD 裁决（2026-07-06）**：两处偏差均采纳 planner 语义正确解——①按 inline 模型删两 ethos 子 generator + ETHOS.md + 3 处引用，`{{PREAMBLE}}` 机制保留；②确系口误，删 `generateCompletenessSection`+`generateSearchBeforeBuildingSection`，保留 `generateCompletionStatus`/`generateAskUserFormat`/`generatePreambleBash`/`generateRepoModeSection`。0b 产物按现状定稿，无需修改。

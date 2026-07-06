@@ -51,7 +51,6 @@ export {
   getQaSkillTemplate,
   getRetroSkillTemplate,
   getReviewSkillTemplate,
-  getSetupBrowserCookiesSkillTemplate,
   getSetupDeploySkillTemplate,
   getShipSkillTemplate,
   getUnfreezeSkillTemplate,

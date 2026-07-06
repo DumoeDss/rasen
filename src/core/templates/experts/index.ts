@@ -26,7 +26,6 @@ export { getQaOnlySkillTemplate } from './qa-only.js';
 export { getQaSkillTemplate } from './qa.js';
 export { getRetroSkillTemplate } from './retro.js';
 export { getReviewSkillTemplate } from './review.js';
-export { getSetupBrowserCookiesSkillTemplate } from './setup-browser-cookies.js';
 export { getSetupDeploySkillTemplate } from './setup-deploy.js';
 export { getShipSkillTemplate } from './ship.js';
 export { getUnfreezeSkillTemplate } from './unfreeze.js';

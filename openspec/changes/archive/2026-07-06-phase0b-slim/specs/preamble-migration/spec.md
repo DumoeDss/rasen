@@ -1,18 +1,4 @@
-# preamble-migration Specification
-
-## Purpose
-Replace the gstack preamble with a minimal OpenSpec preamble and update preamble composition accordingly.
-## Requirements
-### Requirement: Minimal OpenSpec preamble replaces gstack preamble
-The `generatePreambleBash` function in `gen-skill-docs.ts` SHALL generate a minimal preamble that only detects the current git branch. It SHALL NOT call any gstack binaries, create session files, or read external config.
-
-#### Scenario: Preamble output contains only branch detection
-- **WHEN** `generatePreambleBash` is called for any host
-- **THEN** the output SHALL contain only git branch detection (`git branch --show-current`) and echo of the branch value
-
-#### Scenario: No gstack binary calls in preamble
-- **WHEN** any generated SKILL.md file is inspected
-- **THEN** the preamble bash block SHALL NOT contain references to `gstack-update-check`, `gstack-config`, `gstack-repo-mode`, or session file operations
+## MODIFIED Requirements
 
 ### Requirement: generatePreamble composition updated
 The `generatePreamble` composite function SHALL call only these sub-generators:
@@ -41,24 +27,7 @@ It SHALL NOT call `generateUpgradeCheck`, `generateLakeIntro`, `generateContribu
 - **AND** SHALL NOT contain a "Search Before Building" section
 - **AND** SHALL still contain the functional sections (branch detection, AskUserQuestion format, Repo mode, Completion status)
 
-### Requirement: gstack-slug replaced with inline bash
-All `source <(~/.openspec/bin/gstack-slug ...)` calls in `.tmpl` files and generator functions SHALL be replaced with inline bash:
-```bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-```
-
-#### Scenario: No gstack-slug binary reference in generated files
-- **WHEN** any generated SKILL.md is inspected
-- **THEN** it SHALL NOT contain `gstack-slug`
-- **AND** project slug resolution SHALL use inline git/basename commands
-
-### Requirement: Review dashboard calls soft-removed
-All `gstack-review-read` and `gstack-review-log` binary calls in generator functions and `.tmpl` files SHALL be replaced with a comment: `# Review dashboard: pending OpenSpec integration`
-
-#### Scenario: No gstack-review-read binary call in generated files
-- **WHEN** any generated SKILL.md is inspected
-- **THEN** it SHALL NOT contain executable `gstack-review-read` or `gstack-review-log` commands
-- **AND** the location SHALL have a placeholder comment indicating deferred integration
+## ADDED Requirements
 
 ### Requirement: ETHOS.md deleted
 The redundant builder-ethos document `skills/gstack/docs/ETHOS.md` SHALL be deleted. It is not read by the generator; its content was inlined into the (now removed) ethos sub-generators.
@@ -81,4 +50,3 @@ All textual references instructing the reader to "Read ETHOS.md" SHALL be remove
 #### Scenario: No dangling Completeness Principle cross-reference
 - **WHEN** the generated AskUserQuestion-format section is inspected
 - **THEN** it SHALL NOT direct the reader to a "Completeness Principle" section that no longer exists
-
