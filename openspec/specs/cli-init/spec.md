@@ -164,6 +164,7 @@ The init command SHALL generate skills based on the active profile, not a fixed 
 - **THEN** the system SHALL include the `propose` workflow as an available skill template
 
 ### Requirement: Slash Command Generation
+
 The init command SHALL generate commands based on profile AND delivery settings, and SHALL generate command files only for selected tools that have a registered command adapter; adapterless tools remain valid for skill generation.
 
 #### Scenario: Skills-only delivery
@@ -183,7 +184,6 @@ The init command SHALL generate commands based on profile AND delivery settings,
 - **THEN** the system SHALL include the `propose` workflow as an available command template
 
 #### Scenario: Selected tool has no command adapter
-
 - **GIVEN** a selected tool has `skillsDir` configured but no registered command adapter
 - **WHEN** initialization includes command generation
 - **THEN** skill generation for that tool SHALL still remain valid
@@ -191,7 +191,6 @@ The init command SHALL generate commands based on profile AND delivery settings,
 - **AND** the command output SHALL include `Commands skipped for: <tool-id> (no adapter)`
 
 #### Scenario: Kimi CLI skips command-file generation
-
 - **WHEN** the user selects Kimi CLI during initialization
 - **THEN** OpenSpec SHALL treat it as a supported tool with `skillsDir: '.kimi'`
 - **AND** command-file generation SHALL be skipped because no Kimi adapter is registered
