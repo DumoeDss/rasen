@@ -6,12 +6,10 @@ description: |
   elements, verify state, diff before/after, take annotated screenshots, test responsive
   layouts, forms, uploads, dialogs, and capture bug evidence. Use when asked to open or
   test a site, verify a deployment, dogfood a user flow, or file a bug with screenshots.
-  Also suggest adjacent expert skills by stage: brainstorm /office-hours; strategy
-  /plan-ceo-review; architecture /plan-eng-review; design /plan-design-review or
-  /design-consultation; auto-review /autoplan; debugging /investigate; QA /qa; code review
-  /review; visual audit /design-review; shipping /ship; docs /document-release; retro
-  /retro; second opinion /codex; prod safety /careful or /guard; scoped edits /freeze or
-  /unfreeze. Respect the proactive config setting from the preamble.
+  Also suggest adjacent expert skills by stage: brainstorm /office-hours; design
+  /design-consultation; debugging /investigate; QA /qa; code review /review; visual audit
+  /design-review; second opinion /codex; prod safety /careful or /guard; scoped edits
+  /freeze or /unfreeze. Respect the proactive config setting from the preamble.
 allowed-tools:
   - Bash
   - Read
@@ -94,12 +92,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
+| Verify | \`/opsx:verify\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \`/opsx:verify-enhanced\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \`/opsx:review-cycle\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \`/opsx:review-cycle\` for the full review loop, or the individual reviews above.
 \`\`\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one

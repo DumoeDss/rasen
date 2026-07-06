@@ -11,18 +11,12 @@ Skills live in `.agents/skills/`. Invoke them by name (e.g., `/office-hours`).
 | Skill | What it does |
 |-------|-------------|
 | `/office-hours` | Start here. Reframes your product idea before you write code. |
-| `/plan-ceo-review` | CEO-level review: find the 10-star product in the request. |
-| `/plan-eng-review` | Lock architecture, data flow, edge cases, and tests. |
-| `/plan-design-review` | Rate each design dimension 0-10, explain what a 10 looks like. |
 | `/design-consultation` | Build a complete design system from scratch. |
 | `/review` | Pre-landing PR review. Finds bugs that pass CI but break in prod. |
 | `/debug` | Systematic root-cause debugging. No fixes without investigation. |
 | `/design-review` | Design audit + fix loop with atomic commits. |
 | `/qa` | Open a real browser, find bugs, fix them, re-verify. |
 | `/qa-only` | Same as /qa but report only — no code changes. |
-| `/ship` | Run tests, review, push, open PR. One command. |
-| `/document-release` | Update all docs to match what you just shipped. |
-| `/retro` | Weekly retro with per-person breakdowns and shipping streaks. |
 | `/browse` | Headless browser — real Chromium, real clicks, ~100ms/command. |
 | `/careful` | Warn before destructive commands (rm -rf, DROP TABLE, force-push). |
 | `/freeze` | Lock edits to one directory. Hard block, not just a warning. |

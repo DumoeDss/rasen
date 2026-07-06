@@ -91,12 +91,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
+| Verify | \`/opsx:verify\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \`/opsx:verify-enhanced\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \`/opsx:review-cycle\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \`/opsx:review-cycle\` for the full review loop, or the individual reviews above.
 \`\`\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
@@ -268,10 +268,10 @@ Produce this markdown table:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
+| Verify | \`/opsx:verify\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
+| Verify (enhanced) | \`/opsx:verify-enhanced\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
+| Review cycle | \`/opsx:review-cycle\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
 | Codex Review | \`/codex review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
 \`\`\`
 
 Below the table, add these lines (omit any that are empty/not applicable):
@@ -279,8 +279,8 @@ Below the table, add these lines (omit any that are empty/not applicable):
 - **CODEX:** (only if codex-review ran) — one-line summary of codex fixes
 - **CROSS-MODEL:** (only if both Claude and Codex reviews exist) — overlap analysis
 - **UNRESOLVED:** total unresolved decisions across all reviews
-- **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
-  If Eng Review is not CLEAR and not skipped globally, append "eng review required".
+- **VERDICT:** list reviews that are CLEAR (e.g., "VERIFY + REVIEW-CYCLE CLEARED — ready to implement").
+  If the review cycle is not CLEAR and not skipped globally, append "review required".
 
 ### Write to the plan file
 

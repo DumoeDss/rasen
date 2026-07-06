@@ -5,7 +5,7 @@ description: |
   Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems,
   AI slop patterns, and slow interactions — then fixes them. Iteratively fixes issues
   in source code, committing each fix atomically and re-verifying with before/after
-  screenshots. For plan-mode design review (before implementation), use /plan-design-review.
+  screenshots.
   Use when asked to "audit the design", "visual QA", "check if it looks good", or "design polish".
   Proactively suggest when the user mentions visual inconsistencies or
   wants to polish the look of a live site.
@@ -95,12 +95,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
+| Verify | \`/opsx:verify\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \`/opsx:verify-enhanced\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \`/opsx:review-cycle\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \`/opsx:review-cycle\` for the full review loop, or the individual reviews above.
 \`\`\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one

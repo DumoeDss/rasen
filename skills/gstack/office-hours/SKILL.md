@@ -10,7 +10,7 @@ description: |
   this", "office hours", or "is this worth building".
   Proactively suggest when the user describes a new product idea or is exploring
   whether something is worth building — before any code is written.
-  Use before /plan-ceo-review or /plan-eng-review.
+  Use before /opsx:propose.
 allowed-tools:
   - Bash
   - Read
@@ -97,12 +97,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
+| Verify | \`/opsx:verify\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \`/opsx:verify-enhanced\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \`/opsx:review-cycle\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \`/opsx:review-cycle\` for the full review loop, or the individual reviews above.
 \`\`\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
@@ -549,7 +549,7 @@ If they approve or say "good enough," proceed.
 
 Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
 The screenshot file at `/tmp/gstack-sketch.png` can be referenced by downstream skills
-(`/plan-design-review`, `/design-review`) to see what was originally envisioned.
+(`/design-review`) to see what was originally envisioned.
 
 ---
 
@@ -825,9 +825,7 @@ Say:
 
 After the plea, suggest the next step:
 
-- **`/plan-ceo-review`** for ambitious features (EXPANSION mode) — rethink the problem, find the 10-star product
-- **`/plan-eng-review`** for well-scoped implementation planning — lock in architecture, tests, edge cases
-- **`/plan-design-review`** for visual/UX design review
+- **`/opsx:propose`** — turn the validated idea into a change: proposal, design, specs, and tasks
 
 The design doc at `~/.openspec/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 

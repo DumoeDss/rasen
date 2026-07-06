@@ -54,19 +54,30 @@ Read all available artifacts from the change directory:
 
 ### 2B. General Retro
 
-Analyze recent repository activity:
-- Run \`git log --oneline --since="1 week ago"\` to see recent commits
-- Analyze commit patterns (frequency, time of day, areas of code)
-- Identify areas of high churn
-- Look for patterns in commit messages
-- Invoke the \`/retro\` expert skill for detailed analysis
+Run a self-contained git-analysis contract over recent repository activity (default window: last 7 days; accept an explicit window like \`24h\`, \`14d\`, \`30d\`). Detect the repo's default branch first (\`gh repo view --json defaultBranchRef -q .defaultBranchRef.name\`, fall back to \`main\`) and analyze \`origin/<default>\`.
+
+**Gather (run these git queries):**
+- Commits with author, timestamp, and per-commit stat: \`git log origin/<default> --since="<window>" --format="%H|%aN|%ae|%ai|%s" --shortstat\`
+- Per-commit numstat for LOC and test-vs-production split (test files match \`test/|spec/|__tests__/\`): \`git log origin/<default> --since="<window>" --format="COMMIT:%H|%aN" --numstat\`
+- File hotspots: \`git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^$' | sort | uniq -c | sort -rn\`
+- Per-author commit counts: \`git shortlog origin/<default> --since="<window>" -sn --no-merges\`
+- Streak (consecutive days with ≥1 commit, counted back from today): \`git log origin/<default> --format="%ad" --date=format:"%Y-%m-%d" | sort -u\`
+
+**Compute:**
+- The metrics table (commits, contributors, insertions/deletions, net LOC, test LOC ratio, active days, streak)
+- A **per-author leaderboard** sorted by commits descending (contributor, commits, +/-, top area), with the current user (\`git config user.name\`) listed first as "You (name)"
+- Commit-type mix (feat/fix/refactor/test/chore/docs), hotspot list, and any notable patterns (peak hours, churn, high fix ratio)
+
+Use all timestamps in the user's local timezone. If the window has zero commits, say so and suggest a different window.
 
 ### 2C. Global Retro
 
-Delegate to the \`/retro\` expert skill with the \`global\` flag:
-- Cross-project analysis if multiple repos are accessible
-- Aggregate shipping streaks and work patterns
-- Compare productivity across projects
+Run the same git-analysis contract as 2B, but across every accessible repository (cross-project):
+- For each repo the user has configured or that is reachable, gather the same commit/author/LOC/hotspot/streak data
+- Aggregate shipping streaks and work patterns across projects and compare productivity between them
+- If only the current repo is accessible, note that and report it as a single-project global retro
+
+Do NOT persist gstack-style \`.context/retros/*.json\` snapshots or run history-compare against them — write only to OPSX's own report path (Step 4).
 
 ### 3. Generate Report
 
@@ -99,7 +110,7 @@ Delegate to the \`/retro\` expert skill with the \`global\` flag:
 3. <takeaway 3>
 \`\`\`
 
-**General report structure:**
+**General / Global report structure:**
 
 \`\`\`markdown
 # Retro: Weekly Summary
@@ -108,13 +119,24 @@ Delegate to the \`/retro\` expert skill with the \`global\` flag:
 **Scope:** General
 **Period:** <start> to <end>
 
-## Commit Summary
-- Total commits: <count>
-- Contributors: <list>
-- Most active areas: <code areas>
+## Metrics
+| Metric | Value |
+|--------|-------|
+| Commits | <count> |
+| Contributors | <count> |
+| Net LOC | +<ins>/-<del> |
+| Test LOC ratio | <pct>% |
+| Active days | <count> |
+| Streak | <days> consecutive days |
+
+## Per-Author Leaderboard
+| Contributor | Commits | +/- | Top area |
+|-------------|---------|-----|----------|
+| You (<name>) | <n> | +<ins>/-<del> | <dir> |
+| <author> | <n> | +<ins>/-<del> | <dir> |
 
 ## Patterns Observed
-- <pattern 1>
+- <pattern 1: commit-type mix, peak hours, hotspots>
 - <pattern 2>
 
 ## Improvement Suggestions

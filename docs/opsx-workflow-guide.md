@@ -206,7 +206,7 @@ Agent 感知不到自己的上下文占用——它只能**测量**。`openspec 
 ### 3.8 gstack 专家技能（始终安装，按需调用）
 不论 profile 如何，`openspec init` 都会装上一组专家技能（生成为 `openspec-gstack-*`），可在验证/规划阶段单独调用：
 
-`/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/autoplan`（全面规划）、`/investigate` `/careful` `/guard`（排查/谨慎/护栏）、`/land-and-deploy` `/setup-deploy` `/canary`（部署）、`/freeze` `/unfreeze`、`/document-release`、`/codex`、`/cso`、`/plan-ceo-review` `/plan-design-review` `/plan-eng-review`、`/setup-browser-cookies` 等。
+`/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/investigate` `/careful` `/guard`（排查/谨慎/护栏）、`/freeze` `/unfreeze`、`/codex`、`/setup-browser-cookies` 等。
 
 ---
 

@@ -82,12 +82,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
+| Verify | \`/opsx:verify\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \`/opsx:verify-enhanced\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \`/opsx:review-cycle\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \`/opsx:review-cycle\` for the full review loop, or the individual reviews above.
 \`\`\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
@@ -139,21 +139,6 @@ Off the main flow — reach for each by name when its situation comes up.
 - **`/cso`** — security review from a chief-security-officer lens.
 - **`/codex`** — hand a task to Codex for an independent second opinion or a parallel implementation.
 - **`/browse`** — headless browser (real Chromium, real clicks) for scripted page interaction.
-- **`/document-release`** — update the docs to match what you just shipped.
-- **`/retro`** — a standalone retrospective when you want the look-back outside the OPSX flow.
-
-**Deploy family** — getting a change out to production.
-
-- **`/land-and-deploy`** — merge and deploy in one guided pass.
-- **`/setup-deploy`** — configure the deploy pipeline the first time.
-- **`/canary`** — roll out behind a canary and watch it before going wide.
-
-**Plan family** — reviewing a plan before you build it.
-
-- **`/autoplan`** — run the full plan-review pipeline (CEO + eng + design) at once.
-- **`/plan-ceo-review`** — scope and strategy: is this the right thing to build?
-- **`/plan-eng-review`** — architecture, data flow, edge cases, and tests (the required gate).
-- **`/plan-design-review`** — rate each design dimension and say what a 10 looks like.
 
 **Security family** — guarding edits during risky work.
 

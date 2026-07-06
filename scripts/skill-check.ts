@@ -21,18 +21,9 @@ const SKILL_FILES = [
   'browse/SKILL.md',
   'qa/SKILL.md',
   'qa-only/SKILL.md',
-  'ship/SKILL.md',
   'review/SKILL.md',
-  'retro/SKILL.md',
-  'plan-ceo-review/SKILL.md',
-  'plan-eng-review/SKILL.md',
-  'plan-design-review/SKILL.md',
   'design-review/SKILL.md',
-  'document-release/SKILL.md',
-  'canary/SKILL.md',
   'benchmark/SKILL.md',
-  'land-and-deploy/SKILL.md',
-  'setup-deploy/SKILL.md',
   'cso/SKILL.md',
 ].filter(f => fs.existsSync(path.join(ROOT, f)));
 

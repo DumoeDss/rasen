@@ -1,8 +1,8 @@
 /**
  * Ship OPSX Workflow Command
  *
- * Release workflow — merges gstack /ship (test, push, create PR) and
- * /land-and-deploy (merge, CI, deploy, verify production).
+ * Self-contained release workflow — test, push, create PR, optionally merge
+ * and deploy. The ship execution contract is inlined here (no expert delegation).
  * PR body sourced from proposal summary. Ship log written to change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
@@ -51,11 +51,25 @@ Run all checks before shipping:
 
 ### 3. Ship Phase
 
-Invoke the \`/ship\` expert skill which handles:
-- Running tests (\`npm test\` / \`pnpm test\` / detected test command)
-- Reviewing the diff for obvious issues
-- Pushing the branch to remote
-- Creating a pull request via \`gh pr create\`
+Run the ship contract directly — this workflow is self-contained and does NOT delegate to any expert skill.
+
+**a. Detect the base branch**
+- Prefer an existing PR's base: \`gh pr view --json baseRefName -q .baseRefName\`
+- Else the repo default: \`gh repo view --json defaultBranchRef -q .defaultBranchRef.name\`
+- Else fall back to \`main\`. Use this value wherever the steps below say \`<base>\`.
+
+**b. Merge the base branch BEFORE tests**
+- \`git fetch origin <base> && git merge origin/<base> --no-edit\` so tests run against the merged state
+- If the merge produces conflicts that cannot be resolved automatically, **STOP** and surface the conflicts — do not push
+- If already up to date, continue silently
+
+**c. Run tests on the merged code**
+- Detect and run the project's test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` / \`pytest\` / etc. — infer from the repo, do not hardcode a runner)
+- Read the output and check pass/fail
+- If any in-branch test fails, **STOP** and do NOT push (a genuinely pre-existing failure unrelated to this branch's diff may be noted and triaged, but when in doubt treat it as blocking)
+
+**d. Review the diff for obvious structural issues**
+- \`git diff origin/<base>...HEAD\` — scan for accidental debug output, secrets, obviously broken logic, or leftover TODO markers before pushing
 
 **PR Body Generation:**
 
@@ -69,10 +83,16 @@ If no proposal.md:
 - Use change name as PR title
 - Note that no proposal was available
 
-**Fallback (if /ship skill fails):**
-- Run tests directly: detect and execute project test command
-- Push branch: \`git push -u origin <branch>\`
-- Create PR: \`gh pr create --title "<title>" --body "<body>"\`
+**e. Fresh-verification gate (before push)**
+- If any code changed after step (c)'s test run — for example from review fixes in step (d) — re-run the test suite and require fresh passing output before pushing. Stale results from the earlier run are not acceptable.
+- If the re-run fails, **STOP** and fix before proceeding — do not push.
+
+**f. Push the branch**
+- \`git push -u origin <branch>\` (push with upstream tracking; never force-push)
+
+**g. Create the PR**
+- \`gh pr create --base <base> --title "<title>" --body "<body>"\` using the title/body from PR Body Generation above
+- Output the PR URL
 
 ### 4. Write Ship Log
 
@@ -123,7 +143,7 @@ If CI fails:
 After shipping, suggest:
 - Run \`/opsx:retro\` for a retrospective on the change
 - Run \`/opsx:archive\` to archive the completed change
-- Run \`/document-release\` to update project documentation
+- Update project documentation (README, architecture notes, changelog) to match what shipped, so the docs do not drift from the release
 
 ## Output
 
