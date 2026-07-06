@@ -97,3 +97,27 @@
 - proposal.md / design.md（D1 ETHOS inline、D2 命名 reconciliation、D3 两 skill 两删除态、D4 须编译+skill-check 同步、D5 显式 lookup、D6 AGENTS/ARCHITECTURE 处置）/ specs（4：MODIFIED `preamble-migration`+`remove-gstack-upgrade-skill`，ADDED `remove-setup-browser-cookies-skill`+`remove-conductor-config`）/ tasks.md（5 组，§5 render+build+skill-check+grep+vitest+validate 收尾）。4/4 complete。
 - **未删**：deploy 三件套（land-and-deploy/setup-deploy/canary）、plan 四件套（autoplan/plan-ceo/plan-eng/plan-design）——项目类型覆盖储备，确认保留。
 - **LEAD 裁决（2026-07-06）**：两处偏差均采纳 planner 语义正确解——①按 inline 模型删两 ethos 子 generator + ETHOS.md + 3 处引用，`{{PREAMBLE}}` 机制保留；②确系口误，删 `generateCompletenessSection`+`generateSearchBeforeBuildingSection`，保留 `generateCompletionStatus`/`generateAskUserFormat`/`generatePreambleBash`/`generateRepoModeSection`。0b 产物按现状定稿，无需修改。
+
+## planner 调研纪要（0c）
+
+> APPEND 于 2026-07-06（0b 已归档 commit c41716f 后、0c propose 完成）。0c = 只做新增，是 0b 移除链的**镜像**。
+
+### grill 源核查（E:\...\workflow\Reference\skills\skills\）
+- 4 skill 全文小（SKILL.md 30–114 行）：`engineering/{domain-modeling(+ADR-FORMAT/CONTEXT-FORMAT),codebase-design(+DEEPENING/DESIGN-IT-TWICE),tdd(+tests/mocking),prototype(+LOGIC/UI)}`；`writing-great-skills` 在 `productivity/`（SKILL.md+GLOSSARY.md）。
+- **内容干净**：grep personalization/issue-tracker/brand 标记全是误报（ADR Status 字段、ANSI 码、glossary 词）——**无 Matt-Pocock 个人化/issue-tracker 配置引用要去**。适配 = 仅 frontmatter 对齐 + MIT 归属，body 逐字保留（leading-words/可检验判据是价值本体）。
+- grill frontmatter 极简（name+description）；本仓惯例（对照 `investigate` tmpl）更丰富：name/version/description（含「Use when…」+可选 proactive）/allowed-tools/（可选 hooks，这 4 个不需要 freeze hooks）+ frontmatter 后放 `{{PREAMBLE}}`。
+
+### 注册链（0b 移除链的精确镜像，新增每 skill 4 处 wiring + 1 次计数）
+- expert `.ts`（`src/core/templates/experts/<name>.ts`，逐字镜像 `investigate.ts`：readFileSync 生成的 SKILL.md→strip frontmatter→返回 `name:'gstack:<name>'`、`description:'|'`、metadata author openspec/version 1.0；`'|'` sentinel 是有意的别「修」）→ `experts/index.ts` export → `skill-templates.ts` re-export → `skill-generation.ts` import+`getSkillTemplates()` 条目（`dirName:'openspec-gstack-<name>'`、`workflowId:'<name>'`）→ `AGENTS.md` 目录表行。
+- **计数常量四处（唯一受影响）都在 `test/core/shared/skill-generation.test.ts`**：L13 `toHaveLength(42)`→46（17wf+29exp）、L70 `(29)`→33（4wf+29exp）、L89 `(25)`→29（0wf+29exp）、L95 `(26)`→30（1wf+29exp）。**注意**：0a 纪要曾误说「两个 vitest 套件只覆盖 OPSX-core」——**skill-generation.test.ts 其实数 expert 总数**（0b 实施时已把它从 26→25，正是 LEAD 说的「0b 刚改过」）；只有 skill-templates-parity.test.ts 是纯 OPSX-core hash 不受影响。`profiles.test.ts:23` 数的是 workflow（17，不变）。
+- **skill-check.ts 不动**（与 0b 非对称）：`SKILL_FILES` 是 `$B` browse 命令校验的 curated 子集（investigate/careful 等非 browse 专家都不在里面）；4 个方法论 skill 无 browse 命令→不入列。freshness 由 `skill:check` 跑 `gen-skill-docs --dry-run` 遍历全部 .tmpl 自动覆盖。0b 删的两个 skill 恰在 SKILL_FILES 里所以 0b 改了它。
+
+### ⚠️ sidecar 安装可移植性限制（已 flag，非 0c 解决）
+- grill skill 用相对路径引 sibling 文件（DEEPENING.md/LOGIC.md…）。本仓 `init.ts:553` **只 copy SKILL.md** 到安装目标 → sidecar 不落地（review/qa 现有 sidecar 同病，它们容错「读不到就跳过」）。0c 遵循既有 pattern：sidecar 放源 skill 目录 + 相对引用，**不为这 4 个 skill 单独发明 inline 方案**；要彻底可移植（inline）留 0d 横切决策。
+
+### MIT 归属放置
+- 每个 .tmpl 在 frontmatter 闭合 `---` 后、`{{PREAMBLE}}` 前放 `<!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->`——能过 `.ts` 的 strip（保留第 2 个 `---` 之后），随 instructions 一起装。docs/skill-authoring.md 开头同 NOTICE。sidecar 逐字复制的也在头部加一行。
+- `docs/skill-authoring.md`（顶层 docs/，非 skills/gstack/docs/）从 writing-great-skills 改写，**是仓库文档非安装 skill**——无 .tmpl/无 .ts/无注册/无计数影响。
+
+### 0c 产物（已 validate --strict 通过）
+- proposal.md / design.md（D1 frontmatter 适配、D2 .ts 镜像、D3 注册+计数、D4 skill-check 不动、D5 sidecar 限制、D6 MIT 放置、D7 skill-authoring 是 doc）/ specs（2 ADDED：`add-grill-expert-skills`+`skill-authoring-guide`）/ tasks.md（7 组：4 skill 各一组 + 注册组 + 计数&doc 组 + §7 render+build+skill-check+vitest+validate 收尾）。4/4 complete。
