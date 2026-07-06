@@ -17,6 +17,9 @@ import { AI_TOOLS, OPENSPEC_DIR_NAME } from './config.js';
 import {
   generateCommands,
   CommandAdapterRegistry,
+  getLegacyCommandFilePath,
+  getCommandFileId,
+  getCommandFilePathCandidates,
 } from './command-generation/index.js';
 import {
   getToolVersionStatus,
@@ -455,16 +458,17 @@ export class UpdateCommand {
     if (!adapter) return 0;
 
     for (const workflow of ALL_WORKFLOWS) {
-      const cmdPath = adapter.getFilePath(workflow);
-      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
-      try {
-        if (fs.existsSync(fullPath)) {
-          await fs.promises.unlink(fullPath);
-          removed++;
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+            removed++;
+          }
+        } catch {
+          // Ignore errors
         }
-      } catch {
-        // Ignore errors
       }
     }
 
@@ -472,7 +476,8 @@ export class UpdateCommand {
   }
 
   /**
-   * Removes command files for workflows that are no longer selected in the active profile.
+   * Removes command files for workflows that are no longer selected in the active profile,
+   * plus legacy '-command'-suffixed files superseded by the short filenames.
    * Returns the number of files removed.
    */
   private async removeUnselectedCommandFiles(
@@ -488,17 +493,28 @@ export class UpdateCommand {
     const desiredSet = new Set(desiredWorkflows);
 
     for (const workflow of ALL_WORKFLOWS) {
-      if (desiredSet.has(workflow)) continue;
-      const cmdPath = adapter.getFilePath(workflow);
-      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+      const stalePaths: string[] = [];
+      if (!desiredSet.has(workflow)) {
+        stalePaths.push(adapter.getFilePath(getCommandFileId(workflow)));
+      }
+      // Legacy suffixed filenames are stale even for selected workflows —
+      // the current filename was just (re)generated alongside.
+      const legacyPath = getLegacyCommandFilePath(adapter, workflow);
+      if (legacyPath) {
+        stalePaths.push(legacyPath);
+      }
 
-      try {
-        if (fs.existsSync(fullPath)) {
-          await fs.promises.unlink(fullPath);
-          removed++;
+      for (const cmdPath of stalePaths) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+            removed++;
+          }
+        } catch {
+          // Ignore errors
         }
-      } catch {
-        // Ignore errors
       }
     }
 

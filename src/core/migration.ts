@@ -7,7 +7,7 @@
 
 import type { AIToolOption } from './config.js';
 import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig, type Delivery } from './global-config.js';
-import { CommandAdapterRegistry } from './command-generation/index.js';
+import { CommandAdapterRegistry, getCommandFilePathCandidates } from './command-generation/index.js';
 import { WORKFLOW_TO_SKILL_DIR } from './profile-sync-drift.js';
 import { ALL_WORKFLOWS } from './profiles.js';
 import path from 'path';
@@ -44,13 +44,15 @@ function scanInstalledWorkflowArtifacts(
     if (!adapter) continue;
 
     for (const workflowId of ALL_WORKFLOWS) {
-      const commandPath = adapter.getFilePath(workflowId);
-      const fullPath = path.isAbsolute(commandPath)
-        ? commandPath
-        : path.join(projectPath, commandPath);
-      if (fs.existsSync(fullPath)) {
-        installed.add(workflowId);
-        hasCommands = true;
+      for (const commandPath of getCommandFilePathCandidates(adapter, workflowId)) {
+        const fullPath = path.isAbsolute(commandPath)
+          ? commandPath
+          : path.join(projectPath, commandPath);
+        if (fs.existsSync(fullPath)) {
+          installed.add(workflowId);
+          hasCommands = true;
+          break;
+        }
       }
     }
   }

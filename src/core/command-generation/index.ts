@@ -29,5 +29,12 @@ export { CommandAdapterRegistry } from './registry.js';
 // Generator functions
 export { generateCommand, generateCommands } from './generator.js';
 
+// Workflow id -> command file id mapping (and legacy path helpers)
+export {
+  getCommandFileId,
+  getLegacyCommandFilePath,
+  getCommandFilePathCandidates,
+} from './command-file-id.js';
+
 // Adapters (for direct access if needed)
 export { claudeAdapter, cursorAdapter, windsurfAdapter } from './adapters/index.js';

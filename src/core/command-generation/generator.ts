@@ -5,6 +5,7 @@
  */
 
 import type { CommandContent, ToolCommandAdapter, GeneratedCommand } from './types.js';
+import { getCommandFileId } from './command-file-id.js';
 
 /**
  * Generate a single command file using the provided adapter.
@@ -17,7 +18,7 @@ export function generateCommand(
   adapter: ToolCommandAdapter
 ): GeneratedCommand {
   return {
-    path: adapter.getFilePath(content.id),
+    path: adapter.getFilePath(getCommandFileId(content.id)),
     fileContent: adapter.formatFile(content),
   };
 }

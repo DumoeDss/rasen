@@ -23,6 +23,8 @@ import { serializeConfig } from './config-prompts.js';
 import {
   generateCommands,
   CommandAdapterRegistry,
+  getLegacyCommandFilePath,
+  getCommandFilePathCandidates,
 } from './command-generation/index.js';
 import {
   detectLegacyArtifacts,
@@ -585,6 +587,20 @@ export class InitCommand {
               const commandFile = path.isAbsolute(cmd.path) ? cmd.path : path.join(projectPath, cmd.path);
               await FileSystemUtils.writeFile(commandFile, cmd.fileContent);
             }
+
+            // Remove legacy '-command'-suffixed files replaced by the short names above
+            for (const content of commandContents) {
+              const legacyPath = getLegacyCommandFilePath(adapter, content.id);
+              if (!legacyPath) continue;
+              const fullPath = path.isAbsolute(legacyPath) ? legacyPath : path.join(projectPath, legacyPath);
+              try {
+                if (fs.existsSync(fullPath)) {
+                  await fs.promises.unlink(fullPath);
+                }
+              } catch {
+                // Ignore errors
+              }
+            }
           } else {
             commandsSkipped.push(tool.value);
           }
@@ -806,16 +822,17 @@ export class InitCommand {
     if (!adapter) return 0;
 
     for (const workflow of ALL_WORKFLOWS) {
-      const cmdPath = adapter.getFilePath(workflow);
-      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
-      try {
-        if (fs.existsSync(fullPath)) {
-          await fs.promises.unlink(fullPath);
-          removed++;
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+            removed++;
+          }
+        } catch {
+          // Ignore errors
         }
-      } catch {
-        // Ignore errors
       }
     }
 
