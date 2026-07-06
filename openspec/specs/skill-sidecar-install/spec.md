@@ -1,7 +1,8 @@
 # skill-sidecar-install Specification
 
 ## Purpose
-TBD - created by archiving change phase0d-sidecar-install. Update Purpose after archive.
+Ensures expert skills installed by `openspec init`/`update` carry their non-code sidecar reference files (checklists, templates, hook scripts) alongside `SKILL.md`, via a single shared copy helper that allowlists `.md`/`.sh`, excludes `.tmpl` and the `browse` skill's build assets, and is idempotent across repeated installs.
+
 ## Requirements
 ### Requirement: Sidecar reference files installed alongside SKILL.md
 `openspec init` and `openspec update` SHALL, for each installed expert skill, copy the skill's sidecar reference files from the packaged source skill directory (`skills/gstack/<workflowId>/`) into the installed skill directory, preserving relative subdirectory structure, after writing `SKILL.md`. This SHALL be a single shared helper called by both commands.
