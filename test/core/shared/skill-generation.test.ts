@@ -100,9 +100,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandTemplates', () => {
-    it('should return all 17 command templates', () => {
+    it('should return all 18 command templates', () => {
       const templates = getCommandTemplates();
-      expect(templates).toHaveLength(17);
+      expect(templates).toHaveLength(18);
     });
 
     it('should include the review-cycle command with a clean (no -command suffix) id', () => {
@@ -162,9 +162,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandContents', () => {
-    it('should return all 17 command contents', () => {
+    it('should return all 18 command contents', () => {
       const contents = getCommandContents();
-      expect(contents).toHaveLength(17);
+      expect(contents).toHaveLength(18);
     });
 
     it('should have valid content structure', () => {
