@@ -14,11 +14,8 @@ description: |
   interface / seam / depth, or when an interface is growing shallow.
 allowed-tools:
   - Read
-  - Write
-  - Edit
   - Grep
   - Glob
-  - Bash
   - AskUserQuestion
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->

@@ -17,7 +17,6 @@ allowed-tools:
   - Edit
   - Grep
   - Glob
-  - Bash
   - AskUserQuestion
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->

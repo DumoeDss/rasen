@@ -120,6 +120,8 @@ plan's living status.
 
 # Systematic Debugging
 
+<!-- The feedback-loop-first phase, minimise step, ranked-falsifiable hypotheses, the "no correct seam is itself the finding" rule, and the HITL sidecar are adapted from mattpocock/skills (MIT, Copyright Matt Pocock). -->
+
 ## Iron Law
 
 **NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**
@@ -128,29 +130,57 @@ Fixing symptoms creates whack-a-mole debugging. Every fix that doesn't address r
 
 ---
 
-## Phase 1: Root Cause Investigation
+## Phase 1: Build a red-capable feedback loop
 
-Gather context before forming any hypothesis.
+**This is the skill.** Everything downstream — bisection, hypothesis testing, instrumentation — just consumes a pass/fail signal that goes **red** on _this_ bug. Build that signal first. If you catch yourself reading code to form a theory before the signal exists, **stop** — jumping straight to a hypothesis is the exact failure this phase prevents.
 
-1. **Collect symptoms:** Read the error messages, stack traces, and reproduction steps. If the user hasn't provided enough context, ask ONE question at a time via AskUserQuestion.
+1. **Capture the exact symptom.** Read the error messages, stack traces, and reproduction steps, and pin down the *user's* exact symptom — the specific error, wrong output, or slow timing — because that is what your loop must assert on. If context is missing, ask ONE question at a time via AskUserQuestion.
 
-2. **Read the code:** Trace the code path from the symptom back to potential causes. Use Grep to find all references, Read to understand the logic.
+2. **Construct the loop.** Reach for a signal in roughly this order — earlier options are tighter:
+   1. **Failing test** at whatever seam reaches the bug — unit, integration, e2e.
+   2. **Curl / HTTP script** against a running dev server.
+   3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
+   4. **Headless browser script** (Playwright / Puppeteer) driving the UI, asserting on DOM/console/network.
+   5. **Replay a captured trace** — save a real request / payload / event log to disk, replay it through the code path in isolation.
+   6. **Throwaway harness** — a minimal subset of the system (one service, mocked deps) that hits the bug path in a single call.
+   7. **Property / fuzz loop** — for "sometimes wrong output", run 1000 random inputs and look for the failure mode.
+   8. **Bisection harness** — if the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" for `git bisect run`.
+   9. **Differential loop** — run the same input through old vs new (or two configs) and diff outputs.
+   10. **HITL bash script** (last resort) — if a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop stays structured; captured output feeds back to you.
 
-3. **Check recent changes:**
-   ```bash
-   git log --oneline -20 -- <affected-files>
-   ```
-   Was this working before? What changed? A regression means the root cause is in the diff.
+3. **Tighten the loop.** Treat it as a product: make it **faster** (cache setup, skip unrelated init, narrow test scope), the signal **sharper** (assert the specific symptom, not "didn't crash"), and **more deterministic** (pin time, seed RNG, isolate filesystem, freeze network). A 2-second deterministic loop is a debugging superpower; a 30-second flaky one is barely better than none.
 
-4. **Reproduce:** Can you trigger the bug deterministically? If not, gather more evidence before proceeding.
+4. **Non-deterministic bugs:** the goal is a **higher reproduction rate**, not a clean repro. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate until it is.
 
-Output: **"Root cause hypothesis: ..."** — a specific, testable claim about what is wrong and why.
+5. **If you genuinely cannot build a loop:** stop and say so explicitly. List what you tried and ask the user for (a) access to an environment that reproduces it, (b) a captured artifact (HAR file, log dump, core dump, timestamped recording), or (c) permission to add temporary instrumentation. Do **not** proceed to hypotheses without a loop.
+
+**Completion criterion — the hard gate.** You can name **one command** — a test invocation, a curl, a script path — that you have **already run at least once** (paste the invocation and its output), and that is:
+
+- [ ] **Red-capable** — drives the actual bug code path and asserts the **user's exact symptom**, so it goes red on this bug and green once fixed. Not "runs without erroring" — it must catch *this* bug.
+- [ ] **Deterministic** — same verdict every run (flaky bugs: a pinned, high reproduction rate, per above).
+- [ ] **Fast** — seconds, not minutes.
+- [ ] **Agent-runnable** — you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`.
+
+**No red-capable command → no Phase 4 hypotheses.**
+
+---
+
+## Phase 2: Reproduce + minimise
+
+Run the loop. Watch it go red — the bug appears. Confirm:
+
+- [ ] The failure is the one the **user** described — not a different failure nearby. Wrong bug = wrong fix.
+- [ ] It reproduces across multiple runs (or, for non-deterministic bugs, at a high enough rate to debug against).
+
+**Minimise:** once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure. Done when removing any remaining element makes the loop go green. A minimal repro shrinks the hypothesis space in Phase 4 (fewer moving parts to suspect) and becomes the clean regression test in Phase 6.
+
+Do not proceed until you have reproduced **and** minimised.
 
 ---
 
 ## Scope Lock
 
-After forming your root cause hypothesis, lock edits to the affected module to prevent scope creep.
+With a minimised repro in hand you know the affected module — lock edits to it to prevent scope creep.
 
 ```bash
 [ -x "${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
@@ -173,7 +203,7 @@ If the bug spans the entire repo or the scope is genuinely unclear, skip the loc
 
 ---
 
-## Phase 2: Pattern Analysis
+## Phase 3: Pattern Analysis
 
 Check if this bug matches a known pattern:
 
@@ -187,6 +217,7 @@ Check if this bug matches a known pattern:
 | Stale cache | Shows old data, fixes on cache clear | Redis, CDN, browser cache, Turbo |
 
 Also check:
+- `git log --oneline -20 -- <affected-files>` — **was this working before?** A regression means the root cause is in the diff.
 - `TODOS.md` for related known issues
 - `git log` for prior fixes in the same area — **recurring bugs in the same files are an architectural smell**, not a coincidence
 
@@ -194,19 +225,21 @@ Also check:
 - "{framework} {generic error type}" — **sanitize first:** strip hostnames, IPs, file paths, SQL, customer data. Search the error category, not the raw message.
 - "{library} {component} known issues"
 
-If WebSearch is unavailable, skip this search and proceed with hypothesis testing. If a documented solution or known dependency bug surfaces, present it as a candidate hypothesis in Phase 3.
+If WebSearch is unavailable, skip this search and proceed with hypothesis testing. If a documented solution or known dependency bug surfaces, present it as a candidate hypothesis in Phase 4.
 
 ---
 
-## Phase 3: Hypothesis Testing
+## Phase 4: Hypothesis Testing
 
-Before writing ANY fix, verify your hypothesis.
+Generate **3–5 ranked hypotheses** before testing any of them — single-hypothesis generation anchors on the first plausible idea. Each must be **falsifiable**: state the prediction it makes.
 
-1. **Confirm the hypothesis:** Add a temporary log statement, assertion, or debug output at the suspected root cause. Run the reproduction. Does the evidence match?
+> Format: "If <X> is the cause, then <changing Y> makes the bug disappear / <changing Z> makes it worse."
 
-2. **If the hypothesis is wrong:** Before forming the next hypothesis, consider searching for the error. **Sanitize first** — strip hostnames, IPs, file paths, SQL fragments, customer identifiers, and any internal/proprietary data from the error message. Search only the generic error type and framework context: "{component} {sanitized error type} {framework version}". If the error message is too specific to sanitize safely, skip the search. If WebSearch is unavailable, skip and proceed. Then return to Phase 1. Gather more evidence. Do not guess.
+If you cannot state the prediction, the hypothesis is a vibe — discard or sharpen it. **Show the ranked list to the user before testing** — they often re-rank it instantly ("we just deployed a change to #3") or know hypotheses already ruled out. Cheap checkpoint, big time saver. Don't block on it — proceed with your ranking if the user is AFK. Then test the top hypothesis; Phase 5 instruments it.
 
-3. **3-strike rule:** If 3 hypotheses fail, **STOP**. Use AskUserQuestion:
+1. **If the hypothesis is wrong:** Before forming the next, consider searching for the error. **Sanitize first** — strip hostnames, IPs, file paths, SQL fragments, customer identifiers, and any internal/proprietary data from the error message. Search only the generic error type and framework context: "{component} {sanitized error type} {framework version}". If the message is too specific to sanitize safely, or WebSearch is unavailable, skip. Then gather more evidence — do not guess.
+
+2. **3-strike rule:** If 3 hypotheses fail, **STOP**. Use AskUserQuestion:
    ```
    3 hypotheses tested, none match. This may be an architectural issue
    rather than a simple bug.
@@ -223,21 +256,35 @@ Before writing ANY fix, verify your hypothesis.
 
 ---
 
-## Phase 4: Implementation
+## Phase 5: Instrument
+
+Each probe must map to a specific prediction from Phase 4. **Change one variable at a time.**
+
+1. **Debugger / REPL inspection** if the env supports it — one breakpoint beats ten logs.
+2. **Targeted logs** at the boundaries that distinguish hypotheses.
+3. Never "log everything and grep".
+
+**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`, so cleanup is a single grep — untagged logs survive, tagged logs die.
+
+**Perf branch.** For performance regressions, logs are usually wrong. Instead establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect. Measure first, fix second.
+
+---
+
+## Phase 6: Fix + regression test
 
 Once root cause is confirmed:
 
-1. **Fix the root cause, not the symptom.** The smallest change that eliminates the actual problem.
+1. **Write the regression test _before_ the fix — but only if a correct seam exists.** A correct seam exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (a single-caller test when the bug needs multiple callers, a unit test that can't replicate the triggering chain), a test there gives false confidence. **If no correct seam exists, that itself is the finding** — note it; the architecture is preventing the bug from being locked down, and Phase 7 flags it. If a correct seam exists, turn the minimised repro into a failing test at that seam and watch it fail.
 
-2. **Minimal diff:** Fewest files touched, fewest lines changed. Resist the urge to refactor adjacent code.
+2. **Fix the root cause, not the symptom.** The smallest change that eliminates the actual problem.
 
-3. **Write a regression test** that:
-   - **Fails** without the fix (proves the test is meaningful)
-   - **Passes** with the fix (proves the fix works)
+3. **Minimal diff:** fewest files touched, fewest lines changed. Resist the urge to refactor adjacent code.
 
-4. **Run the full test suite.** Paste the output. No regressions allowed.
+4. **Watch the regression test pass**, then re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
 
-5. **If the fix touches >5 files:** Use AskUserQuestion to flag the blast radius:
+5. **Run the full test suite.** Paste the output. No regressions allowed.
+
+6. **If the fix touches >5 files:** Use AskUserQuestion to flag the blast radius:
    ```
    This fix touches N files. That's a large blast radius for a bug fix.
    A) Proceed — the root cause genuinely spans these files
@@ -247,11 +294,15 @@ Once root cause is confirmed:
 
 ---
 
-## Phase 5: Verification & Report
+## Phase 7: Verification & Report
 
-**Fresh verification:** Reproduce the original bug scenario and confirm it's fixed. This is not optional.
+**Fresh verification:** Reproduce the original bug scenario by re-running the Phase 1 loop and confirm it's fixed. This is not optional. Run the test suite and paste the output.
 
-Run the test suite and paste the output.
+Before declaring done:
+- [ ] Original repro no longer reproduces (Phase 1 loop is green)
+- [ ] Regression test passes (or the absence of a correct seam is documented)
+- [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
+- [ ] Throwaway harnesses deleted or moved to a clearly-marked debug location
 
 Output a structured debug report:
 ```
@@ -261,21 +312,24 @@ Symptom:         [what the user observed]
 Root cause:      [what was actually wrong]
 Fix:             [what was changed, with file:line references]
 Evidence:        [test output, reproduction attempt showing fix works]
-Regression test: [file:line of the new test]
+Regression test: [file:line of the new test, or documented absence of a correct seam]
 Related:         [TODOS.md items, prior bugs in same area, architectural notes]
 Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 ════════════════════════════════════════
 ```
+
+**Post-mortem — what would have prevented this bug?** State the hypothesis that turned out correct in the commit / PR message so the next debugger learns. If the answer involves architectural change (no good test seam, tangled callers, hidden coupling), **flag the architectural finding** with the specifics — make that recommendation *after* the fix is in, when you know more than you did at the start.
 
 ---
 
 ## Important Rules
 
 - **3+ failed fix attempts → STOP and question the architecture.** Wrong architecture, not failed hypothesis.
+- **No red-capable feedback loop → no hypotheses.** Building the loop (Phase 1) precedes every theory.
 - **Never apply a fix you cannot verify.** If you can't reproduce and confirm, don't ship it.
 - **Never say "this should fix it."** Verify and prove it. Run the tests.
 - **If fix touches >5 files → AskUserQuestion** about blast radius before proceeding.
 - **Completion status:**
-  - DONE — root cause found, fix applied, regression test written, all tests pass
+  - DONE — root cause found, fix applied, regression test written (or seam absence documented), all tests pass
   - DONE_WITH_CONCERNS — fixed but cannot fully verify (e.g., intermittent bug, requires staging)
   - BLOCKED — root cause unclear after investigation, escalated

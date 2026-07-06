@@ -220,6 +220,22 @@ Takes seconds, prevents recommending outdated patterns. If WebSearch is unavaila
 
 Follow the output format specified in the checklist. Respect the suppressions — do NOT flag items listed in the "DO NOT flag" section.
 
+### Two axes: Standards and Spec
+
+<!-- The two-axis structure and parallel-worker orchestration are adapted from mattpocock/skills (MIT, Copyright Matt Pocock). -->
+
+The two-pass review above is the **Standards axis** — does the diff follow this repo's documented standards plus the smell baseline in `checklist.md`? Run alongside it a **Spec axis** — does the diff faithfully implement what the originating OpenSpec change asked for?
+
+- **Spec source.** If this branch has an associated OpenSpec change, its `proposal.md` and `tasks.md` (under `openspec/changes/<change-id>/`) **are** the spec — there is no external issue tracker to consult. Find the change dir from the branch name, the commit messages, or ask the user which change this implements. If the branch has no OpenSpec change, skip the Spec axis and note "no spec available".
+- **Spec axis brief.** Against `proposal.md` / `tasks.md`, report: (a) requirements the change asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the proposal/task line for each finding. (This overlaps Step 1.5 Scope Drift, which is the fast inline version; the Spec axis is the thorough pass when a change dir exists.)
+
+**Optionally run the two axes as parallel `Agent` workers** so they don't pollute each other's context — send one message with two `Agent` tool calls (`general-purpose` subagent for both):
+
+- **Standards worker** — give it the diff command + commit list, the standards-source files, and the **full smell baseline pasted from `checklist.md`** (the worker has no other access to it). Brief: report each documented-standard violation (cite the standard) and each baseline smell (name it, quote the hunk); distinguish hard violations from judgement calls (baseline smells are always judgement calls, a documented repo standard overrides the baseline); skip what tooling enforces.
+- **Spec worker** — give it the diff command + commit list and the change's `proposal.md` / `tasks.md`; use the Spec axis brief above.
+
+Report the two side by side under `## Standards` and `## Spec` headings. **Do not merge or rerank across axes** — a change can pass one and fail the other (correct code implementing the wrong thing = Standards pass, Spec fail), and keeping them separate stops one axis from masking the other. End with a one-line count per axis and the worst issue *within each axis*; do not pick a single cross-axis winner. These findings feed the same Fix-First flow in Step 5.
+
 ---
 
 ## Step 4.5: Design Review (conditional)
