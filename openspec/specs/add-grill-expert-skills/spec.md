@@ -1,7 +1,8 @@
 # add-grill-expert-skills Specification
 
 ## Purpose
-TBD - created by archiving change phase0c-grill-add. Update Purpose after archive.
+Establishes four grill methodology expert skills — `domain-modeling`, `codebase-design`, `tdd`, and `prototype` — as source templates adapted from Matt Pocock's grill skills (MIT). These fill the fork's gap in method-level design primitives (building ubiquitous language, deep-module design vocabulary, what a test worth keeping is, and throwaway prototyping) that the workflow skills lean on but never spell out. Covers their template/preamble shape, expert registration, count assertions, and MIT attribution.
+
 ## Requirements
 ### Requirement: Four grill expert skills exist as source templates
 The system SHALL add four expert skills adapted from the grill sources (MIT, Matt Pocock), by explicit name: `domain-modeling`, `codebase-design`, `tdd`, `prototype`. Each SHALL have `skills/gstack/<name>/SKILL.md.tmpl` whose body preserves the grill source substance (leading-word vocabulary and checkable completion criteria) and whose frontmatter follows the fork convention (`name`, `version`, a `description` with a "Use when …" trigger list, `allowed-tools`), with `{{PREAMBLE}}` placed after the frontmatter. Each SHALL carry its grill reference files as sidecars in the same directory.

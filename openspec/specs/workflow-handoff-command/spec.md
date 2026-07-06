@@ -1,7 +1,8 @@
 # workflow-handoff-command Specification
 
 ## Purpose
-TBD - created by archiving change add-context-handoff. Update Purpose after archive.
+Defines the opt-in `handoff` workflow — skill `openspec-handoff` and slash command `/opsx:handoff`, generated per delivery mode and covered by drift detection like `review-cycle` — for session-level context handoff. Specifies the handoff document instructions the workflow produces (decisions, eliminated hypotheses, and the next action).
+
 ## Requirements
 ### Requirement: Handoff workflow generation
 The system SHALL provide a `handoff` workflow (skill `openspec-handoff`, slash command `/opsx:handoff`) available via ALL_WORKFLOWS (opt-in, like `review-cycle`), generated per the configured delivery mode.

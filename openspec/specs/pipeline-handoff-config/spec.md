@@ -1,7 +1,8 @@
 # pipeline-handoff-config Specification
 
 ## Purpose
-TBD - created by archiving change add-context-handoff. Update Purpose after archive.
+Adds an optional `handoff` configuration block to pipeline definitions at both pipeline and stage level — `threshold`, per-role overrides, `maxRelays`, and `stallLimit` — with a defined resolution order and validation. This lets a pipeline declare when workers should hand off and how many relays are allowed, and surfaces the resolved config together with run-state handoff records.
+
 ## Requirements
 ### Requirement: Handoff configuration block
 Pipeline definitions SHALL accept an optional `handoff` block at pipeline level and at stage level, carrying `threshold` (0–1), `roles` (per-role threshold overrides), `maxRelays`, and `stallLimit`.

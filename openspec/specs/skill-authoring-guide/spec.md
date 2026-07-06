@@ -1,7 +1,8 @@
 # skill-authoring-guide Specification
 
 ## Purpose
-TBD - created by archiving change phase0c-grill-add. Update Purpose after archive.
+Adds `docs/skill-authoring.md`, a repository document (not an installable skill) adapted from grill `writing-great-skills` (MIT). It captures the fork's skill-writing standard — leading-words, checkable completion criteria, the failure-mode clinic, and no-op deletion — and is deliberately excluded from expert registration so it does not affect skill counts.
+
 ## Requirements
 ### Requirement: Skill authoring guide added as a repository doc
 The system SHALL add `docs/skill-authoring.md`, a repository document (not an installable skill) adapted from the grill `writing-great-skills` source (SKILL.md + GLOSSARY.md, MIT, Matt Pocock). It SHALL capture the skill-writing standard: leading-words, checkable completion criteria, the failure-mode clinic, and no-op deletion. It SHALL NOT be registered as an expert template and SHALL NOT affect skill counts.

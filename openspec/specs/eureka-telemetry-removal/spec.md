@@ -1,7 +1,8 @@
 # eureka-telemetry-removal Specification
 
 ## Purpose
-TBD - created by archiving change phase0a-cleanse. Update Purpose after archive.
+Removes the eureka-moment file telemetry — the jq append that wrote `~/.openspec/analytics/eureka.jsonl` in the skill-doc generator and the matching reader in `retro`, plus the eureka-logging clauses in the skill bodies. Part of the phase0a cleanse; the project's PostHog analytics are intentionally left untouched.
+
 ## Requirements
 ### Requirement: Eureka file-telemetry writer removed
 The system SHALL NOT write eureka moments to `~/.openspec/analytics/eureka.jsonl`. The jq-append block in `gen-skill-docs.ts` `generateSearchBeforeBuildingSection` SHALL be removed. The surrounding Search-Before-Building methodology prose and the EUREKA-naming sentence SHALL be retained (their wholesale removal is deferred to the preamble-removal phase).

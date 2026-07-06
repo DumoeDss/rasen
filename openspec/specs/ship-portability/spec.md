@@ -1,7 +1,8 @@
 # ship-portability Specification
 
 ## Purpose
-TBD - created by archiving change phase0a-cleanse. Update Purpose after archive.
+Makes the `ship` skill runtime-agnostic: it runs the project's tests via the existing test-framework detection convention rather than hardcoded Rails/Vitest invocations, treats eval suites as an optional project-declared step, and stops pinning the commit co-author trailer to a specific model name. Part of the phase0a cleanse of private-repo detail leaked from the grill source.
+
 ## Requirements
 ### Requirement: Runtime-agnostic test execution in ship
 The `ship` skill SHALL run the project's test suite using a runtime-agnostic command rather than hardcoded Rails/Vitest invocations. It SHALL reuse the detection convention already established by the Test Framework Bootstrap generator (`generateTestBootstrap`) — detect the project runtime and its test command — instead of naming `bin/test-lane`, `RAILS_ENV=test bin/rails db:migrate`, `structure.sql`, or `npm run test` directly.

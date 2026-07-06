@@ -1,7 +1,8 @@
 # dead-stub-removal Specification
 
 ## Purpose
-TBD - created by archiving change phase0a-cleanse. Update Purpose after archive.
+Removes the dead `# ... pending OpenSpec integration` bash stubs — empty blocks standing in for a review-log/dashboard/diff-scope backend that does not exist in this fork — from the skill `.tmpl` sources and the generator functions, and drops the self-declared dead-end retro global-mode path. Part of the phase0a cleanse that strips transplanted residue without deleting or adding any skills.
+
 ## Requirements
 ### Requirement: No pending-integration stubs in skill sources
 The system SHALL NOT contain `# ... pending OpenSpec integration` dead bash blocks in any skill `.tmpl` file. For each block whose surrounding passage exists only to run it, the passage SHALL be removed by explicit file lookup; for each block sitting above still-working code, only the dead block SHALL be removed and the working code retained.

@@ -1,7 +1,8 @@
 # remove-setup-browser-cookies-skill Specification
 
 ## Purpose
-TBD - created by archiving change phase0b-slim. Update Purpose after archive.
+Fully removes the `setup-browser-cookies` expert skill — its skill directory, expert template, and every registration link (experts index, skill-templates re-export, and the `getSkillTemplates` entry) — since it is macOS-Keychain-oriented and Elftia's native chrome-use already covers login-state capture. Part of the phase0b slim, exercising the expert de-registration chain end to end.
+
 ## Requirements
 ### Requirement: setup-browser-cookies expert skill removed
 The `setup-browser-cookies` expert skill SHALL be fully removed. Specifically, by explicit file lookup:

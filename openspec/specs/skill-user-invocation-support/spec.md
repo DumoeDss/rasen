@@ -1,7 +1,8 @@
 # skill-user-invocation-support Specification
 
 ## Purpose
-TBD - created by archiving change phase0d-router. Update Purpose after archive.
+Adds the mechanism that lets a generated skill be installed user-invoked: an optional `disableModelInvocation` field on `SkillTemplate` that makes `generateSkillContent` emit `disable-model-invocation: true` in the frontmatter (and omit it otherwise). This closes a gap the fixed-frontmatter generation path could not previously express, and is what the `navigator` router skill relies on.
+
 ## Requirements
 ### Requirement: SkillTemplate can declare user-invocation
 The `SkillTemplate` type SHALL gain an optional `disableModelInvocation?: boolean` field, and `generateSkillContent` SHALL emit `disable-model-invocation: true` in the generated skill frontmatter when that field is set, and omit the line otherwise. This is the mechanism by which a skill is installed user-invoked (per `docs/skill-authoring.md`), which the fixed-frontmatter generation path previously could not express.

@@ -1,7 +1,8 @@
 # navigator-router-skill Specification
 
 ## Purpose
-TBD - created by archiving change phase0d-router. Update Purpose after archive.
+Adds the user-invoked `navigator` router skill (adapted from grill `ask-matt`, MIT) that maps the OPSX main flow plus the expert skills — main flow, on-ramps, a vocabulary layer, and standalone specialists, each with a one-line "when to reach for it". It cures the cognitive-load problem of holding the full expert set in mind, reflects the post-absorb reality (investigate is feedback-loop-first, review is two-axis), and registers as an expert with the count incremented by one.
+
 ## Requirements
 ### Requirement: Navigator router skill exists and is user-invoked
 The system SHALL add a router skill `navigator` at `skills/gstack/navigator/SKILL.md.tmpl` (adapted from grill `ask-matt`, MIT), installed user-invoked (`disable-model-invocation: true`) with a human-facing one-line `description` (no model-facing trigger list). Its frontmatter SHALL follow the fork convention and place `{{PREAMBLE}}` after the frontmatter, with an MIT attribution NOTICE.

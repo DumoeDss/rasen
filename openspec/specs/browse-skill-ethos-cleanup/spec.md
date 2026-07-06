@@ -1,7 +1,8 @@
 # browse-skill-ethos-cleanup Specification
 
 ## Purpose
-TBD - created by archiving change phase0d-absorb. Update Purpose after archive.
+Removes the stale pre-0b "Builder Ethos" residue — the Boil-the-Lake / Completeness-Principle blocks, the Search-Before-Building section with its `eureka.jsonl` write and `ETHOS.md`/`garryslist` references, and the dangling cross-reference — from the standalone vendored `browse/SKILL.md`, which sits outside the `skills/gstack/` generation loop and so was missed by earlier cleansing. The goal is ethos-equivalence with the already-clean generated copy; full body-parity and the broader browse de-vendor work are explicitly out of scope.
+
 ## Requirements
 ### Requirement: Stale ethos removed from the standalone browse skill
 The top-level `browse/SKILL.md` (the standalone browse package's vendored skill doc, outside the `skills/gstack/` generation loop) SHALL have its stale pre-0b ethos content removed: the `LAKE_INTRO` / Completeness-Principle / "Boil the Lake" blocks, the "Search Before Building" section (including the `eureka.jsonl` write and the `ETHOS.md` reference and `garryslist.org` links), and the dangling "(see Completeness Principle)" cross-reference.

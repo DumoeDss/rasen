@@ -1,7 +1,8 @@
 # orchestration-handoff Specification
 
 ## Purpose
-TBD - created by archiving change add-context-handoff. Update Purpose after archive.
+Defines the orchestration playbook's context-handoff protocol: every worker spawn carries a handoff clause (soft-budget/compaction/self-assessment triggers and a structured DONE-or-HANDOFF return), the LEAD relays handoffs into run-state and spawns seeded successors under relay and stall caps, and escalation stays LEAD-first and non-blocking. Preserves the single-writer run-state invariant and adds a LEAD session pre-flight probe.
+
 ## Requirements
 ### Requirement: Worker handoff contract
 The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `openspec/changes/<id>/handoff/`).

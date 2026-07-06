@@ -1,7 +1,8 @@
 # investigate-diagnosing-absorption Specification
 
 ## Purpose
-TBD - created by archiving change phase0d-absorb. Update Purpose after archive.
+Folds grill `diagnosing-bugs` (MIT) into the existing `investigate` skill: before any hypothesis work, the agent must build a tight, red-capable feedback loop that drives the actual bug code path and asserts the exact symptom — no such command means no hypothesis phase. investigate keeps its Iron Law and four-phase gates; the HITL loop template rides along as a sidecar, and the skill's registration and counts stay unchanged.
+
 ## Requirements
 ### Requirement: Investigate requires a red-capable feedback loop before hypotheses
 The `investigate` skill SHALL, before any hypothesis work, require building a tight feedback loop that can go red on the specific bug. The skill body SHALL state a hard gate: the agent can name one command it has already run at least once that drives the actual bug code path and asserts the user's exact symptom, is deterministic, fast, and agent-runnable — and that without such a command it SHALL NOT proceed to hypothesis testing. The skill SHALL keep the existing Iron Law (no fix without root cause) and its four-phase gates. This content is adapted from grill `diagnosing-bugs` (MIT) and SHALL carry an attribution note.

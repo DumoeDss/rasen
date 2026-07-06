@@ -1,7 +1,8 @@
 # cli-agent-context Specification
 
 ## Purpose
-TBD - created by archiving change add-context-handoff. Update Purpose after archive.
+Defines the `openspec agent context` command that reports an agent transcript's context-window occupancy from its recorded API usage, with no estimation. This gives any agent — the LEAD or a role-isolated worker — a deterministic number for deciding when a long run is approaching compaction, together with the context-limit resolution that turns that number into an occupancy fraction.
+
 ## Requirements
 ### Requirement: Context probe command
 The CLI SHALL provide `openspec agent context` that reports the context-window occupancy of an agent transcript from its recorded API usage, without estimation.
