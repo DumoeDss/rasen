@@ -83,6 +83,18 @@
 - 别把 `validate --pipelines` 改回 cwd 语义来"消除不一致"——方向应是 pipeline 命令组向 root-selection 靠拢。
 - a325305 不是大重构（archive.ts 仅 +4/−4），别按"大架构收敛提交"去理解它；archive/validate 的大变化来自 stores beta 的根解析改造。
 
+## 事故记录（2026-07-06 晚，已恢复，根因待查）
+
+用户的真实全局配置 `%APPDATA%\openspec\config.json` 在 22:29:20 被改写为 `profile: custom` + 仅 4 个 workflows（`new,ff,apply,archive`），导致之后 `openspec init` 只装 4 个 workflow skill/command。**已恢复**：profile custom + 全部 18 个 ALL_WORKFLOWS，并重跑 `openspec update`（48 skills + 18 commands 齐全）。
+
+**根因未定**，线索：
+- 写入内容与 `test/commands/config.test.ts:108` 的 "set workflows from JSON array syntax" 测试完全一致（`["new","ff","apply","archive"]`）；
+- 但该文件的隔离看起来是完好的（beforeEach 设 `XDG_CONFIG_HOME` 临时目录，`getGlobalConfigDir` 在所有平台都优先 XDG）；
+- 22:29:20 不在本 session 任何一次测试运行的时间窗内；当天有其他并行 session 在此仓库工作（archived add-context-handoff）。
+- 已排查：`test/core/update.test.ts` mock 了 global-config（安全）；其余写 global config 的测试文件都引用了 XDG 隔离。
+
+**待查**：在 Windows 上复核每个写 global config 的测试的隔离是否真正生效（尤其 vitest worker 复用/模块缓存时序），或确认是并行 session 所为。在查清前，**跑全量测试后建议顺手 `openspec config list` 核对真实配置未被污染**。
+
 ## 下一步（第一个具体动作）
 
 向用户确认后，创建 OPSX change `fix-pipeline-root-selection`，按上面"修复方案"五点实施。验证标准：子目录与 store-pointer 仓库里 `pipeline list` 与 `validate --pipelines` 看到同一 pipeline 集合；store-root change 上 `pipeline resume` 能读到 run-state。
