@@ -17,7 +17,7 @@ The system SHALL add a router skill `navigator` at `skills/gstack/navigator/SKIL
 - **AND** its `description` SHALL be a one-line human-facing summary without a "Use when …" trigger list
 
 ### Requirement: Navigator maps OPSX and the experts, reflecting the post-absorb state
-The navigator body SHALL present a four-part map: a main flow (`/opsx:explore` or `/opsx:office-hours` → `/opsx:propose` → `/opsx:apply` → review/verify → `/opsx:ship` → `/opsx:archive` → `/opsx:retro`, with `/opsx:auto` as the driver), on-ramps, a vocabulary layer (`/domain-modeling`, `/codebase-design`), and standalone specialists, each with a one-line "when to reach for it". It SHALL reflect the post-0d-absorb reality and SHALL NOT reference grill skills absent from this fork.
+The navigator body SHALL present a four-part map: a main flow (`/opsx:explore` or `/opsx:office-hours` → `/opsx:propose` → `/opsx:apply` → review/verify → `/opsx:ship` → `/opsx:archive` → `/opsx:retro`, with `/opsx:auto` as the driver), on-ramps, a vocabulary layer (`/domain-modeling`, `/codebase-design`), and standalone specialists, each with a one-line "when to reach for it". It SHALL reflect the post-absorb reality and SHALL NOT reference grill skills absent from this fork, nor any of the removed parallel-lifecycle skills. The map SHALL NOT contain a Deploy family section, a Plan family section, a standalone `/retro` entry, or a `/document-release` entry.
 
 #### Scenario: Four-part map present
 - **WHEN** the generated navigator skill is inspected
@@ -32,6 +32,11 @@ The navigator body SHALL present a four-part map: a main flow (`/opsx:explore` o
 #### Scenario: No fork-absent grill skills referenced
 - **WHEN** the navigator map is inspected
 - **THEN** it SHALL NOT reference `/to-prd`, `/to-issues`, `/implement`, `/triage`, `/improve-codebase-architecture`, `/research`, `/teach`, `/grill-me`, `/grill-with-docs`, or `/setup-matt-pocock-skills`
+
+#### Scenario: No removed parallel-lifecycle skills referenced
+- **WHEN** the navigator map is inspected
+- **THEN** it SHALL NOT reference `/autoplan`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/land-and-deploy`, `/setup-deploy`, `/canary`, `/document-release`, or a standalone `/retro` expert
+- **AND** the `/opsx:ship` and `/opsx:retro` entries in the main flow SHALL remain
 
 ### Requirement: Navigator registered as an expert with count +1
 The navigator SHALL be registered through the expert chain: `src/core/templates/experts/navigator.ts` (setting `disableModelInvocation: true`), an export in `experts/index.ts`, a re-export in `skill-templates.ts`, and an import plus `getSkillTemplates()` entry (`dirName: 'openspec-gstack-navigator'`, `workflowId: 'navigator'`) in `skill-generation.ts`. The expert count in `test/core/shared/skill-generation.test.ts` SHALL increase by one (applied as a delta to current committed values, per the sibling-conflict guidance). An AGENTS.md row SHALL be added.

@@ -37,18 +37,18 @@ The auto command SHALL classify the task and select a pipeline from the pipeline
 
 ### Requirement: Full Feature Pipeline
 
-Full feature pipeline SHALL execute: office-hours, propose, autoplan/expert reviews, apply, verify, ship, archive, retro.
+Full feature pipeline SHALL execute: office-hours, propose, parallel expert reviews, apply, verify, ship, archive, retro. Planning and task generation are produced by the propose stage; review depth comes from the pipeline registry's expert-review stages and the review-loop, not from a standalone planning skill.
 
 #### Scenario: Full feature pipeline stages
 
 - **WHEN** the full feature pipeline runs
-- **THEN** the system SHALL execute stages in order: office-hours → propose → [autoplan/expert reviews] → apply → verify → ship → archive → retro
+- **THEN** the system SHALL execute stages in order: office-hours → propose → [parallel expert reviews + review-loop] → apply → verify → ship → archive → retro
 - **AND** each stage SHALL wait for the previous stage to complete before starting
 
 #### Scenario: Expert selection for full features
 
 - **WHEN** executing the expert review stage of a full feature pipeline
-- **THEN** the system SHALL invoke /autoplan for planning and task generation
+- **THEN** the system SHALL run the pipeline registry's expert-review stages against the propose output (the `review` expert, plus `cso`/`benchmark`/`qa`/`design-review` as the change warrants), iterating through the review-loop
 - **AND** SHALL invoke /cso if the change is security-relevant
 - **AND** SHALL invoke /benchmark if the change is performance-sensitive
 
@@ -83,7 +83,7 @@ The command SHALL provide 3 pause points for user confirmation during pipeline e
 
 #### Scenario: Pause at Planning to Implementation transition
 
-- **WHEN** the pipeline completes the planning phase (propose/office-hours/autoplan)
+- **WHEN** the pipeline completes the planning phase (office-hours/propose)
 - **AND** is about to begin implementation (apply)
 - **THEN** the system SHALL pause and display a summary of the plan
 - **AND** SHALL prompt the user to confirm before proceeding to implementation
@@ -123,10 +123,11 @@ On invocation, auto SHALL determine where to resume from the change's artifacts 
 
 Expert selection SHALL be context-aware based on change characteristics.
 
-#### Scenario: Autoplan for full features
+#### Scenario: Planning for full features
 
 - **WHEN** the pipeline is classified as Full Feature
-- **THEN** the system SHALL invoke /autoplan for comprehensive planning and task generation
+- **THEN** the system SHALL produce comprehensive planning and task generation through the propose stage and the pipeline registry's expert-review stages
+- **AND** SHALL NOT invoke a standalone /autoplan skill
 
 #### Scenario: CSO for security-relevant changes
 
