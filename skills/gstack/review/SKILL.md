@@ -92,12 +92,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-```
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Completion Status Protocol
@@ -131,18 +125,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+3. If it does NOT — write a `## GSTACK REVIEW REPORT` section to the end of the plan file with this placeholder table:
 
 \`\`\`markdown
 ## GSTACK REVIEW REPORT
@@ -285,8 +268,6 @@ Follow the output format specified in the checklist. Respect the suppressions �
 Check if the diff touches frontend files by inspecting changed file extensions:
 
 ```bash
-# Diff scope detection: pending OpenSpec integration
-# For now, check manually: look at git diff --name-only for .tsx, .jsx, .css, .scss, .html files
 SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\.(tsx|jsx|css|scss|html|vue|svelte)$' && echo "true" || echo "false")
 ```
 
@@ -306,14 +287,6 @@ SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\.(t
    - **[LOW] intent-based detection**: present as "Possible — verify visually or run /design-review"
 
 5. **Include findings** in the review output under a "Design Review" header, following the output format in the checklist. Design findings merge with code review findings into the same Fix-First flow.
-
-6. **Log the result** for the Review Readiness Dashboard:
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of `git rev-parse --short HEAD`.
 
 Include any design findings alongside the findings from Step 4. They follow the same Fix-First flow in Step 5 — AUTO-FIX for mechanical CSS fixes, ASK for everything else.
 
@@ -619,13 +592,8 @@ DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion'
 DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
 which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-# Respect old opt-out
-# Config check: pending OpenSpec integration
 echo "DIFF_SIZE: $DIFF_TOTAL"
-echo "OLD_CFG: ${OLD_CFG:-not_set}"
 ```
-
-If `OLD_CFG` is `disabled`: skip this step silently. Continue to the next step.
 
 **User override:** If the user explicitly requested a specific tier (e.g., "run all passes", "paranoid review", "full adversarial", "do all 4 passes", "thorough review"), honor that request regardless of diff size. Jump to the matching tier section.
 
@@ -674,12 +642,6 @@ Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXA
 
 If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing without adversarial review."
 
-**Persist the review result:**
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-Substitute STATUS: "clean" if no findings, "issues_found" if findings exist. SOURCE: "codex" if Codex ran, "claude" if subagent ran. If both failed, do NOT persist.
-
 **Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing (if Codex was used).
 
 ---
@@ -716,12 +678,6 @@ After stderr: `rm -f "$TMPERR"`
 **3. Codex adversarial challenge (if available):** Run `codex exec` with the adversarial prompt (same as medium tier).
 
 If Codex is not available for steps 1 and 3, note to the user: "Codex CLI not found — large-diff review ran Claude structured + Claude adversarial (2 of 4 passes). Install Codex for full 4-pass coverage: `npm install -g @openai/codex`"
-
-**Persist the review result AFTER all passes complete** (not after each sub-step):
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
 ---
 

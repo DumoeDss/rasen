@@ -320,12 +320,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-\`\`\`bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-\`\`\`
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."`;
 }
 
@@ -363,18 +357,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a \`## GSTACK REVIEW REPORT\` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\\\`\\\`\\\`bash
-# Review dashboard: pending OpenSpec integration
-\\\`\\\`\\\`
-
-Then write a \`## GSTACK REVIEW REPORT\` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before \`---CONFIG---\`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is \`NO_REVIEWS\` or empty: write this placeholder table:
+3. If it does NOT — write a \`## GSTACK REVIEW REPORT\` section to the end of the plan file with this placeholder table:
 
 \\\`\\\`\\\`markdown
 ## GSTACK REVIEW REPORT
@@ -733,8 +716,6 @@ function generateDesignReviewLite(_ctx: TemplateContext): string {
 Check if the diff touches frontend files by inspecting changed file extensions:
 
 \`\`\`bash
-# Diff scope detection: pending OpenSpec integration
-# For now, check manually: look at git diff --name-only for .tsx, .jsx, .css, .scss, .html files
 SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\\.(tsx|jsx|css|scss|html|vue|svelte)$' && echo "true" || echo "false")
 \`\`\`
 
@@ -753,15 +734,7 @@ SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\\.(
    - **[HIGH/MEDIUM] design judgment needed**: classify as ASK
    - **[LOW] intent-based detection**: present as "Possible — verify visually or run /design-review"
 
-5. **Include findings** in the review output under a "Design Review" header, following the output format in the checklist. Design findings merge with code review findings into the same Fix-First flow.
-
-6. **Log the result** for the Review Readiness Dashboard:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of \`git rev-parse --short HEAD\`.`;
+5. **Include findings** in the review output under a "Design Review" header, following the output format in the checklist. Design findings merge with code review findings into the same Fix-First flow.`;
 }
 
 // NOTE: design-checklist.md is a subset of this methodology for code-level detection.
@@ -1102,13 +1075,9 @@ Tie everything to user goals and product objectives. Always suggest specific imp
 function generateReviewDashboard(_ctx: TemplateContext): string {
   return `## Review Readiness Dashboard
 
-After completing the review, read the review log and config to display the dashboard.
+After completing the review, display a readiness dashboard summarizing which reviews have run in this session and their outcomes. Base the dashboard on the reviews actually performed in the current conversation.
 
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite, adversarial-review, codex-review). Ignore entries with timestamps older than 7 days. For the Adversarial row, show whichever is more recent between \`adversarial-review\` (new auto-scaled) and \`codex-review\` (legacy). For Design Review, show whichever is more recent between \`plan-design-review\` (full visual audit) and \`design-review-lite\` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
+Display:
 
 \`\`\`
 +====================================================================+
@@ -1116,7 +1085,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 +====================================================================+
 | Review          | Runs | Last Run            | Status    | Required |
 |-----------------|------|---------------------|-----------|----------|
-| Eng Review      |  1   | 2026-03-16 15:00    | CLEAR     | YES      |
+| Eng Review      |  1   | this session        | CLEAR     | YES      |
 | CEO Review      |  0   | —                   | —         | no       |
 | Design Review   |  0   | —                   | —         | no       |
 | Adversarial     |  0   | —                   | —         | no       |
@@ -1132,16 +1101,9 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Adversarial Review (automatic):** Auto-scales by diff size. Small diffs (<50 lines) skip adversarial. Medium diffs (50–199) get cross-model adversarial. Large diffs (200+) get all 4 passes: Claude structured, Codex structured, Claude adversarial subagent, Codex adversarial. No configuration needed.
 
 **Verdict logic:**
-- **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \\\`skip_eng_review\\\` is \\\`true\\\`)
-- **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
-- CEO, Design, and Codex reviews are shown for context but never block shipping
-- If \\\`skip_eng_review\\\` config is \\\`true\\\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
-
-**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Parse the \\\`---HEAD---\\\` section from the bash output to get the current HEAD commit hash
-- For each review entry that has a \\\`commit\\\` field: compare it against the current HEAD. If different, count elapsed commits: \\\`git rev-list --count STORED_COMMIT..HEAD\\\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
-- For entries without a \\\`commit\\\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
-- If all reviews match the current HEAD, do not display any staleness notes`;
+- **CLEARED**: Eng Review ran in this session with status "clean" (or the user explicitly opted out of eng review)
+- **NOT CLEARED**: Eng Review not run in this session, or has open issues
+- CEO, Design, and Adversarial reviews are shown for context but never block shipping`;
 }
 
 function generatePlanFileReviewReport(_ctx: TemplateContext): string {
@@ -1903,13 +1865,8 @@ DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion'
 DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
 which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-# Respect old opt-out
-# Config check: pending OpenSpec integration
 echo "DIFF_SIZE: $DIFF_TOTAL"
-echo "OLD_CFG: \${OLD_CFG:-not_set}"
 \`\`\`
-
-If \`OLD_CFG\` is \`disabled\`: skip this step silently. Continue to the next step.
 
 **User override:** If the user explicitly requested a specific tier (e.g., "run all passes", "paranoid review", "full adversarial", "do all 4 passes", "thorough review"), honor that request regardless of diff size. Jump to the matching tier section.
 
@@ -1958,12 +1915,6 @@ Present findings under an \`ADVERSARIAL REVIEW (Claude subagent):\` header. **FI
 
 If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing without adversarial review."
 
-**Persist the review result:**
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-Substitute STATUS: "clean" if no findings, "issues_found" if findings exist. SOURCE: "codex" if Codex ran, "claude" if subagent ran. If both failed, do NOT persist.
-
 **Cleanup:** Run \`rm -f "$TMPERR_ADV"\` after processing (if Codex was used).
 
 ---
@@ -2000,12 +1951,6 @@ After stderr: \`rm -f "$TMPERR"\`
 **3. Codex adversarial challenge (if available):** Run \`codex exec\` with the adversarial prompt (same as medium tier).
 
 If Codex is not available for steps 1 and 3, note to the user: "Codex CLI not found — large-diff review ran Claude structured + Claude adversarial (2 of 4 passes). Install Codex for full 4-pass coverage: \`npm install -g @openai/codex\`"
-
-**Persist the review result AFTER all passes complete** (not after each sub-step):
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
 ---
 

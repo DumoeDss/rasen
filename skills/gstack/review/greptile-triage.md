@@ -134,7 +134,7 @@ Use these templates for every Greptile reply. Always include concrete evidence â
 
 ### Tier 2 (Greptile re-flags after prior reply) â€” Firm, overwhelming evidence
 
-Use Tier 2 when escalation detection (below) identifies a prior GStack reply on the same thread. Include maximum evidence to close the discussion.
+Use Tier 2 when escalation detection (below) identifies a prior automated review reply on the same thread. Include maximum evidence to close the discussion.
 
 ```
 **This has been reviewed and confirmed as [intentional/already-fixed/not-a-bug].**
@@ -155,15 +155,15 @@ Use Tier 2 when escalation detection (below) identifies a prior GStack reply on 
 
 ## Escalation Detection
 
-Before composing a reply, check if a prior GStack reply already exists on this comment thread:
+Before composing a reply, check if a prior automated review reply already exists on this comment thread:
 
-1. **For line-level comments:** Fetch replies via `gh api repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies`. Check if any reply body contains GStack markers: `**Fixed**`, `**Not a bug.**`, `**Already fixed**`.
+1. **For line-level comments:** Fetch replies via `gh api repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies`. Check if any reply body contains automated-reply markers: `**Fixed**`, `**Not a bug.**`, `**Already fixed**`.
 
-2. **For top-level comments:** Scan the fetched issue comments for replies posted after the Greptile comment that contain GStack markers.
+2. **For top-level comments:** Scan the fetched issue comments for replies posted after the Greptile comment that contain automated-reply markers.
 
-3. **If a prior GStack reply exists AND Greptile posted again on the same file+category:** Use Tier 2 (firm) templates.
+3. **If a prior automated review reply exists AND Greptile posted again on the same file+category:** Use Tier 2 (firm) templates.
 
-4. **If no prior GStack reply exists:** Use Tier 1 (friendly) templates.
+4. **If no prior automated review reply exists:** Use Tier 1 (friendly) templates.
 
 If escalation detection fails (API error, ambiguous thread): default to Tier 1. Never escalate on ambiguity.
 
@@ -185,7 +185,7 @@ Before writing, ensure both directories exist:
 ```bash
 REMOTE_SLUG=$(browse/bin/remote-slug 2>/dev/null || ~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 mkdir -p "$HOME/.openspec/projects/$REMOTE_SLUG"
-mkdir -p ~/.gstack
+mkdir -p ~/.openspec
 ```
 
 Append one line per triage outcome to **both** files (per-project for suppressions, global for retro):
@@ -199,9 +199,9 @@ Format:
 
 Example entries:
 ```
-2026-03-13 | garrytan/myapp | fp | app/services/auth_service.rb | race-condition
-2026-03-13 | garrytan/myapp | fix | app/models/user.rb | null-check
-2026-03-13 | garrytan/myapp | already-fixed | lib/payments.rb | error-handling
+2026-03-13 | owner/myapp | fp | app/services/auth_service.rb | race-condition
+2026-03-13 | owner/myapp | fix | app/models/user.rb | null-check
+2026-03-13 | owner/myapp | already-fixed | lib/payments.rb | error-handling
 ```
 
 ---

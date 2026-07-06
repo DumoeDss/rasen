@@ -124,16 +124,7 @@ CROSS-MODEL ANALYSIS:
   Agreement rate: X% (N/M total unique findings overlap)
 ```
 
-7. Persist the review result:
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Substitute: TIMESTAMP (ISO 8601), STATUS ("clean" if PASS, "issues_found" if FAIL),
-GATE ("pass" or "fail"), findings (count of [P1] + [P2] markers),
-findings_fixed (count of findings that were addressed/fixed before shipping).
-
-8. Clean up temp files:
+7. Clean up temp files:
 ```bash
 rm -f "$TMPERR"
 ```

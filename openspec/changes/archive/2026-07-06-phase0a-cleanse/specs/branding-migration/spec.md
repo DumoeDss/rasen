@@ -1,8 +1,5 @@
-# branding-migration Specification
+## MODIFIED Requirements
 
-## Purpose
-Replace legacy Claude Code + gstack branding — prose mentions and garryslist.org URLs — with OpenSpec branding across generated content.
-## Requirements
 ### Requirement: CC+gstack branding replaced
 All occurrences of "CC+gstack" in `gen-skill-docs.ts` generator functions, `.tmpl` files, AND static (non-generated) skill content files under `skills/gstack/review/` SHALL be replaced with "AI-assisted".
 
@@ -16,27 +13,7 @@ All occurrences of "CC+gstack" in `gen-skill-docs.ts` generator functions, `.tmp
 - **THEN** none SHALL contain the string "CC+gstack"
 - **AND** effort wording SHALL read "AI-assisted"
 
-### Requirement: garryslist.org URLs removed
-All `garryslist.org` URLs SHALL be removed from generator functions and `.tmpl` files.
-
-#### Scenario: No garryslist URLs in generated files
-- **WHEN** all SKILL.md files are regenerated
-- **THEN** none SHALL contain `garryslist.org`
-
-### Requirement: gstack branding in prose replaced
-Prose text referencing gstack as a product (not as a binary name) SHALL be updated:
-- "gstack follows the **Boil the Lake** principle" → "**Completeness Principle**: always do the complete thing when AI makes the marginal cost near-zero"
-- "gstack skills" (when referring to suggestions) → "expert skills"
-- "gstack browse" (when referring to the tool) → "browse"
-
-#### Scenario: Completeness section uses OpenSpec branding
-- **WHEN** the completeness section is generated
-- **THEN** it SHALL NOT attribute the principle to "gstack"
-- **AND** it SHALL present it as a general engineering principle
-
-#### Scenario: Proactive suggestion text updated
-- **WHEN** the proactive suggestion section is generated
-- **THEN** it SHALL say "expert skills" instead of "gstack skills"
+## ADDED Requirements
 
 ### Requirement: Personal-brand founder prose removed
 The system SHALL NOT contain first-person founder-endorsement prose attributed to Garry Tan or GStack in any skill source or generated output. This targets the three "A personal note from me, Garry Tan, the creator of GStack" cards in `office-hours`, replacing each with neutral wording or removing it.
@@ -80,4 +57,3 @@ The system SHALL NOT contain gstack product-attribution footers or `garrytan/gst
 - **WHEN** `skills/gstack/review/greptile-triage.md` is inspected
 - **THEN** it SHALL NOT reference `~/.gstack`
 - **AND** it SHALL reference `~/.openspec` for the equivalent state directory
-

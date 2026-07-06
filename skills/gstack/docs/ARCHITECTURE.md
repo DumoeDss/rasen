@@ -309,7 +309,7 @@ The `parseNDJSON()` function is pure — no I/O, no side effects — making it i
   │  on failure:
   │  {name}-failure.json
   │
-  │  ALL files in ~/.gstack-dev/
+  │  ALL files in ~/.openspec-dev/
   │  Run dir: e2e-runs/{runId}/
   │
   │         eval-watch.ts
@@ -328,7 +328,7 @@ The `parseNDJSON()` function is pure — no I/O, no side effects — making it i
 
 **Machine-readable diagnostics:** Each test result includes `exit_reason` (success, timeout, error_max_turns, error_api, exit_code_N), `timeout_at_turn`, and `last_tool_call`. This enables `jq` queries like:
 ```bash
-jq '.tests[] | select(.exit_reason == "timeout") | .last_tool_call' ~/.gstack-dev/evals/_partial-e2e.json
+jq '.tests[] | select(.exit_reason == "timeout") | .last_tool_call' ~/.openspec-dev/evals/_partial-e2e.json
 ```
 
 ### Eval persistence (`test/helpers/eval-store.ts`)
@@ -338,7 +338,7 @@ The `EvalCollector` accumulates test results and writes them in two ways:
 1. **Incremental:** `savePartial()` writes `_partial-e2e.json` after each test (atomic: write `.tmp`, `fs.renameSync`). Survives kills.
 2. **Final:** `finalize()` writes a timestamped eval file (e.g. `e2e-20260314-143022.json`). The partial file is never cleaned up — it persists alongside the final file for observability.
 
-`eval:compare` diffs two eval runs. `eval:summary` aggregates stats across all runs in `~/.gstack-dev/evals/`.
+`eval:compare` diffs two eval runs. `eval:summary` aggregates stats across all runs in `~/.openspec-dev/evals/`.
 
 ### Test tiers
 

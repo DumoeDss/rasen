@@ -264,38 +264,15 @@ If any below 8: note what's unresolved and why (user chose to defer).
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note it here. Never silently default to an option.
 
-## Review Log
-
-After producing the Completion Summary above, persist the review result.
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.openspec/` (user config directory, not project files). The skill preamble
-already writes to `~/.openspec/sessions/` and `~/.openspec/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Substitute values from the Completion Summary:
-- **TIMESTAMP**: current ISO 8601 datetime
-- **STATUS**: "clean" if overall score 8+ AND 0 unresolved; otherwise "issues_open"
-- **initial_score**: initial overall design score before fixes (0-10)
-- **overall_score**: final overall design score after fixes (0-10)
-- **unresolved**: number of unresolved design decisions
-- **decisions_made**: number of design decisions added to the plan
-- **COMMIT**: output of `git rev-parse --short HEAD`
-
 {{REVIEW_DASHBOARD}}
 
 {{PLAN_FILE_REVIEW_REPORT}}
 
 ## Next Steps — Review Chaining
 
-After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this design review discovered. Read the dashboard output to see which reviews have already been run and whether they are stale.
+After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this design review discovered. Use the dashboard to see which reviews have already been run this session.
 
-**Recommend /plan-eng-review if eng review is not skipped globally** — check the dashboard output for `skip_eng_review`. If it is `true`, eng review is opted out — do not recommend it. Otherwise, eng review is the required shipping gate. If this design review added significant interaction specifications, new user flows, or changed the information architecture, emphasize that eng review needs to validate the architectural implications. If an eng review already exists but the commit hash shows it predates this design review, note that it may be stale and should be re-run.
+**Recommend /plan-eng-review unless the user opted out of eng review** — if the user opted out of eng review this session, do not recommend it. Otherwise, eng review is the required shipping gate. If this design review added significant interaction specifications, new user flows, or changed the information architecture, emphasize that eng review needs to validate the architectural implications. If an eng review was run earlier but the plan has changed substantially since this design review, note that it may be stale and should be re-run.
 
 **Consider recommending /plan-ceo-review** — but only if this design review revealed fundamental product direction gaps. Specifically: if the overall design score started below 4/10, if the information architecture had major structural problems, or if the review surfaced questions about whether the right problem is being solved. AND no CEO review exists in the dashboard. This is a selective recommendation — most design reviews should NOT trigger a CEO review.
 

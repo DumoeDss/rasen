@@ -124,34 +124,7 @@ and get explicit user confirmation before proceeding.
 
 Collect evidence for each check below. Track warnings (yellow) and blockers (red).
 
-### 3.5a: Review staleness check
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Parse the output. For each review skill (plan-eng-review, plan-ceo-review,
-plan-design-review, design-review-lite, codex-review):
-
-1. Find the most recent entry within the last 7 days.
-2. Extract its `commit` field.
-3. Compare against current HEAD: `git rev-list --count STORED_COMMIT..HEAD`
-
-**Staleness rules:**
-- 0 commits since review → CURRENT
-- 1-3 commits since review → RECENT (yellow if those commits touch code, not just docs)
-- 4+ commits since review → STALE (red — review may not reflect current code)
-- No review found → NOT RUN
-
-**Critical check:** Look at what changed AFTER the last review. Run:
-```bash
-git log --oneline STORED_COMMIT..HEAD
-```
-If any commits after the review contain words like "fix", "refactor", "rewrite",
-"overhaul", or touch more than 5 files — flag as **STALE (significant changes
-since review)**. The review was done on different code than what's about to merge.
-
-### 3.5b: Test results
+### 3.5a: Test results
 
 **Free tests — run them now:**
 
@@ -164,30 +137,33 @@ bun test 2>&1 | tail -10
 
 If tests fail: **BLOCKER.** Cannot merge with failing tests.
 
-**E2E tests — check recent results:**
+**E2E tests — check recent results (if the project declares an eval-output location):**
+
+If the project declares where it writes E2E/integration eval results (e.g. an eval-output directory noted in CLAUDE.md), list today's most recent result files from there. Replace `<eval-output-dir>` with that location:
 
 ```bash
-ls -t ~/.gstack-dev/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+ls -t <eval-output-dir>/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
 ```
 
 For each eval file from today, parse pass/fail counts. Show:
 - Total tests, pass count, fail count
 - How long ago the run finished (from file timestamp)
-- Total cost
+- Total cost (if recorded)
 - Names of any failing tests
 
+If the project declares no eval-output location, skip this sub-step.
 If no E2E results from today: **WARNING — no E2E tests run today.**
 If E2E results exist but have failures: **WARNING — N tests failed.** List them.
 
-**LLM judge evals — check recent results:**
+**LLM judge evals — check recent results (if declared):**
 
 ```bash
-ls -t ~/.gstack-dev/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
+ls -t <eval-output-dir>/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
 ```
 
-If found, parse and show pass/fail. If not found, note "No LLM evals run today."
+If found, parse and show pass/fail. If not found or not declared, note "No LLM evals run today."
 
-### 3.5c: PR body accuracy check
+### 3.5b: PR body accuracy check
 
 Read the current PR body:
 ```bash
@@ -207,7 +183,7 @@ Compare the PR body against the actual commits. Check for:
 If the PR body looks stale or incomplete: **WARNING — PR body may not reflect current
 changes.** List what's missing or stale.
 
-### 3.5d: Document-release check
+### 3.5c: Document-release check
 
 Check if documentation was updated on this branch:
 
@@ -226,7 +202,7 @@ likely not run. CHANGELOG and VERSION not updated despite new features.**
 
 If only docs changed (no code): skip this check.
 
-### 3.5e: Readiness report and confirmation
+### 3.5d: Readiness report and confirmation
 
 Build the full readiness report:
 
@@ -329,10 +305,14 @@ First, run the deploy configuration bootstrap to detect or read persisted deploy
 
 {{DEPLOY_BOOTSTRAP}}
 
-Then classify the changes (check which file types were modified):
+Then classify the changes by inspecting which file types the merged diff touched:
 
 ```bash
-# Diff scope detection: pending OpenSpec integration
+FILES=$(git diff --name-only origin/<base>...HEAD)
+echo "$FILES" | grep -qE '\.(tsx|jsx|ts|js|mjs|cjs|css|scss|less|html|vue|svelte)$' && SCOPE_FRONTEND=true || SCOPE_FRONTEND=false
+echo "$FILES" | grep -qvE '\.(md|txt|ya?ml|json|toml|lock)$' && SCOPE_BACKEND=true || SCOPE_BACKEND=false
+echo "$FILES" | grep -qE '\.(md|mdx|txt)$' && SCOPE_DOCS=true || SCOPE_DOCS=false
+echo "$FILES" | grep -qE '(\.ya?ml|\.json|\.toml|\.env|Dockerfile|\.config\.)' && SCOPE_CONFIG=true || SCOPE_CONFIG=false
 echo "FRONTEND=$SCOPE_FRONTEND BACKEND=$SCOPE_BACKEND DOCS=$SCOPE_DOCS CONFIG=$SCOPE_CONFIG"
 ```
 

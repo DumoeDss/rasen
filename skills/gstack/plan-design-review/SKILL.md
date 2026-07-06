@@ -92,12 +92,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-```
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Completion Status Protocol
@@ -131,18 +125,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+3. If it does NOT — write a `## GSTACK REVIEW REPORT` section to the end of the plan file with this placeholder table:
 
 \`\`\`markdown
 ## GSTACK REVIEW REPORT
@@ -422,38 +405,11 @@ If any below 8: note what's unresolved and why (user chose to defer).
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note it here. Never silently default to an option.
 
-## Review Log
-
-After producing the Completion Summary above, persist the review result.
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.openspec/` (user config directory, not project files). The skill preamble
-already writes to `~/.openspec/sessions/` and `~/.openspec/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Substitute values from the Completion Summary:
-- **TIMESTAMP**: current ISO 8601 datetime
-- **STATUS**: "clean" if overall score 8+ AND 0 unresolved; otherwise "issues_open"
-- **initial_score**: initial overall design score before fixes (0-10)
-- **overall_score**: final overall design score after fixes (0-10)
-- **unresolved**: number of unresolved design decisions
-- **decisions_made**: number of design decisions added to the plan
-- **COMMIT**: output of `git rev-parse --short HEAD`
-
 ## Review Readiness Dashboard
 
-After completing the review, read the review log and config to display the dashboard.
+After completing the review, display a readiness dashboard summarizing which reviews have run in this session and their outcomes. Base the dashboard on the reviews actually performed in the current conversation.
 
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite, adversarial-review, codex-review). Ignore entries with timestamps older than 7 days. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
+Display:
 
 ```
 +====================================================================+
@@ -461,7 +417,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 +====================================================================+
 | Review          | Runs | Last Run            | Status    | Required |
 |-----------------|------|---------------------|-----------|----------|
-| Eng Review      |  1   | 2026-03-16 15:00    | CLEAR     | YES      |
+| Eng Review      |  1   | this session        | CLEAR     | YES      |
 | CEO Review      |  0   | —                   | —         | no       |
 | Design Review   |  0   | —                   | —         | no       |
 | Adversarial     |  0   | —                   | —         | no       |
@@ -477,16 +433,9 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Adversarial Review (automatic):** Auto-scales by diff size. Small diffs (<50 lines) skip adversarial. Medium diffs (50–199) get cross-model adversarial. Large diffs (200+) get all 4 passes: Claude structured, Codex structured, Claude adversarial subagent, Codex adversarial. No configuration needed.
 
 **Verdict logic:**
-- **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \`skip_eng_review\` is \`true\`)
-- **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
-- CEO, Design, and Codex reviews are shown for context but never block shipping
-- If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
-
-**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Parse the \`---HEAD---\` section from the bash output to get the current HEAD commit hash
-- For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
-- For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
-- If all reviews match the current HEAD, do not display any staleness notes
+- **CLEARED**: Eng Review ran in this session with status "clean" (or the user explicitly opted out of eng review)
+- **NOT CLEARED**: Eng Review not run in this session, or has open issues
+- CEO, Design, and Adversarial reviews are shown for context but never block shipping
 
 ## Plan File Review Report
 
@@ -557,9 +506,9 @@ plan's living status.
 
 ## Next Steps — Review Chaining
 
-After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this design review discovered. Read the dashboard output to see which reviews have already been run and whether they are stale.
+After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this design review discovered. Use the dashboard to see which reviews have already been run this session.
 
-**Recommend /plan-eng-review if eng review is not skipped globally** — check the dashboard output for `skip_eng_review`. If it is `true`, eng review is opted out — do not recommend it. Otherwise, eng review is the required shipping gate. If this design review added significant interaction specifications, new user flows, or changed the information architecture, emphasize that eng review needs to validate the architectural implications. If an eng review already exists but the commit hash shows it predates this design review, note that it may be stale and should be re-run.
+**Recommend /plan-eng-review unless the user opted out of eng review** — if the user opted out of eng review this session, do not recommend it. Otherwise, eng review is the required shipping gate. If this design review added significant interaction specifications, new user flows, or changed the information architecture, emphasize that eng review needs to validate the architectural implications. If an eng review was run earlier but the plan has changed substantially since this design review, note that it may be stale and should be re-run.
 
 **Consider recommending /plan-ceo-review** — but only if this design review revealed fundamental product direction gaps. Specifically: if the overall design score started below 4/10, if the information architecture had major structural problems, or if the review surfaced questions about whether the right problem is being solved. AND no CEO review exists in the dashboard. This is a selective recommendation — most design reviews should NOT trigger a CEO review.
 

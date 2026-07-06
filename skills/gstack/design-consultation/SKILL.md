@@ -94,12 +94,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-```
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Completion Status Protocol
@@ -133,18 +127,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+3. If it does NOT — write a `## GSTACK REVIEW REPORT` section to the end of the plan file with this placeholder table:
 
 \`\`\`markdown
 ## GSTACK REVIEW REPORT
@@ -275,7 +258,7 @@ If browse is not available, rely on WebSearch results and your built-in design k
 - **Layer 2 (new and popular):** What are the search results and current design discourse saying? What's trending? What new patterns are emerging?
 - **Layer 3 (first principles):** Given what we know about THIS product's users and positioning — is there a reason the conventional design approach is wrong? Where should we deliberately break from the category norms?
 
-**Eureka check:** If Layer 3 reasoning reveals a genuine design insight — a reason the category's visual language fails THIS product — name it: "EUREKA: Every [category] product does X because they assume [assumption]. But this product's users [evidence] — so we should do Y instead." Log the eureka moment (see preamble).
+**Eureka check:** If Layer 3 reasoning reveals a genuine design insight — a reason the category's visual language fails THIS product — name it: "EUREKA: Every [category] product does X because they assume [assumption]. But this product's users [evidence] — so we should do Y instead."
 
 Summarize conversationally:
 > "I looked at what's out there. Here's the landscape: they converge on [patterns]. Most of them feel [observation — e.g., interchangeable, polished but generic, etc.]. The opportunity to stand out is [gap]. Here's where I'd play it safe and where I'd take a risk..."

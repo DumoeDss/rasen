@@ -89,12 +89,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-```
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Completion Status Protocol
@@ -128,18 +122,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+3. If it does NOT — write a `## GSTACK REVIEW REPORT` section to the end of the plan file with this placeholder table:
 
 \`\`\`markdown
 ## GSTACK REVIEW REPORT

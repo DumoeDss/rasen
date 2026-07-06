@@ -374,7 +374,7 @@ AskUserQuestion options:
 - E) Reject (start over)
 
 **Option handling:**
-- A: mark APPROVED, write review logs, suggest /ship
+- A: mark APPROVED, suggest /ship
 - B: ask which overrides, apply, re-present gate
 - C: answer freeform, re-present gate
 - D: make changes, re-run affected phases (scope→1B, design→2, test plan→3, arch→3). Max 3 cycles.
@@ -382,27 +382,9 @@ AskUserQuestion options:
 
 ---
 
-## Completion: Write Review Logs
+## Completion
 
-On approval, write 3 separate review log entries so /ship's dashboard recognizes them:
-
-```bash
-COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-# Review dashboard: pending OpenSpec integration
-
-# Review dashboard: pending OpenSpec integration
-```
-
-If Phase 2 ran (UI scope):
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Replace field values with actual counts from the review.
-
-Suggest next step: `/ship` when ready to create the PR.
+On approval, mark the plan APPROVED and suggest next step: `/ship` when ready to create the PR.
 
 ---
 

@@ -736,42 +736,17 @@ SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || b
 rm -f ~/.openspec/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
 
-## Review Log
-
-After producing the Completion Summary above, persist the review result.
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.openspec/` (user config directory, not project files). The skill preamble
-already writes to `~/.openspec/sessions/` and `~/.openspec/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Before running this command, substitute the placeholder values from the Completion Summary you just produced:
-- **TIMESTAMP**: current ISO 8601 datetime (e.g., 2026-03-16T14:30:00)
-- **STATUS**: "clean" if 0 unresolved decisions AND 0 critical gaps; otherwise "issues_open"
-- **unresolved**: number from "Unresolved decisions" in the summary
-- **critical_gaps**: number from "Failure modes: ___ CRITICAL GAPS" in the summary
-- **MODE**: the mode the user selected (SCOPE_EXPANSION / SELECTIVE_EXPANSION / HOLD_SCOPE / SCOPE_REDUCTION)
-- **scope_proposed**: number from "Scope proposals: ___ proposed" in the summary (0 for HOLD/REDUCTION)
-- **scope_accepted**: number from "Scope proposals: ___ accepted" in the summary (0 for HOLD/REDUCTION)
-- **scope_deferred**: number of items deferred to TODOS.md from scope decisions (0 for HOLD/REDUCTION)
-- **COMMIT**: output of `git rev-parse --short HEAD`
-
 {{REVIEW_DASHBOARD}}
 
 {{PLAN_FILE_REVIEW_REPORT}}
 
 ## Next Steps — Review Chaining
 
-After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this CEO review discovered. Read the dashboard output to see which reviews have already been run and whether they are stale.
+After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this CEO review discovered. Use the dashboard to see which reviews have already been run this session.
 
-**Recommend /plan-eng-review if eng review is not skipped globally** — check the dashboard output for `skip_eng_review`. If it is `true`, eng review is opted out — do not recommend it. Otherwise, eng review is the required shipping gate. If this CEO review expanded scope, changed architectural direction, or accepted scope expansions, emphasize that a fresh eng review is needed. If an eng review already exists in the dashboard but the commit hash shows it predates this CEO review, note that it may be stale and should be re-run.
+**Recommend /plan-eng-review unless the user opted out of eng review** — if the user opted out of eng review this session, do not recommend it. Otherwise, eng review is the required shipping gate. If this CEO review expanded scope, changed architectural direction, or accepted scope expansions, emphasize that a fresh eng review is needed. If an eng review was run earlier but the plan has changed substantially since this CEO review, note that it may be stale and should be re-run.
 
-**Recommend /plan-design-review if UI scope was detected** — specifically if Section 11 (Design & UX Review) was NOT skipped, or if accepted scope expansions included UI-facing features. If an existing design review is stale (commit hash drift), note that. In SCOPE REDUCTION mode, skip this recommendation — design review is unlikely relevant for scope cuts.
+**Recommend /plan-design-review if UI scope was detected** — specifically if Section 11 (Design & UX Review) was NOT skipped, or if accepted scope expansions included UI-facing features. If a design review was run earlier but the plan has changed substantially since, note that it may be stale. In SCOPE REDUCTION mode, skip this recommendation — design review is unlikely relevant for scope cuts.
 
 **If both are needed, recommend eng review first** (required gate), then design review.
 

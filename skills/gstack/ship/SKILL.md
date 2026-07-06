@@ -90,12 +90,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-```
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Completion Status Protocol
@@ -129,18 +123,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+3. If it does NOT — write a `## GSTACK REVIEW REPORT` section to the end of the plan file with this placeholder table:
 
 \`\`\`markdown
 ## GSTACK REVIEW REPORT
@@ -216,13 +199,9 @@ You are running the `/ship` workflow. This is a **non-interactive, fully automat
 
 ## Review Readiness Dashboard
 
-After completing the review, read the review log and config to display the dashboard.
+After completing the review, display a readiness dashboard summarizing which reviews have run in this session and their outcomes. Base the dashboard on the reviews actually performed in the current conversation.
 
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite, adversarial-review, codex-review). Ignore entries with timestamps older than 7 days. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
+Display:
 
 ```
 +====================================================================+
@@ -230,7 +209,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 +====================================================================+
 | Review          | Runs | Last Run            | Status    | Required |
 |-----------------|------|---------------------|-----------|----------|
-| Eng Review      |  1   | 2026-03-16 15:00    | CLEAR     | YES      |
+| Eng Review      |  1   | this session        | CLEAR     | YES      |
 | CEO Review      |  0   | —                   | —         | no       |
 | Design Review   |  0   | —                   | —         | no       |
 | Adversarial     |  0   | —                   | —         | no       |
@@ -246,16 +225,9 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Adversarial Review (automatic):** Auto-scales by diff size. Small diffs (<50 lines) skip adversarial. Medium diffs (50–199) get cross-model adversarial. Large diffs (200+) get all 4 passes: Claude structured, Codex structured, Claude adversarial subagent, Codex adversarial. No configuration needed.
 
 **Verdict logic:**
-- **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \`skip_eng_review\` is \`true\`)
-- **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
-- CEO, Design, and Codex reviews are shown for context but never block shipping
-- If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
-
-**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Parse the \`---HEAD---\` section from the bash output to get the current HEAD commit hash
-- For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
-- For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
-- If all reviews match the current HEAD, do not display any staleness notes
+- **CLEARED**: Eng Review ran in this session with status "clean" (or the user explicitly opted out of eng review)
+- **NOT CLEARED**: Eng Review not run in this session, or has open issues
+- CEO, Design, and Adversarial reviews are shown for context but never block shipping
 
 If the Eng Review is NOT "CLEAR":
 
@@ -271,7 +243,7 @@ If the Eng Review is NOT "CLEAR":
    - RECOMMENDATION: Choose C if the change is obviously trivial (< 20 lines, typo fix, config-only); Choose B for larger changes
    - Options: A) Ship anyway  B) Abort — run /plan-eng-review first  C) Change is too small to need eng review
    - If CEO Review is missing, mention as informational ("CEO Review not run — recommended for product changes") but do NOT block
-   - For Design Review: run `# Diff scope detection: pending OpenSpec integration exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 3.5, but consider running /design-review for a full visual audit post-implementation." Still never block.
+   - For Design Review: if the PR changes frontend code, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 3.5, but consider running /design-review for a full visual audit post-implementation." Still never block.
 
 3. **If the user chooses A or C,** persist the decision so future `/ship` runs on this branch skip the gate:
    ```bash
@@ -455,19 +427,15 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 
 ## Step 3: Run tests (on merged code)
 
-**Do NOT run `RAILS_ENV=test bin/rails db:migrate`** — `bin/test-lane` already calls
-`db:test:prepare` internally, which loads the schema into the correct lane database.
-Running bare test migrations without INSTANCE hits an orphan DB and corrupts structure.sql.
-
-Run both test suites in parallel:
+Run the project's test suite using the command verified by **Test Framework Bootstrap** (Step 2.5). Use whatever test runner, setup, and environment the detected runtime requires — do not assume a specific language or framework, and do not hardcode a particular runner.
 
 ```bash
-bin/test-lane 2>&1 | tee /tmp/ship_tests.txt &
-npm run test 2>&1 | tee /tmp/ship_vitest.txt &
-wait
+<detected test command> 2>&1 | tee /tmp/ship_tests.txt
 ```
 
-After both complete, read the output files and check pass/fail.
+If the project has multiple independent suites (e.g. a separate unit and integration runner, or a backend + frontend split), run each one and capture its output to a distinct file.
+
+After the run(s) complete, read the output file(s) and check pass/fail.
 
 **If any test fails:** Do NOT immediately stop. Apply the Test Failure Ownership Triage:
 
@@ -575,63 +543,32 @@ Use AskUserQuestion:
 
 ## Step 3.25: Eval Suites (conditional)
 
-Evals are mandatory when prompt-related files change. Skip this step entirely if no prompt files are in the diff.
+Some projects maintain a prompt/eval regression suite — LLM-output evaluations that must run when prompt-related files change. This step is **optional** and applies only when the project declares such a suite and the command that runs it. If the project declares no eval suite, skip this step entirely.
 
-**1. Check if the diff touches prompt-related files:**
+**1. Does the project declare an eval suite?**
+
+If the project has not declared a prompt/eval regression suite (no eval runner command configured for this repo), print "No eval suite declared — skipping." and continue to Step 3.5.
+
+**2. Did the diff touch prompt-related files?**
 
 ```bash
 git diff origin/<base> --name-only
 ```
 
-Match against these patterns (from CLAUDE.md):
-- `app/services/*_prompt_builder.rb`
-- `app/services/*_generation_service.rb`, `*_writer_service.rb`, `*_designer_service.rb`
-- `app/services/*_evaluator.rb`, `*_scorer.rb`, `*_classifier_service.rb`, `*_analyzer.rb`
-- `app/services/concerns/*voice*.rb`, `*writing*.rb`, `*prompt*.rb`, `*token*.rb`
-- `app/services/chat_tools/*.rb`, `app/services/x_thread_tools/*.rb`
-- `config/system_prompts/*.txt`
-- `test/evals/**/*` (eval infrastructure changes affect all suites)
+Match against the file patterns the project declares as prompt-related — typically prompt builders, system-prompt assets, generation/evaluation services, and the eval infrastructure itself. If the project has not declared such patterns, treat any change under its declared prompt/eval directories as a trigger.
 
 **If no matches:** Print "No prompt-related files changed — skipping evals." and continue to Step 3.5.
 
-**2. Identify affected eval suites:**
+**3. Run the declared eval suite(s):**
 
-Each eval runner (`test/evals/*_eval_runner.rb`) declares `PROMPT_SOURCE_FILES` listing which source files affect it. Grep these to find which suites match the changed files:
-
-```bash
-grep -l "changed_file_basename" test/evals/*_eval_runner.rb
-```
-
-Map runner → test file: `post_generation_eval_runner.rb` → `post_generation_eval_test.rb`.
-
-**Special cases:**
-- Changes to `test/evals/judges/*.rb`, `test/evals/support/*.rb`, or `test/evals/fixtures/` affect ALL suites that use those judges/support files. Check imports in the eval test files to determine which.
-- Changes to `config/system_prompts/*.txt` — grep eval runners for the prompt filename to find affected suites.
-- If unsure which suites are affected, run ALL suites that could plausibly be impacted. Over-testing is better than missing a regression.
-
-**3. Run affected suites at `EVAL_JUDGE_TIER=full`:**
-
-`/ship` is a pre-merge gate, so always use full tier (Sonnet structural + Opus persona judges).
-
-```bash
-EVAL_JUDGE_TIER=full EVAL_VERBOSE=1 bin/test-lane --eval test/evals/<suite>_eval_test.rb 2>&1 | tee /tmp/ship_evals.txt
-```
-
-If multiple suites need to run, run them sequentially (each needs a test lane). If the first suite fails, stop immediately — don't burn API cost on remaining suites.
+Run the project's eval command for the affected areas. `/ship` is a pre-merge gate, so run at the project's highest-fidelity tier if it defines eval tiers. Run suites sequentially if each needs its own environment; if the first suite fails, stop immediately rather than burning cost on the rest.
 
 **4. Check results:**
 
-- **If any eval fails:** Show the failures, the cost dashboard, and **STOP**. Do not proceed.
-- **If all pass:** Note pass counts and cost. Continue to Step 3.5.
+- **If any eval fails:** Show the failures (and the project's cost report, if any) and **STOP**. Do not proceed.
+- **If all pass:** Note pass counts (and cost, if reported). Continue to Step 3.5.
 
-**5. Save eval output** — include eval results and cost dashboard in the PR body (Step 8).
-
-**Tier reference (for context — /ship always uses `full`):**
-| Tier | When | Speed (cached) | Cost |
-|------|------|----------------|------|
-| `fast` (Haiku) | Dev iteration, smoke tests | ~5s (14x faster) | ~$0.07/run |
-| `standard` (Sonnet) | Default dev, `bin/test-lane --eval` | ~17s (4x faster) | ~$0.37/run |
-| `full` (Opus persona) | **`/ship` and pre-merge** | ~72s (baseline) | ~$1.27/run |
+**5. Save eval output** — include eval results in the PR body (Step 8).
 
 ---
 
@@ -880,8 +817,6 @@ Review the diff for structural issues that tests don't catch.
 Check if the diff touches frontend files by inspecting changed file extensions:
 
 ```bash
-# Diff scope detection: pending OpenSpec integration
-# For now, check manually: look at git diff --name-only for .tsx, .jsx, .css, .scss, .html files
 SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\.(tsx|jsx|css|scss|html|vue|svelte)$' && echo "true" || echo "false")
 ```
 
@@ -901,14 +836,6 @@ SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\.(t
    - **[LOW] intent-based detection**: present as "Possible — verify visually or run /design-review"
 
 5. **Include findings** in the review output under a "Design Review" header, following the output format in the checklist. Design findings merge with code review findings into the same Fix-First flow.
-
-6. **Log the result** for the Review Readiness Dashboard:
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of `git rev-parse --short HEAD`.
 
    Include any design findings alongside the code review findings. They follow the same Fix-First flow below.
 
@@ -986,13 +913,8 @@ DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion'
 DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
 which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-# Respect old opt-out
-# Config check: pending OpenSpec integration
 echo "DIFF_SIZE: $DIFF_TOTAL"
-echo "OLD_CFG: ${OLD_CFG:-not_set}"
 ```
-
-If `OLD_CFG` is `disabled`: skip this step silently. Continue to the next step.
 
 **User override:** If the user explicitly requested a specific tier (e.g., "run all passes", "paranoid review", "full adversarial", "do all 4 passes", "thorough review"), honor that request regardless of diff size. Jump to the matching tier section.
 
@@ -1041,12 +963,6 @@ Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXA
 
 If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing without adversarial review."
 
-**Persist the review result:**
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-Substitute STATUS: "clean" if no findings, "issues_found" if findings exist. SOURCE: "codex" if Codex ran, "claude" if subagent ran. If both failed, do NOT persist.
-
 **Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing (if Codex was used).
 
 ---
@@ -1083,12 +999,6 @@ After stderr: `rm -f "$TMPERR"`
 **3. Codex adversarial challenge (if available):** Run `codex exec` with the adversarial prompt (same as medium tier).
 
 If Codex is not available for steps 1 and 3, note to the user: "Codex CLI not found — large-diff review ran Claude structured + Claude adversarial (2 of 4 passes). Install Codex for full 4-pass coverage: `npm install -g @openai/codex`"
-
-**Persist the review result AFTER all passes complete** (not after each sub-step):
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
 ---
 
@@ -1161,7 +1071,7 @@ Read `.claude/skills/review/TODOS-format.md` for the canonical format reference.
 **1. Check if TODOS.md exists** in the repository root.
 
 **If TODOS.md does not exist:** Use AskUserQuestion:
-- Message: "GStack recommends maintaining a TODOS.md organized by skill/component, then priority (P0 at top through P4, then Completed at bottom). See TODOS-format.md for the full format. Would you like to create one?"
+- Message: "We recommend maintaining a TODOS.md organized by skill/component, then priority (P0 at top through P4, then Completed at bottom). See TODOS-format.md for the full format. Would you like to create one?"
 - Options: A) Create it now, B) Skip for now
 - If A: Create `TODOS.md` with a skeleton (# TODOS heading + ## Completed section). Continue to step 3.
 - If B: Skip the rest of Step 5.5. Continue to Step 6.
@@ -1232,13 +1142,13 @@ Save this summary — it goes into the PR body in Step 8.
 5. Compose each commit message:
    - First line: `<type>: <summary>` (type = feat/fix/chore/refactor/docs)
    - Body: brief description of what this commit contains
-   - Only the **final commit** (VERSION + CHANGELOG) gets the version tag and co-author trailer:
+   - Only the **final commit** (VERSION + CHANGELOG) gets the version tag and, if the project configures one, a co-author trailer. Do not pin a specific model version in the trailer; use a non-versioned attribution or omit it entirely if the project does not configure one:
 
 ```bash
 git commit -m "$(cat <<'EOF'
 chore: bump version and changelog (vX.Y.Z.W)
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```

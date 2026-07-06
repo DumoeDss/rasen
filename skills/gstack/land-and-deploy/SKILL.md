@@ -88,12 +88,6 @@ Before building infrastructure, unfamiliar patterns, or anything the runtime mig
 **Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
 "EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
 
-Log eureka moments:
-```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.openspec/analytics/eureka.jsonl 2>/dev/null || true
-```
-Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
-
 **WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Completion Status Protocol
@@ -127,18 +121,7 @@ When you are in plan mode and about to call ExitPlanMode:
 
 1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-# Review dashboard: pending OpenSpec integration
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+3. If it does NOT — write a `## GSTACK REVIEW REPORT` section to the end of the plan file with this placeholder table:
 
 \`\`\`markdown
 ## GSTACK REVIEW REPORT
@@ -299,34 +282,7 @@ and get explicit user confirmation before proceeding.
 
 Collect evidence for each check below. Track warnings (yellow) and blockers (red).
 
-### 3.5a: Review staleness check
-
-```bash
-# Review dashboard: pending OpenSpec integration
-```
-
-Parse the output. For each review skill (plan-eng-review, plan-ceo-review,
-plan-design-review, design-review-lite, codex-review):
-
-1. Find the most recent entry within the last 7 days.
-2. Extract its `commit` field.
-3. Compare against current HEAD: `git rev-list --count STORED_COMMIT..HEAD`
-
-**Staleness rules:**
-- 0 commits since review → CURRENT
-- 1-3 commits since review → RECENT (yellow if those commits touch code, not just docs)
-- 4+ commits since review → STALE (red — review may not reflect current code)
-- No review found → NOT RUN
-
-**Critical check:** Look at what changed AFTER the last review. Run:
-```bash
-git log --oneline STORED_COMMIT..HEAD
-```
-If any commits after the review contain words like "fix", "refactor", "rewrite",
-"overhaul", or touch more than 5 files — flag as **STALE (significant changes
-since review)**. The review was done on different code than what's about to merge.
-
-### 3.5b: Test results
+### 3.5a: Test results
 
 **Free tests — run them now:**
 
@@ -339,30 +295,33 @@ bun test 2>&1 | tail -10
 
 If tests fail: **BLOCKER.** Cannot merge with failing tests.
 
-**E2E tests — check recent results:**
+**E2E tests — check recent results (if the project declares an eval-output location):**
+
+If the project declares where it writes E2E/integration eval results (e.g. an eval-output directory noted in CLAUDE.md), list today's most recent result files from there. Replace `<eval-output-dir>` with that location:
 
 ```bash
-ls -t ~/.gstack-dev/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+ls -t <eval-output-dir>/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
 ```
 
 For each eval file from today, parse pass/fail counts. Show:
 - Total tests, pass count, fail count
 - How long ago the run finished (from file timestamp)
-- Total cost
+- Total cost (if recorded)
 - Names of any failing tests
 
+If the project declares no eval-output location, skip this sub-step.
 If no E2E results from today: **WARNING — no E2E tests run today.**
 If E2E results exist but have failures: **WARNING — N tests failed.** List them.
 
-**LLM judge evals — check recent results:**
+**LLM judge evals — check recent results (if declared):**
 
 ```bash
-ls -t ~/.gstack-dev/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
+ls -t <eval-output-dir>/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
 ```
 
-If found, parse and show pass/fail. If not found, note "No LLM evals run today."
+If found, parse and show pass/fail. If not found or not declared, note "No LLM evals run today."
 
-### 3.5c: PR body accuracy check
+### 3.5b: PR body accuracy check
 
 Read the current PR body:
 ```bash
@@ -382,7 +341,7 @@ Compare the PR body against the actual commits. Check for:
 If the PR body looks stale or incomplete: **WARNING — PR body may not reflect current
 changes.** List what's missing or stale.
 
-### 3.5d: Document-release check
+### 3.5c: Document-release check
 
 Check if documentation was updated on this branch:
 
@@ -401,7 +360,7 @@ likely not run. CHANGELOG and VERSION not updated despite new features.**
 
 If only docs changed (no code): skip this check.
 
-### 3.5e: Readiness report and confirmation
+### 3.5d: Readiness report and confirmation
 
 Build the full readiness report:
 
@@ -536,10 +495,14 @@ in the decision tree below.
 
 If you want to persist deploy settings for future runs, suggest the user run `/setup-deploy`.
 
-Then classify the changes (check which file types were modified):
+Then classify the changes by inspecting which file types the merged diff touched:
 
 ```bash
-# Diff scope detection: pending OpenSpec integration
+FILES=$(git diff --name-only origin/<base>...HEAD)
+echo "$FILES" | grep -qE '\.(tsx|jsx|ts|js|mjs|cjs|css|scss|less|html|vue|svelte)$' && SCOPE_FRONTEND=true || SCOPE_FRONTEND=false
+echo "$FILES" | grep -qvE '\.(md|txt|ya?ml|json|toml|lock)$' && SCOPE_BACKEND=true || SCOPE_BACKEND=false
+echo "$FILES" | grep -qE '\.(md|mdx|txt)$' && SCOPE_DOCS=true || SCOPE_DOCS=false
+echo "$FILES" | grep -qE '(\.ya?ml|\.json|\.toml|\.env|Dockerfile|\.config\.)' && SCOPE_CONFIG=true || SCOPE_CONFIG=false
 echo "FRONTEND=$SCOPE_FRONTEND BACKEND=$SCOPE_BACKEND DOCS=$SCOPE_DOCS CONFIG=$SCOPE_CONFIG"
 ```
 
