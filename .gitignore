@@ -157,5 +157,8 @@ opencode.json
 # Codex
 .codex/
 
+# Bob
+.bob/
+
 openspec/changes/**/auto-run.json
 openspec/changes/**/portfolio-run.json

@@ -14,6 +14,7 @@ import {
   normalizeRequirementName,
   type RequirementBlock,
 } from './parsers/requirement-blocks.js';
+import { findMainSpecStructureIssues } from './parsers/spec-structure.js';
 import { Validator } from './validation/validator.js';
 
 // -----------------------------------------------------------------------------
@@ -100,7 +101,8 @@ export async function findSpecUpdates(changeDir: string, mainSpecsDir: string): 
  */
 export async function buildUpdatedSpec(
   update: SpecUpdate,
-  changeName: string
+  changeName: string,
+  options: { silent?: boolean } = {}
 ): Promise<{ rebuilt: string; counts: { added: number; modified: number; removed: number; renamed: number } }> {
   // Read change spec content (delta-format expected)
   const changeContent = await fs.readFile(update.source, 'utf-8');
@@ -212,7 +214,7 @@ export async function buildUpdatedSpec(
       );
     }
     // Warn about REMOVED requirements being ignored for new specs
-    if (plan.removed.length > 0) {
+    if (plan.removed.length > 0 && !options.silent) {
       console.log(
         chalk.yellow(
           `⚠️  Warning: ${specName} - ${plan.removed.length} REMOVED requirement(s) ignored for new spec (nothing to remove).`
@@ -221,6 +223,16 @@ export async function buildUpdatedSpec(
     }
     isNewSpec = true;
     targetContent = buildSpecSkeleton(specName, changeName);
+  }
+
+  const structureIssues = findMainSpecStructureIssues(targetContent);
+  if (structureIssues.length > 0) {
+    const details = structureIssues
+      .map(issue => `line ${issue.line}: ${issue.message}`)
+      .join('\n');
+    throw new Error(
+      `${specName}: target spec is structurally invalid and cannot be updated until fixed:\n${details}`
+    );
   }
 
   // Extract requirements section and build name->block map
@@ -276,7 +288,7 @@ export async function buildUpdatedSpec(
       throw new Error(`${specName} MODIFIED failed for header "### Requirement: ${mod.name}" - not found`);
     }
     // Replace block with provided raw (ensure header line matches key)
-    const modHeaderMatch = mod.raw.split('\n')[0].match(/^###\s*Requirement:\s*(.+)\s*$/);
+    const modHeaderMatch = mod.raw.split('\n')[0].match(/^###\s*Requirement:\s*(.+)\s*$/i);
     if (!modHeaderMatch || normalizeRequirementName(modHeaderMatch[1]) !== key) {
       throw new Error(
         `${specName} MODIFIED failed for header "### Requirement: ${mod.name}" - header mismatch in content`
@@ -342,15 +354,18 @@ export async function buildUpdatedSpec(
 export async function writeUpdatedSpec(
   update: SpecUpdate,
   rebuilt: string,
-  counts: { added: number; modified: number; removed: number; renamed: number }
+  counts: { added: number; modified: number; removed: number; renamed: number },
+  options: { silent?: boolean; displayPath?: string } = {}
 ): Promise<void> {
   // Create target directory if needed
   const targetDir = path.dirname(update.target);
   await fs.mkdir(targetDir, { recursive: true });
   await fs.writeFile(update.target, rebuilt);
 
+  if (options.silent) return;
+
   const specName = path.basename(path.dirname(update.target));
-  console.log(`Applying changes to openspec/specs/${specName}/spec.md:`);
+  console.log(`Applying changes to ${options.displayPath ?? `openspec/specs/${specName}/spec.md`}:`);
   if (counts.added) console.log(`  + ${counts.added} added`);
   if (counts.modified) console.log(`  ~ ${counts.modified} modified`);
   if (counts.removed) console.log(`  - ${counts.removed} removed`);

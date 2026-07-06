@@ -9,8 +9,11 @@
  * use is driven by the orchestration playbook's handoff protocol (Step H).
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const HANDOFF_INSTRUCTIONS = `Write a handoff document — distill the current working context so a fresh agent can continue without replaying this conversation.
+
+${STORE_SELECTION_GUIDANCE}
 
 Context-window occupancy is measured, never guessed: \`openspec agent context --latest\` reads the exact API usage from the session transcript (\`--transcript <path>\` probes a specific worker transcript instead). The handoff document is a DISTILLATION CHECKPOINT on top of the change-directory blackboard, not a replacement for it — tasks.md ticks and on-disk artifacts stay the primary state; the document carries only what the blackboard cannot record.
 

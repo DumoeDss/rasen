@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,7 +21,9 @@ export function getDomainModelingSkillTemplate(): SkillTemplate {
   return {
     name: 'gstack:domain-modeling',
     description: '|',
-    instructions,
+    instructions: `${instructions}
+
+${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

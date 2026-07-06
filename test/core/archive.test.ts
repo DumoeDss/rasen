@@ -15,34 +15,45 @@ describe('ArchiveCommand', () => {
   let tempDir: string;
   let archiveCommand: ArchiveCommand;
   const originalConsoleLog = console.log;
+  const originalXdgDataHome = process.env.XDG_DATA_HOME;
 
   beforeEach(async () => {
     // Create temp directory
     tempDir = path.join(os.tmpdir(), `openspec-archive-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
-    
+
     // Change to temp directory
     process.chdir(tempDir);
-    
+
+    // Isolate root resolution from any real store registry on the
+    // host machine so no-root behavior stays the implicit-root path.
+    process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
+
     // Create OpenSpec structure
     const openspecDir = path.join(tempDir, 'openspec');
     await fs.mkdir(path.join(openspecDir, 'changes'), { recursive: true });
     await fs.mkdir(path.join(openspecDir, 'specs'), { recursive: true });
     await fs.mkdir(path.join(openspecDir, 'changes', 'archive'), { recursive: true });
-    
+
     // Suppress console.log during tests
     console.log = vi.fn();
-    
+
     archiveCommand = new ArchiveCommand();
   });
 
   afterEach(async () => {
     // Restore console.log
     console.log = originalConsoleLog;
-    
+
+    if (originalXdgDataHome === undefined) {
+      delete process.env.XDG_DATA_HOME;
+    } else {
+      process.env.XDG_DATA_HOME = originalXdgDataHome;
+    }
+
     // Clear mocks
     vi.clearAllMocks();
-    
+
     // Clean up temp directory
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -91,6 +102,50 @@ describe('ArchiveCommand', () => {
       // Verify warning was logged
       expect(console.log).toHaveBeenCalledWith(
         expect.stringContaining('Warning: 2 incomplete task(s) found')
+      );
+    });
+
+    it('detects incomplete tasks in nested glob tasks.md files (#1202 data-safety gate)', async () => {
+      // Before the fix the gate read a fixed changes/<name>/tasks.md, saw zero
+      // tasks for a glob-tasks change, and let an unfinished change archive.
+      const schemaDir = path.join(tempDir, 'openspec', 'schemas', 'glob-tasks');
+      await fs.mkdir(schemaDir, { recursive: true });
+      await fs.writeFile(
+        path.join(schemaDir, 'schema.yaml'),
+        [
+          'name: glob-tasks',
+          'version: 1',
+          'artifacts:',
+          '  - id: proposal',
+          '    generates: proposal.md',
+          '    description: Proposal',
+          '    template: proposal.md',
+          '    requires: []',
+          '  - id: tasks',
+          '    generates: "**/tasks.md"',
+          '    description: Nested tasks',
+          '    template: tasks.md',
+          '    requires: [proposal]',
+          'apply:',
+          '  requires: [tasks]',
+          '  tracks: "**/tasks.md"',
+          '',
+        ].join('\n')
+      );
+
+      const changeName = 'glob-incomplete-feature';
+      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      await fs.mkdir(path.join(changeDir, 'backend'), { recursive: true });
+      await fs.mkdir(path.join(changeDir, 'frontend'), { recursive: true });
+      await fs.writeFile(path.join(changeDir, '.openspec.yaml'), 'schema: glob-tasks\n');
+      await fs.writeFile(path.join(changeDir, 'backend', 'tasks.md'), '- [x] 1.1 a\n- [x] 1.2 b\n');
+      await fs.writeFile(path.join(changeDir, 'frontend', 'tasks.md'), '- [x] 2.1 a\n- [ ] 2.2 b\n- [ ] 2.3 c\n');
+
+      await archiveCommand.execute(changeName, { yes: true, noValidate: true, skipSpecs: true });
+
+      // The gate now sees 5 tasks / 2 incomplete across the nested files.
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('2 incomplete task(s) found')
       );
     });
 
@@ -559,6 +614,68 @@ new text
       expect(still).toBe(mainContent);
       // Change dir should still exist since operation aborted
       await expect(fs.access(changeDir)).resolves.not.toThrow();
+    });
+
+    it('should abort with a structural error when target spec hides requirements outside ## Requirements', async () => {
+      const changeName = 'hidden-requirement-target';
+      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeSpecDir = path.join(changeDir, 'specs', 'delta-target');
+      await fs.mkdir(changeSpecDir, { recursive: true });
+
+      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'delta-target');
+      await fs.mkdir(mainSpecDir, { recursive: true });
+      const malformedMain = `# delta-target Specification
+
+## Purpose
+Delta target purpose.
+
+## Requirements
+
+### Requirement: A
+The system SHALL do A.
+
+#### Scenario: A works
+- **WHEN** foo
+- **THEN** bar
+
+## Edge Cases
+
+### Requirement: B
+The system SHALL do B.
+
+#### Scenario: B works
+- **WHEN** baz
+- **THEN** qux`;
+      await fs.writeFile(path.join(mainSpecDir, 'spec.md'), malformedMain);
+
+      const deltaContent = `# Delta Target Changes
+
+## MODIFIED Requirements
+
+### Requirement: B
+The system SHALL do B differently.
+
+#### Scenario: B changes
+- **WHEN** baz changes
+- **THEN** qux changes`;
+      await fs.writeFile(path.join(changeSpecDir, 'spec.md'), deltaContent);
+
+      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('delta-target: target spec is structurally invalid and cannot be updated until fixed:')
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('Requirement header "### Requirement: B" appears outside the main ## Requirements section.')
+      );
+      expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
+
+      const still = await fs.readFile(path.join(mainSpecDir, 'spec.md'), 'utf-8');
+      expect(still).toBe(malformedMain);
+
+      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archives = await fs.readdir(archiveDir);
+      expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
 
     it('should require MODIFIED to reference the NEW header when a rename exists (error format)', async () => {

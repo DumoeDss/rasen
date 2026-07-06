@@ -9,11 +9,21 @@ import chalk from 'chalk';
 import path from 'path';
 import * as fs from 'fs';
 import { getSchemaDir, listSchemas } from '../../core/artifact-graph/index.js';
+import type { ReferenceIndexEntry } from '../../core/references.js';
+import { isRootSelectionError } from '../../core/root-selection.js';
 import { validateChangeName } from '../../utils/change-utils.js';
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
+
+export interface ChangeCommandStatus {
+  severity: 'error' | 'warning';
+  code: string;
+  message: string;
+  target?: string;
+  fix?: string;
+}
 
 export interface TaskItem {
   id: string;
@@ -25,7 +35,7 @@ export interface ApplyInstructions {
   changeName: string;
   changeDir: string;
   schemaName: string;
-  contextFiles: Record<string, string>;
+  contextFiles: Record<string, string[]>;
   progress: {
     total: number;
     complete: number;
@@ -35,6 +45,8 @@ export interface ApplyInstructions {
   state: 'blocked' | 'all_done' | 'ready';
   missingArtifacts?: string[];
   instruction: string;
+  /** Referenced-store index (read-only upstream context; omitted when none declared) */
+  references?: ReferenceIndexEntry[];
 }
 
 // -----------------------------------------------------------------------------
@@ -46,6 +58,22 @@ export const DEFAULT_SCHEMA = 'spec-driven';
 // -----------------------------------------------------------------------------
 // Utility Functions
 // -----------------------------------------------------------------------------
+
+export function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+export function statusFromError(error: unknown): ChangeCommandStatus {
+  if (isRootSelectionError(error)) {
+    return { ...error.diagnostic };
+  }
+
+  return {
+    severity: 'error',
+    code: 'change_error',
+    message: error instanceof Error ? error.message : String(error),
+  };
+}
 
 /**
  * Checks if color output is disabled via NO_COLOR env or --no-color flag.
@@ -90,8 +118,11 @@ export function getStatusIndicator(status: 'done' | 'ready' | 'blocked'): string
  * Returns the list of available change directory names under openspec/changes/.
  * Excludes the archive directory and hidden directories.
  */
-export async function getAvailableChanges(projectRoot: string): Promise<string[]> {
-  const changesPath = path.join(projectRoot, 'openspec', 'changes');
+export async function getAvailableChanges(
+  projectRoot: string,
+  changesDir = path.join(projectRoot, 'openspec', 'changes')
+): Promise<string[]> {
+  const changesPath = changesDir;
   try {
     const entries = await fs.promises.readdir(changesPath, { withFileTypes: true });
     return entries
@@ -109,12 +140,18 @@ export async function getAvailableChanges(projectRoot: string): Promise<string[]
  */
 export async function validateChangeExists(
   changeName: string | undefined,
-  projectRoot: string
+  projectRoot: string,
+  changesDir = path.join(projectRoot, 'openspec', 'changes'),
+  hints: { newChangeHint?: string } = {}
 ): Promise<string> {
+  // Hints must stay pasteable: callers with a selected store pass a
+  // store-carrying hint so following it lands in the same root.
+  const newChangeHint = hints.newChangeHint ?? 'openspec new change <name>';
+
   if (!changeName) {
-    const available = await getAvailableChanges(projectRoot);
+    const available = await getAvailableChanges(projectRoot, changesDir);
     if (available.length === 0) {
-      throw new Error('No changes found. Create one with: openspec new change <name>');
+      throw new Error(`No changes found. Create one with: ${newChangeHint}`);
     }
     throw new Error(
       `Missing required option --change. Available changes:\n  ${available.join('\n  ')}`
@@ -128,14 +165,14 @@ export async function validateChangeExists(
   }
 
   // Check directory existence directly
-  const changePath = path.join(projectRoot, 'openspec', 'changes', changeName);
+  const changePath = path.join(changesDir, changeName);
   const exists = fs.existsSync(changePath) && fs.statSync(changePath).isDirectory();
 
   if (!exists) {
-    const available = await getAvailableChanges(projectRoot);
+    const available = await getAvailableChanges(projectRoot, changesDir);
     if (available.length === 0) {
       throw new Error(
-        `Change '${changeName}' not found. No changes exist. Create one with: openspec new change <name>`
+        `Change '${changeName}' not found. No changes exist. Create one with: ${newChangeHint}`
       );
     }
     throw new Error(

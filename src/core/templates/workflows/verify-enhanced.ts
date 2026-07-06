@@ -6,8 +6,11 @@
  * Auto-scales review depth based on change scope.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines OpenSpec completeness/correctness/consistency checks with expert reviews.
+
+${STORE_SELECTION_GUIDANCE}
 
 Automatically adjusts review depth based on task size. Reports saved to the OpenSpec change directory.
 

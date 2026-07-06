@@ -6,8 +6,11 @@
  * PR body sourced from proposal summary. Ship log written to change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const SHIP_INSTRUCTIONS = `Release workflow — test, push, create PR, optionally merge and deploy.
+
+${STORE_SELECTION_GUIDANCE}
 
 PR body comes from proposal summary. Ship log recorded to the OpenSpec change directory.
 

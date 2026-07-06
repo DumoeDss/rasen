@@ -6,8 +6,11 @@
  * retrospective modes. Report saved to the OpenSpec change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const RETRO_INSTRUCTIONS = `Engineering retrospective — analyze what shipped, patterns, and learnings.
+
+${STORE_SELECTION_GUIDANCE}
 
 Supports three scopes: change-scoped, general, and global. Retro report saved to the OpenSpec change directory.
 

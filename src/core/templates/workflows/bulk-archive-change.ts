@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getBulkArchiveChangeSkillTemplate(): SkillTemplate {
   return {
@@ -13,6 +14,8 @@ export function getBulkArchiveChangeSkillTemplate(): SkillTemplate {
     instructions: `Archive multiple completed changes in a single operation.
 
 This skill allows you to batch-archive changes, handling spec conflicts intelligently by checking the codebase to determine what's actually implemented.
+
+${STORE_SELECTION_GUIDANCE}
 
 **Input**: None required (prompts for selection)
 
@@ -38,14 +41,14 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
    For each selected change, collect:
 
    a. **Artifact status** - Run \`openspec status --change "<name>" --json\`
-      - Parse \`schemaName\` and \`artifacts\` list
+      - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
 
-   b. **Task completion** - Read \`openspec/changes/<name>/tasks.md\`
+   b. **Task completion** - Read \`artifactPaths.tasks.existingOutputPaths\` from status JSON
       - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
       - If no tasks file exists, note as "No tasks"
 
-   c. **Delta specs** - Check \`openspec/changes/<name>/specs/\` directory
+   c. **Delta specs** - Check \`artifactPaths.specs.existingOutputPaths\` from status JSON
       - List which capability specs exist
       - For each, extract requirement names (lines matching \`### Requirement: <name>\`)
 
@@ -85,7 +88,7 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
    Display a table summarizing all changes:
 
    \`\`\`
-   | Change               | Artifacts | Tasks | Specs   | Conflicts | Status |
+   | Change              | Artifacts | Tasks | Specs   | Conflicts | Status |
    |---------------------|-----------|-------|---------|-----------|--------|
    | schema-management   | Done      | 5/5   | 2 delta | None      | Ready  |
    | project-config      | Done      | 3/3   | 1 delta | None      | Ready  |
@@ -128,8 +131,8 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
 
    b. **Perform the archive**:
       \`\`\`bash
-      mkdir -p openspec/changes/archive
-      mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+      mkdir -p "<planningHome.changesDir>/archive"
+      mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
       \`\`\`
 
    c. **Track outcome** for each change:
@@ -261,6 +264,8 @@ export function getOpsxBulkArchiveCommandTemplate(): CommandTemplate {
 
 This skill allows you to batch-archive changes, handling spec conflicts intelligently by checking the codebase to determine what's actually implemented.
 
+${STORE_SELECTION_GUIDANCE}
+
 **Input**: None required (prompts for selection)
 
 **Steps**
@@ -285,14 +290,14 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
    For each selected change, collect:
 
    a. **Artifact status** - Run \`openspec status --change "<name>" --json\`
-      - Parse \`schemaName\` and \`artifacts\` list
+      - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
 
-   b. **Task completion** - Read \`openspec/changes/<name>/tasks.md\`
+   b. **Task completion** - Read \`artifactPaths.tasks.existingOutputPaths\` from status JSON
       - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
       - If no tasks file exists, note as "No tasks"
 
-   c. **Delta specs** - Check \`openspec/changes/<name>/specs/\` directory
+   c. **Delta specs** - Check \`artifactPaths.specs.existingOutputPaths\` from status JSON
       - List which capability specs exist
       - For each, extract requirement names (lines matching \`### Requirement: <name>\`)
 
@@ -332,7 +337,7 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
    Display a table summarizing all changes:
 
    \`\`\`
-   | Change               | Artifacts | Tasks | Specs   | Conflicts | Status |
+   | Change              | Artifacts | Tasks | Specs   | Conflicts | Status |
    |---------------------|-----------|-------|---------|-----------|--------|
    | schema-management   | Done      | 5/5   | 2 delta | None      | Ready  |
    | project-config      | Done      | 3/3   | 1 delta | None      | Ready  |
@@ -375,8 +380,8 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
 
    b. **Perform the archive**:
       \`\`\`bash
-      mkdir -p openspec/changes/archive
-      mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+      mkdir -p "<planningHome.changesDir>/archive"
+      mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
       \`\`\`
 
    c. **Track outcome** for each change:

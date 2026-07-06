@@ -8,9 +8,12 @@
  * is not hard-coded here, and the orchestration playbook is registry-agnostic.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const AUTO_INSTRUCTIONS = `Autopilot — drive the full OPSX workflow end-to-end.
+
+${STORE_SELECTION_GUIDANCE}
 
 You are the **LEAD**. You select a pipeline (default \`small-feature\`) and drive it by orchestrating role-isolated subagents (you do not do the stage work yourself). You pause at gates and the user can switch to manual at any time.
 

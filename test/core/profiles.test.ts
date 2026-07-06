@@ -8,8 +8,8 @@ import {
 
 describe('profiles', () => {
   describe('CORE_WORKFLOWS', () => {
-    it('should contain the five core workflows', () => {
-      expect(CORE_WORKFLOWS).toEqual(['propose', 'explore', 'apply', 'archive', 'auto-command']);
+    it('should contain the default core workflows', () => {
+      expect(CORE_WORKFLOWS).toEqual(['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command']);
     });
 
     it('should be a subset of ALL_WORKFLOWS', () => {

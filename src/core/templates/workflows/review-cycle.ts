@@ -11,9 +11,12 @@
  * single-context is the explicit fallback (Tier C), not the baseline.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const REVIEW_CYCLE_INSTRUCTIONS = `Iterative review loop — drive a change to actually-clean: review the diff, triage findings, fix, re-review only the delta, and repeat until clean or escalate to a human.
+
+${STORE_SELECTION_GUIDANCE}
 
 This workflow does NOT reimplement the reviewer — each review pass delegates to the always-installed \`openspec-gstack-review\` engine. It does NOT reimplement the orchestration — it runs on the shared LEAD orchestration playbook below. It owns: change selection, the loop bound, fix-size triage, the author != verifier invariant, and the cycle report.
 

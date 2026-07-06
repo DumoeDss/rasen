@@ -6,8 +6,11 @@
  * dual-written to OpenSpec change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const OFFICE_HOURS_INSTRUCTIONS = `YC-style product validation — integrates /office-hours into the OPSX workflow.
+
+${STORE_SELECTION_GUIDANCE}
 
 Two modes:
 - **Startup mode**: Six forcing questions that expose demand reality

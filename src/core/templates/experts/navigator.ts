@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,7 +21,9 @@ export function getNavigatorSkillTemplate(): SkillTemplate {
   return {
     name: 'gstack:navigator',
     description: 'A map of this repo\'s skills and OPSX workflows and when to reach for each.',
-    instructions,
+    instructions: `${instructions}
+
+${STORE_SELECTION_GUIDANCE}`,
     disableModelInvocation: true,
     metadata: { author: 'openspec', version: '1.0' },
   };
