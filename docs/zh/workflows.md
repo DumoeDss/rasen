@@ -1,10 +1,10 @@
 # 工作流
 
-本指南涵盖 OpenSpec 的常见工作流模式以及每种模式的适用场景。基础设置请参阅[快速入门](getting-started.md)。命令参考请参阅[命令](commands.md)。
+本指南涵盖 OpenSpec 的常见工作流模式以及每种模式的适用场景。基础设置请参阅 [快速入门](getting-started.md)。命令参考请参阅 [命令](commands.md)。
 
 ## 理念：操作而非阶段
 
-传统工作流强制你经历各个阶段：规划、然后实施、然后完成。但实际工作并不能整齐地放入这些框框中。
+传统工作流强制你经历各个阶段：先规划、再实施、最后完成。但实际工作并不能整齐地放进这些框框里。
 
 OPSX 采用了不同的方式：
 
@@ -23,30 +23,58 @@ OPSX (fluid actions):
 
 **核心原则：**
 
-- **操作而非阶段** - 命令是你可以执行的操作，而不是你被困在其中的阶段
+- **操作而非阶段** - 命令是你可以执行的操作，而不是把你困在其中的阶段
 - **依赖关系是推动者** - 它们展示的是可能性，而不是下一步必须做什么
 
-> **自定义：** OPSX 工作流由定义工件序列的 schema 驱动。详情请参阅[自定义](customization.md)。
+> **自定义：** OPSX 工作流由定义产物序列的 schema 驱动。有关创建自定义 schema 的详情，请参阅 [自定义](customization.md)。
 
 ## 两种模式
 
 ### 默认快速路径（`core` profile）
 
 新安装默认使用 `core`，提供以下命令：
-- `/opsx:propose`
 - `/opsx:explore`
+- `/opsx:propose`
 - `/opsx:apply`
+- `/opsx:sync`
 - `/opsx:archive`
 
 典型流程：
 
 ```text
-/opsx:propose ──► /opsx:apply ──► /opsx:archive
+/opsx:explore ──► /opsx:propose ──► /opsx:apply ──► /opsx:sync ──► /opsx:archive
+  (optional)
 ```
+
+#### 从探索开始（值得养成的习惯）
+
+`/opsx:explore` 是默认 profile 的一部分，而不是什么高级附加功能。只要你有一个问题、却还没有方案时，就该用它——而在有 AI 助手的情况下，这大半时间都成立。
+
+```text
+You: /opsx:explore
+
+AI:  What would you like to explore?
+
+You: Our search results feel stale. I'm not sure if it's caching,
+     indexing, or the query itself.
+
+AI:  Let me look... [reads the search service and cache layer]
+     It's the index: it only rebuilds nightly, so edits don't show
+     up until the next day. Two options: rebuild on write (simple,
+     more load) or a short-TTL cache invalidation (more moving parts,
+     less load). Given your write volume is low, rebuild-on-write is
+     the cleaner fix. Want to scope it?
+
+You: Yes.
+
+You: /opsx:propose rebuild-search-index-on-write
+```
+
+探索不会创建任何产物，也不会编写任何代码。它是一场免费的、零成本的对话，把一个模糊的担忧变成一个精确的变更，因此随后产出的提案会很犀利。已经确切知道想要什么？跳过它，直接用 `/opsx:propose`。完整指南：[先探索](explore.md)。
 
 ### 扩展/完整工作流（自定义选择）
 
-如果你需要显式的脚手架和构建命令（`/opsx:new`、`/opsx:continue`、`/opsx:ff`、`/opsx:verify`、`/opsx:sync`、`/opsx:bulk-archive`、`/opsx:onboard`），可以通过以下方式启用：
+如果你需要显式的脚手架和构建命令（`/opsx:new`、`/opsx:continue`、`/opsx:ff`、`/opsx:verify`、`/opsx:bulk-archive`、`/opsx:onboard`），通过以下方式启用：
 
 ```bash
 openspec config profile
@@ -57,7 +85,7 @@ openspec update
 
 ### 快速功能开发
 
-当你清楚要构建什么，只需要执行时：
+当你清楚要构建什么、只需要执行时：
 
 ```text
 /opsx:new ──► /opsx:ff ──► /opsx:apply ──► /opsx:verify ──► /opsx:archive
@@ -191,7 +219,7 @@ AI:  Resuming add-dark-mode...
 
 **最适合：** 并行工作流、紧急中断、团队协作。
 
-当你有多个已完成的变更时，可以使用 `/opsx:bulk-archive`：
+当你有多个已完成的变更时，使用 `/opsx:bulk-archive`：
 
 ```text
 You: /opsx:bulk-archive
@@ -232,7 +260,7 @@ AI:  ✓ Archived add-dark-mode
 
 #### 验证：检查你的工作
 
-`/opsx:verify` 从三个维度验证实现是否符合工件：
+`/opsx:verify` 从三个维度验证实现是否符合产物：
 
 ```text
 You: /opsx:verify
@@ -268,9 +296,9 @@ AI:  Verifying add-auth...
 **验证检查的内容：**
 
 | 维度 | 验证内容 |
-|------|---------|
-| 完整性 | 所有任务完成、所有需求已实现、场景已覆盖 |
-| 正确性 | 实现匹配 spec 意图、边界情况已处理 |
+|-----------|------------------|
+| 完整性 | 所有任务已完成、所有需求已实现、场景已覆盖 |
+| 正确性 | 实现符合规格意图、边界情况已处理 |
 | 一致性 | 设计决策体现在代码中、模式保持一致 |
 
 验证不会阻止归档，但会暴露你可能想先解决的问题。
@@ -280,17 +308,17 @@ AI:  Verifying add-auth...
 `/opsx:verify` 是单次通过；`/opsx:review-cycle` 则是包裹审查器、持续推进直到变更真正干净的**循环**：
 
 ```text
-审查 ──► 分诊 ──► 修复 ──► 复审(Δ) ──► { 通过 | 继续循环 | 上报 }
+review ──► triage ──► fix ──► re-review(Δ) ──► { pass | loop | escalate }
 ```
 
 每一轮审查都委托给始终安装的 `openspec-review` 引擎 —— 循环本身不重新实现审查启发式。它在此之上增加四件事：
 
-- **按修复规模分诊。** 每条发现按其修复规模路由：**琐碎** → 编排者就地修复；**非琐碎** → 编写该代码的实现 agent；**设计级** → 单独的修复 agent（而非原作者）。
-- **作者≠验证者。** 只有当确认者不是修复作者、并对照原始发现确认后，发现才算解决。对于琐碎的就地修复，等价的非作者检查是一次独立门禁运行（测试/lint/构建）加上对该改动的 diff 阅读 —— 且必须记入循环报告。
+- **按修复规模分诊。** 每条发现按其修复规模路由：**琐碎（trivial）** → 编排者就地修复；**非琐碎（non-trivial）** → 编写该代码的实现 agent；**设计级（design-level）** → 单独的修复 agent（而非原作者）。
+- **作者≠验证者。** 只有当确认者不是修复作者、并对照原始发现确认后，发现才算解决。对于琐碎的就地修复，等价的非作者检查是一次独立的门禁运行（测试/lint/构建）加上对该改动的 diff 阅读 —— 且必须记入循环报告。
 - **只复审增量。** 在启用 agent-teams 的 Claude Code（`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`）上，lead 可通过 `SendMessage` 唤回原审查器只复审增量（仅 lead 可发起 `SendMessage`）。否则回退为全新的增量审查，将先前发现与修复 diff 通过共享文件传入 —— 结果等价，只是成本更高。
 - **有界终止。** 循环上限为最大轮次（默认 3）。达到上限且仍有未解决的 Blocker/Major 发现时，连同开放发现与轮次历史一并上报给人类 —— 绝不静默报告通过。
 
-在实现**之后**针对实时 diff 使用。它是可选项：通过自定义配置启用（不在 `core` 中）。轮次历史与每条非作者确认会记录在变更目录下的 `review-cycle-report.md`。
+在实现**之后**针对实时 diff 使用。它是可选项：通过自定义 profile 启用（不在 `core` 中）。轮次历史与每条非作者确认会记录在变更目录下的 `review-cycle-report.md`。
 
 #### 归档：最终完成变更
 
@@ -318,7 +346,7 @@ AI:  ✓ Synced specs to openspec/specs/auth/spec.md
      Change archived successfully.
 ```
 
-如果 specs 尚未同步，归档时会进行提示。它不会因为未完成的任务而阻止归档，但会发出警告。
+如果 specs 尚未同步，归档时会进行提示。它不会因未完成的任务而阻止归档，但会发出警告。
 
 ## 何时使用什么
 
@@ -332,7 +360,7 @@ AI:  ✓ Synced specs to openspec/specs/auth/spec.md
 | 时间紧迫，需要快速推进 | `/opsx:ff` |
 | 复杂变更，需要精细控制 | `/opsx:continue` |
 
-**经验法则：** 如果你能提前描述完整范围，使用 `/opsx:ff`。如果你在过程中逐步摸索，使用 `/opsx:continue`。
+**经验法则：** 如果你���提前描述完整范围，使用 `/opsx:ff`。如果你在过程中逐步摸索，使用 `/opsx:continue`。
 
 ### 何时更新已有变更 vs 重新开始
 
@@ -349,7 +377,7 @@ AI:  ✓ Synced specs to openspec/specs/auth/spec.md
 
 - 意图发生了根本性变化
 - 范围扩展成了完全不同的工作
-- 原始变更可以独立标记为"完成"
+- 原始变更可以独立标记为「完成」
 - 补丁会带来更多困惑而非清晰
 
 ```text
@@ -372,7 +400,7 @@ AI:  ✓ Synced specs to openspec/specs/auth/spec.md
     UPDATE            NEW  UPDATE       NEW  UPDATE          NEW
 ```
 
-**示例："添加深色模式"**
+**示例：「添加深色模式」**
 
 - "还需要支持自定义主题" → 新建变更（范围扩展）
 - "系统偏好检测比预期更困难" → 更新（意图相同）
@@ -382,7 +410,7 @@ AI:  ✓ Synced specs to openspec/specs/auth/spec.md
 
 ### 保持变更聚焦
 
-每个变更对应一个逻辑工作单元。如果你在做"添加功能 X 同时重构 Y"，考虑拆分为两个独立变更。
+每个变更对应一个逻辑工作单元。如果你在做「添加功能 X 同时重构 Y」，考虑拆分为两个独立变更。
 
 **为什么这很重要：**
 - 更容易审查和理解
@@ -412,11 +440,11 @@ AI:  Let me investigate your current setup and options...
      Your current stack suggests #1 or #2. What's your scale?
 ```
 
-探索可以在创建工件之前理清思路。
+探索可以在创建产物之前理清思路。
 
 ### 归档前先验证
 
-使用 `/opsx:verify` 检查实现是否与工件匹配：
+使用 `/opsx:verify` 检查实现是否与产物匹配：
 
 ```text
 You: /opsx:verify
@@ -434,7 +462,7 @@ AI:  Verifying add-dark-mode...
 
 ### 清晰命名变更
 
-好的命名使 `openspec list` 更加实用：
+好的命名让 `openspec list` 更加实用：
 
 ```text
 Good:                          Avoid:
@@ -446,23 +474,26 @@ implement-2fa                  wip
 
 ## 命令快速参考
 
-完整命令详情和选项请参阅[命令](commands.md)。
+完整命令详情和选项请参阅 [命令](commands.md)。
 
 | 命令 | 用途 | 适用场景 |
-|------|------|---------|
-| `/opsx:propose` | 创建变更 + 规划工件 | 快速默认路径（`core` profile） |
-| `/opsx:explore` | 思考和探索想法 | 需求不明确、调查研究 |
-| `/opsx:new` | 创建变更脚手架 | 扩展模式，显式工件控制 |
-| `/opsx:continue` | 创建下一个工件 | 扩展模式，逐步创建工件 |
-| `/opsx:ff` | 创建所有规划工件 | 扩展模式，范围明确 |
-| `/opsx:apply` | 实现任务 | 准备编写代码 |
-| `/opsx:verify` | 验证实现 | 扩展模式，归档前检查 |
-| `/opsx:sync` | 合并 delta specs | 扩展模式，可选 |
-| `/opsx:archive` | 完成变更 | 所有工作完成 |
-| `/opsx:bulk-archive` | 批量归档多个变更 | 扩展模式，并行工作 |
+|---------|---------|-------------|
+| `/opsx:propose` | 创建变更 + 规划产物 | 快速默认路径（`core` profile） |
+| `/opsx:explore` | 和 AI 一起思考想法 | 不确定时从这里开始：需求不明确、调查研究、比较方案 |
+| `/opsx:new` | 创建变更脚手架 | 扩展模式，显式产物控制 |
+| `/opsx:continue` | 创建下一个产物 | 扩展模式，逐步创建产物 |
+| `/opsx:ff` | 创建所有规划产物 | 扩展模式，范围明确 |
+| `/opsx:apply` | 实施任务 | 准备编写代码 |
+| `/opsx:verify` | 验证实现 | 扩展模式，归档前 |
+| `/opsx:sync` | 合并增量规格 | 扩展模式，可选 |
+| `/opsx:archive` | 完成变更 | 所有工作已完成 |
+| `/opsx:bulk-archive` | 归档多个变更 | 扩展模式，并行工作 |
 
-## 下一步
+## 后续步骤
 
+- [编写好的规格](writing-specs.md) - 什么是强有力的需求和场景，以及如何把变更规模定得合适
+- [审查变更](reviewing-changes.md) - 在写任何代码之前，对草案计划的两分钟快速过审
+- [团队中的 OpenSpec](team-workflow.md) - 变更如何配合分支和 pull request
 - [命令](commands.md) - 完整命令参考及选项
-- [概念](concepts.md) - 深入了解 specs、工件和 schemas
+- [概念](concepts.md) - 深入了解 specs、产物和 schemas
 - [自定义](customization.md) - 创建自定义工作流

@@ -6,13 +6,14 @@
 
 ## 快速参考
 
-### 默认快速路径（`core` 配置文件）
+### 默认快速路径（`core` profile）
 
 | 命令 | 用途 |
 |---------|---------|
 | `/opsx:propose` | 一步创建变更并生成规划产物 |
 | `/opsx:explore` | 在提交变更之前深入思考想法 |
-| `/opsx:apply` | 根据变更实施任务 |
+| `/opsx:apply` | 实施变更中的任务 |
+| `/opsx:sync` | 将增量规格合并到主规格中 |
 | `/opsx:archive` | 归档已完成的变更 |
 
 ### 扩展工作流命令（自定义工作流选择）
@@ -23,12 +24,11 @@
 | `/opsx:continue` | 根据依赖关系创建下一个产物 |
 | `/opsx:ff` | 快进：一次性创建所有规划产物 |
 | `/opsx:verify` | 验证实现是否与产物匹配 |
-| `/opsx:sync` | 将增量规格合并到主规格中 |
 | `/opsx:bulk-archive` | 一次性归档多个变更 |
-| `/opsx:onboard` | 通过完整工作流的引导式教程 |
+| `/opsx:onboard` | 完整工作流的引导式教程 |
 | `/opsx:review-cycle` | 迭代式审查循环 —— 审查、分诊、修复、复审增量，循环直至干净或上报 |
 
-默认全局配置文件为 `core`。要启用扩展工作流命令，运行 `openspec config profile`，选择工作流，然后在你的项目中运行 `openspec update`。
+默认全局 profile 为 `full` —— 所有工作流命令开箱即用。要精简为核心命令，运行 `openspec config profile core`（或用 `openspec config profile` 选择自定义子集），然后在你的项目中运行 `openspec update`。
 
 ---
 
@@ -36,7 +36,7 @@
 
 ### `/opsx:propose`
 
-一步创建新变更并生成规划产物。这是 `core` 配置文件中的默认启动命令。
+一步创建新变更并生成规划产物。这是 `core` profile 中的默认启动命令。
 
 **语法：**
 ```text
@@ -46,7 +46,7 @@
 **参数：**
 | 参数 | 必需 | 描述 |
 |----------|----------|-------------|
-| `change-name-or-description` | 否 | 短横线连接的名称或自然语言变更描述 |
+| `change-name-or-description` | 否 | kebab-case 名称或自然语言的变更描述 |
 
 **功能说明：**
 - 创建 `openspec/changes/<change-name>/`
@@ -72,6 +72,8 @@ AI:  Created openspec/changes/add-dark-mode/
 ---
 
 ### `/opsx:explore`
+
+> **不确定时从这里开始。** Explore 是一个零成本的思考伙伴：它阅读你的代码库、比较各种方案，并在任何变更发生之前把一个模糊的想法打磨成具体的计划。它在默认 profile 中提供。完整论述和更多示例请参阅 [先探索](explore.md) 指南。
 
 在提交变更之前，深入思考想法、调查问题并明确需求。
 
@@ -129,7 +131,7 @@ AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
 
 开始新的变更脚手架。创建变更文件夹，等待你使用 `/opsx:continue` 或 `/opsx:ff` 生成产物。
 
-此命令属于扩展工作流集（不包含在默认的 `core` 配置文件中）。
+此命令属于扩展工作流集（不包含在默认的 `core` profile 中）。
 
 **语法：**
 ```
@@ -151,7 +153,7 @@ AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
 **创建的内容：**
 ```
 openspec/changes/<change-name>/
-└── .openspec.yaml    # 变更元数据（schema、创建日期）
+└── .openspec.yaml    # Change metadata (schema, created date)
 ```
 
 **示例：**
@@ -188,10 +190,10 @@ AI:  Created openspec/changes/add-dark-mode/
 
 **功能说明：**
 - 查询产物依赖图
-- 显示哪些产物已就绪和哪些被阻塞
+- 显示哪些产物已就绪、哪些被阻塞
 - 创建第一个就绪的产物
 - 读取依赖文件以获取上下文
-- 显示创建后可用的后续产物
+- 显示创建后新可用的后续产物
 
 **示例：**
 ```
@@ -225,7 +227,7 @@ AI:  Change: add-dark-mode
 
 ### `/opsx:ff`
 
-快进产物创建过程。一次性创建所有规划产物。
+快进式创建产物。一次性创建所有规划产物。
 
 **语法：**
 ```
@@ -259,7 +261,7 @@ AI:  Fast-forwarding add-dark-mode...
 ```
 
 **提示：**
-- 当你对要构建的内容有清晰的想法时使用
+- 当你对要构建的内容有清晰想法时使用
 - 对于简单直接的变更，比 `/opsx:continue` 更快
 - 之后仍然可以编辑产物
 - 适合中小型功能
@@ -333,16 +335,16 @@ AI:  Implementing add-dark-mode...
 **功能说明：**
 - 从三个维度检查实现质量
 - 搜索代码库以寻找实现证据
-- 将问题分为 CRITICAL、WARNING 或 SUGGESTION 报告
+- 将问题分为 CRITICAL、WARNING 或 SUGGESTION 进行报告
 - 不会阻止归档，但会显示问题
 
 **验证维度：**
 
 | 维度 | 验证内容 |
 |-----------|-------------------|
-| **完整性** | 所有任务已完成、所有需求已实现、场景已覆盖 |
-| **正确性** | 实现符合规格意图、边界情况已处理 |
-| **一致性** | 设计决策体现在代码中、模式保持一致 |
+| **完整性（Completeness）** | 所有任务已完成、所有需求已实现、场景已覆盖 |
+| **正确性（Correctness）** | 实现符合规格意图、边界情况已处理 |
+| **一致性（Coherence）** | 设计决策体现在代码中、模式保持一致 |
 
 **示例：**
 ```
@@ -386,7 +388,7 @@ AI:  Verifying add-dark-mode...
 
 ### `/opsx:review-cycle`
 
-以迭代循环把变更推进到「真正干净」：`审查 → 分诊 → 修复 → 复审（增量）→ {通过 | 继续循环 | 上报}`。它不重新实现审查器 —— 每一轮都委托给始终安装的 `openspec-review` 引擎。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` 配置中）。
+通过迭代循环把变更推进到「真正干净」：`review → triage → fix → re-review(Δ) → {pass | loop | escalate}`。它不重新实现审查器 —— 每一轮都委托给始终安装的 `openspec-review` 引擎。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` profile 中）。
 
 **语法：**
 ```
@@ -394,13 +396,13 @@ AI:  Verifying add-dark-mode...
 ```
 
 **参数：**
-| 参数 | 必填 | 说明 |
+| 参数 | 必需 | 描述 |
 |----------|----------|-------------|
 | `change-name` | 否 | 要运行循环的变更（未提供时从上下文推断） |
 
-**它做什么：**
+**功能说明：**
 - 通过 `openspec-review` 跑一轮审查，然后按修复规模对每条发现分诊
-- 路由修复：琐碎 → 编排者就地修复；非琐碎 → 编写该代码的实现 agent；设计级 → 单独的修复 agent
+- 路由修复：琐碎（trivial）→ 编排者就地修复；非琐碎（non-trivial）→ 编写该代码的实现 agent；设计级（design-level）→ 单独的修复 agent
 - 仅复审修复增量；只有当**非作者**对照原始发现确认后，该发现才标记为已解决（作者≠验证者）
 - 循环上限为最大轮次（默认 3）；达到上限且仍有未解决的 Blocker/Major 发现时上报给人类 —— 绝不静默通过
 - 在 `review-cycle-report.md` 中记录轮次历史与每条非作者确认
@@ -412,8 +414,22 @@ AI:  Verifying add-dark-mode...
 - **Claude Code 加速（可选）：** 启用 agent-teams（`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`）时，lead 可通过 `SendMessage` 唤回原审查器只复审增量（仅 lead 可发起 `SendMessage`）。
 - **工具无关回退（强制）：** 否则进行一次全新的增量审查，将先前发现与修复 diff 通过共享文件传入。结果等价，只是成本更高。
 
+**示例：**
+```
+You: /opsx:review-cycle add-dark-mode
+
+AI:  Review Cycle: add-dark-mode (round 1/3)
+     Findings: 1 Blocker, 2 Major
+       - [Blocker] missing null guard → trivial → orchestrator inline
+       - [Major]   race in toggle      → non-trivial → implementing agent
+       - [Major]   contract changed     → design-level → separate fix agent
+     Fixes applied → re-reviewing delta (fresh non-author review)...
+     Round 2/3: 0 Blocker, 0 Major → CLEAN
+     Report: review-cycle-report.md
+```
+
 **提示：**
-- 在实现**之后**针对实时 diff 使用；若只需单次验证门禁请改用 `/opsx:verify`
+- 在实现**之后**针对实时 diff 使用；若只需单次验证门禁，请改用 `/opsx:verify`
 - 循环是有界的 —— 若上报，开放发现与轮次历史会交给人类，而非静默通过
 
 ---
@@ -460,9 +476,9 @@ AI:  Syncing add-dark-mode delta specs...
 
 **何时手动使用：**
 
-| 场景 | 使用 sync？ |
+| 场景 | 是否使用 sync？ |
 |----------|-----------|
-| 长期运行的变更，想在归档前将规格放入主目录 | 是 |
+| 长期运行的变更，想在归档前把规格放入主目录 | 是 |
 | 多个并行变更需要更新后的基础规格 | 是 |
 | 想单独预览/审查合并结果 | 是 |
 | 快速变更，直接归档 | 否（归档会处理） |
@@ -522,7 +538,7 @@ AI:  ✓ Synced specs to openspec/specs/ui/spec.md
 **提示：**
 - 归档不会因未完成的任务而阻塞，但会发出警告
 - 增量规格可以在归档时或之前同步
-- 已归档的变更会保留用于历史记录
+- 已归档的变更会保留以供历史记录
 - 先使用 `/opsx:verify` 来发现问题
 
 ---
@@ -653,17 +669,18 @@ AI:  Welcome to OpenSpec!
 | Cursor | `/opsx-propose`, `/opsx-apply` |
 | Windsurf | `/opsx-propose`, `/opsx-apply` |
 | Copilot (IDE) | `/opsx-propose`, `/opsx-apply` |
+| Kimi CLI | 基于技能的调用方式，如 `/skill:openspec-propose`、`/skill:openspec-apply-change`（不生成 `opsx-*` 命令文件） |
 | Trae | 基于技能的调用方式，如 `/openspec-propose`、`/openspec-apply-change`（不生成 `opsx-*` 命令文件） |
 
-各工具的意图相同，但命令的呈现方式因集成方式而异。
+各工具的意图相同，但命令的呈现方式会因集成方式而异。
 
-> **注意：** GitHub Copilot 命令（`.github/prompts/*.prompt.md`）仅在 IDE 扩展中可用（VS Code、JetBrains、Visual Studio）。GitHub Copilot CLI 目前不支持自定义提示文件——详见 [支持的工具](supported-tools.md)。
+> **注意：** GitHub Copilot 命令（`.github/prompts/*.prompt.md`）仅在 IDE 扩展中可用（VS Code、JetBrains、Visual Studio）。GitHub Copilot CLI 目前不支持自定义提示文件——详情和变通方法请参阅 [支持的工具](supported-tools.md)。
 
 ---
 
 ## 旧版命令
 
-这些命令使用较旧的"一次性完成"工作流。它们仍然有效，但推荐使用 OPSX 命令。
+这些命令使用较旧的「一次性完成」工作流。它们仍然有效，但推荐使用 OPSX 命令。
 
 | 命令 | 功能 |
 |---------|--------------|
@@ -677,7 +694,7 @@ AI:  Welcome to OpenSpec!
 - 偏好一次性完成的方式
 
 **迁移到 OPSX：**
-旧版变更可以使用 OPSX 命令继续。产物结构是兼容的。
+旧版变更可以用 OPSX 命令继续。产物结构是兼容的。
 
 ---
 

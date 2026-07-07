@@ -1,215 +1,216 @@
-# grill 与 gstack 融入 OpenSpec 的现状
+# The current state of grill and gstack absorption into OpenSpec
 
-> 截止 2026-07-07，记录 `unify-expert-template-pipeline` 归档后的真实落地形态。
-> 本文是「现状快照 + 来龙去脉」，不是变更日志。变更日志看 `openspec/changes/archive/` 各 change 的 retro。
-> 配套阅读：`docs/opsx-workflow-guide.md`（命令总览）、`docs/review-cycle-workflow-design.md`（评审循环设计）、`skills/experts/docs/`（专家技能架构）。
+> As of 2026-07-07, recording the real landed shape after `unify-expert-template-pipeline` was archived.
+> This is a "current-state snapshot + how we got here", not a changelog. For changelogs, see each change's retro in `openspec/changes/archive/`.
+> Companion reading: `docs/opsx-workflow-guide.md` (command overview), `docs/review-cycle-workflow-design.md` (review-loop design), `skills/experts/docs/` (expert-skill architecture).
 
-## 0. 一句话现状
+## 0. The one-paragraph current state
 
-OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技能集，MIT）和 **gstack**（一套平行的方法论/工具层）**消化吸收为单一体系**：19 个专家技能以 TypeScript 模板为唯一源、统一 `openspec` 命名、由 OPSX 工作流命令编排。原 grill / gstack 的入口、工具链、品牌都已退出，只剩吸收后的能力留在 OpenSpec 里。
+OPSX (OpenSpec's fusion workflow layer) has **absorbed** both **grill** (Matt Pocock's skill set, MIT) and **gstack** (a parallel methodology/tooling layer) **into a single system**: 19 expert skills with TypeScript templates as the single source, unified `openspec` naming, orchestrated by OPSX workflow commands. The original grill / gstack entry points, toolchains, and branding have all exited; only the absorbed capabilities remain inside OpenSpec.
 
-需要注意一个分寸：**「技能身份层」（用户怎么调、叫什么名、装在哪）已 100% 去 gstack 化；「内部代码层」（运行时路径、文件格式标记、vendored 工具）仍保留若干 gstack 字符串**——其中一部分是改了就会改变行为的（故不动），一部分是历史性注释（可清不清）。第 5 节有诚实清单。
+One nuance to note: **the "skill-identity layer" (how the user invokes them, what they are named, where they install) is 100% de-gstacked; the "internal-code layer" (runtime paths, file-format markers, vendored tools) still retains a number of gstack strings** — part of which would change behavior if touched (so left alone), part of which is historical commentary (clearable but not required). Section 5 has the honest inventory.
 
-## 1. 背景：这三个词分别是什么
+## 1. Background: what each of these three terms is
 
-| 名词 | 本质 | 在本仓库的角色 |
+| Term | Essence | Role in this repo |
 |---|---|---|
-| **OpenSpec** | 规格驱动开发的核心：`propose → apply → archive` + CLI + change/spec 产物体系 | 主体/宿主 |
-| **OPSX** | OpenSpec 之上的「融合工作流层」：`/opsx:auto` 编排器、流水线注册表、ship/verify-enhanced/office-hours/retro 等命令、LEAD+worker 编排模型 | 吸收 grill/gstack 后长出的工作流层 |
-| **grill** | Matt Pocock 的技能集（MIT 授权）：代码评审、grilling 访谈纪律、bug 诊断、路由、方法论设计原语 | 能力来源——被「吸收」进专家技能与工作流命令 |
-| **gstack** | 一套平行的方法论 + 工具层（专家技能、ship/retro、browse 浏览器工具、编排） | 工具来源——被「收编」进 OPSX，自身作为独立系统退出 |
+| **OpenSpec** | The core of spec-driven development: `propose → apply → archive` + CLI + change/spec artifact system | The host/substrate |
+| **OPSX** | The "fusion workflow layer" on top of OpenSpec: `/opsx:auto` orchestrator, pipeline registry, ship/verify-enhanced/office-hours/retro commands, LEAD+worker orchestration model | The workflow layer that grew out of absorbing grill/gstack |
+| **grill** | Matt Pocock's skill set (MIT-licensed): code review, grilling interview discipline, bug diagnosis, routing, methodology design primitives | Source of capabilities — "absorbed" into expert skills and workflow commands |
+| **gstack** | A parallel methodology + tooling layer (expert skills, ship/retro, browse browser tool, orchestration) | Source of tooling — "folded in" to OPSX, exiting as a standalone system |
 
-一句话：grill 提供「方法与纪律」，gstack 提供「专家与工具」，两者都被 OPSX 消化，最终只剩 OpenSpec 一个体系。
+In one sentence: grill provides "method and discipline", gstack provides "experts and tooling", and both were digested by OPSX, leaving only OpenSpec as the single system.
 
-## 2. 融合时间线（按归档顺序）
+## 2. Fusion timeline (in archive order)
 
-每一步都是一个已归档的 OpenSpec change，commits 在各 change 的 retro 里。
+Each step is an archived OpenSpec change; commits are in each change's retro.
 
-1. **`gstack-skills-integration`** —— 把 gstack 专家技能初次接入 OpenSpec（模板源 + sidecar + 注册 + `openspec init` 安装）。
-2. **`add-grill-expert-skills`** —— 引入 grill 的方法论专家（`codebase-design` / `tdd` / `prototype`，MIT），填补「方法级设计原语」缺口。
-3. **`review-two-axis-absorption`** —— grill `code-review` 并入 P0 `review`，做成双轴（Standards + Spec）并行评审。
-4. **`office-hours-grilling-absorption`** —— grill `grilling` 访谈纪律并入 `office-hours`（一次只问一个问题、给推荐答案、能在代码里查到的就别问）。
-5. **`investigate-diagnosing-absorption`** —— grill `diagnosing-bugs` 并入 `investigate`（先建「能复红」的反馈环，再谈假设）。
-6. **`navigator-router-skill`** —— grill `ask-matt` 演化为 `navigator` 路由技能，画出 OPSX 主流程 + 专家地图。
-7. **一批 `remove-*` / 清理 change**（`remove-gstack-features`、`remove-conductor-config`、`remove-gstack-upgrade-skill`、`remove-setup-browser-cookies-skill`、`dead-stub-removal`、`eureka-telemetry-removal`、`preamble-migration`、`browse-skill-ethos-cleanup`、`legacy-cleanup` 等）—— 逐项移除不再需要的 gstack 特性/telemetry/桩代码。
-8. **`remove-parallel-lifecycle-skills`** —— 删除 10 个平行生命周期专家（`/autoplan`、`/plan-*-review`、`/canary`、`/document-release`、`/setup-deploy` 等），并把 `ship`/`retro` 契约吸收进 `/opsx:ship`、`/opsx:retro` 自包含工作流。专家名册 30→20。
-9. **`fuse-methodology-into-opsx`** —— grill 四个教学级方法论接入 `propose`/`apply`/`explore`；修 `schema.yaml` 的 `enhance` 钩子现行 bug；清理主 spec 陈旧示例。
-10. **`reconcile-fusion-seams`** —— 融合矩阵审查发现的三处缝修复 + **整体移除 `domain-modeling` 专家**（其 CONTEXT.md/ADR 工作方式与 change 目录流结构性冲突），名册 20→19。
-11. **`ship-delivery-modes`** —— 重构 ship 契约（见 §4.3）：原样收编自 gstack `/ship` 的「盲 merge main + 无条件全量测试」被改为三交付模式 + 证据门。
-12. **`unify-expert-template-pipeline`** —— 把 19 个专家源从 `.tmpl` 内联为 TS 模板、删 `bun/gen-skill-docs/skill-check` 工具链、新鲜度门禁统一到 parity 哈希、**去除 gstack 品牌**（dirName `openspec-<name>`、skill id `openspec:<name>`、源目录 `skills/experts/`）。
+1. **`gstack-skills-integration`** — first wired gstack expert skills into OpenSpec (template source + sidecar + registration + `openspec init` install).
+2. **`add-grill-expert-skills`** — introduced grill's methodology experts (`codebase-design` / `tdd` / `prototype`, MIT), filling the "method-level design primitive" gap.
+3. **`review-two-axis-absorption`** — folded grill's `code-review` into the P0 `review`, making it a two-axis (Standards + Spec) parallel review.
+4. **`office-hours-grilling-absorption`** — folded grill's `grilling` interview discipline into `office-hours` (ask one question at a time, give a recommended answer, don't ask what can be looked up in code).
+5. **`investigate-diagnosing-absorption`** — folded grill's `diagnosing-bugs` into `investigate` (build a red-reproducing feedback loop before talking hypotheses).
+6. **`navigator-router-skill`** — grill's `ask-matt` evolved into the `navigator` routing skill, sketching the OPSX main flow + expert map.
+7. **A batch of `remove-*` / cleanup changes** (`remove-gstack-features`, `remove-conductor-config`, `remove-gstack-upgrade-skill`, `remove-setup-browser-cookies-skill`, `dead-stub-removal`, `eureka-telemetry-removal`, `preamble-migration`, `browse-skill-ethos-cleanup`, `legacy-cleanup`, etc.) — incrementally removing unneeded gstack features/telemetry/stubs.
+8. **`remove-parallel-lifecycle-skills`** — removed 10 parallel lifecycle experts (`/autoplan`, `/plan-*-review`, `/canary`, `/document-release`, `/setup-deploy`, etc.), and absorbed the `ship`/`retro` contracts into the self-contained `/opsx:ship`, `/opsx:retro` workflows. Expert roster 30→20.
+9. **`fuse-methodology-into-opsx`** — wired grill's four teaching-level methodologies into `propose`/`apply`/`explore`; fixed a live bug in `schema.yaml`'s `enhance` hook; cleaned stale examples from the main spec.
+10. **`reconcile-fusion-seams`** — fixed the three seams found by the fusion-matrix review + **wholesale removal of the `domain-modeling` expert** (its CONTEXT.md/ADR working style structurally conflicted with the change-directory flow), roster 20→19.
+11. **`ship-delivery-modes`** — restructured the ship contract (see §4.3): the "blind merge main + unconditional full test" lifted verbatim from gstack `/ship` was replaced by three delivery modes + an evidence gate.
+12. **`unify-expert-template-pipeline`** — inlined the 19 expert sources from `.tmpl` to TS templates, deleted the bun/gen-skill-docs/skill-check toolchain, unified the freshness gate on a parity hash, **removed the gstack branding** (dirName `openspec-<name>`, skill id `openspec:<name>`, source dir `skills/experts/`).
 
-## 3. 当前架构（融合后的落地形态）
+## 3. Current architecture (the post-fusion landed shape)
 
-### 3.1 三层结构
+### 3.1 Three-layer structure
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  上层：专家技能（19 个 openspec:<name>，按需调用）            │
+│  Upper layer: expert skills (19 openspec:<name>, on demand)  │
 │  review / cso / benchmark / qa / design-review / ...         │
-│  + 方法论三件：codebase-design / tdd / prototype             │
+│  + methodology trio: codebase-design / tdd / prototype       │
 ├─────────────────────────────────────────────────────────────┤
-│  中层：OPSX 工作流命令（/opsx:*）                            │
+│  Middle layer: OPSX workflow commands (/opsx:*)              │
 │  explore → propose → apply → verify/review-cycle             │
-│  → ship → archive → retro    驱动器：/opsx:auto             │
+│  → ship → archive → retro    driver: /opsx:auto              │
 ├─────────────────────────────────────────────────────────────┤
-│  底层：openspec CLI（确定性的状态读写/校验/归档基座）         │
+│  Lower layer: openspec CLI (deterministic state base:        │
+│  read/write/validate/archive)                                │
 │  propose/apply/archive + pipeline/validate/status/...        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **底层 CLI** 是规格驱动开发的核心，所有 slash 命令最终都落到它身上。
-- **中层 OPSX** 把零散的 CLI 串成有门禁、有循环、有编排的工作流，并提供 LEAD+worker 多代理编排。
-- **上层专家** 是「能力插件」——独立技能，被工作流命令在合适时机条件式引用，也可被用户直接 `/review` 这样调用。
+- **The lower-layer CLI** is the core of spec-driven development; all slash commands ultimately land on it.
+- **The middle-layer OPSX** strings the scattered CLIs into workflows with gates, loops, and orchestration, and provides the LEAD+worker multi-agent orchestration.
+- **The upper-layer experts** are "capability plugins" — standalone skills, conditionally referenced by workflow commands at the right moment, and also directly invocable by the user via `/review` and the like.
 
-### 3.2 19 个专家技能清单与分类
+### 3.2 The 19 expert skills — inventory and classification
 
-源在 `src/core/templates/experts/<name>.ts`（每个一个 getter），sidecar 在 `skills/experts/<name>/`，注册名 `openspec:<name>`、安装目录 `openspec-<name>`。
+Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sidecars in `skills/experts/<name>/`, registered name `openspec:<name>`, install dir `openspec-<name>`.
 
-**评审/验证家（full-feature 流水线 `review` 阶段的并行专家组，按 condition 触发）**
-- `review` —— 双轴评审（Standards + Spec），始终触发。grill `code-review` 吸收而来。
-- `cso` —— 安全审计（condition: security-relevant）。
-- `benchmark` —— 性能基线（condition: performance-sensitive）。
-- `qa` —— 真实浏览器找 bug 并修（condition: ui）。
-- `qa-only` —— ��� qa 但只报告不改（condition: non-ui）。
-- `design-review` —— 渲染 UI 的设计审计 + 修复循环（condition: ui）。
-- `design-consultation` —— 从零构建完整设计系统（独立专家，不在流水线）。
+**Review/validation family (the parallel expert group in the `review` stage of the full-feature pipeline, triggered by condition)**
+- `review` — two-axis review (Standards + Spec), always triggered. Absorbed from grill's `code-review`.
+- `cso` — security audit (condition: security-relevant).
+- `benchmark` — performance baseline (condition: performance-sensitive).
+- `qa` — finds and fixes bugs in a real browser (condition: ui).
+- `qa-only` — like qa but report-only, no changes (condition: non-ui).
+- `design-review` — design audit + fix loop for rendered UI (condition: ui).
+- `design-consultation` — builds a complete design system from scratch (standalone expert, not in the pipeline).
 
-**方法论三件（grill MIT，条件式被工作流引用，不强制）**
-- `codebase-design` —— 深模块设计词汇（module/interface/depth/seam/adapter/leverage/locality）。`propose` 对设计密集型 change 引用。
-- `tdd` —— 一个值得留下的测试，红→绿。`apply` 对测试先行工作引用。
-- `prototype` —— 一次性探针回答一个设计问题，留答案删代码。`explore` 对「卡住、只有动手才说得清」的设计问题引用。
+**Methodology trio (grill MIT, conditionally referenced by workflows, not enforced)**
+- `codebase-design` — deep-module design vocabulary (module/interface/depth/seam/adapter/leverage/locality). Referenced by `propose` for design-intensive changes.
+- `tdd` — one test worth keeping, red→green. Referenced by `apply` for test-first work.
+- `prototype` — a throwaway probe that answers one design question; keep the answer, delete the code. Referenced by `explore` for design questions where "stuck, only hands-on makes it clear".
 
-**调试/诊断**
-- `investigate` —— 系统化根因调试，铁律「先建能复红的反馈环再谈假设」。grill `diagnosing-bugs` 吸收而来。
+**Debugging/diagnosis**
+- `investigate` — systematic root-cause debugging, iron rule "build a red-reproducing feedback loop before talking hypotheses". Absorbed from grill's `diagnosing-bugs`.
 
-**浏览器工具 / 第二意见 / 路由 / 访谈**
-- `browse` —— 无头浏览器（真实 Chromium，真实点击）。vendored 工具（见 §5）。
-- `codex` —— 把任务交给 Codex 做独立第二意见或并行实现。
-- `navigator` —— 路由技能，画出本仓库技能地图（grill `ask-matt` 演化）。
-- `office-hours` —— YC 式需求验证，Startup 模式（六问）+ Builder 模式（设计头脑风暴）。grill `grilling` 访谈纪律吸收。
+**Browser tool / second opinion / routing / interview**
+- `browse` — headless browser (real Chromium, real clicks). A vendored tool (see §5).
+- `codex` — hands the task to Codex for an independent second opinion or parallel implementation.
+- `navigator` — routing skill, sketches this repo's skill map (evolved from grill's `ask-matt`).
+- `office-hours` — YC-style demand validation, Startup mode (six questions) + Builder mode (design brainstorm). Absorbs grill's `grilling` interview discipline.
 
-**编辑安全家**
-- `careful` —— 破坏性命令前警告（rm -rf / DROP TABLE / force-push）。`apply` 引用。
-- `guard` —— careful + freeze 一起开。
-- `freeze` —— 硬锁编辑到一个目录。
-- `unfreeze` —— 解除目录锁。
+**Edit-safety family**
+- `careful` — warns before destructive commands (rm -rf / DROP TABLE / force-push). Referenced by `apply`.
+- `guard` — careful + freeze turned on together.
+- `freeze` — hard-locks edits to one directory.
+- `unfreeze` — releases the directory lock.
 
-> 名册从早期的 30（含平行生命周期专家）→ 20（移除平行生命周期）→ **19**（移除 domain-modeling）。当前稳定在 19。
+> The roster went from 30 early on (including parallel lifecycle experts) → 20 (parallel lifecycle removed) → **19** (domain-modeling removed). Currently stable at 19.
 
-### 3.3 grill 的去留
+### 3.3 grill's fate
 
-| grill 技能 | 去向 |
+| grill skill | Destination |
 |---|---|
-| `code-review` | → `review`（双轴 Standards+Spec） |
-| `grilling`（访谈纪律） | → `office-hours` 的访谈 phase |
-| `diagnosing-bugs` | → `investigate`（反馈环优先） |
-| `ask-matt`（路由） | → `navigator` |
-| `codebase-design` / `tdd` / `prototype`（方法论） | → 独立专家技能 + 条件式接入 propose/apply/explore |
-| `/to-prd`、`/to-issues`、`/implement`、`/triage`、`/improve-codebase-architecture`、`/research`、`/teach`、`/grill-me`、`/grill-with-docs`、`/setup-matt-pocock-skills` | **未引入**（本 fork 不需要） |
+| `code-review` | → `review` (two-axis Standards+Spec) |
+| `grilling` (interview discipline) | → the interview phase of `office-hours` |
+| `diagnosing-bugs` | → `investigate` (feedback-loop first) |
+| `ask-matt` (routing) | → `navigator` |
+| `codebase-design` / `tdd` / `prototype` (methodology) | → standalone expert skills + conditional wiring into propose/apply/explore |
+| `/to-prd`, `/to-issues`, `/implement`, `/triage`, `/improve-codebase-architecture`, `/research`, `/teach`, `/grill-me`, `/grill-with-docs`, `/setup-matt-pocock-skills` | **Not introduced** (this fork doesn't need them) |
 
-grill 的 MIT 归属在每个吸收它的技能源文件头部保留（如 `review.ts`、`navigator.ts`、`codebase-design.ts` 等的 `<!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->`）。
+grill's MIT attribution is retained in the header of each skill source file that absorbs it (e.g. the `<!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->` in `review.ts`, `navigator.ts`, `codebase-design.ts`, etc.).
 
-### 3.4 gstack 的去留
+### 3.4 gstack's fate
 
-| gstack 能力 | 去向 |
+| gstack capability | Destination |
 |---|---|
-| 专家技能层（review/cso/qa/browse/...） | → 19 专家（去 gstack 品牌） |
-| `/ship` + `/land-and-deploy` | → `/opsx:ship`（land-and-deploy 变为 `--deploy`） |
+| Expert-skill layer (review/cso/qa/browse/...) | → the 19 experts (de-gstacked) |
+| `/ship` + `/land-and-deploy` | → `/opsx:ship` (land-and-deploy becomes `--deploy`) |
 | `/retro` | → `/opsx:retro` |
-| browse 浏览器工具 | → `browse` 专家（vendored，内部仍带 gstack 命名，见 §5） |
-| 编排模型 | → OPSX LEAD+worker 编排 playbook |
-| `/autoplan`、`/plan-*-review`、`/canary`、`/document-release`、`/setup-deploy`、`/setup-browser-cookies`、conductor 配置、upgrade skill、telemetry | **已删除** |
+| browse browser tool | → the `browse` expert (vendored, internal naming still gstack, see §5) |
+| Orchestration model | → the OPSX LEAD+worker orchestration playbook |
+| `/autoplan`, `/plan-*-review`, `/canary`, `/document-release`, `/setup-deploy`, `/setup-browser-cookies`, conductor config, upgrade skill, telemetry | **Deleted** |
 
-主轴确立：**OPSX 工作流消费纯专家层；gstack 作为独立系统不再存在。**
+The main axis is established: **OPSX workflows consume a pure expert layer; gstack no longer exists as a standalone system.**
 
-### 3.5 方法论专家的接线方式（条件式引用，不内联）
+### 3.5 How the methodology experts are wired (conditional reference, not inline)
 
-grill 方法论三件（`codebase-design`/`tdd`/`prototype`）**不**把专家体塞进工作流指令，而是用一两句「条件式引用」告诉 agent 何时去调那个独立技能，并把产物落进 change 目录（而非技能自有路径）。落点：
+The grill methodology trio (`codebase-design`/`tdd`/`prototype`) does **not** inline the expert body into the workflow instructions; instead it uses a sentence or two of "conditional reference" telling the agent when to call that standalone skill, and lands the artifacts in the change directory (not the skill's own path). The landing points:
 
-- `propose.ts` ——「设计密集型 change（新模块/非平凡接口）→ 先咨询 `/codebase-design`，把接口/设计决策记进 `design.md` 的 Decisions。」
-- `apply-change.ts` ——「测试先行的工作 → 咨询 `/tdd`；触碰破坏性操作 → 咨询 `/careful`。」
-- `explore.ts` ——「设计问题卡住、只有动手才说得清 → 用 `/prototype` 探针，留答案删代码。」
+- `propose.ts` — "Design-intensive change (new module / non-trivial interface) → first consult `/codebase-design`, record the interface/design decisions in `design.md`'s Decisions."
+- `apply-change.ts` — "Test-first work → consult `/tdd`; touching destructive operations → consult `/careful`."
+- `explore.ts` — "Design question stuck, only hands-on makes it clear → use the `/prototype` probe, keep the answer, delete the code."
 
-这种「引用而非内联」是为了保持 explore/propose/apply 的「抓取/规划/实现」本职不被方法论文本稀释。`schema.yaml` 不再携带任何 `enhance` 钩子（机制保留休眠、当前无使用方）。
+This "reference rather than inline" is to keep explore/propose/apply's "grab/plan/implement" core job from being diluted by methodology text. `schema.yaml` no longer carries any `enhance` hook (mechanism retained dormant, currently no consumers).
 
-### 3.6 编排模型（LEAD + 角色隔离 worker）
+### 3.6 Orchestration model (LEAD + role-isolated workers)
 
-`/opsx:auto` 是驱动器：LEAD（编排者，不亲自动手写产物）按流水线 DAG 把每个 stage 派给一个**角色隔离的叶 worker**（planner/implementer/reviewer/fixer/shipper），worker 调用该 stage 对应的 OPSX 技能。关键不变量：
+`/opsx:auto` is the driver: the LEAD (orchestrator, does not write artifacts itself) dispatches each stage along the pipeline DAG to a **role-isolated leaf worker** (planner/implementer/reviewer/fixer/shipper), and the worker calls that stage's corresponding OPSX skill. Key invariants:
 
-- **author ≠ verifier**：评审者不能是作者；修复必须由非作者复核。
-- **change 目录是黑板**：stage 间通过 `openspec/changes/<name>/` 的产物交接（proposal/design/tasks/specs/review-report/ship-log），不靠共享���存。
-- **门禁**：gate stage 暂停等人工；review-loop 有界（默认 3 轮），到顶仍有 Blocker/Major 不悄悄判过，走 LEAD 升级阶梯。
-- **Tier A/B/C**：有 agent-teams（Tier A）可用 `SendMessage` 温续；只能 spawn 不能温续（Tier B）；单上下文降级（Tier C）。pipeline 定义三层一致，只是机制不同。
+- **author ≠ verifier**: the reviewer cannot be the author; a fix must be re-checked by a non-author.
+- **The change directory is the blackboard**: stages hand off via artifacts in `openspec/changes/<name>/` (proposal/design/tasks/specs/review-report/ship-log), not via shared memory.
+- **Gates**: gate stages pause to wait for a human; the review-loop is bounded (default 3 rounds), and at the cap with Blocker/Major findings remaining it does not silently pass — it goes through the LEAD escalation ladder.
+- **Tier A/B/C**: with agent-teams (Tier A) `SendMessage` warm-resume is available; spawn-only, no warm-resume (Tier B); single-context fallback (Tier C). The pipeline definition is consistent across the three tiers; only the mechanism differs.
 
-## 4. 源码、构建、命名
+## 4. Source, build, naming
 
-### 4.1 专家技能的单一源
+### 4.1 The single source for expert skills
 
-`src/core/templates/experts/<name>.ts` 是专家技能的**唯一权威源**——每个 getter 返回一个 `SkillTemplate`，指令体是 TS 模板字符串。共享块（PREAMBLE、BROWSE_SETUP、SPEC_REVIEW_LOOP 等 14 个）抽到 `src/core/templates/experts/_shared.ts` 常量。`openspec init`/`update` 从这些模板生成安装侧的 `SKILL.md` + sidecar。
+`src/core/templates/experts/<name>.ts` is the **single authoritative source** for expert skills — each getter returns a `SkillTemplate`, and the instruction body is a TS template string. Shared blocks (PREAMBLE, BROWSE_SETUP, SPEC_REVIEW_LOOP, ... — 14 in total) are extracted into constants in `src/core/templates/experts/_shared.ts`. `openspec init`/`update` generates the install-side `SKILL.md` + sidecar from these templates.
 
-> 这是 `unify-expert-template-pipeline` 的核心成果：此前源是 `skills/gstack/<name>/SKILL.md.tmpl`，由 bun + `gen-skill-docs` 生成。现已统一为 TS 模板 + parity 哈希门禁，工具链删除。
+> This is the core outcome of `unify-expert-template-pipeline`: previously the source was `skills/gstack/<name>/SKILL.md.tmpl`, generated by bun + `gen-skill-docs`. Now unified to TS templates + a parity-hash freshness gate, with the toolchain deleted.
 
-### 4.2 命名规则（去 gstack 后）
+### 4.2 Naming rules (after de-gstacking)
 
-| 维度 | 旧 | 新 |
+| Dimension | Old | New |
 |---|---|---|
-| 技能调用 id | `gstack:<name>` | `openspec:<name>` |
-| 安装目录名 | `openspec-gstack-<name>` | `openspec-<name>` |
-| 源目录 | `skills/gstack/` | `skills/experts/`（仅 sidecar） |
-| 工作流命令 | `/ship`、`/retro` | `/opsx:ship`、`/opsx:retro` |
+| Skill invocation id | `gstack:<name>` | `openspec:<name>` |
+| Install directory name | `openspec-gstack-<name>` | `openspec-<name>` |
+| Source directory | `skills/gstack/` | `skills/experts/` (sidecars only) |
+| Workflow commands | `/ship`, `/retro` | `/opsx:ship`, `/opsx:retro` |
 
-`openspec-` 前缀的工作流技能（explore/propose/apply/...）与 `openspec-` 前缀的专家技能现在共处同一命名空间、无歧义（`openspec-review` 专家 vs `openspec-review-cycle` 工作流，名字不同）。
+The `openspec-`-prefixed workflow skills (explore/propose/apply/...) and the `openspec-`-prefixed expert skills now share the same namespace, unambiguously (`openspec-review` the expert vs `openspec-review-cycle` the workflow — different names).
 
-### 4.3 新鲜度门禁：parity golden-master
+### 4.3 Freshness gate: parity golden-master
 
-`test/core/templates/skill-templates-parity.test.ts` 用两组哈希钉死模板内容：`EXPECTED_FUNCTION_HASHES`（每个 getter 的结构哈希）和 `EXPECTED_GENERATED_SKILL_CONTENT_HASHES`（生成内容哈希）。改了模板必须同步重算哈希，否则测试红——这就是「新鲜度门禁」，取代了旧的 gen-skill-docs 一致性检查。19 个专家现已全部纳入。
+`test/core/templates/skill-templates-parity.test.ts` pins template content with two sets of hashes: `EXPECTED_FUNCTION_HASHES` (a structural hash per getter) and `EXPECTED_GENERATED_SKILL_CONTENT_HASHES` (a generated-content hash). Change a template and you must recompute the hashes in lockstep or the test goes red — this is the "freshness gate", replacing the old gen-skill-docs consistency check. All 19 experts are now covered.
 
-### 4.4 ship 契约（去 gstack 假设后的重构）
+### 4.4 The ship contract (restructured after dropping gstack assumptions)
 
-gstack `/ship` 假设「feature 分支从 main 分叉、PR 回 main」，所以无条件 merge base + 全量测试。这在直推工作分支、decompose 子任务共享工作树等场景下是**正确性错误**。`ship-delivery-modes` 重构后：
+gstack's `/ship` assumed "feature branch forks from main, PRs back to main", so it unconditionally merged base + ran a full test. That is a **correctness error** for direct-push-to-working-branch, decompose-subtask shared-worktree, and similar scenarios. After the `ship-delivery-modes` restructure:
 
-- **三交付模式**：`pr`（开 PR）/ `push`（直推当前分支）/ `local`（仅 commit，decompose 子任务用）。解析顺序：显式参数 > 现存 PR > 仓库惯例 > 询问用户，**绝不默认 repo 默认分支**。
-- **commit 是 ship 的一等步骤**（hook 失败修复重试，绝不 `--no-verify`）。
-- **测试改证据门**：有绿色测试证据（review/verify 报告记录的通过测试所对应的代码未变）就跳过，否则才跑。
-- **decompose 子任务链全部完成后**，才在组合层做一次统一 push/PR。
+- **Three delivery modes**: `pr` (open a PR) / `push` (push the current branch directly) / `local` (commit only, for decompose subtasks). Resolution order: explicit parameter > existing PR > repo convention > ask the user, **never defaulting to the repo's default branch**.
+- **Commit is a first-class step of ship** (hook-failure fixups retry, never `--no-verify`).
+- **Test changed to an evidence gate**: if there is green-test evidence (the code covered by the passing tests recorded in the review/verify report is unchanged), skip; otherwise run.
+- **After all decompose subtasks in a chain are done**, a single unified push/PR is done at the composition layer.
 
-## 5. 残留的 gstack 字符串（诚实清单）
+## 5. Residual gstack strings (honest inventory)
 
-去品牌针对的是**技能身份层**。内部代码层仍有 gstack 字符串，按性质分三类——**它们大多是「改了就改变行为」或「历史记录」，刻意保留**：
+De-branding targets the **skill-identity layer**. The internal-code layer still has gstack strings, classified into three kinds by nature — **most of these are "changing it would change behavior" or "historical record", deliberately retained**:
 
-### 5.1 故意保留（功能性）
+### 5.1 Deliberately retained (functional)
 
-- **孤儿清理前缀常量**：`src/core/legacy-cleanup.ts` 的 `RETIRED_EXPERT_SKILL_PREFIX = 'openspec-gstack-'`。`init`/`update` 用它精确匹配并删除改名遗留的旧安装目录（`openspec-gstack-*`），带 near-miss 测试防止误伤 `openspec-*`。改了它，孤儿就清不掉。
-- **freeze 家族的运行时状态目录**：`freeze`/`guard`/`investigate`/`unfreeze` 把锁状态写在 `${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}`。改路径会让用户机器上已有的 freeze 锁失效。属运行时状态目录，不在去品牌范围。
-- **review 引擎的文件格式标记**：`_shared.ts` 里 `## GSTACK REVIEW REPORT` 是评审报告写进 plan 文件的固定 section 名（稳定字符串标识）。改名是文件格式变更。
-- **design-sketch 临时文件前缀**：`_shared.ts` 的 `/tmp/gstack-sketch-*.html/png`。纯 temp 命名，下游技能按这个路径引用截图。
+- **Orphan-cleanup prefix constant**: `RETIRED_EXPERT_SKILL_PREFIX = 'openspec-gstack-'` in `src/core/legacy-cleanup.ts`. `init`/`update` uses it to exact-match and delete the old install directories left behind by the rename (`openspec-gstack-*`), with a near-miss test to avoid collateral damage to `openspec-*`. Change it and the orphans won't be cleaned up.
+- **Runtime state directory for the freeze family**: `freeze`/`guard`/`investigate`/`unfreeze` write lock state to `${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}`. Changing the path would invalidate freeze locks already on users' machines. This is a runtime state directory, out of scope for de-branding.
+- **The review engine's file-format marker**: `## GSTACK REVIEW REPORT` in `_shared.ts` is the fixed section name the review report writes into the plan file (a stable string identifier). Renaming it is a file-format change.
+- **design-sketch temp-file prefix**: `/tmp/gstack-sketch-*.html/png` in `_shared.ts`. Pure temp naming; downstream skills reference screenshots by this path.
 
-### 5.2 vendored 工具的内部命名
+### 5.2 Internal naming of vendored tools
 
-- **`browse`** 是一个 vendored 的无头浏览器工具（真实 Chromium，自带 `src/`、`test/`、`scripts/build-node-server.sh`）。它原本是 gstack 的工具，整个工具树作为黑盒并入 `skills/experts/browse/`，内部文件（`gstack-config.test.ts`、`gstack-update-check.test.ts` 等）保留其原始命名。去品牌只动技能模板层，不重写 vendored 工具的源码。
+- **`browse`** is a vendored headless-browser tool (real Chromium, with its own `src/`, `test/`, `scripts/build-node-server.sh`). It was originally a gstack tool; the entire tool tree was brought in as a black box under `skills/experts/browse/`, and its internal files (`gstack-config.test.ts`, `gstack-update-check.test.ts`, etc.) keep their original naming. De-branding touches only the skill-template layer, not the vendored tool's source.
 
-### 5.3 历史性注释/prose（可清不清）
+### 5.3 Historical comments/prose (clearable but not required)
 
-- `skill-generation.ts:48`、`skill-templates.ts:31` 的 `// from gstack` / `// migrated from gstack` 注释——溯源说明，无害。
-- `guard.ts:12`「by the gstack setup script」、`verify-enhanced.ts:5`「with gstack expert reviews」——过时注释。
-- `retro.ts:80`「Do NOT persist gstack-style `.context/retros/*.json`」——这是在告诉 agent **别做**旧的 gstack 行为，"gstack-style" 是对旧行为的描述，留着合理。
-- `docs/` 里 `review-cycle-workflow-design.md`、handoff 文档中的 "OPSX/gstack 融合工作" 叙述——历史叙述，保留。
-- `CHANGELOG.md` 中的 gstack 提及——历史发布记录，**刻意不改**（改了等于伪造历史）。
+- `// from gstack` / `// migrated from gstack` comments in `skill-generation.ts:48`, `skill-templates.ts:31` — provenance notes, harmless.
+- "by the gstack setup script" in `guard.ts:12`, "with gstack expert reviews" in `verify-enhanced.ts:5` — stale comments.
+- "Do NOT persist gstack-style `.context/retros/*.json`" in `retro.ts:80` — this is telling the agent **not** to do the old gstack behavior; "gstack-style" describes the old behavior, so keeping it is reasonable.
+- The "OPSX/gstack fusion work" narrative in `docs/` — in `review-cycle-workflow-design.md`, handoff documents — historical narrative, retained.
+- gstack mentions in `CHANGELOG.md` — historical release records, **deliberately not changed** (changing them would amount to forging history).
 
-> 一句话：用户看到的、调用的、装出来的全是 openspec；翻进源码才会看到 gstack 作为「历史/运行时路径/vendored 工具」留下的字样。这是有意的分层，不是清理漏网。
+> In one sentence: everything the user sees, invokes, or has installed is openspec; only by digging into the source do you see gstack lingering as "history / runtime path / vendored tool". This is an intentional layering, not a missed spot in cleanup.
 
-## 6. 测试与门禁
+## 6. Tests and gates
 
-- **parity golden-master**：`test/core/templates/skill-templates-parity.test.ts`（函数哈希 + 生成内容哈希，19 专家 + 工作流全在列）。
-- **profiles**：`test/core/profiles.test.ts` 守核心/扩展技能集划分（review-cycle 是 opt-in 不进 core）。
-- **skill-generation / sidecar-install**：守生成与安装正确性。
-- **pipeline-registry**：守流水线 DAG（skill 引用必须真实存在——改名后 `openspec:review` 等都得对得上）。
-- **legacy-cleanup**：守孤儿清理的精确性与 near-miss 安全。
-- 全量 `pnpm test` 当前 2091 passed / 22 skipped（`unify-expert-template-pipeline` 归档后基线）。
+- **parity golden-master**: `test/core/templates/skill-templates-parity.test.ts` (function hash + generated-content hash, all 19 experts + workflows listed).
+- **profiles**: `test/core/profiles.test.ts` guards the core/expanded skill-set split (review-cycle is opt-in, not in core).
+- **skill-generation / sidecar-install**: guards generation and install correctness.
+- **pipeline-registry**: guards the pipeline DAG (skill references must actually exist — after the rename, `openspec:review` and friends all have to line up).
+- **legacy-cleanup**: guards orphan-cleanup precision and near-miss safety.
+- The full `pnpm test` currently shows 2091 passed / 22 skipped (the baseline after `unify-expert-template-pipeline` was archived).
 
-## 7. 已知 follow-up（非阻塞）
+## 7. Known follow-ups (non-blocking)
 
-- **archive 零需求 spec 工具缺口**（已复现两次）：archiver 无法把 spec rebuild 到零 requirements，全 REMOVED 的 spec 只能 `--no-validate` + 手删目录。值得一个小 change 开删除路径。
-- **navigator 的 `/opsx:ship` 简介未提三模式**：`navigator.ts:22` 仍写「test, push, open the PR」，没反映 §4.3 的三交付模式 + 证据门。一句话级修复（`ship-delivery-modes` 评审遗留 F3）。
-- **ship 证据门可加 tree 指纹**：用 `git rev-parse HEAD^{tree}` 比「HEAD + dirty 状态」更严密（F2）。
-- **专家 getter 的 `description: '|'` 空描述痼疾**：除 navigator 外每个 getter 写死空 YAML block scalar，是既存 bug，按「行为不变」原则保留，未在本线修。
+- **archive zero-requirement spec tool gap** (reproduced twice): the archiver cannot rebuild a spec down to zero requirements; an all-REMOVED spec can only go through `--no-validate` + a manual directory delete. Worth a small change to open up a deletion path.
+- **navigator's `/opsx:ship` blurb doesn't mention the three modes**: `navigator.ts:22` still says "test, push, open the PR", not reflecting the three delivery modes + evidence gate from §4.3. A one-line fix (leftover F3 from the `ship-delivery-modes` review).
+- **ship evidence gate could add a tree fingerprint**: `git rev-parse HEAD^{tree}` is tighter than "HEAD + dirty state" (F2).
+- **The `description: '|'` empty-description malaise in expert getters**: every getter except navigator hardcodes an empty YAML block scalar; it is a pre-existing bug, retained per the "behavior unchanged" principle, not fixed on this line.

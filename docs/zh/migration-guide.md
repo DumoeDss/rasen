@@ -8,7 +8,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 | 方面 | 旧版 | OPSX |
 |--------|--------|------|
-| **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/opsx:propose`, `/opsx:apply`, `/opsx:archive` (扩展工作流命令可选) |
+| **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/opsx:propose`, `/opsx:apply`, `/opsx:sync`, `/opsx:archive`（扩展工作流命令可选） |
 | **工作流** | 一次性创建所有制品 | 渐进式或一次性创建——由你选择 |
 | **回退** | 笨拙的阶段门控 | 自然——随时更新任何制品 |
 | **定制** | 固定结构 | Schema 驱动，完全可定制 |
@@ -84,7 +84,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 `openspec init` 和 `openspec update` 都会检测旧版文件并引导你完成相同的清理过程。根据你的情况选择合适的命令：
 
-- 新安装默认使用 `core` 配置文件（`propose`、`explore`、`apply`、`archive`）。
+- 新安装默认使用 `core` 配置文件（`propose`、`explore`、`apply`、`sync`、`archive`）。
 - 迁移安装会在需要时通过写入 `custom` 配置文件来保留你之前安装的工作流。
 
 ### 使用 `openspec init`
@@ -297,7 +297,7 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 | `/opsx:continue` | 创建下一个制品（一次一个） |
 | `/opsx:ff` | 快进——一次创建规划制品 |
 | `/opsx:verify` | 验证实现是否匹配规格 |
-| `/opsx:sync` | 预览/spec-merge 而不归档 |
+| `/opsx:sync` | 将 delta specs 合并到主 specs |
 | `/opsx:bulk-archive` | 一次归档多个变更 |
 | `/opsx:onboard` | 引导式端到端入门工作流 |
 
@@ -381,7 +381,7 @@ OPSX 使用操作而非阶段：
                      specs, design)
 ```
 
-当你运行 `/opsx:continue` 时，它会检查哪些已就绪并提供下一个制品。你也可以按任意顺序创建多个就绪的制品。
+当你运行 `/opsx:continue` 时，它会检查哪些已就绪并���供下一个制品。你也可以按任意顺序创建多个就绪的制品。
 
 ### Skills 与 Commands
 
@@ -561,6 +561,7 @@ project/
 │       ├── openspec-propose/     # 默认 core profile
 │       ├── openspec-explore/
 │       ├── openspec-apply-change/
+│       ├── openspec-sync-specs/
 │       └── ...                   # 扩展 profile 添加 new/continue/ff 等
 ├── CLAUDE.md                     # OpenSpec 标记已移除，你的内容保留
 └── AGENTS.md                     # OpenSpec 标记已移除，你的内容保留

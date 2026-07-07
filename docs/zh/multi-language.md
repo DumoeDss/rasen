@@ -103,10 +103,10 @@ context: |
 要验证你的语言配置是否生效：
 
 ```bash
-# Check the instructions - should show your language context
+# 查看 instructions——应显示你的语言上下文
 openspec instructions proposal --change my-change
 
-# Output will include your language context
+# 输出会包含你的语言上下文
 ```
 
 ## 相关文档

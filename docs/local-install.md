@@ -1,13 +1,13 @@
-# 本地安装 (项目级安装)
+# Local Install (Project-Level)
 
-与全局安装不同，本地安装将 OpenSpec 作为项目依赖，确保团队成员使用相同版本。
+Unlike a global install, a local install adds OpenSpec as a project dependency, so everyone on the team uses the same version.
 
-## 前置条件
+## Prerequisites
 
 - **Node.js 20.19.0+** — `node --version`
-- 项目已初始化 `package.json`（若没有，先运行 `npm init -y`）
+- The project already has a `package.json` (if not, run `npm init -y` first)
 
-## 从 npm 注册表安装
+## Install from the npm registry
 
 ### npm
 
@@ -33,44 +33,44 @@ yarn add -D @fission-ai/openspec
 bun add -D @fission-ai/openspec
 ```
 
-安装后，`openspec` 命令位于 `node_modules/.bin/openspec`。
+After installing, the `openspec` command lives at `node_modules/.bin/openspec`.
 
-## 从本地文件夹安装（开发模式）
+## Install from a local folder (development mode)
 
-适用于你本地克隆了 OpenSpec 源码，希望在另一个项目中使用开发版本。
+Use this when you have cloned the OpenSpec source locally and want to use a development build in another project.
 
-### 方式一：pnpm link（推荐）
+### Option 1: pnpm link (recommended)
 
 ```bash
-# 1. 在 OpenSpec 源码目录构建
+# 1. Build in the OpenSpec source directory
 cd /path/to/OpenSpec
 pnpm install
 pnpm build
 
-# 2. 在目标项目中链接
+# 2. Link it in the target project
 cd /path/to/your-project
 pnpm link /path/to/OpenSpec
 ```
 
-取消链接：
+To unlink:
 
 ```bash
 pnpm unlink @fission-ai/openspec
 ```
 
-### 方式二：npm link
+### Option 2: npm link
 
 ```bash
-# 1. 在 OpenSpec 源码目录注册全局链接
+# 1. Register a global link in the OpenSpec source directory
 cd /path/to/OpenSpec
 npm link
 
-# 2. 在目标项目中使用链接
+# 2. Use the link in the target project
 cd /path/to/your-project
 npm link @fission-ai/openspec
 ```
 
-取消链接：
+To unlink:
 
 ```bash
 cd /path/to/your-project
@@ -80,36 +80,36 @@ cd /path/to/OpenSpec
 npm unlink
 ```
 
-### 方式三：直接引用本地路径
+### Option 3: Point directly at a local path
 
 ```bash
 # npm
 npm install --save-dev /path/to/OpenSpec
 
-# pnpm (使用 file: 协议)
+# pnpm (use the file: protocol)
 pnpm add -D "file:/path/to/OpenSpec"
 ```
 
-> **注意**：此方式会复制文件而非创建符号链接。每次修改 OpenSpec 源码后需要重新安装。
+> **Note**: This copies files rather than creating a symlink. You must reinstall after each change to the OpenSpec source.
 
-### 方式四：打包后安装 (.tgz)
+### Option 4: Install a packed tarball (.tgz)
 
 ```bash
-# 1. 在 OpenSpec 源码目录打包
+# 1. Pack in the OpenSpec source directory
 cd /path/to/OpenSpec
 pnpm pack
-# 生成 fission-ai-openspec-x.x.x.tgz
+# Produces fission-ai-openspec-x.x.x.tgz
 
-# 2. 在目标项目中安装
+# 2. Install it in the target project
 cd /path/to/your-project
 npm install --save-dev /path/to/OpenSpec/fission-ai-openspec-x.x.x.tgz
 ```
 
-## 运行本地安装的 openspec
+## Run a locally installed openspec
 
-本地安装不会将 `openspec` 添加到系统 PATH。使用以下方式运行：
+A local install does not add `openspec` to your system PATH. Run it via:
 
-### npx / pnpx（推荐）
+### npx / pnpx (recommended)
 
 ```bash
 npx openspec --version
@@ -133,7 +133,7 @@ yarn openspec init
 
 ### package.json scripts
 
-在 `package.json` 中添加脚本是最简洁的方式：
+Adding a script to `package.json` is the cleanest approach:
 
 ```json
 {
@@ -145,71 +145,71 @@ yarn openspec init
 }
 ```
 
-然后运行：
+Then run:
 
 ```bash
 npm run openspec -- init
 pnpm openspec:init
 ```
 
-### 直接调用 node_modules/.bin
+### Call node_modules/.bin directly
 
 ```bash
 ./node_modules/.bin/openspec --version
 ```
 
-Windows 下：
+On Windows:
 
 ```bash
 .\node_modules\.bin\openspec --version
 ```
 
-## 验证安装
+## Verify the install
 
 ```bash
 npx openspec --version
 ```
 
-## 初始化项目
+## Initialize the project
 
 ```bash
 npx openspec init
 ```
 
-按照交互式提示选择 AI 工具和配置。详见 [Getting Started](getting-started.md)。
+Follow the interactive prompts to choose an AI tool and configuration. See [Getting Started](getting-started.md).
 
-## 本地安装 vs 全局安装
+## Local vs global install
 
-| | 本地安装 | 全局安装 |
+| | Local install | Global install |
 |---|---|---|
-| 作用范围 | 仅当前项目 | 所有项目 |
-| 版本锁定 | 锁定在 `package.json` | 系统级单一版本 |
-| 团队协作 | 团队成员 `npm install` 自动获取 | 需要每人手动安装 |
-| 运行方式 | `npx openspec` / `pnpm exec openspec` | 直接 `openspec` |
-| CI/CD | 自动可用 | 需要额外安装步骤 |
-| 推荐场景 | 团队项目、CI/CD | 个人快速使用 |
+| Scope | Current project only | All projects |
+| Version pinning | Pinned in `package.json` | A single system-wide version |
+| Team collaboration | Team members get it via `npm install` | Each person installs manually |
+| How to run | `npx openspec` / `pnpm exec openspec` | `openspec` directly |
+| CI/CD | Available automatically | Requires an extra install step |
+| Recommended for | Team projects, CI/CD | Quick personal use |
 
-## 常见问题
+## FAQ
 
-### Q: link 之后修改了 OpenSpec 源码，需要重新 link 吗？
+### Q: After linking, I changed the OpenSpec source — do I need to re-link?
 
-不需要。`pnpm link` / `npm link` 创建的是符号链接，修改源码后只需重新构建：
+No. `pnpm link` / `npm link` create a symlink; after changing the source you only need to rebuild:
 
 ```bash
 cd /path/to/OpenSpec
 pnpm build
 ```
 
-### Q: 项目中同时有全局和本地安装，哪个优先？
+### Q: My project has both a global and a local install — which takes precedence?
 
-使用 `npx openspec` 或 `pnpm exec openspec` 时优先使用本地版本。直接运行 `openspec` 时使用全局版本。
+`npx openspec` or `pnpm exec openspec` use the local version. Running `openspec` directly uses the global version.
 
-### Q: CI 环境中如何使用？
+### Q: How do I use it in CI?
 
-本地安装是 CI 的推荐方式。`npm ci` 或 `pnpm install --frozen-lockfile` 会自动安装依赖：
+A local install is the recommended approach for CI. `npm ci` or `pnpm install --frozen-lockfile` installs dependencies automatically:
 
 ```yaml
-# GitHub Actions 示例
+# GitHub Actions example
 steps:
   - uses: actions/checkout@v4
   - uses: actions/setup-node@v4

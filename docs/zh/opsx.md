@@ -65,7 +65,7 @@ openspec init
 
 这将在 `.claude/skills/`（或等效目录）中创建技能文件，AI 编码助手会自动检测到它们。
 
-默认情况下，OpenSpec 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`ff`、`verify`、`sync`、`bulk-archive`、`onboard`），请使用 `openspec config profile` 进行配置，并通过 `openspec update` 应用。
+默认情况下，OpenSpec 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`sync`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），请使用 `openspec config profile` 进行配置，并通过 `openspec update` 应用。
 
 在设置过程中，系统会提示你创建**项目配置**（`openspec/config.yaml`）。这是可选的，但建议创建。
 
@@ -164,7 +164,7 @@ rules:
 | `/opsx:ff` | 快速生成规划产物（扩展工作流） |
 | `/opsx:apply` | 实现任务，按需更新产物 |
 | `/opsx:verify` | 根据产物验证实现（扩展工作流） |
-| `/opsx:sync` | 将增量规格同步到主分支（扩展工作流，可选） |
+| `/opsx:sync` | 将增量规格同步到主分支（默认工作流，可选） |
 | `/opsx:archive` | 完成后归档 |
 | `/opsx:bulk-archive` | 批量归档已完成的变更（扩展工作流） |
 | `/opsx:onboard` | 端到端变更的引导式演练（扩展工作流） |
@@ -313,7 +313,7 @@ rules:
 ## 架构深入解析
 
 本节解释 OPSX 的底层工作原理以及它与传统工作流的比较。
-本节中的示例使用扩展命令集（`new`、`continue` 等）；默认 `core` 用户可以将同样的流程映射为 `propose → apply → archive`。
+本节中的示例使用扩展命令集（`new`、`continue` 等）；默认 `core` 用户可以将同样的流程映射为 `propose → apply → sync → archive`。
 
 ### 理念：阶段 vs 操作
 
