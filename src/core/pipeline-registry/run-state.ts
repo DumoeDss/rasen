@@ -53,6 +53,10 @@ export const RunStateWorkerSchema = z.object({
   effort: z.string().optional(),
   resumeMode: z.string().optional(),
   previousThreadId: z.string().optional(),
+  // Lineage: the id of a prior child change whose context this worker's
+  // transcript already carries (i.e. the worker was reused warm across
+  // children). Descriptive only — not a stage-worker inclusion key.
+  reusedFrom: z.string().optional(),
   updatedAt: z.string().optional(),
 }).passthrough();
 export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;

@@ -115,6 +115,55 @@ export const StageHandoffConfigSchema = HandoffConfigSchema.omit({ roles: true }
 export type StageHandoffConfig = z.infer<typeof StageHandoffConfigSchema>;
 
 /**
+ * Whether a role's worker may be carried into a new child change.
+ *  - `auto` — the orchestrator may reuse (warm) or retire the worker per policy.
+ *  - `never` — always spawn a fresh worker for this role (today's behavior).
+ */
+export const ReuseModeSchema = z.enum(['auto', 'never']);
+export type ReuseMode = z.infer<typeof ReuseModeSchema>;
+
+/**
+ * A reuse threshold: the fraction of context headroom in (0, 1] a worker must
+ * have before it may take on a whole new child change. Numerically identical to
+ * HandoffThresholdSchema's rule, kept separate so its validation message
+ * vocabulary ("reuse threshold") stays self-describing.
+ */
+const ReuseThresholdSchema = z
+  .number()
+  .gt(0, { error: 'reuse threshold must be in (0, 1]' })
+  .lte(1, { error: 'reuse threshold must be in (0, 1]' });
+
+/**
+ * Per-role reuse threshold overrides. Only `planner` and `implementer` are
+ * reusable roles (reviewer/fixer/shipper are out of scope — a fixer's
+ * fresh-eyes value is the reason), so restricting the keys both documents scope
+ * and rejects e.g. `roles: { reviewer: … }` as an unknown key.
+ */
+const ReuseRolesSchema = z
+  .object({
+    planner: ReuseThresholdSchema.optional(),
+    implementer: ReuseThresholdSchema.optional(),
+  })
+  .strict();
+
+/**
+ * Worker-reuse policy config, accepted at pipeline level only (reuse is a
+ * cross-change concern with no stage form).
+ *  - `planner` / `implementer` — reuse mode switch for that role.
+ *  - `threshold` — pipeline-level reuse threshold (context headroom).
+ *  - `roles` — per-role `threshold` overrides for `planner` / `implementer`.
+ */
+export const ReuseConfigSchema = z
+  .object({
+    planner: ReuseModeSchema.optional(),
+    implementer: ReuseModeSchema.optional(),
+    threshold: ReuseThresholdSchema.optional(),
+    roles: ReuseRolesSchema.optional(),
+  })
+  .strict();
+export type ReuseConfig = z.infer<typeof ReuseConfigSchema>;
+
+/**
  * Loop configuration for a stage that re-runs until a condition is met.
  * Currently only the 'review-cycle' kind is supported.
  */
@@ -200,6 +249,7 @@ export const PipelineYamlSchema = z.object({
   description: z.string().optional(),
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
   handoff: HandoffConfigSchema.optional(),
+  reuse: ReuseConfigSchema.optional(),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 });
 
@@ -332,6 +382,52 @@ export function resolveStageHandoffConfig(
         : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
+}
+
+/**
+ * Built-in reuse defaults, applied when the pipeline configures no `reuse`
+ * block (or leaves a field unset). Both roles default to `auto`; the threshold
+ * is stricter than handoff's — it answers "should this worker take on a whole
+ * new change", not "should it keep going on the task in hand".
+ */
+export const DEFAULT_REUSE_CONFIG = {
+  planner: 'auto',
+  implementer: 'auto',
+  threshold: 0.25,
+} as const;
+
+export interface ResolvedReuseConfig {
+  planner: ReuseMode;
+  implementer: ReuseMode;
+  /** Pipeline-level resolved reuse threshold. */
+  threshold: number;
+  /** Per-role resolved reuse thresholds. */
+  roles: { planner: number; implementer: number };
+}
+
+/**
+ * Resolve the effective reuse config for a pipeline.
+ *
+ * Precedence (field-wise):
+ *  - per-role threshold: `reuse.roles[<role>]` > `reuse.threshold` > built-in default.
+ *  - mode: `reuse[<role>]` > built-in default.
+ *  - top-level threshold: `reuse.threshold` > built-in default.
+ *
+ * Reuse has no stage dimension, so this is pipeline-scoped (unlike the
+ * stage-scoped resolveStageHandoffConfig).
+ */
+export function resolvePipelineReuseConfig(pipeline: PipelineYaml): ResolvedReuseConfig {
+  const reuse = pipeline.reuse;
+  const threshold = reuse?.threshold ?? DEFAULT_REUSE_CONFIG.threshold;
+  return {
+    planner: reuse?.planner ?? DEFAULT_REUSE_CONFIG.planner,
+    implementer: reuse?.implementer ?? DEFAULT_REUSE_CONFIG.implementer,
+    threshold,
+    roles: {
+      planner: reuse?.roles?.planner ?? threshold,
+      implementer: reuse?.roles?.implementer ?? threshold,
+    },
+  };
 }
 
 // Runtime state types (not Zod - internal only)

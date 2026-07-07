@@ -38,11 +38,13 @@ import {
   resolveChildPipelineName,
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
+  resolvePipelineReuseConfig,
   normalizeAgentRuntimeConfig,
   type AgentRuntime,
   type PipelineInfo,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
+  type ResolvedReuseConfig,
   type RunStateWorker,
   type Stage,
   type StageRole,
@@ -185,11 +187,13 @@ export class PipelineCommand {
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline));
+    const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
 
     const result = {
       name: pipeline.name,
       description: pipeline.description ?? '',
       agents: pipeline.agents ?? {},
+      reuse,
       buildOrder,
       stages,
     };

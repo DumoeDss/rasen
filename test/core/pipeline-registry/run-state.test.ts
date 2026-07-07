@@ -200,6 +200,39 @@ describe('pipeline run-state', () => {
       expect(normalizeWorker({ agentId: 'x' })).toEqual({ agentId: 'x' });
     });
 
+    it('accepts a worker with a reusedFrom lineage marker (round-trips)', () => {
+      const state: RunState = {
+        pipeline: 'small-feature',
+        stages: {
+          apply: {
+            status: 'done',
+            worker: {
+              role: 'implementer',
+              agentId: 'abc',
+              transcript: 'agent-abc.jsonl',
+              reusedFrom: 'child-1',
+            },
+          },
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      expect((back?.stages?.apply.worker as { reusedFrom?: string }).reusedFrom).toBe('child-1');
+    });
+
+    it('parses a worker without reusedFrom exactly as before (field absent)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            apply: { status: 'done', worker: { role: 'implementer', agentId: 'abc' } },
+          },
+        })
+      );
+      const w = s.stages?.apply.worker as { reusedFrom?: string };
+      expect(w.reusedFrom).toBeUndefined();
+    });
+
     it('stageWorkers returns only stages with a reusable pointer (agentId/transcript/threadId)', () => {
       const s: RunState = {
         pipeline: 'small-feature',

@@ -7,7 +7,9 @@ import {
 import {
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
+  resolvePipelineReuseConfig,
   DEFAULT_HANDOFF_CONFIG,
+  DEFAULT_REUSE_CONFIG,
 } from '../../../src/core/pipeline-registry/types.js';
 
 describe('pipeline-registry/pipeline', () => {
@@ -648,6 +650,164 @@ stages:
         maxRelays: DEFAULT_HANDOFF_CONFIG.maxRelays,
         stallLimit: DEFAULT_HANDOFF_CONFIG.stallLimit,
         source: 'default',
+      });
+    });
+  });
+
+  describe('reuse config', () => {
+    it('parses a valid reuse block', () => {
+      const pipeline = parsePipeline(`
+name: reuse-ok
+reuse:
+  planner: auto
+  implementer: never
+  threshold: 0.4
+  roles:
+    planner: 0.5
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      expect(pipeline.reuse?.planner).toBe('auto');
+      expect(pipeline.reuse?.implementer).toBe('never');
+      expect(pipeline.reuse?.threshold).toBe(0.4);
+      expect(pipeline.reuse?.roles?.planner).toBe(0.5);
+    });
+
+    it('accepts the (0,1] upper boundary threshold of exactly 1', () => {
+      const pipeline = parsePipeline(`
+name: reuse-max
+reuse:
+  threshold: 1
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      expect(pipeline.reuse?.threshold).toBe(1);
+    });
+
+    it('rejects a mode other than auto/never', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-mode
+reuse:
+  planner: sometimes
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(PipelineValidationError);
+    });
+
+    it('rejects a threshold outside (0, 1] (top-level and per-role)', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-hi
+reuse:
+  threshold: 1.5
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(/reuse threshold must be in/);
+      expect(() =>
+        parsePipeline(`
+name: bad-zero
+reuse:
+  threshold: 0
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(/reuse threshold must be in/);
+      expect(() =>
+        parsePipeline(`
+name: bad-role-threshold
+reuse:
+  roles:
+    implementer: 2
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(/reuse threshold must be in/);
+    });
+
+    it('rejects unknown keys in a reuse block (strict)', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-key
+reuse:
+  bogus: 1
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(PipelineValidationError);
+    });
+
+    it('rejects an unknown (non-reusable) role in reuse.roles (strict)', () => {
+      expect(() =>
+        parsePipeline(`
+name: bad-role
+reuse:
+  roles:
+    reviewer: 0.5
+stages:
+  - id: a
+    skill: openspec-propose
+`)
+      ).toThrow(PipelineValidationError);
+    });
+
+    it('resolves per-role threshold: roles[role] > pipeline threshold > default', () => {
+      const pipeline = parsePipeline(`
+name: reuse-prec
+reuse:
+  threshold: 0.3
+  roles:
+    planner: 0.5
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      expect(resolvePipelineReuseConfig(pipeline)).toEqual({
+        planner: 'auto',
+        implementer: 'auto',
+        threshold: 0.3,
+        roles: { planner: 0.5, implementer: 0.3 },
+      });
+    });
+
+    it('resolves modes: declared value > default', () => {
+      const pipeline = parsePipeline(`
+name: reuse-modes
+reuse:
+  planner: never
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      const resolved = resolvePipelineReuseConfig(pipeline);
+      expect(resolved.planner).toBe('never');
+      expect(resolved.implementer).toBe('auto');
+    });
+
+    it('resolves to built-in defaults when no reuse block is configured', () => {
+      const pipeline = parsePipeline(`
+name: reuse-defaults
+stages:
+  - id: a
+    skill: openspec-propose
+`);
+      expect(resolvePipelineReuseConfig(pipeline)).toEqual({
+        planner: DEFAULT_REUSE_CONFIG.planner,
+        implementer: DEFAULT_REUSE_CONFIG.implementer,
+        threshold: DEFAULT_REUSE_CONFIG.threshold,
+        roles: {
+          planner: DEFAULT_REUSE_CONFIG.threshold,
+          implementer: DEFAULT_REUSE_CONFIG.threshold,
+        },
       });
     });
   });

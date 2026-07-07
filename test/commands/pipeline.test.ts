@@ -198,6 +198,53 @@ stages:
       expect(review.handoff).toMatchObject({ threshold: 0.65, source: 'role' });
       expect(fix.handoff).toMatchObject({ threshold: 0.8, maxRelays: 4, source: 'stage' });
     });
+
+    it('surfaces the resolved reuse config at the top level (declared block)', async () => {
+      const pipelineDir = path.join(testDir, 'openspec', 'pipelines', 'reuse-mix');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: reuse-mix
+reuse:
+  planner: never
+  threshold: 0.4
+  roles:
+    planner: 0.5
+stages:
+  - id: propose
+    skill: openspec-propose
+    role: planner
+  - id: apply
+    skill: openspec-apply-change
+    role: implementer
+    requires: [propose]
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'reuse-mix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.reuse).toEqual({
+        planner: 'never',
+        implementer: 'auto',
+        threshold: 0.4,
+        roles: { planner: 0.5, implementer: 0.4 },
+      });
+    });
+
+    it('surfaces the resolved reuse config as built-in defaults when no block is declared', async () => {
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.reuse).toEqual({
+        planner: 'auto',
+        implementer: 'auto',
+        threshold: 0.25,
+        roles: { planner: 0.25, implementer: 0.25 },
+      });
+    });
   });
 
   describe('agents', () => {
@@ -373,6 +420,41 @@ stages:
       expect(json.workers).toEqual({
         apply: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
       });
+    });
+
+    it('surfaces a reused worker\'s reusedFrom lineage and omits it when absent', async () => {
+      const changeDir = path.join(changesDir, 'reused-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          tier: 'A',
+          stages: {
+            propose: {
+              status: 'done',
+              worker: { role: 'planner', agentId: 'plan-1', transcript: 'agent-plan-1.jsonl' },
+            },
+            apply: {
+              status: 'done',
+              worker: {
+                role: 'implementer',
+                agentId: 'imp-7',
+                transcript: 'agent-imp-7.jsonl',
+                reusedFrom: 'child-1',
+              },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'reused-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.workers.apply.reusedFrom).toBe('child-1');
+      // A worker without the marker does not gain a reusedFrom key.
+      expect(Object.prototype.hasOwnProperty.call(json.workers.propose, 'reusedFrom')).toBe(false);
     });
 
     it('surfaces Codex threadId worker pointers for resume', async () => {
