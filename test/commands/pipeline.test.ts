@@ -245,6 +245,35 @@ stages:
         roles: { planner: 0.25, implementer: 0.25 },
       });
     });
+
+    // Goal-loop `pipeline show` human-readable rendering. goal-loop-core
+    // generalized the meta line (pipeline.ts) to emit the goal-loop gate label,
+    // but shipped no command test for the string. These assert the exact format.
+    it('renders the goal-loop measure gate label in human-readable show', async () => {
+      const result = await runCLI(['pipeline', 'show', 'goal-loop-measure'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      // The iterate stage meta line names the gate kind + both bounds.
+      expect(result.stdout).toContain('loop=goal[measure](max 5, stall 2)');
+      // And it must NOT degrade to the review-cycle label format.
+      expect(result.stdout).not.toContain('loop=review-cycle');
+    });
+
+    it('renders the goal-loop evaluate gate label in human-readable show', async () => {
+      const result = await runCLI(['pipeline', 'show', 'goal-loop-evaluate'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('loop=goal[evaluate](max 5, stall 2)');
+      expect(result.stdout).not.toContain('loop=review-cycle');
+    });
+
+    // Regression guard: the goal-loop generalization must not have changed the
+    // review-cycle label on the existing built-in pipelines.
+    it('still renders the review-cycle loop label for small-feature (no regression)', async () => {
+      const result = await runCLI(['pipeline', 'show', 'small-feature'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('loop=review-cycle(max 3)');
+      // The goal-loop bracket format must not appear on a review-cycle stage.
+      expect(result.stdout).not.toContain('loop=goal[');
+    });
   });
 
   describe('agents', () => {

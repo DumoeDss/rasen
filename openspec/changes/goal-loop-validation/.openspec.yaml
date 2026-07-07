@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-07-07
+goal: Prove goal-loop works end-to-end across all three variants and document it.

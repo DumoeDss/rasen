@@ -456,5 +456,135 @@ describe('pipeline run-state', () => {
         expect(back.loopConfig.gate.timeoutSec).toBe(45);
       }
     });
+
+    // goal-loop-core covered the measure `gte` + `threshold` path only. These
+    // fill the evaluate-gate, `direction: lte`, and `target` stop-condition
+    // variants — all deterministic run-state round-trip surfaces.
+    it('round-trips an evaluate-gate loopConfig (goal + rubric, narrows on evaluate)', () => {
+      const state: RunState = {
+        pipeline: 'goal-loop-evaluate',
+        loopConfig: {
+          kind: 'goal',
+          gate: { kind: 'evaluate', goal: 'module error handling satisfies the rubric', rubric: 'no swallowed errors' },
+          maxRounds: 3,
+          loopStallLimit: 2,
+          workProduct: 'code',
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      expect(back?.loopConfig?.kind).toBe('goal');
+      // Narrows correctly on the evaluate gate variant.
+      if (back?.loopConfig?.kind === 'goal' && back.loopConfig.gate.kind === 'evaluate') {
+        expect(back.loopConfig.gate.goal).toBe('module error handling satisfies the rubric');
+        expect(back.loopConfig.gate.rubric).toBe('no swallowed errors');
+      } else {
+        throw new Error('expected evaluate gate to narrow');
+      }
+    });
+
+    it('round-trips a measure gate with direction lte (smaller-is-better)', () => {
+      const state: RunState = {
+        pipeline: 'goal-loop-measure',
+        loopConfig: {
+          kind: 'goal',
+          // lte = smaller is better (latency/memory tuning). goal-loop-core
+          // exercised gte only; this covers the lte branch.
+          gate: { kind: 'measure', command: './latency', threshold: 50, direction: 'lte' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          workProduct: 'code',
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      if (back?.loopConfig?.kind === 'goal' && back.loopConfig.gate.kind === 'measure') {
+        expect(back.loopConfig.gate.direction).toBe('lte');
+        expect(back.loopConfig.gate.threshold).toBe(50);
+      } else {
+        throw new Error('expected measure gate to narrow');
+      }
+    });
+
+    it('round-trips a measure gate with a target (passed-count) stop condition', () => {
+      const state: RunState = {
+        pipeline: 'goal-loop-measure',
+        loopConfig: {
+          kind: 'goal',
+          // target = passed-count stop condition (vs threshold). goal-loop-core
+          // covered threshold only; this covers the target branch.
+          gate: { kind: 'measure', command: './tests --json', target: 10, direction: 'gte' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          workProduct: 'code',
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      if (back?.loopConfig?.kind === 'goal' && back.loopConfig.gate.kind === 'measure') {
+        expect(back.loopConfig.gate.target).toBe(10);
+        // threshold is absent (target-driven stop condition).
+        expect(back.loopConfig.gate.threshold).toBeUndefined();
+      } else {
+        throw new Error('expected measure gate to narrow');
+      }
+    });
+  });
+
+  // loopProgress is the best-effort derived cache (authoritative record is
+  // goal-run.json). goal-loop-core round-trip-tested loopConfig only; this
+  // covers the loopProgress block for both gate kinds + backward compatibility.
+  describe('loopProgress (goal-loop round-trip)', () => {
+    it('round-trips a measure-gate loopProgress block through write + read', () => {
+      const state: RunState = {
+        pipeline: 'goal-loop-measure',
+        loopProgress: {
+          kind: 'goal',
+          round: 2,
+          lastScore: 78,
+          measurePassed: false,
+          stallStreak: 1,
+          historyRef: 'goal-run.json',
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      expect(back?.loopProgress).toEqual({
+        kind: 'goal',
+        round: 2,
+        lastScore: 78,
+        measurePassed: false,
+        stallStreak: 1,
+        historyRef: 'goal-run.json',
+      });
+    });
+
+    it('parses an evaluate-gate loopProgress (evaluateSatisfied instead of measurePassed)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'goal-loop-evaluate',
+          loopProgress: {
+            kind: 'goal',
+            round: 1,
+            evaluateSatisfied: false,
+            stallStreak: 0,
+            historyRef: 'goal-run.json',
+          },
+        })
+      );
+      expect(s.loopProgress?.kind).toBe('goal');
+      expect(s.loopProgress?.round).toBe(1);
+      expect(s.loopProgress?.evaluateSatisfied).toBe(false);
+      // measurePassed is absent on an evaluate-gate progress record.
+      expect(s.loopProgress?.measurePassed).toBeUndefined();
+      expect(s.loopProgress?.historyRef).toBe('goal-run.json');
+    });
+
+    it('a run-state without loopProgress parses unchanged (backward compatible)', () => {
+      const s = parseRunState('{"pipeline":"small-feature","completed":["propose"]}');
+      expect(s.loopProgress).toBeUndefined();
+      expect(s.loopConfig).toBeUndefined();
+      expect(s.completed).toEqual(['propose']);
+    });
   });
 });

@@ -63,6 +63,9 @@ Built-in pipelines (can be overridden or augmented by user/project; resolution p
 | **small-feature** _(default)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → adaptive verify → ship → archive |
 | **auto-decompose** | **decompose** (conditional first step, LEAD self-review, not a human gate) → propose → apply → verify → review-loop → ship → archive; taking decompose fans out into multiple sub-changes, each running `childPipeline` (default small-feature, see §2.7) |
+| **goal-loop-measure** | define-goal → iterate (measure gate, loops until satisfied/maxRounds) → ship → archive — driven by `/opsx:goal`, **see §9** |
+| **goal-loop-evaluate** | define-goal → iterate (evaluate gate, loops) → ship → archive — driven by `/opsx:goal`, **see §9** |
+| **goal-loop-research** | define-goal → iterate (evaluate gate, loops) → report — driven by `/opsx:goal`, **see §9** |
 
 > All built-in pipelines **explicitly specify `model: sonnet` for the ship and archive stages** — these two stages are mechanical execution (run tests / push / create PR, archive / merge specs) and don't need a large-model reasoning; when `model` is not specified, the worker inherits the main agent's model, needlessly spending more. Custom pipelines are also encouraged to set `model: sonnet` for ship/archive.
 
@@ -443,3 +446,135 @@ Session-resume semantics differ:
 - A Codex worker records `threadId` / `turnId`, and after a restart prefers `thread/resume(threadId)` to continue the same Codex thread.
 
 `openspec pipeline resume <change> --json` puts both kinds of resume handles in `workers`, distinguished by `runtime`.
+
+---
+
+## 9. Goal-driven iteration: `/opsx:goal`
+
+`/opsx:auto` assumes the product is a single reviewable code change (propose → apply → verify → ship). Some tasks don't fit that shape — their "done" is a **condition**, not a document: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/opsx:goal` is the entry point for those: it repeats **modify → judge** until a gate is satisfied or a round cap is hit.
+
+> Use `/opsx:goal` when the product is a *condition* met by iteration. Use `/opsx:auto` when the product is a code-change document. The two share the same orchestration playbook (LEAD + role-isolated workers, tiers, run-state, gates, resume) — `/opsx:goal` is a sibling entry, not a second system.
+
+### 9.1 One entry, LEAD-classified family of three backend pipelines
+
+You see one command. The LEAD classifies the task and selects ONE backend pipeline (explicit override always wins):
+
+```text
+/opsx:goal <task>                        # LEAD classifies by keyword
+/opsx:goal measure <task>                # force the measure variant
+/opsx:goal evaluate <task>               # force the evaluate variant
+/opsx:goal research <task>               # force the research variant
+/opsx:goal --pipeline goal-loop-<variant> <task>   # explicit pipeline name
+```
+
+**Classification keywords** (suggestion only; explicit wins). Ambiguous defaults to **evaluate** (a quality judgment is the most general gate; a measure command can be refined during define-goal if the task turns out quantifiable).
+
+| Keywords in the task | Selected pipeline | Gate (examiner) | Work product | Tail |
+|---|---|---|---|---|
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure — a deterministic command emits `{score, passed}` | code | ship → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate — a fresh reviewer worker judges `{satisfied, gaps}` | code | ship → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate — a fresh reviewer worker judges | prose (research + writing) | report |
+
+Each pipeline is **homogeneous** — exactly one gate type, one iterate-skill flavor, one tail. No runtime conditions, no gate combination. This is deliberate: an earlier single-pipeline design that combined measure+evaluate gates was killed by three defects (an AND-semantics stall hole, an unenforced conditional tail, a hand-waved generic skill); the family dissolves all three.
+
+```bash
+openspec pipeline show goal-loop-measure        # view the DAG + the loop metadata
+openspec pipeline show goal-loop-measure --json  # { name, buildOrder, stages }
+```
+
+The `iterate` stage carries `loop: { kind: goal, gate: {...} }`. The LEAD interprets it via **Step L** of the playbook (single dispatch per round, a warm-reused implementer, the gate, `goal-run.json`).
+
+### 9.2 The flow: define-goal → iterate → tail
+
+1. **define-goal** (planner, `openspec-goal-plan`) — translates the task into `goal-plan.md`: the `goal` (natural language), the concrete `gate` (`{kind: measure, command, threshold/target, direction}` or `{kind: evaluate, goal, rubric}`), `workProduct` (`code` | `prose`), and `maxRounds`. This stage has `gate: true` — the user pauses to **confirm a measure command before any round runs** (the safety valve for "measure.command is arbitrary shell"). It does NOT produce proposal/design/specs; the product is the iterated code or document, not a change specification.
+2. **iterate** (implementer, `openspec-goal-iterate`) — the loop body. The LEAD injects the concrete gate config from `goal-plan.md` into the run-state's `loopConfig` before round 1. Each round: dispatch the **warm-reused** implementer (same worker across all rounds, like review-cycle reuses the fixer thread), then run the gate:
+   - **measure** — run `gate.command`, parse `{score, passed, detail}`. A failed command (non-zero exit / timeout / unparseable JSON) is recorded as `{round, error}` and treated as not-passed — it does NOT deadlock.
+   - **evaluate** — dispatch a **fresh reviewer worker** (≠ implementer — author ≠ verifier) that MUST return structured `{satisfied: boolean, gaps: string[]}`.
+3. **tail** — measure/evaluate → `ship` → `archive` (the iterated code is delivered normally); research → `report` (the `openspec-goal-report` skill summarizes the run into a final document — there is no code to ship).
+
+### 9.3 `goal-run.json` — the authoritative loop spine
+
+Every round appends a record to `goal-run.json` in the change directory:
+
+```json
+{ "round": 2, "score": 87, "measurePassed": false, "detail": "...", "gitTreeFingerprint": "abc123" }
+```
+
+`goal-run.json` is the **authoritative** loop position. The run-state (`auto-run.json`) carries an injected `loopConfig` (the effective gate config) and a best-effort `loopProgress` cache (current round, last score, stall streak, `historyRef → goal-run.json`); when the two disagree, `goal-run.json` wins. This is also what survives an implementer relay: the implementer is warm-reused but, when its context fills, it follows the standard Step H.3 self-handoff and the LEAD warm-seeds a successor that reads the on-disk record.
+
+### 9.4 Bounds and stall — never lie, never silently burn
+
+- **`maxRounds` cap (default 5).** The loop is bounded. When rounds are exhausted with the gate unsatisfied, the run proceeds to the tail but the outcome is marked `maxRounds-exhausted` — **never reported as success**.
+- **`loopStallLimit` (default 2).** A round "progresses" if (measure: score moved favorably — `gte` increased / `lte` decreased) or (evaluate: the gap-set shrank or was newly satisfied). Round 1 always counts as progress. `loopStallLimit` consecutive non-progressing rounds triggers the LEAD strategy-review ladder (Step H.5 — change approach / adjust seeding / escalate) rather than silently burning rounds.
+
+### 9.5 Resume after an interrupt
+
+Kill the run mid-loop, then:
+
+```bash
+openspec pipeline resume <change> --json   # next incomplete stage + worker pointers
+```
+
+The goal-loop resume protocol reads the **last record** of `goal-run.json`:
+
+| Last record | Resume action |
+|---|---|
+| gate **satisfied** | go to the tail (do NOT re-run the satisfied round) |
+| **not-passed** (round complete, has a record) | resume at **lastRound + 1** (fresh dispatch, seeded with the prior gap) — that round already has its recorded judgment, so it is not re-run |
+| **no record** (define-goal done, iterate died before the first gate) | dispatch round 1 |
+
+Before resuming a round, the LEAD MAY re-run the gate once on the current tree (to catch a flaky command or externally-fixed state); `gitTreeFingerprint` detects when the tree changed under it.
+
+### 9.6 Worked examples
+
+**Measure — drive Lighthouse performance to 90.**
+```text
+You: /opsx:goal drive the Lighthouse performance score to 90
+
+AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
+     Fetch DAG: define-goal -> iterate (measure gate) -> ship -> archive
+     ▸ planner -> goal-plan.md (gate: measure, command: lighthouse --output=json,
+        threshold: 90, direction: gte, workProduct: code, maxRounds: 5)
+     ⏸ gate: confirm the measure command? -> You: continue
+     ▸ implementer (round 1) -> edits the perf-critical path
+     ▸ measure gate: score 82 (not passed) -> recorded to goal-run.json
+     ▸ implementer (round 2, warm-reused, seeded with score 82) -> further edits
+     ▸ measure gate: score 91 (satisfied) -> recorded
+     ▸ ship -> archive   (outcome: satisfied)
+```
+
+**Evaluate — make a module rubric-clean.**
+```text
+You: /opsx:goal make the auth module error-handling satisfy this rubric
+
+AI:  Keyword "rubric" -> goal-loop-evaluate
+     ▸ planner -> goal-plan.md (gate: evaluate, goal: "auth error handling satisfies
+        the rubric", rubric: "no swallowed errors; every failure path returns a
+        typed error", workProduct: code, maxRounds: 5)
+     ⏸ gate: confirm? -> You: continue
+     ▸ implementer (round 1) -> refactors error paths
+     ▸ evaluate gate: FRESH reviewer worker -> { satisfied: false, gaps: [...] }
+     ▸ implementer (round 2, warm-reused, seeded with the gaps) -> addresses them
+     ▸ evaluate gate: FRESH reviewer -> { satisfied: true } -> recorded
+     ▸ ship -> archive   (outcome: satisfied)
+```
+
+**Research — research and write a brief.**
+```text
+You: /opsx:goal research and write a brief on WebGPU compute adoption
+
+AI:  Keyword "research" + "write brief" -> goal-loop-research
+     ▸ planner -> goal-plan.md (gate: evaluate, goal: "a brief covering WebGPU
+        compute adoption", workProduct: prose, maxRounds: 5)
+     ⏸ gate: confirm? -> You: continue
+     ▸ implementer (round 1) -> researches inline (web search/fetch), drafts the brief
+        (context-heavy -> the pipeline's lowered implementer threshold 0.35 relays
+         earlier via Step H.3 when needed)
+     ▸ evaluate gate: FRESH reviewer -> { satisfied: false, gaps: ["missing browser
+        support matrix"] }
+     ▸ implementer (round 2, warm-reused) -> adds the matrix
+     ▸ evaluate gate: FRESH reviewer -> { satisfied: true } -> recorded
+     ▸ report -> final brief + run summary   (no ship/archive; outcome: satisfied)
+```
+
+> **Quick reference**: `/opsx:goal <task>` (or `measure|evaluate|research` selector / `--pipeline goal-loop-<variant>`); rounds record to `goal-run.json`; `maxRounds` exhaustion is marked honestly; `openspec pipeline resume <change>` resumes from the last record. The loop semantics live in the LEAD playbook (Step L), driven by the same orchestration as `/opsx:auto`.

@@ -12,6 +12,7 @@ import {
 import { PipelineGraph } from '../../../src/core/pipeline-registry/graph.js';
 import { loadPipeline } from '../../../src/core/pipeline-registry/pipeline.js';
 import { resolvePipelinePath } from '../../../src/core/pipeline-registry/resolver.js';
+import { resolveStageHandoffConfig } from '../../../src/core/pipeline-registry/types.js';
 import { getSkillTemplates } from '../../../src/core/shared/skill-generation.js';
 
 const BUILTIN_NAMES = ['full-feature', 'small-feature', 'bug-fix'] as const;
@@ -134,6 +135,72 @@ describe('pipeline-registry/built-ins', () => {
     expect(DECOMPOSE_FREE_NAMES).not.toContain('goal-loop-measure');
     expect(DECOMPOSE_FREE_NAMES).not.toContain('goal-loop-evaluate');
     expect(DECOMPOSE_FREE_NAMES).not.toContain('goal-loop-research');
+  });
+
+  // Per-pipeline tail divergence. goal-loop-core asserted each pipeline "has a
+  // goal loop on iterate" but did not assert the structural tail differences
+  // that make each pipeline homogeneous: measure/evaluate ship code (ship →
+  // archive, model: sonnet); research writes prose (report tail, no ship/archive).
+  describe('goal-loop per-pipeline tail structure', () => {
+    it('goal-loop-measure ends in ship -> archive, each model: sonnet', () => {
+      const pipeline = loadPipelineByName('goal-loop-measure');
+      const stages = pipeline.stages;
+      const last = stages[stages.length - 1];
+      const secondLast = stages[stages.length - 2];
+      expect(secondLast.id).toBe('ship');
+      expect(secondLast.model).toBe('sonnet');
+      expect(last.id).toBe('archive');
+      expect(last.model).toBe('sonnet');
+      // No report stage on a code-tail pipeline.
+      expect(stages.some(s => s.id === 'report')).toBe(false);
+    });
+
+    it('goal-loop-evaluate ends in ship -> archive, each model: sonnet', () => {
+      const pipeline = loadPipelineByName('goal-loop-evaluate');
+      const stages = pipeline.stages;
+      const last = stages[stages.length - 1];
+      const secondLast = stages[stages.length - 2];
+      expect(secondLast.id).toBe('ship');
+      expect(secondLast.model).toBe('sonnet');
+      expect(last.id).toBe('archive');
+      expect(last.model).toBe('sonnet');
+      expect(stages.some(s => s.id === 'report')).toBe(false);
+    });
+
+    it('goal-loop-research ends in a single report stage (no ship/archive)', () => {
+      const pipeline = loadPipelineByName('goal-loop-research');
+      const stages = pipeline.stages;
+      const last = stages[stages.length - 1];
+      expect(last.id).toBe('report');
+      expect(last.skill).toBe('openspec-goal-report');
+      // Research writes prose — there is no code to ship/archive.
+      const ids = stages.map(s => s.id);
+      expect(ids).not.toContain('ship');
+      expect(ids).not.toContain('archive');
+    });
+
+    it('goal-loop-research lowers the implementer handoff threshold to 0.35 (source role)', () => {
+      // Research is context-heavy; the pipeline sets handoff.roles.implementer
+      // to 0.35 so the implementer relays earlier (implementer-inline + relay,
+      // not a research-sibling). resolveStageHandoffConfig surfaces it.
+      const pipeline = loadPipelineByName('goal-loop-research');
+      const iterate = pipeline.stages.find(s => s.id === 'iterate')!;
+      const handoff = resolveStageHandoffConfig(iterate, pipeline);
+      expect(handoff.threshold).toBe(0.35);
+      expect(handoff.source).toBe('role');
+    });
+
+    it('goal-loop-measure/evaluate keep the default implementer handoff threshold (0.5)', () => {
+      // Contrast: only research lowers the threshold. measure/evaluate keep the
+      // built-in default, confirming the 0.35 is a research-pipeline override.
+      for (const name of ['goal-loop-measure', 'goal-loop-evaluate'] as const) {
+        const pipeline = loadPipelineByName(name);
+        const iterate = pipeline.stages.find(s => s.id === 'iterate')!;
+        const handoff = resolveStageHandoffConfig(iterate, pipeline);
+        expect(handoff.threshold).toBe(0.5);
+        expect(handoff.source).toBe('default');
+      }
+    });
   });
 
   describe('auto-decompose entry pipeline', () => {
