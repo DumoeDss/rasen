@@ -372,20 +372,19 @@ hooks:
 
 如果已有框架，读取 2-3 个现有测试文件学习约定后跳过。用户可通过 `.gstack/no-test-bootstrap` 文件永久拒绝。
 
-##### `{{TEST_COVERAGE_AUDIT_PLAN}}` / `{{TEST_COVERAGE_AUDIT_SHIP}}` / `{{TEST_COVERAGE_AUDIT_REVIEW}}`
+##### `{{TEST_COVERAGE_AUDIT_SHIP}}` / `{{TEST_COVERAGE_AUDIT_REVIEW}}`
 
-**生成函数**：`generateTestCoverageAuditPlan/Ship/Review(ctx)` → 内部委托给 `generateTestCoverageAuditInner(mode)`
+**生成函数**：`generateTestCoverageAuditShip/Review(ctx)` → 内部委托给 `generateTestCoverageAuditInner(mode)`
 
-三个占位符共享同一个内部函数，按模式（plan/ship/review）生成不同的测试覆盖审计指令。共享部分包括：
+两个占位符共享同一个内部函数，按模式（ship/review）生成不同的测试覆盖审计指令。共享部分包括：
 
-- **代码路径追踪方法**：读取 diff 或计划，追踪每个入口点的数据流，绘制包含所有分支的 ASCII 图
+- **代码路径追踪方法**：读取 diff，追踪每个入口点的数据流，绘制包含所有分支的 ASCII 图
 - **用户流程覆盖**：映射用户交互路径（双击、中途导航、过期会话等边界场景）
 - **质量评分标准**：★★★（行为+边界+错误路径）/ ★★（快乐路径）/ ★（冒烟/存在性检查）
 - **E2E 决策矩阵**：何时用 E2E 测试、何时用 Eval 测试、何时用单元测试
 - **回归规则（IRON RULE）**：回归必须立即写测试，不允许跳过
 
 模式差异：
-- **plan**：将缺失的测试作为需求添加到计划文件
 - **ship**：自动生成测试并提交，输出前后测试计数（如 `Tests: 12 → 17 (+5 new)`）
 - **review**：将覆盖缺口作为 INFORMATIONAL 发现，走 Fix-First 流程
 

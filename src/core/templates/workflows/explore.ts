@@ -279,6 +279,12 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 ---
 
+## Prototype to Settle a Stuck Question
+
+When a design question is stuck and only building will settle it, you may reach for \`/prototype\` — a throwaway probe that answers the question with running code. Capture the *answer* in the change directory (\`design.md\` Decisions or a change-directory sidecar), then delete the prototype code afterward. This stays within explore's "capture, don't implement" stance: the artifact is the decision, not the code.
+
+---
+
 ## Guardrails
 
 - **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
@@ -455,6 +461,12 @@ There's no required ending. Discovery might:
 - **Continue later**: "We can pick this up anytime"
 
 When things crystallize, you might offer a summary - but it's optional. Sometimes the thinking IS the value.
+
+---
+
+## Prototype to Settle a Stuck Question
+
+When a design question is stuck and only building will settle it, you may reach for \`/prototype\` — a throwaway probe that answers the question with running code. Capture the *answer* in the change directory (\`design.md\` Decisions or a change-directory sidecar), then delete the prototype code afterward. This stays within explore's "capture, don't implement" stance: the artifact is the decision, not the code.
 
 ---
 

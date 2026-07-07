@@ -11,7 +11,7 @@
 
 OpenSpec 的流程是 `propose → apply → archive`，而 OPSX/gstack 融合工作又新增了专家技能与运行时命令：
 
-- **规划期评审**已由作用于规划产物的 `enhance:` 技能覆盖（`schemas/spec-driven/schema.yaml` 中对 `proposal`/`specs` 应用的 `plan-ceo-review`、`plan-design-review`、`plan-eng-review`）。
+- **规划期评审**由 propose 工作流对设计密集型 change 的方法论咨询（`/codebase-design`、`/domain-modeling`）以及 `schemas/spec-driven/schema.yaml` 中 `design` 产物的 `enhance: codebase-design` 覆盖。
 - **一次性代码评审**以始终安装的 gstack 专家技能 `openspec-gstack-review`（`skills/gstack/review/SKILL.md`）形式存在。
 - **验证 / 交付**以融合命令（`verify-enhanced`、`ship`）形式存在 —— 参见进行中的 change `openspec/changes/add-opsx-fusion-commands/`。
 

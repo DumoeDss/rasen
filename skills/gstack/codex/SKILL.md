@@ -247,13 +247,6 @@ After displaying the Review Readiness Dashboard in conversation output, also upd
 Read the review log output you already have from the Review Readiness Dashboard step above.
 Parse each JSONL entry. Each skill logs different fields:
 
-- **plan-ceo-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`mode\`, \`scope_proposed\`, \`scope_accepted\`, \`scope_deferred\`, \`commit\`
-  → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
-  → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
-- **plan-eng-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`issues_found\`, \`mode\`, \`commit\`
-  → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
-- **plan-design-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`unresolved\`, \`decisions_made\`, \`commit\`
-  → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
 - **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 

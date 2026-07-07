@@ -1078,13 +1078,6 @@ After displaying the Review Readiness Dashboard in conversation output, also upd
 Read the review log output you already have from the Review Readiness Dashboard step above.
 Parse each JSONL entry. Each skill logs different fields:
 
-- **plan-ceo-review**: \\\`status\\\`, \\\`unresolved\\\`, \\\`critical_gaps\\\`, \\\`mode\\\`, \\\`scope_proposed\\\`, \\\`scope_accepted\\\`, \\\`scope_deferred\\\`, \\\`commit\\\`
-  → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
-  → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
-- **plan-eng-review**: \\\`status\\\`, \\\`unresolved\\\`, \\\`critical_gaps\\\`, \\\`issues_found\\\`, \\\`mode\\\`, \\\`commit\\\`
-  → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
-- **plan-design-review**: \\\`status\\\`, \\\`initial_score\\\`, \\\`overall_score\\\`, \\\`unresolved\\\`, \\\`decisions_made\\\`, \\\`commit\\\`
-  → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
 - **codex-review**: \\\`status\\\`, \\\`gate\\\`, \\\`findings\\\`, \\\`findings_fixed\\\`
   → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
 
@@ -1288,9 +1281,8 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 // ─── Test Coverage Audit ────────────────────────────────────
 //
 // Shared methodology for codepath tracing, ASCII diagrams, and test gap analysis.
-// Three modes, three placeholders, one inner function:
+// Two modes, two placeholders, one inner function:
 //
-//   {{TEST_COVERAGE_AUDIT_PLAN}}   → plan-eng-review: adds missing tests to the plan
 //   {{TEST_COVERAGE_AUDIT_SHIP}}   → ship: auto-generates tests, coverage summary
 //   {{TEST_COVERAGE_AUDIT_REVIEW}} → review: generates tests via Fix-First (ASK)
 //
@@ -1301,12 +1293,11 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 //   │    ASCII diagram, quality rubric, E2E matrix,  │
 //   │    regression rule                             │
 //   │                                                │
-//   │  plan:   edit plan file, write artifact        │
 //   │  ship:   auto-generate tests, write artifact   │
 //   │  review: Fix-First ASK, INFORMATIONAL gaps     │
 //   └────────────────────────────────────────────────┘
 
-type CoverageAuditMode = 'plan' | 'ship' | 'review';
+type CoverageAuditMode = 'ship' | 'review';
 
 function generateTestCoverageAuditInner(mode: CoverageAuditMode): string {
   const sections: string[] = [];
@@ -1314,8 +1305,6 @@ function generateTestCoverageAuditInner(mode: CoverageAuditMode): string {
   // ── Intro (mode-specific) ──
   if (mode === 'ship') {
     sections.push(`100% coverage is the goal — every untested path is a path where bugs hide and vibe coding becomes yolo coding. Evaluate what was ACTUALLY coded (from the diff), not what was planned.`);
-  } else if (mode === 'plan') {
-    sections.push(`100% coverage is the goal. Evaluate every codepath in the plan and ensure the plan includes tests for each one. If the plan is missing tests, add them — the plan should be complete enough that implementation includes full test coverage from the start.`);
   } else {
     sections.push(`100% coverage is the goal. Evaluate every codepath changed in the diff and identify test gaps. Gaps become INFORMATIONAL findings that follow the Fix-First flow.`);
   }
@@ -1357,17 +1346,11 @@ Store this number for the PR body.`);
   }
 
   // ── Codepath tracing methodology (shared, with mode-specific source) ──
-  const traceSource = mode === 'plan'
-    ? `**Step 1. Trace every codepath in the plan:**
-
-Read the plan document. For each new feature, service, endpoint, or component described, trace how data will flow through the code — don't just list planned functions, actually follow the planned execution:`
-    : `**${mode === 'ship' ? '1' : 'Step 1'}. Trace every codepath changed** using \`git diff origin/<base>...HEAD\`:
+  const traceSource = `**${mode === 'ship' ? '1' : 'Step 1'}. Trace every codepath changed** using \`git diff origin/<base>...HEAD\`:
 
 Read every changed file. For each one, trace how data flows through the code — don't just list functions, actually follow the execution:`;
 
-  const traceStep1 = mode === 'plan'
-    ? `1. **Read the plan.** For each planned component, understand what it does and how it connects to existing code.`
-    : `1. **Read the diff.** For each changed file, read the full file (not just the diff hunk) to understand context.`;
+  const traceStep1 = `1. **Read the diff.** For each changed file, read the full file (not just the diff hunk) to understand context.`;
 
   sections.push(`
 ${traceSource}
@@ -1450,14 +1433,16 @@ When checking each branch, also determine whether a unit test or E2E/integration
   sections.push(`
 ### REGRESSION RULE (mandatory)
 
-**IRON RULE:** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is ${mode === 'plan' ? 'added to the plan as a critical requirement' : 'written immediately'}. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
+**IRON RULE:** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is written immediately. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
 
 A regression is when:
 - The diff modifies existing behavior (not new code)
 - The existing test suite (if any) doesn't cover the changed path
 - The change introduces a new failure mode for existing callers
 
-When uncertain whether a change is a regression, err on the side of writing the test.${mode !== 'plan' ? '\n\nFormat: commit as `test: regression test for {what broke}`' : ''}`);
+When uncertain whether a change is a regression, err on the side of writing the test.
+
+Format: commit as \`test: regression test for {what broke}\``);
 
   // ── ASCII coverage diagram (shared) ──
   sections.push(`
@@ -1507,56 +1492,10 @@ GAPS: 8 paths need tests (2 need E2E, 1 needs eval)
 ─────────────────────────────────
 \`\`\`
 
-**Fast path:** All paths covered → "${mode === 'ship' ? 'Step 3.4' : mode === 'review' ? 'Step 4.75' : 'Test review'}: All new code paths have test coverage ✓" Continue.`);
+**Fast path:** All paths covered → "${mode === 'ship' ? 'Step 3.4' : 'Step 4.75'}: All new code paths have test coverage ✓" Continue.`);
 
   // ── Mode-specific action section ──
-  if (mode === 'plan') {
-    sections.push(`
-**Step 5. Add missing tests to the plan:**
-
-For each GAP identified in the diagram, add a test requirement to the plan. Be specific:
-- What test file to create (match existing naming conventions)
-- What the test should assert (specific inputs → expected outputs/behavior)
-- Whether it's a unit test, E2E test, or eval (use the decision matrix)
-- For regressions: flag as **CRITICAL** and explain what broke
-
-The plan should be complete enough that when implementation begins, every test is written alongside the feature code — not deferred to a follow-up.`);
-
-    // ── Test plan artifact (plan + ship) ──
-    sections.push(`
-### Test Plan Artifact
-
-After producing the coverage diagram, write a test plan artifact to the project directory so \`/qa\` and \`/qa-only\` can consume it as primary test input:
-
-\`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
-USER=$(whoami)
-DATETIME=$(date +%Y%m%d-%H%M%S)
-\`\`\`
-
-Write to \`~/.openspec/projects/{slug}/{user}-{branch}-eng-review-test-plan-{datetime}.md\`:
-
-\`\`\`markdown
-# Test Plan
-Generated on {date}
-Branch: {branch}
-Repo: {owner/repo}
-
-## Affected Pages/Routes
-- {URL path} — {what to test and why}
-
-## Key Interactions to Verify
-- {interaction description} on {page}
-
-## Edge Cases
-- {edge case} on {page}
-
-## Critical Paths
-- {end-to-end flow that must work}
-\`\`\`
-
-This file is consumed by \`/qa\` and \`/qa-only\` as primary test input. Include only the information that helps a QA tester know **what to test and where** — not implementation details.`);
-  } else if (mode === 'ship') {
+  if (mode === 'ship') {
     sections.push(`
 **5. Generate tests for uncovered paths:**
 
@@ -1638,10 +1577,6 @@ If no test framework detected → include gaps as INFORMATIONAL findings only, n
   }
 
   return sections.join('\n');
-}
-
-function generateTestCoverageAuditPlan(_ctx: TemplateContext): string {
-  return generateTestCoverageAuditInner('plan');
 }
 
 function generateTestCoverageAuditShip(_ctx: TemplateContext): string {
@@ -1975,7 +1910,6 @@ const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   REVIEW_DASHBOARD: generateReviewDashboard,
   PLAN_FILE_REVIEW_REPORT: generatePlanFileReviewReport,
   TEST_BOOTSTRAP: generateTestBootstrap,
-  TEST_COVERAGE_AUDIT_PLAN: generateTestCoverageAuditPlan,
   TEST_COVERAGE_AUDIT_SHIP: generateTestCoverageAuditShip,
   TEST_COVERAGE_AUDIT_REVIEW: generateTestCoverageAuditReview,
   TEST_FAILURE_TRIAGE: generateTestFailureTriage,
