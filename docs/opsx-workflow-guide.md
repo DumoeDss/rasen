@@ -192,7 +192,22 @@ An agent can't perceive its own context usage — it can only **measure** it. `o
 - **Compact recovery hook (passive reinforcement)**: an optional `SessionStart` hook (matcher `compact`, script `hooks/compact-recovery.sh`; `openspec init` prints the copy-paste snippet and never edits `.claude/settings.json` itself) injects guidance right after an auto-compaction: run `openspec pipeline resume`, read the handoff distillates first, and don't trust fine-grained details from the machine summary. Complementary to active relay — same recovery entry point, no second state channel.
 - **Worker level (automatic)**: every dispatch prompt carries a handoff clause — when the worker notices being compacted / hitting a soft budget, it writes `handoff/<role>-<n>.md` (fixer / debugger must include an "eliminated hypotheses and evidence" section), returns a structured `HANDOFF {path, reason, completed, remaining}`; the LEAD accounts for it (the stage's `handoffs[]`, single-writer invariant) and dispatches a successor to continue within the same session, without interrupting the pipeline. Before each `SendMessage` continuation (re-review / planner reuse) the LEAD also probes that worker first, and if over threshold "writes a handoff doc → retires and replaces".
 - **Relay cap and escalation ladder (LEAD-first, minimizing human interruption)**: `maxRelays` (default 3, the 4th triggers LEAD review) + `stallLimit` (2 consecutive no-progress triggers early; eliminating one hypothesis counts as progress). LEAD review picks a strategy by cost: change approach / adjust seeding → send back to planner for a higher-dimensional redo → decompose and isolate, all recorded in `strategyAttempts`; only when the strategy budget (default 3) is exhausted is the stage marked `escalated` and **suspended** — the rest of the work continues, and it's reported centrally at the next gate or run end. Never quietly passing, and never interrupting the whole run because of a single stuck stage. review-loop rounds exhausted also go through this ladder, instead of immediately interrupting to call a human.
-- **Config** (pipeline.yaml, resolution order stage > `roles[role]` (thresholds only) > pipeline > built-in default `{threshold: 0.5, maxRelays: 3, stallLimit: 2}`):
+- **Tunable config + defaults** — all orchestration tunables live in `pipeline.yaml` (built-ins under `pipelines/<name>/pipeline.yaml`; resolution priority `project > user > package`, so a same-named file overrides the built-in). Inspect the **resolved** values any time with `openspec pipeline show <name> --json`.
+
+  **Defaults at a glance:**
+
+  | Block | Key | Default | Meaning |
+  |---|---|---|---|
+  | `handoff` | `threshold` | `0.5` | context fraction at which a worker retires via handoff |
+  | | `roles` | `{}` | per-role threshold override, e.g. `reviewer: 0.65` |
+  | | `maxRelays` | `3` | successor relays per stage before LEAD review |
+  | | `stallLimit` | `2` | consecutive no-progress relays that trigger early review |
+  | `reuse` | `planner` | `auto` | `auto` = reuse the planner across proposes; `never` = fresh planner per propose |
+  | | `implementer` | `auto` | `auto` = warm-reuse across dependent children; `never` = fresh worker each apply |
+  | | `threshold` | `0.25` | headroom required to *accept a whole new change* (stricter than `handoff.threshold`) |
+  | | `roles` | `{}` | per-role reuse-threshold override — `planner` / `implementer` only |
+
+  **`handoff`** — *when to retire a worker mid-stage*. Resolution per stage: stage `handoff` > pipeline `handoff.roles[<role>]` (threshold only) > pipeline `handoff` > built-in defaults `{ threshold: 0.5, maxRelays: 3, stallLimit: 2 }`. `roles` accepts any stage role; expensive-to-load roles (reviewer, fixer) typically get more headroom.
 
   ```yaml
   handoff:
@@ -204,6 +219,20 @@ An agent can't perceive its own context usage — it can only **measure** it. `o
     - id: review-loop
       handoff: { threshold: 0.7, maxRelays: 5 }   # relax the capacity dimension for hard problems; the quality dimension (maxRounds) is not relaxed
   ```
+
+  **`reuse`** — *whether to accept new work on an existing warm worker*. Pipeline-level only (no stage override — reuse is a cross-stage/cross-change concern); `roles` is restricted to `planner` / `implementer`.
+
+  ```yaml
+  reuse:
+    planner: auto          # auto | never
+    implementer: auto      # auto | never
+    threshold: 0.25        # accept new work only with ≥75% headroom free
+    roles: { planner: 0.4 } # give the (cheaper) planner more headroom to keep accepting work
+  ```
+
+  **Capability tier** (auto-detected, not set in YAML): set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` for Tier A (warm `SendMessage` continuation — the default, since `openspec init`/`update` merges this flag into the project's `.claude/settings.json`). Absent it, Tier B (fresh worker per stage) is used.
+
+  **Hooks** (optional, opt-in via the `openspec init` copy-paste snippets — never auto-written to `.claude/settings.json`): `hooks/safety-check.sh` (`PreToolUse`, blocks destructive commands) and `hooks/compact-recovery.sh` (`SessionStart`, matcher `compact`, re-anchors on handoff docs after a compaction).
 
 - **Resume consumption**: `openspec pipeline resume --json` outputs `sessionHandoff` / each stage's latest handoff-doc pointer / each worker's `contextEstimate`; a new session **reads the handoff doc first** (the distillate), with raw-transcript warm seeding degrading to fallback.
 

@@ -48,6 +48,23 @@
 
 <!-- TODO: 添加 /opsx:propose → /opsx:archive 工作流的 GIF 演示 -->
 
+## 关于本 Fork
+
+这是 [OpenSpec](https://github.com/Fission-AI/OpenSpec) 的**编排增强 fork**。它保持与上游完全兼容——`/opsx:propose → /opsx:apply → /opsx:archive` 工作流、`openspec/` 的 spec/change 目录结构、以及 stores 都和上游一致——并在其之上叠加了一套**自动驾驶编排**系统，让 AI 能端到端地驱动一个完整 change，而你始终保持掌控。
+
+本 Fork 新增的能力：
+
+- **`/opsx:auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
+- **数据驱动的流水线注册表** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以 YAML 形式提供；用 `openspec pipeline show|list|classify|resume` 查看。新增一种任务类型 = 加一个文件，零代码改动。
+- **Auto-decompose（组合扇出）** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
+- **上下文感知与交接** — `openspec agent context` 测量真实占用；`/opsx:handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，受接力上限、停滞检测和 LEAD 优先的升级阶梯约束。
+- **会话接力** — 当 LEAD 自身上下文不足时，经你授权可拉起一个继任 Claude Code 会话；一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到交接蒸馏物。
+- **Worker 复用策略** — 可配置的 planner/implementer 在有依赖的子 change 之间复用（`reuse` 配置块），并记录 `reusedFrom` 血统。
+- **迭代评审环** + 配套命令：`/opsx:review-cycle`、`/opsx:ship`、`/opsx:verify-enhanced`、`/opsx:office-hours`、`/opsx:retro`。
+- **安全与恢复 hooks** — `safety-check.sh`（拦截危险命令）与 `compact-recovery.sh`（compact 后重新锚定）。
+
+> `handoff` / `reuse` / 能力分层的可调参数与默认值见 [docs/zh/opsx-workflow-guide.md §3.7](docs/zh/opsx-workflow-guide.md#37-上下文感知与交接openspec-agent-context--opsxhandoff)。内置流水线位于 [`pipelines/`](pipelines/)。
+
 ## 实际演示
 
 ```text

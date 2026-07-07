@@ -191,7 +191,22 @@ Agent 感知不到自己的上下文占用——它只能**测量**。`openspec 
 - **Compact 恢复 hook（被动加固）**：可选的 `SessionStart` hook（matcher `compact`，脚本 `hooks/compact-recovery.sh`；`openspec init` 打印 copy-paste 配置片段，绝不自动改写 `.claude/settings.json`）在 auto-compact 发生后立即注入指引：运行 `openspec pipeline resume`、优先读交接蒸馏物、不要信任机器摘要里的细节。与主动接力互补——同一恢复入口，不引入第二套状态。
 - **Worker 级（自动）**：每个派工 prompt 带交接条款——worker 察觉被压缩 / 达到软预算时，写 `handoff/<role>-<n>.md`（fixer/debugger 必须写「已排除假设及证据」节），返回结构化 `HANDOFF {path, reason, completed, remaining}`；LEAD 记账（stage 的 `handoffs[]`，单写者不变）并在同一会话派继任者续作，pipeline 不中断。LEAD 每次 `SendMessage` 续聊（复审/planner 复用）前也会先探测该 worker，超阈值则「写交接文档→退役换新」。
 - **接力上限与升级阶梯（LEAD 优先，最小化人工打断）**：`maxRelays`（默认 3，第 4 次触发 LEAD 审查）+ `stallLimit`（连续 2 次无进展提前触发；排除一个假设也算进展）。LEAD 审查按代价择策略：换打法/改播种 → 退回 planner 升维返工 → 拆解隔离，全部记入 `strategyAttempts`；策略预算（默认 3）耗尽才把 stage 标记 `escalated` **挂起**——继续其余工作，在下一个 gate 或 run 结束时集中呈报。绝不悄悄判过，也绝不因单个卡住的 stage 中断整个 run。review-loop 轮次耗尽同样走这个阶梯，不再立即中断叫人。
-- **配置**（pipeline.yaml，解析顺序 stage > `roles[role]`（仅阈值）> pipeline > 内置默认 `{threshold: 0.5, maxRelays: 3, stallLimit: 2}`）：
+- **可调配置 + 默认值** — 所有编排参数都在 `pipeline.yaml` 里（内置流水线在 `pipelines/<name>/pipeline.yaml`；解析优先级 `project > user > package`，同名文件覆盖内置）。随时可用 `openspec pipeline show <name> --json` 查看**解析后的**取值。
+
+  **默认值速查：**
+
+  | 配置块 | 键 | 默认值 | 含义 |
+  |---|---|---|---|
+  | `handoff` | `threshold` | `0.5` | worker 达到该上下文占比即退役交接 |
+  | | `roles` | `{}` | 按角色的阈值覆盖，如 `reviewer: 0.65` |
+  | | `maxRelays` | `3` | 每个 stage 的继任者接力次数上限，超出触发 LEAD 审查 |
+  | | `stallLimit` | `2` | 连续无进展的接力次数，提前触发审查 |
+  | `reuse` | `planner` | `auto` | `auto` = 跨 propose 复用 planner；`never` = 每次 propose 新开 |
+  | | `implementer` | `auto` | `auto` = 跨依赖子 change 暖复用；`never` = 每次 apply 新开 |
+  | | `threshold` | `0.25` | *接下一个完整 change* 所需的余量（比 `handoff.threshold` 更严）|
+  | | `roles` | `{}` | 按角色的复用阈值覆盖——仅限 `planner` / `implementer` |
+
+  **`handoff`** — *何时在 stage 中途退役 worker*。按 stage 解析：stage `handoff` > pipeline `handoff.roles[<role>]`（仅阈值）> pipeline `handoff` > 内置默认 `{threshold: 0.5, maxRelays: 3, stallLimit: 2}`。`roles` 接受任意 stage 角色；装载成本高的角色（reviewer、fixer）通常给更多余量。
 
   ```yaml
   handoff:
@@ -203,6 +218,20 @@ Agent 感知不到自己的上下文占用——它只能**测量**。`openspec 
     - id: review-loop
       handoff: { threshold: 0.7, maxRelays: 5 }   # 难题场景放宽容量维度；质量维度(maxRounds)不放宽
   ```
+
+  **`reuse`** — *是否在已存在的暖 worker 上接新活*。仅 pipeline 级（无 stage 覆盖——复用是跨 stage / 跨 change 的关注点）；`roles` 仅限 `planner` / `implementer`。
+
+  ```yaml
+  reuse:
+    planner: auto          # auto | never
+    implementer: auto      # auto | never
+    threshold: 0.25        # 仅在剩余 ≥75% 余量时才接新活
+    roles: { planner: 0.4 } # 给（更便宜的）planner 更多余量，让它持续接活
+  ```
+
+  **能力分层**（自动检测，不在 YAML 配置）：设置 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 启用 Tier A（`SendMessage` 暖续聊——默认值，因为 `openspec init`/`update` 会把该标志并入项目 `.claude/settings.json`）。缺省时走 Tier B（每个 stage 新开 worker）。
+
+  **Hooks**（可选，通过 `openspec init` 的 copy-paste 片段启用——绝不自动写入 `.claude/settings.json`）：`hooks/safety-check.sh`（`PreToolUse`，拦截危险命令）与 `hooks/compact-recovery.sh`（`SessionStart`，matcher `compact`，compact 后重新锚定到交接文档）。
 
 - **续跑消费**：`openspec pipeline resume --json` 输出 `sessionHandoff` / 各 stage 最新交接文档指针 / 各 worker 的 `contextEstimate`；新会话**先读交接文档**（蒸馏物），raw transcript 暖播种降级为兜底。
 

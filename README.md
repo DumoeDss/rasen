@@ -44,6 +44,23 @@ Our philosophy:
 
 <!-- TODO: Add GIF demo of /opsx:propose → /opsx:archive workflow -->
 
+## About this fork
+
+This is an **orchestration-focused fork** of [OpenSpec](https://github.com/Fission-AI/OpenSpec). It stays fully upstream-compatible — the `/opsx:propose → /opsx:apply → /opsx:archive` workflow, the `openspec/` spec/change layout, and stores all work as in upstream — and layers an **autopilot orchestration** system on top, so the AI can drive a whole change end-to-end while you stay in control.
+
+What this fork adds:
+
+- **`/opsx:auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
+- **Data-driven pipeline registry** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as YAML; inspect them with `openspec pipeline show|list|classify|resume`. Adding a task type = adding one file, zero code.
+- **Auto-decompose (portfolio fan-out)** — a task too large for one reviewable diff is split into multiple independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
+- **Context sensing & handoff** — `openspec agent context` measures real occupancy; `/opsx:handoff` writes a distillate checkpoint; workers self-handoff at soft budgets under relay caps, stall detection, and a LEAD-first escalation ladder.
+- **Session relay** — when the LEAD itself runs low on context it can, with your OK, launch a successor Claude Code session; a compact-recovery hook re-anchors on the handoff distillate after an auto-compact.
+- **Worker reuse policy** — configurable planner/implementer reuse across dependent child changes (the `reuse` config block) with `reusedFrom` lineage.
+- **Iterative review-loop** + companion commands: `/opsx:review-cycle`, `/opsx:ship`, `/opsx:verify-enhanced`, `/opsx:office-hours`, `/opsx:retro`.
+- **Safety & recovery hooks** — `safety-check.sh` (guards destructive commands) and `compact-recovery.sh` (re-anchors after compaction).
+
+> Tunables and defaults for `handoff` / `reuse` / capability tiers are documented in [docs/opsx-workflow-guide.md §3.7](docs/opsx-workflow-guide.md#37-context-awareness-and-handoff-openspec-agent-context--opsxhandoff). Built-in pipelines live under [`pipelines/`](pipelines/).
+
 ## See it in action
 
 ```text
