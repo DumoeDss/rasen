@@ -1,0 +1,137 @@
+# opsx-ship-command — Delta
+
+## ADDED Requirements
+
+### Requirement: Delivery Mode Resolution
+
+The ship workflow SHALL resolve exactly one of three delivery modes before integrating or delivering: `pr` (deliver via pull request), `push` (commit to the current branch and push directly, no PR), and `local` (commit only — no push, no PR; delivery deferred to a portfolio/parent-level ship). Resolution SHALL follow this precedence: explicit argument or pipeline stage metadata > an existing open PR for the current branch (mode `pr`, base = that PR's base) > repository convention (project instructions, git history of the current branch) > prompting the user. The workflow SHALL NOT select an integration base by defaulting to the repository's default branch.
+
+#### Scenario: Explicit mode wins
+
+- **WHEN** the invocation or the pipeline stage metadata specifies a delivery mode (and optionally a base)
+- **THEN** the workflow SHALL use that mode (and base) without further inference
+
+#### Scenario: Existing PR implies pr mode and its base
+
+- **WHEN** no explicit mode is given and an open PR exists for the current branch
+- **THEN** the workflow SHALL resolve mode `pr` with that PR's base branch as the integration base
+
+#### Scenario: Repository convention infers push mode
+
+- **WHEN** no explicit mode and no open PR exist
+- **AND** project instructions or the branch's git history show the current branch is routinely pushed to directly
+- **THEN** the workflow SHALL resolve mode `push`
+
+#### Scenario: Ambiguity prompts the user instead of defaulting
+
+- **WHEN** the mode cannot be resolved from arguments, an existing PR, or repository convention
+- **THEN** the workflow SHALL ask the user
+- **AND** SHALL NOT fall back to merging or targeting the repository's default branch
+
+### Requirement: Commit Is Part of Ship
+
+The ship workflow SHALL commit the change's working-tree modifications as part of the ship phase in every delivery mode, honoring commit hooks.
+
+#### Scenario: Uncommitted changes are committed by ship
+
+- **WHEN** the ship phase runs with uncommitted changes in the working tree
+- **THEN** the workflow SHALL stage the change's files and create the commit itself
+
+#### Scenario: Hook failure is fixed and retried
+
+- **WHEN** a pre-commit hook (e.g. lint or format) rejects the commit
+- **THEN** the workflow SHALL fix the reported issues and retry the commit
+- **AND** SHALL NOT bypass hooks (e.g. `--no-verify`)
+
+#### Scenario: Clean tree skips the commit step
+
+- **WHEN** the working tree is already clean at the commit step
+- **THEN** the workflow SHALL skip committing and continue
+
+## MODIFIED Requirements
+
+### Requirement: Pre-Flight Checks
+
+Pre-flight checks SHALL verify readiness before shipping. A dirty working tree SHALL NOT block shipping — committing is the ship phase's own responsibility.
+
+#### Scenario: Verification status check
+
+- **WHEN** the ship command starts
+- **THEN** the system SHALL check whether verification has been run for the change
+- **AND** if no verification report exists, the system SHALL warn the user and prompt for confirmation to proceed
+
+#### Scenario: Task completion check
+
+- **WHEN** the ship command starts
+- **THEN** the system SHALL read `tasks.md` and verify all tasks are marked complete
+- **AND** if incomplete tasks exist, the system SHALL list them and prompt the user for confirmation
+
+#### Scenario: Working tree state check
+
+- **WHEN** the ship command starts with uncommitted changes in the working tree
+- **THEN** the system SHALL NOT require the user to commit or stash beforehand — the ship phase commits them itself
+- **AND** if HEAD is detached, the system SHALL warn and suggest creating a branch
+
+#### Scenario: All pre-flight checks pass
+
+- **WHEN** all pre-flight checks pass
+- **THEN** the system SHALL proceed to the ship phase without additional prompts
+
+### Requirement: Ship Execution
+
+Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/opsx:ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a gstack `/ship` expert skill.
+
+#### Scenario: Merge base branch only in pr mode
+
+- **WHEN** the ship phase executes in `pr` mode
+- **THEN** the system SHALL fetch and merge the resolved integration base (the existing PR's base, an explicit base argument, or fork-point inference — never a blind repository default) into the current branch before the test gate
+- **AND** if the merge produces conflicts that cannot be resolved automatically, the system SHALL stop and surface the conflicts
+
+#### Scenario: No base merge outside pr mode
+
+- **WHEN** the ship phase executes in `push` or `local` mode
+- **THEN** the system SHALL NOT fetch or merge any base branch
+
+#### Scenario: Evidence-based test gate
+
+- **WHEN** the ship phase reaches the test gate
+- **THEN** the system SHALL run the project's detected test command only if at least one holds: (a) the base merge introduced new commits, (b) no green test evidence exists for the current code state — a recorded passing test run (review report, review-cycle report, or run-state) with the code unchanged since, or (c) the user explicitly requests it
+- **AND** if tests run and any in-branch test fails, the system SHALL stop and NOT deliver
+
+#### Scenario: Tests skipped on fresh evidence
+
+- **WHEN** green test evidence exists for the current code state and the base merge introduced nothing new
+- **THEN** the system SHALL skip the test run
+- **AND** SHALL record the skip and the evidence source in the ship log
+
+#### Scenario: Fresh-verification gate before delivery
+
+- **WHEN** code changed after the last green test run (for example, from review fixes or lint fixes during commit)
+- **THEN** the system SHALL re-run the tests and require fresh passing evidence before delivering
+
+#### Scenario: Deliver per mode
+
+- **WHEN** the test gate is satisfied
+- **THEN** in `pr` mode the system SHALL push the branch with upstream tracking and create a pull request via `gh pr create`; in `push` mode it SHALL push the current branch without creating a PR; in `local` mode it SHALL NOT push and SHALL record that delivery is deferred to the portfolio/parent level
+- **AND** the ship phase SHALL complete without invoking any gstack `/ship` expert skill
+
+#### Scenario: Documentation sync is inline, not delegated
+
+- **WHEN** the ship workflow reaches its post-ship documentation-sync step
+- **THEN** it SHALL carry a minimal inline instruction to update project documentation to match the release
+- **AND** it SHALL NOT reference or point at a `/document-release` skill
+
+### Requirement: Ship Log
+
+`ship-log.md` SHALL be written to the change directory with shipping details, aware of the delivery mode.
+
+#### Scenario: Ship log written after delivery in any mode
+
+- **WHEN** the ship phase completes delivery (PR created, branch pushed, or local commit recorded)
+- **THEN** the system SHALL write `openspec/changes/<name>/ship-log.md`
+- **AND** the log SHALL include: the delivery mode, branch name, commit, timestamp, the test decision (ran green, or skipped with the evidence source), the PR URL in `pr` mode, and the deferral note in `local` mode
+
+#### Scenario: Ship log updated after deployment
+
+- **WHEN** the optional land-and-deploy phase completes
+- **THEN** the system SHALL update `ship-log.md` with deployment status and production verification results

@@ -99,6 +99,13 @@ describe('review-cycle workflow', () => {
       expect(skillText).toContain('MUST be recorded');
     });
 
+    it('records test evidence in the cycle report for ship\'s evidence-based test gate', () => {
+      expect(skillText).toContain('test evidence');
+      expect(skillText).toContain('evidence-based test gate');
+      // evidence carries the git state the tests ran against
+      expect(skillText).toContain('HEAD + working-tree dirty or clean');
+    });
+
     it('encodes the fix-size triage routing (trivial / non-trivial / design-level)', () => {
       expect(skillText).toContain('trivial');
       expect(skillText).toContain('non-trivial');

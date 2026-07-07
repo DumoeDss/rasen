@@ -107,6 +107,15 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText.toLowerCase()).toContain('author != verifier');
     });
 
+    it('ships decomposed children locally with one portfolio-level delivery', () => {
+      // per-child ship is commit-only; delivery happens once at the parent level
+      expect(skillText).toContain('**local** delivery mode');
+      expect(skillText).toContain('Single portfolio-level delivery');
+      expect(skillText.toLowerCase()).toContain('never push a half-delivered portfolio');
+      // adaptive verify records evidence for ship's evidence-based test gate
+      expect(skillText).toContain('evidence-based test gate');
+    });
+
     it('covers decompose as the conditional first step and portfolio fan-out', () => {
       // decompose stage kind + conditional first step
       expect(skillText.toLowerCase()).toContain('kind: decompose');

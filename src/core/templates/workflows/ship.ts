@@ -1,14 +1,15 @@
 /**
  * Ship OPSX Workflow Command
  *
- * Self-contained release workflow — test, push, create PR, optionally merge
- * and deploy. The ship execution contract is inlined here (no expert delegation).
+ * Self-contained release workflow — commit, resolve the delivery mode
+ * (pr / push / local), run tests only when evidence demands it, then deliver.
+ * The ship execution contract is inlined here (no expert delegation).
  * PR body sourced from proposal summary. Ship log written to change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
-const SHIP_INSTRUCTIONS = `Release workflow — test, push, create PR, optionally merge and deploy.
+const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver, optionally merge and deploy.
 
 ${STORE_SELECTION_GUIDANCE}
 
@@ -41,9 +42,9 @@ Run all checks before shipping:
 - Verify all tasks are marked complete (\`- [x]\`)
 - If incomplete tasks exist, list them and prompt for confirmation
 
-**c. Clean Git Status**
+**c. Working Tree State**
 - Run \`git status --porcelain\`
-- If uncommitted changes exist, prompt user to commit or stash
+- Uncommitted changes do NOT block — committing them is the ship phase's own job (step 3b)
 - If on detached HEAD, warn and suggest creating a branch
 
 **d. All Checks Pass**
@@ -53,25 +54,47 @@ Run all checks before shipping:
 
 Run the ship contract directly — this workflow is self-contained and does NOT delegate to any expert skill.
 
-**a. Detect the base branch**
-- Prefer an existing PR's base: \`gh pr view --json baseRefName -q .baseRefName\`
-- Else the repo default: \`gh repo view --json defaultBranchRef -q .defaultBranchRef.name\`
-- Else fall back to \`main\`. Use this value wherever the steps below say \`<base>\`.
+**a. Resolve the delivery mode**
 
-**b. Merge the base branch BEFORE tests**
-- \`git fetch origin <base> && git merge origin/<base> --no-edit\` so tests run against the merged state
-- If the merge produces conflicts that cannot be resolved automatically, **STOP** and surface the conflicts — do not push
+Exactly one of three modes:
+- **pr** — deliver via pull request against a resolved integration base.
+- **push** — commit to the current branch and push it directly; no PR (repos where the working branch IS the integration branch).
+- **local** — commit only; no push, no PR. For decomposed child changes sharing a working tree: delivery happens ONCE at the portfolio/parent level after ALL children complete.
+
+Resolution precedence (first match wins):
+1. An explicit argument or pipeline stage metadata (e.g. \`--mode\`, \`--base\`).
+2. An existing open PR for the current branch (\`gh pr view --json baseRefName -q .baseRefName\`) → mode **pr**, base = that PR's base.
+3. Repository convention — project instructions (CLAUDE.md etc.) or the branch's git history (a branch that is routinely committed to and pushed directly implies **push**).
+4. Ask the user.
+
+NEVER resolve an integration base by falling back to the repository's default branch — a branch whose target you had to guess is a branch you must ask about.
+
+**b. Commit the change (all modes)**
+- Stage the change's files and commit with a conventional message derived from the change name / proposal summary
+- Pre-commit hooks (lint, format) may reject the commit: fix the reported issues and retry — NEVER bypass with \`--no-verify\`
+- If the working tree is already clean, skip this step
+
+**c. Merge the integration base (pr mode ONLY)**
+- \`git fetch origin <base> && git merge origin/<base> --no-edit\` so the test gate runs against the merged state — \`<base>\` is the base resolved in (a), never a guessed default
+- If the merge produces conflicts that cannot be resolved automatically, **STOP** and surface the conflicts — do not deliver
 - If already up to date, continue silently
+- In **push** or **local** mode, skip this step entirely — there is no merge event to pre-validate
 
-**c. Run tests on the merged code**
-- Detect and run the project's test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` / \`pytest\` / etc. — infer from the repo, do not hardcode a runner)
-- Read the output and check pass/fail
-- If any in-branch test fails, **STOP** and do NOT push (a genuinely pre-existing failure unrelated to this branch's diff may be noted and triaged, but when in doubt treat it as blocking)
+**d. Evidence-based test gate (all modes)**
 
-**d. Review the diff for obvious structural issues**
-- \`git diff origin/<base>...HEAD\` — scan for accidental debug output, secrets, obviously broken logic, or leftover TODO markers before pushing
+Run the project's detected test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` / \`pytest\` / etc. — infer from the repo, do not hardcode a runner) ONLY if at least one holds:
+1. Step (c) merged in new commits — the merged state has never been tested.
+2. No green test evidence exists for the current code state. Evidence = a recorded passing test run (in \`review-report.md\`, \`review-cycle-report.md\`, another verification report, or run-state) with the code unchanged since — compare the recorded git state (HEAD + dirty status) against now. The commit in (b) moves HEAD but does not change code content, so it does not invalidate evidence; lint or review fixes DO.
+3. The user explicitly asks for a test run.
 
-**PR Body Generation:**
+Otherwise SKIP the run and record \`tests: skipped — green at <evidence source>, code unchanged since\` for the ship log. Missing evidence means RUN — the gate skips on proof, never on hope.
+
+If tests run and any in-branch test fails, **STOP** and do NOT deliver (a genuinely pre-existing failure unrelated to this change's diff may be noted and triaged, but when in doubt treat it as blocking).
+
+**e. Review the diff for obvious structural issues**
+- Scan the change's diff (\`git diff origin/<base>...HEAD\` in pr mode; the commits being delivered otherwise) for accidental debug output, secrets, obviously broken logic, or leftover TODO markers before delivering
+
+**PR Body Generation (pr mode):**
 
 If \`openspec/changes/<name>/proposal.md\` exists:
 - Extract "Why" and "What Changes" sections
@@ -83,39 +106,42 @@ If no proposal.md:
 - Use change name as PR title
 - Note that no proposal was available
 
-**e. Fresh-verification gate (before push)**
-- If any code changed after step (c)'s test run — for example from review fixes in step (d) — re-run the test suite and require fresh passing output before pushing. Stale results from the earlier run are not acceptable.
-- If the re-run fails, **STOP** and fix before proceeding — do not push.
+**f. Fresh-verification gate (before delivery)**
+- If any code changed after the last green test run — for example from review fixes in step (e) or lint fixes in step (b) — re-run the test suite and require fresh passing output before delivering. Stale results are not acceptable.
+- If the re-run fails, **STOP** and fix before proceeding — do not deliver.
 
-**f. Push the branch**
-- \`git push -u origin <branch>\` (push with upstream tracking; never force-push)
-
-**g. Create the PR**
-- \`gh pr create --base <base> --title "<title>" --body "<body>"\` using the title/body from PR Body Generation above
-- Output the PR URL
+**g. Deliver per mode**
+- **pr**: \`git push -u origin <branch>\` (upstream tracking; never force-push), then \`gh pr create --base <base> --title "<title>" --body "<body>"\` using PR Body Generation above; output the PR URL
+- **push**: \`git push origin <branch>\` (never force-push); no PR
+- **local**: nothing to push — record in the ship log that delivery is deferred to the portfolio/parent level
 
 ### 4. Write Ship Log
 
-After successful PR creation, write \`openspec/changes/<name>/ship-log.md\`:
+After successful delivery in ANY mode, write \`openspec/changes/<name>/ship-log.md\`:
 
 \`\`\`markdown
 # Ship Log: <change-name>
 
 **Date:** <timestamp>
+**Mode:** pr | push | local
 **Branch:** <branch-name>
-**PR:** <PR-URL>
-**Status:** PR Created
+**Commit:** <commit-hash>
+**Base:** <base-branch>            (pr mode only)
+**PR:** <PR-URL>                   (pr mode only)
+**Status:** PR Created | Pushed | Committed (delivery deferred to portfolio level)
 
 ## Pre-Flight Results
 - Verification: <pass/skip>
 - Tasks: <N/M complete>
-- Git status: clean
+
+## Test Gate
+- Tests: ran green | skipped — green at <evidence source>, code unchanged since
 
 ## Deployment
-Status: Pending (run /opsx:ship --deploy to continue)
+Status: Pending (run /opsx:ship --deploy to continue)   (pr mode only)
 \`\`\`
 
-### 5. Optional: Land and Deploy
+### 5. Optional: Land and Deploy (pr mode only)
 
 If the user opts into deployment (or passes \`--deploy\`):
 
@@ -153,10 +179,11 @@ After shipping, suggest:
 ### Pre-Flight
 - [x] Verification: passed
 - [x] Tasks: 7/7 complete
-- [x] Git: clean
 
 ### Ship
+- Mode: pr
 - Branch: feature/add-auth
+- Tests: skipped — green at review-cycle-report.md, code unchanged since
 - PR: https://github.com/org/repo/pull/42
 - Status: Created
 
@@ -169,7 +196,7 @@ After shipping, suggest:
 export function getShipCommandSkillTemplate(): SkillTemplate {
   return {
     name: 'openspec-opsx-ship',
-    description: 'Ship the change — test, push, create PR, optionally merge and deploy. PR body from proposal. Ship log saved to change directory.',
+    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to change directory.',
     instructions: SHIP_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires openspec CLI.',
@@ -180,7 +207,7 @@ export function getShipCommandSkillTemplate(): SkillTemplate {
 export function getOpsxShipCommandTemplate(): CommandTemplate {
   return {
     name: 'OPSX: Ship',
-    description: 'Ship the change — test, push, create PR, optionally merge and deploy',
+    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver',
     category: 'Workflow',
     tags: ['workflow', 'release', 'ship', 'deploy'],
     content: SHIP_INSTRUCTIONS,

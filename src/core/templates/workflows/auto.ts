@@ -75,7 +75,7 @@ When leadReview is not enabled, proceed from propose to the next stage without t
 ## 5. Adaptive Bug-Fix verify
 
 For a \`verify\` stage with **verifyPolicy=adaptive**:
-- Run the unit-test gate first.
+- Run the unit-test gate first. Record the gate's command, result, and the git state it ran against (HEAD + dirty status) in run-state — the ship stage's evidence-based test gate consumes this to decide whether tests must be re-run.
 - **Simple** fix (single file / non-core path / tests sufficient) AND tests green -> verify passes; skip the review loop.
 - **Complex** fix (multiple files / core paths / insufficient coverage) -> spawn a dedicated test/verification worker for deeper checking AND enter the review-cycle loop.
 Compute the simple/complex determination from the diff and record it in run-state.
@@ -130,6 +130,7 @@ Frontier: <parent>-ui, <parent>-docs
 - Decompose is LEAD-audited, not a human gate — proceed automatically once the plan is safe; escalate only when no safe plan exists. The user can still interrupt.
 - NEVER parallelize children you cannot prove are independent: parallel requires no dependency edge AND no overlapping touched capabilities/specs/files AND Tier A. When uncertain, run serial. Never parallelize under Tier B/C.
 - A dependent child waits for every prerequisite to be implemented + review-clean before it starts; a shared working tree is sufficient (no forced ship/archive of the prerequisite unless the dependency is on landed/merged artifacts).
+- Decomposed children ship in **local** delivery mode (commit only — no per-child push or PR). The portfolio delivers ONCE: after ALL children complete, resolve the delivery mode at the parent level and push / create the PR there. On partial failure, completed children's commits stay local — never push a half-delivered portfolio.
 - Save portfolio run-state (\`portfolio-run.json\`) so a decomposed run is observable and resumable; on a child's failure, stop its dependent chain, keep independent done children, and escalate with the open frontier.`;
 
 export function getAutoCommandSkillTemplate(): SkillTemplate {
