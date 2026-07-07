@@ -2,7 +2,6 @@
 
 ## Purpose
 Provide an iterative review → triage → fix → re-review loop (the `/opsx:review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
-
 ## Requirements
 ### Requirement: Review-Cycle Skill and Command Templates
 
@@ -136,4 +135,18 @@ The review-cycle workflow SHALL consume the shared `opsx-orchestration` playbook
 - **WHEN** the review-cycle instructions describe how the loop is driven
 - **THEN** they SHALL reference the `opsx-orchestration` playbook for tier detection, role-isolated dispatch, run-state, and escalation
 - **AND** SHALL continue to delegate each review pass to the `openspec-gstack-review` engine without forking it
+
+### Requirement: Gate-Run Test Evidence Is Recorded for Ship
+
+The cycle report SHALL record test evidence consumable by the ship stage's evidence-based test gate: for the final clean round (and for every Tier C gate-run), the exact test/gate command(s) executed, their result, and the git code state they ran against (HEAD plus whether the working tree was dirty).
+
+#### Scenario: Final clean round records test evidence
+
+- **WHEN** a review cycle ends clean
+- **THEN** `review-cycle-report.md` SHALL record the test/gate command(s) of the final round, their passing result, and the git state (HEAD, working-tree dirty or clean) they ran against
+
+#### Scenario: Ship consumes the evidence
+
+- **WHEN** a later ship stage evaluates its evidence-based test gate
+- **THEN** the recorded evidence SHALL be sufficient to decide whether the code state is unchanged since the last green run
 

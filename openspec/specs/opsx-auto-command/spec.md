@@ -64,7 +64,7 @@ Small feature pipeline SHALL execute: propose, apply, verify, ship, archive.
 
 ### Requirement: Bug Fix Pipeline
 
-The Bug-Fix pipeline SHALL use an adaptive verify policy: a green unit-test gate suffices for simple fixes, while complex fixes additionally engage a dedicated test/verification worker.
+The Bug-Fix pipeline SHALL use an adaptive verify policy: a green unit-test gate suffices for simple fixes, while complex fixes additionally engage a dedicated test/verification worker. The unit-test gate's evidence SHALL be recorded for the ship stage's evidence-based test gate.
 
 #### Scenario: Simple fix passes on the unit-test gate
 
@@ -76,6 +76,11 @@ The Bug-Fix pipeline SHALL use an adaptive verify policy: a green unit-test gate
 
 - **WHEN** a bug fix is complex (e.g. multiple files, core paths, insufficient coverage)
 - **THEN** the LEAD SHALL spawn a dedicated test/verification worker and enter the review-cycle loop
+
+#### Scenario: Unit-test gate evidence recorded
+
+- **WHEN** the unit-test gate runs during adaptive verify
+- **THEN** the gate's command, result, and the git code state it ran against SHALL be recorded in run-state
 
 ### Requirement: Pause Points for User Confirmation
 
