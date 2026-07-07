@@ -134,5 +134,50 @@ describe('auto workflow (orchestrated autopilot)', () => {
       // portfolio run-state + resume
       expect(skillText).toContain('portfolio-run.json');
     });
+
+    it('gates persistent-planner reuse on reuse.planner (auto vs never)', () => {
+      expect(skillText).toContain('reuse.planner');
+      expect(skillText).toContain('resolvePipelineReuseConfig');
+      // never → fresh planner per propose, seeded from planning-context.md.
+      expect(skillText.toLowerCase()).toContain('spawn a fresh planner for each propose');
+      // The cross-change planner retire decision uses the reuse threshold, not handoff.
+      expect(skillText).toContain('resolvePipelineReuseConfig(pipeline).roles.planner');
+    });
+
+    it('defines cross-child implementer warm-vs-retire reuse (Step G.1)', () => {
+      expect(skillText).toContain('Cross-child implementer reuse');
+      expect(skillText).toContain('reuse.implementer');
+      // Relatedness signal + probe timing.
+      expect(skillText).toContain('Relatedness = DAG adjacency');
+      expect(skillText.toLowerCase()).toContain('probe point = prerequisite review-clean');
+      // Decision: warm reuse below threshold with the contamination guard; retire above.
+      expect(skillText).toContain('contamination guard');
+      expect(skillText).toContain('retired-between-children');
+      expect(skillText.toLowerCase()).toContain('dual-source seed');
+    });
+
+    it('requires a unique warm predecessor (merge nodes get a fresh worker)', () => {
+      expect(skillText).toContain('unique warm predecessor');
+      expect(skillText).toContain('DAG merge node');
+      expect(skillText.toLowerCase()).toContain('multi-source seeded from each prerequisite');
+    });
+
+    it('records reuse lineage and excludes the design fixer', () => {
+      expect(skillText).toContain('reusedFrom');
+      expect(skillText).toContain('fixer is excluded from reuse');
+    });
+
+    it('extends the H.3 DONE contract with a durable-findings clause', () => {
+      expect(skillText).toContain('durable-findings');
+      expect(skillText).toContain('relays these findings VERBATIM');
+    });
+
+    it('requires a held warm reuse candidate to write its digest before session relay (H.7)', () => {
+      expect(skillText).toContain('held warm reuse candidate');
+      expect(skillText).toContain('knowledge digest document');
+      // The digest is explicitly the retired-between-children handoff document (F.1 finds it).
+      expect(skillText).toContain('which IS a handoff document');
+      expect(skillText).toContain('handoff/<role>-<n>.md');
+    });
   });
 });

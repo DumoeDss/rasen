@@ -119,6 +119,15 @@ describe('handoff workflow', () => {
       expect(skillText).toContain('Spawn a visible interactive window');
       expect(skillText).toContain('Fallback is always manual');
     });
+
+    it('describes the retired-between-children content focus for cross-change reuse', () => {
+      expect(skillText).toContain('retired-between-children');
+      expect(skillText).toContain('transfer cross-change knowledge');
+      // Reuses the existing template; the between-children doc leaves Remaining empty.
+      expect(skillText).toContain('leave **Remaining** empty');
+      // The same file is the session-relay quiesce rule's "knowledge digest".
+      expect(skillText).toContain('knowledge digest');
+    });
   });
 
   describe('orchestration playbook Step H', () => {

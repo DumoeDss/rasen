@@ -61,6 +61,8 @@ NEVER inline the prompt into the spawn command as a bare quoted string: nested s
 
 A worker told to hand off mid-stage writes \`openspec/changes/<name>/handoff/<role>-<n>.md\` with the same template, then returns the structured \`HANDOFF\` result to the LEAD. Workers NEVER update run-state — the LEAD does that accounting (single-writer invariant).
 
+**Retired between child changes (\`retired-between-children\`).** When the orchestration playbook retires a warm worker BETWEEN dependent child changes (a cross-change re-staffing, not a mid-stage exhaustion) rather than reusing it, that worker writes the SAME document with reason \`retired-between-children\`, but its content focus shifts from "resume this task" to "transfer cross-change knowledge": lead with **Key decisions**, **Dead ends & gotchas**, and **Working set** — the conventions and traps the successor on the dependent child inherits — and leave **Remaining** empty (the change is complete; there is nothing to finish, only knowledge to carry forward). The template is unchanged — only the emphasis differs. The successor implementer on the dependent child is then dual-source seeded from this document plus the LEAD's dispatch brief. This \`retired-between-children\` document is also what the session-relay quiesce rule calls a held warm reuse candidate's **knowledge digest** — the same file, written before any session relay so the worker's cross-change knowledge survives the boundary.
+
 ## Handoff document template
 
 \`\`\`markdown
