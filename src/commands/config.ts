@@ -94,7 +94,7 @@ const WORKFLOW_PROMPT_META: Record<string, WorkflowPromptMeta> = {
  * Resolve the effective current profile state from global config defaults.
  */
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
-  const profile = config.profile || 'core';
+  const profile = config.profile || 'full';
   const delivery = config.delivery || 'both';
   const workflows = [
     ...getProfileWorkflows(profile, config.workflows ? [...config.workflows] : undefined),
@@ -106,6 +106,12 @@ export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
  * Derive profile type from selected workflows.
  */
 export function deriveProfileFromWorkflowSelection(selectedWorkflows: string[]): Profile {
+  const isFullMatch =
+    selectedWorkflows.length === ALL_WORKFLOWS.length &&
+    ALL_WORKFLOWS.every((w) => selectedWorkflows.includes(w));
+  if (isFullMatch) {
+    return 'full';
+  }
   const isCoreMatch =
     selectedWorkflows.length === CORE_WORKFLOWS.length &&
     CORE_WORKFLOWS.every((w) => selectedWorkflows.includes(w));
@@ -256,7 +262,9 @@ export function registerConfigCommand(program: Command): void {
         console.log(`\nProfile settings:`);
         console.log(`  profile: ${config.profile} ${profileSource}`);
         console.log(`  delivery: ${config.delivery} ${deliverySource}`);
-        if (config.profile === 'core') {
+        if (config.profile === 'full') {
+          console.log(`  workflows: ${ALL_WORKFLOWS.join(', ')} (from full profile)`);
+        } else if (config.profile === 'core') {
           console.log(`  workflows: ${CORE_WORKFLOWS.join(', ')} (from core profile)`);
         } else if (config.workflows && config.workflows.length > 0) {
           console.log(`  workflows: ${config.workflows.join(', ')} (explicit)`);
@@ -453,11 +461,11 @@ export function registerConfigCommand(program: Command): void {
     .command('profile [preset]')
     .description('Configure workflow profile (interactive picker or preset shortcut)')
     .action(async (preset?: string) => {
-      // Preset shortcut: `openspec config profile core`
-      if (preset === 'core') {
+      // Preset shortcuts: `openspec config profile full` / `openspec config profile core`
+      if (preset === 'full' || preset === 'core') {
         const config = getGlobalConfig();
-        config.profile = 'core';
-        config.workflows = [...CORE_WORKFLOWS];
+        config.profile = preset;
+        config.workflows = preset === 'full' ? [...ALL_WORKFLOWS] : [...CORE_WORKFLOWS];
         // Preserve delivery setting
         saveGlobalConfig(config);
         printConfigProfileApplyGuidance();
@@ -465,14 +473,14 @@ export function registerConfigCommand(program: Command): void {
       }
 
       if (preset) {
-        console.error(`Error: Unknown profile preset "${preset}". Available presets: core`);
+        console.error(`Error: Unknown profile preset "${preset}". Available presets: full, core`);
         process.exitCode = 1;
         return;
       }
 
       // Non-interactive check
       if (!process.stdout.isTTY) {
-        console.error('Interactive mode required. Use `openspec config profile core` or set config via environment/flags.');
+        console.error('Interactive mode required. Use `openspec config profile full` (or `core`) or set config via environment/flags.');
         process.exitCode = 1;
         return;
       }

@@ -77,12 +77,66 @@ describe('InitCommand', () => {
       expect(content).toContain('schema: spec-driven');
     });
 
-    it('should create core profile skills for Claude Code by default', async () => {
+    it('should create full profile skills for Claude Code by default', async () => {
       const initCommand = new InitCommand({ tools: 'claude', force: true });
 
       await initCommand.execute(testDir);
 
-      // Core profile: propose, explore, apply, sync, archive
+      // Full profile (default): all workflow skills are installed
+      const expectedSkillNames = [
+        'openspec-propose',
+        'openspec-explore',
+        'openspec-apply-change',
+        'openspec-sync-specs',
+        'openspec-archive-change',
+        'openspec-new-change',
+        'openspec-continue-change',
+        'openspec-ff-change',
+        'openspec-bulk-archive-change',
+        'openspec-verify-change',
+      ];
+
+      for (const skillName of expectedSkillNames) {
+        const skillFile = path.join(testDir, '.claude', 'skills', skillName, 'SKILL.md');
+        expect(await fileExists(skillFile)).toBe(true);
+
+        const content = await fs.readFile(skillFile, 'utf-8');
+        expect(content).toContain('---');
+        expect(content).toContain('name:');
+        expect(content).toContain('description:');
+      }
+    });
+
+    it('should create full profile commands for Claude Code by default', async () => {
+      const initCommand = new InitCommand({ tools: 'claude', force: true });
+
+      await initCommand.execute(testDir);
+
+      // Full profile (default): all workflow commands are installed
+      const expectedCommandNames = [
+        'opsx/propose.md',
+        'opsx/explore.md',
+        'opsx/apply.md',
+        'opsx/sync.md',
+        'opsx/archive.md',
+        'opsx/new.md',
+        'opsx/continue.md',
+        'opsx/ff.md',
+        'opsx/bulk-archive.md',
+        'opsx/verify.md',
+      ];
+
+      for (const cmdName of expectedCommandNames) {
+        const cmdFile = path.join(testDir, '.claude', 'commands', cmdName);
+        expect(await fileExists(cmdFile)).toBe(true);
+      }
+    });
+
+    it('should create only core profile skills with --profile core', async () => {
+      const initCommand = new InitCommand({ tools: 'claude', force: true, profile: 'core' });
+
+      await initCommand.execute(testDir);
+
       const coreSkillNames = [
         'openspec-propose',
         'openspec-explore',
@@ -94,14 +148,8 @@ describe('InitCommand', () => {
       for (const skillName of coreSkillNames) {
         const skillFile = path.join(testDir, '.claude', 'skills', skillName, 'SKILL.md');
         expect(await fileExists(skillFile)).toBe(true);
-
-        const content = await fs.readFile(skillFile, 'utf-8');
-        expect(content).toContain('---');
-        expect(content).toContain('name:');
-        expect(content).toContain('description:');
       }
 
-      // Non-core skills should NOT be created
       const nonCoreSkillNames = [
         'openspec-new-change',
         'openspec-continue-change',
@@ -113,40 +161,6 @@ describe('InitCommand', () => {
       for (const skillName of nonCoreSkillNames) {
         const skillFile = path.join(testDir, '.claude', 'skills', skillName, 'SKILL.md');
         expect(await fileExists(skillFile)).toBe(false);
-      }
-    });
-
-    it('should create core profile commands for Claude Code by default', async () => {
-      const initCommand = new InitCommand({ tools: 'claude', force: true });
-
-      await initCommand.execute(testDir);
-
-      // Core profile: propose, explore, apply, sync, archive
-      const coreCommandNames = [
-        'opsx/propose.md',
-        'opsx/explore.md',
-        'opsx/apply.md',
-        'opsx/sync.md',
-        'opsx/archive.md',
-      ];
-
-      for (const cmdName of coreCommandNames) {
-        const cmdFile = path.join(testDir, '.claude', 'commands', cmdName);
-        expect(await fileExists(cmdFile)).toBe(true);
-      }
-
-      // Non-core commands should NOT be created
-      const nonCoreCommandNames = [
-        'opsx/new.md',
-        'opsx/continue.md',
-        'opsx/ff.md',
-        'opsx/bulk-archive.md',
-        'opsx/verify.md',
-      ];
-
-      for (const cmdName of nonCoreCommandNames) {
-        const cmdFile = path.join(testDir, '.claude', 'commands', cmdName);
-        expect(await fileExists(cmdFile)).toBe(false);
       }
     });
 

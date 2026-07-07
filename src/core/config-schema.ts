@@ -11,9 +11,9 @@ export const GlobalConfigSchema = z
       .optional()
       .default({}),
     profile: z
-      .enum(['core', 'custom'])
+      .enum(['full', 'core', 'custom'])
       .optional()
-      .default('core'),
+      .default('full'),
     delivery: z
       .enum(['both', 'skills', 'commands', 'skills-first', 'commands-first'])
       .optional()
@@ -31,7 +31,7 @@ export type GlobalConfigType = z.infer<typeof GlobalConfigSchema>;
  */
 export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
-  profile: 'core',
+  profile: 'full',
   delivery: 'both',
 };
 

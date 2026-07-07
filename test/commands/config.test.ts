@@ -291,6 +291,7 @@ describe('config profile command', () => {
   it('config schema should validate profile and delivery values', async () => {
     const { validateConfig } = await import('../../src/core/config-schema.js');
 
+    expect(validateConfig({ featureFlags: {}, profile: 'full', delivery: 'both' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'core', delivery: 'both' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'commands', workflows: ['explore'] }).success).toBe(true);

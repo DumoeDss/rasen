@@ -8,7 +8,7 @@ export const GLOBAL_CONFIG_FILE_NAME = 'config.json';
 export const GLOBAL_DATA_DIR_NAME = 'openspec';
 
 // TypeScript types
-export type Profile = 'core' | 'custom';
+export type Profile = 'full' | 'core' | 'custom';
 export type Delivery = 'both' | 'skills' | 'commands' | 'skills-first' | 'commands-first';
 export type RepoMode = 'solo' | 'collaborative';
 
@@ -26,7 +26,7 @@ export interface GlobalConfig {
 
 const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
-  profile: 'core',
+  profile: 'full',
   delivery: 'both',
   proactive: true,
   repoMode: 'collaborative',

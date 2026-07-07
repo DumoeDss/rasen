@@ -28,7 +28,7 @@ For workflow patterns and when to use each command, see [Workflows](workflows.md
 | `/opsx:onboard` | Guided tutorial through the complete workflow |
 | `/opsx:review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
 
-The default global profile is `core`. To enable expanded workflow commands, run `openspec config profile`, select workflows, then run `openspec update` in your project.
+The default global profile is `full` — all workflow commands are installed out of the box. To slim down to the essentials, run `openspec config profile core` (or pick a custom subset with `openspec config profile`), then run `openspec update` in your project.
 
 ---
 

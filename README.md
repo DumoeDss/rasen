@@ -119,7 +119,7 @@ Now talk to your AI:
 - **Not sure what to build yet?** Start with `/opsx:explore`, a no-stakes thinking partner that reads your code, weighs options, and shapes a plan before anything is written. ([Explore guide](docs/explore.md))
 - **Already know what you want?** Go straight to `/opsx:propose <what-you-want-to-build>`.
 
-Both are in the default profile. If you want the expanded workflow (`/opsx:new`, `/opsx:continue`, `/opsx:ff`, `/opsx:verify`, `/opsx:bulk-archive`, `/opsx:onboard`), select it with `openspec config profile` and apply with `openspec update`.
+The default profile is `full`, so every workflow command (`/opsx:new`, `/opsx:continue`, `/opsx:ff`, `/opsx:verify`, `/opsx:bulk-archive`, `/opsx:onboard`, and more) is installed out of the box. To slim down, run `openspec config profile` and apply with `openspec update`.
 
 > [!NOTE]
 > Not sure if your tool is supported? [View the full list](docs/supported-tools.md) – we support 25+ tools and growing.
