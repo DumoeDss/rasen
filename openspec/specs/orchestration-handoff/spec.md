@@ -5,7 +5,7 @@ Defines the orchestration playbook's context-handoff protocol: every worker spaw
 
 ## Requirements
 ### Requirement: Worker handoff contract
-The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `openspec/changes/<id>/handoff/`).
+The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `openspec/changes/<id>/handoff/`). The `DONE` return SHALL additionally carry a durable-findings clause — 1–3 lines of discoveries that remain true for future planning (not per-task chatter) — which the LEAD relays verbatim into the next planner's dispatch so implementation discoveries feed subsequent proposals.
 
 #### Scenario: Worker self-handoff mid-stage
 - **WHEN** a worker returns a `HANDOFF` result
@@ -15,6 +15,10 @@ The orchestration playbook SHALL instruct every worker spawn prompt to carry a h
 #### Scenario: Worker dies without a handoff document
 - **WHEN** a worker terminates abnormally or returns `DONE` with unticked tasks
 - **THEN** the playbook SHALL direct the LEAD to treat it as a handoff without a document and cold-reconstruct the successor's context from the change-directory blackboard
+
+#### Scenario: Durable findings relayed to the next planner
+- **WHEN** a worker returns `DONE` with a durable-findings clause
+- **THEN** the LEAD SHALL relay those findings verbatim into the dispatch of the planner that proposes a dependent or subsequent child change
 
 ### Requirement: Relay caps with LEAD-first review
 The playbook SHALL bound handoff relays per stage by the resolved `maxRelays` and `stallLimit`, with the LEAD — not a human gate — performing the triggered review.
