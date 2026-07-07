@@ -2,14 +2,13 @@
 
 ## Purpose
 Add a schema `enhance` field that emits enhance instructions and resolves an enhance skill, with backward-compatible validation and JSON output.
-
 ## Requirements
 ### Requirement: Schema Parsing of Enhance Field
 Schema parsing SHALL accept an optional `enhance` string field on artifact definitions that references a built-in skill name.
 
 #### Scenario: Schema with enhance field parsed successfully
-- **WHEN** a schema YAML contains an artifact with `enhance: "plan-ceo-review"`
-- **THEN** the parsed artifact object includes `enhance` with value `"plan-ceo-review"`
+- **WHEN** a schema YAML contains an artifact with `enhance: "review"`
+- **THEN** the parsed artifact object includes `enhance` with value `"review"`
 
 #### Scenario: Schema without enhance field parsed successfully
 - **WHEN** a schema YAML contains an artifact without an `enhance` field
@@ -19,8 +18,8 @@ Schema parsing SHALL accept an optional `enhance` string field on artifact defin
 When `enhance` is present, instruction output SHALL include an enhance instruction section wrapped in `<enhance>` tags, containing the built-in skill name and guidance to invoke it after creating the artifact.
 
 #### Scenario: Enhance section included in instructions
-- **WHEN** instructions are generated for an artifact with `enhance: "plan-ceo-review"`
-- **THEN** the output includes an `<enhance>` section containing the skill name `"plan-ceo-review"` and guidance to invoke the built-in skill after artifact creation
+- **WHEN** instructions are generated for an artifact with `enhance: "review"`
+- **THEN** the output includes an `<enhance>` section containing the skill name `"review"` and guidance to invoke the built-in skill after artifact creation
 
 #### Scenario: No enhance section when field is absent
 - **WHEN** instructions are generated for an artifact without an `enhance` field
@@ -30,8 +29,8 @@ When `enhance` is present, instruction output SHALL include an enhance instructi
 The enhance field value SHALL be resolved as a built-in skill name located in the project's `skills/` directory.
 
 #### Scenario: Enhance skill resolved from skills directory
-- **WHEN** an artifact has `enhance: "plan-ceo-review"`
-- **THEN** the system resolves the skill from `skills/plan-ceo-review/SKILL.md`
+- **WHEN** an artifact has `enhance: "review"`
+- **THEN** the system resolves the skill from `skills/review/SKILL.md`
 
 #### Scenario: Enhance skill not found
 - **WHEN** an artifact has `enhance: "nonexistent-skill"` and no matching directory exists in `skills/`
@@ -52,8 +51,8 @@ Schema validation SHALL accept schemas with and without `enhance` fields.
 The enhance field SHALL be included in `openspec instructions --json` output.
 
 #### Scenario: Enhance field present in JSON output
-- **WHEN** `openspec instructions --json` is run for an artifact with `enhance: "plan-ceo-review"`
-- **THEN** the JSON output includes `"enhance": "plan-ceo-review"` in the artifact object
+- **WHEN** `openspec instructions --json` is run for an artifact with `enhance: "review"`
+- **THEN** the JSON output includes `"enhance": "review"` in the artifact object
 
 #### Scenario: Enhance field absent in JSON output when not defined
 - **WHEN** `openspec instructions --json` is run for an artifact without an `enhance` field

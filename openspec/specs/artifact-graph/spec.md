@@ -11,7 +11,7 @@ The system SHALL load artifact graph definitions from YAML schema files within s
 - **THEN** the system returns an ArtifactGraph with all artifacts and dependencies
 
 #### Scenario: Schema with enhance field
-- **WHEN** a schema contains an artifact with `enhance: "plan-ceo-review"`
+- **WHEN** a schema contains an artifact with `enhance: "review"`
 - **THEN** the system loads the artifact with the enhance field preserved
 
 #### Scenario: Schema without new fields

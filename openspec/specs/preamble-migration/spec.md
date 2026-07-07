@@ -68,10 +68,10 @@ The redundant builder-ethos document `skills/gstack/docs/ETHOS.md` SHALL be dele
 - **THEN** `skills/gstack/docs/ETHOS.md` SHALL NOT exist
 
 ### Requirement: Dangling ETHOS references removed
-All textual references instructing the reader to "Read ETHOS.md" SHALL be removed from skill sources and docs, by explicit file lookup: `skills/gstack/office-hours/SKILL.md.tmpl`, `skills/gstack/plan-ceo-review/SKILL.md.tmpl`, and `skills/gstack/docs/ARCHITECTURE.md`. Cross-references to the removed Completeness Principle (e.g. in `generateAskUserFormat`) SHALL be softened so they do not point at a deleted section.
+All textual references instructing the reader to "Read ETHOS.md" SHALL be removed from skill sources and docs, by explicit file lookup: `skills/gstack/office-hours/SKILL.md.tmpl` and `skills/gstack/docs/ARCHITECTURE.md`. Cross-references to the removed Completeness Principle (e.g. in `generateAskUserFormat`) SHALL be softened so they do not point at a deleted section.
 
 #### Scenario: No ETHOS pointer in skill sources
-- **WHEN** `skills/gstack/office-hours/SKILL.md.tmpl`, `skills/gstack/plan-ceo-review/SKILL.md.tmpl`, and their regenerated `SKILL.md` are inspected
+- **WHEN** `skills/gstack/office-hours/SKILL.md.tmpl` and its regenerated `SKILL.md` are inspected
 - **THEN** none SHALL contain the string `ETHOS.md`
 
 #### Scenario: No ETHOS pointer in docs

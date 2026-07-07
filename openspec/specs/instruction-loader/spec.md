@@ -57,8 +57,8 @@ The system SHALL enrich templates with change-specific context, quality rules, a
 - **THEN** instruction output does not include `<quality-rules>` tags
 
 #### Scenario: Include enhance instruction
-- **WHEN** artifact has `enhance` field set to "plan-ceo-review"
-- **THEN** instruction output includes `<enhance>` section with the built-in skill name and path to `skills/plan-ceo-review/SKILL.md`
+- **WHEN** artifact has `enhance` field set to "review"
+- **THEN** instruction output includes `<enhance>` section with the built-in skill name and path to `skills/review/SKILL.md`
 
 #### Scenario: Include provider instruction
 - **WHEN** artifact has `provider` field set to "review"
