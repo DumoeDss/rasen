@@ -123,8 +123,9 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  * packaged source skill dir into the installed skill directory, preserving
  * subdirectory structure. Called by `init`/`update` after writing each `SKILL.md`.
  *
- * - The source dir is resolved the same way expert templates resolve their
- *   `SKILL.md` (relative to the package root, at `skills/gstack/<workflowId>`).
+ * - The source dir is resolved relative to the package root, at
+ *   `skills/experts/<workflowId>` (sidecar reference files only; expert prompts
+ *   are inline TypeScript in `src/core/templates/experts/<name>.ts`).
  * - The `browse` skill is skipped entirely: it is a vendored bun tool package
  *   (heavy `.ts` src/test trees plus build scripts) whose runtime binary ships
  *   separately via `{{BROWSE_SETUP}}`, not as skill sidecars.
@@ -135,7 +136,7 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
   if (workflowId === 'browse') return;
 
-  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'gstack', workflowId);
+  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', workflowId);
   if (!existsSync(sourceDir)) return;
 
   copySidecarTree(sourceDir, targetSkillDir);
@@ -171,25 +172,25 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
 
   // Expert skills are always installed regardless of workflowFilter
   const expertSkills: SkillTemplateEntry[] = [
-    { template: getBenchmarkSkillTemplate(), dirName: 'openspec-gstack-benchmark', workflowId: 'benchmark' },
-    { template: getBrowseSkillTemplate(), dirName: 'openspec-gstack-browse', workflowId: 'browse' },
-    { template: getCarefulSkillTemplate(), dirName: 'openspec-gstack-careful', workflowId: 'careful' },
-    { template: getCodebaseDesignSkillTemplate(), dirName: 'openspec-gstack-codebase-design', workflowId: 'codebase-design' },
-    { template: getCodexSkillTemplate(), dirName: 'openspec-gstack-codex', workflowId: 'codex' },
-    { template: getCsoSkillTemplate(), dirName: 'openspec-gstack-cso', workflowId: 'cso' },
-    { template: getDesignConsultationSkillTemplate(), dirName: 'openspec-gstack-design-consultation', workflowId: 'design-consultation' },
-    { template: getDesignReviewSkillTemplate(), dirName: 'openspec-gstack-design-review', workflowId: 'design-review' },
-    { template: getFreezeSkillTemplate(), dirName: 'openspec-gstack-freeze', workflowId: 'freeze' },
-    { template: getGuardSkillTemplate(), dirName: 'openspec-gstack-guard', workflowId: 'guard' },
-    { template: getInvestigateSkillTemplate(), dirName: 'openspec-gstack-investigate', workflowId: 'investigate' },
-    { template: getNavigatorSkillTemplate(), dirName: 'openspec-gstack-navigator', workflowId: 'navigator' },
-    { template: getOfficeHoursSkillTemplate(), dirName: 'openspec-gstack-office-hours', workflowId: 'office-hours' },
-    { template: getPrototypeSkillTemplate(), dirName: 'openspec-gstack-prototype', workflowId: 'prototype' },
-    { template: getQaSkillTemplate(), dirName: 'openspec-gstack-qa', workflowId: 'qa' },
-    { template: getQaOnlySkillTemplate(), dirName: 'openspec-gstack-qa-only', workflowId: 'qa-only' },
-    { template: getReviewSkillTemplate(), dirName: 'openspec-gstack-review', workflowId: 'review' },
-    { template: getTddSkillTemplate(), dirName: 'openspec-gstack-tdd', workflowId: 'tdd' },
-    { template: getUnfreezeSkillTemplate(), dirName: 'openspec-gstack-unfreeze', workflowId: 'unfreeze' },
+    { template: getBenchmarkSkillTemplate(), dirName: 'openspec-benchmark', workflowId: 'benchmark' },
+    { template: getBrowseSkillTemplate(), dirName: 'openspec-browse', workflowId: 'browse' },
+    { template: getCarefulSkillTemplate(), dirName: 'openspec-careful', workflowId: 'careful' },
+    { template: getCodebaseDesignSkillTemplate(), dirName: 'openspec-codebase-design', workflowId: 'codebase-design' },
+    { template: getCodexSkillTemplate(), dirName: 'openspec-codex', workflowId: 'codex' },
+    { template: getCsoSkillTemplate(), dirName: 'openspec-cso', workflowId: 'cso' },
+    { template: getDesignConsultationSkillTemplate(), dirName: 'openspec-design-consultation', workflowId: 'design-consultation' },
+    { template: getDesignReviewSkillTemplate(), dirName: 'openspec-design-review', workflowId: 'design-review' },
+    { template: getFreezeSkillTemplate(), dirName: 'openspec-freeze', workflowId: 'freeze' },
+    { template: getGuardSkillTemplate(), dirName: 'openspec-guard', workflowId: 'guard' },
+    { template: getInvestigateSkillTemplate(), dirName: 'openspec-investigate', workflowId: 'investigate' },
+    { template: getNavigatorSkillTemplate(), dirName: 'openspec-navigator', workflowId: 'navigator' },
+    { template: getOfficeHoursSkillTemplate(), dirName: 'openspec-office-hours', workflowId: 'office-hours' },
+    { template: getPrototypeSkillTemplate(), dirName: 'openspec-prototype', workflowId: 'prototype' },
+    { template: getQaSkillTemplate(), dirName: 'openspec-qa', workflowId: 'qa' },
+    { template: getQaOnlySkillTemplate(), dirName: 'openspec-qa-only', workflowId: 'qa-only' },
+    { template: getReviewSkillTemplate(), dirName: 'openspec-review', workflowId: 'review' },
+    { template: getTddSkillTemplate(), dirName: 'openspec-tdd', workflowId: 'tdd' },
+    { template: getUnfreezeSkillTemplate(), dirName: 'openspec-unfreeze', workflowId: 'unfreeze' },
   ];
 
   if (!workflowFilter) return [...workflowSkills, ...expertSkills];

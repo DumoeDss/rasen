@@ -28,7 +28,7 @@ stages:
     gate: true
 
   - id: verify
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     requires: [apply]
     condition: always

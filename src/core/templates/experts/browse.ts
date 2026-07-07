@@ -1,29 +1,139 @@
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
+import { PREAMBLE, BROWSE_SETUP, SNAPSHOT_FLAGS, COMMAND_REFERENCE } from './_shared.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const BODY = `
+${PREAMBLE}
+
+# browse: QA Testing & Dogfooding
+
+Persistent headless Chromium. First call auto-starts (~3s), then ~100ms per command.
+State persists between calls (cookies, tabs, login sessions).
+
+${BROWSE_SETUP}
+
+## Core QA Patterns
+
+### 1. Verify a page loads correctly
+\`\`\`bash
+$B goto https://yourapp.com
+$B text                          # content loads?
+$B console                       # JS errors?
+$B network                       # failed requests?
+$B is visible ".main-content"    # key elements present?
+\`\`\`
+
+### 2. Test a user flow
+\`\`\`bash
+$B goto https://app.com/login
+$B snapshot -i                   # see all interactive elements
+$B fill @e3 "user@test.com"
+$B fill @e4 "password"
+$B click @e5                     # submit
+$B snapshot -D                   # diff: what changed after submit?
+$B is visible ".dashboard"       # success state present?
+\`\`\`
+
+### 3. Verify an action worked
+\`\`\`bash
+$B snapshot                      # baseline
+$B click @e3                     # do something
+$B snapshot -D                   # unified diff shows exactly what changed
+\`\`\`
+
+### 4. Visual evidence for bug reports
+\`\`\`bash
+$B snapshot -i -a -o /tmp/annotated.png   # labeled screenshot
+$B screenshot /tmp/bug.png                # plain screenshot
+$B console                                # error log
+\`\`\`
+
+### 5. Find all clickable elements (including non-ARIA)
+\`\`\`bash
+$B snapshot -C                   # finds divs with cursor:pointer, onclick, tabindex
+$B click @c1                     # interact with them
+\`\`\`
+
+### 6. Assert element states
+\`\`\`bash
+$B is visible ".modal"
+$B is enabled "#submit-btn"
+$B is disabled "#submit-btn"
+$B is checked "#agree-checkbox"
+$B is editable "#name-field"
+$B is focused "#search-input"
+$B js "document.body.textContent.includes('Success')"
+\`\`\`
+
+### 7. Test responsive layouts
+\`\`\`bash
+$B responsive /tmp/layout        # mobile + tablet + desktop screenshots
+$B viewport 375x812              # or set specific viewport
+$B screenshot /tmp/mobile.png
+\`\`\`
+
+### 8. Test file uploads
+\`\`\`bash
+$B upload "#file-input" /path/to/file.pdf
+$B is visible ".upload-success"
+\`\`\`
+
+### 9. Test dialogs
+\`\`\`bash
+$B dialog-accept "yes"           # set up handler
+$B click "#delete-button"        # trigger dialog
+$B dialog                        # see what appeared
+$B snapshot -D                   # verify deletion happened
+\`\`\`
+
+### 10. Compare environments
+\`\`\`bash
+$B diff https://staging.app.com https://prod.app.com
+\`\`\`
+
+### 11. Show screenshots to the user
+After \`$B screenshot\`, \`$B snapshot -a -o\`, or \`$B responsive\`, always use the Read tool on the output PNG(s) so the user can see them. Without this, screenshots are invisible.
+
+## User Handoff
+
+When you hit something you can't handle in headless mode (CAPTCHA, complex auth, multi-factor
+login), hand off to the user:
+
+\`\`\`bash
+# 1. Open a visible Chrome at the current page
+$B handoff "Stuck on CAPTCHA at login page"
+
+# 2. Tell the user what happened (via AskUserQuestion)
+#    "I've opened Chrome at the login page. Please solve the CAPTCHA
+#     and let me know when you're done."
+
+# 3. When user says "done", re-snapshot and continue
+$B resume
+\`\`\`
+
+**When to use handoff:**
+- CAPTCHAs or bot detection
+- Multi-factor authentication (SMS, authenticator app)
+- OAuth flows that require user interaction
+- Complex interactions the AI can't handle after 3 attempts
+
+The browser preserves all state (cookies, localStorage, tabs) across the handoff.
+After \`resume\`, you get a fresh snapshot of wherever the user left off.
+
+## Snapshot Flags
+
+${SNAPSHOT_FLAGS}
+
+## Full Command List
+
+${COMMAND_REFERENCE}
+`;
 
 export function getBrowseSkillTemplate(): SkillTemplate {
-  const skillPath = resolve(__dirname, '..', '..', '..', '..', 'skills', 'gstack', 'browse', 'SKILL.md');
-  let instructions: string;
-  try {
-    const content = readFileSync(skillPath, 'utf-8');
-    // Strip YAML frontmatter if present
-    const fmEnd = content.indexOf('---', content.indexOf('---') + 3);
-    instructions = fmEnd > 0 ? content.slice(fmEnd + 3).trim() : content;
-  } catch {
-    instructions = 'Skill file not found: browse/SKILL.md';
-  }
   return {
-    name: 'gstack:browse',
+    name: 'openspec:browse',
     description: '|',
-    instructions: `${instructions}
-
-${STORE_SELECTION_GUIDANCE}`,
+    instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

@@ -106,7 +106,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
          loop: { kind: review-cycle, maxRounds: 2 } }
      - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop], model: sonnet }
    ```
-   可挑的现成 skill：`openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`，专家 `gstack:review` / `gstack:cso` / `gstack:benchmark` / `gstack:design-review` / `gstack:qa` / `gstack:qa-only`。stage 字段同 §2.2；抄现成写法用 `openspec pipeline show full-feature`。
+   可挑的现成 skill：`openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`，专家 `openspec:review` / `openspec:cso` / `openspec:benchmark` / `openspec:design-review` / `openspec:qa` / `openspec:qa-only`。stage 字段同 §2.2；抄现成写法用 `openspec pipeline show full-feature`。
 3. **校验 + 用**：
    ```bash
    openspec validate <名字> --type pipeline   # 唯一id / requires可解析 / 无环 / skill存在 / parallelGroup独立 / decompose(至多一个·首位·childPipeline可解析且不含递归)
@@ -114,7 +114,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
    ```
    之后 `/opsx:auto` 会把它列进 `available`，你在分类后**覆盖**选它即可。
 
-> 两个真实约束：① **skill 名必须精确**——专家是 `gstack:xxx`（非 `openspec-gstack-xxx`）、apply 是 `openspec-apply-change`（非 `openspec-apply`），写错 `validate` 直接报 skill 不存在；② **classify 不会自动推荐自定义流水线**（它是内置关键词启发式，只在三个内置里建议）——自定义流水线一定在 `available` 里，但需你/用户在分类后**手动覆盖**选择。想让某关键词自动命中自定义流水线，目前要改 `src/commands/pipeline.ts` 的关键词表（可作后续增强）。
+> 两个真实约束：① **skill 名必须精确**——专家是 `openspec:xxx`（非 `openspec-xxx`）、apply 是 `openspec-apply-change`（非 `openspec-apply`），写错 `validate` 直接报 skill 不存在；② **classify 不会自动推荐自定义流水线**（它是内置关键词启发式，只在三个内置里建议）——自定义流水线一定在 `available` 里，但需你/用户在分类后**手动覆盖**选择。想让某关键词自动命中自定义流水线，目前要改 `src/commands/pipeline.ts` 的关键词表（可作后续增强）。
 
 ### 2.7 decompose 扇出（一次拆成多个可独立交付的 change）
 
@@ -170,7 +170,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
 按 `tasks.md` 逐条实现并勾选复选框。实现中可随时回头改任何产物（无 phase gate）。
 
 ### 3.5 `/opsx:review-cycle` — 迭代评审环（也是 `/opsx:auto` 的 review-loop 阶段）
-实现之后的**迭代**循环：调用 `openspec-gstack-review` 做评审 → 按修复体量分级（trivial / non-trivial / design-level）→ 修复 → **只复审增量** → 直到无 Blocker/Major 或达上限升级人工。
+实现之后的**迭代**循环：调用 `openspec-review` 做评审 → 按修复体量分级（trivial / non-trivial / design-level）→ 修复 → **只复审增量** → 直到无 Blocker/Major 或达上限升级人工。
 
 要点（详见 [设计文档](./review-cycle-workflow-design.md)）：
 - **作者 ≠ 验证者**：修复只有被「非修复作者」对照原问题确认后才算解决；trivial 内联修复则以「独立重跑 gate + 读 diff」作为等价的非作者复核并记录。
@@ -179,7 +179,7 @@ openspec pipeline list --json                     # 列出 package/user/project 
 - **profile**：opt-in（在 `ALL_WORKFLOWS`，不在 `core`）。
 
 ### 3.6 `/opsx:verify` / `/opsx:verify-enhanced` — 验证
-`verify` 校验实现匹配产物；`verify-enhanced` 是多阶段深度验证（产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查），按改动规模自动伸缩，内部会调用相应 gstack 专家。
+`verify` 校验实现匹配产物；`verify-enhanced` 是多阶段深度验证（产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查），按改动规模自动伸缩，内部会调用相应专家技能。
 
 ### 3.7 上下文感知与交接（`openspec agent context` + `/opsx:handoff`）
 
@@ -203,8 +203,8 @@ Agent 感知不到自己的上下文占用——它只能**测量**。`openspec 
 
 - **续跑消费**：`openspec pipeline resume --json` 输出 `sessionHandoff` / 各 stage 最新交接文档指针 / 各 worker 的 `contextEstimate`；新会话**先读交接文档**（蒸馏物），raw transcript 暖播种降级为兜底。
 
-### 3.8 gstack 专家技能（始终安装，按需调用）
-不论 profile 如何，`openspec init` 都会装上一组专家技能（生成为 `openspec-gstack-*`），可在验证/规划阶段单独调用：
+### 3.8 专家技能（始终安装，按需调用）
+不论 profile 如何，`openspec init` 都会装上一组专家技能（生成为 `openspec-*`），可在验证/规划阶段单独调用：
 
 `/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/investigate` `/careful` `/guard`（排查/谨慎/护栏）、`/freeze` `/unfreeze`、`/codex`、`/setup-browser-cookies` 等。
 
@@ -239,14 +239,14 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
 - **Profile = 装哪些 workflow 命令**：
   - `core`（默认）= `propose` / `explore` / `apply` / `archive`。
   - `custom`（expanded）= 你勾选的集合，可含 `new` `continue` `ff` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` 以及 fusion 命令 `auto` `ship` `verify-enhanced` `office-hours` `retro`。
-  - **gstack 专家技能与 profile 无关，始终安装**。
+  - **专家技能与 profile 无关，始终安装**。
 - **启用 expanded / fusion 命令**：
   ```bash
   openspec config profile      # 交互选择 profile + workflows
   openspec update              # 在项目里重新生成对应的 skills/commands
   ```
 - **Delivery = 生成 skill 还是 command 还是都生成**：`both`（默认）/ `skills` / `commands` / `skills-first` / `commands-first`。在全局配置（`openspec config`）里设。
-  - ⚠️ **编排靠 skill**：`/opsx:auto` 与 `/opsx:review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-gstack-review`）。模型能调 skill、**不能**调 command——所以 `commands` / `commands-first`（会删掉有 command 对应物的 skill）会**打断编排**。要编排正常就保 skill：用 `both`（默认）或 `skills` / `skills-first`。
+  - ⚠️ **编排靠 skill**：`/opsx:auto` 与 `/opsx:review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-review`）。模型能调 skill、**不能**调 command——所以 `commands` / `commands-first`（会删掉有 command 对应物的 skill）会**打断编排**。要编排正常就保 skill：用 `both`（默认）或 `skills` / `skills-first`。
   - ⚠️ 注意：若全局设了 `delivery: commands-first`，`openspec init` 会生成 commands 并清掉对应的 workflow skill 目录——这也会让"断言生成了 skill 文件"的测试在该机器上失败（已知点，测试侧需隔离全局配置）。
 
 ### 升级已安装过的项目（拿到本次的编排 + pipeline）
@@ -396,7 +396,7 @@ stage 级别仍可覆盖 role 默认：
 ```yaml
 stages:
   - id: verify
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread

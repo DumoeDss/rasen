@@ -1,29 +1,34 @@
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const BODY = `
+# /unfreeze — Clear Freeze Boundary
+
+Remove the edit restriction set by \`/freeze\`, allowing edits to all directories.
+
+## Clear the boundary
+
+\`\`\`bash
+STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}"
+if [ -f "$STATE_DIR/freeze-dir.txt" ]; then
+  PREV=$(cat "$STATE_DIR/freeze-dir.txt")
+  rm -f "$STATE_DIR/freeze-dir.txt"
+  echo "Freeze boundary cleared (was: $PREV). Edits are now allowed everywhere."
+else
+  echo "No freeze boundary was set."
+fi
+\`\`\`
+
+Tell the user the result. Note that \`/freeze\` hooks are still registered for the
+session — they will just allow everything since no state file exists. To re-freeze,
+run \`/freeze\` again.
+`;
 
 export function getUnfreezeSkillTemplate(): SkillTemplate {
-  const skillPath = resolve(__dirname, '..', '..', '..', '..', 'skills', 'gstack', 'unfreeze', 'SKILL.md');
-  let instructions: string;
-  try {
-    const content = readFileSync(skillPath, 'utf-8');
-    // Strip YAML frontmatter if present
-    const fmEnd = content.indexOf('---', content.indexOf('---') + 3);
-    instructions = fmEnd > 0 ? content.slice(fmEnd + 3).trim() : content;
-  } catch {
-    instructions = 'Skill file not found: unfreeze/SKILL.md';
-  }
   return {
-    name: 'gstack:unfreeze',
+    name: 'openspec:unfreeze',
     description: '|',
-    instructions: `${instructions}
-
-${STORE_SELECTION_GUIDANCE}`,
+    instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

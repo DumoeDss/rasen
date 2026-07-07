@@ -4,7 +4,7 @@
  * Iterative post-implementation review loop:
  * review -> triage -> fix -> re-review(delta) -> {pass | loop | escalate}.
  * It does NOT reimplement the reviewer (each pass delegates to the
- * `openspec-gstack-review` engine) and does NOT reimplement the orchestration
+ * `openspec-review` engine) and does NOT reimplement the orchestration
  * (it runs on the shared LEAD orchestration playbook). The multi-agent path is
  * PRIMARY — review, fix, and re-review run as distinct role-isolated workers,
  * with a Tier A `SendMessage` warm resume of the original reviewer — and
@@ -18,7 +18,7 @@ const REVIEW_CYCLE_INSTRUCTIONS = `Iterative review loop — drive a change to a
 
 ${STORE_SELECTION_GUIDANCE}
 
-This workflow does NOT reimplement the reviewer — each review pass delegates to the always-installed \`openspec-gstack-review\` engine. It does NOT reimplement the orchestration — it runs on the shared LEAD orchestration playbook below. It owns: change selection, the loop bound, fix-size triage, the author != verifier invariant, and the cycle report.
+This workflow does NOT reimplement the reviewer — each review pass delegates to the always-installed \`openspec-review\` engine. It does NOT reimplement the orchestration — it runs on the shared LEAD orchestration playbook below. It owns: change selection, the loop bound, fix-size triage, the author != verifier invariant, and the cycle report.
 
 **The multi-agent path is PRIMARY.** Review, fix, and re-review run as distinct role-isolated workers; on Claude Code with agent-teams (Tier A) the LEAD resumes the original reviewer via \`SendMessage\` to re-review only the delta — within the SAME session. Across a session boundary (\`SendMessage\` cannot reach a worker from a prior session) the LEAD instead warm-seeds a fresh reviewer from the original reviewer's recorded transcript (playbook Step F.1), so it still re-reviews only the delta with the prior findings in hand. Single-context execution is the explicit FALLBACK (Tier C), used only when the tool has no subagent capability — NOT the baseline.
 
@@ -77,7 +77,7 @@ Rounds: <r>/<max-rounds>   Tier: A | B | C   Status: CLEAN | ESCALATED
 
 ## Integration Notes
 
-- Delegates every review pass to \`openspec-gstack-review\` — one review engine, no fork.
+- Delegates every review pass to \`openspec-review\` — one review engine, no fork.
 - Runs AFTER implementation, against the live diff; complements (does not replace) the one-shot \`/opsx:verify-enhanced\` gate and plan-time \`plan-*-review\`.
 - Shares the orchestration playbook with \`/opsx:auto\` — this loop is auto's \`review-loop\` stage.
 - The cycle report lives in the change directory alongside \`review-report.md\` / \`ship-log.md\` and is consumable by \`/opsx:retro\` and \`/opsx:archive\`.`;
@@ -86,7 +86,7 @@ export function getReviewCycleSkillTemplate(): SkillTemplate {
   return {
     name: 'openspec-review-cycle',
     description:
-      'Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate. Multi-agent path is primary (distinct reviewer/fixer workers, Tier A SendMessage warm resume); single-context is the fallback. Delegates each pass to openspec-gstack-review; enforces author != verifier and a max-rounds cap.',
+      'Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate. Multi-agent path is primary (distinct reviewer/fixer workers, Tier A SendMessage warm resume); single-context is the fallback. Delegates each pass to openspec-review; enforces author != verifier and a max-rounds cap.',
     instructions: REVIEW_CYCLE_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires openspec CLI.',

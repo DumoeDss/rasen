@@ -108,7 +108,7 @@ stages:
     sessionReuse: run-planner
 
   - id: verify
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     runtime: codex
     sessionReuse: stage

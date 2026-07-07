@@ -10,6 +10,49 @@ import { FileSystemUtils, removeMarkerBlock as removeMarkerBlockUtil } from '../
 import { OPENSPEC_MARKERS } from './config.js';
 
 /**
+ * Retired installed-skill directory prefix left behind by the expert-skill
+ * rebrand (`openspec-gstack-<name>` → `openspec-<name>`). Installed skill dirs
+ * are not renamed in place by init/update, so the old dirs would linger as
+ * orphans; {@link pruneRetiredExpertSkillDirs} removes them.
+ */
+export const RETIRED_EXPERT_SKILL_PREFIX = 'openspec-gstack-';
+
+/**
+ * Removes installed expert-skill directories orphaned by the rebrand — those whose
+ * directory name begins with {@link RETIRED_EXPERT_SKILL_PREFIX}. Scoped to exactly
+ * that prefix, so it can never remove a current `openspec-*` skill or any unrelated
+ * directory. Idempotent: a no-op (no error) when the skills directory is absent or
+ * contains no such directory.
+ *
+ * @param skillsDir - Absolute path to a tool's installed skills directory
+ *   (e.g. `<project>/.claude/skills`)
+ * @returns The directory names that were removed
+ */
+export async function pruneRetiredExpertSkillDirs(skillsDir: string): Promise<string[]> {
+  const removed: string[] = [];
+
+  let entries: import('fs').Dirent[];
+  try {
+    entries = await fs.readdir(skillsDir, { withFileTypes: true });
+  } catch {
+    return removed; // skills dir does not exist yet — nothing to prune
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (!entry.name.startsWith(RETIRED_EXPERT_SKILL_PREFIX)) continue;
+    try {
+      await fs.rm(path.join(skillsDir, entry.name), { recursive: true, force: true });
+      removed.push(entry.name);
+    } catch {
+      // Best-effort cleanup; ignore per-directory failures.
+    }
+  }
+
+  return removed;
+}
+
+/**
  * Legacy config file names from the old ToolRegistry.
  * These were config files created at project root with OpenSpec markers.
  */

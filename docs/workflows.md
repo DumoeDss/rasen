@@ -311,7 +311,7 @@ Verify won't block archive, but it surfaces issues you might want to address fir
 review ──► triage ──► fix ──► re-review(Δ) ──► { pass | loop | escalate }
 ```
 
-Each review pass delegates to the always-installed `openspec-gstack-review` engine — the loop does not reimplement review heuristics. It adds four things on top:
+Each review pass delegates to the always-installed `openspec-review` engine — the loop does not reimplement review heuristics. It adds four things on top:
 
 - **Fix-size triage.** Each finding is routed by the size of its fix: **trivial** → orchestrator inline; **non-trivial** → the implementing agent that wrote the code; **design-level** → a separate fix agent (not the original author).
 - **Author ≠ verifier.** A finding is resolved only when a reviewer who did NOT author the fix confirms it against the original finding. For a trivial inline fix, an independent gate-run (tests/lint/build) plus a diff-read of the exact change is the equivalent non-author check — and it must be recorded in the cycle report.

@@ -16,6 +16,8 @@ import {
   formatDetectionSummary,
   formatProjectMdMigrationHint,
   getToolsFromLegacyArtifacts,
+  pruneRetiredExpertSkillDirs,
+  RETIRED_EXPERT_SKILL_PREFIX,
   LEGACY_CONFIG_FILES,
   LEGACY_SLASH_COMMAND_PATHS,
 } from '../../src/core/legacy-cleanup.js';
@@ -1159,4 +1161,59 @@ ${OPENSPEC_MARKERS.end}`);
       expect(tools).toHaveLength(0);
     });
   });
+
+  describe('pruneRetiredExpertSkillDirs', () => {
+    let skillsDir: string;
+
+    beforeEach(async () => {
+      skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(skillsDir, { recursive: true });
+    });
+
+    it('removes a retired openspec-gstack-* dir and leaves the current openspec-* dir intact', async () => {
+      await fs.mkdir(path.join(skillsDir, 'openspec-gstack-review'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'openspec-gstack-review', 'SKILL.md'), 'old');
+      await fs.mkdir(path.join(skillsDir, 'openspec-review'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'openspec-review', 'SKILL.md'), 'new');
+      await fs.mkdir(path.join(skillsDir, 'my-other-skill'), { recursive: true });
+
+      const removed = await pruneRetiredExpertSkillDirs(skillsDir);
+
+      expect(removed).toEqual(['openspec-gstack-review']);
+      await expect(existsSyncPromise(path.join(skillsDir, 'openspec-gstack-review'))).resolves.toBe(false);
+      await expect(fs.readFile(path.join(skillsDir, 'openspec-review', 'SKILL.md'), 'utf-8')).resolves.toBe('new');
+      await expect(existsSyncPromise(path.join(skillsDir, 'my-other-skill'))).resolves.toBe(true);
+    });
+
+    it('is scoped to the retired prefix — never touches openspec-* non-gstack dirs', async () => {
+      await fs.mkdir(path.join(skillsDir, 'openspec-review'), { recursive: true });
+      await fs.mkdir(path.join(skillsDir, 'openspec-review-cycle'), { recursive: true });
+      await fs.mkdir(path.join(skillsDir, 'openspec-cso'), { recursive: true });
+
+      const removed = await pruneRetiredExpertSkillDirs(skillsDir);
+
+      expect(removed).toEqual([]);
+      for (const dir of ['openspec-review', 'openspec-review-cycle', 'openspec-cso']) {
+        await expect(existsSyncPromise(path.join(skillsDir, dir))).resolves.toBe(true);
+      }
+    });
+
+    it('is a no-op when the skills directory is absent', async () => {
+      const missing = path.join(testDir, 'nope', 'skills');
+      await expect(pruneRetiredExpertSkillDirs(missing)).resolves.toEqual([]);
+    });
+
+    it('exposes the retired prefix constant', () => {
+      expect(RETIRED_EXPERT_SKILL_PREFIX).toBe('openspec-gstack-');
+    });
+  });
 });
+
+async function existsSyncPromise(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -1,29 +1,99 @@
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
+import { PREAMBLE, BROWSE_SETUP, QA_METHODOLOGY } from './_shared.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const BODY = `
+${PREAMBLE}
+
+# /qa-only: Report-Only QA Testing
+
+You are a QA engineer. Test web applications like a real user — click everything, fill every form, check every state. Produce a structured report with evidence. **NEVER fix anything.**
+
+## Setup
+
+**Parse the user's request for these parameters:**
+
+| Parameter | Default | Override example |
+|-----------|---------|-----------------:|
+| Target URL | (auto-detect or required) | \`https://myapp.com\`, \`http://localhost:3000\` |
+| Mode | full | \`--quick\`, \`--regression .openspec/qa-reports/baseline.json\` |
+| Output dir | \`.openspec/qa-reports/\` | \`Output to /tmp/qa\` |
+| Scope | Full app (or diff-scoped) | \`Focus on the billing page\` |
+| Auth | None | \`Sign in to user@example.com\`, \`Import cookies from cookies.json\` |
+
+**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
+
+**Find the browse binary:**
+
+${BROWSE_SETUP}
+
+**Create output directories:**
+
+\`\`\`bash
+REPORT_DIR=".openspec/qa-reports"
+mkdir -p "$REPORT_DIR/screenshots"
+\`\`\`
+
+---
+
+## Test Plan Context
+
+Before falling back to git diff heuristics, check for richer test plan sources:
+
+1. **Project-scoped test plans:** Check \`~/.openspec/projects/\` for recent \`*-test-plan-*.md\` files for this repo
+   \`\`\`bash
+   SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
+   ls -t ~/.openspec/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   \`\`\`
+2. **Conversation context:** Check if a prior planning or review step produced test plan output in this conversation
+3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
+
+---
+
+${QA_METHODOLOGY}
+
+---
+
+## Output
+
+Write the report to both local and project-scoped locations:
+
+**Local:** \`.openspec/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
+
+**Project-scoped:** Write test outcome artifact for cross-session context:
+\`\`\`bash
+SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
+\`\`\`
+Write to \`~/.openspec/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md\`
+
+### Output Structure
+
+\`\`\`
+.openspec/qa-reports/
+├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
+├── screenshots/
+│   ├── initial.png                        # Landing page annotated screenshot
+│   ├── issue-001-step-1.png               # Per-issue evidence
+│   ├── issue-001-result.png
+│   └── ...
+└── baseline.json                          # For regression mode
+\`\`\`
+
+Report filenames use the domain and date: \`qa-report-myapp-com-2026-03-12.md\`
+
+---
+
+## Additional Rules (qa-only specific)
+
+11. **Never fix bugs.** Find and document only. Do not read source code, edit files, or suggest fixes in the report. Your job is to report what's broken, not to fix it. Use \`/qa\` for the test-fix-verify loop.
+12. **No test framework detected?** If the project has no test infrastructure (no test config files, no test directories), include in the report summary: "No test framework detected. Run \`/qa\` to bootstrap one and enable regression test generation."
+`;
 
 export function getQaOnlySkillTemplate(): SkillTemplate {
-  const skillPath = resolve(__dirname, '..', '..', '..', '..', 'skills', 'gstack', 'qa-only', 'SKILL.md');
-  let instructions: string;
-  try {
-    const content = readFileSync(skillPath, 'utf-8');
-    // Strip YAML frontmatter if present
-    const fmEnd = content.indexOf('---', content.indexOf('---') + 3);
-    instructions = fmEnd > 0 ? content.slice(fmEnd + 3).trim() : content;
-  } catch {
-    instructions = 'Skill file not found: qa-only/SKILL.md';
-  }
   return {
-    name: 'gstack:qa-only',
+    name: 'openspec:qa-only',
     description: '|',
-    instructions: `${instructions}
-
-${STORE_SELECTION_GUIDANCE}`,
+    instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

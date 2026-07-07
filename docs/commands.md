@@ -388,7 +388,7 @@ AI:  Verifying add-dark-mode...
 
 ### `/opsx:review-cycle`
 
-Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `openspec-gstack-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
+Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `openspec-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
 
 **Syntax:**
 ```
@@ -401,7 +401,7 @@ Drive a change to actually-clean with an iterative loop: `review → triage → 
 | `change-name` | No | Which change to run the loop on (inferred from context if not provided) |
 
 **What it does:**
-- Runs a review pass via `openspec-gstack-review`, then triages each finding by fix size
+- Runs a review pass via `openspec-review`, then triages each finding by fix size
 - Routes fixes: trivial → orchestrator inline; non-trivial → the implementing agent; design-level → a separate fix agent
 - Re-reviews only the fix delta and marks a finding resolved only when a non-author confirms it against the original finding (author ≠ verifier)
 - Caps the loop at max rounds (default 3); on the cap with unresolved Blocker/Major findings it escalates to a human — never silently passes

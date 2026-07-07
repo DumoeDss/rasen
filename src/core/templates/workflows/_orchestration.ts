@@ -93,7 +93,7 @@ Under Tier C (single context) the non-author confirmation degrades to an indepen
 
 When a stage is a **loop**:
 
-1. **Review** — dispatch reviewer worker(s), delegating each pass to the \`openspec-gstack-review\` engine, over the current diff; collect findings with severity (Blocker / Major / Minor / Trivial). Do NOT fork or reimplement the review heuristics.
+1. **Review** — dispatch reviewer worker(s), delegating each pass to the \`openspec-review\` engine, over the current diff; collect findings with severity (Blocker / Major / Minor / Trivial). Do NOT fork or reimplement the review heuristics.
 2. **Triage by fix size** — trivial (you fix inline) / non-trivial (route to the implementer worker that wrote the code) / design-level (route to a SEPARATE fixer worker, never the author).
 3. **Fix** via the routed actor; capture the exact fix delta so re-review can target only the delta.
 4. **Re-review the delta with a non-author** — Tier A, same session: resume the original reviewer via \`SendMessage\` (after the Step H.2 warm-continue guard) to re-review only the delta against its prior findings. Across a session boundary (the original reviewer is gone): warm-seed a fresh reviewer from that reviewer's recorded transcript (Step F.1) so it carries the prior findings, then re-review only the delta. Tier B/C: a fresh reviewer over just the delta, with prior findings + fix diff passed through a shared file. A finding is resolved ONLY after a non-author confirms it; self-certification by the fixer is rejected.

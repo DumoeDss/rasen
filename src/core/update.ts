@@ -37,6 +37,7 @@ import {
   formatCleanupSummary,
   formatDetectionSummary,
   getToolsFromLegacyArtifacts,
+  pruneRetiredExpertSkillDirs,
   type LegacyDetectionResult,
 } from './legacy-cleanup.js';
 import { isInteractive } from '../utils/interactive.js';
@@ -154,6 +155,16 @@ export class UpdateCommand {
       ...toolsNeedingConfigSync,
     ]);
     const toolsUpToDate = toolStatuses.filter((s) => !toolsToUpdateSet.has(s.toolId));
+
+    // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
+    // openspec-*) for every configured tool, before the up-to-date short-circuit.
+    // Installed dirs are not renamed in place, and the retired dirs are always
+    // stale, so this must run even when no tool otherwise needs an update.
+    for (const toolId of configuredTools) {
+      const tool = AI_TOOLS.find((t) => t.value === toolId);
+      if (!tool?.skillsDir) continue;
+      await pruneRetiredExpertSkillDirs(path.join(resolvedProjectPath, tool.skillsDir, 'skills'));
+    }
 
     if (!this.force && toolsToUpdateSet.size === 0) {
       // All tools are up to date

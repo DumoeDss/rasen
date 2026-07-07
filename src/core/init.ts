@@ -33,6 +33,7 @@ import {
   cleanupLegacyArtifacts,
   formatCleanupSummary,
   formatDetectionSummary,
+  pruneRetiredExpertSkillDirs,
   type LegacyDetectionResult,
 } from './legacy-cleanup.js';
 import {
@@ -577,6 +578,10 @@ export class InitCommand {
         if (shouldGenerateSkills) {
           // Use tool-specific skillsDir
           const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+
+          // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
+          // openspec-*); installed dirs are not renamed in place.
+          await pruneRetiredExpertSkillDirs(skillsDir);
 
           // Create skill directories and SKILL.md files
           for (const { template, dirName, workflowId } of skillTemplates) {

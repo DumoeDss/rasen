@@ -31,10 +31,10 @@ describe('skill sidecar install (init + update real run)', () => {
 
   const skillsRoot = () => path.join(testDir, '.claude', 'skills');
   const investigateSidecar = () =>
-    path.join(skillsRoot(), 'openspec-gstack-investigate', 'scripts', 'hitl-loop.template.sh');
+    path.join(skillsRoot(), 'openspec-investigate', 'scripts', 'hitl-loop.template.sh');
   const reviewSidecar = () =>
-    path.join(skillsRoot(), 'openspec-gstack-review', 'checklist.md');
-  const browseSrc = () => path.join(skillsRoot(), 'openspec-gstack-browse', 'src');
+    path.join(skillsRoot(), 'openspec-review', 'checklist.md');
+  const browseSrc = () => path.join(skillsRoot(), 'openspec-browse', 'src');
 
   beforeEach(async () => {
     testDir = path.join(os.tmpdir(), `openspec-sidecar-run-${randomUUID()}`);
@@ -66,7 +66,7 @@ describe('skill sidecar install (init + update real run)', () => {
     expect(existsSync(reviewSidecar())).toBe(true);
     // The browse vendored bun package must never be copied into the install target.
     expect(existsSync(browseSrc())).toBe(false);
-    expect(existsSync(path.join(skillsRoot(), 'openspec-gstack-browse', 'SKILL.md'))).toBe(true);
+    expect(existsSync(path.join(skillsRoot(), 'openspec-browse', 'SKILL.md'))).toBe(true);
 
     // Re-run update (force) — idempotent: no throw, same sidecars present, browse still absent.
     await new UpdateCommand({ force: true }).execute(testDir);

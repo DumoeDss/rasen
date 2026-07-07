@@ -112,7 +112,7 @@ stages:
     skill: openspec-propose
     role: planner
   - id: verify
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -174,7 +174,7 @@ stages:
     skill: openspec-propose
     role: planner
   - id: review
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     requires: [propose]
   - id: fix

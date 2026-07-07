@@ -57,9 +57,7 @@
     "release": "pnpm run release:ci",
     "release:ci": "pnpm run check:pack-version && pnpm exec changeset publish",
     "changeset": "changeset",
-    "build:browse": "bun build --compile browse/src/cli.ts --outfile browse/dist/browse && bun build --compile browse/src/find-browse.ts --outfile browse/dist/find-browse",
-    "gen:skill-docs": "bun run scripts/gen-skill-docs.ts",
-    "skill:check": "bun run scripts/gen-skill-docs.ts --dry-run"
+    "build:browse": "bun build --compile browse/src/cli.ts --outfile browse/dist/browse && bun build --compile browse/src/find-browse.ts --outfile browse/dist/find-browse"
   },
   "engines": {
     "node": ">=20.19.0"

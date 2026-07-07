@@ -24,42 +24,42 @@ stages:
     gate: true
 
   - id: review
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: always
 
   - id: cso
-    skill: gstack:cso
+    skill: openspec:cso
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: security-relevant
 
   - id: benchmark
-    skill: gstack:benchmark
+    skill: openspec:benchmark
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: performance-sensitive
 
   - id: design-review
-    skill: gstack:design-review
+    skill: openspec:design-review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa
-    skill: gstack:qa
+    skill: openspec:qa
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa-only
-    skill: gstack:qa-only
+    skill: openspec:qa-only
     role: reviewer
     requires: [apply]
     parallelGroup: experts

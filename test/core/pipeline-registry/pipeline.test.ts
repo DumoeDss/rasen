@@ -79,7 +79,7 @@ stages:
   - id: a
     skill: openspec-propose
   - id: verify
-    skill: gstack:review
+    skill: openspec:review
     requires: [a]
     condition: always
     verifyPolicy: adaptive
@@ -107,7 +107,7 @@ stages:
     skill: openspec-propose
     role: planner
   - id: verify
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -191,7 +191,7 @@ stages:
 name: bad-policy
 stages:
   - id: a
-    skill: gstack:review
+    skill: openspec:review
     verifyPolicy: extreme
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
@@ -269,7 +269,7 @@ stages:
     requires:
       - A
   - id: C
-    skill: gstack:review
+    skill: openspec:review
     requires:
       - B
 `;
@@ -291,11 +291,11 @@ stages:
   - id: root
     skill: openspec-apply-change
   - id: review
-    skill: gstack:review
+    skill: openspec:review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: gstack:cso
+    skill: openspec:cso
     requires: [root, review]
     parallelGroup: experts
 `;
@@ -310,11 +310,11 @@ stages:
   - id: root
     skill: openspec-apply-change
   - id: review
-    skill: gstack:review
+    skill: openspec:review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: gstack:cso
+    skill: openspec:cso
     requires: [root]
     parallelGroup: experts
 `;
@@ -329,22 +329,22 @@ stages:
   - id: a
     skill: openspec-propose
   - id: b
-    skill: gstack:review
+    skill: openspec:review
     requires: [a]
 `;
 
     it('should pass when all skills are known', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['openspec-propose', 'gstack:review', 'extra']);
+      const known = new Set(['openspec-propose', 'openspec:review', 'extra']);
       expect(() => validatePipelineSkills(pipeline, known)).not.toThrow();
     });
 
     it('should throw when a stage references an unknown skill', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['openspec-propose']); // missing gstack:review
+      const known = new Set(['openspec-propose']); // missing openspec:review
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(PipelineValidationError);
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(
-        /Stage 'b' references unknown skill: 'gstack:review'/
+        /Stage 'b' references unknown skill: 'openspec:review'/
       );
     });
 
@@ -512,7 +512,7 @@ stages:
     skill: openspec-propose
     role: planner
   - id: review
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     requires: [propose]
     handoff:
@@ -597,7 +597,7 @@ stages:
     skill: openspec-apply-change
     role: implementer
   - id: review
-    skill: gstack:review
+    skill: openspec:review
     role: reviewer
     requires: [implement]
   - id: fix

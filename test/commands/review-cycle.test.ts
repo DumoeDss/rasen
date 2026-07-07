@@ -77,8 +77,8 @@ describe('review-cycle workflow', () => {
       expect(commandText).toBe(skillText);
     });
 
-    it('delegates each review pass to the openspec-gstack-review engine (does not fork it)', () => {
-      expect(skillText).toContain('openspec-gstack-review');
+    it('delegates each review pass to the openspec-review engine (does not fork it)', () => {
+      expect(skillText).toContain('openspec-review');
     });
 
     it('encodes the review -> triage -> fix -> re-review(delta) loop', () => {
@@ -220,7 +220,7 @@ describe('review-cycle workflow', () => {
 
       const skillContent = await fs.readFile(skillFile, 'utf-8');
       expect(skillContent).toContain('name: openspec-review-cycle');
-      expect(skillContent).toContain('openspec-gstack-review');
+      expect(skillContent).toContain('openspec-review');
 
       const commandContent = await fs.readFile(commandFile, 'utf-8');
       expect(commandContent).toContain('name: "OPSX: Review Cycle"');
