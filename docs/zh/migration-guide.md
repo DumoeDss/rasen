@@ -9,8 +9,8 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 | 方面 | 旧版 | OPSX |
 |--------|--------|------|
 | **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/opsx:propose`, `/opsx:apply`, `/opsx:sync`, `/opsx:archive`（扩展工作流命令可选） |
-| **工作流** | 一次性创建所有制品 | 渐进式或一次性创建——由你选择 |
-| **回退** | 笨拙的阶段门控 | 自然——随时更新任何制品 |
+| **工作流** | 一次性创建所有产物 | 渐进式或一次性创建——由你选择 |
+| **回退** | 笨拙的阶段门控 | 自然——随时更新任何产物 |
 | **定制** | 固定结构 | Schema 驱动，完全可定制 |
 | **配置** | `CLAUDE.md` 标记 + `project.md` | 简洁的配置在 `openspec/config.yaml` |
 
@@ -67,7 +67,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 旧的 `project.md` 是被动的——AI 助手可能读它，可能不读，可能忘了读过什么。我们发现可靠性不一致。
 
-新的 `config.yaml` 上下文会**被主动注入到每个 OpenSpec 规划请求中**。这意味着你的项目约定、技术栈和规则在 AI 创建制品时始终存在。可靠性更高。
+新的 `config.yaml` 上下文会**被主动注入到每个 OpenSpec 规划请求中**。这意味着你的项目约定、技术栈和规则在 AI 创建产物时始终存在。可靠性更高。
 
 **权衡：**
 
@@ -144,7 +144,7 @@ Needs your attention
 openspec update
 ```
 
-update 命令也会检测并清理旧版制品，然后刷新生成的 skills/commands 以匹配你当前的 profile 和 delivery 设置。
+update 命令也会检测并清理旧版产物，然后刷新生成的 skills/commands 以匹配你当前的 profile 和 delivery 设置。
 
 ### 非交互式 / CI 环境
 
@@ -204,8 +204,8 @@ rules:
 | project.md | config.yaml |
 |------------|-------------|
 | 自由格式 markdown | 结构化 YAML |
-| 一大段文本 | 独立的上下文和按制品分类的规则 |
-| 不清楚何时被使用 | 上下文出现在所有制品中；规则仅出现在匹配的制品中 |
+| 一大段文本 | 独立的上下文和按产物分类的规则 |
+| 不清楚何时被使用 | 上下文出现在所有产物中；规则仅出现在匹配的产物中 |
 | 无 schema 选择 | 显式的 `schema:` 字段设置默认工作流 |
 
 ### 保留什么，丢弃什么
@@ -219,9 +219,9 @@ rules:
 - 经常被忽略的关键约定
 
 **改为放入 `rules:` 的内容**
-- 特定制品的格式要求（"在 specs 中使用 Given/When/Then"）
+- 特定产物的格式要求（"在 specs 中使用 Given/When/Then"）
 - 审查标准（"proposal 必须包含回滚计划"）
-- 这些只会出现在匹配的制品中，使其他请求更轻量
+- 这些只会出现在匹配的产物中，使其他请求更轻量
 
 **完全省略的内容**
 - AI 已经知道的通用最佳实践
@@ -242,7 +242,7 @@ rules:
      Focus on what the AI genuinely needs to know.
    ```
 
-3. **添加按制品分类的规则**（可选）：
+3. **添加按产物分类的规则**（可选）：
    ```yaml
    rules:
      proposal:
@@ -284,7 +284,7 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 | 命令 | 用途 |
 |---------|---------|
-| `/opsx:propose` | 创建变更并一步生成规划制品 |
+| `/opsx:propose` | 创建变更并一步生成规划产物 |
 | `/opsx:explore` | 无结构地思考想法 |
 | `/opsx:apply` | 从 tasks.md 执行任务 |
 | `/opsx:archive` | 完成并归档变更 |
@@ -294,8 +294,8 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 | 命令 | 用途 |
 |---------|---------|
 | `/opsx:new` | 创建新的变更脚手架 |
-| `/opsx:continue` | 创建下一个制品（一次一个） |
-| `/opsx:ff` | 快进——一次创建规划制品 |
+| `/opsx:continue` | 创建下一个产物（一次一个） |
+| `/opsx:ff` | 快进——一次创建规划产物 |
 | `/opsx:verify` | 验证实现是否匹配规格 |
 | `/opsx:sync` | 将 delta specs 合并到主 specs |
 | `/opsx:bulk-archive` | 一次归档多个变更 |
@@ -315,11 +315,11 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 这些功能是扩展工作流命令集的一部分。
 
-**细粒度制品创建：**
+**细粒度产物创建：**
 ```
 /opsx:continue
 ```
-根据依赖关系一次创建一个制品。当你想逐步审查时使用此命令。
+根据依赖关系一次创建一个产物。当你想逐步审查时使用此命令。
 
 **探索模式：**
 ```
@@ -360,7 +360,7 @@ OPSX 使用操作而非阶段：
 
 ### 依赖图
 
-制品形成有向图。依赖关系是促成条件，而非门控：
+产物形成有向图。依赖关系是促成条件，而非门控：
 
 ```
                         proposal
@@ -381,7 +381,7 @@ OPSX 使用操作而非阶段：
                      specs, design)
 ```
 
-当你运行 `/opsx:continue` 时，它会检查哪些已就绪并���供下一个制品。你也可以按任意顺序创建多个就绪的制品。
+当你运行 `/opsx:continue` 时，它会检查哪些已就绪并���供下一个产物。你也可以按任意顺序创建多个就绪的产物。
 
 ### Skills 与 Commands
 
@@ -419,9 +419,9 @@ Skills 被多种 AI 编码工具识别，并提供更丰富的元数据。
 /opsx:apply add-my-feature
 ```
 
-OPSX 会读取现有制品并从你离开的地方继续。
+OPSX 会读取现有产物并从你离开的地方继续。
 
-**想为现有变更添加更多制品？**
+**想为现有变更添加更多产物？**
 
 ```
 /opsx:continue add-my-feature
@@ -475,7 +475,7 @@ rules:
 
 ### 可用的 Schema
 
-| Schema | 制品 | 最适用于 |
+| Schema | 产物 | 最适用于 |
 |--------|-----------|----------|
 | `spec-driven` | proposal → specs → design → tasks | 大多数项目 |
 
@@ -519,11 +519,11 @@ openspec init --force
 
 ### "Unknown artifact ID in rules"
 
-检查你的 `rules:` 键是否匹配你 schema 的制品 ID：
+检查你的 `rules:` 键是否匹配你 schema 的产物 ID：
 
 - **spec-driven**: `proposal`, `specs`, `design`, `tasks`
 
-运行以下命令查看有效的制品 ID：
+运行以下命令查看有效的产物 ID：
 
 ```bash
 openspec schemas --json
@@ -583,8 +583,8 @@ project/
 
 # 扩展工作流（如果启用）：
 /opsx:new          创建变更脚手架
-/opsx:continue     创建下一个制品
-/opsx:ff           创建规划制品
+/opsx:continue     创建下一个产物
+/opsx:ff           创建规划产物
 ```
 
 ---

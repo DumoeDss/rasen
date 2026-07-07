@@ -91,7 +91,7 @@ openspec update                              # 在每个项目内运行
 npm uninstall -g @fission-ai/openspec   # 或：pnpm rm -g / yarn global remove / bun rm -g
 ```
 
-**2. 从某个项目中移除 OpenSpec（可选）。** 如果你不再需要它的规范和变更，删除 `openspec/` 目录：
+**2. 从某个项目中移除 OpenSpec（可选）。** 如果你不再需要它的规格和变更，删除 `openspec/` 目录：
 
 ```bash
 rm -rf openspec/

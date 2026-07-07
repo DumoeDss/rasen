@@ -6,7 +6,7 @@
 
 ## 核心名词
 
-**规格（Spec）。** 一份描述系统某一部分如何运作的文档。规格存放在 `openspec/specs/`，按领域组织，由需求和场景构成。规格是对"这个软件做什么？"这一问题已达成共识的答案。参见[概念](concepts.md#specs)。
+**规格（Spec）。** 一份描述系统某一部分如何运作的文档。规格存放在 `openspec/specs/`，按领域组织，由需求和场景构成。规格是对"这个软件做什么？"这一问题已达成共识的答案。参见[概念](concepts.md#规格specs)。
 
 **唯一事实来源（Source of truth）。** 即 `openspec/specs/` 目录整体。它保存系统当前已达成一致的行为。变更（change）会提议对它的修改；归档（archive）则把这些修改应用上去。
 
@@ -14,7 +14,7 @@
 
 **产物（Artifact）。** 变更内部的一份文档。标准产物包括提案、增量规格、设计和任务。它们按依赖顺序创建，并彼此承接。
 
-**增量规格（Delta spec）。** 变更内部的一份规格，只描述正在改变的内容，使用 `ADDED`、`MODIFIED` 和 `REMOVED` 区段，而不是把整份规格重述一遍。这正是让 OpenSpec 能干净地修改既有系统的关键。参见[概念](concepts.md#delta-specs)。
+**增量规格（Delta spec）。** 变更内部的一份规格，只描述正在改变的内容，使用 `ADDED`、`MODIFIED` 和 `REMOVED` 区段，而不是把整份规格重述一遍。这正是让 OpenSpec 能干净地修改既有系统的关键。参见[概念](concepts.md#增量规格delta-specs)。
 
 **领域（Domain）。** 规格的逻辑分组，比如 `auth/`、`payments/` 或 `ui/`。你可以选择与自己思考系统的方式相匹配的领域划分。
 
@@ -36,7 +36,7 @@
 
 ## 生命周期
 
-**归档（Archive）。** 结束一个变更的动作。它的增量规格会合并进主规格，变更文件夹则移动到 `openspec/changes/archive/YYYY-MM-DD-<name>/`。归档之后，你的规格描述的就是新的现实了。参见[概念](concepts.md#archive)。
+**归档（Archive）。** 结束一个变更的动作。它的增量规格会合并进主规格，变更文件夹则移动到 `openspec/changes/archive/YYYY-MM-DD-<name>/`。归档之后，你的规格描述的就是新的现实了。参见[概念](concepts.md#归档archive)。
 
 **同步（Sync）。** 把一个变更的增量规格合并进主规格，但*不*归档该变更。通常是自动进行的（归档时会主动提议同步），不过对于长期推进的变更，也可以单独通过 `/opsx:sync` 来执行。参见[命令](commands.md#opsxsync)。
 
@@ -60,17 +60,17 @@
 
 ## 自定义
 
-**模式（Schema）。** 定义一个工作流拥有哪些产物，以及它们彼此如何依赖。内置默认是 `spec-driven`（proposal → specs → design → tasks）。你可以 fork 它，或者自己写一个。参见[自定义配置](customization.md#custom-schemas)。
+**模式（Schema）。** 定义一个工作流拥有哪些产物，以及它们彼此如何依赖。内置默认是 `spec-driven`（proposal → specs → design → tasks）。你可以 fork 它，或者自己写一个。参见[自定义配置](customization.md#自定义-schema)。
 
 **模板（Template）。** 模式内部的一个 Markdown 文件，用来塑造 AI 为某个产物所生成的内容。编辑模板会立即改变 AI 的输出，无需重新构建。
 
-**项目配置（`openspec/config.yaml`，Project config）。** 针对项目的设置：默认模式、注入到每次规划请求中的 `context:`，以及针对单个产物的 `rules:`。这是把你的技术栈和约定告诉 OpenSpec 最简单的方式。参见[自定义配置](customization.md#project-configuration)。
+**项目配置（`openspec/config.yaml`，Project config）。** 针对项目的设置：默认模式、注入到每次规划请求中的 `context:`，以及针对单个产物的 `rules:`。这是把你的技术栈和约定告诉 OpenSpec 最简单的方式。参见[自定义配置](customization.md#项目配置)。
 
 **上下文注入（Context injection）。** 把项目背景放进 `config.yaml` 的 `context:` 字段，从而让它被自动加到 AI 生成的每一份产物里。这比寄望 AI 去读另一个单独文件要可靠得多。
 
 **依赖图（Dependency graph）。** 由产物的 `requires:` 关系形成的有向图。它是一个 DAG（有向无环图：箭头只向前指、绝不形成环），OpenSpec 借助它来判断你接下来可以创建什么。
 
-**启用条件，而非门禁（Enablers, not gates）。** 这样一条原则：产物的依赖展示的是接下来*可以*做什么，而不是接下来*必须*做什么。你随时都可以回过头来编辑任意一份产物。参见[核心概念一览](overview.md#enablers-not-gates)。
+**启用条件，而非门禁（Enablers, not gates）。** 这样一条原则：产物的依赖展示的是接下来*可以*做什么，而不是接下来*必须*做什么。你随时都可以回过头来编辑任意一份产物。参见[核心概念一览](overview.md#赋能者而非关卡)。
 
 ## 跨仓库协作（beta）
 

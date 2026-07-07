@@ -4,7 +4,7 @@
 
 开始之前的一点提醒：像 `/opsx:propose` 这样的斜杠命令要输入到你的 **AI 助手的聊天**里，而 `openspec` 命令要输入到你的 **终端**里。如果这对你来说是新东西，先读一读[命令如何工作](how-commands-work.md)。在下面的对话记录里，`You:` 和 `AI:` 是聊天，以 `$` 开头的行是终端。
 
-> **还不确定要构建什么？** 这些配方大多数在你先用 `/opsx:explore` 把它想清楚后会更加锋利。[配方 3](#recipe-3-exploring-before-you-commit) 展示了它的实际运作，[先探索](explore.md)指南给出了完整的论证。
+> **还不确定要构建什么？** 这些配方大多数在你先用 `/opsx:explore` 把它想清楚后会更加锋利。[配方 3](#配方-3在承诺之前先探索) 展示了它的实际运作，[先探索](explore.md)指南给出了完整的论证。
 
 ## 配方 1：一个小功能，快速路径
 
@@ -23,7 +23,7 @@ AI:  Created openspec/changes/add-logout-button/
      Ready for implementation. Run /opsx:apply.
 ```
 
-现在读这份方案。打开提案和增量规范。这正是 OpenSpec 为之而生的时刻：在错误假设还只是一段话、而不是 400 行代码时抓住它。如果哪里不对就直接编辑任何工件，然后继续。
+现在读这份方案。打开提案和增量规格。这正是 OpenSpec 为之而生的时刻：在错误假设还只是一段话、而不是 400 行代码时抓住它。如果哪里不对就直接编辑任何产物，然后继续。
 
 ```text
 You: /opsx:apply
@@ -42,7 +42,7 @@ AI:  Archiving add-logout-button...
      Done. Ready for the next change.
 ```
 
-就这样。登出行为现在是你规范的一部分，而这份变更带着完整上下文被归档了。
+就这样。登出行为现在是你规格的一部分，而这份变更带着完整上下文被归档了。
 
 ## 配方 2：一个 bug 修复
 
@@ -68,7 +68,7 @@ AI:  Created openspec/changes/fix-login-redirect-loop/
 
 **何时使用：** 你有一个问题，但还没有方案。你不确定要构建什么，或者哪种方法是对的。
 
-从 `/opsx:explore` 开始。它是一个思考伙伴，没有结构、也不创建任何工件。它读取你的代码库并帮你做决定。
+从 `/opsx:explore` 开始。它是一个思考伙伴，没有结构、也不创建任何产物。它读取你的代码库并帮你做决定。
 
 ```text
 You: /opsx:explore
@@ -123,13 +123,13 @@ AI:  Resuming add-dark-mode. Picking up at task 2.3: Update Header...
 
 在 `/opsx:apply add-dark-mode` 中点名变更，是当有不止一个变更在进行时、你向 AI 指定某个变更的方式。因为任务在 `tasks.md` 中追踪完成情况，AI 准确知道你停在了哪里。
 
-当几个变更同时完成时，扩展的 `/opsx:bulk-archive` 会把它们一起归档，并通过检查实际实现的内容来解决规范冲突。参见[工作流](workflows.md#parallel-changes)。
+当几个变更同时完成时，扩展的 `/opsx:bulk-archive` 会把它们一起归档，并通过检查实际实现的内容来解决规格冲突。参见[工作流](workflows.md#并行变更)。
 
 ## 配方 5：一个没有行为变化的重构
 
 **何时使用：** 你在重组代码，而外部可见的行为应当保持完全一致。
 
-这是有意思的情形，因为一个纯粹的重构*没有任何东西要加进你的规范*。行为契约没有变；只有实现变了。所以工作存在于设计和任务里，而规范增量是空的或缺席的。
+这是有意思的情形，因为一个纯粹的重构*没有任何东西要加进你的规格*。行为契约没有变；只有实现变了。所以工作存在于设计和任务里，而规格增量是空的或缺席的。
 
 ```text
 You: /opsx:propose refactor-payment-module
@@ -140,17 +140,17 @@ AI:  Created the change. The proposal states the goal (split the
      Ready for implementation.
 ```
 
-当你归档一个没有触及规范的变更时，你可以让终端命令跳过规范这一步：
+当你归档一个没有触及规格的变更时，你可以让终端命令跳过规格这一步：
 
 ```bash
 $ openspec archive refactor-payment-module --skip-specs
 ```
 
-同一个标志对工具化、CI 和仅文档的变更也很方便。原则是：规范描述行为，所以如果行为没变，规范也不应变。参见[概念](concepts.md#what-a-spec-is-and-is-not)。
+同一个标志对工具化、CI 和仅文档的变更也很方便。原则是：规格描述行为，所以如果行为没变，规格也不应变。参见[概念](concepts.md#规格是什么以及不是什么)。
 
 ## 配方 6：逐步控制（扩展命令）
 
-**何时使用：** 一个复杂或有风险的变更，你想在每个工件落地后再继续之前先审查它。
+**何时使用：** 一个复杂或有风险的变更，你想在每个产物落地后再继续之前先审查它。
 
 核心的 `/opsx:propose` 一次性起草所有东西。当你更想一步一步来时，开启扩展命令：
 
@@ -175,7 +175,7 @@ You: /opsx:continue
 AI:  Created specs/auth/spec.md. Now available: design.
 ```
 
-在每个工件落地时审查它，自由编辑，满意了再继续。当你想让剩余部分一次性起草时，`/opsx:ff` 会快进穿过剩余的规划工件。在归档之前，`/opsx:verify` 检查实现是否确实匹配规范。参见[工作流](workflows.md#opsxff-vs-opsxcontinue)。
+在每个产物落地时审查它，自由编辑，满意了再继续。当你想让剩余部分一次性起草时，`/opsx:ff` 会快进穿过剩余的规划产物。在归档之前，`/opsx:verify` 检查实现是否确实匹配规格。参见[工作流](workflows.md#opsxff-与-opsxcontinue-的对比)。
 
 ## 配方 7：亲手学习整个循环
 

@@ -117,5 +117,5 @@ explore  ──►  propose  ──►  apply  ──►  archive
 
 - [命令：`/opsx:explore`](commands.md#opsxexplore)：精确的参考说明
 - [工作流](workflows.md)：explore 作为日常循环的一部分
-- [示例与配方](examples.md#recipe-3-exploring-before-you-commit)：一次完整走查中的 explore
+- [示例与配方](examples.md#配方-3在承诺之前先探索)：一次完整走查中的 explore
 - [快速入门](getting-started.md)：首次变更指南，包含探索

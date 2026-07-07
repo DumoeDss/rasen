@@ -19,7 +19,7 @@ TERMINAL   $ cd your-project && openspec init
 AI CHAT      /opsx:explore                    （可选：先想透）
 AI CHAT      /opsx:propose add-dark-mode      （AI 起草计划；你评审它）
 AI CHAT      /opsx:apply                      （AI 构建它）
-AI CHAT      /opsx:archive                    （规范更新，变更归档）
+AI CHAT      /opsx:archive                    （规格更新，变更归档）
 ```
 
 两个终端步骤完成配置，之后你就生活在聊天里。本指南余下部分会拆解每一步做什么、你会看到什么。
@@ -61,7 +61,7 @@ openspec/
 │       ├── proposal.md
 │       ├── design.md
 │       ├── tasks.md
-│       └── specs/      # Delta 规范（什么在变）
+│       └── specs/      # Delta 规格（什么在变）
 │           └── <domain>/
 │               └── spec.md
 └── config.yaml         # 项目配置（可选）
@@ -69,9 +69,9 @@ openspec/
 
 **两个关键目录：**
 
-- **`specs/`** - 唯一事实来源。这些规范描述了你的系统当前是如何运作的，按领域组织（例如 `specs/auth/`、`specs/payments/`）。
+- **`specs/`** - 唯一事实来源。这些规格描述了你的系统当前是如何运作的，按领域组织（例如 `specs/auth/`、`specs/payments/`）。
 
-- **`changes/`** - 提议的修改。每次变更都有自己的文件夹，装着所有相关产物。当一次变更完成时，它的规范会并入主 `specs/` 目录。
+- **`changes/`** - 提议的修改。每次变更都有自己的文件夹，装着所有相关产物。当一次变更完成时，它的规格会并入主 `specs/` 目录。
 
 ## 理解产物
 
@@ -80,7 +80,7 @@ openspec/
 | 产物 | 用途 |
 |----------|---------|
 | `proposal.md` | “为什么”和“做什么”——记录意图、范围和方法 |
-| `specs/` | Delta 规范，展示 ADDED/MODIFIED/REMOVED 的需求 |
+| `specs/` | Delta 规格，展示 ADDED/MODIFIED/REMOVED 的需求 |
 | `design.md` | “怎么做”——技术方案和架构决策 |
 | `tasks.md` | 带复选框的实施清单 |
 
@@ -95,13 +95,13 @@ proposal ──► specs ──► design ──► tasks ──► implement
 
 在实施过程中，随着你了解得更多，你随时可以回头打磨更早的产物。
 
-## Delta 规范如何运作
+## Delta 规格如何运作
 
-Delta 规范是 OpenSpec 的核心概念。它们展示的是相对于你当前规范，什么东西在变。
+Delta 规格是 OpenSpec 的核心概念。它们展示的是相对于你当前规格，什么东西在变。
 
 ### 格式
 
-Delta 规范用分节来标明变更类型：
+Delta 规格用分节来标明变更类型：
 
 ```markdown
 # Delta for Auth
@@ -137,9 +137,9 @@ The system SHALL expire sessions after 30 minutes of inactivity.
 
 当你归档一次变更时：
 
-1. **ADDED** 的需求会追加到主规范中
+1. **ADDED** 的需求会追加到主规格中
 2. **MODIFIED** 的需求会替换掉现有版本
-3. **REMOVED** 的需求会从主规范中删除
+3. **REMOVED** 的需求会从主规格中删除
 
 变更文件夹会被移动到 `openspec/changes/archive/`，作为审计历史。
 
@@ -252,7 +252,7 @@ AI:  Archiving add-dark-mode...
      Done! Ready for the next feature.
 ```
 
-你的 delta 规范现在已成为主规范的一部分，记录着你的系统是如何运作的。
+你的 delta 规格现在已成为主规格的一部分，记录着你的系统是如何运作的。
 
 ## 验证与评审
 
@@ -276,7 +276,7 @@ openspec view
 
 - [先做探索](explore.md) - 在拍板之前，用 `/opsx:explore` 把一个想法想透
 - [评审一次变更](reviewing-changes.md) - 在写任何代码之前，该检查 AI 起草计划里的哪些东西
-- [写好规范](writing-specs.md) - 一条强需求和一个好场景长什么样
+- [写好规格](writing-specs.md) - 一条强需求和一个好场景长什么样
 - [在现有项目中使用 OpenSpec](existing-projects.md) - 在庞大的棕地代码库上起步
 - [编辑与迭代一次变更](editing-changes.md) - 更新产物、回退、调和手动改动
 - [核心概念一览](overview.md) - 一页讲清整套心智模型

@@ -55,7 +55,7 @@ openspec init --tools claude,cursor
 
 5. **检查你是否初始化了这个项目。** 技能是按项目写入的。如果你克隆了一个仓库或切换了文件夹，就在那里运行 `openspec init`（或 `openspec update`）。
 
-6. **确认你的工具支持命令文件。** 少数工具（Kimi CLI、Trae、ForgeCode、Mistral Vibe）不会生成 `opsx-*` 命令文件；它们改用基于技能的调用方式。各工具的形式有所不同：参见[支持的工具](supported-tools.md)和[命令是如何工作的](how-commands-work.md#slash-command-syntax-by-tool)。
+6. **确认你的工具支持命令文件。** 少数工具（Kimi CLI、Trae、ForgeCode、Mistral Vibe）不会生成 `opsx-*` 命令文件；它们改用基于技能的调用方式。各工具的形式有所不同：参见[支持的工具](supported-tools.md)和[命令是如何工作的](how-commands-work.md#各工具的斜杠命令语法)。
 
 ## 处理变更
 
@@ -82,7 +82,7 @@ openspec status --change <name>
 
 ### `openspec validate` 报告警告或错误
 
-校验会检查你的规范和变更是否存在结构问题。阅读提示信息：它会点出文件和问题所在。
+校验会检查你的规格和变更是否存在结构问题。阅读提示信息：它会点出文件和问题所在。
 
 ```bash
 openspec validate <name>           # validate one item
@@ -90,20 +90,20 @@ openspec validate --all            # validate everything
 openspec validate --all --strict   # stricter checks, good for CI
 ```
 
-常见原因包括缺少必要的章节（比如一份没有场景的规范），或增量头部格式有误。修复文件后重新运行。[CLI 参考](cli.md#openspec-validate)文档说明了输出格式。
+常见原因包括缺少必要的章节（比如一份没有场景的规格），或增量头部格式有误。修复文件后重新运行。[CLI 参考](cli.md#openspec-validate)文档说明了输出格式。
 
 ### AI 创建了不完整或错误的产物
 
 AI 没有足够的上下文。几个杠杆会有帮助：
 
-- 在 `openspec/config.yaml` 中添加项目上下文，这样你的技术栈和约定会被注入每一次请求。参见[自定义](customization.md#project-configuration)。
+- 在 `openspec/config.yaml` 中添加项目上下文，这样你的技术栈和约定会被注入每一次请求。参见[自定义](customization.md#项目配置)。
 - 添加按产物分类的 `rules:`，用于只在（比如说）specs 上生效的指导。
 - 在提出变更时给出更详细的描述。
 - 使用扩展的 `/opsx:continue`，一次创建一个产物并逐一评审，而不是用 `/opsx:ff` 一次性全部生成。
 
 ### 归档无法完成，或警告任务未完成
 
-归档不会因任务未完成而*阻塞*，但它会警告你，因为归档通常意味着工作已经完成。如果任务是刻意保留的（你正在提交一次不完整的变更），那就继续。否则，请先把任务做完。归档还会提议把你的增量规范同步进主规范（如果你还没同步的话）；除非你有理由拒绝，否则就同意。
+归档不会因任务未完成而*阻塞*，但它会警告你，因为归档通常意味着工作已经完成。如果任务是刻意保留的（你正在提交一次不完整的变更），那就继续。否则，请先把任务做完。归档还会提议把你的增量规格同步进主规格（如果你还没同步的话）；除非你有理由拒绝，否则就同意。
 
 ## 配置
 
@@ -137,7 +137,7 @@ openspec schema which <name>        # see where a schema resolves from
 openspec schema init <name>         # create a custom one
 ```
 
-参见[自定义](customization.md#custom-schemas)。
+参见[自定义](customization.md#自定义-schema)。
 
 ## 从旧工作流迁移
 
@@ -155,7 +155,7 @@ openspec init --force
 
 ### 我的旧 `project.md` 没有被迁移
 
-这是有意为之。OpenSpec 从不自动删除 `project.md`，因为它可能装着你写下的上下文。把其中有用的部分搬进 `config.yaml` 的 `context:` 章节，然后自己删掉它。[迁移指南](migration-guide.md#migrating-projectmd-to-configyaml)详细讲解了这一过程，包括一段你可以直接交给 AI 去做提炼的提示词。
+这是有意为之。OpenSpec 从不自动删除 `project.md`，因为它可能装着你写下的上下文。把其中有用的部分搬进 `config.yaml` 的 `context:` 章节，然后自己删掉它。[迁移指南](migration-guide.md#将-projectmd-迁移到-configyaml)详细讲解了这一过程，包括一段你可以直接交给 AI 去做提炼的提示词。
 
 ## 还是卡住了？
 
