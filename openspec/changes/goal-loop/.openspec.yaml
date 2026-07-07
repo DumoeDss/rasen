@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-07
+goal: Add a goal-driven iteration loop primitive to opsx:auto so it supports
+  non-coding, measurable/judged tasks (perf optimization, code-quality rubric,
+  autoresearch).

@@ -81,13 +81,20 @@ The system SHALL provide an `openspec pipeline` command group with `list`, `show
 
 ### Requirement: Built-In Pipelines
 
-The package SHALL ship built-in pipelines for the initial task types.
+The package SHALL ship built-in pipelines for the initial task types and the goal-loop family. Each SHALL be included in the published package files.
 
 #### Scenario: Initial built-ins present
 
 - **WHEN** no user or project pipelines are defined
 - **THEN** `full-feature`, `small-feature`, and `bug-fix` SHALL resolve from the package
 - **AND** they SHALL be included in the published package files
+
+#### Scenario: Goal-loop built-ins present
+
+- **WHEN** no user or project pipelines are defined
+- **THEN** `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research` SHALL resolve from the package
+- **AND** they SHALL be included in the published package files
+- **AND** they SHALL be auto-discovered from `pipelines/goal-loop-*/pipeline.yaml` with no TypeScript registration
 
 ### Requirement: Decompose 阶段类型
 
@@ -142,4 +149,53 @@ decompose 阶段的 `childPipeline` SHALL 通过显式的注册表查找（proje
 
 - **WHEN** 对一条首阶段为 `kind: decompose` 的流水线运行 `openspec pipeline show <name> --json`
 - **THEN** 输出 SHALL 包含该阶段，并带上其 `kind` 与解析后的 `childPipeline`
+
+### Requirement: Stage Loop Is a Discriminated Union
+
+The `loop` field of a stage SHALL be a Zod discriminated union on a `kind` discriminator with two variants: `review-cycle` (the existing single-round-cap review→fix loop) and `goal` (a goal-driven iteration loop). The union SHALL parse the existing `review-cycle` shape unchanged so existing pipelines validate identically. The `goal` variant SHALL carry a required `gate` that is itself a discriminated union on `kind` with variants `measure` and `evaluate`, plus `maxRounds` (default 5) and `loopStallLimit` (default 2, gate-neutral). A `goal` loop SHALL be rejected if its `measure` gate declares neither `threshold` nor `target`.
+
+#### Scenario: Review-cycle shape parses unchanged under the union
+
+- **WHEN** a stage declares `loop: { kind: review-cycle }` (or with an explicit `maxRounds`)
+- **THEN** the discriminated union SHALL parse it to `{ kind: 'review-cycle', maxRounds: 3 }` (default applied when omitted)
+- **AND** the parsed shape SHALL equal the pre-union `{ kind: 'review-cycle', maxRounds: 3 }` value
+
+#### Scenario: Goal loop with a measure gate parses
+
+- **WHEN** a stage declares `loop: { kind: goal, gate: { kind: measure, threshold: 90, direction: gte } }`
+- **THEN** the union SHALL accept it and expose `loop.kind === 'goal'` with the gate narrowed to the measure variant
+
+#### Scenario: Goal loop with an evaluate gate parses
+
+- **WHEN** a stage declares `loop: { kind: goal, gate: { kind: evaluate, goal: '<text>' } }`
+- **THEN** the union SHALL accept it and expose `loop.kind === 'goal'` with the gate narrowed to the evaluate variant
+
+#### Scenario: Measure gate missing a stop condition is rejected
+
+- **WHEN** a goal loop declares `gate: { kind: measure }` with neither `threshold` nor `target`
+- **THEN** validation SHALL fail with an error indicating the measure gate needs a threshold or target
+
+#### Scenario: Unknown loop kind is rejected
+
+- **WHEN** a stage declares `loop: { kind: unknown-kind }`
+- **THEN** the discriminated union SHALL reject it at parse
+
+### Requirement: Goal-Loop Gate Metadata Rendered in Pipeline Show
+
+The human-readable `openspec pipeline show <name>` output SHALL render a stage's loop metadata for both loop kinds. For a `review-cycle` loop the meta line SHALL remain `loop=review-cycle(max <N>)`. For a `goal` loop the meta line SHALL name the gate kind and both bounds: `loop=goal[<gate-kind>](max <N>, stall <L>)`, where `<gate-kind>` is `measure` or `evaluate`, `<N>` is the goal variant's `maxRounds`, and `<L>` is its `loopStallLimit`. This generalizes the review-cycle-only label that preceded the goal-loop addition.
+
+#### Scenario: Measure gate rendered in show
+
+- **WHEN** `openspec pipeline show goal-loop-measure` renders the `iterate` stage
+- **THEN** the stage meta SHALL include `loop=goal[measure](max <maxRounds>, stall <loopStallLimit>)`
+
+#### Scenario: Evaluate gate rendered in show
+
+- **WHEN** `openspec pipeline show goal-loop-evaluate` (or `goal-loop-research`) renders the `iterate` stage
+- **THEN** the stage meta SHALL include `loop=goal[evaluate](max <maxRounds>, stall <loopStallLimit>)`
+
+#### Scenario: Review-cycle label unchanged
+
+- **WHEN** `openspec pipeline show <pipeline>` renders a stage with a `review-cycle` loop
+- **THEN** the stage meta SHALL include `loop=review-cycle(max <N>)` and SHALL NOT include the goal-loop bracket format
 
