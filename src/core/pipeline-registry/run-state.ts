@@ -133,6 +133,48 @@ export const RunStateSchema = z
       )
       .optional(),
     updatedAt: z.string().optional(),
+    // Goal-loop: the injected effective loop config (runtime authoritative).
+    // The LEAD reads goal-plan.md and merges the concrete gate config here
+    // before round 1. Optional — only present for a goal-loop run.
+    loopConfig: z
+      .object({
+        kind: z.literal('goal'),
+        gate: z.discriminatedUnion('kind', [
+          z.object({
+            kind: z.literal('measure'),
+            command: z.string(),
+            threshold: z.number().optional(),
+            target: z.number().optional(),
+            direction: z.enum(['gte', 'lte']),
+            // Per-task measure timeout, injected from goal-plan.md. Mirrors the
+            // registry schema so a configured value survives the strict nested
+            // object (which would otherwise strip it); defaults to 120s.
+            timeoutSec: z.number().int().positive().default(120),
+          }),
+          z.object({
+            kind: z.literal('evaluate'),
+            goal: z.string(),
+            rubric: z.string().optional(),
+          }),
+        ]),
+        maxRounds: z.number().int().positive(),
+        loopStallLimit: z.number().int().positive(),
+        workProduct: z.enum(['code', 'prose']),
+      })
+      .optional(),
+    // Goal-loop: best-effort derived cache. The AUTHORITATIVE per-round record
+    // is goal-run.json (historyRef); this is a convenience for the resume fast path.
+    loopProgress: z
+      .object({
+        kind: z.literal('goal'),
+        round: z.number().int().nonnegative(),
+        lastScore: z.number().optional(),
+        measurePassed: z.boolean().optional(), // present when gate=measure
+        evaluateSatisfied: z.boolean().optional(), // present when gate=evaluate
+        stallStreak: z.number().int().nonnegative(),
+        historyRef: z.string(), // -> goal-run.json
+      })
+      .optional(),
   })
   .passthrough();
 export type RunState = z.infer<typeof RunStateSchema>;

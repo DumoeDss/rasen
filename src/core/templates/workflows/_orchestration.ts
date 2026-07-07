@@ -93,13 +93,45 @@ Under Tier C (single context) the non-author confirmation degrades to an indepen
 
 ### Step E — The review -> fix loop (bounded; this is the review-cycle inner loop)
 
-When a stage is a **loop**:
+When a stage is a **loop**, narrow on \`loop.kind\`:
+
+- **\`loop.kind === 'review-cycle'\`** runs the review -> fix protocol below (Steps 1–5). This is the ONLY loop kind that existed before goal-loop; the steps are unchanged.
+- **\`loop.kind === 'goal'\`** runs the goal-driven iteration loop defined in **Step L** (single dispatch per round, warm-reused implementer, a measure or evaluate gate). Skip Steps 1–5 for a goal loop — they are review-cycle-specific.
+
+For a **review-cycle** loop:
 
 1. **Review** — dispatch reviewer worker(s), delegating each pass to the \`openspec-review\` engine, over the current diff; collect findings with severity (Blocker / Major / Minor / Trivial). Do NOT fork or reimplement the review heuristics.
 2. **Triage by fix size** — trivial (you fix inline) / non-trivial (route to the implementer worker that wrote the code) / design-level (route to a SEPARATE fixer worker, never the author).
 3. **Fix** via the routed actor; capture the exact fix delta so re-review can target only the delta.
 4. **Re-review the delta with a non-author** — Tier A, same session: resume the original reviewer via \`SendMessage\` (after the Step H.2 warm-continue guard) to re-review only the delta against its prior findings. Across a session boundary (the original reviewer is gone): warm-seed a fresh reviewer from that reviewer's recorded transcript (Step F.1) so it carries the prior findings, then re-review only the delta. Tier B/C: a fresh reviewer over just the delta, with prior findings + fix diff passed through a shared file. A finding is resolved ONLY after a non-author confirms it; self-certification by the fixer is rejected.
 5. **Loop or terminate** — all Blocker/Major resolved (non-author confirmed) -> clean. Resolvable findings remain AND rounds < cap -> next round, re-review the new delta. Cap reached with any unresolved Blocker/Major -> do NOT stop for a human immediately: run the **Step H.5/H.6 escalation ladder** — a LEAD strategy review where each retry changes a material variable (different fix approach, design-level rework via the planner, isolating the stubborn finding), recorded in \`strategyAttempts\`; only after the strategy budget is exhausted is the stage parked as \`escalated\` and surfaced at the next natural pause point. Default cap: 3. Never report clean while a Blocker or Major finding is open. Any open Minor/Trivial findings at clean-time MUST be recorded in run-state as accepted-known — never silently dropped.
+
+### Step L — The goal-loop (bounded iteration toward a gate condition)
+
+A \`goal\` loop drives a task whose "done" is a *condition* — a measurable threshold (measure gate) or a quality judgment (evaluate gate) — not a review-clean diff. It is isomorphic to review-cycle's single-dispatch-per-round shape: ONE implementer dispatch per round, then a gate, then a recorded judgment. Only the LEAD orchestrates; the implementer NEVER spawns child subagents (flat hierarchy).
+
+**Inject (once, before round 1).** Read \`goal-plan.md\` (produced by the \`define-goal\` stage's planner) and merge the concrete gate config into \`iterate.loopConfig\` in run-state: for a \`measure\` gate assert the \`command\` is present (it is optional in the pipeline YAML, REQUIRED at run-time) and copy \`threshold\`/\`target\`/\`direction\`/\`timeoutSec\`; for an \`evaluate\` gate copy \`goal\`/\`rubric\`. The pipeline registers only the gate *type*; the per-task specifics come from goal-plan.md.
+
+**Each round (single dispatch, warm-reused implementer).**
+- **Dispatch the implementer** — warm-reused across ALL rounds (the SAME worker, like review-cycle reuses the fixer thread; rounds do NOT each cost a fresh relay). Tier A: \`SendMessage\` the same implementer agentId (after the Step H.2 warm-continue guard). Tier B/C: spawn fresh per round seeded from goal-plan.md + the prior round's judgment + the run's handoff documents. Seed: **round 1** = goal-plan.md (no prior score); **round N>1** = goal-plan.md + the prior round's recorded \`{score/gaps, measurePassed/evaluateSatisfied}\`. The implementer MAY self-run the measure command / self-check informally during its dispatch; the **formal recorded score** is the post-dispatch gate below. Every dispatch prompt ends with the Step H.3 handoff clause and the flat-hierarchy clause (no child subagents).
+- **Run the gate (one type, per the pipeline):**
+  - **measure** — run \`gate.command\` (bounded by \`timeoutSec\`, default 120s), parse stdout JSON \`{ score: number, passed?: number, detail?: string }\`. Compare \`score\` against \`threshold\` using \`direction\` (\`gte\` → score ≥ threshold; \`lte\` → score ≤ threshold), or \`passed\` against \`target\` (passed ≥ target). Satisfied when the comparison holds.
+  - **evaluate** — dispatch a **FRESH reviewer worker** (≠ the implementer — author ≠ verifier). Hand it \`goal\` + \`rubric\` + the artifact under judgment; it MUST return structured \`{ satisfied: boolean, gaps: string[] }\` (no free text, for reproducibility). Satisfied when \`satisfied === true\`.
+- **Measure failure branch (no deadlock).** Non-zero exit / timeout / unparseable JSON → record \`{round, error: <stderr|timeout|parse>}\`, treat the round as NOT passed, and feed the stderr/parse-error as the gap for the next round. The loop never blocks on a broken measure command.
+
+**Record.** Append \`{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}\` to \`goal-run.json\` in the change root (\`git rev-parse HEAD^{tree}\` for \`gitTreeFingerprint\`). This file is the AUTHORITATIVE loop spine — it survives worker relay. Also mirror the summary into \`loopProgress\` in run-state (best-effort cache).
+
+**Stop.** Gate satisfied → proceed to the pipeline tail (ship/archive, or report for research). \`maxRounds\` exhausted → proceed to the tail BUT mark \`outcome: maxRounds-exhausted\` in the ship-log/report — **never lie about success**. The ship/report stage surfaces the real outcome.
+
+**Stall (gate-neutral).** A round "progresses" if: measure — \`score\` moved favorably vs the prior round (\`gte\`: score increased; \`lte\`: score decreased); evaluate — the gap-set shrank or the gate is newly satisfied. **Round 1 always counts as progress** (no prior to compare). \`loopStallLimit\` (default 2) consecutive NON-progressing rounds → run the Step H.5 LEAD strategy review: warm-seed a fresh implementer with a different approach, or escalate. Never silently burn rounds on a stuck measure/evaluate.
+
+**Resume (authoritative = \`goal-run.json\` last record).**
+- last record satisfied → go to the tail (do NOT re-run the round).
+- last record NOT passed (round complete, has a record) → resume at **lastRound + 1** (fresh dispatch, seeded with the prior gap). NOT "re-run N" — round N already has its recorded judgment.
+- no record (define-goal done, iterate died before the first gate) → dispatch round 1.
+- Before resuming a round, you MAY re-run the gate once on the current tree (catch a flaky measure command or externally-fixed state); \`gitTreeFingerprint\` detects tree changes under you — if the tree changed since the last record, the prior judgment may be stale.
+
+**Context / handoff.** The implementer is warm-reused; when its context fills it follows the standard **Step H.3** self-handoff (write a handoff doc, return \`HANDOFF { path, reason, completed, remaining }\`). The LEAD warm-seeds a successor and the loop continues — \`goal-run.json\` is the spine that survives the relay. The **research pipeline** sets a lower \`handoff.roles.implementer.threshold\` (0.35) so relay happens earlier (research is context-heavy); this is the "implementer inline + relay" decision — do NOT use a research-sibling subagent pattern (that violates the flat hierarchy).
 
 ### Step F — Maintain run-state (observability + resume)
 

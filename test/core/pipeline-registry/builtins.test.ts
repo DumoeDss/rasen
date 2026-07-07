@@ -16,6 +16,10 @@ import { getSkillTemplates } from '../../../src/core/shared/skill-generation.js'
 
 const BUILTIN_NAMES = ['full-feature', 'small-feature', 'bug-fix'] as const;
 
+// Goal-loop backend pipelines (homogeneous: one gate type each). Registered as
+// data via pipelines/<name>/pipeline.yaml and auto-discovered by the registry.
+const GOAL_LOOP_NAMES = ['goal-loop-measure', 'goal-loop-evaluate', 'goal-loop-research'] as const;
+
 // Pipelines that must remain decompose-free so they are valid child pipelines.
 const DECOMPOSE_FREE_NAMES = ['small-feature', 'bug-fix'] as const;
 
@@ -73,6 +77,64 @@ describe('pipeline-registry/built-ins', () => {
       expect(pipeline.stages.some(s => s.kind === 'decompose')).toBe(false);
     });
   }
+
+  it('should expose all three goal-loop pipelines via listPipelines', () => {
+    const names = listPipelines();
+    for (const name of GOAL_LOOP_NAMES) {
+      expect(names).toContain(name);
+    }
+  });
+
+  for (const name of GOAL_LOOP_NAMES) {
+    describe(name, () => {
+      it('should parse and pass all validators (load + reparse from disk)', () => {
+        const pipeline = loadPipelineByName(name);
+        expect(pipeline.name).toBe(name);
+
+        const pipelinePath = resolvePipelinePath(name);
+        expect(pipelinePath).not.toBeNull();
+        expect(() => loadPipeline(pipelinePath!)).not.toThrow();
+        expect(() => parsePipeline(JSON.stringify(pipeline))).not.toThrow();
+      });
+
+      it('should be acyclic (topo-sort covers every stage)', () => {
+        const graph = PipelineGraph.fromPipeline(loadPipelineByName(name));
+        const order = graph.getBuildOrder();
+        expect(order).toHaveLength(graph.getAllStages().length);
+        expect(new Set(order).size).toBe(order.length);
+      });
+
+      it('should reference only skills that exist in getSkillTemplates()', () => {
+        const pipeline = loadPipelineByName(name);
+        expect(() => validatePipelineSkills(pipeline, knownSkillNames)).not.toThrow();
+      });
+
+      it('every requires reference must exist as a stage (re-derived check)', () => {
+        const pipeline = loadPipelineByName(name);
+        const ids = new Set(pipeline.stages.map(s => s.id));
+        for (const stage of pipeline.stages) {
+          for (const req of stage.requires) {
+            expect(ids.has(req)).toBe(true);
+          }
+        }
+      });
+
+      it('has a goal loop on its iterate stage', () => {
+        const pipeline = loadPipelineByName(name);
+        const iterate = pipeline.stages.find(s => s.id === 'iterate');
+        expect(iterate?.loop).toBeDefined();
+        expect(iterate?.loop?.kind).toBe('goal');
+      });
+    });
+  }
+
+  it('goal-loop-* pipelines are NOT asserted as decompose-free (only small/bug-fix are)', () => {
+    // Only small-feature and bug-fix are valid child pipelines; the goal-loop
+    // family is intentionally not in DECOMPOSE_FREE_NAMES.
+    expect(DECOMPOSE_FREE_NAMES).not.toContain('goal-loop-measure');
+    expect(DECOMPOSE_FREE_NAMES).not.toContain('goal-loop-evaluate');
+    expect(DECOMPOSE_FREE_NAMES).not.toContain('goal-loop-research');
+  });
 
   describe('auto-decompose entry pipeline', () => {
     it('is listed and parses with all validators', () => {

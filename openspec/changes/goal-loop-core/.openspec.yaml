@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-07
+goal: Implement the goal-loop primitive + pipeline family + skills + entry, zero
+  regression on existing pipelines.

@@ -45,6 +45,12 @@ import {
   getOpsxReviewCycleCommandTemplate,
   getHandoffSkillTemplate,
   getOpsxHandoffCommandTemplate,
+  // Goal-loop workflow skills + command
+  getGoalPlanSkillTemplate,
+  getGoalIterateSkillTemplate,
+  getGoalReportSkillTemplate,
+  getGoalCommandSkillTemplate,
+  getOpsxGoalCommandTemplate,
   // Expert skill templates (from gstack)
   getBenchmarkSkillTemplate,
   getBrowseSkillTemplate,
@@ -168,6 +174,11 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     { template: getAutoCommandSkillTemplate(), dirName: 'openspec-opsx-auto', workflowId: 'auto-command' },
     { template: getReviewCycleSkillTemplate(), dirName: 'openspec-review-cycle', workflowId: 'review-cycle' },
     { template: getHandoffSkillTemplate(), dirName: 'openspec-handoff', workflowId: 'handoff' },
+    // Goal-loop workflow skills (stage skills + entry command)
+    { template: getGoalPlanSkillTemplate(), dirName: 'openspec-goal-plan', workflowId: 'goal-plan' },
+    { template: getGoalIterateSkillTemplate(), dirName: 'openspec-goal-iterate', workflowId: 'goal-iterate' },
+    { template: getGoalReportSkillTemplate(), dirName: 'openspec-goal-report', workflowId: 'goal-report' },
+    { template: getGoalCommandSkillTemplate(), dirName: 'openspec-opsx-goal', workflowId: 'goal-command' },
   ];
 
   // Expert skills are always installed regardless of workflowFilter
@@ -227,6 +238,7 @@ export function getCommandTemplates(workflowFilter?: readonly string[]): Command
     { template: getOpsxAutoCommandTemplate(), id: 'auto-command' },
     { template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' },
     { template: getOpsxHandoffCommandTemplate(), id: 'handoff' },
+    { template: getOpsxGoalCommandTemplate(), id: 'goal-command' },
   ];
 
   if (!workflowFilter) return all;

@@ -390,4 +390,71 @@ describe('pipeline run-state', () => {
       });
     });
   });
+
+  describe('loopConfig (goal-loop measure gate)', () => {
+    it('preserves a configured timeoutSec through parse (goal-plan -> loopConfig)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          loopConfig: {
+            kind: 'goal',
+            gate: {
+              kind: 'measure',
+              command: './lighthouse',
+              threshold: 90,
+              direction: 'gte',
+              timeoutSec: 30,
+            },
+            maxRounds: 5,
+            loopStallLimit: 2,
+            workProduct: 'code',
+          },
+        })
+      );
+      expect(s.loopConfig?.kind).toBe('goal');
+      if (s.loopConfig?.kind === 'goal' && s.loopConfig.gate.kind === 'measure') {
+        expect(s.loopConfig.gate.command).toBe('./lighthouse');
+        expect(s.loopConfig.gate.threshold).toBe(90);
+        // The configured per-task timeout survives the strict nested object
+        // (the core of the fix ��� previously Zod stripped it).
+        expect(s.loopConfig.gate.timeoutSec).toBe(30);
+      }
+    });
+
+    it('defaults timeoutSec to 120 when not configured (backward compatible)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          loopConfig: {
+            kind: 'goal',
+            gate: { kind: 'measure', command: './score', threshold: 80, direction: 'gte' },
+            maxRounds: 3,
+            loopStallLimit: 2,
+            workProduct: 'code',
+          },
+        })
+      );
+      if (s.loopConfig?.kind === 'goal' && s.loopConfig.gate.kind === 'measure') {
+        expect(s.loopConfig.gate.timeoutSec).toBe(120);
+      }
+    });
+
+    it('round-trips a configured timeoutSec through write + read', () => {
+      const state: RunState = {
+        pipeline: 'small-feature',
+        loopConfig: {
+          kind: 'goal',
+          gate: { kind: 'measure', command: './bench', threshold: 1000, direction: 'lte', timeoutSec: 45 },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          workProduct: 'code',
+        },
+      };
+      writeRunState(dir, state);
+      const back = readRunState(dir);
+      if (back?.loopConfig?.kind === 'goal' && back.loopConfig.gate.kind === 'measure') {
+        expect(back.loopConfig.gate.timeoutSec).toBe(45);
+      }
+    });
+  });
 });

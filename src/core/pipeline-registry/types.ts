@@ -165,12 +165,92 @@ export type ReuseConfig = z.infer<typeof ReuseConfigSchema>;
 
 /**
  * Loop configuration for a stage that re-runs until a condition is met.
- * Currently only the 'review-cycle' kind is supported.
+ *
+ * Two kinds today:
+ *  - `review-cycle` — the bounded review -> fix loop (Step E of the playbook).
+ *  - `goal` — the goal-driven iteration loop (Step L of the playbook): repeat
+ *    modify -> judge until a gate is satisfied or a round cap is hit.
+ *
+ * The `goal` variant carries a required `gate` discriminated union — exactly
+ * ONE gate per pipeline (measure XOR evaluate). No combination in v1: the
+ * discriminated union makes the two gate kinds structurally exclusive, which is
+ * what dissolves AND/OR-combination complexity.
  */
-export const StageLoopSchema = z.object({
-  kind: z.literal('review-cycle'),
-  maxRounds: z.number().int().positive({ error: 'maxRounds must be a positive integer' }).default(3),
-});
+export const StageLoopSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('review-cycle'),
+    maxRounds: z
+      .number()
+      .int()
+      .positive({ error: 'maxRounds must be a positive integer' })
+      .default(3),
+  }),
+  z
+    .object({
+      kind: z.literal('goal'),
+      // Exactly ONE gate per pipeline (measure XOR evaluate). The pipeline YAML
+      // registers only the gate TYPE ({kind: measure} / {kind: evaluate}); the
+      // LEAD injects the concrete command/threshold/goal/rubric from goal-plan.md
+      // into iterate.loopConfig at run start.
+      gate: z.discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('measure'),
+            // Optional in the registry schema, REQUIRED at run-time: the LEAD
+            // asserts it is present (read from goal-plan.md) before round 1.
+            command: z.string().min(1).optional(),
+            // Score stop threshold (gte/lte against gate stdout `score`).
+            threshold: z.number().optional(),
+            // passed-count target (against gate stdout `passed`).
+            target: z.number().optional(),
+            direction: z.enum(['gte', 'lte']).default('gte'), // lte = smaller is better
+            timeoutSec: z.number().int().positive().default(120),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('evaluate'),
+            // NL success criterion + rubric — injected at run-time from goal-plan.md.
+            goal: z.string().min(1).optional(),
+            rubric: z.string().optional(),
+          })
+          .strict(),
+      ]),
+      maxRounds: z
+        .number()
+        .int()
+        .positive({ error: 'maxRounds must be a positive integer' })
+        .default(5),
+      // gate-neutral; avoids HandoffConfigSchema.stallLimit collision.
+      loopStallLimit: z
+        .number()
+        .int()
+        .positive({ error: 'loopStallLimit must be a positive integer' })
+        .default(2),
+      runArtifact: z.string().default('goal-run.json'),
+    })
+    .superRefine((s, ctx) => {
+      // A measure gate that names a command (i.e. is concretely configured to
+      // run) MUST also define a stop condition — threshold OR target. The bare
+      // registry template `{ kind: measure }` (no command) is ALLOWED: the
+      // pipeline registers only the gate type, and the LEAD injects the concrete
+      // command + threshold/target at run-time from goal-plan.md (Step L Inject).
+      // This keeps the data-driven template valid while still catching a
+      // half-configured measure gate that would run without a stop condition.
+      if (
+        s.gate.kind === 'measure' &&
+        s.gate.command !== undefined &&
+        s.gate.threshold === undefined &&
+        s.gate.target === undefined
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['gate'],
+          message: 'measure gate with a command needs threshold or target',
+        });
+      }
+    }),
+]);
 
 /**
  * Policy hint for how thoroughly a verification/review stage should run.

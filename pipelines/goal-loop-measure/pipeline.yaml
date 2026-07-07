@@ -1,0 +1,33 @@
+name: goal-loop-measure
+description: >-
+  Goal-driven iteration for measurable code targets (perf, scores, latency).
+  define-goal -> iterate (measure gate) -> ship -> archive. The LEAD injects
+  the concrete measure command/threshold from goal-plan.md before round 1.
+stages:
+  - id: define-goal
+    skill: openspec-goal-plan
+    role: planner
+    requires: []
+    gate: true
+
+  - id: iterate
+    skill: openspec-goal-iterate
+    role: implementer
+    requires: [define-goal]
+    loop:
+      kind: goal
+      gate: { kind: measure }
+      runArtifact: goal-run.json
+
+  - id: ship
+    skill: openspec-opsx-ship
+    role: shipper
+    requires: [iterate]
+    gate: true
+    model: sonnet
+
+  - id: archive
+    skill: openspec-archive-change
+    role: shipper
+    requires: [ship]
+    model: sonnet

@@ -1,0 +1,30 @@
+name: goal-loop-research
+description: >-
+  Goal-driven iteration for autoresearch-style research and writing. The
+  implementer researches inline and writes/refines a document; an evaluate gate
+  (fresh reviewer per round) judges satisfaction against the goal. The tail is a
+  report stage (no code to ship). A lower implementer handoff threshold (0.35)
+  triggers earlier relay because research is context-heavy.
+handoff:
+  roles:
+    implementer: 0.35
+stages:
+  - id: define-goal
+    skill: openspec-goal-plan
+    role: planner
+    requires: []
+    gate: true
+
+  - id: iterate
+    skill: openspec-goal-iterate
+    role: implementer
+    requires: [define-goal]
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+      runArtifact: goal-run.json
+
+  - id: report
+    skill: openspec-goal-report
+    role: shipper
+    requires: [iterate]

@@ -638,7 +638,15 @@ export class PipelineCommand {
       if (stage.role) meta.push(`role=${stage.role}`);
       if (stage.requires.length > 0) meta.push(`requires=[${stage.requires.join(', ')}]`);
       if (stage.gate) meta.push('gate');
-      if (stage.loop) meta.push(`loop=${stage.loop.kind}(max ${stage.loop.maxRounds})`);
+      if (stage.loop) {
+        if (stage.loop.kind === 'review-cycle') {
+          meta.push(`loop=review-cycle(max ${stage.loop.maxRounds})`);
+        } else {
+          meta.push(
+            `loop=goal[${stage.loop.gate.kind}](max ${stage.loop.maxRounds}, stall ${stage.loop.loopStallLimit})`
+          );
+        }
+      }
       if (stage.parallelGroup) meta.push(`parallelGroup=${stage.parallelGroup}`);
       if (stage.condition) meta.push(`condition=${stage.condition}`);
       if (stage.leadReview) meta.push('leadReview');

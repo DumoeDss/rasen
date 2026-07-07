@@ -1,0 +1,34 @@
+name: goal-loop-evaluate
+description: >-
+  Goal-driven iteration for code-quality work judged against a rubric.
+  define-goal -> iterate (evaluate gate, fresh reviewer per round) -> ship ->
+  archive. The LEAD injects the concrete goal/rubric from goal-plan.md before
+  round 1.
+stages:
+  - id: define-goal
+    skill: openspec-goal-plan
+    role: planner
+    requires: []
+    gate: true
+
+  - id: iterate
+    skill: openspec-goal-iterate
+    role: implementer
+    requires: [define-goal]
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+      runArtifact: goal-run.json
+
+  - id: ship
+    skill: openspec-opsx-ship
+    role: shipper
+    requires: [iterate]
+    gate: true
+    model: sonnet
+
+  - id: archive
+    skill: openspec-archive-change
+    role: shipper
+    requires: [ship]
+    model: sonnet

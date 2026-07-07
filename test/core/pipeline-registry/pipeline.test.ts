@@ -74,6 +74,138 @@ stages:
       expect(pipeline.stages[0].loop).toEqual({ kind: 'review-cycle', maxRounds: 3 });
     });
 
+    it('should parse a goal loop with a measure gate and narrow on kind', () => {
+      const yaml = `
+name: goal-measure
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: measure }
+      runArtifact: goal-run.json
+`;
+      const pipeline = parsePipeline(yaml);
+      const loop = pipeline.stages[0].loop;
+      expect(loop).toBeDefined();
+      expect(loop?.kind).toBe('goal');
+      if (loop?.kind === 'goal') {
+        expect(loop.gate.kind).toBe('measure');
+        expect(loop.maxRounds).toBe(5);
+        expect(loop.loopStallLimit).toBe(2);
+        expect(loop.runArtifact).toBe('goal-run.json');
+      }
+    });
+
+    it('should parse a goal loop with an evaluate gate', () => {
+      const yaml = `
+name: goal-evaluate
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+`;
+      const pipeline = parsePipeline(yaml);
+      const loop = pipeline.stages[0].loop;
+      expect(loop?.kind).toBe('goal');
+      if (loop?.kind === 'goal') {
+        expect(loop.gate.kind).toBe('evaluate');
+      }
+    });
+
+    it('should apply defaults loopStallLimit=2 and maxRounds=5 for a goal loop', () => {
+      const yaml = `
+name: goal-defaults
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+`;
+      const pipeline = parsePipeline(yaml);
+      const loop = pipeline.stages[0].loop;
+      if (loop?.kind === 'goal') {
+        expect(loop.maxRounds).toBe(5);
+        expect(loop.loopStallLimit).toBe(2);
+        expect(loop.runArtifact).toBe('goal-run.json');
+      }
+    });
+
+    it('should parse a measure gate with a stop condition (threshold)', () => {
+      const yaml = `
+name: goal-threshold
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: goal
+      gate:
+        kind: measure
+        command: ./lighthouse
+        threshold: 90
+        direction: gte
+`;
+      const pipeline = parsePipeline(yaml);
+      const loop = pipeline.stages[0].loop;
+      if (loop?.kind === 'goal' && loop.gate.kind === 'measure') {
+        expect(loop.gate.command).toBe('./lighthouse');
+        expect(loop.gate.threshold).toBe(90);
+        expect(loop.gate.direction).toBe('gte');
+        expect(loop.gate.timeoutSec).toBe(120);
+      }
+    });
+
+    it('should reject a measure gate (with a command) missing both threshold and target', () => {
+      const yaml = `
+name: goal-no-stop
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: goal
+      gate:
+        kind: measure
+        command: ./score
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/threshold or target/);
+    });
+
+    it('should reject a gate that combines measure and evaluate fields', () => {
+      // The discriminated union on gate.kind makes measure XOR evaluate
+      // structurally exclusive: a gate claiming measure but carrying an
+      // evaluate-only field (rubric) is rejected.
+      const yaml = `
+name: goal-combo
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: goal
+      gate:
+        kind: measure
+        command: ./score
+        threshold: 90
+        rubric: shouldBeRejected
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+
+    it('should reject an unknown loop kind', () => {
+      const yaml = `
+name: bad-loop-kind
+stages:
+  - id: iterate
+    skill: openspec-goal-iterate
+    loop:
+      kind: unknown
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+
     it('should parse optional verifyPolicy, condition, parallelGroup', () => {
       const yaml = `
 name: opts

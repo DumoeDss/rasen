@@ -27,6 +27,10 @@ export { getRetroCommandSkillTemplate, getOpsxRetroCommandTemplate } from './wor
 export { getAutoCommandSkillTemplate, getOpsxAutoCommandTemplate } from './workflows/auto.js';
 export { getReviewCycleSkillTemplate, getOpsxReviewCycleCommandTemplate } from './workflows/review-cycle.js';
 export { getHandoffSkillTemplate, getOpsxHandoffCommandTemplate } from './workflows/handoff.js';
+export { getGoalPlanSkillTemplate } from './workflows/goal-plan.js';
+export { getGoalIterateSkillTemplate } from './workflows/goal-iterate.js';
+export { getGoalReportSkillTemplate } from './workflows/goal-report.js';
+export { getGoalCommandSkillTemplate, getOpsxGoalCommandTemplate } from './workflows/goal-command.js';
 
 // Expert skill templates (migrated from gstack)
 export {
