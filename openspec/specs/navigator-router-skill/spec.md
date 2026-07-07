@@ -50,6 +50,12 @@ The navigator body SHALL present a four-part map: a main flow (`/opsx:explore` o
 - **WHEN** the navigator map is inspected
 - **THEN** it SHALL NOT reference `/domain-modeling`
 
+#### Scenario: Ship entry reflects the delivery modes
+
+- **WHEN** the navigator map's main flow is inspected
+- **THEN** the `/opsx:ship` one-liner SHALL name the three delivery modes (pr / push / local) and evidence-gated testing
+- **AND** it SHALL remain a one-line "when to reach for it" entry, not the full ship contract (resolution precedence, the merge step, and the ship-log fields stay in the ship command)
+
 ### Requirement: Navigator registered as an expert with count +1
 
 The navigator SHALL be registered through the expert chain: `src/core/templates/experts/navigator.ts` (setting `disableModelInvocation: true`), an export in `experts/index.ts`, a re-export in `skill-templates.ts`, and an import plus `getSkillTemplates()` entry (`dirName: 'openspec-navigator'`, `workflowId: 'navigator'`) in `skill-generation.ts`. The expert count in `test/core/shared/skill-generation.test.ts` SHALL account for navigator (the 2026-07 addition remains reflected in the roster count). An AGENTS.md row SHALL be present.

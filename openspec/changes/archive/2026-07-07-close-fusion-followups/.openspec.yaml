@@ -1,0 +1,10 @@
+schema: spec-driven
+created: 2026-07-07
+quality:
+  files:
+    - review-cycle-report.md
+    - review-report.md
+  metrics:
+    review-cycle-report.md: 0
+    review-report.md: 1
+  rulesExtracted: 0

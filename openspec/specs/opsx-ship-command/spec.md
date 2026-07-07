@@ -59,7 +59,7 @@ Ship SHALL commit, integrate, and deliver according to the resolved delivery mod
 #### Scenario: Evidence-based test gate
 
 - **WHEN** the ship phase reaches the test gate
-- **THEN** the system SHALL run the project's detected test command only if at least one holds: (a) the base merge introduced new commits, (b) no green test evidence exists for the current code state — a recorded passing test run (review report, review-cycle report, or run-state) with the code unchanged since, or (c) the user explicitly requests it
+- **THEN** the system SHALL run the project's detected test command only if at least one holds: (a) the base merge introduced new commits, (b) no green test evidence exists for the current code state — i.e. no recorded passing test run (review report, review-cycle report, or run-state) whose recorded content tree fingerprint (`git rev-parse HEAD^{tree}`) matches the current tree fingerprint, or (c) the user explicitly requests it
 - **AND** if tests run and any in-branch test fails, the system SHALL stop and NOT deliver
 
 #### Scenario: Tests skipped on fresh evidence
@@ -111,7 +111,7 @@ PR body SHALL include the proposal summary from the change's `proposal.md`.
 
 - **WHEN** the ship phase completes delivery (PR created, branch pushed, or local commit recorded)
 - **THEN** the system SHALL write `openspec/changes/<name>/ship-log.md`
-- **AND** the log SHALL include: the delivery mode, branch name, commit, timestamp, the test decision (ran green, or skipped with the evidence source), the PR URL in `pr` mode, and the deferral note in `local` mode
+- **AND** the log SHALL include: the delivery mode, branch name, commit, the content tree fingerprint (`git rev-parse HEAD^{tree}`) of that commit, timestamp, the test decision (ran green, or skipped with the evidence source and the matched tree fingerprint), the PR URL in `pr` mode, and the deferral note in `local` mode
 
 #### Scenario: Ship log updated after deployment
 
