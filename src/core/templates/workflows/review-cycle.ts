@@ -48,7 +48,7 @@ ${ORCHESTRATION_PLAYBOOK}
 
 ## Cycle report
 
-Track everything in \`openspec/changes/<name>/review-cycle-report.md\`: each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the exact test/gate command(s), their result, and the git state they ran against (HEAD + working-tree dirty or clean) — the ship stage's evidence-based test gate reads this to decide whether tests must be re-run.
+Track everything in \`openspec/changes/<name>/review-cycle-report.md\`: each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the exact test/gate command(s), their result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state they ran against — the ship stage's evidence-based test gate reads this to decide whether tests must be re-run.
 
 ## Termination Invariants (non-negotiable)
 

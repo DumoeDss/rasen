@@ -84,10 +84,10 @@ NEVER resolve an integration base by falling back to the repository's default br
 
 Run the project's detected test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` / \`pytest\` / etc. — infer from the repo, do not hardcode a runner) ONLY if at least one holds:
 1. Step (c) merged in new commits — the merged state has never been tested.
-2. No green test evidence exists for the current code state. Evidence = a recorded passing test run (in \`review-report.md\`, \`review-cycle-report.md\`, another verification report, or run-state) with the code unchanged since — compare the recorded git state (HEAD + dirty status) against now. The commit in (b) moves HEAD but does not change code content, so it does not invalidate evidence; lint or review fixes DO.
+2. No green test evidence exists for the current code state. Evidence = a recorded passing test run (in \`review-report.md\`, \`review-cycle-report.md\`, another verification report, or run-state) whose recorded content tree fingerprint (\`git rev-parse HEAD^{tree}\`) matches the current one. The tree hash is content-addressed — it changes if and only if the tracked tree content changes — so the commit in (b), which moves HEAD but changes no content, does not invalidate evidence; lint or review fixes change the tree and DO.
 3. The user explicitly asks for a test run.
 
-Otherwise SKIP the run and record \`tests: skipped — green at <evidence source>, code unchanged since\` for the ship log. Missing evidence means RUN — the gate skips on proof, never on hope.
+Otherwise SKIP the run and record \`tests: skipped — green at <evidence source>, tree <fingerprint>\` for the ship log. Missing evidence means RUN — the gate skips on proof, never on hope.
 
 If tests run and any in-branch test fails, **STOP** and do NOT deliver (a genuinely pre-existing failure unrelated to this change's diff may be noted and triaged, but when in doubt treat it as blocking).
 
@@ -126,6 +126,7 @@ After successful delivery in ANY mode, write \`openspec/changes/<name>/ship-log.
 **Mode:** pr | push | local
 **Branch:** <branch-name>
 **Commit:** <commit-hash>
+**Tree:** <tree-fingerprint>       (content tree fingerprint, \`git rev-parse HEAD^{tree}\`)
 **Base:** <base-branch>            (pr mode only)
 **PR:** <PR-URL>                   (pr mode only)
 **Status:** PR Created | Pushed | Committed (delivery deferred to portfolio level)
@@ -135,7 +136,7 @@ After successful delivery in ANY mode, write \`openspec/changes/<name>/ship-log.
 - Tasks: <N/M complete>
 
 ## Test Gate
-- Tests: ran green | skipped — green at <evidence source>, code unchanged since
+- Tests: ran green | skipped — green at <evidence source>, tree <fingerprint>
 
 ## Deployment
 Status: Pending (run /opsx:ship --deploy to continue)   (pr mode only)
@@ -183,7 +184,7 @@ After shipping, suggest:
 ### Ship
 - Mode: pr
 - Branch: feature/add-auth
-- Tests: skipped — green at review-cycle-report.md, code unchanged since
+- Tests: skipped — green at review-cycle-report.md, tree <fingerprint>
 - PR: https://github.com/org/repo/pull/42
 - Status: Created
 

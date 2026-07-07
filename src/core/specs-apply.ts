@@ -103,7 +103,7 @@ export async function buildUpdatedSpec(
   update: SpecUpdate,
   changeName: string,
   options: { silent?: boolean } = {}
-): Promise<{ rebuilt: string; counts: { added: number; modified: number; removed: number; renamed: number } }> {
+): Promise<{ rebuilt: string; counts: { added: number; modified: number; removed: number; renamed: number }; emptied: boolean }> {
   // Read change spec content (delta-format expected)
   const changeContent = await fs.readFile(update.source, 'utf-8');
 
@@ -306,6 +306,12 @@ export async function buildUpdatedSpec(
     nameToBlock.set(key, add);
   }
 
+  // An existing spec that this delta empties — every requirement REMOVED,
+  // none remaining — is deleted from main specs by the caller rather than
+  // written empty. A new spec that ends empty is NOT emptied: it still has no
+  // requirements and must hit min(1) (creating an empty spec is never intended).
+  const emptied = !isNewSpec && nameToBlock.size === 0;
+
   // Duplicates within resulting map are implicitly prevented by key uniqueness.
 
   // Recompose requirements section preserving original ordering where possible
@@ -339,6 +345,7 @@ export async function buildUpdatedSpec(
 
   return {
     rebuilt,
+    emptied,
     counts: {
       added: plan.added.length,
       modified: plan.modified.length,
@@ -427,17 +434,21 @@ export async function applySpecs(
     update: SpecUpdate;
     rebuilt: string;
     counts: { added: number; modified: number; removed: number; renamed: number };
+    emptied: boolean;
   }> = [];
 
   for (const update of specUpdates) {
     const built = await buildUpdatedSpec(update, changeName);
-    prepared.push({ update, rebuilt: built.rebuilt, counts: built.counts });
+    prepared.push({ update, rebuilt: built.rebuilt, counts: built.counts, emptied: built.emptied });
   }
 
-  // Validate rebuilt specs unless validation is skipped
+  // Validate rebuilt specs unless validation is skipped. An emptied existing
+  // spec (every requirement REMOVED) is deleted, not written, so it has no
+  // content to validate — skip it rather than fail on the empty Requirements.
   if (!options.skipValidation) {
     const validator = new Validator();
     for (const p of prepared) {
+      if (p.emptied) continue;
       const specName = path.basename(path.dirname(p.update.target));
       const report = await validator.validateSpecContent(specName, p.rebuilt);
       if (!report.valid) {
@@ -457,7 +468,17 @@ export async function applySpecs(
   for (const p of prepared) {
     const capability = path.basename(path.dirname(p.update.target));
 
-    if (!options.dryRun) {
+    if (p.emptied) {
+      // Existing spec fully emptied by this delta → delete its directory.
+      if (!options.dryRun) {
+        await fs.rm(path.dirname(p.update.target), { recursive: true, force: true });
+        if (!options.silent) {
+          console.log(`Deleting spec '${capability}' — all requirements removed by this change.`);
+        }
+      } else if (!options.silent) {
+        console.log(`Would delete spec '${capability}' — all requirements removed by this change.`);
+      }
+    } else if (!options.dryRun) {
       // Write the updated spec
       const targetDir = path.dirname(p.update.target);
       await fs.mkdir(targetDir, { recursive: true });

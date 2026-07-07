@@ -75,7 +75,7 @@ When leadReview is not enabled, proceed from propose to the next stage without t
 ## 5. Adaptive Bug-Fix verify
 
 For a \`verify\` stage with **verifyPolicy=adaptive**:
-- Run the unit-test gate first. Record the gate's command, result, and the git state it ran against (HEAD + dirty status) in run-state — the ship stage's evidence-based test gate consumes this to decide whether tests must be re-run.
+- Run the unit-test gate first. Record the gate's command, result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state it ran against in run-state — the ship stage's evidence-based test gate consumes this to decide whether tests must be re-run.
 - **Simple** fix (single file / non-core path / tests sufficient) AND tests green -> verify passes; skip the review loop.
 - **Complex** fix (multiple files / core paths / insufficient coverage) -> spawn a dedicated test/verification worker for deeper checking AND enter the review-cycle loop.
 Compute the simple/complex determination from the diff and record it in run-state.

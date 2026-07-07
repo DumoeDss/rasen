@@ -1,7 +1,7 @@
 # expert-template-inlining Specification
 
 ## Purpose
-TBD - created by archiving change unify-expert-template-pipeline. Update Purpose after archive.
+Make the 19 expert skills a single-sourced TypeScript system: each expert's `SkillTemplate.instructions` is an inline template string in `src/core/templates/experts/<name>.ts` (no file-read getters, no committed generated `SKILL.md`), shared prose blocks live once in `_shared.ts`, the migration is byte-faithful to the prior output, the parity golden-master pins freshness in place of the retired skill-doc generator, and the build no longer invokes that generator.
 ## Requirements
 ### Requirement: Expert instructions are inline TypeScript, not generated files
 

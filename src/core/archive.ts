@@ -415,11 +415,11 @@ export class ArchiveCommand {
 
         if (shouldUpdateSpecs) {
           // Prepare all updates first (validation pass, no writes)
-          const prepared: Array<{ update: SpecUpdate; rebuilt: string; counts: { added: number; modified: number; removed: number; renamed: number } }> = [];
+          const prepared: Array<{ update: SpecUpdate; rebuilt: string; counts: { added: number; modified: number; removed: number; renamed: number }; emptied: boolean }> = [];
           try {
             for (const update of specUpdates) {
               const built = await buildUpdatedSpec(update, changeName!, { silent: json });
-              prepared.push({ update, rebuilt: built.rebuilt, counts: built.counts });
+              prepared.push({ update, rebuilt: built.rebuilt, counts: built.counts, emptied: built.emptied });
             }
           } catch (err: any) {
             if (json) {
@@ -436,8 +436,11 @@ export class ArchiveCommand {
 
           // Validate every rebuilt spec before writing any of them, so a
           // late validation failure really does leave all targets unchanged.
+          // An emptied existing spec (every requirement REMOVED) is deleted, not
+          // written, so it has no content to validate — skip it.
           if (!skipValidation) {
             for (const p of prepared) {
+              if (p.emptied) continue;
               const specName = path.basename(path.dirname(p.update.target));
               const report = await new Validator().validateSpecContent(specName, p.rebuilt);
               if (!report.valid) {
@@ -462,11 +465,20 @@ export class ArchiveCommand {
           // All validations passed; write files and display counts
           const writeTotals = { added: 0, modified: 0, removed: 0, renamed: 0 };
           for (const p of prepared) {
-            await writeUpdatedSpec(p.update, p.rebuilt, p.counts, {
-              silent: json,
-              // Cross-root paths must be absolute when a store is selected.
-              ...(isStoreSelectedRoot(root) ? { displayPath: p.update.target } : {}),
-            });
+            const capability = path.basename(path.dirname(p.update.target));
+            if (p.emptied) {
+              // Existing spec fully emptied by this delta → delete its directory.
+              await fs.rm(path.dirname(p.update.target), { recursive: true, force: true });
+              if (!json) {
+                console.log(`Deleting spec '${capability}' — all requirements removed by this change.`);
+              }
+            } else {
+              await writeUpdatedSpec(p.update, p.rebuilt, p.counts, {
+                silent: json,
+                // Cross-root paths must be absolute when a store is selected.
+                ...(isStoreSelectedRoot(root) ? { displayPath: p.update.target } : {}),
+              });
+            }
             writeTotals.added += p.counts.added;
             writeTotals.modified += p.counts.modified;
             writeTotals.removed += p.counts.removed;

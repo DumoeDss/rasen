@@ -579,6 +579,129 @@ content D`;
       expect(updated).not.toContain('### Requirement: B');
     });
 
+    it('should delete a spec whose requirements are all REMOVED by the delta (zero-requirements deletion)', async () => {
+      const changeName = 'zero-req-deletion';
+      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeSpecDir = path.join(changeDir, 'specs', 'theta');
+      await fs.mkdir(changeSpecDir, { recursive: true });
+
+      // Existing main spec with a single requirement
+      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'theta');
+      await fs.mkdir(mainSpecDir, { recursive: true });
+      const mainContent = `# theta Specification
+
+## Purpose
+Theta purpose.
+
+## Requirements
+
+### Requirement: Theta Rule
+The system SHALL do theta.
+
+#### Scenario: theta works
+- **WHEN** theta
+- **THEN** done`;
+      await fs.writeFile(path.join(mainSpecDir, 'spec.md'), mainContent);
+
+      // Delta REMOVES the only requirement → the rebuilt spec has zero requirements
+      const deltaContent = `# Theta - Changes
+
+## REMOVED Requirements
+
+### Requirement: Theta Rule`;
+      await fs.writeFile(path.join(changeSpecDir, 'spec.md'), deltaContent);
+
+      // Validation is ON (no --no-validate): without the zero-req deletion path
+      // this would abort on "Spec must have at least one requirement".
+      await archiveCommand.execute(changeName, { yes: true });
+
+      // The spec directory is deleted, not left holding an empty spec.md
+      await expect(fs.access(path.join(mainSpecDir, 'spec.md'))).rejects.toThrow();
+      await expect(fs.access(mainSpecDir)).rejects.toThrow();
+
+      // A clear log line names the deleted capability
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining("Deleting spec 'theta' — all requirements removed by this change.")
+      );
+
+      // Archive did NOT abort on the emptied spec
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('Validation errors in rebuilt spec for theta')
+      );
+      expect(console.log).not.toHaveBeenCalledWith('Aborted. No files were changed.');
+
+      // The change was archived (the delta moves to archive as usual)
+      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archives = await fs.readdir(archiveDir);
+      expect(archives.some(a => a.includes(changeName))).toBe(true);
+
+      // The post-archive main-specs tree validates strictly — mirrors the delta's
+      // "validate --strict SHALL pass afterward": no emptied spec is left to fail min(1).
+      const strictValidator = new Validator(true);
+      const specsRoot = path.join(tempDir, 'openspec', 'specs');
+      for (const entry of await fs.readdir(specsRoot)) {
+        const specFile = path.join(specsRoot, entry, 'spec.md');
+        try { await fs.access(specFile); } catch { continue; }
+        const report = await strictValidator.validateSpec(specFile);
+        expect(report.valid).toBe(true);
+      }
+    });
+
+    it('should NOT delete a spec that still has a surviving requirement (zero-req safety boundary)', async () => {
+      const changeName = 'partial-removal-keeps-spec';
+      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeSpecDir = path.join(changeDir, 'specs', 'iota');
+      await fs.mkdir(changeSpecDir, { recursive: true });
+
+      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'iota');
+      await fs.mkdir(mainSpecDir, { recursive: true });
+      const mainContent = `# iota Specification
+
+## Purpose
+Iota purpose.
+
+## Requirements
+
+### Requirement: Keep Me
+The system SHALL keep this.
+
+#### Scenario: kept
+- **WHEN** x
+- **THEN** y
+
+### Requirement: Remove Me
+The system SHALL remove this.
+
+#### Scenario: removed
+- **WHEN** a
+- **THEN** b`;
+      await fs.writeFile(path.join(mainSpecDir, 'spec.md'), mainContent);
+
+      // Delta removes ONE of two requirements — the spec survives with one left
+      const deltaContent = `# Iota - Changes
+
+## REMOVED Requirements
+
+### Requirement: Remove Me`;
+      await fs.writeFile(path.join(changeSpecDir, 'spec.md'), deltaContent);
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      // The spec still exists with the surviving requirement
+      const updated = await fs.readFile(path.join(mainSpecDir, 'spec.md'), 'utf-8');
+      expect(updated).toContain('### Requirement: Keep Me');
+      expect(updated).not.toContain('### Requirement: Remove Me');
+
+      // It was NOT treated as a deletion
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining("Deleting spec 'iota'")
+      );
+
+      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archives = await fs.readdir(archiveDir);
+      expect(archives.some(a => a.includes(changeName))).toBe(true);
+    });
+
     it('should abort with error when MODIFIED/REMOVED reference non-existent requirements', async () => {
       const changeName = 'validate-missing';
       const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);

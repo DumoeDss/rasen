@@ -19,7 +19,7 @@ The route most work travels. **\`/opsx:auto\`** drives this whole flow autonomou
 2. **\`/opsx:propose\`** — turn the sharpened idea into a change: proposal, design, specs, and tasks.
 3. **\`/opsx:apply\`** — implement the tasks against the change.
 4. **\`/opsx:review-cycle\`** — iterate review → triage → fix → re-review the delta until it's clean or escalates. Lighter gate: **\`/opsx:verify\`** checks the implementation matches the artifacts. Heavier: **\`/opsx:verify-enhanced\`** adds code-review, security, and browser passes, auto-scaled to the change size.
-5. **\`/opsx:ship\`** — test, push, open the PR from the proposal.
+5. **\`/opsx:ship\`** — resolve the delivery mode (pr / push / local), test only when evidence demands it, then deliver.
 6. **\`/opsx:archive\`** — fold the delta specs into the main specs once the change has merged.
 7. **\`/opsx:retro\`** — look back at what shipped and what to learn from it.
 
