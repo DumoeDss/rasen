@@ -1459,19 +1459,21 @@ The screenshot file at \`/tmp/gstack-sketch.png\` can be referenced by downstrea
 
 export const SPEC_REVIEW_LOOP = `## Spec Review Loop
 
-Before presenting the document to the user for approval, run an adversarial review.
+Before presenting the document to the user for approval, run adversarial review. This is
+a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/opsx:propose\` →
+implement → \`/opsx:review-cycle\` will scrutinize it again (review-cycle is the real
+adversarial code review). Do not over-polish a draft, and never iterate to convergence.
 
-**Step 1: Dispatch reviewer subagent**
+**Step 1: One fresh adversarial review**
 
-Use the Agent tool to dispatch an independent reviewer. The reviewer has fresh context
-and cannot see the brainstorming conversation — only the document. This ensures genuine
-adversarial independence.
+Dispatch ONE independent reviewer via the Agent tool, and give it a **name** (e.g.
+\`spec-reviewer\`) so you can continue it later. Fresh context is the whole point of this
+first pass — the reviewer cannot see the brainstorming conversation, only the document on
+disk — and that independence only holds on the FIRST pass.
 
-Prompt the subagent with:
-- The file path of the document just written
-- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
-  list specific issues with suggested fixes. At the end, output a quality score (1-10)
-  across all dimensions."
+Prompt: "Read this document and review it on 5 dimensions. For each dimension, note PASS
+or list specific issues with a concrete suggested fix. End with a quality score (1-10).
+Return PASS, or a numbered list of issues."
 
 **Dimensions:**
 1. **Completeness** — Are all requirements addressed? Missing edge cases?
@@ -1480,42 +1482,67 @@ Prompt the subagent with:
 4. **Scope** — Does the document creep beyond the original problem? YAGNI violations?
 5. **Feasibility** — Can this actually be built with the stated approach? Hidden complexity?
 
-The subagent should return:
-- A quality score (1-10)
-- PASS if no issues, or a numbered list of issues with dimension, description, and fix
+**Step 2: Triage findings — defect vs. direction fork (CRITICAL)**
 
-**Step 2: Fix and re-dispatch**
+Sort every finding into one of two buckets. This is the step that goes wrong most often:
 
-If the reviewer returns issues:
-1. Fix each issue in the document on disk (use Edit tool)
-2. Re-dispatch the reviewer subagent with the updated document
-3. Maximum 3 iterations total
+- **Defect** — there is ONE correct resolution (a missing validation, a self-contradiction,
+  a name collision, stale wording, an unguarded check). → **Fix it silently** with the Edit
+  tool. No user involvement needed.
+- **Direction fork** — there are MULTIPLE valid resolutions and the choice depends on
+  product vision, scope, or priorities (e.g. "this use case is incompatible with the reused
+  skill" → could cut the use case, replace the skill, or reframe the design). → **STOP. Do
+  not resolve it yourself.** Surface it to the user: name the fork, list the options, give
+  your recommendation. Resolving a direction fork autonomously — especially by quietly
+  narrowing scope — burns review rounds and produces a design the user never asked for.
 
-**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
-(the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
-and persist those issues as "Reviewer Concerns" in the document rather than looping
-further.
+**When unsure which bucket a finding is in, treat it as a direction fork and ask.**
 
-If the subagent fails, times out, or is unavailable — skip the review loop entirely.
-Tell the user: "Spec review unavailable — presenting unreviewed doc." The document is
-already written to disk; the review is a quality bonus, not a gate.
+**Step 3: Verify fixes with a WARM-continued reviewer (not a fresh dispatch)**
 
-**Step 3: Report and persist metrics**
+After applying defect fixes (and any user-decided fork resolutions), **continue the SAME
+reviewer agent** via SendMessage (e.g. to \`spec-reviewer\`): "I addressed findings #N —
+here's how. The doc is at <path>. Verify those are resolved and check ONLY the changed
+sections; don't re-derive context you already have."
 
-After the loop completes (PASS, max iterations, or convergence guard):
+Warm continuation reuses the reviewer's prior context — it remembers what it flagged, so it
+does a fast incremental delta-check instead of re-reading the whole document from scratch.
+**Do NOT spawn a fresh reviewer for verification**: that throws away the context you already
+paid for and re-reads everything (slow, expensive — the single biggest cause of wasted time
+in this loop).
 
-1. Tell the user the result — summary by default:
-   "Your doc survived N rounds of adversarial review. M issues caught and fixed.
-   Quality score: X/10."
-   If they ask "what did the reviewer find?", show the full reviewer output.
+**Step 4: Fresh re-review ONLY after a major redesign**
 
-2. If issues remain after max iterations or convergence, add a "## Reviewer Concerns"
-   section to the document listing each unresolved issue. Downstream skills will see this.
+Re-dispatch a FRESH reviewer (independence matters again) only when a direction fork or user
+feedback drove a **substantial redesign that introduces new design surface area** — new
+stages, new modes, a replaced mechanism. Cosmetic fixes and defect patches do NOT warrant a
+fresh pass. At most one fresh-after-redesign pass per redesign.
 
+**Step 5: Stop — don't converge**
+
+The cap for a DRAFT is tight: **1 fresh review + 1 warm verification**, plus at most **1
+fresh pass after a major redesign**. Do NOT iterate toward a perfect score.
+
+- If the reviewer returns the SAME unresolved issue on two consecutive passes (the fix didn't
+  land, or it's a genuine disagreement), STOP. Persist it as an "## Open Questions" or
+  "## Reviewer Concerns" section in the document for \`/opsx:propose\` to resolve. A draft is
+  allowed to carry open questions — that is not a failure.
+- If the subagent fails, times out, or is unavailable — skip the loop: tell the user "Spec
+  review unavailable — presenting unreviewed doc." The document is already on disk; the
+  review is a bonus, not a gate.
+
+**Step 6: Report and persist metrics**
+
+1. Summary, by default: "Fresh review + N warm verification pass(es). M defect findings
+   fixed; K direction fork(s) surfaced to you. Quality score: X/10." Show the full reviewer
+   output only if asked.
+2. Residual unresolved issues → "## Reviewer Concerns" section in the document (downstream
+   skills read it).
 3. Append metrics:
 \`\`\`bash
 mkdir -p ~/.openspec/analytics
 echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.openspec/analytics/spec-review.jsonl 2>/dev/null || true
 \`\`\`
-Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.`;
+ITERATIONS = total review passes (fresh + warm). Replace ITERATIONS, FOUND, FIXED,
+REMAINING, SCORE with actual values from the review.`;
 
