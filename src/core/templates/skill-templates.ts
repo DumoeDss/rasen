@@ -38,7 +38,6 @@ export {
   getCsoSkillTemplate,
   getDesignConsultationSkillTemplate,
   getDesignReviewSkillTemplate,
-  getDomainModelingSkillTemplate,
   getFreezeSkillTemplate,
   getGuardSkillTemplate,
   getInvestigateSkillTemplate,

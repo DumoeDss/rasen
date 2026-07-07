@@ -12,7 +12,6 @@ export { getCodexSkillTemplate } from './codex.js';
 export { getCsoSkillTemplate } from './cso.js';
 export { getDesignConsultationSkillTemplate } from './design-consultation.js';
 export { getDesignReviewSkillTemplate } from './design-review.js';
-export { getDomainModelingSkillTemplate } from './domain-modeling.js';
 export { getFreezeSkillTemplate } from './freeze.js';
 export { getGuardSkillTemplate } from './guard.js';
 export { getInvestigateSkillTemplate } from './investigate.js';

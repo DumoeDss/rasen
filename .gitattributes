@@ -1,0 +1,7 @@
+# Collapse OpenSpec working artifacts in GitHub PR diffs.
+# linguist-generated marks files as generated: hidden by default in PR
+# diffs (expandable via "Load diff") and excluded from language stats.
+# Files stay fully tracked in git — history and blame are unaffected.
+# specs/ is intentionally NOT collapsed: spec deltas are the part
+# reviewers must see.
+openspec/changes/** linguist-generated=true

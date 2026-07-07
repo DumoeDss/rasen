@@ -3,6 +3,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
+import { CHANGE_CONTEXT_CAPTURE_GUIDANCE } from '../workflows/change-context.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,6 +23,8 @@ export function getPrototypeSkillTemplate(): SkillTemplate {
     name: 'gstack:prototype',
     description: '|',
     instructions: `${instructions}
+
+${CHANGE_CONTEXT_CAPTURE_GUIDANCE}
 
 ${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'openspec', version: '1.0' },

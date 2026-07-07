@@ -22,7 +22,6 @@ Skills live in `.agents/skills/`. Invoke them by name (e.g., `/office-hours`).
 | `/freeze` | Lock edits to one directory. Hard block, not just a warning. |
 | `/guard` | Activate both careful + freeze at once. |
 | `/unfreeze` | Remove directory edit restrictions. |
-| `/domain-modeling` | Actively build and sharpen the ubiquitous language — glossary, ADRs, edge-case scenarios. |
 | `/codebase-design` | Deep-module vocabulary (seam / depth / adapter / leverage) and the deletion test. |
 | `/tdd` | Test-driven development that produces tests worth keeping: seams, red→green, anti-patterns. |
 | `/prototype` | Throwaway code that answers one design question — a LOGIC or UI branch. |

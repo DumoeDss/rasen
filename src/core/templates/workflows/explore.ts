@@ -287,7 +287,7 @@ When a design question is stuck and only building will settle it, you may reach 
 
 ## Guardrails
 
-- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
+- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not. The single exception is a throwaway \`/prototype\` probe (see "Prototype to Settle a Stuck Question") — and its code MUST be deleted once the answer is captured.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally
@@ -472,7 +472,7 @@ When a design question is stuck and only building will settle it, you may reach 
 
 ## Guardrails
 
-- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
+- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not. The single exception is a throwaway \`/prototype\` probe (see "Prototype to Settle a Stuck Question") — and its code MUST be deleted once the answer is captured.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally

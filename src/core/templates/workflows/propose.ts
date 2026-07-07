@@ -24,7 +24,7 @@ When ready to implement, run /opsx:apply
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Methodology consults (optional):** For design-dense changes — a new module or a non-trivial interface — consult \`/codebase-design\` (deep-module design, design-it-twice) before writing specs. When the domain language is fuzzy or overloaded, consult \`/domain-modeling\` to pin down the glossary. Capture the resulting interface/design and domain decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`openspec status --json\` \`changeRoot\`) — not in a root \`CONTEXT.md\` or \`docs/adr/\`. These are conditional references, not required steps; don't inline the expert bodies.
+**Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult \`/codebase-design\` (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`openspec status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
 
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
 
@@ -140,7 +140,7 @@ When ready to implement, run /opsx:apply
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Methodology consults (optional):** For design-dense changes — a new module or a non-trivial interface — consult \`/codebase-design\` (deep-module design, design-it-twice) before writing specs. When the domain language is fuzzy or overloaded, consult \`/domain-modeling\` to pin down the glossary. Capture the resulting interface/design and domain decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`openspec status --json\` \`changeRoot\`) — not in a root \`CONTEXT.md\` or \`docs/adr/\`. These are conditional references, not required steps; don't inline the expert bodies.
+**Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult \`/codebase-design\` (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`openspec status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
 
 **Input**: The argument after \`/opsx:propose\` is the change name (kebab-case), OR a description of what the user wants to build.
 

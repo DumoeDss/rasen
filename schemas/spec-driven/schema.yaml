@@ -107,7 +107,6 @@ artifacts:
       Reference the proposal for motivation and specs for requirements.
 
       Good design docs explain the "why" behind technical decisions.
-    enhance: codebase-design
     requires:
       - proposal
 
