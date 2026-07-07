@@ -1,0 +1,8 @@
+quality:
+  files:
+    - review-cycle-report.md
+    - review-report.md
+  metrics:
+    review-cycle-report.md: 0
+    review-report.md: 0
+  rulesExtracted: 0

@@ -17,7 +17,7 @@ The system SHALL provide a SkillTemplate and a CommandTemplate for the review-cy
 #### Scenario: Delegates to the review engine, does not fork it
 
 - **WHEN** the review-cycle instructions describe how to run a review pass
-- **THEN** they SHALL invoke the existing `openspec-gstack-review` skill as the review engine
+- **THEN** they SHALL invoke the existing `openspec-review` skill as the review engine
 - **AND** they SHALL NOT reimplement the review heuristics inline
 
 ### Requirement: Iterative Review-Fix-Re-Review Loop
@@ -134,7 +134,7 @@ The review-cycle workflow SHALL consume the shared `opsx-orchestration` playbook
 
 - **WHEN** the review-cycle instructions describe how the loop is driven
 - **THEN** they SHALL reference the `opsx-orchestration` playbook for tier detection, role-isolated dispatch, run-state, and escalation
-- **AND** SHALL continue to delegate each review pass to the `openspec-gstack-review` engine without forking it
+- **AND** SHALL continue to delegate each review pass to the `openspec-review` engine without forking it
 
 ### Requirement: Gate-Run Test Evidence Is Recorded for Ship
 

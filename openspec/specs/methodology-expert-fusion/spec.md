@@ -1,7 +1,7 @@
 # methodology-expert-fusion Specification
 
 ## Purpose
-Fuses the three methodology experts (`codebase-design`, `tdd`, `prototype`) into the OPSX workflow templates (propose, apply, explore) as conditional, teaching-level references — with their artifacts captured in the change directory rather than gstack-native paths — and removes dangling `enhance` hooks and doc references to the plan-review skills deleted in an earlier change.
+Fuses the three methodology experts (`codebase-design`, `tdd`, `prototype`) into the OPSX workflow templates (propose, apply, explore) as conditional, teaching-level references — with their artifacts captured in the change directory rather than skill-native paths — and removes dangling `enhance` hooks and doc references to the plan-review skills deleted in an earlier change.
 ## Requirements
 ### Requirement: Apply references the TDD and careful disciplines
 The `/opsx:apply` workflow template SHALL mention `/tdd` as an optional test-first implementation discipline and `/careful` for changes touching destructive operations, as conditional references without inlining their bodies.
@@ -40,19 +40,23 @@ The `enhance` hooks in `schemas/spec-driven/schema.yaml` SHALL NOT reference any
 - **THEN** no emitted `enhance` section SHALL name a removed skill
 
 ### Requirement: No live references to removed plan-review skills
-No live surface — workflow templates, generated skills, the doc generator, or docs — SHALL retain a reference to the removed `plan-ceo-review`, `plan-eng-review`, or `plan-design-review` skills. Historical archives under `openspec/changes/archive/` are exempt.
 
-#### Scenario: Generated codex skill drops the dead plan-review report bullets
-- **WHEN** the regenerated `skills/gstack/codex/SKILL.md` is inspected
-- **THEN** it SHALL NOT reference `plan-ceo-review`, `plan-eng-review`, or `plan-design-review`
+No live surface — workflow templates, expert templates, generated/installed skills, or docs — SHALL retain a reference to the removed `plan-ceo-review`, `plan-eng-review`, or `plan-design-review` skills. Historical archives under `openspec/changes/archive/` are exempt.
 
-#### Scenario: Generator and docs are clean
-- **WHEN** `scripts/gen-skill-docs.ts` and `skills/gstack/docs/ARCHITECTURE.md` are inspected
-- **THEN** neither SHALL reference the removed plan-review skills as live consumers or examples
+#### Scenario: Installed codex skill drops the dead plan-review report bullets
 
-#### Scenario: Generated docs remain fresh
-- **WHEN** `bun run gen:skill-docs` and `bun run skill:check` are run after the edits
-- **THEN** the freshness check SHALL pass with no stale or missing generated files
+- **WHEN** the `codex` expert template `src/core/templates/experts/codex.ts` and the installed `codex` `SKILL.md` are inspected
+- **THEN** neither SHALL reference `plan-ceo-review`, `plan-eng-review`, or `plan-design-review`
+
+#### Scenario: Templates and docs are clean
+
+- **WHEN** the expert templates under `src/core/templates/experts/` and `skills/experts/docs/ARCHITECTURE.md` are inspected
+- **THEN** none SHALL reference the removed plan-review skills as live consumers or examples
+
+#### Scenario: Freshness gate stays green
+
+- **WHEN** `test/core/templates/skill-templates-parity.test.ts` is run after the edits
+- **THEN** the golden-master parity check SHALL pass with no drift
 
 ### Requirement: Fused experts remain standalone-invokable
 
@@ -61,8 +65,8 @@ The surviving methodology experts SHALL remain registered and standalone-invokab
 #### Scenario: Methodology experts still registered
 
 - **WHEN** `getSkillTemplates()` is called without a workflow filter
-- **THEN** the returned array SHALL still include entries with `dirName` `openspec-gstack-codebase-design`, `openspec-gstack-tdd`, and `openspec-gstack-prototype`
-- **AND** SHALL NOT include `openspec-gstack-domain-modeling`
+- **THEN** the returned array SHALL still include entries with `dirName` `openspec-codebase-design`, `openspec-tdd`, and `openspec-prototype`
+- **AND** SHALL NOT include `openspec-domain-modeling`
 
 ### Requirement: Propose references the design methodology expert
 
@@ -82,7 +86,7 @@ The `/opsx:propose` workflow template SHALL reference `/codebase-design` as a co
 
 ### Requirement: Prototype adapts its capture path to an active change context
 
-The `prototype` expert skill template SHALL carry change-context capture guidance (appended at the expert-getter layer, leaving the generated SKILL.md source untouched): when invoked while an OpenSpec change is active, the prototype verdict and the decisions it settles SHALL be captured in that change's directory — the change's `design.md` Decisions section or a change-directory sidecar resolved from `openspec status --change <name> --json` (`changeRoot`) — and the skill's standalone capture locations (ADR, `NOTES.md` beside the prototype) SHALL be described as standalone-use-only in that mode.
+The `prototype` expert skill template SHALL carry change-context capture guidance (appended at the expert-getter layer to the inline instructions): when invoked while an OpenSpec change is active, the prototype verdict and the decisions it settles SHALL be captured in that change's directory — the change's `design.md` Decisions section or a change-directory sidecar resolved from `openspec status --change <name> --json` (`changeRoot`) — and the skill's standalone capture locations (ADR, `NOTES.md` beside the prototype) SHALL be described as standalone-use-only in that mode.
 
 #### Scenario: Prototype verdict capture in a change context
 

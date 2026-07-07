@@ -1,23 +1,27 @@
 # gstack-skills-integration Specification
 
 ## Purpose
-Integrate the gstack expert skills into OpenSpec — their source directory, TypeScript template functions, registry entries, and installation via `openspec init`.
-
+Integrate the expert skills into OpenSpec — their inline TypeScript template source, sidecar directory, registry entries, and installation via `openspec init`.
 ## Requirements
 ### Requirement: Skill Source Directory
-The system SHALL maintain a `skills/` directory at the project package root containing SKILL.md.tmpl source files and generated SKILL.md files for each expert skill.
 
-#### Scenario: Skills directory exists at package root
+The system SHALL maintain a `skills/experts/` directory at the project package root containing, for each expert skill that has them, only its sidecar reference files (`.md` other than `SKILL.md`, and `.sh`). The complete skill prompt for each expert SHALL be an inline TypeScript template string in `src/core/templates/experts/<name>.ts`, not a `SKILL.md.tmpl` source or a generated `SKILL.md` build product.
+
+#### Scenario: Expert source directory exists at package root
+
 - **WHEN** the OpenSpec package source tree is inspected
-- **THEN** a `skills/` directory exists containing subdirectories for each expert skill
+- **THEN** a `skills/experts/` directory exists containing sidecar subdirectories for the experts that carry sidecar files
 
-#### Scenario: Each skill subdirectory has SKILL.md
-- **WHEN** a skill subdirectory such as `skills/review/` is inspected
-- **THEN** it contains at minimum a `SKILL.md` file with the complete skill prompt
+#### Scenario: No SKILL.md or template under the source directory
 
-#### Scenario: Gstack skill directory names preserved
-- **WHEN** a gstack skill originally named `review` is migrated
-- **THEN** it appears as `skills/review/` in the OpenSpec source tree
+- **WHEN** a skill subdirectory such as `skills/experts/review/` is inspected
+- **THEN** it SHALL NOT contain a `SKILL.md` or a `SKILL.md.tmpl` file
+- **AND** it SHALL contain only sidecar reference files (e.g. `checklist.md`)
+
+#### Scenario: Complete prompt lives in the TypeScript template
+
+- **WHEN** the source of an expert skill originally named `review` is located
+- **THEN** its complete prompt SHALL be the inline template string in `src/core/templates/experts/review.ts`
 
 ### Requirement: TypeScript Template Functions
 The system SHALL provide TypeScript template functions in `src/core/templates/experts/` that return `SkillTemplate` objects for each expert skill, using the same interface as existing workflow templates.
