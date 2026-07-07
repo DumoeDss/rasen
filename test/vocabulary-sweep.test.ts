@@ -22,7 +22,10 @@ const FORBIDDEN_PATTERN = new RegExp('context' + '[-_ ]?store', 'i');
 // Fork note: historical analysis docs may cite the retired vocabulary when
 // documenting the upstream transition itself (names and upstream paths are
 // quoted verbatim there). Exempt them explicitly instead of rewording history.
-const SWEEP_EXEMPT_FILES = new Set(['docs/upstream-v1.5-stores-and-resolution.md']);
+const SWEEP_EXEMPT_FILES = new Set([
+  'docs/upstream-v1.5-stores-and-resolution.md',
+  'docs/zh/upstream-v1.5-stores-and-resolution.md',
+]);
 
 const TEXT_EXTENSIONS = new Set([
   '.ts',
