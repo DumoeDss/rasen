@@ -474,6 +474,53 @@ stages:
       expect(json.handoffs).toEqual({ apply: 'handoff/implementer-2.md' });
     });
 
+    it('surfaces the sessionHandoff relay generation n in json and text output', async () => {
+      const changeDir = path.join(changesDir, 'relay-gen-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          sessionHandoff: { path: 'handoff/lead-2.md', n: 2, pct: 0.55 },
+          stages: { propose: { status: 'done' } },
+        }),
+        'utf-8'
+      );
+
+      const jsonResult = await runCLI(['pipeline', 'resume', 'relay-gen-change', '--json'], { cwd: testDir });
+      expect(jsonResult.exitCode).toBe(0);
+      const json = JSON.parse(jsonResult.stdout.trim());
+      expect(json.sessionHandoff).toMatchObject({ path: 'handoff/lead-2.md', n: 2 });
+
+      const textResult = await runCLI(['pipeline', 'resume', 'relay-gen-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Session handoff (generation 2): handoff/lead-2.md');
+    });
+
+    it('reports generation 1 in text output when sessionHandoff has no n', async () => {
+      const changeDir = path.join(changesDir, 'relay-gen1-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          sessionHandoff: { path: 'handoff/lead-1.md' },
+          stages: { propose: { status: 'done' } },
+        }),
+        'utf-8'
+      );
+
+      const jsonResult = await runCLI(['pipeline', 'resume', 'relay-gen1-change', '--json'], { cwd: testDir });
+      expect(jsonResult.exitCode).toBe(0);
+      const json = JSON.parse(jsonResult.stdout.trim());
+      expect(json.sessionHandoff.path).toBe('handoff/lead-1.md');
+      expect(Object.prototype.hasOwnProperty.call(json.sessionHandoff, 'n')).toBe(false);
+
+      const textResult = await runCLI(['pipeline', 'resume', 'relay-gen1-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Session handoff (generation 1): handoff/lead-1.md');
+    });
+
     it('omits handoff keys entirely when a run recorded none', async () => {
       const changeDir = path.join(changesDir, 'no-handoff-change');
       await fs.mkdir(changeDir, { recursive: true });

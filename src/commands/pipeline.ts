@@ -27,6 +27,7 @@ import {
   stageWorkers,
   stagesWithStatus,
   latestStageHandoffs,
+  sessionHandoffGeneration,
   normalizeWorker,
   readPortfolioState,
   runnableChildren,
@@ -455,6 +456,11 @@ export class PipelineCommand {
     }
     if (warmSeedable.length > 0) {
       console.log(`Resume handles available (worker sessions/transcripts): ${warmSeedable.join(', ')}`);
+    }
+    if (sessionHandoff) {
+      console.log(
+        `Session handoff (generation ${sessionHandoffGeneration(sessionHandoff)}): ${sessionHandoff.path}`
+      );
     }
   }
 

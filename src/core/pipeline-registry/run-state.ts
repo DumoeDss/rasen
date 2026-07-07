@@ -85,15 +85,22 @@ export type RunStateStage = z.infer<typeof RunStateStageSchema>;
 /**
  * Session-level handoff pointer: written when a whole session (the LEAD)
  * distills its state via `/opsx:handoff` so a fresh session reads the
- * distillate before warm-seeding from raw transcripts.
+ * distillate before warm-seeding from raw transcripts. `n` is the relay
+ * generation (1st handoff = 1); records without it are generation 1.
  */
 export const SessionHandoffSchema = z.object({
   path: z.string(),
+  n: z.number().int().positive().optional(),
   pct: z.number().optional(),
   afterStage: z.string().optional(),
   at: z.string().optional(),
 }).passthrough();
 export type SessionHandoff = z.infer<typeof SessionHandoffSchema>;
+
+/** Relay generation of a session handoff record; absent `n` means generation 1. */
+export function sessionHandoffGeneration(handoff: SessionHandoff): number {
+  return handoff.n ?? 1;
+}
 
 /**
  * Canonical run-state shape. `passthrough()` lets the LEAD record extra context

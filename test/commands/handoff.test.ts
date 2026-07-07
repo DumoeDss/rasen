@@ -94,6 +94,31 @@ describe('handoff workflow', () => {
       expect(skillText).toContain('Eliminated hypotheses');
       expect(skillText).toContain('MANDATORY for fixer/debugger');
     });
+
+    it('offers a session relay after the handoff document is written', () => {
+      expect(skillText).toContain('## Session relay (launching the successor yourself)');
+      expect(skillText).toContain('relay-prompt.txt');
+      expect(skillText).toContain('Offer to relay');
+    });
+
+    it('requires quote-safe bootstrap delivery, never bare quoted strings', () => {
+      expect(skillText).toContain('file indirection, never bare quoting');
+      expect(skillText).toContain('-EncodedCommand');
+      expect(skillText).toContain('NEVER inline the prompt into the spawn command');
+    });
+
+    it('caps relay generations and records n in sessionHandoff', () => {
+      expect(skillText).toContain('"n": <n>');
+      expect(skillText).toContain('Generation cap');
+      expect(skillText).toContain('maxRelays');
+      expect(skillText).toContain('recommend decomposing the change');
+    });
+
+    it('spawns only after persistence, visibly, with a manual fallback', () => {
+      expect(skillText).toContain('spawn strictly after both');
+      expect(skillText).toContain('Spawn a visible interactive window');
+      expect(skillText).toContain('Fallback is always manual');
+    });
   });
 
   describe('orchestration playbook Step H', () => {
@@ -135,6 +160,20 @@ describe('handoff workflow', () => {
     it('makes planner retirement deterministic via the probe', () => {
       expect(ORCHESTRATION_PLAYBOOK).toContain('Retire on bloat (deterministic)');
     });
+
+    it('upgrades the H.1 pre-flight to a relay/continue/manual offer', () => {
+      expect(ORCHESTRATION_PLAYBOOK).toContain('automatic relay now');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('This is an offer, not a gate');
+    });
+
+    it('defines the H.7 session relay with quiesce, ordering, cap, and no worker resurrection', () => {
+      expect(ORCHESTRATION_PLAYBOOK).toContain('H.7 Session relay');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('Quiesce first');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('Relay ONLY at a stage boundary');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('Spawn after persistence');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('Generation cap');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('No cross-session worker resurrection');
+    });
   });
 
   describe('auto + review-cycle integration', () => {
@@ -143,6 +182,12 @@ describe('handoff workflow', () => {
       expect(autoText).toContain('## 0. Pre-flight context probe (once, non-blocking)');
       expect(autoText).toContain('openspec agent context --latest --json');
       expect(autoText).toContain('/opsx:handoff');
+    });
+
+    it('auto pre-flight offers the three-way relay choice', () => {
+      const autoText = getAutoCommandSkillTemplate().instructions;
+      expect(autoText).toContain('automatic relay now');
+      expect(autoText).toContain('Step H.7');
     });
 
     it('review-cycle routes round exhaustion through the escalation ladder, never a silent pass', () => {

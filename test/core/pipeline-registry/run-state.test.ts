@@ -12,6 +12,7 @@ import {
   stageWorkers,
   stagesWithStatus,
   latestStageHandoffs,
+  sessionHandoffGeneration,
   runStatePath,
   RunStateValidationError,
   RUN_STATE_FILENAME,
@@ -273,6 +274,39 @@ describe('pipeline run-state', () => {
       const s = parseRunState('{"pipeline":"bug-fix","stages":{"apply":{"status":"done"}}}');
       expect(s.sessionHandoff).toBeUndefined();
       expect(s.stages?.apply.handoffs).toBeUndefined();
+    });
+
+    it('parses a sessionHandoff with a relay generation n', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          sessionHandoff: { path: 'handoff/lead-2.md', n: 2, pct: 0.55 },
+        })
+      );
+      expect(s.sessionHandoff?.n).toBe(2);
+      expect(sessionHandoffGeneration(s.sessionHandoff!)).toBe(2);
+    });
+
+    it('treats a sessionHandoff without n as generation 1', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          sessionHandoff: { path: 'handoff/lead-1.md' },
+        })
+      );
+      expect(s.sessionHandoff?.n).toBeUndefined();
+      expect(sessionHandoffGeneration(s.sessionHandoff!)).toBe(1);
+    });
+
+    it('rejects a non-positive sessionHandoff generation', () => {
+      expect(() =>
+        parseRunState(
+          JSON.stringify({
+            pipeline: 'full-feature',
+            sessionHandoff: { path: 'handoff/lead-1.md', n: 0 },
+          })
+        )
+      ).toThrow(RunStateValidationError);
     });
 
     it('round-trips handoff records through write + read', () => {

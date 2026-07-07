@@ -23,7 +23,7 @@ Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`openspec agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), surface a one-line reminder — "context at <pct>% — consider /opsx:handoff before this run" — and proceed on the user's say-so. Below it, proceed silently. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
+Before anything else run \`openspec agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now — write the session handoff document and launch a successor session per the playbook's Step H.7; (b) continue this session (auto-compact remains the backstop); (c) handle it manually via /opsx:handoff. Proceed on the user's say-so; below the threshold, proceed silently. Declining leaves behavior exactly as before. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
 
 ## 1. Select the pipeline (explicit wins; default = small-feature)
 

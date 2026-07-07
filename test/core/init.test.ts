@@ -52,6 +52,29 @@ describe('InitCommand', () => {
     vi.restoreAllMocks();
   });
 
+  describe('hook configuration hints', () => {
+    it('prints safety + compact-recovery hook snippets without touching .claude/settings.json', async () => {
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => call.join(' '))
+        .join('\n');
+      expect(logged).toContain('hooks/safety-check.sh');
+      expect(logged).toContain('Compact Recovery Hook (optional):');
+      expect(logged).toContain('"SessionStart"');
+      expect(logged).toContain('"matcher": "compact"');
+      expect(logged).toContain('hooks/compact-recovery.sh');
+
+      // Instructions only — init must never write the hook config itself.
+      // (settings.json may exist for the agent-teams env flag, but no hooks key.)
+      const settingsPath = path.join(testDir, '.claude', 'settings.json');
+      if (await fileExists(settingsPath)) {
+        const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
+        expect(settings.hooks).toBeUndefined();
+      }
+    });
+  });
+
   describe('execute with --tools flag', () => {
     it('should create OpenSpec directory structure', async () => {
       const initCommand = new InitCommand({ tools: 'claude', force: true });

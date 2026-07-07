@@ -26,8 +26,36 @@ Use when: "handoff", "交接", context usage is high and a fresh session is plan
 1. **Probe first.** Run \`openspec agent context --latest --json\` and report \`{ contextTokens, limit, pct }\` to the user. This is informational — the user decides; do not refuse to hand off below any threshold.
 2. **Select the change.** Use the active change being driven (infer from conversation / \`openspec list --json\`; prompt only if genuinely ambiguous). If no change is active, write the document to \`openspec/handoff/<topic-slug>.md\` instead and skip the run-state update.
 3. **Write the document** to \`openspec/changes/<name>/handoff/lead-<n>.md\` where \`<n>\` is 1 + the highest existing lead-* number (never overwrite a predecessor). Use the template below.
-4. **Update run-state** (\`openspec/changes/<name>/auto-run.json\`): set top-level \`sessionHandoff\` to \`{ "path": "handoff/lead-<n>.md", "pct": <probe pct>, "afterStage": "<last completed stage>", "at": "<ISO timestamp>" }\`. Create the file with just that field if no run-state exists yet.
-5. **Tell the user how to resume**: start a fresh session and run \`/opsx:auto <change>\` (or \`openspec pipeline resume <change> --json\` manually) — resume reports the sessionHandoff pointer and the new LEAD reads the document FIRST, before any transcript warm-seeding.
+4. **Update run-state** (\`openspec/changes/<name>/auto-run.json\`): set top-level \`sessionHandoff\` to \`{ "path": "handoff/lead-<n>.md", "n": <n>, "pct": <probe pct>, "afterStage": "<last completed stage>", "at": "<ISO timestamp>" }\` — \`n\` is the relay generation and matches the document number (a record without \`n\` reads as generation 1). Create the file with just that field if no run-state exists yet.
+5. **Offer to relay** (below the cap — see Session relay): ask whether to launch the successor session now. On yes, follow the Session relay protocol. On no — or when the generation cap is reached — fall back to manual resume:
+6. **Tell the user how to resume manually**: start a fresh session and run \`/opsx:auto <change>\` (or \`openspec pipeline resume <change> --json\` manually) — resume reports the sessionHandoff pointer and the new LEAD reads the document FIRST, before any transcript warm-seeding.
+
+## Session relay (launching the successor yourself)
+
+With the user's authorization you can launch the successor instead of asking them to open a new session. Preconditions: the handoff document AND the run-state update are already on disk (spawn strictly after both), and no worker is in flight (stage boundary — every dispatched worker has returned \`DONE\`/\`HANDOFF\`).
+
+**Generation cap.** Before spawning, check the generation: if the new document's \`n\` has reached \`maxRelays\` (the pipeline's resolved handoff config via \`openspec pipeline show <pipeline> --json\`, default 3), do NOT auto-spawn. Present the relay history (\`handoff/lead-*.md\`) and recommend decomposing the change instead — repeated session relays signal work that should be split, not relayed harder.
+
+**Bootstrap prompt — file indirection, never bare quoting.** Write the successor's first instruction to \`openspec/changes/<name>/handoff/relay-prompt.txt\`:
+
+\`\`\`
+You are the successor session (generation <n+1>) for change <name>.
+1. Read openspec/changes/<name>/handoff/lead-<n>.md — it is your predecessor's distillate; do not re-litigate its decisions.
+2. Run: openspec pipeline resume <name> --json   (add --store <id> if the change lives in a store)
+3. Continue from the document's "Next action". Workers from the previous session are gone (dead agentIds) — re-create any you need via the resume ladder (handoff doc, then recorded transcript, then change directory).
+\`\`\`
+
+NEVER inline the prompt into the spawn command as a bare quoted string: nested shell parsing strips the quotes and the successor receives only the text up to the first space (observed live — a non-ASCII prompt truncated to its first two characters). The file is the platform-neutral channel; on Windows, PowerShell \`-EncodedCommand\` (base64) is an equally safe shortcut.
+
+**Spawn a visible interactive window** (never headless — the user must be able to watch and take over), from the project root:
+
+- Windows (verified): build the command string \`claude "$(Get-Content -Raw '<abs path to relay-prompt.txt>')"\`, base64-encode it (\`[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))\`), then \`Start-Process powershell -WorkingDirectory '<project root>' -ArgumentList '-NoProfile','-NoExit','-EncodedCommand',$enc\`.
+- macOS: write a small executable \`relay.command\` script containing \`cd '<project root>' && claude "$(cat '<abs path to relay-prompt.txt>')"\`, then \`open relay.command\`.
+- Linux: \`gnome-terminal -- bash -lc 'cd <project root> && claude "$(cat <abs path>)"'\` (or \`konsole -e\` with the same body).
+
+**Fallback is always manual.** If the terminal form is unknown or the spawn errors, print the project root, the relay-prompt file path, and the exact launch command for the user to run themselves — never retry headless.
+
+**After the spawn**, end your turn: tell the user the successor window is up and this session can be closed. Do not keep working in the predecessor.
 
 ## Worker-level use (directed by the orchestration playbook)
 
@@ -70,7 +98,8 @@ Sections with nothing to say state "none" rather than being dropped — an expli
 
 - Never overwrite an existing handoff document; numbering is append-only.
 - The document must not contradict the blackboard — if tasks.md is stale, fix tasks.md rather than describing the divergence.
-- Do not paste large code/diff bodies into the document; point at files and line ranges instead.`;
+- Do not paste large code/diff bodies into the document; point at files and line ranges instead.
+- Relay only with user authorization, only below the generation cap, and only after the document and run-state are on disk; bootstrap prompts travel via file indirection or \`-EncodedCommand\`, never bare quoted strings.`;
 
 export function getHandoffSkillTemplate(): SkillTemplate {
   return {

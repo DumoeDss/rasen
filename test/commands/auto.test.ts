@@ -47,6 +47,12 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('Tier C');
     });
 
+    it('pre-flight offers automatic session relay alongside continue/manual', () => {
+      expect(skillText).toContain('automatic relay now');
+      expect(skillText).toContain('Step H.7');
+      expect(skillText).toContain('/opsx:handoff');
+    });
+
     it('defaults to the small-feature pipeline (no auto-escalation)', () => {
       expect(skillText).toContain('default = small-feature');
       expect(skillText.toLowerCase()).toContain('do not auto-escalate');

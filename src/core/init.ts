@@ -809,6 +809,12 @@ export class InitCommand {
     console.log('  Add to .claude/settings.json to detect destructive commands:');
     console.log(chalk.dim('  "hooks": { "PreToolUse": [{ "type": "command", "command": "bash hooks/safety-check.sh" }] }'));
 
+    // Compact recovery hook configuration hint
+    console.log();
+    console.log(chalk.bold('Compact Recovery Hook (optional):'));
+    console.log('  Add to .claude/settings.json to re-anchor on handoff distillates after a compaction:');
+    console.log(chalk.dim('  "hooks": { "SessionStart": [{ "matcher": "compact", "hooks": [{ "type": "command", "command": "bash hooks/compact-recovery.sh" }] }] }'));
+
     // Links
     console.log();
     console.log(`Learn more: ${chalk.cyan('https://github.com/Fission-AI/OpenSpec')}`);

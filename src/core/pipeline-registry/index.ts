@@ -74,6 +74,7 @@ export {
   stageWorkers,
   stagesWithStatus,
   latestStageHandoffs,
+  sessionHandoffGeneration,
   type RunState,
   type RunStateStage,
   type RunStateWorker,
