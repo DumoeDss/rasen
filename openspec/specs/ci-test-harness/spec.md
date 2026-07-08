@@ -1,4 +1,10 @@
-## ADDED Requirements
+# ci-test-harness Specification
+
+## Purpose
+
+This spec defines the cross-platform CI test matrix and the hardened CLI-spawn test harness that keeps Windows test runs from hanging or leaking processes. It governs `.github/workflows/ci.yml`'s PR/merge-group matrix, the `runCLI` test helper (`test/helpers/run-cli.ts`), global vitest teardown, and the retrying temp-directory cleanup helper (`test/helpers/temp-cleanup.ts`) used across CLI e2e/command tests. The spec exists to make Windows CLI-spawning tests reliable: bounded per-OS vitest workers, guaranteed process-tree termination on timeout, telemetry disabled in spawned CLIs, and retrying cleanup for transient locked-handle errors.
+
+## Requirements
 
 ### Requirement: Cross-Platform Test Matrix on Pull Requests
 
