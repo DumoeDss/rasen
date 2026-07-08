@@ -31,6 +31,11 @@ binding = "ASSETS"
 directory = "./admin"
 run_worker_first = true
 not_found_handling = "none"
+# html_handling MUST be "none": the Worker maps /admin -> /index.html on this
+# binding, and the default "auto-trailing-slash" canonicalizes /index.html with
+# a 307 redirect to / — bouncing authenticated users onto the POST-only ingest
+# root (405). "none" serves the file exactly as requested.
+html_handling = "none"
 
 # Cloudflare Access config. Empty = FAIL-CLOSED: admin paths (/admin*, /api/admin*)
 # return 403 on every host until BOTH are backfilled, so an un-provisioned deploy
