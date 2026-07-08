@@ -1,3 +1,5 @@
+> Forked from OpenSpec (MIT) by Fission-AI — independently maintained by DumoeDss, not affiliated with Fission-AI.
+
 <p align="center">
   <a href="https://github.com/Fission-AI/OpenSpec">
     <picture>
@@ -8,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Fission-AI/OpenSpec/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fission-AI/OpenSpec/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/DumoeDss/OpenSpec/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/OpenSpec/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://www.npmjs.com/package/@fission-ai/openspec"><img alt="npm version" src="https://img.shields.io/npm/v/@fission-ai/openspec?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://discord.gg/YctCnvvshC"><img alt="Discord" src="https://img.shields.io/discord/1411657095639601154?style=flat-square&logo=discord&logoColor=white&label=Discord&suffix=%20online" /></a>
@@ -61,6 +63,42 @@ What this fork adds:
 - **Safety & recovery hooks** — `safety-check.sh` (guards destructive commands) and `compact-recovery.sh` (re-anchors after compaction).
 
 > Tunables and defaults for `handoff` / `reuse` / capability tiers are documented in [docs/opsx-workflow-guide.md §3.7](docs/opsx-workflow-guide.md#37-context-awareness-and-handoff-openspec-agent-context--opsxhandoff). Built-in pipelines live under [`pipelines/`](pipelines/).
+
+## Install (fork release)
+
+This fork is distributed as a packaged tarball from [GitHub Releases](https://github.com/DumoeDss/OpenSpec/releases), not from npm. It is **aligned with upstream v1.5.0** and versioned independently starting at `0.1.0`.
+
+**Requires Node.js `>=20.19.0`** (per `engines.node`). The chrome-use tooling additionally needs **Node 22+**.
+
+> [!WARNING]
+> This fork installs the same `openspec` global binary as upstream. npm's global bin is first-installer-wins, so **uninstall any upstream `openspec` first** to avoid a conflict:
+>
+> ```bash
+> npm uninstall -g @fission-ai/openspec
+> ```
+
+Download the `.tgz` asset from the [latest release](https://github.com/DumoeDss/OpenSpec/releases/latest), then install it globally:
+
+```bash
+# after downloading the release asset into the current directory
+npm install -g ./fission-ai-openspec-0.1.0.tgz
+```
+
+Then initialize in your project:
+
+```bash
+cd your-project
+openspec init
+```
+
+### chrome-use prerequisites
+
+The `chrome-use` expert drives your everyday Chrome over the Chrome DevTools Protocol. To use it you need:
+
+- **Google Chrome** installed.
+- **Node.js 22 or newer** (the CDP proxy tooling requires it).
+- Chrome started with remote debugging enabled — open `chrome://inspect/#remote-debugging` (or launch Chrome with `--remote-debugging-port`).
+- On the **first CDP connection**, Chrome shows an **"Allow"** permission popup — approve it to let the tooling attach.
 
 ## See it in action
 
