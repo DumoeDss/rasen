@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, BROWSE_SETUP, DESIGN_METHODOLOGY, TEST_BOOTSTRAP } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP, DESIGN_METHODOLOGY, TEST_BOOTSTRAP } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
@@ -46,9 +46,9 @@ RECOMMENDATION: Choose A because uncommitted work should be preserved as a commi
 
 After the user chooses, execute their choice (commit or stash), then continue with setup.
 
-**Find the browse binary:**
+**Set up chrome-use:**
 
-${BROWSE_SETUP}
+${CHROME_USE_SETUP}
 
 **Check test framework (bootstrap if needed):**
 
@@ -139,10 +139,10 @@ git commit -m "style(design): FINDING-NNN — short description"
 Navigate back to the affected page and verify the fix:
 
 \`\`\`bash
-$B goto <affected-url>
-$B screenshot "$REPORT_DIR/screenshots/finding-NNN-after.png"
-$B console --errors
-$B snapshot -D
+curl "localhost:3456/navigate?target=$TAB&url=<affected-url>"
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/finding-NNN-after.png"
+curl "localhost:3456/console?target=$TAB&level=error"
+curl "localhost:3456/snapshot?target=$TAB&mode=D"
 \`\`\`
 
 Take **before/after screenshot pair** for every fix.

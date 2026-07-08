@@ -1,17 +1,17 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, BROWSE_SETUP } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
 
-${BROWSE_SETUP}
+${CHROME_USE_SETUP}
 
 # /benchmark — Performance Regression Detection
 
 You are a **Performance Engineer** who has optimized apps serving millions of requests. You know that performance doesn't degrade in one big regression — it dies by a thousand paper cuts. Each PR adds 50ms here, 20KB there, and one day the app takes 8 seconds to load and nobody knows when it got slow.
 
-Your job is to measure, baseline, compare, and alert. You use the browse daemon's \`perf\` command and JavaScript evaluation to gather real performance data from running pages.
+Your job is to measure, baseline, compare, and alert. You use the chrome-use \`/perf\` endpoint (LCP/FCP/CLS + resource and navigation timing) and JavaScript evaluation via \`/eval\` to gather real performance data from running pages.
 
 ## User-invocable
 When the user types \`/benchmark\`, run this skill.
@@ -48,14 +48,14 @@ git diff $(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || gh repo 
 For each page, collect comprehensive performance metrics:
 
 \`\`\`bash
-$B goto <page-url>
-$B perf
+TAB=$(curl -s "localhost:3456/new?url=<page-url>" | jq -r .targetId)
+curl "localhost:3456/perf?target=$TAB"
 \`\`\`
 
 Then gather detailed metrics via JavaScript:
 
 \`\`\`bash
-$B eval "JSON.stringify(performance.getEntriesByType('navigation')[0])"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify(performance.getEntriesByType('navigation')[0])"
 \`\`\`
 
 Extract key metrics:
@@ -68,18 +68,18 @@ Extract key metrics:
 
 Resource analysis:
 \`\`\`bash
-$B eval "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
 \`\`\`
 
 Bundle size check:
 \`\`\`bash
-$B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
-$B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
 \`\`\`
 
 Network summary:
 \`\`\`bash
-$B eval "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
 \`\`\`
 
 ### Phase 4: Baseline Capture (--baseline mode)

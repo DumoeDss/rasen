@@ -2,15 +2,14 @@
  * Shared instruction blocks for expert skill templates.
  *
  * These constants are the single source of truth for prose blocks interpolated
- * into the expert template strings in `experts/*.ts` (via `${BLOCK}`). They were
- * migrated verbatim from the retired `scripts/gen-skill-docs.ts` placeholder
- * resolvers, resolved for the claude host (paths `.openspec/skills`,
- * `~/.openspec/browse/dist`). Freshness is pinned by the parity golden-master in
+ * into the expert template strings in `experts/*.ts` (via `${BLOCK}`). Freshness
+ * is pinned by the parity golden-master in
  * `test/core/templates/skill-templates-parity.test.ts`.
  *
- * `SNAPSHOT_FLAGS` and `COMMAND_REFERENCE` are frozen snapshots of tables the
- * generator derived from `browse/src/{snapshot,commands}`; they change rarely and
- * are kept static to avoid coupling the main build to the vendored bun package.
+ * The browser-driving blocks (`CHROME_USE_SETUP`, `CHROME_USE_SNAPSHOT`,
+ * `CHROME_USE_ENDPOINTS`, and the methodology blocks) instruct the reader to drive
+ * the vendored chrome-use CDP proxy over its curl endpoints at `localhost:3456`;
+ * endpoint names/params mirror `skills/experts/chrome-use/references/cdp-api.md`.
  */
 
 export const PREAMBLE = `## Preamble (run first)
@@ -98,150 +97,111 @@ When you are in plan mode and about to call ExitPlanMode:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`;
 
-export const BROWSE_SETUP = `## SETUP (run this check BEFORE any browse command)
+export const CHROME_USE_SETUP = `## SETUP (run this BEFORE any chrome-use command)
+
+chrome-use drives your everyday Chrome over the Chrome DevTools Protocol via a
+sticky local proxy on \`localhost:3456\`. Verify prerequisites and start the proxy:
 
 \`\`\`bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.openspec/skills/browse/dist/browse" ] && B="$_ROOT/.openspec/skills/browse/dist/browse"
-[ -z "$B" ] && B=~/.openspec/browse/dist/browse
-if [ -x "$B" ]; then
-  echo "READY: $B"
-else
-  echo "NEEDS_SETUP"
-fi
+node "\${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 \`\`\`
 
-If \`NEEDS_SETUP\`:
-1. Tell the user: "Browse needs a one-time build (~10 seconds). OK to proceed?" Then STOP and wait.
-2. Run: \`cd <SKILL_DIR> && ./setup\`
-3. If \`bun\` is not installed: \`curl -fsSL https://bun.sh/install | bash\``;
+This checks Node 22+, detects Chrome's debug port, and starts the proxy if it is
+not already running. Expect \`node: ok\`, \`chrome: ok (port NNNN)\`, \`proxy: ready\`.
 
-// Frozen snapshot of browse command metadata (was generated from browse/src).
-export const SNAPSHOT_FLAGS = `The snapshot is your primary tool for understanding and interacting with pages.
+- **Chrome not connected?** Open \`chrome://inspect/#remote-debugging\` and tick
+  **Allow remote debugging** (Chrome must already be running).
+- **First connection** triggers a one-time Chrome **"Allow"** popup — if
+  \`check-deps.mjs\` hangs on \`proxy: connecting...\`, click Allow.
+- **Sticky proxy — never stop it.** Restarting forces re-authorizing CDP; reuse the
+  running instance across every command.
 
-\`\`\`
--i        --interactive           Interactive elements only (buttons, links, inputs) with @e refs
--c        --compact               Compact (no empty structural nodes)
--d <N>    --depth                 Limit tree depth (0 = root only, default: unlimited)
--s <sel>  --selector              Scope to CSS selector
--D        --diff                  Unified diff against previous snapshot (first call stores baseline)
--a        --annotate              Annotated screenshot with red overlay boxes and ref labels
--o <path> --output                Output path for annotated screenshot (default: <temp>/browse-annotated.png)
--C        --cursor-interactive    Cursor-interactive elements (@c refs — divs with pointer, onclick)
-\`\`\`
+Then open a background tab and reuse its \`targetId\` on all subsequent calls:
 
-All flags can be combined freely. \`-o\` only applies when \`-a\` is also used.
-Example: \`$B snapshot -i -a -C -o /tmp/annotated.png\`
-
-**Ref numbering:** @e refs are assigned sequentially (@e1, @e2, ...) in tree order.
-@c refs from \`-C\` are numbered separately (@c1, @c2, ...).
-
-After snapshot, use @refs as selectors in any command:
 \`\`\`bash
-$B click @e3       $B fill @e4 "value"     $B hover @e1
-$B html @e2        $B css @e5 "color"      $B attrs @e6
-$B click @c1       # cursor-interactive ref (from -C)
+TAB=$(curl -s "localhost:3456/new?url=about:blank" | jq -r .targetId)
 \`\`\`
 
-**Output format:** indented accessibility tree with @ref IDs, one element per line.
-\`\`\`
-  @e1 [heading] "Welcome" [level=1]
-  @e2 [textbox] "Email"
-  @e3 [button] "Submit"
+Tabs are isolated per \`targetId\` (the shared proxy serves multiple sub-agents).
+Close yours when done: \`curl "localhost:3456/close?target=$TAB"\`.`;
+
+export const CHROME_USE_SNAPSHOT = `\`/snapshot\` is your primary tool for understanding and interacting with pages. It
+returns a serialized interactive DOM tree — each element with a stable \`@ref\`, an
+ARIA \`role\`, its \`name\`/text, and its \`tag\`.
+
+\`\`\`bash
+curl "localhost:3456/snapshot?target=$TAB"            # mode=i (default): interactive elements
+curl "localhost:3456/snapshot?target=$TAB&mode=C"     # + non-ARIA clickables (@c refs)
+curl "localhost:3456/snapshot?target=$TAB&mode=D"     # diff vs this tab's previous snapshot
 \`\`\`
 
-Refs are invalidated on navigation — run \`snapshot\` again after \`goto\`.`;
+**Modes:**
+- \`mode=i\` — interactive elements only (links, buttons, inputs, and anything with \`role\`/\`onclick\`/\`tabindex\`); assigned \`@e\` refs.
+- \`mode=C\` — also includes non-ARIA clickables (divs with \`cursor:pointer\`, \`onclick\`, or \`tabindex\`); assigned \`@c\` refs. Use it for tricky UIs the accessibility tree misses.
+- \`mode=D\` — reports what changed (added/removed) since the last snapshot of this \`targetId\`. Snapshot before an action, then \`mode=D\` after, to see exactly what changed.
 
-// Frozen snapshot of browse command metadata (was generated from browse/src).
-export const COMMAND_REFERENCE = `### Navigation
-| Command | Description |
-|---------|-------------|
-| \`back\` | History back |
-| \`forward\` | History forward |
-| \`goto <url>\` | Navigate to URL |
-| \`reload\` | Reload page |
-| \`url\` | Print current URL |
+**Interacting with what you found:** the snapshot is an inventory — act on elements by
+CSS selector via \`/click\`, \`/clickAt\`, or \`/eval\`:
+\`\`\`bash
+curl -sX POST "localhost:3456/click?target=$TAB" -d 'button[type=submit]'
+curl -sX POST "localhost:3456/eval?target=$TAB"  -d 'document.querySelector("#email").value="user@test.com"'
+\`\`\`
+
+The diff baseline is per-tab and in-memory (reset if the proxy restarts). Re-snapshot
+after navigation — the DOM is rebuilt.`;
+
+export const CHROME_USE_ENDPOINTS = `All endpoints are HTTP calls against the sticky proxy at \`localhost:3456\`; pass your
+tab as \`target=$TAB\`. See \`references/cdp-api.md\` (beside this skill) for the full
+list and every parameter.
+
+### Navigation
+| Endpoint | Description |
+|----------|-------------|
+| \`GET /new?url=<url>\` | Open a background tab (auto-waits load); returns \`{targetId}\` |
+| \`GET /navigate?target=$TAB&url=<url>\` | Navigate current tab (auto-waits); add \`&hard_reload=true\` for a no-cache reload |
+| \`GET /back?target=$TAB\` | History back |
+| \`GET /info?target=$TAB\` | \`{title, url, ready}\` (current URL / readiness) |
+| \`GET /close?target=$TAB\` | Close the tab |
 
 ### Reading
-| Command | Description |
-|---------|-------------|
-| \`accessibility\` | Full ARIA tree |
-| \`forms\` | Form fields as JSON |
-| \`html [selector]\` | innerHTML of selector (throws if not found), or full page HTML if no selector given |
-| \`links\` | All links as "text → href" |
-| \`text\` | Cleaned page text |
+| Endpoint | Description |
+|----------|-------------|
+| \`GET /text?target=$TAB&selector=<sel>\` | \`{text, value}\` — innerText + input value |
+| \`GET /attribute?target=$TAB&selector=<sel>&name=<attr>\` | One attribute value |
+| \`POST /eval?target=$TAB\` (body = JS) | Run JS (supports await); returns \`{value}\`. Use for link/form extraction, e.g. map \`document.links\` |
+| \`GET /resources?target=$TAB[&type=&contains=]\` | PerformanceResourceTiming entries |
+| \`GET /iframes?target=$TAB\` | Cross-origin iframe targets (attach independently) |
 
 ### Interaction
-| Command | Description |
-|---------|-------------|
-| \`click <sel>\` | Click element |
-| \`cookie <name>=<value>\` | Set cookie on current page domain |
-| \`cookie-import <json>\` | Import cookies from JSON file |
-| \`cookie-import-browser [browser] [--domain d]\` | Import cookies from Comet, Chrome, Arc, Brave, or Edge (opens picker, or use --domain for direct import) |
-| \`dialog-accept [text]\` | Auto-accept next alert/confirm/prompt. Optional text is sent as the prompt response |
-| \`dialog-dismiss\` | Auto-dismiss next dialog |
-| \`fill <sel> <val>\` | Fill input |
-| \`header <name>:<value>\` | Set custom request header (colon-separated, sensitive values auto-redacted) |
-| \`hover <sel>\` | Hover element |
-| \`press <key>\` | Press key — Enter, Tab, Escape, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp, PageDown, or modifiers like Shift+Enter |
-| \`scroll [sel]\` | Scroll element into view, or scroll to page bottom if no selector |
-| \`select <sel> <val>\` | Select dropdown option by value, label, or visible text |
-| \`type <text>\` | Type into focused element |
-| \`upload <sel> <file> [file2...]\` | Upload file(s) |
-| \`useragent <string>\` | Set user agent |
-| \`viewport <WxH>\` | Set viewport size |
-| \`wait <sel|--networkidle|--load>\` | Wait for element, network idle, or page load (timeout: 15s) |
+| Endpoint | Description |
+|----------|-------------|
+| \`POST /click?target=$TAB\` (body = CSS sel) | JS-layer \`el.click()\` |
+| \`POST /clickAt?target=$TAB[&visible=true&nth=N&text=...]\` (body = CSS sel) | Real mouse click, filterable by visibility/index/text |
+| \`POST /eval?target=$TAB\` (body = JS) | Fill / select / type via \`document.querySelector(...).value=...\` (no dedicated /fill endpoint) |
+| \`POST /setFiles?target=$TAB\` (JSON \`{selector,files[]}\`) | Set a file input's paths (bypasses the OS dialog) |
+| \`GET /scroll?target=$TAB&y=N&direction=down\\|up\\|top\\|bottom\` | Scroll (waits ~800ms for lazy load) |
+| \`GET /wait?target=$TAB&selector=<sel>[&visible=true&timeout=10000]\` | Wait for an element; \`POST\` body = JS to wait for a truthy expression |
 
 ### Inspection
-| Command | Description |
-|---------|-------------|
-| \`attrs <sel|@ref>\` | Element attributes as JSON |
-| \`console [--clear|--errors]\` | Console messages (--errors filters to error/warning) |
-| \`cookies\` | All cookies as JSON |
-| \`css <sel> <prop>\` | Computed CSS value |
-| \`dialog [--clear]\` | Dialog messages |
-| \`eval <file>\` | Run JavaScript from file and return result as string (path must be under /tmp or cwd) |
-| \`is <prop> <sel>\` | State check (visible/hidden/enabled/disabled/checked/editable/focused) |
-| \`js <expr>\` | Run JavaScript expression and return result as string |
-| \`network [--clear]\` | Network requests |
-| \`perf\` | Page load timings |
-| \`storage [set k v]\` | Read all localStorage + sessionStorage as JSON, or set <key> <value> to write localStorage |
+| Endpoint | Description |
+|----------|-------------|
+| \`GET /console/enable?target=$TAB\` → \`GET /console?target=$TAB[&level=error&contains=&since=&limit=]\` | Console messages / exceptions / logs |
+| \`GET /cookies?target=$TAB\` · \`POST /cookies?target=$TAB\` (JSON) | Read / write cookies |
+| \`GET /localStorage?target=$TAB[&key=]\` · \`POST /localStorage?target=$TAB\` (JSON) | Read / write localStorage |
+| \`GET /perf?target=$TAB\` | LCP / FCP / CLS + resource timing + nav timing |
+| \`GET /network/enable?target=$TAB[&body=true]\`, \`/network/events\`, \`/network/wait\`, \`/network/body\` | Browser-layer network capture |
 
 ### Visual
-| Command | Description |
-|---------|-------------|
-| \`diff <url1> <url2>\` | Text diff between pages |
-| \`pdf [path]\` | Save as PDF |
-| \`responsive [prefix]\` | Screenshots at mobile (375x812), tablet (768x1024), desktop (1280x720). Saves as {prefix}-mobile.png etc. |
-| \`screenshot [--viewport] [--clip x,y,w,h] [selector|@ref] [path]\` | Save screenshot (supports element crop via CSS/@ref, --clip region, --viewport) |
+| Endpoint | Description |
+|----------|-------------|
+| \`GET /screenshot?target=$TAB&file=<path>[&full=true&format=png\\|jpeg&retries=N]\` | Save a screenshot (\`full=true\` = beyond viewport) |
+| \`GET /viewport?target=$TAB&width=W&height=H[&scale=S&mobile=true]\` | Device viewport emulation — does NOT resize the real window |
+| \`GET /responsive?target=$TAB[&screenshot=true&dir=<dir>]\` | Emulate mobile/tablet/desktop breakpoints; optional per-breakpoint screenshots |
 
 ### Snapshot
-| Command | Description |
-|---------|-------------|
-| \`snapshot [flags]\` | Accessibility tree with @e refs for element selection. Flags: -i interactive only, -c compact, -d N depth limit, -s sel scope, -D diff vs previous, -a annotated screenshot, -o path output, -C cursor-interactive @c refs |
-
-### Meta
-| Command | Description |
-|---------|-------------|
-| \`chain\` | Run commands from JSON stdin. Format: [["cmd","arg1",...],...] |
-
-### Tabs
-| Command | Description |
-|---------|-------------|
-| \`closetab [id]\` | Close tab |
-| \`newtab [url]\` | Open new tab |
-| \`tab <id>\` | Switch to tab |
-| \`tabs\` | List open tabs |
-
-### Server
-| Command | Description |
-|---------|-------------|
-| \`handoff [message]\` | Open visible Chrome at current page for user takeover |
-| \`restart\` | Restart server |
-| \`resume\` | Re-snapshot after user takeover, return control to AI |
-| \`status\` | Health check |
-| \`stop\` | Shutdown server |`;
+| Endpoint | Description |
+|----------|-------------|
+| \`GET /snapshot?target=$TAB[&mode=i\\|C\\|D]\` | Interactive DOM tree with @refs: \`i\` interactive, \`C\` +clickables, \`D\` diff vs previous |`;
 
 export const BASE_BRANCH_DETECT = `## Step 0: Detect base branch
 
@@ -339,16 +299,18 @@ This is the **primary mode** for developers verifying their work. When the user 
    - View/template/component files → which pages render them
    - Model/service files → which pages use those models (check controllers that reference them)
    - CSS/style files → which pages include those stylesheets
-   - API endpoints → test them directly with \`$B js "await fetch('/api/...')"\`
+   - API endpoints → test them directly with \`curl -sX POST "localhost:3456/eval?target=$TAB" -d "await fetch('/api/...').then(r => r.status)"\`
    - Static pages (markdown, HTML) → navigate to them directly
 
    **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
 
 3. **Detect the running app** — check common local dev ports:
    \`\`\`bash
-   $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \\
-   $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \\
-   $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
+   for PORT in 3000 4000 8080; do
+     TAB=$(curl -s "localhost:3456/new?url=http://localhost:$PORT" | jq -r .targetId)
+     [ "$(curl -s "localhost:3456/info?target=$TAB" | jq -r .ready)" = "complete" ] \\
+       && { echo "Found app on :$PORT (tab $TAB)"; break; }
+   done
    \`\`\`
    If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
 
@@ -357,7 +319,7 @@ This is the **primary mode** for developers verifying their work. When the user 
    - Take a screenshot
    - Check console for errors
    - If the change was interactive (forms, buttons, flows), test the interaction end-to-end
-   - Use \`snapshot -D\` before and after actions to verify the change had the expected effect
+   - Use \`/snapshot?mode=D\` before and after actions to verify the change had the expected effect
 
 5. **Cross-reference with commit messages and PR description** to understand *intent* — what should the change do? Verify it actually does that.
 
@@ -385,7 +347,7 @@ Run full mode, then load \`baseline.json\` from a previous run. Diff: which issu
 
 ### Phase 1: Initialize
 
-1. Find browse binary (see Setup above)
+1. Run SETUP — \`check-deps.mjs\` and open a tab \`$TAB\` via \`/new\` (see Setup above)
 2. Create output directories
 3. Copy report template from \`qa/templates/qa-report-template.md\` to output dir
 4. Start timer for duration tracking
@@ -395,19 +357,19 @@ Run full mode, then load \`baseline.json\` from a previous run. Diff: which issu
 **If the user specified auth credentials:**
 
 \`\`\`bash
-$B goto <login-url>
-$B snapshot -i                    # find the login form
-$B fill @e3 "user@example.com"
-$B fill @e4 "[REDACTED]"         # NEVER include real passwords in report
-$B click @e5                      # submit
-$B snapshot -D                    # verify login succeeded
+curl "localhost:3456/navigate?target=$TAB&url=<login-url>"
+curl "localhost:3456/snapshot?target=$TAB&mode=i"                # find the login form
+curl -sX POST "localhost:3456/eval?target=$TAB" -d 'document.querySelector("#email").value="user@example.com"'
+curl -sX POST "localhost:3456/eval?target=$TAB" -d 'document.querySelector("#password").value="[REDACTED]"'   # NEVER include real passwords in report
+curl -sX POST "localhost:3456/click?target=$TAB" -d '#submit'    # submit
+curl "localhost:3456/snapshot?target=$TAB&mode=D"                # verify login succeeded
 \`\`\`
 
 **If the user provided a cookie file:**
 
 \`\`\`bash
-$B cookie-import cookies.json
-$B goto <target-url>
+curl -sX POST "localhost:3456/cookies?target=$TAB" -d @cookies.json
+curl "localhost:3456/navigate?target=$TAB&url=<target-url>"
 \`\`\`
 
 **If 2FA/OTP is required:** Ask the user for the code and wait.
@@ -419,10 +381,11 @@ $B goto <target-url>
 Get a map of the application:
 
 \`\`\`bash
-$B goto <target-url>
-$B snapshot -i -a -o "$REPORT_DIR/screenshots/initial.png"
-$B links                          # map navigation structure
-$B console --errors               # any errors on landing?
+curl "localhost:3456/navigate?target=$TAB&url=<target-url>"
+curl "localhost:3456/snapshot?target=$TAB&mode=i"                                          # interactive inventory
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/initial.png&full=true"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d '[...document.links].map(a => a.textContent.trim()+" -> "+a.href)'   # map navigation
+curl "localhost:3456/console/enable?target=$TAB"; curl "localhost:3456/console?target=$TAB&level=error"                 # errors on landing?
 \`\`\`
 
 **Detect framework** (note in report metadata):
@@ -431,16 +394,17 @@ $B console --errors               # any errors on landing?
 - \`wp-content\` in URLs → WordPress
 - Client-side routing with no page reloads → SPA
 
-**For SPAs:** The \`links\` command may return few results because navigation is client-side. Use \`snapshot -i\` to find nav elements (buttons, menu items) instead.
+**For SPAs:** the \`document.links\` extraction may return few results because navigation is client-side. Use \`/snapshot?mode=i\` to find nav elements (buttons, menu items) instead.
 
 ### Phase 4: Explore
 
 Visit pages systematically. At each page:
 
 \`\`\`bash
-$B goto <page-url>
-$B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
-$B console --errors
+curl "localhost:3456/navigate?target=$TAB&url=<page-url>"
+curl "localhost:3456/snapshot?target=$TAB&mode=i"
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/page-name.png&full=true"
+curl "localhost:3456/console?target=$TAB&level=error"
 \`\`\`
 
 Then follow the **per-page exploration checklist** (see \`qa/references/issue-taxonomy.md\`):
@@ -453,9 +417,9 @@ Then follow the **per-page exploration checklist** (see \`qa/references/issue-ta
 6. **Console** — Any new JS errors after interactions?
 7. **Responsiveness** — Check mobile viewport if relevant:
    \`\`\`bash
-   $B viewport 375x812
-   $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
-   $B viewport 1280x720
+   curl "localhost:3456/viewport?target=$TAB&width=375&height=812&mobile=true"
+   curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/page-mobile.png"
+   curl "localhost:3456/viewport?target=$TAB&width=1280&height=720"
    \`\`\`
 
 **Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
@@ -472,14 +436,14 @@ Document each issue **immediately when found** — don't batch them.
 1. Take a screenshot before the action
 2. Perform the action
 3. Take a screenshot showing the result
-4. Use \`snapshot -D\` to show what changed
+4. Use \`/snapshot?mode=D\` to show what changed
 5. Write repro steps referencing screenshots
 
 \`\`\`bash
-$B screenshot "$REPORT_DIR/screenshots/issue-001-step-1.png"
-$B click @e5
-$B screenshot "$REPORT_DIR/screenshots/issue-001-result.png"
-$B snapshot -D
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-001-step-1.png"
+curl -sX POST "localhost:3456/click?target=$TAB" -d '#submit'
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-001-result.png"
+curl "localhost:3456/snapshot?target=$TAB&mode=D"
 \`\`\`
 
 **Static bugs** (typos, layout issues, missing images):
@@ -487,7 +451,7 @@ $B snapshot -D
 2. Describe what's wrong
 
 \`\`\`bash
-$B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-002.png&full=true"
 \`\`\`
 
 **Write each issue to the report immediately** using the template format from \`qa/templates/qa-report-template.md\`.
@@ -578,7 +542,7 @@ Minimum 0 per category.
 - Check for mixed content warnings (common with WP)
 
 ### General SPA (React, Vue, Angular)
-- Use \`snapshot -i\` for navigation — \`links\` command misses client-side routes
+- Use \`/snapshot?mode=i\` for navigation — the \`document.links\` extraction misses client-side routes
 - Check for stale state (navigate away and back — does data refresh?)
 - Test browser back/forward — does the app handle history correctly?
 - Check for memory leaks (monitor console after extended use)
@@ -596,8 +560,8 @@ Minimum 0 per category.
 7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
 9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
-10. **Use \`snapshot -C\` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
-11. **Show screenshots to the user.** After every \`$B screenshot\`, \`$B snapshot -a -o\`, or \`$B responsive\` command, use the Read tool on the output file(s) so the user can see them inline. For \`responsive\` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
+10. **Use \`/snapshot?mode=C\` for tricky UIs.** Finds clickable divs (@c refs) that the accessibility tree misses.
+11. **Show screenshots to the user.** After every \`/screenshot\` or \`/responsive\` call that writes a file, use the Read tool on the output file(s) so the user can see them inline. For \`/responsive\` (up to 3 files), Read all of them. This is critical — without it, screenshots are invisible to the user.
 12. **Never refuse to use the browser.** When the user invokes /qa or /qa-only, they are requesting browser-based testing. Never suggest evals, unit tests, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.`;
 
 export const DESIGN_METHODOLOGY = `## Modes
@@ -628,7 +592,7 @@ Run full audit, then load previous \`design-baseline.json\`. Compare: per-catego
 The most uniquely designer-like output. Form a gut reaction before analyzing anything.
 
 1. Navigate to the target URL
-2. Take a full-page desktop screenshot: \`$B screenshot "$REPORT_DIR/screenshots/first-impression.png"\`
+2. Take a full-page desktop screenshot: \`curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/first-impression.png&full=true"\`
 3. Write the **First Impression** using this structured critique format:
    - "The site communicates **[what]**." (what it says at a glance — competence? playfulness? confusion?)
    - "I notice **[observation]**." (what stands out, positive or negative — be specific)
@@ -645,19 +609,19 @@ Extract the actual design system the site uses (not what a DESIGN.md says, but w
 
 \`\`\`bash
 # Fonts in use (capped at 500 elements to avoid timeout)
-$B js "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).map(e => getComputedStyle(e).fontFamily))])"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).map(e => getComputedStyle(e).fontFamily))])"
 
 # Color palette in use
-$B js "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).flatMap(e => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]).filter(c => c !== 'rgba(0, 0, 0, 0)'))])"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).flatMap(e => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]).filter(c => c !== 'rgba(0, 0, 0, 0)'))])"
 
 # Heading hierarchy
-$B js "JSON.stringify([...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => ({tag:h.tagName, text:h.textContent.trim().slice(0,50), size:getComputedStyle(h).fontSize, weight:getComputedStyle(h).fontWeight})))"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => ({tag:h.tagName, text:h.textContent.trim().slice(0,50), size:getComputedStyle(h).fontSize, weight:getComputedStyle(h).fontWeight})))"
 
 # Touch target audit (find undersized interactive elements)
-$B js "JSON.stringify([...document.querySelectorAll('a,button,input,[role=button]')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && (r.width<44||r.height<44)}).map(e => ({tag:e.tagName, text:(e.textContent||'').trim().slice(0,30), w:Math.round(e.getBoundingClientRect().width), h:Math.round(e.getBoundingClientRect().height)})).slice(0,20))"
+curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...document.querySelectorAll('a,button,input,[role=button]')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && (r.width<44||r.height<44)}).map(e => ({tag:e.tagName, text:(e.textContent||'').trim().slice(0,30), w:Math.round(e.getBoundingClientRect().width), h:Math.round(e.getBoundingClientRect().height)})).slice(0,20))"
 
-# Performance baseline
-$B perf
+# Performance baseline — LCP/FCP/CLS + resource timing
+curl "localhost:3456/perf?target=$TAB"
 \`\`\`
 
 Structure findings as an **Inferred Design System**:
@@ -675,18 +639,19 @@ After extraction, offer: *"Want me to save this as your DESIGN.md? I can lock in
 For each page in scope:
 
 \`\`\`bash
-$B goto <url>
-$B snapshot -i -a -o "$REPORT_DIR/screenshots/{page}-annotated.png"
-$B responsive "$REPORT_DIR/screenshots/{page}"
-$B console --errors
-$B perf
+curl "localhost:3456/navigate?target=$TAB&url=<url>"
+curl "localhost:3456/snapshot?target=$TAB&mode=i"
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/{page}-annotated.png&full=true"
+curl "localhost:3456/responsive?target=$TAB&screenshot=true&dir=$REPORT_DIR/screenshots"
+curl "localhost:3456/console/enable?target=$TAB"; curl "localhost:3456/console?target=$TAB&level=error"
+curl "localhost:3456/perf?target=$TAB"
 \`\`\`
 
 ### Auth Detection
 
 After the first navigation, check if the URL changed to a login-like path:
 \`\`\`bash
-$B url
+curl "localhost:3456/info?target=$TAB"
 \`\`\`
 If URL contains \`/login\`, \`/signin\`, \`/auth\`, or \`/sso\`: the site requires authentication. AskUserQuestion: "This site requires authentication. Provide a logged-in browser session (or import cookies for the domain) before continuing the audit."
 
@@ -713,7 +678,7 @@ Apply these at each page. Each finding gets an impact rating (high/medium/polish
 - Weight contrast: >=2 weights used for hierarchy
 - No blacklisted fonts (Papyrus, Comic Sans, Lobster, Impact, Jokerman)
 - If primary font is Inter/Roboto/Open Sans/Poppins → flag as potentially generic
-- \`text-wrap: balance\` or \`text-pretty\` on headings (check via \`$B css <heading> text-wrap\`)
+- \`text-wrap: balance\` or \`text-pretty\` on headings (check via \`curl -sX POST "localhost:3456/eval?target=$TAB" -d 'getComputedStyle(document.querySelector("<heading>")).textWrap'\`)
 - Curly quotes used, not straight quotes
 - Ellipsis character (\`…\`) not three dots (\`...\`)
 - \`font-variant-numeric: tabular-nums\` on number columns
@@ -773,7 +738,7 @@ Apply these at each page. Each finding gets an impact rating (high/medium/polish
 - Easing: ease-out for entering, ease-in for exiting, ease-in-out for moving
 - Duration: 50-700ms range (nothing slower unless page transition)
 - Purpose: every animation communicates something (state change, attention, spatial relationship)
-- \`prefers-reduced-motion\` respected (check: \`$B js "matchMedia('(prefers-reduced-motion: reduce)').matches"\`)
+- \`prefers-reduced-motion\` respected (check: \`curl -sX POST "localhost:3456/eval?target=$TAB" -d "matchMedia('(prefers-reduced-motion: reduce)').matches"\`)
 - No \`transition: all\` — properties listed explicitly
 - Only \`transform\` and \`opacity\` animated (not layout properties like width, height, top, left)
 
@@ -817,9 +782,9 @@ The test: would a human designer at a respected studio ever ship this?
 Walk 2-3 key user flows and evaluate the *feel*, not just the function:
 
 \`\`\`bash
-$B snapshot -i
-$B click @e3           # perform action
-$B snapshot -D          # diff to see what changed
+curl "localhost:3456/snapshot?target=$TAB&mode=i"
+curl -sX POST "localhost:3456/click?target=$TAB" -d '<selector>'   # perform action
+curl "localhost:3456/snapshot?target=$TAB&mode=D"                  # diff to see what changed
 \`\`\`
 
 Evaluate:
@@ -920,16 +885,16 @@ Tie everything to user goals and product objectives. Always suggest specific imp
 ## Important Rules
 
 1. **Think like a designer, not a QA engineer.** You care whether things feel right, look intentional, and respect the user. You do NOT just care whether things "work."
-2. **Screenshots are evidence.** Every finding needs at least one screenshot. Use annotated screenshots (\`snapshot -a\`) to highlight elements.
+2. **Screenshots are evidence.** Every finding needs at least one screenshot. Use \`/screenshot\` (add \`&full=true\` for the whole page) and pair it with a \`/snapshot\` to identify the elements involved.
 3. **Be specific and actionable.** "Change X to Y because Z" — not "the spacing feels off."
 4. **Never read source code.** Evaluate the rendered site, not the implementation. (Exception: offer to write DESIGN.md from extracted observations.)
 5. **AI Slop detection is your superpower.** Most developers can't evaluate whether their site looks AI-generated. You can. Be direct about it.
 6. **Quick wins matter.** Always include a "Quick Wins" section — the 3-5 highest-impact fixes that take <30 minutes each.
-7. **Use \`snapshot -C\` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
+7. **Use \`/snapshot?mode=C\` for tricky UIs.** Finds clickable divs (@c refs) that the accessibility tree misses.
 8. **Responsive is design, not just "not broken."** A stacked desktop layout on mobile is not responsive design — it's lazy. Evaluate whether the mobile layout makes *design* sense.
 9. **Document incrementally.** Write each finding to the report as you find it. Don't batch.
 10. **Depth over breadth.** 5-10 well-documented findings with screenshots and specific suggestions > 20 vague observations.
-11. **Show screenshots to the user.** After every \`$B screenshot\`, \`$B snapshot -a -o\`, or \`$B responsive\` command, use the Read tool on the output file(s) so the user can see them inline. For \`responsive\` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.`;
+11. **Show screenshots to the user.** After every \`/screenshot\` or \`/responsive\` call that writes a file, use the Read tool on the output file(s) so the user can see them inline. For \`/responsive\` (up to 3 files), Read all of them. This is critical — without it, screenshots are invisible to the user.`;
 
 export const DESIGN_REVIEW_LITE = `## Design Review (conditional, diff-scoped)
 
@@ -1437,12 +1402,13 @@ SKETCH_FILE="/tmp/gstack-sketch-$(date +%s).html"
 **Step 3: Render and capture**
 
 \`\`\`bash
-$B goto "file://$SKETCH_FILE"
-$B screenshot /tmp/gstack-sketch.png
+TAB=$(curl -s "localhost:3456/new?url=file://$SKETCH_FILE" | jq -r .targetId)
+curl "localhost:3456/screenshot?target=$TAB&file=/tmp/gstack-sketch.png&full=true"
 \`\`\`
 
-If \`$B\` is not available (browse binary not set up), skip the render step. Tell the
-user: "Visual sketch requires the browse binary. Run the setup script to enable it."
+If the chrome-use proxy is not available (\`check-deps.mjs\` failed), skip the render
+step. Tell the user: "Visual sketch requires chrome-use — a running Chrome with remote
+debugging. Run \`check-deps.mjs\` to enable it."
 
 **Step 4: Present and iterate**
 

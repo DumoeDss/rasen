@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, BROWSE_SETUP } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
@@ -44,11 +44,11 @@ If office-hours output exists, read it — the product context is pre-filled.
 
 If the codebase is empty and purpose is unclear, say: *"I don't have a clear picture of what you're building yet. Want to explore first with \`/office-hours\`? Once we know the product direction, we can set up the design system."*
 
-**Find the browse binary (optional — enables visual competitive research):**
+**Set up chrome-use (optional — enables visual competitive research):**
 
-${BROWSE_SETUP}
+${CHROME_USE_SETUP}
 
-If browse is not available, that's fine — visual research is optional. The skill works without it using WebSearch and your built-in design knowledge.
+If chrome-use is not available, that's fine — visual research is optional. The skill works without it using WebSearch and your built-in design knowledge.
 
 ---
 
@@ -77,21 +77,21 @@ Use WebSearch to find 5-10 products in their space. Search for:
 - "[product category] best websites 2025"
 - "best [industry] web apps"
 
-**Step 2: Visual research via browse (if available)**
+**Step 2: Visual research via chrome-use (if available)**
 
-If the browse binary is available (\`$B\` is set), visit the top 3-5 sites in the space and capture visual evidence:
+If chrome-use is available (\`check-deps.mjs\` reported \`proxy: ready\` and you have a \`$TAB\`), visit the top 3-5 sites in the space and capture visual evidence:
 
 \`\`\`bash
-$B goto "https://example-site.com"
-$B screenshot "/tmp/design-research-site-name.png"
-$B snapshot
+TAB=$(curl -s "localhost:3456/new?url=https://example-site.com" | jq -r .targetId)
+curl "localhost:3456/screenshot?target=$TAB&file=/tmp/design-research-site-name.png&full=true"
+curl "localhost:3456/snapshot?target=$TAB"
 \`\`\`
 
 For each site, analyze: fonts actually used, color palette, layout approach, spacing density, aesthetic direction. The screenshot gives you the feel; the snapshot gives you structural data.
 
-If a site blocks the headless browser or requires login, skip it and note why.
+If a site blocks automation or requires login, skip it and note why.
 
-If browse is not available, rely on WebSearch results and your built-in design knowledge — this is fine.
+If chrome-use is not available, rely on WebSearch results and your built-in design knowledge — this is fine.
 
 **Step 3: Synthesize findings**
 

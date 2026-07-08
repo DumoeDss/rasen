@@ -50,7 +50,7 @@ Off the main flow — reach for each by name when its situation comes up.
 - **\`/benchmark\`** — measure performance against a baseline.
 - **\`/cso\`** — security review from a chief-security-officer lens.
 - **\`/codex\`** — hand a task to Codex for an independent second opinion or a parallel implementation.
-- **\`/browse\`** — headless browser (real Chromium, real clicks) for scripted page interaction.
+- **\`/chrome-use\`** — drives your real Chrome over the DevTools Protocol (real login state, real clicks) for scripted page interaction, DOM snapshots, and network capture.
 
 **Security family** — guarding edits during risky work.
 
