@@ -51,10 +51,12 @@ to verify the Access JWT.
 3. Application configuration:
    - **Application name:** `openspec-telemetry admin`
    - **Session duration:** your preference (e.g. 24h).
-   - **Application domain:** subdomain `telemetry`, domain `rasen.io`, **path**
-     `admin` (so the app covers `telemetry.rasen.io/admin*`, which includes
-     `/api/admin`). Add a second domain row for the same host + path
-     `api/admin` if you want the API path listed explicitly.
+   - **Application domain:** TWO rows are REQUIRED (the Worker verifies the
+     edge-injected `Cf-Access-Jwt-Assertion` header only, and `/api/admin` is
+     NOT under the `/admin` path prefix — without the second row the panel
+     loads but every stats request returns 403):
+     - Row 1: subdomain `telemetry`, domain `rasen.io`, path `admin`
+     - Row 2: subdomain `telemetry`, domain `rasen.io`, path `api/admin`
 4. **Add a policy:**
    - **Policy name:** `maintainer`
    - **Action:** **Allow**
