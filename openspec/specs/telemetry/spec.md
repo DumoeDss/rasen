@@ -33,10 +33,10 @@ The system SHALL NOT include command arguments, file paths, project names, spec 
 - **THEN** the request body carries no IP address and the backend does not persist the caller's IP
 
 ### Requirement: Environment variable opt-out
-The system SHALL disable telemetry when `OPENSPEC_TELEMETRY=0` or `DO_NOT_TRACK=1` environment variables are set.
+The system SHALL disable telemetry when `RASEN_TELEMETRY=0` or `DO_NOT_TRACK=1` environment variables are set. The legacy `OPENSPEC_TELEMETRY` variable SHALL NOT be read.
 
-#### Scenario: OPENSPEC_TELEMETRY opt-out
-- **WHEN** `OPENSPEC_TELEMETRY=0` is set in the environment
+#### Scenario: RASEN_TELEMETRY opt-out
+- **WHEN** `RASEN_TELEMETRY=0` is set in the environment
 - **THEN** the system sends no telemetry events
 
 #### Scenario: DO_NOT_TRACK opt-out
@@ -45,7 +45,7 @@ The system SHALL disable telemetry when `OPENSPEC_TELEMETRY=0` or `DO_NOT_TRACK=
 
 #### Scenario: Environment variable takes precedence
 - **WHEN** the user has previously used the CLI (config exists)
-- **AND** the user sets `OPENSPEC_TELEMETRY=0`
+- **AND** the user sets `RASEN_TELEMETRY=0`
 - **THEN** telemetry is disabled regardless of config state
 
 ### Requirement: CI environment auto-disable
@@ -57,16 +57,16 @@ The system SHALL automatically disable telemetry when `CI=true` environment vari
 
 #### Scenario: CI with explicit enable
 - **WHEN** `CI=true` is set
-- **AND** `OPENSPEC_TELEMETRY=1` is explicitly set
+- **AND** `RASEN_TELEMETRY=1` is explicitly set
 - **THEN** telemetry remains disabled (CI takes precedence for privacy)
 
 ### Requirement: First-run telemetry notice
 The system SHALL display a telemetry disclosure notice on the first command execution, before any telemetry is sent, that truthfully states the data goes to the maintainer's own Cloudflare Worker, what is collected, and how to opt out.
 
 #### Scenario: First command execution
-- **WHEN** a user runs their first openspec command
+- **WHEN** a user runs their first rasen command
 - **AND** telemetry is enabled
-- **THEN** the system displays a one-line notice stating that anonymous usage stats (command, version, OS, Node version, and a random id) are sent to OpenSpec's own Cloudflare Worker, and that opt-out is via `OPENSPEC_TELEMETRY=0`
+- **THEN** the system displays a one-line notice stating that anonymous usage stats (command, version, OS, Node version, and a random id) are sent to rasen's own Cloudflare Worker, and that opt-out is via `RASEN_TELEMETRY=0`
 
 #### Scenario: Notice does not mention PostHog
 - **WHEN** the first-run notice is displayed
@@ -149,5 +149,5 @@ The system SHALL send telemetry only to the maintainer's Cloudflare Worker endpo
 - **THEN** there is no `posthog-node` dependency and no reference to a PostHog API key or `edge.openspec.dev` host
 
 #### Scenario: Opt-out suppresses all network calls
-- **WHEN** telemetry is disabled via `OPENSPEC_TELEMETRY=0`, `DO_NOT_TRACK=1`, or CI auto-off
+- **WHEN** telemetry is disabled via `RASEN_TELEMETRY=0`, `DO_NOT_TRACK=1`, or CI auto-off
 - **THEN** no request is made to the Worker endpoint
