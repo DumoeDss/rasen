@@ -21,7 +21,7 @@ describe('FileSystemUtils.updateFileWithMarkers', () => {
   describe('new file creation', () => {
     it('should create new file with markers and content', async () => {
       const filePath = path.join(testDir, 'new-file.md');
-      const content = 'OpenSpec content';
+      const content = 'Rasen content';
       
       await FileSystemUtils.updateFileWithMarkers(
         filePath,
@@ -41,7 +41,7 @@ describe('FileSystemUtils.updateFileWithMarkers', () => {
       const existingContent = '# Existing Content\nUser content here';
       await fs.writeFile(filePath, existingContent);
       
-      const newContent = 'OpenSpec content';
+      const newContent = 'Rasen content';
       await FileSystemUtils.updateFileWithMarkers(
         filePath,
         newContent,
@@ -60,13 +60,13 @@ describe('FileSystemUtils.updateFileWithMarkers', () => {
     it('should replace content between markers', async () => {
       const filePath = path.join(testDir, 'with-markers.md');
       const beforeContent = '# Before\nSome content before';
-      const oldManagedContent = 'Old OpenSpec content';
+      const oldManagedContent = 'Old Rasen content';
       const afterContent = '# After\nSome content after';
       
       const existingFile = `${beforeContent}\n${START_MARKER}\n${oldManagedContent}\n${END_MARKER}\n${afterContent}`;
       await fs.writeFile(filePath, existingFile);
       
-      const newContent = 'New OpenSpec content';
+      const newContent = 'New Rasen content';
       await FileSystemUtils.updateFileWithMarkers(
         filePath,
         newContent,
@@ -294,7 +294,7 @@ describe('removeMarkerBlock', () => {
     it('should remove marker block and preserve content before', () => {
       const content = `User content before
 ${START_MARKER}
-OpenSpec content
+Rasen content
 ${END_MARKER}`;
       const result = removeMarkerBlock(content, START_MARKER, END_MARKER);
       expect(result).toBe('User content before\n');
@@ -304,7 +304,7 @@ ${END_MARKER}`;
 
     it('should remove marker block and preserve content after', () => {
       const content = `${START_MARKER}
-OpenSpec content
+Rasen content
 ${END_MARKER}
 User content after`;
       const result = removeMarkerBlock(content, START_MARKER, END_MARKER);
@@ -314,7 +314,7 @@ User content after`;
     it('should remove marker block and preserve content before and after', () => {
       const content = `User content before
 ${START_MARKER}
-OpenSpec content
+Rasen content
 ${END_MARKER}
 User content after`;
       const result = removeMarkerBlock(content, START_MARKER, END_MARKER);
@@ -325,7 +325,7 @@ User content after`;
 
     it('should return empty string when only markers remain', () => {
       const content = `${START_MARKER}
-OpenSpec content
+Rasen content
 ${END_MARKER}`;
       const result = removeMarkerBlock(content, START_MARKER, END_MARKER);
       expect(result).toBe('');
@@ -369,7 +369,7 @@ ${START_MARKER}`;
 
 
 ${START_MARKER}
-OpenSpec content
+Rasen content
 ${END_MARKER}
 
 
@@ -381,7 +381,7 @@ Line 2`;
     it('should handle markers with whitespace on same line', () => {
       const content = `User content
   ${START_MARKER}
-OpenSpec content
+Rasen content
   ${END_MARKER}
 More content`;
       const result = removeMarkerBlock(content, START_MARKER, END_MARKER);
@@ -432,7 +432,7 @@ After block content`;
 export PATH="/usr/local/bin:$PATH"
 
 ${SHELL_START}
-# OpenSpec managed
+# Rasen managed
 alias openspec="npx openspec"
 ${SHELL_END}
 

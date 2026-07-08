@@ -318,7 +318,7 @@ function resolveSetupRoot(id: string, inputPath: string | undefined): string {
       'store_setup_path_required',
       {
         target: 'store.root',
-        fix: `openspec store setup ${id} --path ~/openspec/${id}`,
+        fix: `rasen store setup ${id} --path ~/openspec/${id}`,
       }
     );
   }
@@ -330,7 +330,7 @@ function resolveRegisterRoot(inputPath: string | undefined): string {
   if (inputPath === undefined || inputPath.trim().length === 0) {
     throw new StoreError('Pass a store path.', 'store_path_required', {
       target: 'store.root',
-      fix: 'openspec store register /path/to/store',
+      fix: 'rasen store register /path/to/store',
     });
   }
 
@@ -444,7 +444,7 @@ async function prepareSetupPlan(
       'store_setup_path_not_directory',
       {
         target: 'store.root',
-        fix: 'Choose an empty directory or an existing healthy OpenSpec root.',
+        fix: 'Choose an empty directory or an existing healthy Rasen root.',
       }
     );
   }
@@ -482,11 +482,11 @@ async function prepareSetupPlan(
       const safeFreshDirectory = await isDirectoryEmpty(storeRoot) || await isGitOnlyDirectory(storeRoot);
       if (!openspecRoot.healthy && !safeFreshDirectory) {
         throw new StoreError(
-          'Store setup does not support initializing a non-empty folder that is not a healthy OpenSpec root.',
+          'Store setup does not support initializing a non-empty folder that is not a healthy Rasen root.',
           'store_setup_non_empty_directory',
           {
             target: 'store.root',
-            fix: 'Choose an empty folder, a Git-only folder, or an existing healthy OpenSpec root.',
+            fix: 'Choose an empty folder, a Git-only folder, or an existing healthy Rasen root.',
           }
         );
       }
@@ -563,7 +563,7 @@ export async function setupPreparedStore(
       'store_setup_path_changed',
       {
         target: 'store.root',
-        fix: 'Rerun openspec store setup to re-evaluate the directory.',
+        fix: 'Rerun rasen store setup to re-evaluate the directory.',
       }
     );
   }
@@ -734,7 +734,7 @@ export async function registerExistingStore(
   if (!openspecRoot.healthy) {
     const problems =
       openspecRoot.diagnostics.map((diagnostic) => diagnostic.message).join(' ') ||
-      'The OpenSpec root is missing or incomplete.';
+      'The Rasen root is missing or incomplete.';
     const isEmptyCloneSuspect =
       (await isGitRepositoryAtRoot(storeRoot)) &&
       (await gitHasCommits(storeRoot)) === false;
@@ -743,13 +743,13 @@ export async function registerExistingStore(
       : '';
 
     throw new StoreError(
-      `Store register requires an existing healthy OpenSpec root. ${problems}${emptyCloneHint}`,
+      `Store register requires an existing healthy Rasen root. ${problems}${emptyCloneHint}`,
       'store_register_root_unhealthy',
       {
         target: 'openspec.root',
         fix: isEmptyCloneSuspect
           ? 'If this is a store clone: commit and push the origin store, pull it into this clone, then rerun register.'
-          : 'Run openspec store setup for a new store, or point register at a checkout whose openspec/ files are present.',
+          : 'Run rasen store setup for a new store, or point register at a checkout whose openspec/ files are present.',
       }
     );
   }
@@ -771,7 +771,7 @@ export async function registerExistingStore(
       {
         target: 'store.id',
         fix: registeredElsewhere
-          ? `One checkout per store id is supported, and '${metadata.id}' is already registered. Run openspec store unregister ${metadata.id} first to register this checkout instead.`
+          ? `One checkout per store id is supported, and '${metadata.id}' is already registered. Run rasen store unregister ${metadata.id} first to register this checkout instead.`
           : `Use --id ${metadata.id} or register a different folder.`,
       }
     );
@@ -780,7 +780,7 @@ export async function registerExistingStore(
   const id = metadata?.id ?? explicitId ?? inferStoreIdFromPath(storeRoot);
   if (!metadata && !input.allowCreateIdentity) {
     throw new StoreError(
-      `Turn this OpenSpec root into store '${id}'?`,
+      `Turn this Rasen root into store '${id}'?`,
       'store_register_identity_confirmation_required',
       {
         target: 'store.metadata',
@@ -884,7 +884,7 @@ async function assertSafeToDeleteStoreRoot(storeRoot: string, id: string): Promi
       'store_remove_path_not_directory',
       {
         target: 'store.root',
-        fix: 'Run "openspec store unregister <id>" if you only want to forget this local registry entry.',
+        fix: 'Run "rasen store unregister <id>" if you only want to forget this local registry entry.',
       }
     );
   }
@@ -896,7 +896,7 @@ async function assertSafeToDeleteStoreRoot(storeRoot: string, id: string): Promi
       'store_remove_metadata_missing',
       {
         target: 'store.metadata',
-        fix: 'Run "openspec store unregister <id>" if you only want to forget this local registry entry.',
+        fix: 'Run "rasen store unregister <id>" if you only want to forget this local registry entry.',
       }
     );
   }
@@ -1037,7 +1037,7 @@ async function inspectStore(entry: {
       'Store location does not exist.',
       {
         target: 'store.root',
-        fix: `Run openspec store register /path/to/${entry.id} --id ${entry.id}.`,
+        fix: `Run rasen store register /path/to/${entry.id} --id ${entry.id}.`,
       }
     ));
   } else if (kind !== 'directory') {
@@ -1166,7 +1166,7 @@ export async function doctorStores(id?: string): Promise<StoreDoctorResult> {
     if (selectedId !== undefined) {
       throw new StoreError(`Unknown store '${selectedId}'.`, 'store_not_found', {
         target: 'store.id',
-        fix: 'Run openspec store list to see registered stores.',
+        fix: 'Run rasen store list to see registered stores.',
       });
     }
 
@@ -1181,7 +1181,7 @@ export async function doctorStores(id?: string): Promise<StoreDoctorResult> {
   if (selectedId && selected.length === 0) {
     throw new StoreError(`Unknown store '${selectedId}'.`, 'store_not_found', {
       target: 'store.id',
-      fix: 'Run openspec store list to see registered stores.',
+      fix: 'Run rasen store list to see registered stores.',
     });
   }
 

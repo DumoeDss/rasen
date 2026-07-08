@@ -40,7 +40,7 @@ describe('openspec CLI e2e basics', () => {
   it('shows help output', async () => {
     const result = await runCLI(['--help']);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('Usage: openspec');
+    expect(result.stdout).toContain('Usage: rasen');
     expect(result.stderr).toBe('');
 
   });
@@ -138,7 +138,7 @@ describe('openspec CLI e2e basics', () => {
       });
       expect(result.timedOut).toBe(false);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('OpenSpec Setup Complete');
+      expect(result.stdout).toContain('Rasen Setup Complete');
 
       // Check that skills were created for multiple tools
       const claudeSkillPath = path.join(emptyProjectDir, '.claude/skills/openspec-explore/SKILL.md');
@@ -154,7 +154,7 @@ describe('openspec CLI e2e basics', () => {
 
       const result = await runCLI(['init', '--tools', 'claude'], { cwd: emptyProjectDir });
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('OpenSpec Setup Complete');
+      expect(result.stdout).toContain('Rasen Setup Complete');
       expect(result.stdout).toContain('Claude Code');
 
       // New init creates skills, not CLAUDE.md
@@ -171,7 +171,7 @@ describe('openspec CLI e2e basics', () => {
 
       const result = await runCLI(['init', '--tools', 'none'], { cwd: emptyProjectDir });
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('OpenSpec Setup Complete');
+      expect(result.stdout).toContain('Rasen Setup Complete');
 
       // With --tools none, no tool skills should be created
       const claudeSkillPath = path.join(emptyProjectDir, '.claude/skills/openspec-explore/SKILL.md');

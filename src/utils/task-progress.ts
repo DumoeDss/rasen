@@ -70,7 +70,7 @@ async function countSingleTopLevelTasksFile(changeDir: string): Promise<TaskProg
 /**
  * Computes a change's task progress by resolving its tracked-tasks artifact and
  * counting checkboxes across every file matched by that artifact's `generates`
- * glob — the same file-resolution `openspec status` uses to detect the tasks
+ * glob — the same file-resolution `rasen status` uses to detect the tasks
  * artifact (`resolveArtifactOutputs`) — so progress is no longer blind to nested
  * `tasks.md` files (#1202). Falls back to a single top-level `tasks.md` (exactly
  * as before) when the schema is unresolvable, no tracked-tasks artifact is found,

@@ -30,7 +30,7 @@ describe('workset journey (7.1 e2e)', () => {
   let scratchFolder: string;
 
   beforeEach(async () => {
-    process.env.OPENSPEC_ENABLE_CLI_AGENT_OPENERS = '1';
+    process.env.RASEN_ENABLE_CLI_AGENT_OPENERS = '1';
     tempDir = fs.realpathSync.native(
       fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-workset-e2e-'))
     );
@@ -38,7 +38,7 @@ describe('workset journey (7.1 e2e)', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
       PATH: path.dirname(process.execPath),
     };
     globalDataDir = getGlobalDataDir({ env });
@@ -65,7 +65,7 @@ describe('workset journey (7.1 e2e)', () => {
   });
 
   afterEach(() => {
-    delete process.env.OPENSPEC_ENABLE_CLI_AGENT_OPENERS;
+    delete process.env.RASEN_ENABLE_CLI_AGENT_OPENERS;
     // Windows can hold a brief handle on a just-exited spawned CLI/opener;
     // retry the recursive remove so EBUSY during teardown does not flake.
     fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

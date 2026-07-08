@@ -76,7 +76,7 @@ export function getGoalPlanSkillTemplate(): SkillTemplate {
       'Goal-loop define-goal stage (planner role) — produces goal-plan.md with the goal, a measure XOR evaluate gate, work product, and maxRounds. Does NOT produce proposal/design/specs.',
     instructions: GOAL_PLAN_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

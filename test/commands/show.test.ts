@@ -8,7 +8,7 @@ describe('top-level show command', () => {
   const testDir = path.join(projectRoot, 'test-show-command-tmp');
   const changesDir = path.join(testDir, 'openspec', 'changes');
   const specsDir = path.join(testDir, 'openspec', 'specs');
-  const openspecBin = path.join(projectRoot, 'bin', 'openspec.js');
+  const openspecBin = path.join(projectRoot, 'bin', 'rasen.js');
 
 
   beforeEach(async () => {
@@ -42,9 +42,9 @@ describe('top-level show command', () => {
       expect(err.status).not.toBe(0);
       const stderr = err.stderr.toString();
       expect(stderr).toContain('Nothing to show.');
-      expect(stderr).toContain('openspec show <item>');
-      expect(stderr).toContain('openspec change show');
-      expect(stderr).toContain('openspec spec show');
+      expect(stderr).toContain('rasen show <item>');
+      expect(stderr).toContain('rasen change show');
+      expect(stderr).toContain('rasen spec show');
     } finally {
       process.chdir(originalCwd);
       process.env = originalEnv;

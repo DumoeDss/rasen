@@ -64,7 +64,7 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
       warning(
         'relationship_registry_unreadable',
         'The store registry is unreadable; reference health cannot be checked.',
-        'Run: openspec store doctor'
+        'Run: rasen store doctor'
       )
     );
   }
@@ -73,7 +73,7 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     status.push(
       warning(
         'root_pointer_ignored',
-        `${input.bothShapesPointer.filePath} declares store '${input.bothShapesPointer.value}', but this directory is a real OpenSpec root; the declaration is ignored.`,
+        `${input.bothShapesPointer.filePath} declares store '${input.bothShapesPointer.value}', but this directory is a real Rasen root; the declaration is ignored.`,
         `Remove the store: line from ${input.bothShapesPointer.filePath}, or move the planning files into the store.`
       )
     );

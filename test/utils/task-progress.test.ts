@@ -7,7 +7,7 @@ import { resolveArtifactOutputs } from '../../src/core/artifact-graph/index.js';
 
 /**
  * #1202 — task progress is resolved through the tracked-tasks artifact's
- * `generates` glob (the same file-resolution `openspec status` uses), not a
+ * `generates` glob (the same file-resolution `rasen status` uses), not a
  * fixed `changes/<name>/tasks.md` path.
  */
 describe('getTaskProgressForChange (#1202 tracked-tasks resolution)', () => {

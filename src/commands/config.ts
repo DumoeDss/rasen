@@ -85,7 +85,7 @@ const WORKFLOW_PROMPT_META: Record<string, WorkflowPromptMeta> = {
   },
   onboard: {
     name: 'Onboard',
-    description: 'Guided onboarding flow for OpenSpec',
+    description: 'Guided onboarding flow for Rasen',
   },
 };
 
@@ -199,11 +199,11 @@ function maybeWarnProjectConfigDrift(
   if (!hasProjectConfigDrift(projectDir, state.workflows, state.delivery)) {
     return;
   }
-  console.log(colorize('Warning: Global config is not applied to this project. Run `openspec update` to sync.'));
+  console.log(colorize('Warning: Global config is not applied to this project. Run `rasen update` to sync.'));
 }
 
 function printConfigProfileApplyGuidance(): void {
-  console.log('Config updated. Run `openspec update` in your projects to apply.');
+  console.log('Config updated. Run `rasen update` in your projects to apply.');
 }
 
 /**
@@ -214,7 +214,7 @@ function printConfigProfileApplyGuidance(): void {
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
-    .description('View and modify global OpenSpec configuration')
+    .description('View and modify global Rasen configuration')
     .option('--scope <scope>', 'Config scope (only "global" supported currently)')
     .hook('preAction', (thisCommand) => {
       const opts = thisCommand.opts();
@@ -306,7 +306,7 @@ export function registerConfigCommand(program: Command): void {
       if (!keyValidation.valid && !allowUnknown) {
         const reason = keyValidation.reason ? ` ${keyValidation.reason}.` : '';
         console.error(`Error: Invalid configuration key "${key}".${reason}`);
-        console.error('Use "openspec config list" to see available keys.');
+        console.error('Use "rasen config list" to see available keys.');
         console.error('Pass --allow-unknown to bypass this check.');
         process.exitCode = 1;
         return;
@@ -361,7 +361,7 @@ export function registerConfigCommand(program: Command): void {
     .action(async (options: { all?: boolean; yes?: boolean }) => {
       if (!options.all) {
         console.error('Error: --all flag is required for reset');
-        console.error('Usage: openspec config reset --all [-y]');
+        console.error('Usage: rasen config reset --all [-y]');
         process.exitCode = 1;
         return;
       }
@@ -461,7 +461,7 @@ export function registerConfigCommand(program: Command): void {
     .command('profile [preset]')
     .description('Configure workflow profile (interactive picker or preset shortcut)')
     .action(async (preset?: string) => {
-      // Preset shortcuts: `openspec config profile full` / `openspec config profile core`
+      // Preset shortcuts: `rasen config profile full` / `rasen config profile core`
       if (preset === 'full' || preset === 'core') {
         const config = getGlobalConfig();
         config.profile = preset;
@@ -480,7 +480,7 @@ export function registerConfigCommand(program: Command): void {
 
       // Non-interactive check
       if (!process.stdout.isTTY) {
-        console.error('Interactive mode required. Use `openspec config profile full` (or `core`) or set config via environment/flags.');
+        console.error('Interactive mode required. Use `rasen config profile full` (or `core`) or set config via environment/flags.');
         process.exitCode = 1;
         return;
       }
@@ -618,7 +618,7 @@ export function registerConfigCommand(program: Command): void {
         config.workflows = nextState.workflows;
         saveGlobalConfig(config);
 
-        // Check if inside an OpenSpec project
+        // Check if inside a Rasen project
         const projectDir = process.cwd();
         const openspecDir = path.join(projectDir, OPENSPEC_DIR_NAME);
         if (fs.existsSync(openspecDir)) {
@@ -630,16 +630,16 @@ export function registerConfigCommand(program: Command): void {
           if (applyNow) {
             try {
               // Re-invoke the SAME binary that is currently running rather than
-              // `npx openspec`, which resolves the nearest local node_modules and
+              // `npx rasen`, which resolves the nearest local node_modules and
               // can hit a stale/broken install (e.g. a leftover symlink). Running
               // the current entry guarantees the CLI the user invoked applies the change.
               execSync(`"${process.execPath}" "${process.argv[1]}" update`, {
                 stdio: 'inherit',
                 cwd: projectDir,
               });
-              console.log('Run `openspec update` in your other projects to apply.');
+              console.log('Run `rasen update` in your other projects to apply.');
             } catch {
-              console.error('`openspec update` failed. Please run it manually to apply the profile changes.');
+              console.error('`rasen update` failed. Please run it manually to apply the profile changes.');
               process.exitCode = 1;
             }
             return;

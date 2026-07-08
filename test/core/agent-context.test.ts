@@ -133,9 +133,9 @@ describe('agent-context', () => {
   describe('claudeProjectsDir', () => {
     it('slugs the cwd by replacing : and separators with -', () => {
       const home = path.join('C:', 'home');
-      const result = claudeProjectsDir('E:\\AI\\ChatAI\\OpenSpec-code', home);
+      const result = claudeProjectsDir('E:\\AI\\ChatAI\\Rasen-code', home);
       expect(result).toBe(
-        path.join(home, '.claude', 'projects', 'E--AI-ChatAI-OpenSpec-code')
+        path.join(home, '.claude', 'projects', 'E--AI-ChatAI-Rasen-code')
       );
     });
 

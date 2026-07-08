@@ -129,5 +129,5 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
   saveGlobalConfig(config);
 
   console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows`);
-  console.log("New in this version: /opsx:propose. Try 'openspec config profile core' for the streamlined experience.");
+  console.log("New in this version: /opsx:propose. Try 'rasen config profile core' for the streamlined experience.");
 }

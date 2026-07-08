@@ -40,6 +40,7 @@ import {
   type NewChangeOptions,
 } from '../commands/workflow/index.js';
 import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/index.js';
+import { migrateLegacyBrandConfig } from '../core/global-config.js';
 import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 
 const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
@@ -51,7 +52,7 @@ const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
 function hiddenStorePathOption(): Option {
   return new Option(
     '--store-path <path>',
-    'Not supported; register the path with "openspec store register <path>" and use --store <id>'
+    'Not supported; register the path with "rasen store register <path>" and use --store <id>'
   ).hideHelp();
 }
 
@@ -95,18 +96,18 @@ export function getCommandPath(command: Command): string {
 
   while (current) {
     const name = current.name();
-    // Skip the root 'openspec' command
-    if (name && name !== 'openspec') {
+    // Skip the root 'rasen' command
+    if (name && name !== 'rasen') {
       names.unshift(name);
     }
     current = current.parent;
   }
 
-  return names.join(':') || 'openspec';
+  return names.join(':') || 'rasen';
 }
 
 program
-  .name('openspec')
+  .name('rasen')
   .description('AI-native system for spec-driven development')
   .version(version);
 
@@ -145,7 +146,7 @@ const toolsOptionDescription = `Configure AI tools non-interactively. Use "all",
 
 program
   .command('init [path]')
-  .description('Initialize OpenSpec in your project')
+  .description('Initialize Rasen in your project')
   .option('--tools <tools>', toolsOptionDescription)
   .option('--force', 'Auto-cleanup legacy files without prompting')
   .option('--profile <profile>', 'Override global config profile (full, core, or custom)')
@@ -191,7 +192,7 @@ program
   .option('--no-interactive', 'Disable interactive prompts')
   .action(async (options?: { tool?: string; noInteractive?: boolean }) => {
     try {
-      console.log('Note: "openspec experimental" is deprecated. Use "openspec init" instead.');
+      console.log('Note: "rasen experimental" is deprecated. Use "rasen init" instead.');
       const { InitCommand } = await import('../core/init.js');
       const initCommand = new InitCommand({
         tools: options?.tool,
@@ -206,7 +207,7 @@ program
 
 program
   .command('update [path]')
-  .description('Update OpenSpec instruction files')
+  .description('Update Rasen instruction files')
   .option('--force', 'Force update even when tools are up to date')
   .action(async (targetPath = '.', options?: { force?: boolean }) => {
     try {
@@ -270,11 +271,11 @@ program
 // Change command with subcommands
 const changeCmd = program
   .command('change')
-  .description('Manage OpenSpec change proposals');
+  .description('Manage Rasen change proposals');
 
 // Deprecation notice for noun-based commands
 changeCmd.hook('preAction', () => {
-  console.error('Warning: The "openspec change ..." commands are deprecated. Prefer verb-first commands (e.g., "openspec list", "openspec validate --changes").');
+  console.error('Warning: The "rasen change ..." commands are deprecated. Prefer verb-first commands (e.g., "rasen list", "rasen validate --changes").');
 });
 
 changeCmd
@@ -296,12 +297,12 @@ changeCmd
 
 changeCmd
   .command('list')
-  .description('List all active changes (DEPRECATED: use "openspec list" instead)')
+  .description('List all active changes (DEPRECATED: use "rasen list" instead)')
   .option('--json', 'Output as JSON')
   .option('--long', 'Show id and title with counts')
   .action(async (options?: { json?: boolean; long?: boolean }) => {
     try {
-      console.error('Warning: "openspec change list" is deprecated. Use "openspec list".');
+      console.error('Warning: "rasen change list" is deprecated. Use "rasen list".');
       const changeCommand = new ChangeCommand();
       await changeCommand.list(options);
     } catch (error) {
@@ -367,7 +368,7 @@ program
   .option('--type <type>', 'Specify item type when ambiguous: change|spec|pipeline')
   .option('--strict', 'Enable strict validation mode')
   .option('--json', 'Output validation results as JSON')
-  .option('--concurrency <n>', 'Max concurrent validations (defaults to env OPENSPEC_CONCURRENCY or 6)')
+  .option('--concurrency <n>', 'Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)')
   .option('--no-interactive', 'Disable interactive prompts')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
@@ -414,7 +415,7 @@ program
 // Feedback command
 program
   .command('feedback <message>')
-  .description('Submit feedback about OpenSpec')
+  .description('Submit feedback about Rasen')
   .option('--body <text>', 'Detailed description for the feedback')
   .action(async (message: string, options?: { body?: string }) => {
     try {
@@ -429,7 +430,7 @@ program
 // Completion command with subcommands
 const completionCmd = program
   .command('completion')
-  .description('Manage shell completions for OpenSpec CLI');
+  .description('Manage shell completions for Rasen CLI');
 
 completionCmd
   .command('generate [shell]')
@@ -725,6 +726,9 @@ agentCmd
 export { program };
 
 export function runCli(argv = process.argv): void {
+  // One-time adoption of a pre-rename `openspec` global config/data dir.
+  // Best-effort and synchronous; must run before any config is read.
+  migrateLegacyBrandConfig();
   program.parse(argv);
 }
 

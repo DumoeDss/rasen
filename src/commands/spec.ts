@@ -125,11 +125,11 @@ export class SpecCommand {
 export function registerSpecCommand(rootProgram: typeof program) {
   const specCommand = rootProgram
     .command('spec')
-    .description('Manage and view OpenSpec specifications');
+    .description('Manage and view Rasen specifications');
 
   // Deprecation notice for noun-based commands
   specCommand.hook('preAction', () => {
-    console.error('Warning: The "openspec spec ..." commands are deprecated. Prefer verb-first commands (e.g., "openspec show", "openspec validate --specs").');
+    console.error('Warning: The "rasen spec ..." commands are deprecated. Prefer verb-first commands (e.g., "rasen show", "rasen validate --specs").');
   });
 
   specCommand

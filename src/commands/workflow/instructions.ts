@@ -116,7 +116,7 @@ export async function instructionsCommand(
       options.change,
       projectRoot,
       root.changesDir,
-      { newChangeHint: withStoreFlag(root, 'openspec new change <name>') }
+      { newChangeHint: withStoreFlag(root, 'rasen new change <name>') }
     );
 
     // Validate schema if explicitly provided
@@ -486,7 +486,7 @@ export async function applyInstructionsCommand(options: ApplyInstructionsOptions
       options.change,
       projectRoot,
       root.changesDir,
-      { newChangeHint: withStoreFlag(root, 'openspec new change <name>') }
+      { newChangeHint: withStoreFlag(root, 'rasen new change <name>') }
     );
 
     // Validate schema if explicitly provided

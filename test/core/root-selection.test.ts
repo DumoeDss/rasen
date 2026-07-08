@@ -104,7 +104,7 @@ describe('resolveOpenSpecRoot', () => {
     return error;
   }
 
-  it('resolves a selected store to its healthy OpenSpec root', async () => {
+  it('resolves a selected store to its healthy Rasen root', async () => {
     const storeRoot = await registerStore('team-context');
 
     const root = await resolveOpenSpecRoot({ store: 'team-context', globalDataDir });
@@ -244,7 +244,7 @@ describe('resolveOpenSpecRoot', () => {
     );
     expect(error.message).toContain('team-context');
     expect(error.message).toContain('--store <id>');
-    expect(error.message).toContain('openspec init');
+    expect(error.message).toContain('rasen init');
     // No scaffolding happened.
     expect(fs.existsSync(path.join(appRepo, 'openspec'))).toBe(false);
   });

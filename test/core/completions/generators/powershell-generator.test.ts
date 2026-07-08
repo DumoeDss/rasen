@@ -24,38 +24,38 @@ describe('PowerShellGenerator', () => {
 			const commands: CommandDefinition[] = [
 				{
 					name: 'init',
-					description: 'Initialize OpenSpec',
+					description: 'Initialize Rasen',
 					flags: [],
 				},
 			];
 
 			const script = generator.generate(commands);
 
-			expect(script).toContain('# PowerShell completion script for OpenSpec CLI');
-			expect(script).toContain('$openspecCompleter = {');
+			expect(script).toContain('# PowerShell completion script for Rasen CLI');
+			expect(script).toContain('$rasenCompleter = {');
 			expect(script).toContain('Register-ArgumentCompleter');
 		});
 
-		it('should register argument completer for openspec command', () => {
+		it('should register argument completer for rasen command', () => {
 			const commands: CommandDefinition[] = [
 				{
 					name: 'init',
-					description: 'Initialize OpenSpec',
+					description: 'Initialize Rasen',
 					flags: [],
 				},
 			];
 
 			const script = generator.generate(commands);
 
-			expect(script).toContain('Register-ArgumentCompleter -CommandName openspec');
-			expect(script).toContain('-ScriptBlock $openspecCompleter');
+			expect(script).toContain('Register-ArgumentCompleter -CommandName rasen');
+			expect(script).toContain('-ScriptBlock $rasenCompleter');
 		});
 
 		it('should include all commands with descriptions', () => {
 			const commands: CommandDefinition[] = [
 				{
 					name: 'init',
-					description: 'Initialize OpenSpec',
+					description: 'Initialize Rasen',
 					flags: [],
 				},
 				{
@@ -73,7 +73,7 @@ describe('PowerShellGenerator', () => {
 			const script = generator.generate(commands);
 
 			expect(script).toContain('"init"');
-			expect(script).toContain('Initialize OpenSpec');
+			expect(script).toContain('Initialize Rasen');
 			expect(script).toContain('"validate"');
 			expect(script).toContain('Validate specs');
 			expect(script).toContain('"show"');
@@ -84,7 +84,7 @@ describe('PowerShellGenerator', () => {
 			const commands: CommandDefinition[] = [
 				{
 					name: 'init',
-					description: 'Initialize OpenSpec',
+					description: 'Initialize Rasen',
 					flags: [],
 				},
 			];
@@ -340,7 +340,7 @@ describe('PowerShellGenerator', () => {
 			const commands: CommandDefinition[] = [
 				{
 					name: 'init',
-					description: 'Initialize OpenSpec',
+					description: 'Initialize Rasen',
 					acceptsPositional: true,
 					positionalType: 'path',
 					flags: [],
@@ -367,7 +367,7 @@ describe('PowerShellGenerator', () => {
 			const script = generator.generate(commands);
 
 			expect(script).toContain('Get-OpenSpecSchemas');
-			expect(script).toContain('openspec __complete schemas 2>$null');
+			expect(script).toContain('rasen __complete schemas 2>$null');
 		});
 
 		it('should generate dynamic completion helper for changes', () => {
@@ -384,7 +384,7 @@ describe('PowerShellGenerator', () => {
 			const script = generator.generate(commands);
 
 			expect(script).toContain('function Get-OpenSpecChanges');
-			expect(script).toContain('openspec __complete changes 2>$null');
+			expect(script).toContain('rasen __complete changes 2>$null');
 			expect(script).toContain('-split');
 		});
 
@@ -402,7 +402,7 @@ describe('PowerShellGenerator', () => {
 			const script = generator.generate(commands);
 
 			expect(script).toContain('function Get-OpenSpecSpecs');
-			expect(script).toContain('openspec __complete specs 2>$null');
+			expect(script).toContain('rasen __complete specs 2>$null');
 		});
 
 		it('should escape double quotes in descriptions', () => {
@@ -495,7 +495,7 @@ describe('PowerShellGenerator', () => {
 			const script = generator.generate(commands);
 
 			expect(script).toContain('# PowerShell completion script');
-			expect(script).toContain('$openspecCompleter = {');
+			expect(script).toContain('$rasenCompleter = {');
 			expect(script).toContain('Register-ArgumentCompleter');
 		});
 

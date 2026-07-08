@@ -4,7 +4,7 @@
  * Autopilot mode — the LEAD classifies the task, selects a pipeline, and drives
  * it end-to-end by orchestrating role-isolated subagents (see the shared
  * orchestration playbook). Pipelines are sourced from the data-driven pipeline
- * registry via the `openspec pipeline` CLI (classify / show / resume); the DAG
+ * registry via the `rasen pipeline` CLI (classify / show / resume); the DAG
  * is not hard-coded here, and the orchestration playbook is registry-agnostic.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
@@ -23,19 +23,19 @@ Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`openspec agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now — write the session handoff document and launch a successor session per the playbook's Step H.7; (b) continue this session (auto-compact remains the backstop); (c) handle it manually via /opsx:handoff. Proceed on the user's say-so; below the threshold, proceed silently. Declining leaves behavior exactly as before. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now — write the session handoff document and launch a successor session per the playbook's Step H.7; (b) continue this session (auto-compact remains the backstop); (c) handle it manually via /opsx:handoff. Proceed on the user's say-so; below the threshold, proceed silently. Declining leaves behavior exactly as before. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
 
 ## 1. Select the pipeline (explicit wins; default = small-feature)
 
 **Input**: \`/opsx:auto [--pipeline <name>] [--review-plan] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
 
 Choose the pipeline in this order:
-1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`openspec pipeline list --json\` (e.g. \`/opsx:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description.
+1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`rasen pipeline list --json\` (e.g. \`/opsx:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description.
 2. **Default** — otherwise use **\`small-feature\`** (the default pipeline). Do NOT auto-escalate to full-feature/bug-fix.
 
-You MAY run \`openspec pipeline classify "<task>" --json\` for a suggestion, or pick any pipeline from \`openspec pipeline list\` (including project/user-defined ones) — but an explicit selection always wins, and absent one the default is \`small-feature\`. DISPLAY the chosen pipeline and let the user change it before proceeding.
+You MAY run \`rasen pipeline classify "<task>" --json\` for a suggestion, or pick any pipeline from \`rasen pipeline list\` (including project/user-defined ones) — but an explicit selection always wins, and absent one the default is \`small-feature\`. DISPLAY the chosen pipeline and let the user change it before proceeding.
 
-Built-in pipelines (see \`openspec pipeline list --json\`):
+Built-in pipelines (see \`rasen pipeline list --json\`):
 - **full-feature** — office-hours -> propose -> apply -> parallel expert reviews -> review-loop -> ship -> archive -> retro
 - **small-feature** — propose -> apply -> verify -> review-loop -> ship -> archive  _(default)_
 - **bug-fix** — propose -> apply -> adaptive verify -> ship -> archive
@@ -45,7 +45,7 @@ Built-in pipelines (see \`openspec pipeline list --json\`):
 Load the chosen pipeline's stages from the registry — do NOT hard-code them:
 
 \`\`\`bash
-openspec pipeline show <name> --json   # -> { name, description, buildOrder, stages }
+rasen pipeline show <name> --json   # -> { name, description, buildOrder, stages }
 \`\`\`
 
 Execute stages in \`buildOrder\`. Each stage carries the metadata the LEAD interprets via the playbook in section 3: **id**, **kind** (\`standard\` | \`decompose\`), **skill** (the OPSX skill the worker invokes; absent for a decompose stage), **childPipeline** (decompose only — the pipeline each child change runs), **role** (worker isolation), **requires** (DAG edges), **gate** (human pause after), **loop** (bounded review->fix), **parallelGroup** (concurrent fan-out — e.g. a \`verify\` stage's experts), **condition** (run only if met; mutually exclusive conditions like ui / non-ui pick exactly one), **leadReview** (LEAD checks the output for drift — section 4), **verifyPolicy** (section 5).
@@ -82,11 +82,11 @@ Compute the simple/complex determination from the diff and record it in run-stat
 
 ## Resume
 
-On invocation for an existing change, determine the next incomplete stage from the change's run-state AND artifacts via \`openspec pipeline resume <change> --json\`, then resume from there rather than restarting. If the run is store-scoped (the change lives in a \`--store\`-selected OpenSpec root), thread the SAME \`--store <id>\` onto resume — \`openspec pipeline resume <change> --store <id> --json\` — so it resolves the store root and reads run-state from the store's change directory; omitting it would resolve the cwd root and report \`hasRunState:false\` for a change that is actually mid-run. The run-state per-stage status is AUTHORITATIVE; artifact presence is a heuristic to seed or cross-check it, and run-state wins on any conflict. Artifact signals: office-hours-design.md -> office-hours done; proposal.md -> propose done; tasks.md all checked -> apply done; review-report.md (or any expert \`*-report.md\` — the verify worker saves these per the playbook's Step B) -> verify done; review-cycle-report.md -> review-loop done; ship-log.md -> ship done; change moved to archive -> archive done; retro.md -> retro done. If neither run-state nor any artifact exists yet, start from the pipeline's first stage.
+On invocation for an existing change, determine the next incomplete stage from the change's run-state AND artifacts via \`rasen pipeline resume <change> --json\`, then resume from there rather than restarting. If the run is store-scoped (the change lives in a \`--store\`-selected Rasen root), thread the SAME \`--store <id>\` onto resume — \`rasen pipeline resume <change> --store <id> --json\` — so it resolves the store root and reads run-state from the store's change directory; omitting it would resolve the cwd root and report \`hasRunState:false\` for a change that is actually mid-run. The run-state per-stage status is AUTHORITATIVE; artifact presence is a heuristic to seed or cross-check it, and run-state wins on any conflict. Artifact signals: office-hours-design.md -> office-hours done; proposal.md -> propose done; tasks.md all checked -> apply done; review-report.md (or any expert \`*-report.md\` — the verify worker saves these per the playbook's Step B) -> verify done; review-cycle-report.md -> review-loop done; ship-log.md -> ship done; change moved to archive -> archive done; retro.md -> retro done. If neither run-state nor any artifact exists yet, start from the pipeline's first stage.
 
-A fresh session has no live workers, so \`SendMessage\` cannot reach a worker from a prior session. When you must re-engage a role on resume (e.g. the reviewer for a re-review, or an interrupted stage), **warm-seed** a fresh same-role worker from its predecessor's recorded transcript — see the playbook's **Step F.1**. \`openspec pipeline resume\` reports the per-stage \`workers\` pointers (agentId / transcript) available to seed from; fall back to cold reconstruction from the change directory when a transcript is gone.
+A fresh session has no live workers, so \`SendMessage\` cannot reach a worker from a prior session. When you must re-engage a role on resume (e.g. the reviewer for a re-review, or an interrupted stage), **warm-seed** a fresh same-role worker from its predecessor's recorded transcript — see the playbook's **Step F.1**. \`rasen pipeline resume\` reports the per-stage \`workers\` pointers (agentId / transcript) available to seed from; fall back to cold reconstruction from the change directory when a transcript is gone.
 
-**Portfolio resume.** If the change is a decomposed parent (it has a \`portfolio-run.json\`), \`openspec pipeline resume <parent> --json\` returns \`isPortfolio: true\` with the child list, each child's status, and the **runnable frontier** (thread \`--store <id>\` here too for a store-scoped run, same as above). Resume the portfolio — continue incomplete children in dependency order and do NOT re-run completed ones — rather than re-running decompose. The portfolio record is authoritative; each child's own \`auto-run.json\` resumes that child's inner pipeline. It also returns the run-level \`planner\` pointer (the persistent planner that spans all children's proposes — playbook Step B.1): warm-seed the next planner from it plus \`planning-context.md\` instead of starting propose research from zero.
+**Portfolio resume.** If the change is a decomposed parent (it has a \`portfolio-run.json\`), \`rasen pipeline resume <parent> --json\` returns \`isPortfolio: true\` with the child list, each child's status, and the **runnable frontier** (thread \`--store <id>\` here too for a store-scoped run, same as above). Resume the portfolio — continue incomplete children in dependency order and do NOT re-run completed ones — rather than re-running decompose. The portfolio record is authoritative; each child's own \`auto-run.json\` resumes that child's inner pipeline. It also returns the run-level \`planner\` pointer (the persistent planner that spans all children's proposes — playbook Step B.1): warm-seed the next planner from it plus \`planning-context.md\` instead of starting propose research from zero.
 
 ## Output Format
 
@@ -139,7 +139,7 @@ export function getAutoCommandSkillTemplate(): SkillTemplate {
     description: 'Autopilot mode — the LEAD classifies the task, selects a pipeline, and drives it end-to-end by orchestrating role-isolated subagents with gates, the review-cycle loop, and human escalation.',
     instructions: AUTO_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

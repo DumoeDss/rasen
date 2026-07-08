@@ -10,7 +10,7 @@ import {
   rollbackCreatedPaths,
 } from '../../src/core/index.js';
 
-describe('OpenSpec root helper', () => {
+describe('Rasen root helper', () => {
   let tempDir: string;
 
   beforeEach(() => {

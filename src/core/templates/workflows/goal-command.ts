@@ -27,7 +27,7 @@ Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse 
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`openspec agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via /opsx:handoff. Proceed on the user's say-so; below the threshold, proceed silently.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via /opsx:handoff. Proceed on the user's say-so; below the threshold, proceed silently.
 
 ## 1. Classify and select the backend pipeline (explicit wins)
 
@@ -43,7 +43,7 @@ Choose the pipeline in this order:
 
 DISPLAY the chosen pipeline and let the user change it before proceeding.
 
-Built-in goal-loop pipelines (see \`openspec pipeline list --json\`):
+Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
 - **goal-loop-measure** — define-goal -> iterate (measure gate) -> ship -> archive  _(quantifiable targets)_
 - **goal-loop-evaluate** — define-goal -> iterate (evaluate gate) -> ship -> archive  _(rubric/quality)_
 - **goal-loop-research** — define-goal -> iterate (evaluate gate) -> report  _(research/writing; prose work product, earlier relay)_
@@ -51,7 +51,7 @@ Built-in goal-loop pipelines (see \`openspec pipeline list --json\`):
 ## 2. Fetch the selected pipeline's stage DAG
 
 \`\`\`bash
-openspec pipeline show <name> --json   # -> { name, description, buildOrder, stages }
+rasen pipeline show <name> --json   # -> { name, description, buildOrder, stages }
 \`\`\`
 
 Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: true\` lets the user confirm a measure command before any round runs.
@@ -69,7 +69,7 @@ ${ORCHESTRATION_PLAYBOOK}
 
 ## Resume
 
-On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`openspec pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> tail; last record not-passed -> resume at lastRound+1; no record -> round 1.
+On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`rasen pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> tail; last record not-passed -> resume at lastRound+1; no record -> round 1.
 
 ## Output Format
 
@@ -101,7 +101,7 @@ export function getGoalCommandSkillTemplate(): SkillTemplate {
       'Goal-driven iteration entry — the LEAD classifies the task (measure | evaluate | research), selects one backend goal-loop pipeline, and drives it via the shared orchestration playbook. Repeats modify -> judge until a gate is satisfied or maxRounds is hit.',
     instructions: GOAL_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

@@ -8,7 +8,7 @@
  * the LAST assistant entry that reports usage. This module turns a transcript
  * path (or the current main session, resolved via the Claude projects
  * directory) into that number plus the model's context-window `limit`, so any
- * agent or the `openspec agent context` command can decide whether to hand off.
+ * agent or the `rasen agent context` command can decide whether to hand off.
  *
  * Pure core: it reads the filesystem but never writes, prints, or exits. The
  * command layer owns output formatting and process exit codes.

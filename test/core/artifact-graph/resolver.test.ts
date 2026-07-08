@@ -40,7 +40,7 @@ describe('artifact-graph/resolver', () => {
     it('should use XDG_DATA_HOME when set', () => {
       process.env.XDG_DATA_HOME = tempDir;
       const userDir = getUserSchemasDir();
-      expect(userDir).toBe(path.join(tempDir, 'openspec', 'schemas'));
+      expect(userDir).toBe(path.join(tempDir, 'rasen', 'schemas'));
     });
   });
 
@@ -59,7 +59,7 @@ describe('artifact-graph/resolver', () => {
 
     it('should prefer user override directory', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -97,7 +97,7 @@ describe('artifact-graph/resolver', () => {
     it('should prefer user override over built-in', () => {
       // Set up global data dir
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
 
       // Create a custom schema with same name as built-in
@@ -120,7 +120,7 @@ artifacts:
 
     it('should validate user override and throw on invalid schema', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
 
       // Create an invalid schema (missing required fields)
@@ -138,7 +138,7 @@ artifacts:
 
     it('should include file path in validation error message', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
 
       const invalidSchema = `
@@ -163,7 +163,7 @@ artifacts:
 
     it('should detect cycles in user override schemas', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
 
       // Create a schema with cyclic dependencies
@@ -189,7 +189,7 @@ artifacts:
 
     it('should detect invalid requires references in user override schemas', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
 
       // Create a schema with invalid requires reference
@@ -210,7 +210,7 @@ artifacts:
 
     it('should throw SchemaLoadError on YAML syntax errors', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
 
       // Create malformed YAML
@@ -266,7 +266,7 @@ version: [[[invalid yaml
 
     it('should include user override schemas', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'custom-workflow');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'custom-workflow');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(path.join(userSchemaDir, 'schema.yaml'), 'name: custom\nversion: 1\nartifacts: []');
 
@@ -278,7 +278,7 @@ version: [[[invalid yaml
 
     it('should deduplicate schemas with same name', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'spec-driven');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'spec-driven');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       // Override spec-driven
       fs.writeFileSync(path.join(userSchemaDir, 'schema.yaml'), 'name: custom\nversion: 1\nartifacts: []');
@@ -299,7 +299,7 @@ version: [[[invalid yaml
 
     it('should only include directories with schema.yaml', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemasBase = path.join(tempDir, 'openspec', 'schemas');
+      const userSchemasBase = path.join(tempDir, 'rasen', 'schemas');
 
       // Create a directory without schema.yaml
       const emptyDir = path.join(userSchemasBase, 'empty-dir');
@@ -343,7 +343,7 @@ version: [[[invalid yaml
     it('should prefer project-local schema over user override', () => {
       // Set up user override
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'my-schema');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'my-schema');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -380,7 +380,7 @@ version: [[[invalid yaml
     it('should fall back to user override when no project-local schema', () => {
       // Set up user override only
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'user-only-schema');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'user-only-schema');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -407,7 +407,7 @@ version: [[[invalid yaml
     it('should maintain backward compatibility when projectRoot not provided', () => {
       // Set up user override
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'my-schema');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'my-schema');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -455,7 +455,7 @@ artifacts:
     it('should prefer project-local over user override when resolving', () => {
       // Set up user override
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'shared-schema');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'shared-schema');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -509,7 +509,7 @@ artifacts:
     it('should deduplicate project-local schema that shadows user override', () => {
       // Set up user override
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'my-schema');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'my-schema');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -582,7 +582,7 @@ artifacts:
 
     it('should return source: user for user override schemas', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'user-custom');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'user-custom');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),
@@ -609,7 +609,7 @@ artifacts:
     it('should show project source when project-local shadows user override', () => {
       // Set up user override
       process.env.XDG_DATA_HOME = tempDir;
-      const userSchemaDir = path.join(tempDir, 'openspec', 'schemas', 'shared');
+      const userSchemaDir = path.join(tempDir, 'rasen', 'schemas', 'shared');
       fs.mkdirSync(userSchemaDir, { recursive: true });
       fs.writeFileSync(
         path.join(userSchemaDir, 'schema.yaml'),

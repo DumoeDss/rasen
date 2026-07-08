@@ -23,7 +23,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 1. **Get active changes**
 
-   Run \`openspec list --json\` to get all active changes.
+   Run \`rasen list --json\` to get all active changes.
 
    If no active changes exist, inform user and stop.
 
@@ -40,7 +40,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    For each selected change, collect:
 
-   a. **Artifact status** - Run \`openspec status --change "<name>" --json\`
+   a. **Artifact status** - Run \`rasen status --change "<name>" --json\`
       - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
 
@@ -249,7 +249,7 @@ No active changes found. Create a new change to get started.
 - Archive directory target uses current date: YYYY-MM-DD-<name>
 - If archive target exists, fail that change but continue with others`,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }
@@ -272,7 +272,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 1. **Get active changes**
 
-   Run \`openspec list --json\` to get all active changes.
+   Run \`rasen list --json\` to get all active changes.
 
    If no active changes exist, inform user and stop.
 
@@ -289,7 +289,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    For each selected change, collect:
 
-   a. **Artifact status** - Run \`openspec status --change "<name>" --json\`
+   a. **Artifact status** - Run \`rasen status --change "<name>" --json\`
       - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
 

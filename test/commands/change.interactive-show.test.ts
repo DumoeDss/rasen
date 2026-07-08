@@ -7,7 +7,7 @@ describe('change show (interactive behavior)', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-change-show-tmp');
   const changesDir = path.join(testDir, 'openspec', 'changes');
-  const bin = path.join(projectRoot, 'bin', 'openspec.js');
+  const bin = path.join(projectRoot, 'bin', 'rasen.js');
 
 
   beforeEach(async () => {
@@ -34,7 +34,7 @@ describe('change show (interactive behavior)', () => {
       expect(err).toBeDefined();
       expect(err.status).not.toBe(0);
       expect(err.stderr.toString()).toContain('Available IDs:');
-      expect(err.stderr.toString()).toContain('openspec change list');
+      expect(err.stderr.toString()).toContain('rasen change list');
     } finally {
       process.chdir(originalCwd);
       process.env = originalEnv;

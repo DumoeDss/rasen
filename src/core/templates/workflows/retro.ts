@@ -3,7 +3,7 @@
  *
  * Engineering retrospective — analyzes commit history, work patterns,
  * and code quality metrics. Supports change-scoped, general, and global
- * retrospective modes. Report saved to the OpenSpec change directory.
+ * retrospective modes. Report saved to the Rasen change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -12,7 +12,7 @@ const RETRO_INSTRUCTIONS = `Engineering retrospective — analyze what shipped, 
 
 ${STORE_SELECTION_GUIDANCE}
 
-Supports three scopes: change-scoped, general, and global. Retro report saved to the OpenSpec change directory.
+Supports three scopes: change-scoped, general, and global. Retro report saved to the Rasen change directory.
 
 ## When to Use
 
@@ -172,7 +172,7 @@ export function getRetroCommandSkillTemplate(): SkillTemplate {
     description: 'Engineering retrospective — analyze what shipped, patterns, and learnings. Supports change-scoped, general, and global modes.',
     instructions: RETRO_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

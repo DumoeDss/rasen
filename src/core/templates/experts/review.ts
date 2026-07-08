@@ -107,9 +107,9 @@ Follow the output format specified in the checklist. Respect the suppressions �
 
 <!-- The two-axis structure and parallel-worker orchestration are adapted from mattpocock/skills (MIT, Copyright Matt Pocock). -->
 
-The two-pass review above is the **Standards axis** — does the diff follow this repo's documented standards plus the smell baseline in \`checklist.md\`? Run alongside it a **Spec axis** — does the diff faithfully implement what the originating OpenSpec change asked for?
+The two-pass review above is the **Standards axis** — does the diff follow this repo's documented standards plus the smell baseline in \`checklist.md\`? Run alongside it a **Spec axis** — does the diff faithfully implement what the originating Rasen change asked for?
 
-- **Spec source.** If this branch has an associated OpenSpec change, its \`proposal.md\` and \`tasks.md\` (under \`openspec/changes/<change-id>/\`) **are** the spec — there is no external issue tracker to consult. Find the change dir from the branch name, the commit messages, or ask the user which change this implements. If the branch has no OpenSpec change, skip the Spec axis and note "no spec available".
+- **Spec source.** If this branch has an associated Rasen change, its \`proposal.md\` and \`tasks.md\` (under \`openspec/changes/<change-id>/\`) **are** the spec — there is no external issue tracker to consult. Find the change dir from the branch name, the commit messages, or ask the user which change this implements. If the branch has no Rasen change, skip the Spec axis and note "no spec available".
 - **Spec axis brief.** Against \`proposal.md\` / \`tasks.md\`, report: (a) requirements the change asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the proposal/task line for each finding. (This overlaps Step 1.5 Scope Drift, which is the fast inline version; the Spec axis is the thorough pass when a change dir exists.)
 
 **Optionally run the two axes as parallel \`Agent\` workers** so they don't pollute each other's context — send one message with two \`Agent\` tool calls (\`general-purpose\` subagent for both):

@@ -133,8 +133,8 @@ function matchesKeyword(keyword: string, lowercasedText: string): boolean {
 
 export class PipelineCommand {
   /**
-   * Resolve the OpenSpec root through the shared root-selection layer, exactly
-   * as `openspec validate` does: `--store <id>` selects a registered store,
+   * Resolve the Rasen root through the shared root-selection layer, exactly
+   * as `rasen validate` does: `--store <id>` selects a registered store,
    * otherwise the nearest ancestor root wins with an implicit-root fallback.
    * Returns null only in `--json` mode when resolution failed — the resolver
    * already printed a machine-readable diagnostic and set `process.exitCode`,

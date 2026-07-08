@@ -242,7 +242,7 @@ describe('store registry facade', () => {
   it('removes only setup-created root files when registry write fails', async () => {
     const originalEnv = { ...process.env };
     const dataHome = mkdir('blocked-data-home');
-    fs.writeFileSync(path.join(dataHome, 'openspec'), 'not a directory\n');
+    fs.writeFileSync(path.join(dataHome, 'rasen'), 'not a directory\n');
     process.env = {
       ...process.env,
       XDG_DATA_HOME: dataHome,

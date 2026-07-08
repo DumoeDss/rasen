@@ -1,6 +1,6 @@
 /**
  * Working-set assembly (slice 4.1): the full set a root's declarations
- * describe — the OpenSpec root and its referenced stores — as an
+ * describe — the Rasen root and its referenced stores — as an
  * agent-consumable brief. A local convenience
  * computed from declared relationships, never a planning system; no
  * clone/sync/launch machinery. Unresolvable members are reported, not

@@ -64,7 +64,7 @@ describe('store command', () => {
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
 
@@ -191,7 +191,7 @@ describe('store command', () => {
       ...process.env,
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     delete process.env.OPEN_SPEC_INTERACTIVE;
     delete process.env.CI;
@@ -300,7 +300,7 @@ describe('store command', () => {
     expectHealthyOpenSpecRoot(storeRoot);
   });
 
-  it('preserves an existing healthy OpenSpec root during setup', async () => {
+  it('preserves an existing healthy Rasen root during setup', async () => {
     const storeRoot = mkdir('team-context');
     createHealthyOpenSpecRoot(storeRoot, 'config.yml');
     fs.writeFileSync(path.join(storeRoot, 'openspec', 'specs', 'note.md'), 'keep\n');
@@ -414,7 +414,7 @@ describe('store command', () => {
       ...process.env,
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     delete process.env.OPEN_SPEC_INTERACTIVE;
     delete process.env.CI;
@@ -459,7 +459,7 @@ describe('store command', () => {
       ...process.env,
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     delete process.env.OPEN_SPEC_INTERACTIVE;
     delete process.env.CI;
@@ -550,7 +550,7 @@ describe('store command', () => {
       ...process.env,
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     delete process.env.OPEN_SPEC_INTERACTIVE;
     delete process.env.CI;
@@ -566,7 +566,7 @@ describe('store command', () => {
     await runStoreCommand(['register', storeRoot]);
 
     expect(confirm).toHaveBeenCalledWith({
-      message: "Turn this OpenSpec root into store 'team-context'?",
+      message: "Turn this Rasen root into store 'team-context'?",
       default: false,
     });
     expect(fs.existsSync(getStoreMetadataPath(storeRoot))).toBe(false);
@@ -975,7 +975,7 @@ describe('store command', () => {
     );
   });
 
-  it('reports OpenSpec root health separately without repairing it', async () => {
+  it('reports Rasen root health separately without repairing it', async () => {
     const storeRoot = mkdir('team-context');
     fs.mkdirSync(path.join(storeRoot, 'openspec', 'specs'), { recursive: true });
     fs.mkdirSync(path.join(storeRoot, 'openspec', 'changes'), { recursive: true });
@@ -1038,7 +1038,7 @@ describe('store command', () => {
     expect(conflictStatus.code).toBe('store_id_conflict');
     expect(conflictStatus.message).toContain('One checkout per store id');
     expect(conflictStatus.message).toContain(expectedExistingPath(original));
-    expect(conflictStatus.fix).toContain('openspec store unregister team-context');
+    expect(conflictStatus.fix).toContain('rasen store unregister team-context');
     expect(conflictStatus.fix).not.toContain('different store id');
 
     // Mismatched --id when the metadata id is already registered elsewhere:
@@ -1145,11 +1145,11 @@ describe('store command', () => {
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("unknown command 'new' for 'openspec store'");
+      expect(result.stderr).toContain("unknown command 'new' for 'rasen store'");
       expect(result.stderr).toContain(
         'setup, register, unregister, remove, list (ls), doctor'
       );
-      expect(result.stderr).toContain('openspec new change billing-rework --store <id>');
+      expect(result.stderr).toContain('rasen new change billing-rework --store <id>');
     });
 
     it('never suggests an invalid command for partial new invocations', async () => {
@@ -1157,8 +1157,8 @@ describe('store command', () => {
 
       expect(result.exitCode).toBe(1);
       // 'new my-change' would be invalid; the hint falls back to the full form.
-      expect(result.stderr).toContain('openspec new change <change-id> --store <id>');
-      expect(result.stderr).not.toContain('openspec new my-change');
+      expect(result.stderr).toContain('rasen new change <change-id> --store <id>');
+      expect(result.stderr).not.toContain('rasen new my-change');
     });
 
     it('falls back to the generic example when flags interleave operands', async () => {
@@ -1168,7 +1168,7 @@ describe('store command', () => {
       );
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('openspec new change <change-id> --store <id>');
+      expect(result.stderr).toContain('rasen new change <change-id> --store <id>');
       expect(result.stderr).not.toContain('core');
     });
 

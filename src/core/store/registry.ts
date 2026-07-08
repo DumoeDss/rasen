@@ -103,7 +103,7 @@ export function assertNoRegisteredStoreConflict(
         'store_id_conflict',
         {
           target: 'store.id',
-          fix: `Use the existing registration, or run openspec store unregister ${id} first to switch this id to a different checkout.`,
+          fix: `Use the existing registration, or run rasen store unregister ${id} first to switch this id to a different checkout.`,
         }
       );
     }
@@ -151,7 +151,7 @@ function getRegisteredStoreOrThrow(
   if (!entry) {
     throw new StoreError(`Unknown store '${id}'`, 'store_not_found', {
       target: 'store.id',
-      fix: 'Run openspec store list to see registered stores.',
+      fix: 'Run rasen store list to see registered stores.',
     });
   }
 
@@ -233,7 +233,7 @@ async function ensureStoreMetadata(
         'store_metadata_missing',
         {
           target: 'store.metadata',
-          fix: `Create ${getStoreMetadataPath(storeRoot)} or rerun "openspec store register <path>".`,
+          fix: `Create ${getStoreMetadataPath(storeRoot)} or rerun "rasen store register <path>".`,
         }
       );
     }
@@ -424,7 +424,7 @@ export async function unregisterStoreRegistration(
   if (!removed) {
     throw new StoreError(`Unknown store '${id}'`, 'store_not_found', {
       target: 'store.id',
-      fix: 'Run openspec store list to see registered stores.',
+      fix: 'Run rasen store list to see registered stores.',
     });
   }
 
@@ -445,7 +445,7 @@ export async function resolveRegisteredStore(
   if (!registry) {
     throw new StoreError('No store registry found', 'no_store_registry', {
       target: 'store.id',
-      fix: 'Register a store with openspec store register <path>, then select it with --store <id>.',
+      fix: 'Register a store with rasen store register <path>, then select it with --store <id>.',
     });
   }
 

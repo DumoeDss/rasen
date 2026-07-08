@@ -18,7 +18,7 @@ describe('legacy command groups are removed', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
   });
@@ -84,7 +84,7 @@ describe('legacy command groups are removed', () => {
     const result = await runCLI(['update'], { cwd: tempDir, env });
 
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('No OpenSpec directory found');
+    expect(result.stderr).toContain('No Rasen directory found');
     expect(result.stderr).not.toContain('workspace');
   });
 

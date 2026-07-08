@@ -26,7 +26,7 @@ describe('store canonical remote (3.3)', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
       ...isolatedGitEnv(tempDir),
     };
     globalDataDir = getGlobalDataDir({ env });
@@ -396,7 +396,7 @@ describe('store canonical remote (3.3)', () => {
       // win32 double quotes (cmd/PowerShell treat ' as literal).
       const q = process.platform === 'win32' ? '"' : "'";
       expect(fix).toBe(
-        `git clone -- ${originRemote} ${q}${expectedCheckout}${q} && openspec store register ${q}${expectedCheckout}${q} --id team-context`
+        `git clone -- ${originRemote} ${q}${expectedCheckout}${q} && rasen store register ${q}${expectedCheckout}${q} --id team-context`
       );
 
       // Execute the fix's two commands with the values the shape pin

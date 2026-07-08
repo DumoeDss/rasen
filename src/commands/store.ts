@@ -264,7 +264,7 @@ async function resolveSetupInput(
       'store_setup_id_required',
       {
         target: 'store.id',
-        fix: 'openspec store setup <id> --path ~/openspec/<id> --json',
+        fix: 'rasen store setup <id> --path ~/openspec/<id> --json',
       }
     );
   }
@@ -275,7 +275,7 @@ async function resolveSetupInput(
       'store_setup_path_required',
       {
         target: 'store.root',
-        fix: `openspec store setup ${id ?? '<id>'} --path ~/openspec/${id ?? '<id>'}`,
+        fix: `rasen store setup ${id ?? '<id>'} --path ~/openspec/${id ?? '<id>'}`,
       }
     );
   }
@@ -306,7 +306,7 @@ async function confirmSetup(
   const { confirm } = await import('@inquirer/prompts');
 
   console.log('');
-  console.log('OpenSpec will create:');
+  console.log('Rasen will create:');
   console.log('');
   console.log(`  Store: ${prepared.id}`);
   console.log(`  Location: ${formatPathForHuman(prepared.root)}`);
@@ -339,7 +339,7 @@ async function confirmRemove(id: string, root: string, options: StoreRemoveOptio
       'store_remove_confirmation_required',
       {
         target: 'store.root',
-        fix: `openspec store remove ${id} --yes`,
+        fix: `rasen store remove ${id} --yes`,
       }
     );
   }
@@ -356,7 +356,7 @@ async function confirmRemove(id: string, root: string, options: StoreRemoveOptio
       'store_remove_cancelled',
       {
         target: 'store.root',
-        fix: 'Run "openspec store unregister <id>" if you only want to forget the local registration.',
+        fix: 'Run "rasen store unregister <id>" if you only want to forget the local registration.',
       }
     );
   }
@@ -399,19 +399,19 @@ function printMutationHuman(
 
   console.log(`${title}: ${payload.store.id}`);
   console.log(`Location: ${formatPathForHuman(payload.store.root)}`);
-  console.log('OpenSpec root: ready');
+  console.log('Rasen root: ready');
   console.log(`Registry: ${payload.registry.already_registered ? 'already registered' : 'registered'}`);
   for (const status of payload.status) {
     console.log(`${status.severity === 'error' ? 'Issue' : 'Note'}: ${status.message}`);
   }
   console.log('');
-  console.log('Next: run normal OpenSpec commands against this store, for example:');
-  console.log(`  openspec new change <change-id> --store ${payload.store.id}`);
+  console.log('Next: run normal Rasen commands against this store, for example:');
+  console.log(`  rasen new change <change-id> --store ${payload.store.id}`);
   if (payload.git.is_repository) {
     const shareRemote = remotes?.canonical ?? remotes?.observed;
     console.log(
       shareRemote
-        ? `Share it: teammates clone ${shareRemote} and run openspec store register <path>.`
+        ? `Share it: teammates clone ${shareRemote} and run rasen store register <path>.`
         : 'Share this store by committing and pushing it like any Git repo.'
     );
   }
@@ -442,12 +442,12 @@ function printListHuman(payload: StoreListOutput): void {
     console.log('No stores registered.');
     console.log('');
     console.log('Next:');
-    console.log('  openspec store setup team-context --path ~/openspec/team-context');
-    console.log('  openspec store register /path/to/store');
+    console.log('  rasen store setup team-context --path ~/openspec/team-context');
+    console.log('  rasen store register /path/to/store');
     return;
   }
 
-  console.log(`OpenSpec stores (${payload.stores.length})`);
+  console.log(`Rasen stores (${payload.stores.length})`);
   console.log('');
   console.log(`${'ID'.padEnd(16)}Location`);
   for (const store of payload.stores) {
@@ -490,7 +490,7 @@ function printDoctorHuman(payload: StoreDoctorOutput): void {
     console.log('');
     console.log(store.id);
     console.log(`  Location: ${store.root}`);
-    console.log(`  OpenSpec root: ${formatOpenSpecRootHuman(store)}`);
+    console.log(`  Rasen root: ${formatOpenSpecRootHuman(store)}`);
     console.log(`  Metadata: ${formatMetadataHuman(store)}`);
     const remoteLine = store.metadata.remote ?? store.git.origin_url;
     if (remoteLine) {
@@ -664,7 +664,7 @@ export function registerStoreCommand(program: Command): void {
   // entry, which shell completion scripts also consume.
   const storeGroupDescription =
     COMMAND_REGISTRY.find((entry) => entry.name === 'store')?.description ??
-    'Create and manage stores - standalone OpenSpec repos you register on this machine';
+    'Create and manage stores - standalone Rasen repos you register on this machine';
   const store = program.command('store').description(storeGroupDescription);
 
   store
@@ -683,7 +683,7 @@ export function registerStoreCommand(program: Command): void {
     .command('register [path]')
     .description('Register an existing local store')
     .option('--id <id>', 'Store id; defaults to metadata or folder name')
-    .option('--yes', 'Confirm creating store identity metadata for a healthy OpenSpec root')
+    .option('--yes', 'Confirm creating store identity metadata for a healthy Rasen root')
     .option('--json', 'Output as JSON')
     .action(async (inputPath: string | undefined, options: StoreRegisterOptions) => {
       await storeCommand.register(inputPath, options);
@@ -758,8 +758,8 @@ export function registerStoreCommand(program: Command): void {
     if (operands.includes('--json')) {
       const message =
         attempted.length > 0
-          ? `Unknown command '${attempted[0]}' for 'openspec store'. Store subcommands: ${storeSubcommandsLine}.`
-          : `Missing subcommand for 'openspec store'. Store subcommands: ${storeSubcommandsLine}.`;
+          ? `Unknown command '${attempted[0]}' for 'rasen store'. Store subcommands: ${storeSubcommandsLine}.`
+          : `Missing subcommand for 'rasen store'. Store subcommands: ${storeSubcommandsLine}.`;
       printJson({
         status: [
           {
@@ -773,19 +773,19 @@ export function registerStoreCommand(program: Command): void {
       process.exitCode = 1;
       return;
     }
-    let example = 'openspec new change <change-id> --store <id>';
+    let example = 'rasen new change <change-id> --store <id>';
     if (!hasFlagLikeToken && attempted.length > 0 && lifecycleRedirects.has(attempted[0])) {
       if (attempted[0] === 'new') {
         const changeId = attempted[1] === 'change' && attempted[2] ? attempted[2] : '<change-id>';
-        example = `openspec new change ${changeId} --store <id>`;
+        example = `rasen new change ${changeId} --store <id>`;
       } else {
-        example = `openspec ${attempted.join(' ')} --store <id>`;
+        example = `rasen ${attempted.join(' ')} --store <id>`;
       }
     }
     console.error(
       attempted.length > 0
-        ? `Error: unknown command '${attempted[0]}' for 'openspec store'.`
-        : "Error: missing subcommand for 'openspec store'."
+        ? `Error: unknown command '${attempted[0]}' for 'rasen store'.`
+        : "Error: missing subcommand for 'rasen store'."
     );
     console.error(
       `Store subcommands manage store registration: ${storeSubcommandsLine}.`

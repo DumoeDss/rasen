@@ -35,7 +35,7 @@ describe('ListCommand', () => {
       const listCommand = new ListCommand();
       
       await expect(listCommand.execute(tempDir, 'changes')).rejects.toThrow(
-        "No OpenSpec changes directory found. Run 'openspec init' first."
+        "No Rasen changes directory found. Run 'rasen init' first."
       );
     });
 

@@ -25,7 +25,7 @@ describe('capstone persona journeys (6.1)', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
   });
@@ -67,7 +67,7 @@ describe('capstone persona journeys (6.1)', () => {
         role: 'referenced_store',
         id: 'product-requirements',
         path: storeRoot,
-        fetch: 'openspec show <spec-id> --type spec --store product-requirements',
+        fetch: 'rasen show <spec-id> --type spec --store product-requirements',
       })
     );
 

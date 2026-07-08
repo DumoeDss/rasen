@@ -8,7 +8,7 @@ import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { createOpenSpecRoot } from '../helpers/openspec-fixtures.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
 
-describe('openspec context (4.1)', () => {
+describe('rasen context (4.1)', () => {
   let tempDir: string;
   let globalDataDir: string;
   let env: NodeJS.ProcessEnv;
@@ -21,7 +21,7 @@ describe('openspec context (4.1)', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
 
@@ -66,7 +66,7 @@ describe('openspec context (4.1)', () => {
         role: 'referenced_store',
         id: 'upstream-context',
         path: upstream,
-        fetch: 'openspec show <spec-id> --type spec --store upstream-context',
+        fetch: 'rasen show <spec-id> --type spec --store upstream-context',
         status: [],
       },
       {
@@ -86,7 +86,7 @@ describe('openspec context (4.1)', () => {
     expect(human.exitCode).toBe(0);
     expect(human.stdout).toContain(`Working context for team-context (${storeRoot})`);
     expect(human.stdout).toContain(`  upstream-context  ${upstream}`);
-    expect(human.stdout).toContain('Fetch: openspec show <spec-id> --type spec --store upstream-context');
+    expect(human.stdout).toContain('Fetch: rasen show <spec-id> --type spec --store upstream-context');
     expect(human.stdout).toContain('Not available on this machine');
     expect(human.stdout).toContain('Fix: git clone --');
 

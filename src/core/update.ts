@@ -1,7 +1,7 @@
 /**
  * Update Command
  *
- * Refreshes OpenSpec skills and commands for configured tools.
+ * Refreshes Rasen skills and commands for configured tools.
  * Supports profile-aware updates, delivery changes, migration, and smart update detection.
  */
 
@@ -93,7 +93,7 @@ export class UpdateCommand {
 
     // 1. Check openspec directory exists
     if (!await FileSystemUtils.directoryExists(openspecPath)) {
-      throw new Error(`No OpenSpec directory found. Run 'openspec init' first.`);
+      throw new Error(`No Rasen directory found. Run 'rasen init' first.`);
     }
 
     // 2. Perform one-time migration if needed before any legacy upgrade generation.
@@ -124,7 +124,7 @@ export class UpdateCommand {
 
     if (configuredTools.length === 0 && newlyConfiguredTools.length === 0) {
       console.log(chalk.yellow('No configured tools found.'));
-      console.log(chalk.dim('Run "openspec init" to set up tools.'));
+      console.log(chalk.dim('Run "rasen init" to set up tools.'));
       return;
     }
 
@@ -310,7 +310,7 @@ export class UpdateCommand {
       console.log('  /opsx:continue  Create the next artifact');
       console.log('  /opsx:apply     Implement tasks');
       console.log();
-      console.log(`Learn more: ${chalk.cyan('https://github.com/Fission-AI/OpenSpec')}`);
+      console.log(`Learn more: ${chalk.cyan('https://github.com/DumoeDss/rasen')}`);
     }
 
     const configuredAndNewTools = [...new Set([...configuredTools, ...newlyConfiguredTools])];
@@ -385,7 +385,7 @@ export class UpdateCommand {
       console.log();
       console.log(
         chalk.yellow(
-          `Detected new ${toolNoun}: ${newToolNames.join(', ')}. Run 'openspec init' to add ${pronoun}.`
+          `Detected new ${toolNoun}: ${newToolNames.join(', ')}. Run 'rasen init' to add ${pronoun}.`
         )
       );
     }
@@ -404,7 +404,7 @@ export class UpdateCommand {
     const extraWorkflows = installedWorkflows.filter((w) => !profileSet.has(w));
 
     if (extraWorkflows.length > 0) {
-      console.log(chalk.dim(`Note: ${extraWorkflows.length} extra workflows not in profile (use \`openspec config profile\` to manage)`));
+      console.log(chalk.dim(`Note: ${extraWorkflows.length} extra workflows not in profile (use \`rasen config profile\` to manage)`));
     }
   }
 
@@ -427,7 +427,7 @@ export class UpdateCommand {
     }
 
     console.log(chalk.dim('Note: The core profile now includes sync. Your custom profile is preserving the old core workflow set.'));
-    console.log(chalk.dim('Run `openspec config profile core` and then `openspec update` to add sync.'));
+    console.log(chalk.dim('Run `rasen config profile core` and then `rasen update` to add sync.'));
   }
 
   /**
@@ -563,7 +563,7 @@ export class UpdateCommand {
   }
 
   /**
-   * Detect and handle legacy OpenSpec artifacts.
+   * Detect and handle legacy Rasen artifacts.
    * Unlike init, update warns but continues if legacy files found in non-interactive mode.
    * Returns array of tool IDs that were newly configured during legacy upgrade.
    */

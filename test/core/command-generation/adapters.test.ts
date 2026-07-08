@@ -29,7 +29,7 @@ import type { CommandContent } from '../../../src/core/command-generation/types.
 describe('command-generation/adapters', () => {
   const sampleContent: CommandContent = {
     id: 'explore',
-    name: 'OpenSpec Explore',
+    name: 'Rasen Explore',
     description: 'Enter explore mode for thinking',
     category: 'Workflow',
     tags: ['workflow', 'explore', 'experimental'],
@@ -55,7 +55,7 @@ describe('command-generation/adapters', () => {
       const output = claudeAdapter.formatFile(sampleContent);
 
       expect(output).toContain('---\n');
-      expect(output).toContain('name: OpenSpec Explore');
+      expect(output).toContain('name: Rasen Explore');
       expect(output).toContain('description: Enter explore mode for thinking');
       expect(output).toContain('category: Workflow');
       expect(output).toContain('tags: [workflow, explore, experimental]');
@@ -117,7 +117,7 @@ describe('command-generation/adapters', () => {
       const output = windsurfAdapter.formatFile(sampleContent);
 
       expect(output).toContain('---\n');
-      expect(output).toContain('name: OpenSpec Explore');
+      expect(output).toContain('name: Rasen Explore');
       expect(output).toContain('description: Enter explore mode for thinking');
       expect(output).toContain('category: Workflow');
       expect(output).toContain('tags: [workflow, explore, experimental]');
@@ -261,7 +261,7 @@ describe('command-generation/adapters', () => {
 
     it('should format file with markdown header (no YAML frontmatter)', () => {
       const output = clineAdapter.formatFile(sampleContent);
-      expect(output).toContain('# OpenSpec Explore');
+      expect(output).toContain('# Rasen Explore');
       expect(output).toContain('Enter explore mode for thinking');
       expect(output).toContain('This is the command body.');
       expect(output).not.toContain('---');
@@ -335,7 +335,7 @@ describe('command-generation/adapters', () => {
     it('should format file with name, description, and argument-hint', () => {
       const output = codebuddyAdapter.formatFile(sampleContent);
       expect(output).toContain('---\n');
-      expect(output).toContain('name: OpenSpec Explore');
+      expect(output).toContain('name: Rasen Explore');
       expect(output).toContain('description: "Enter explore mode for thinking"');
       expect(output).toContain('argument-hint: "[command arguments]"');
       expect(output).toContain('---\n\n');
@@ -397,7 +397,7 @@ describe('command-generation/adapters', () => {
     it('should format file with name, description, category, and tags', () => {
       const output = crushAdapter.formatFile(sampleContent);
       expect(output).toContain('---\n');
-      expect(output).toContain('name: OpenSpec Explore');
+      expect(output).toContain('name: Rasen Explore');
       expect(output).toContain('description: Enter explore mode for thinking');
       expect(output).toContain('category: Workflow');
       expect(output).toContain('tags: [workflow, explore, experimental]');
@@ -562,7 +562,7 @@ describe('command-generation/adapters', () => {
     it('should format file with name, description, category, and tags', () => {
       const output = qoderAdapter.formatFile(sampleContent);
       expect(output).toContain('---\n');
-      expect(output).toContain('name: OpenSpec Explore');
+      expect(output).toContain('name: Rasen Explore');
       expect(output).toContain('description: Enter explore mode for thinking');
       expect(output).toContain('category: Workflow');
       expect(output).toContain('tags: [workflow, explore, experimental]');
@@ -666,7 +666,7 @@ describe('command-generation/adapters', () => {
 
     it('should format file with markdown header (no YAML frontmatter)', () => {
       const output = roocodeAdapter.formatFile(sampleContent);
-      expect(output).toContain('# OpenSpec Explore');
+      expect(output).toContain('# Rasen Explore');
       expect(output).toContain('Enter explore mode for thinking');
       expect(output).toContain('This is the command body.');
       expect(output).not.toContain('---');

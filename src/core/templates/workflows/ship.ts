@@ -13,7 +13,7 @@ const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mod
 
 ${STORE_SELECTION_GUIDANCE}
 
-PR body comes from proposal summary. Ship log recorded to the OpenSpec change directory.
+PR body comes from proposal summary. Ship log recorded to the Rasen change directory.
 
 ## When to Use
 
@@ -26,7 +26,7 @@ Use when: "ship it", "deploy", "create PR", "push", "land it", "merge", "release
 If a change name is provided, use it. Otherwise:
 - Infer from conversation context
 - Auto-select if only one active change exists
-- If ambiguous, run \`openspec list --json\` and prompt for selection
+- If ambiguous, run \`rasen list --json\` and prompt for selection
 
 ### 2. Pre-Flight Checks
 
@@ -200,7 +200,7 @@ export function getShipCommandSkillTemplate(): SkillTemplate {
     description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to change directory.',
     instructions: SHIP_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

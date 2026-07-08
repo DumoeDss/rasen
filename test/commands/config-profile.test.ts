@@ -377,7 +377,7 @@ describe('config profile interactive flow', () => {
     });
   });
 
-  it('confirmed project apply should run openspec update in the project', async () => {
+  it('confirmed project apply should run rasen update in the project', async () => {
     const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
     const { select, confirm } = await getPromptMocks();
 

@@ -72,7 +72,7 @@ export function getGoalIterateSkillTemplate(): SkillTemplate {
       'Goal-loop iterate stage (implementer role, the student) — work-product-aware: code edits toward the goal (may self-run measure informally) or prose research inline. Never spawns child subagents; self-hands off via Step H.3 when context fills.',
     instructions: GOAL_ITERATE_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

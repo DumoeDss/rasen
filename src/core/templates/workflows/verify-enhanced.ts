@@ -1,18 +1,18 @@
 /**
  * Verify-Enhanced OPSX Workflow Command
  *
- * Enhanced verification combining OpenSpec artifact consistency checks
+ * Enhanced verification combining Rasen artifact consistency checks
  * with gstack expert reviews (code review, security, QA, design review).
  * Auto-scales review depth based on change scope.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
-const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines OpenSpec completeness/correctness/consistency checks with expert reviews.
+const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines Rasen completeness/correctness/consistency checks with expert reviews.
 
 ${STORE_SELECTION_GUIDANCE}
 
-Automatically adjusts review depth based on task size. Reports saved to the OpenSpec change directory.
+Automatically adjusts review depth based on task size. Reports saved to the Rasen change directory.
 
 ## When to Use
 
@@ -25,7 +25,7 @@ Use when: "verify", "review", "check my code", "run tests", "QA", "verify the ch
 If a change name is provided, use it. Otherwise:
 - Infer from conversation context
 - Auto-select if only one active change exists
-- If ambiguous, run \`openspec list --json\` and prompt for selection
+- If ambiguous, run \`rasen list --json\` and prompt for selection
 
 ### 2. Classify Change Scope
 
@@ -45,10 +45,10 @@ Determine verification depth by analyzing the change:
 
 Display the classification and allow user override.
 
-### 3. Run OpenSpec Artifact Consistency Checks
+### 3. Run Rasen Artifact Consistency Checks
 
 \`\`\`bash
-openspec status --change "<name>" --json
+rasen status --change "<name>" --json
 \`\`\`
 
 Verify:
@@ -125,7 +125,7 @@ export function getVerifyEnhancedSkillTemplate(): SkillTemplate {
     description: 'Enhanced verification — artifact checks + code review + security audit + browser QA + visual audit. Auto-scales by change size.',
     instructions: VERIFY_ENHANCED_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

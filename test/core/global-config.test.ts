@@ -9,6 +9,7 @@ import {
   getGlobalDataDir,
   getGlobalConfig,
   saveGlobalConfig,
+  migrateLegacyBrandConfig,
   GLOBAL_CONFIG_DIR_NAME,
   GLOBAL_CONFIG_FILE_NAME
 } from '../../src/core/global-config.js';
@@ -21,7 +22,7 @@ describe('global-config', () => {
 
   beforeEach(() => {
     // Create temp directory for tests
-    tempDir = path.join(os.tmpdir(), `openspec-global-config-test-${Date.now()}`);
+    tempDir = path.join(os.tmpdir(), `rasen-global-config-test-${Date.now()}`);
     fs.mkdirSync(tempDir, { recursive: true });
 
     // Save original env
@@ -44,7 +45,7 @@ describe('global-config', () => {
 
   describe('constants', () => {
     it('should export correct directory name', () => {
-      expect(GLOBAL_CONFIG_DIR_NAME).toBe('openspec');
+      expect(GLOBAL_CONFIG_DIR_NAME).toBe('rasen');
     });
 
     it('should export correct file name', () => {
@@ -58,7 +59,7 @@ describe('global-config', () => {
 
       const result = getGlobalConfigDir();
 
-      expect(result).toBe(path.join(tempDir, 'openspec'));
+      expect(result).toBe(path.join(tempDir, 'rasen'));
     });
 
     it('should fall back to ~/.config on Unix/macOS without XDG_CONFIG_HOME', () => {
@@ -66,9 +67,9 @@ describe('global-config', () => {
 
       const result = getGlobalConfigDir();
 
-      // On non-Windows, should use ~/.config/openspec
+      // On non-Windows, should use ~/.config/rasen
       if (os.platform() !== 'win32') {
-        expect(result).toBe(path.join(os.homedir(), '.config', 'openspec'));
+        expect(result).toBe(path.join(os.homedir(), '.config', 'rasen'));
       }
     });
 
@@ -80,7 +81,7 @@ describe('global-config', () => {
         const appData = process.env.APPDATA;
         if (appData) {
           const result = getGlobalConfigDir();
-          expect(result).toBe(path.join(appData, 'openspec'));
+          expect(result).toBe(path.join(appData, 'rasen'));
         }
       }
     });
@@ -92,7 +93,7 @@ describe('global-config', () => {
 
       const result = getGlobalConfigPath();
 
-      expect(result).toBe(path.join(tempDir, 'openspec', 'config.json'));
+      expect(result).toBe(path.join(tempDir, 'rasen', 'config.json'));
     });
   });
 
@@ -104,7 +105,7 @@ describe('global-config', () => {
           platform: 'linux',
           homedir: '/home/tabish',
         })
-      ).toBe('/home/tabish/.local/share/openspec');
+      ).toBe('/home/tabish/.local/share/rasen');
 
       expect(
         getGlobalDataDir({
@@ -112,7 +113,7 @@ describe('global-config', () => {
           platform: 'darwin',
           homedir: '/Users/tabish',
         })
-      ).toBe('/var/data/openspec');
+      ).toBe('/var/data/rasen');
     });
 
     it('should use Windows separators for native Windows platform overrides', () => {
@@ -122,7 +123,7 @@ describe('global-config', () => {
           platform: 'win32',
           homedir: 'C:\\Users\\Tabish',
         })
-      ).toBe('C:\\Users\\Tabish\\AppData\\Local\\openspec');
+      ).toBe('C:\\Users\\Tabish\\AppData\\Local\\rasen');
 
       expect(
         getGlobalDataDir({
@@ -130,7 +131,7 @@ describe('global-config', () => {
           platform: 'win32',
           homedir: 'C:\\Users\\Tabish',
         })
-      ).toBe('D:\\Users\\Tabish\\AppData\\Local\\openspec');
+      ).toBe('D:\\Users\\Tabish\\AppData\\Local\\rasen');
     });
   });
 
@@ -145,7 +146,7 @@ describe('global-config', () => {
 
     it('should not create directory when reading non-existent config', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
 
       getGlobalConfig();
 
@@ -154,7 +155,7 @@ describe('global-config', () => {
 
     it('should load valid config from file', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
       fs.mkdirSync(configDir, { recursive: true });
@@ -169,7 +170,7 @@ describe('global-config', () => {
 
     it('should return defaults for invalid JSON', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
       fs.mkdirSync(configDir, { recursive: true });
@@ -182,7 +183,7 @@ describe('global-config', () => {
 
     it('should log warning for invalid JSON', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
       fs.mkdirSync(configDir, { recursive: true });
@@ -197,7 +198,7 @@ describe('global-config', () => {
 
     it('should preserve unknown fields from config file', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
       fs.mkdirSync(configDir, { recursive: true });
@@ -215,7 +216,7 @@ describe('global-config', () => {
 
     it('should merge loaded config with defaults', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
       // Config with only some fields
@@ -233,7 +234,7 @@ describe('global-config', () => {
     describe('schema evolution', () => {
       it('should add default profile and delivery when loading old config without them', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
-        const configDir = path.join(tempDir, 'openspec');
+        const configDir = path.join(tempDir, 'rasen');
         const configPath = path.join(configDir, 'config.json');
 
         // Simulate a pre-existing config that only has featureFlags
@@ -252,7 +253,7 @@ describe('global-config', () => {
 
       it('should preserve explicit profile and delivery values from config', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
-        const configDir = path.join(tempDir, 'openspec');
+        const configDir = path.join(tempDir, 'rasen');
         const configPath = path.join(configDir, 'config.json');
 
         fs.mkdirSync(configDir, { recursive: true });
@@ -289,7 +290,7 @@ describe('global-config', () => {
 
       it('should default workflows to undefined when not in config', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
-        const configDir = path.join(tempDir, 'openspec');
+        const configDir = path.join(tempDir, 'rasen');
         const configPath = path.join(configDir, 'config.json');
 
         fs.mkdirSync(configDir, { recursive: true });
@@ -309,7 +310,7 @@ describe('global-config', () => {
   describe('saveGlobalConfig', () => {
     it('should create directory if it does not exist', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
 
       saveGlobalConfig({ featureFlags: { test: true } });
 
@@ -318,7 +319,7 @@ describe('global-config', () => {
 
     it('should write config to file', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configPath = path.join(tempDir, 'openspec', 'config.json');
+      const configPath = path.join(tempDir, 'rasen', 'config.json');
 
       saveGlobalConfig({ featureFlags: { myFlag: true } });
 
@@ -329,7 +330,7 @@ describe('global-config', () => {
 
     it('should overwrite existing config file', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configDir = path.join(tempDir, 'openspec');
+      const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
       // Create initial config
@@ -347,7 +348,7 @@ describe('global-config', () => {
 
     it('should write formatted JSON with trailing newline', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
-      const configPath = path.join(tempDir, 'openspec', 'config.json');
+      const configPath = path.join(tempDir, 'rasen', 'config.json');
 
       saveGlobalConfig({ featureFlags: {} });
 
@@ -366,6 +367,78 @@ describe('global-config', () => {
       const loadedConfig = getGlobalConfig();
 
       expect(loadedConfig.featureFlags).toEqual(originalConfig.featureFlags);
+    });
+  });
+
+  describe('migrateLegacyBrandConfig', () => {
+    it('adopts a legacy rasen config dir, preserving anonymousId', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      process.env.XDG_DATA_HOME = tempDir;
+
+      const legacyDir = path.join(tempDir, 'openspec');
+      fs.mkdirSync(legacyDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(legacyDir, 'config.json'),
+        JSON.stringify({ anonymousId: 'abc-123', noticeSeen: true })
+      );
+
+      migrateLegacyBrandConfig();
+
+      const newConfigPath = path.join(tempDir, 'rasen', 'config.json');
+      expect(fs.existsSync(newConfigPath)).toBe(true);
+      const migrated = JSON.parse(fs.readFileSync(newConfigPath, 'utf-8'));
+      expect(migrated.anonymousId).toBe('abc-123');
+      expect(migrated.noticeSeen).toBe(true);
+      // Copy-not-move: legacy dir is never deleted.
+      expect(fs.existsSync(path.join(legacyDir, 'config.json'))).toBe(true);
+    });
+
+    it('does not overwrite an existing new-brand dir', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      process.env.XDG_DATA_HOME = tempDir;
+
+      const legacyDir = path.join(tempDir, 'openspec');
+      fs.mkdirSync(legacyDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(legacyDir, 'config.json'),
+        JSON.stringify({ anonymousId: 'legacy-id' })
+      );
+
+      const newDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(newDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(newDir, 'config.json'),
+        JSON.stringify({ anonymousId: 'existing-id' })
+      );
+
+      migrateLegacyBrandConfig();
+
+      const kept = JSON.parse(
+        fs.readFileSync(path.join(newDir, 'config.json'), 'utf-8')
+      );
+      expect(kept.anonymousId).toBe('existing-id');
+    });
+
+    it('is a no-op when no legacy dir exists (normal first-write path)', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      process.env.XDG_DATA_HOME = tempDir;
+
+      migrateLegacyBrandConfig();
+
+      expect(fs.existsSync(path.join(tempDir, 'rasen'))).toBe(false);
+    });
+
+    it('swallows adverse filesystem state so startup cannot break', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      process.env.XDG_DATA_HOME = tempDir;
+
+      // Legacy path exists but is a *file*, not a directory — an unexpected
+      // filesystem shape. Migration must skip it gracefully, never throw.
+      fs.writeFileSync(path.join(tempDir, 'openspec'), 'not a directory\n');
+
+      expect(() => migrateLegacyBrandConfig()).not.toThrow();
+      // Adverse legacy shape is not adopted.
+      expect(fs.existsSync(path.join(tempDir, 'rasen'))).toBe(false);
     });
   });
 });

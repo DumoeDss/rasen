@@ -116,7 +116,7 @@ describe('reference index assembly', () => {
       { id: 'auth-sso', summary: '' },
       { id: 'billing', summary: 'Billing must support usage-based invoicing.' },
     ]);
-    expect(entry.fetch).toBe('openspec show <spec-id> --type spec --store team-context');
+    expect(entry.fetch).toBe('rasen show <spec-id> --type spec --store team-context');
     expect(entry.status).toEqual([]);
   });
 
@@ -139,7 +139,7 @@ describe('reference index assembly', () => {
       expect.objectContaining({
         severity: 'warning',
         code: 'reference_unresolved',
-        fix: expect.stringContaining('openspec store register <path> --id missing-context'),
+        fix: expect.stringContaining('rasen store register <path> --id missing-context'),
       })
     );
   });
@@ -156,7 +156,7 @@ describe('reference index assembly', () => {
     // double quotes (cmd/PowerShell treat single quotes as literal).
     const q = process.platform === 'win32' ? '"' : "'";
     expect(entries[0].status[0].fix).toBe(
-      `git clone -- https://192.0.2.1/team.git ${q}${checkout}${q} && openspec store register ${q}${checkout}${q} --id missing-context`
+      `git clone -- https://192.0.2.1/team.git ${q}${checkout}${q} && rasen store register ${q}${checkout}${q} --id missing-context`
     );
 
     // An invalid id wins over any declared remote.
@@ -207,7 +207,7 @@ describe('reference index assembly', () => {
         expect.objectContaining({
           severity: 'warning',
           code: 'reference_root_unhealthy',
-          fix: expect.stringContaining('openspec store doctor'),
+          fix: expect.stringContaining('rasen store doctor'),
         })
       );
     }
@@ -345,7 +345,7 @@ describe('reference index assembly', () => {
     expect(entry.status[0]).toEqual(
       expect.objectContaining({
         code: 'reference_index_truncated',
-        fix: expect.stringContaining('openspec list --specs --store huge-context'),
+        fix: expect.stringContaining('rasen list --specs --store huge-context'),
       })
     );
 
@@ -373,9 +373,9 @@ describe('reference index assembly', () => {
     expect(block).toContain('  - billing: Usage-based invoicing.');
     expect(block).toContain('  - bare');
     expect(block).not.toContain('  - bare:');
-    expect(block).toContain('Fetch: openspec show <spec-id> --type spec --store team-context');
+    expect(block).toContain('Fetch: rasen show <spec-id> --type spec --store team-context');
     expect(block).toContain("Store missing-context: Referenced store 'missing-context' is not registered on this machine.");
-    expect(block).toContain('Fix: Get a checkout from a teammate and run: openspec store register <path> --id missing-context');
+    expect(block).toContain('Fix: Get a checkout from a teammate and run: rasen store register <path> --id missing-context');
 
     expect(section).toContain('### Referenced Stores');
     expect(section).toContain('  - billing: Usage-based invoicing.');

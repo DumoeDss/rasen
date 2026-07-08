@@ -1,5 +1,5 @@
 /**
- * Legacy cleanup module for detecting and removing OpenSpec artifacts
+ * Legacy cleanup module for detecting and removing Rasen artifacts
  * from previous init versions during the migration to the skill-based workflow.
  */
 
@@ -54,7 +54,7 @@ export async function pruneRetiredExpertSkillDirs(skillsDir: string): Promise<st
 
 /**
  * Legacy config file names from the old ToolRegistry.
- * These were config files created at project root with OpenSpec markers.
+ * These were config files created at project root with Rasen markers.
  */
 export const LEGACY_CONFIG_FILES = [
   'CLAUDE.md',
@@ -115,7 +115,7 @@ export interface LegacySlashCommandPattern {
  * Result of legacy artifact detection
  */
 export interface LegacyDetectionResult {
-  /** Config files with OpenSpec markers detected */
+  /** Config files with Rasen markers detected */
   configFiles: string[];
   /** Config files to update (remove markers only, never delete) */
   configFilesToUpdate: string[];
@@ -127,14 +127,14 @@ export interface LegacyDetectionResult {
   hasOpenspecAgents: boolean;
   /** Whether openspec/project.md exists (preserved, migration hint only) */
   hasProjectMd: boolean;
-  /** Whether root AGENTS.md has OpenSpec markers */
+  /** Whether root AGENTS.md has Rasen markers */
   hasRootAgentsWithMarkers: boolean;
   /** Whether any legacy artifacts were found */
   hasLegacyArtifacts: boolean;
 }
 
 /**
- * Detects all legacy OpenSpec artifacts in a project.
+ * Detects all legacy Rasen artifacts in a project.
  *
  * @param projectPath - The root path of the project
  * @returns Detection result with all found legacy artifacts
@@ -182,7 +182,7 @@ export async function detectLegacyArtifacts(
 }
 
 /**
- * Detects legacy config files with OpenSpec markers.
+ * Detects legacy config files with Rasen markers.
  * All config files with markers are candidates for update (marker removal only).
  * Config files are NEVER deleted - they belong to the user's project root.
  *
@@ -302,7 +302,7 @@ async function findLegacySlashCommandFiles(
 }
 
 /**
- * Detects legacy OpenSpec structure files (AGENTS.md and project.md).
+ * Detects legacy Rasen structure files (AGENTS.md and project.md).
  *
  * @param projectPath - The root path of the project
  * @returns Object with detection results for structure files
@@ -326,7 +326,7 @@ export async function detectLegacyStructureFiles(
   const projectMdPath = FileSystemUtils.joinPath(projectPath, 'openspec', 'project.md');
   hasProjectMd = await FileSystemUtils.fileExists(projectMdPath);
 
-  // Check for root AGENTS.md with OpenSpec markers
+  // Check for root AGENTS.md with Rasen markers
   const rootAgentsPath = FileSystemUtils.joinPath(projectPath, 'AGENTS.md');
   if (await FileSystemUtils.fileExists(rootAgentsPath)) {
     const content = await FileSystemUtils.readFile(rootAgentsPath);
@@ -337,7 +337,7 @@ export async function detectLegacyStructureFiles(
 }
 
 /**
- * Checks if content contains OpenSpec markers.
+ * Checks if content contains Rasen markers.
  *
  * @param content - File content to check
  * @returns True if both start and end markers are present
@@ -349,7 +349,7 @@ export function hasOpenSpecMarkers(content: string): boolean {
 }
 
 /**
- * Checks if file content is 100% OpenSpec content (only markers and whitespace outside).
+ * Checks if file content is 100% Rasen content (only markers and whitespace outside).
  *
  * @param content - File content to check
  * @returns True if content outside markers is only whitespace
@@ -369,11 +369,11 @@ export function isOnlyOpenSpecContent(content: string): boolean {
 }
 
 /**
- * Removes the OpenSpec marker block from file content.
+ * Removes the Rasen marker block from file content.
  * Only removes markers that are on their own lines (ignores inline mentions).
  * Cleans up double blank lines that may result from removal.
  *
- * @param content - File content with OpenSpec markers
+ * @param content - File content with Rasen markers
  * @returns Content with marker block removed
  */
 export function removeMarkerBlock(content: string): string {
@@ -397,7 +397,7 @@ export interface CleanupResult {
 }
 
 /**
- * Cleans up legacy OpenSpec artifacts from a project.
+ * Cleans up legacy Rasen artifacts from a project.
  * Preserves openspec/project.md (shows migration hint instead of deleting).
  *
  * @param projectPath - The root path of the project
@@ -431,7 +431,7 @@ export async function cleanupLegacyArtifacts(
     }
   }
 
-  // Delete legacy slash command directories (these are 100% OpenSpec-managed)
+  // Delete legacy slash command directories (these are 100% Rasen-managed)
   for (const dirPath of detection.slashCommandDirs) {
     const fullPath = FileSystemUtils.joinPath(projectPath, dirPath);
     try {
@@ -442,7 +442,7 @@ export async function cleanupLegacyArtifacts(
     }
   }
 
-  // Delete legacy slash command files (these are 100% OpenSpec-managed)
+  // Delete legacy slash command files (these are 100% Rasen-managed)
   for (const filePath of detection.slashCommandFiles) {
     const fullPath = FileSystemUtils.joinPath(projectPath, filePath);
     try {
@@ -453,7 +453,7 @@ export async function cleanupLegacyArtifacts(
     }
   }
 
-  // Delete openspec/AGENTS.md (this is inside openspec/, it's OpenSpec-managed)
+  // Delete openspec/AGENTS.md (this is inside openspec/, it's Rasen-managed)
   if (detection.hasOpenspecAgents) {
     const agentsPath = FileSystemUtils.joinPath(projectPath, 'openspec', 'AGENTS.md');
     if (await FileSystemUtils.fileExists(agentsPath)) {
@@ -466,7 +466,7 @@ export async function cleanupLegacyArtifacts(
     }
   }
 
-  // Handle root AGENTS.md with OpenSpec markers - remove markers only, NEVER delete
+  // Handle root AGENTS.md with Rasen markers - remove markers only, NEVER delete
   // Note: Root AGENTS.md is handled via configFilesToUpdate above (it's in LEGACY_CONFIG_FILES)
   // This hasRootAgentsWithMarkers flag is just for detection, cleanup happens via configFilesToUpdate
 
@@ -494,7 +494,7 @@ export function formatCleanupSummary(result: CleanupResult): string {
     }
 
     for (const file of result.modifiedFiles) {
-      lines.push(`  ✓ Removed OpenSpec markers from ${file}`);
+      lines.push(`  ✓ Removed Rasen markers from ${file}`);
     }
   }
 
@@ -520,7 +520,7 @@ export function formatCleanupSummary(result: CleanupResult): string {
 
 /**
  * Build list of files to be removed with explanations.
- * Only includes OpenSpec-managed files (slash commands, openspec/AGENTS.md).
+ * Only includes Rasen-managed files (slash commands, openspec/AGENTS.md).
  * Config files like CLAUDE.md, AGENTS.md are NEVER deleted.
  *
  * @param detection - Detection result from detectLegacyArtifacts
@@ -529,19 +529,19 @@ export function formatCleanupSummary(result: CleanupResult): string {
 function buildRemovalsList(detection: LegacyDetectionResult): Array<{ path: string; explanation: string }> {
   const removals: Array<{ path: string; explanation: string }> = [];
 
-  // Slash command directories (these are 100% OpenSpec-managed)
+  // Slash command directories (these are 100% Rasen-managed)
   for (const dir of detection.slashCommandDirs) {
     // Split on both forward and backward slashes for Windows compatibility
     const toolDir = dir.split(/[\/\\]/)[0];
     removals.push({ path: dir + '/', explanation: `replaced by ${toolDir}/skills/` });
   }
 
-  // Slash command files (these are 100% OpenSpec-managed)
+  // Slash command files (these are 100% Rasen-managed)
   for (const file of detection.slashCommandFiles) {
     removals.push({ path: file, explanation: 'replaced by skills/' });
   }
 
-  // openspec/AGENTS.md (inside openspec/, it's OpenSpec-managed)
+  // openspec/AGENTS.md (inside openspec/, it's Rasen-managed)
   if (detection.hasOpenspecAgents) {
     removals.push({ path: 'openspec/AGENTS.md', explanation: 'obsolete workflow file' });
   }
@@ -564,7 +564,7 @@ function buildUpdatesList(detection: LegacyDetectionResult): Array<{ path: strin
 
   // All config files with markers get updated (markers removed, file preserved)
   for (const file of detection.configFilesToUpdate) {
-    updates.push({ path: file, explanation: 'removing OpenSpec markers' });
+    updates.push({ path: file, explanation: 'removing Rasen markers' });
   }
 
   return updates;
@@ -589,9 +589,9 @@ export function formatDetectionSummary(detection: LegacyDetectionResult): string
   }
 
   // Header - welcoming upgrade message
-  lines.push(chalk.bold('Upgrading to the new OpenSpec'));
+  lines.push(chalk.bold('Upgrading to the new Rasen'));
   lines.push('');
-  lines.push('OpenSpec now uses agent skills, the emerging standard across coding');
+  lines.push('Rasen now uses agent skills, the emerging standard across coding');
   lines.push('agents. This simplifies your setup while keeping everything working');
   lines.push('as before.');
   lines.push('');
@@ -609,7 +609,7 @@ export function formatDetectionSummary(detection: LegacyDetectionResult): string
   if (updates.length > 0) {
     if (removals.length > 0) lines.push('');
     lines.push(chalk.bold('Files to update'));
-    lines.push(chalk.dim('OpenSpec markers will be removed, your content preserved:'));
+    lines.push(chalk.dim('Rasen markers will be removed, your content preserved:'));
     for (const { path } of updates) {
       lines.push(`  • ${path}`);
     }
@@ -686,7 +686,7 @@ export function formatProjectMdMigrationHint(): string {
   lines.push(chalk.dim('    We won\'t delete this file. It may contain useful project context.'));
   lines.push('');
   lines.push(chalk.dim('    The new openspec/config.yaml has a "context:" section for planning'));
-  lines.push(chalk.dim('    context. This is included in every OpenSpec request and works more'));
+  lines.push(chalk.dim('    context. This is included in every Rasen request and works more'));
   lines.push(chalk.dim('    reliably than the old project.md approach.'));
   lines.push('');
   lines.push(chalk.dim('    Review project.md, move any useful content to config.yaml\'s context'));

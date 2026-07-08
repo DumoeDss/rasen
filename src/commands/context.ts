@@ -1,5 +1,5 @@
 /**
- * `openspec context` (slice 4.1): the working set a root's declarations
+ * `rasen context` (slice 4.1): the working set a root's declarations
  * describe, as an agent brief (JSON), a human listing, or an editor
  * view (`--code-workspace`). Assembly is presentation over the Phase 3
  * relationship data; doctor is the health surface. The only write this
@@ -63,7 +63,7 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
   const rootLabel = workingSet.root.store_id ?? path.basename(workingSet.root.path);
   console.log(`Working context for ${rootLabel} (${workingSet.root.path})`);
   console.log('');
-  console.log('OpenSpec root');
+  console.log('Rasen root');
   console.log(`  ${rootLabel}  ${workingSet.root.path}`);
 
   const availableStores = workingSet.members.filter(
@@ -160,7 +160,7 @@ function writeCodeWorkspace(
 export function registerContextCommand(program: Command): void {
   const description =
     COMMAND_REGISTRY.find((entry) => entry.name === 'context')?.description ??
-    'Print the working context for the resolved OpenSpec root';
+    'Print the working context for the resolved Rasen root';
 
   program
     .command('context')
