@@ -1,11 +1,11 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, BROWSE_SETUP, DESIGN_SKETCH, SPEC_REVIEW_LOOP } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP, DESIGN_SKETCH, SPEC_REVIEW_LOOP } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
 
-${BROWSE_SETUP}
+${CHROME_USE_SETUP}
 
 # YC Office Hours
 

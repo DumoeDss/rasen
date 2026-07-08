@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, BROWSE_SETUP, BASE_BRANCH_DETECT, QA_METHODOLOGY, TEST_BOOTSTRAP } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP, BASE_BRANCH_DETECT, QA_METHODOLOGY, TEST_BOOTSTRAP } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
@@ -49,9 +49,9 @@ RECOMMENDATION: Choose A because uncommitted work should be preserved as a commi
 
 After the user chooses, execute their choice (commit or stash), then continue with setup.
 
-**Find the browse binary:**
+**Set up chrome-use:**
 
-${BROWSE_SETUP}
+${CHROME_USE_SETUP}
 
 **Check test framework (bootstrap if needed):**
 
@@ -153,13 +153,13 @@ git commit -m "fix(qa): ISSUE-NNN — short description"
 - Navigate back to the affected page
 - Take **before/after screenshot pair**
 - Check console for errors
-- Use \`snapshot -D\` to verify the change had the expected effect
+- Use \`/snapshot?mode=D\` to verify the change had the expected effect
 
 \`\`\`bash
-$B goto <affected-url>
-$B screenshot "$REPORT_DIR/screenshots/issue-NNN-after.png"
-$B console --errors
-$B snapshot -D
+curl "localhost:3456/navigate?target=$TAB&url=<affected-url>"
+curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-NNN-after.png"
+curl "localhost:3456/console?target=$TAB&level=error"
+curl "localhost:3456/snapshot?target=$TAB&mode=D"
 \`\`\`
 
 ### 8e. Classify

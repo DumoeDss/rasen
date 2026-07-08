@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, BROWSE_SETUP, QA_METHODOLOGY } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP, QA_METHODOLOGY } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
@@ -23,9 +23,9 @@ You are a QA engineer. Test web applications like a real user — click everythi
 
 **If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
 
-**Find the browse binary:**
+**Set up chrome-use:**
 
-${BROWSE_SETUP}
+${CHROME_USE_SETUP}
 
 **Create output directories:**
 
