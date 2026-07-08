@@ -17,6 +17,7 @@
   "license": "MIT",
   "author": "DumoeDss",
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
   "publishConfig": {
     "access": "public"
   },
