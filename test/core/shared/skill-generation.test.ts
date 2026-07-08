@@ -12,9 +12,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (22 workflow + 19 expert)', () => {
+    it('should return all skill templates (22 workflow + 20 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(41);
+      expect(templates).toHaveLength(42);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -74,8 +74,8 @@ describe('skill-generation', () => {
 
     it('should filter workflow skills by IDs (expert skills always included)', () => {
       const filtered = getSkillTemplates(['propose', 'explore', 'apply', 'archive']);
-      // 4 workflow + 19 expert skills
-      expect(filtered).toHaveLength(23);
+      // 4 workflow + 20 expert skills
+      expect(filtered).toHaveLength(24);
       const ids = filtered.map(t => t.workflowId);
       expect(ids).toContain('propose');
       expect(ids).toContain('explore');
@@ -93,14 +93,14 @@ describe('skill-generation', () => {
 
     it('should return only expert skills when filter matches no workflows', () => {
       const filtered = getSkillTemplates(['nonexistent']);
-      // 0 workflow + 19 expert skills
-      expect(filtered).toHaveLength(19);
+      // 0 workflow + 20 expert skills
+      expect(filtered).toHaveLength(20);
     });
 
     it('should return single workflow template plus expert skills when filter has one workflow', () => {
       const filtered = getSkillTemplates(['propose']);
-      // 1 workflow + 19 expert skills
-      expect(filtered).toHaveLength(20);
+      // 1 workflow + 20 expert skills
+      expect(filtered).toHaveLength(21);
       const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
       expect(workflowTemplates).toHaveLength(1);
       expect(workflowTemplates[0].dirName).toBe('openspec-propose');
@@ -263,6 +263,21 @@ describe('skill-generation', () => {
     it('copies hook bin/*.sh sidecars', () => {
       copySkillSidecars('careful', target);
       expect(existsSync(join(target, 'bin', 'check-careful.sh'))).toBe(true);
+    });
+
+    it('copies executable .mjs/.js sidecars (chrome-use proxy scripts) but never *.tmpl or SKILL.md', () => {
+      copySkillSidecars('chrome-use', target);
+      // The vendored CDP proxy scripts must install so check-deps.mjs can launch the proxy.
+      expect(existsSync(join(target, 'scripts', 'cdp-proxy.mjs'))).toBe(true);
+      expect(existsSync(join(target, 'scripts', 'check-deps.mjs'))).toBe(true);
+      expect(existsSync(join(target, 'scripts', 'match-site.mjs'))).toBe(true);
+      // The reference doc (.md) sidecar installs alongside.
+      expect(existsSync(join(target, 'references', 'cdp-api.md'))).toBe(true);
+      // SKILL.md/*.tmpl still excluded, and personal site-patterns must never be vendored.
+      const files = allFiles(target);
+      expect(files).not.toContain('SKILL.md');
+      expect(files.some(f => f.endsWith('.tmpl'))).toBe(false);
+      expect(files.some(f => f.includes('site-patterns'))).toBe(false);
     });
 
     it('skips the browse skill entirely (no vendored .ts src/test trees)', () => {
