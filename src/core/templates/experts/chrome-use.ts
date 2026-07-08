@@ -59,48 +59,52 @@ sub-agents; isolate your work by tab:
 
 \`\`\`bash
 BASE=http://localhost:3456
+# --noproxy '*' on every call: a configured HTTP(S)_PROXY otherwise hijacks
+# localhost and returns 502.
 
 # open a disposable tab, capture its id
-TAB=$(curl -s "$BASE/new?url=https://yourapp.com" | jq -r .targetId)
+TAB=$(curl --noproxy '*' -s "$BASE/new?url=https://yourapp.com" | jq -r .targetId)
 
 # verify a page loads
-curl -s "$BASE/info?target=$TAB"                       # title / url / readyState
-curl -s "$BASE/text?target=$TAB&selector=.main-content"
-curl -s "$BASE/console/enable?target=$TAB"; curl -s "$BASE/console?target=$TAB&level=error"
+curl --noproxy '*' -s "$BASE/info?target=$TAB"                       # title / url / readyState
+curl --noproxy '*' -s "$BASE/text?target=$TAB&selector=.main-content"
+curl --noproxy '*' -s "$BASE/console/enable?target=$TAB"; curl --noproxy '*' -s "$BASE/console?target=$TAB&level=error"
 
 # interact
-curl -s -X POST "$BASE/click?target=$TAB" -d '#submit'     # JS-layer click (CSS selector in body)
-curl -s "$BASE/screenshot?target=$TAB&file=/tmp/shot.png"
+curl --noproxy '*' -s -X POST "$BASE/click?target=$TAB" -d '#submit'     # JS-layer click (CSS selector in body)
+curl --noproxy '*' -s "$BASE/screenshot?target=$TAB&file=/tmp/shot.png"
 
 # reverse-engineer a request (browser-layer capture)
-curl -s "$BASE/network/enable?target=$TAB&body=true"
-curl -s "$BASE/network/wait?target=$TAB&url_pattern=/api/.*/submit&method=POST&timeout=60000&include_body=true"
+curl --noproxy '*' -s "$BASE/network/enable?target=$TAB&body=true"
+curl --noproxy '*' -s "$BASE/network/wait?target=$TAB&url_pattern=/api/.*/submit&method=POST&timeout=60000&include_body=true"
 
 # close when done
-curl -s "$BASE/close?target=$TAB"
+curl --noproxy '*' -s "$BASE/close?target=$TAB"
 \`\`\`
 
 ## Browser-QA endpoints
 
 \`\`\`bash
 # structured interactive DOM snapshot (parity with browse snapshot -i/-C/-D)
-curl -s "$BASE/snapshot?target=$TAB"            # interactive elements w/ @ref, role, name
-curl -s "$BASE/snapshot?target=$TAB&mode=C"     # + non-ARIA clickables (@c refs)
-curl -s "$BASE/snapshot?target=$TAB&mode=D"     # diff vs previous snapshot: added/removed
+curl --noproxy '*' -s "$BASE/snapshot?target=$TAB"            # interactive elements w/ @ref, role, name
+curl --noproxy '*' -s "$BASE/snapshot?target=$TAB&mode=C"     # + non-ARIA clickables (@c refs)
+curl --noproxy '*' -s "$BASE/snapshot?target=$TAB&mode=D"     # diff vs previous snapshot: added/removed
 
 # performance metrics (FCP/LCP/CLS + long tasks + nav/resource timing)
-curl -s "$BASE/perf?target=$TAB"
+curl --noproxy '*' -s "$BASE/perf?target=$TAB"
 
 # device viewport emulation — does NOT resize the real window
-curl -s "$BASE/viewport?target=$TAB&width=375&height=812&scale=2&mobile=true"
+curl --noproxy '*' -s "$BASE/viewport?target=$TAB&width=375&height=812&scale=2&mobile=true"
 
 # responsive audit across mobile/tablet/desktop breakpoints (optional per-bp screenshot)
-curl -s "$BASE/responsive?target=$TAB&screenshot=true&dir=/tmp"
+curl --noproxy '*' -s "$BASE/responsive?target=$TAB&screenshot=true&dir=/tmp"
 \`\`\`
 
 Take \`/snapshot\` in pairs (baseline, then \`mode=D\` after an action) to see exactly
-what changed. \`/perf\` returns whatever metrics the page has produced — \`lcp\`/\`cls\`
-are \`null\` until the page has painted/shifted.
+what changed. \`/perf\` returns whatever metrics the page has produced — a background
+tab that never rendered reports \`null\` paint/\`lcp\` plus a \`visibility\`/\`note\`; pass
+\`&activate=true\` to briefly foreground it and sample real paint (\`lcp\` reads from a
+buffered observer, so any once-rendered tab already has it).
 
 ## Full endpoint reference
 

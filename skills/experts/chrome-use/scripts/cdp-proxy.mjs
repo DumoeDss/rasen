@@ -748,6 +748,7 @@ const server = http.createServer(async (req, res) => {
         expression: expr,
         returnByValue: true,
         awaitPromise: true,
+        replMode: true, // DevTools-console semantics: bare top-level `await` works without an async IIFE
       }, sid);
       if (resp.result?.result?.value !== undefined) {
         res.end(JSON.stringify({ value: resp.result.result.value }));
@@ -1327,16 +1328,35 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // GET /perf?target= — 页面性能指标（FCP/LCP/CLS + longtask + 导航/资源计时）
-    //   同步读取缓冲的 Performance 条目（largest-contentful-paint / layout-shift / longtask 等）。
-    //   指标视页面渲染状态而定，缺失项返回 null 而非报错。/resources 为 Runtime.evaluate 读法先例。
+    // GET /perf?target=[&activate=true] — 页面性能指标（FCP/LCP/CLS + longtask + 导航/资源计时）
+    //   LCP 走 buffered PerformanceObserver（getEntriesByType('largest-contentful-paint') 按规范恒空）；
+    //   fp/fcp 读 getEntriesByType('paint')。始终返回 visibility；后台 tab 未渲染时 paint 为 null 并附 note。
+    //   activate=true（opt-in）先 Target.activateTarget 提前台、等 ~1200ms 让 paint 发生再采样；默认不改焦点，
+    //   且不自动切回原前台 tab（CDP 无可靠的"当前前台 tab"信号 — 见 design Open Question 1）。
     else if (pathname === '/perf') {
       const sid = await ensureSession(q.target);
-      const js = `(() => {
+      const activate = q.activate === 'true' || q.activate === '1';
+      if (activate) {
+        try { await sendCDP('Target.activateTarget', { targetId: q.target }); } catch { /* best-effort foreground */ }
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+      const js = `(async () => {
+        // LCP：buffered PerformanceObserver 交付曾记录的 LCP；无渲染则 400ms 后回退 null。
+        const lcp = await new Promise((resolve) => {
+          let done = false;
+          let po = null;
+          const finish = (v) => { if (!done) { done = true; try { po?.disconnect(); } catch {} resolve(v); } };
+          try {
+            po = new PerformanceObserver((list) => {
+              const entries = list.getEntries();
+              if (entries.length) finish(Math.round(entries[entries.length - 1].startTime));
+            });
+            po.observe({ type: 'largest-contentful-paint', buffered: true });
+            setTimeout(() => finish(null), 400);
+          } catch { finish(null); }
+        });
         const paint = {};
         for (const e of performance.getEntriesByType('paint')) paint[e.name] = Math.round(e.startTime);
-        const lcpEntries = performance.getEntriesByType('largest-contentful-paint');
-        const lcp = lcpEntries.length ? Math.round(lcpEntries[lcpEntries.length - 1].startTime) : null;
         let cls = 0;
         try { for (const e of performance.getEntriesByType('layout-shift')) { if (!e.hadRecentInput) cls += e.value; } } catch {}
         let longTasks = [];
@@ -1352,17 +1372,25 @@ const server = http.createServer(async (req, res) => {
         const byType = {};
         let transferBytes = 0;
         for (const r of resources) { byType[r.initiatorType] = (byType[r.initiatorType] || 0) + 1; transferBytes += (r.transferSize || 0); }
-        return {
-          fp: paint['first-paint'] ?? null,
-          fcp: paint['first-contentful-paint'] ?? null,
+        const fp = paint['first-paint'] ?? null;
+        const fcp = paint['first-contentful-paint'] ?? null;
+        const visibility = document.visibilityState;
+        const out = {
+          fp,
+          fcp,
           lcp,
           cls: Math.round(cls * 1000) / 1000,
           longTasks: { count: longTasks.length, tasks: longTasks.slice(0, 20) },
           navTiming,
           resources: { count: resources.length, byType, transferBytes },
+          visibility,
         };
+        if (fp === null && fcp === null && lcp === null && visibility !== 'visible') {
+          out.note = 'background tab not rendered; paint/LCP null — pass ?activate=true to force a foreground sample';
+        }
+        return out;
       })()`;
-      const r = await sendCDP('Runtime.evaluate', { expression: js, returnByValue: true }, sid);
+      const r = await sendCDP('Runtime.evaluate', { expression: js, returnByValue: true, awaitPromise: true }, sid);
       res.end(JSON.stringify(r.result?.result?.value || {}));
     }
 
