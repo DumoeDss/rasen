@@ -35,7 +35,6 @@ export { getGoalCommandSkillTemplate, getOpsxGoalCommandTemplate } from './workf
 // Expert skill templates (migrated from gstack)
 export {
   getBenchmarkSkillTemplate,
-  getBrowseSkillTemplate,
   getCarefulSkillTemplate,
   getChromeUseSkillTemplate,
   getCodebaseDesignSkillTemplate,

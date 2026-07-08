@@ -53,7 +53,6 @@ import {
   getOpsxGoalCommandTemplate,
   // Expert skill templates (from gstack)
   getBenchmarkSkillTemplate,
-  getBrowseSkillTemplate,
   getCarefulSkillTemplate,
   getChromeUseSkillTemplate,
   getCodebaseDesignSkillTemplate,
@@ -122,7 +121,7 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
     if (entry.isDirectory()) {
       // Recurse to preserve subdir structure (references/ templates/ scripts/ bin/).
       // Target subdirs are created lazily on first sidecar copy, so an all-filtered
-      // subtree (e.g. browse's .ts src/) leaves no empty target directory behind.
+      // subtree (e.g. a skill's .ts src/) leaves no empty target directory behind.
       copySidecarTree(sourcePath, join(targetDir, entry.name));
       continue;
     }
@@ -140,16 +139,11 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  * - The source dir is resolved relative to the package root, at
  *   `skills/experts/<workflowId>` (sidecar reference files only; expert prompts
  *   are inline TypeScript in `src/core/templates/experts/<name>.ts`).
- * - The `browse` skill is skipped entirely: it is a vendored bun tool package
- *   (heavy `.ts` src/test trees plus build scripts) whose runtime binary ships
- *   separately via `{{BROWSE_SETUP}}`, not as skill sidecars.
  * - No-ops gracefully if the source dir is absent (e.g. a published npm package
  *   that does not bundle `skills/`), matching the expert-template `readFileSync`
  *   try/catch behavior. Re-running overwrites in place (idempotent).
  */
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
-  if (workflowId === 'browse') return;
-
   const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', workflowId);
   if (!existsSync(sourceDir)) return;
 
@@ -192,7 +186,6 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
   // Expert skills are always installed regardless of workflowFilter
   const expertSkills: SkillTemplateEntry[] = [
     { template: getBenchmarkSkillTemplate(), dirName: 'openspec-benchmark', workflowId: 'benchmark' },
-    { template: getBrowseSkillTemplate(), dirName: 'openspec-browse', workflowId: 'browse' },
     { template: getCarefulSkillTemplate(), dirName: 'openspec-careful', workflowId: 'careful' },
     { template: getChromeUseSkillTemplate(), dirName: 'openspec-chrome-use', workflowId: 'chrome-use' },
     { template: getCodebaseDesignSkillTemplate(), dirName: 'openspec-codebase-design', workflowId: 'codebase-design' },

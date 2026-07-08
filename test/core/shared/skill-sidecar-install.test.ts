@@ -22,7 +22,7 @@ vi.mock('../../../src/prompts/searchable-multi-select.js', () => ({
 /**
  * Real-run coverage for phase0d-sidecar-install: drive `openspec init` then
  * `openspec update` against a temp project and assert expert-skill sidecars land
- * alongside SKILL.md, the browse vendored `.ts` tree does not, and update is idempotent.
+ * alongside SKILL.md and that update is idempotent.
  */
 describe('skill sidecar install (init + update real run)', () => {
   let testDir: string;
@@ -34,7 +34,6 @@ describe('skill sidecar install (init + update real run)', () => {
     path.join(skillsRoot(), 'openspec-investigate', 'scripts', 'hitl-loop.template.sh');
   const reviewSidecar = () =>
     path.join(skillsRoot(), 'openspec-review', 'checklist.md');
-  const browseSrc = () => path.join(skillsRoot(), 'openspec-browse', 'src');
 
   beforeEach(async () => {
     testDir = path.join(os.tmpdir(), `openspec-sidecar-run-${randomUUID()}`);
@@ -58,21 +57,17 @@ describe('skill sidecar install (init + update real run)', () => {
     vi.restoreAllMocks();
   });
 
-  it('installs sidecars on init, skips browse .ts, and stays idempotent on update', async () => {
+  it('installs sidecars on init and stays idempotent on update', async () => {
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
     // Expert skills are always installed regardless of profile; their sidecars must land.
     expect(existsSync(investigateSidecar())).toBe(true);
     expect(existsSync(reviewSidecar())).toBe(true);
-    // The browse vendored bun package must never be copied into the install target.
-    expect(existsSync(browseSrc())).toBe(false);
-    expect(existsSync(path.join(skillsRoot(), 'openspec-browse', 'SKILL.md'))).toBe(true);
 
-    // Re-run update (force) — idempotent: no throw, same sidecars present, browse still absent.
+    // Re-run update (force) — idempotent: no throw, same sidecars present.
     await new UpdateCommand({ force: true }).execute(testDir);
 
     expect(existsSync(investigateSidecar())).toBe(true);
     expect(existsSync(reviewSidecar())).toBe(true);
-    expect(existsSync(browseSrc())).toBe(false);
   });
 });

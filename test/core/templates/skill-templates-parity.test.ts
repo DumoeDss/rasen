@@ -28,7 +28,6 @@ import {
   getVerifyChangeSkillTemplate,
   // Expert skill templates
   getBenchmarkSkillTemplate,
-  getBrowseSkillTemplate,
   getCarefulSkillTemplate,
   getCodebaseDesignSkillTemplate,
   getCodexSkillTemplate,
@@ -80,7 +79,6 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getFeedbackSkillTemplate: 'd7d83c5f7fc2b92fe8f4588a5bf2d9cb315e4c73ec19bcd5ef28270906319a0d',
   // Expert skill templates (inlined; see expert-template-inlining)
   getBenchmarkSkillTemplate: '11ce4890bfd70362bf8cdaab0e779d0ba043114895267ef41bdfba8fcd43696e',
-  getBrowseSkillTemplate: '87a78432cfd7d30f3f524ed558eaae035e67c27ccba63b11ec0197c3141eda57',
   getCarefulSkillTemplate: 'e0b2195f539c7ba52b03a59ec5b3af8ac8ac96bf691e375ed9ace01b1ea51e5e',
   getCodebaseDesignSkillTemplate: '031c8c89f7c817f9da9c7e4e6a9c5046d164b9f837ff0bcef4003180c9bf2453',
   getCodexSkillTemplate: 'e6b23f1f13bf3b683e176c4fcb97b0abe5993429704b7786b79c9bfa91ac366a',
@@ -114,7 +112,6 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'openspec-propose': 'ceccbc9807b064bba291798fb26e8d7f7e0de98a008ea2ac09af99b798c79bde',
   // Expert skills (inlined; see expert-template-inlining)
   'openspec-benchmark': 'd5cf3f24bfc148493c8aa259ecfb1ab9d68b20dcb27cfb744ff8b45fc274a06d',
-  'openspec-browse': '3a98221c7e01c0e914fd43d10d83ef0ea283bdf203aee1fe9a057bd03424c5ae',
   'openspec-careful': '0a8f29a3a0cfd1407baae86c917a56625494d796969018aa57c21858988c8385',
   'openspec-codebase-design': 'ce4793a4f24f3b52a8a83901cde66bf41c01b104a358f078b1021e82b09ea1ce',
   'openspec-codex': 'dcf19167a7fcfd2384e1cf220240fd72b35baf3f5c8b9413a71c599bf60f6d2b',
@@ -149,7 +146,6 @@ const GENERATED_SKILL_FACTORIES: Array<[string, () => SkillTemplate]> = [
   ['openspec-onboard', getOnboardSkillTemplate],
   ['openspec-propose', getOpsxProposeSkillTemplate],
   ['openspec-benchmark', getBenchmarkSkillTemplate],
-  ['openspec-browse', getBrowseSkillTemplate],
   ['openspec-careful', getCarefulSkillTemplate],
   ['openspec-codebase-design', getCodebaseDesignSkillTemplate],
   ['openspec-codex', getCodexSkillTemplate],
@@ -216,7 +212,6 @@ describe('skill templates split parity', () => {
       getOpsxProposeCommandTemplate,
       getFeedbackSkillTemplate,
       getBenchmarkSkillTemplate,
-      getBrowseSkillTemplate,
       getCarefulSkillTemplate,
       getCodebaseDesignSkillTemplate,
       getCodexSkillTemplate,

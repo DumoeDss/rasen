@@ -5,7 +5,6 @@
  */
 
 export { getBenchmarkSkillTemplate } from './benchmark.js';
-export { getBrowseSkillTemplate } from './browse.js';
 export { getCarefulSkillTemplate } from './careful.js';
 export { getChromeUseSkillTemplate } from './chrome-use.js';
 export { getCodebaseDesignSkillTemplate } from './codebase-design.js';

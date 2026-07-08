@@ -84,7 +84,7 @@ Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sideca
 - `investigate` — systematic root-cause debugging, iron rule "build a red-reproducing feedback loop before talking hypotheses". Absorbed from grill's `diagnosing-bugs`.
 
 **Browser tool / second opinion / routing / interview**
-- `browse` — headless browser (real Chromium, real clicks). A vendored tool (see §5).
+- `chrome-use` — drives the user's own Chrome over CDP (navigate, click, capture network/cookies/WASM). Replaced the fork's original vendored `browse` tool (see §5).
 - `codex` — hands the task to Codex for an independent second opinion or parallel implementation.
 - `navigator` — routing skill, sketches this repo's skill map (evolved from grill's `ask-matt`).
 - `office-hours` — YC-style demand validation, Startup mode (six questions) + Builder mode (design brainstorm). Absorbs grill's `grilling` interview discipline.
@@ -114,10 +114,10 @@ grill's MIT attribution is retained in the header of each skill source file that
 
 | gstack capability | Destination |
 |---|---|
-| Expert-skill layer (review/cso/qa/browse/...) | → the 19 experts (de-gstacked) |
+| Expert-skill layer (review/cso/qa/chrome-use/...) | → the 19 experts (de-gstacked) |
 | `/ship` + `/land-and-deploy` | → `/opsx:ship` (land-and-deploy becomes `--deploy`) |
 | `/retro` | → `/opsx:retro` |
-| browse browser tool | → the `browse` expert (vendored, internal naming still gstack, see §5) |
+| browse browser tool | → initially the vendored `browse` expert; replaced in the fork by the CDP-based `chrome-use` expert (see §5) |
 | Orchestration model | → the OPSX LEAD+worker orchestration playbook |
 | `/autoplan`, `/plan-*-review`, `/canary`, `/document-release`, `/setup-deploy`, `/setup-browser-cookies`, conductor config, upgrade skill, telemetry | **Deleted** |
 
@@ -187,7 +187,7 @@ De-branding targets the **skill-identity layer**. The internal-code layer still 
 
 ### 5.2 Internal naming of vendored tools
 
-- **`browse`** is a vendored headless-browser tool (real Chromium, with its own `src/`, `test/`, `scripts/build-node-server.sh`). It was originally a gstack tool; the entire tool tree was brought in as a black box under `skills/experts/browse/`, and its internal files (`gstack-config.test.ts`, `gstack-update-check.test.ts`, etc.) keep their original naming. De-branding touches only the skill-template layer, not the vendored tool's source.
+- **`browse`** was originally a gstack-vendored headless-browser tool (real Chromium, brought in as a black box under `skills/experts/browse/` with its own `src/`, `test/`, `scripts/build-node-server.sh`). The fork **removed** it and replaced it with **`chrome-use`**, which drives the user's own Chrome over CDP via a vendored Node proxy under `skills/experts/chrome-use/` rather than shipping a compiled browser binary.
 
 ### 5.3 Historical comments/prose (clearable but not required)
 

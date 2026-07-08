@@ -27,8 +27,7 @@
     }
   },
   "bin": {
-    "openspec": "./bin/openspec.js",
-    "browse": "./browse/dist/browse"
+    "openspec": "./bin/openspec.js"
   },
   "files": [
     "dist",
@@ -56,8 +55,7 @@
     "check:pack-version": "node scripts/pack-version-check.mjs",
     "release": "pnpm run release:ci",
     "release:ci": "pnpm run check:pack-version && pnpm exec changeset publish",
-    "changeset": "changeset",
-    "build:browse": "bun build --compile browse/src/cli.ts --outfile browse/dist/browse && bun build --compile browse/src/find-browse.ts --outfile browse/dist/find-browse"
+    "changeset": "changeset"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -83,8 +81,5 @@
     "ora": "^8.2.0",
     "yaml": "^2.8.2",
     "zod": "^4.0.17"
-  },
-  "optionalDependencies": {
-    "playwright": "^1.58.2"
   }
 }
