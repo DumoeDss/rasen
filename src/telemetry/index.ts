@@ -2,37 +2,88 @@
  * Telemetry module for anonymous usage analytics.
  *
  * Privacy-first design:
- * - Only tracks command name and version
+ * - Only tracks command name and version (plus coarse os / node version)
  * - No arguments, file paths, or content
  * - Opt-out via OPENSPEC_TELEMETRY=0 or DO_NOT_TRACK=1
  * - Auto-disabled in CI environments
  * - Anonymous ID is a random UUID with no relation to the user
+ *
+ * Transport: a single fire-and-forget HTTPS POST to the maintainer's own
+ * Cloudflare Worker. The Worker returns 202 even on internal error, so the
+ * client never parses the response body and never retries.
+ *
+ * Why `node:https` and not `fetch`: Node's global `fetch` (undici) keeps its
+ * socket in a keep-alive pool with a reffed timer after the request settles,
+ * which delays process exit by ~10s when the endpoint is slow or unreachable —
+ * violating the "return fast / never block CLI exit" contract. `undici` is not
+ * importable to tune the dispatcher, and forcing `process.exit()` is out of
+ * scope (the CLI must need no changes). `https.request` with `agent: false`
+ * uses no keep-alive pool, and a guard timer tears the socket down so a stalled
+ * send can never hold the event loop open beyond the timeout.
  */
-import { PostHog } from 'posthog-node';
 import { randomUUID } from 'crypto';
+import https from 'node:https';
 import { getTelemetryConfig, updateTelemetryConfig } from './config.js';
 
-// PostHog API key - public key for client-side analytics
-// This is safe to embed as it only allows sending events, not reading data
-const POSTHOG_API_KEY = 'phc_Hthu8YvaIJ9QaFKyTG4TbVwkbd5ktcAFzVTKeMmoW2g';
-// Using reverse proxy to avoid ad blockers and keep traffic on our domain
-const POSTHOG_HOST = 'https://edge.openspec.dev';
+// Maintainer-owned Cloudflare Worker (fork-phase1-telemetry-backend). No API
+// key required — the Worker is unauthenticated by design.
+const TELEMETRY_ENDPOINT = 'https://openspec-telemetry.ws11579.workers.dev';
 const TELEMETRY_REQUEST_TIMEOUT_MS = 1000;
 
-let posthogClient: PostHog | null = null;
 let anonymousId: string | null = null;
+// The most recent in-flight send, so shutdown() can await it (bounded by the
+// send's own guard timer) without ever blocking CLI exit.
+let inFlightSend: Promise<void> | null = null;
 
-async function safeTelemetryFetch(url: string, options: RequestInit): Promise<Response> {
-  try {
-    const response = await fetch(url, options);
-    if (response.ok) {
-      return response;
+/**
+ * POST one event to the Worker, swallowing every failure. Resolves when the
+ * request completes, errors, or hits the timeout — whichever comes first — and
+ * never leaves a handle that could delay process exit.
+ */
+function sendEvent(payload: Record<string, unknown>): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve();
+    };
+
+    try {
+      const req = https.request(
+        TELEMETRY_ENDPOINT,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          // No keep-alive: the socket closes after the response instead of
+          // lingering in a connection pool and blocking CLI exit.
+          agent: false,
+        },
+        (res) => {
+          // Drain and discard. The Worker returns 202 even on internal error,
+          // so there is nothing actionable to read — never parse the body.
+          res.on('data', () => {});
+          res.on('end', done);
+          res.on('error', done);
+        }
+      );
+
+      req.on('error', done);
+      // Bound the whole attempt; on timeout tear the socket down so a stalled
+      // request can never delay process exit beyond the timeout.
+      timer = setTimeout(() => {
+        req.destroy();
+        done();
+      }, TELEMETRY_REQUEST_TIMEOUT_MS);
+
+      req.end(JSON.stringify(payload));
+    } catch {
+      // Silent failure - telemetry should never surface network noise.
+      done();
     }
-  } catch {
-    // Silent failure - telemetry should never surface network noise
-  }
-
-  return new Response(null, { status: 204 });
+  });
 }
 
 /**
@@ -86,27 +137,6 @@ export async function getOrCreateAnonymousId(): Promise<string> {
 }
 
 /**
- * Get the PostHog client instance.
- * Creates it on first call with CLI-optimized settings.
- */
-function getClient(): PostHog {
-  if (!posthogClient) {
-    posthogClient = new PostHog(POSTHOG_API_KEY, {
-      host: POSTHOG_HOST,
-      flushAt: 1, // Send immediately, don't batch
-      flushInterval: 0, // No timer-based flushing
-      fetchRetryCount: 0,
-      requestTimeout: TELEMETRY_REQUEST_TIMEOUT_MS,
-      preloadFeatureFlags: false,
-      disableRemoteConfig: true,
-      disableSurveys: true,
-      fetch: safeTelemetryFetch,
-    });
-  }
-  return posthogClient;
-}
-
-/**
  * Track a command execution.
  *
  * @param commandName - The command name (e.g., 'init', 'change:apply')
@@ -118,18 +148,16 @@ export async function trackCommand(commandName: string, version: string): Promis
   }
 
   try {
-    const userId = await getOrCreateAnonymousId();
-    const client = getClient();
+    const distinctId = await getOrCreateAnonymousId();
 
-    client.capture({
-      distinctId: userId,
-      event: 'command_executed',
-      properties: {
-        command: commandName,
-        version: version,
-        surface: 'cli',
-        $ip: null, // Explicitly disable IP tracking
-      },
+    // Fire-and-forget: start the send and record it so shutdown() can await it.
+    // The command is not blocked on the network; the send overlaps its work.
+    inFlightSend = sendEvent({
+      command: commandName,
+      version,
+      distinctId,
+      os: process.platform,
+      node_version: process.versions.node,
     });
   } catch {
     // Silent failure - telemetry should never break CLI
@@ -152,7 +180,7 @@ export async function maybeShowTelemetryNotice(): Promise<void> {
 
     // Display notice
     console.log(
-      'Note: OpenSpec collects anonymous usage stats. Opt out: OPENSPEC_TELEMETRY=0'
+      'Note: OpenSpec sends anonymous usage stats (command, version, OS, Node version, and a random id) to its own Cloudflare Worker. Opt out: OPENSPEC_TELEMETRY=0'
     );
 
     // Mark as seen
@@ -163,19 +191,21 @@ export async function maybeShowTelemetryNotice(): Promise<void> {
 }
 
 /**
- * Shutdown the PostHog client and flush pending events.
- * Call this before CLI exit.
+ * Flush any in-flight telemetry before CLI exit.
+ *
+ * There is no batched client to flush; this awaits the most recent send, which
+ * is itself bounded by its guard timer, so it can never hang the CLI exit.
  */
 export async function shutdown(): Promise<void> {
-  if (!posthogClient) {
+  const pending = inFlightSend;
+  inFlightSend = null;
+  if (!pending) {
     return;
   }
 
   try {
-    await posthogClient.shutdown();
+    await pending;
   } catch {
     // Silent failure - telemetry should never break CLI exit
-  } finally {
-    posthogClient = null;
   }
 }
