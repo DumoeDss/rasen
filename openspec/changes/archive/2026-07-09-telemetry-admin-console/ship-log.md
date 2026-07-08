@@ -94,3 +94,24 @@ part of this change.
 ## Deployment
 N/A — local mode; no push/tag/Release. Worker code is committed; live activation
 of the admin console awaits the operator env backfill (above).
+
+## Ship-commit pollution note (shared-index race — LEAD ruling: leave as-is)
+The ship commit **4b37644** contains **8 foreign files** that do NOT belong to
+this change: `openspec/changes/archive/2026-07-09-phase2-rasen-readme/*` (7
+files) + `openspec/specs/project-readme/spec.md`. These were slurped by a
+shared-git-index race with the concurrent phase-2 (`rasen`) session, which staged
+its `phase2-rasen-readme` archive into the same index between this shipper's
+`git diff --cached` verification (clean, 21 files) and `git commit`. The
+concurrent session then committed **1842258 "archive phase2-rasen-readme"** on
+top of 4b37644 on the same `dev-harness` branch.
+
+Content is intact, not lost — phase2-rasen-readme's archive is split across
+4b37644 + 1842258. The LEAD ruled to **LEAVE 4b37644 AS-IS** (no rebase/reset/
+amend/revert): rewriting it would require rebasing the concurrent session's child
+commit and clobbering its in-flight work, and the branch is local/unpushed so the
+mixed commit is cosmetic. Root cause: two shippers on one working tree + index +
+branch — `git add`/`git commit` are not atomic against a concurrent `git add`.
+Mitigation adopted for this archive commit and all subsequent commits while the
+concurrent session is alive: **commit with an explicit pathspec**
+(`git commit -- <paths>`), which includes only the named paths regardless of
+index state.
