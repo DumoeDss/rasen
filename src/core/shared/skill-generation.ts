@@ -55,6 +55,7 @@ import {
   getBenchmarkSkillTemplate,
   getBrowseSkillTemplate,
   getCarefulSkillTemplate,
+  getChromeUseSkillTemplate,
   getCodebaseDesignSkillTemplate,
   getCodexSkillTemplate,
   getCsoSkillTemplate,
@@ -97,15 +98,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
- * A sidecar is a reference file that lives beside a skill's `SKILL.md` and is
- * read by relative path from the skill body (e.g. `checklist.md`,
- * `references/issue-taxonomy.md`, `scripts/hitl-loop.template.sh`). Only `.md`
- * (except `SKILL.md`) and `.sh` files qualify; `.tmpl` sources are excluded.
+ * A sidecar is a reference file or executable helper script that lives beside a
+ * skill's `SKILL.md` and is read or launched by relative path from the skill
+ * body (e.g. `checklist.md`, `references/issue-taxonomy.md`,
+ * `scripts/hitl-loop.template.sh`, `scripts/cdp-proxy.mjs`). Documentation
+ * (`.md` except `SKILL.md`), shell scripts (`.sh`), and executable Node scripts
+ * (`.mjs`/`.js`) qualify; `.tmpl` sources are excluded (build-only).
  */
 function isSidecarFile(fileName: string): boolean {
   if (fileName === 'SKILL.md') return false;
   if (fileName.endsWith('.tmpl')) return false;
-  return fileName.endsWith('.md') || fileName.endsWith('.sh');
+  return (
+    fileName.endsWith('.md') ||
+    fileName.endsWith('.sh') ||
+    fileName.endsWith('.mjs') ||
+    fileName.endsWith('.js')
+  );
 }
 
 function copySidecarTree(sourceDir: string, targetDir: string): void {
@@ -186,6 +194,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     { template: getBenchmarkSkillTemplate(), dirName: 'openspec-benchmark', workflowId: 'benchmark' },
     { template: getBrowseSkillTemplate(), dirName: 'openspec-browse', workflowId: 'browse' },
     { template: getCarefulSkillTemplate(), dirName: 'openspec-careful', workflowId: 'careful' },
+    { template: getChromeUseSkillTemplate(), dirName: 'openspec-chrome-use', workflowId: 'chrome-use' },
     { template: getCodebaseDesignSkillTemplate(), dirName: 'openspec-codebase-design', workflowId: 'codebase-design' },
     { template: getCodexSkillTemplate(), dirName: 'openspec-codex', workflowId: 'codex' },
     { template: getCsoSkillTemplate(), dirName: 'openspec-cso', workflowId: 'cso' },

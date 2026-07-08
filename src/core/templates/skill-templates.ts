@@ -37,6 +37,7 @@ export {
   getBenchmarkSkillTemplate,
   getBrowseSkillTemplate,
   getCarefulSkillTemplate,
+  getChromeUseSkillTemplate,
   getCodebaseDesignSkillTemplate,
   getCodexSkillTemplate,
   getCsoSkillTemplate,
