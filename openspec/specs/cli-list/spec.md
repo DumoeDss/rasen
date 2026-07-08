@@ -80,8 +80,9 @@ The command SHALL gracefully handle missing files and directories with appropria
 #### Scenario: Missing changes directory
 
 - **WHEN** `openspec/changes/` directory doesn't exist
-- **THEN** display error: "No OpenSpec changes directory found. Run 'openspec init' first."
-- **AND** exit with code 1
+- **THEN** treat it as an empty change set rather than an error
+- **AND** display "No active changes found."
+- **AND** exit with code 0
 
 ### Requirement: Sorting
 
