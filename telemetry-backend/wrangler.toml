@@ -3,6 +3,42 @@ main = "src/index.ts"
 account_id = "5cc51d8388c780c03fb4c6161bd403c4"
 compatibility_date = "2025-07-08"
 
+# Keep the *.workers.dev route ENABLED. The shipped CLI clients hard-code
+# https://openspec-telemetry.ws11579.workers.dev for ingest, so it must stay live.
+# Declaring `routes` disables workers.dev by default — this line re-enables it, so
+# ingest answers on BOTH workers.dev and the custom domain.
+workers_dev = true
+
+# Custom domain. rasen.io zone is delegated to Cloudflare (NS = *.ns.cloudflare.com,
+# verified 2026-07-09). workers.dev stays enabled for the public ingest path.
+# NOTE: this MUST be a top-level key (before any [table] header) or TOML scopes it
+# into the preceding table (e.g. [vars]) and wrangler treats it as a var, not a route.
+routes = [{ pattern = "telemetry.rasen.io", custom_domain = true }]
+
 [[analytics_engine_datasets]]
 binding = "TELEMETRY"
 dataset = "openspec_telemetry"
+
+# Static admin panel (telemetry-backend/admin/index.html), served same-origin.
+# SECURITY-CRITICAL: run_worker_first = true makes the Worker script run FIRST
+# for every request, so an asset is served ONLY when src/index.ts explicitly
+# calls env.ASSETS.fetch — after the Access JWT gate. Without it the static
+# runtime would answer /admin/* before the Worker runs and leak the panel HTML
+# off workers.dev with no auth. not_found_handling = "none": no SPA fallback;
+# the Worker owns all routing (single file, no bundler).
+[assets]
+binding = "ASSETS"
+directory = "./admin"
+run_worker_first = true
+not_found_handling = "none"
+
+# Cloudflare Access config. Empty = FAIL-CLOSED: admin paths (/admin*, /api/admin*)
+# return 403 on every host until BOTH are backfilled, so an un-provisioned deploy
+# exposes no admin surface. Set after creating the Zero Trust Access application
+# (see RUNBOOK.md): ACCESS_TEAM_DOMAIN = "<team>.cloudflareaccess.com",
+# ACCESS_AUD = "<application-aud-tag>". ACCESS_ALLOWED_EMAILS is OPTIONAL
+# defense-in-depth (JSON array or comma list); when unset, a valid Access JWT for
+# this AUD suffices because the Access policy already pins the maintainer email.
+[vars]
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>openspec-telemetry · admin</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --fg: #e6e9ef;
+    --muted: #8b93a7; --accent: #6ea8fe; --accent-soft: #6ea8fe22; --warn: #e0a458;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
+  header h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: .85rem; }
+  header .spacer { flex: 1; }
+  button { background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 8px; padding: .4rem .8rem; cursor: pointer; font-size: .85rem; }
+  button:hover { border-color: var(--accent); }
+  main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+  .banner { border-radius: 10px; padding: .85rem 1rem; margin-bottom: 1.25rem;
+    border: 1px solid var(--border); background: var(--panel); }
+  .banner.warn { border-color: var(--warn); background: #e0a4581a; }
+  .banner.hidden { display: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem; margin-bottom: 1.75rem; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
+  .card .label { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 1.9rem; font-weight: 650; margin-top: .35rem; }
+  .card .note { color: var(--muted); font-size: .72rem; margin-top: .2rem; }
+  section { margin-bottom: 2rem; }
+  section h2 { font-size: .95rem; font-weight: 600; margin: 0 0 .75rem; }
+  .approx { color: var(--warn); font-size: .72rem; font-weight: 500; }
+  .chart { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+  svg { display: block; width: 100%; height: auto; }
+  .chart .gridline { stroke: var(--border); stroke-width: 1; }
+  .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .chart .area { fill: var(--accent-soft); }
+  .chart .dot { fill: var(--accent); }
+  .chart .axis { fill: var(--muted); font-size: 10px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: .55rem .85rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>openspec-telemetry</h1>
+  <span class="sub">anonymous CLI usage · admin</span>
+  <span class="spacer"></span>
+  <button id="refresh">Refresh</button>
+</header>
+<main>
+  <div id="banner" class="banner hidden"></div>
+
+  <section>
+    <div class="cards" id="overview">
+      <div class="card"><div class="label">Events · 24h</div><div class="value" id="ev24">–</div></div>
+      <div class="card"><div class="label">Users · 24h</div><div class="value" id="us24">–</div><div class="note">approximate (sampled)</div></div>
+      <div class="card"><div class="label">Events · 7d</div><div class="value" id="ev7">–</div></div>
+      <div class="card"><div class="label">Users · 7d</div><div class="value" id="us7">–</div><div class="note">approximate (sampled)</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Daily activity <span class="approx">· users approximate (sampled)</span></h2>
+    <div class="chart" id="dauChart"><p class="muted" style="margin:0">Loading…</p></div>
+  </section>
+
+  <div class="grid-2">
+    <section>
+      <h2>By command</h2>
+      <table><thead><tr><th>Command</th><th class="num">Events</th><th class="num">Users*</th></tr></thead>
+        <tbody id="commands"><tr><td class="muted" colspan="3">Loading…</td></tr></tbody></table>
+    </section>
+    <section>
+      <h2>By version</h2>
+      <table><thead><tr><th>Version</th><th class="num">Events</th><th class="num">Users*</th></tr></thead>
+        <tbody id="versions"><tr><td class="muted" colspan="3">Loading…</td></tr></tbody></table>
+    </section>
+  </div>
+  <p class="muted" style="font-size:.75rem">* distinct-user counts are approximate under Analytics Engine sampling.</p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => Number(n || 0).toLocaleString();
+
+function showBanner(msg, warn) {
+  const b = $('banner');
+  b.textContent = msg;
+  b.className = 'banner' + (warn ? ' warn' : '');
+}
+function clearBanner() { $('banner').className = 'banner hidden'; }
+
+// Returns parsed JSON, or throws { status } so callers can branch on 403/503.
+async function api(path) {
+  const res = await fetch(path, { headers: { 'accept': 'application/json' } });
+  if (!res.ok) {
+    let body = {};
+    try { body = await res.json(); } catch {}
+    const err = new Error(body.hint || res.statusText);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+function renderOverview(o) {
+  $('ev24').textContent = fmt(o.last24h.events);
+  $('us24').textContent = fmt(o.last24h.users);
+  $('ev7').textContent = fmt(o.last7d.events);
+  $('us7').textContent = fmt(o.last7d.users);
+}
+
+function renderDau(d) {
+  const el = $('dauChart');
+  const series = d.series || [];
+  if (!series.length) { el.innerHTML = '<p class="muted" style="margin:0">No data in window.</p>'; return; }
+  const W = 900, H = 240, pad = { l: 44, r: 12, t: 12, b: 24 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const max = Math.max(1, ...series.map((p) => p.events));
+  const n = series.length;
+  const x = (i) => pad.l + (n === 1 ? iw / 2 : (i * iw) / (n - 1));
+  const y = (v) => pad.t + ih - (v / max) * ih;
+  const pts = series.map((p, i) => [x(i), y(p.events)]);
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  const area = 'M' + pad.l + ' ' + (pad.t + ih) + ' ' + pts.map((p) => 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ') + ' L' + (pad.l + iw) + ' ' + (pad.t + ih) + ' Z';
+  const ticks = [0, 0.5, 1].map((f) => { const v = Math.round(max * f); return { y: y(v), v }; });
+  const dayLabel = (s) => String(s).slice(5, 10) || String(s);
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="daily events">';
+  ticks.forEach((t) => {
+    svg += '<line class="gridline" x1="' + pad.l + '" y1="' + t.y.toFixed(1) + '" x2="' + (pad.l + iw) + '" y2="' + t.y.toFixed(1) + '"/>';
+    svg += '<text class="axis" x="' + (pad.l - 6) + '" y="' + (t.y + 3).toFixed(1) + '" text-anchor="end">' + fmt(t.v) + '</text>';
+  });
+  svg += '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>';
+  pts.forEach((p) => { svg += '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.5"/>'; });
+  const step = Math.ceil(n / 8);
+  series.forEach((p, i) => {
+    if (i % step === 0 || i === n - 1) {
+      svg += '<text class="axis" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + dayLabel(p.day) + '</text>';
+    }
+  });
+  svg += '</svg>';
+  el.innerHTML = svg;
+}
+
+function renderBreakdown(id, key, data) {
+  const tbody = $(id);
+  const items = data.items || [];
+  if (!items.length) { tbody.innerHTML = '<tr><td class="muted" colspan="3">No data.</td></tr>'; return; }
+  tbody.innerHTML = items.map((r) =>
+    '<tr><td>' + escapeHtml(r[key] || '(none)') + '</td><td class="num">' + fmt(r.events) + '</td><td class="num">' + fmt(r.users) + '</td></tr>'
+  ).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function load() {
+  clearBanner();
+  try {
+    const [overview, dau, commands, versions] = await Promise.all([
+      api('/api/admin/overview'),
+      api('/api/admin/dau?days=14'),
+      api('/api/admin/commands?days=14'),
+      api('/api/admin/versions?days=14'),
+    ]);
+    renderOverview(overview);
+    renderDau(dau);
+    renderBreakdown('commands', 'command', commands);
+    renderBreakdown('versions', 'version', versions);
+  } catch (err) {
+    if (err.status === 403) {
+      showBanner('Your Cloudflare Access session is missing or expired. Reload this page to re-authenticate through Cloudflare Access.', true);
+    } else if (err.status === 503) {
+      showBanner('Stats read token is not configured. Set TELEMETRY_SQL_TOKEN on the Worker (see RUNBOOK.md), then refresh.', true);
+    } else {
+      showBanner('Could not load stats: ' + (err.message || 'unknown error') + '.', true);
+    }
+  }
+}
+
+$('refresh').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>

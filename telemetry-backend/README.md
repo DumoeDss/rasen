@@ -167,6 +167,78 @@ below the sampling threshold; at volume use the sampling-accurate form
 `SUM(_sample_interval)` for event counts (distinct-user counts remain
 approximate under sampling).
 
+## Admin console
+
+The same Worker serves a private maintainer dashboard. It is **not** a second
+service — routing inside `src/index.ts` splits three surfaces:
+
+| Path            | Auth                          | Handler                                  |
+| --------------- | ----------------------------- | ---------------------------------------- |
+| `POST /`        | none (public ingest)          | unchanged ingest — 202/400/405           |
+| `/api/admin/*`  | Cloudflare Access JWT (gated) | read-only stats JSON (`src/stats.ts`)    |
+| `/admin`, `/admin/*` | Cloudflare Access JWT (gated) | single-file panel `admin/index.html` |
+
+### Auth model — edge Access **and** fail-closed in-Worker enforcement
+
+Authentication is two layers, and the second is mandatory:
+
+1. **Edge:** a Cloudflare Access self-hosted application fronts
+   `telemetry.rasen.io/admin*`. Users authenticate at Cloudflare's edge; Access
+   injects a signed `Cf-Access-Jwt-Assertion` header on allowed requests.
+2. **In-Worker (fail-closed):** the `*.workers.dev` host does **not** pass
+   through Access, so `src/access.ts` independently verifies that JWT (RS256,
+   `audience` = `ACCESS_AUD`, `issuer` = `https://<ACCESS_TEAM_DOMAIN>`, JWKS from
+   `https://<ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs`) on **every** `/admin*` and
+   `/api/admin*` request across every host. If `ACCESS_TEAM_DOMAIN`/`ACCESS_AUD`
+   are unset, or the JWT is missing/invalid, admin paths return `403` — the panel
+   HTML is never servable without a valid Access identity.
+
+This is enforced by `run_worker_first = true` in the `[assets]` block: the Worker
+script runs **before** any static asset is served, and it calls
+`env.ASSETS.fetch` only **after** the JWT gate passes. (Without
+`run_worker_first`, the static-assets runtime would answer `/admin` before the
+Worker runs and leak the panel — so it is a tested, load-bearing invariant.)
+
+### Stats API
+
+Read-only JSON over the Analytics Engine dataset via the CF SQL API
+(`src/stats.ts`). Event counts use `SUM(_sample_interval)` (sampling-accurate);
+distinct-user counts use `count(DISTINCT index1)` and are flagged
+`usersApproximate: true`.
+
+| Endpoint                     | Returns                                             |
+| ---------------------------- | --------------------------------------------------- |
+| `GET /api/admin/overview`    | total events + distinct users for last 24h and 7d   |
+| `GET /api/admin/dau?days=N`  | daily event + distinct-user series (N clamped 1..30, default 14) |
+| `GET /api/admin/commands?days=N` | per-command breakdown (events desc)             |
+| `GET /api/admin/versions?days=N` | per-version breakdown                            |
+
+Graceful degradation (deploy is always safe):
+
+- `TELEMETRY_SQL_TOKEN` unset → stats endpoints return **503** with a hint (never
+  a crash); the panel shows a "read token not configured" notice.
+- CF SQL API upstream error → **502/503** with the upstream status echoed in the
+  hint.
+
+### Panel
+
+`admin/index.html` is a single self-contained file (vanilla JS + `fetch` + inline
+SVG chart) — no bundler, no build step, no credentials in the browser. It renders
+overview cards, a DAU line chart, and command/version tables; on `403` it shows a
+"reload to re-authenticate through Cloudflare Access" banner, on `503` a
+"read token not configured" notice, and annotates distinct-user figures as
+approximate.
+
+### Local development / tests
+
+```bash
+npm test                      # Worker unit tests (vitest): fail-closed + ingest regression
+npm run dev -- --noproxy '*'  # wrangler dev; --noproxy '*' avoids this machine's localhost proxy hijack
+```
+
+> Setup of the Access application, the SQL read token, and the custom domain are
+> **manual** operator steps — see [RUNBOOK.md](./RUNBOOK.md).
+
 ## npm packaging note
 
 `telemetry-backend/` lives at the repo root and is **not** in the CLI

@@ -2,14 +2,19 @@
   "name": "openspec-telemetry",
   "version": "0.1.0",
   "private": true,
-  "description": "Maintainer-owned Cloudflare Worker that ingests anonymous OpenSpec CLI usage events into Analytics Engine.",
+  "description": "Maintainer-owned Cloudflare Worker that ingests anonymous OpenSpec CLI usage events into Analytics Engine, with an Access-gated admin console.",
   "type": "module",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
   },
   "devDependencies": {
+    "vitest": "^3.2.4",
     "wrangler": "^4.86.0"
   }
 }
