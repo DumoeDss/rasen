@@ -1,94 +1,56 @@
-> Forked from OpenSpec (MIT) by Fission-AI — independently maintained by DumoeDss, not affiliated with Fission-AI.
+<h1 align="center">Rasen — loops that ascend</h1>
+
+<p align="center"><strong>「不是循环，是螺旋」</strong></p>
 
 <p align="center">
-  <a href="https://github.com/Fission-AI/OpenSpec">
-    <picture>
-      <source srcset="assets/openspec_bg.png">
-      <img src="assets/openspec_bg.png" alt="OpenSpec logo">
-    </picture>
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/DumoeDss/OpenSpec/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/OpenSpec/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://www.npmjs.com/package/@fission-ai/openspec"><img alt="npm version" src="https://img.shields.io/npm/v/@fission-ai/openspec?style=flat-square" /></a>
+  <a href="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
-  <a href="https://discord.gg/YctCnvvshC"><img alt="Discord" src="https://img.shields.io/discord/1411657095639601154?style=flat-square&logo=discord&logoColor=white&label=Discord&suffix=%20online" /></a>
 </p>
 
-<details>
-<summary><strong>The most loved spec framework.</strong></summary>
+**Rasen** is a spec-driven development workflow with an autonomous orchestration harness on top — you write a spec, and the harness drives the change through propose → apply → archive, iterating on its own until the work is done.
 
-[![Stars](https://img.shields.io/github/stars/Fission-AI/OpenSpec?style=flat-square&label=Stars)](https://github.com/Fission-AI/OpenSpec/stargazers)
-[![Downloads](https://img.shields.io/npm/dm/@fission-ai/openspec?style=flat-square&label=Downloads/mo)](https://www.npmjs.com/package/@fission-ai/openspec)
-[![Contributors](https://img.shields.io/github/contributors/Fission-AI/OpenSpec?style=flat-square&label=Contributors)](https://github.com/Fission-AI/OpenSpec/graphs/contributors)
+## Not a circle — a spiral
 
-</details>
-<p></p>
-Our philosophy:
+A loop that returns to where it started is just a circle. Rasen (螺旋, "spiral") is the shape of a loop that climbs. That is the whole idea, and it maps onto how the tool actually works:
 
-```text
-→ fluid not rigid
-→ iterative not waterfall
-→ easy not complex
-→ built for brownfield not just greenfield
-→ scalable from personal projects to enterprises
+- **The spec is the origin.** Every change begins as a written intent — a proposal, requirements, a design, a task list — captured in your `openspec/` workspace before any code is written. `/opsx:propose → apply → archive`.
+- **Loops are the form.** Work moves in cycles, not one waterfall pass. The `opsx` pipeline family — `small-feature`, `bug-fix`, `full-feature`, `auto-decompose` — turns a task into a shaped loop of propose, implement, review, ship.
+- **Each turn ascends.** The harness doesn't just repeat; it makes progress. `/opsx:auto` runs a LEAD that orchestrates role-isolated subagents, a review-cycle that catches its own mistakes, and handoff/relay that carries context across sessions — so every turn ends higher than it began.
+- **Until it breaks through.** `/opsx:goal` closes the spiral on a condition, not a document: drive a metric to a target, make a module rubric-clean, research until a brief is answered — repeat modify → judge until the gate is met.
+
+Spec is where you start. The spiral is how you get there.
+
+## Lineage
+
+Rasen is forked from [OpenSpec](https://github.com/Fission-AI/OpenSpec) (MIT) by Fission-AI, and is independently maintained by [DumoeDss](https://github.com/DumoeDss). It is **not affiliated with Fission-AI**, and is currently aligned with upstream **OpenSpec v1.5.0**. The upstream `/opsx:propose → apply → archive` workflow and the `openspec/` spec/change layout are preserved; rasen layers autonomous orchestration on top.
+
+## Install
+
+Requires **Node.js `>=20.19.0`**.
+
+```bash
+npm i -g rasen
 ```
 
-> [!TIP]
-> **New workflow now available!** We've rebuilt OpenSpec with a new artifact-guided workflow.
->
-> Run `/opsx:propose "your idea"` to get started. → [Learn more here](docs/opsx.md)
-
-<p align="center">
-  Follow <a href="https://x.com/0xTab">@0xTab on X</a> for updates · Join the <a href="https://discord.gg/YctCnvvshC">OpenSpec Discord</a> for help and questions.
-</p>
-
-<!-- TODO: Add GIF demo of /opsx:propose → /opsx:archive workflow -->
-
-## About this fork
-
-This is an **orchestration-focused fork** of [OpenSpec](https://github.com/Fission-AI/OpenSpec). It stays fully upstream-compatible — the `/opsx:propose → /opsx:apply → /opsx:archive` workflow, the `openspec/` spec/change layout, and stores all work as in upstream — and layers an **autopilot orchestration** system on top, so the AI can drive a whole change end-to-end while you stay in control.
-
-What this fork adds:
-
-- **`/opsx:auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
-- **`/opsx:goal` goal-driven iteration** — a sibling entry to `/opsx:auto` for tasks whose "done" is a condition, not a document (drive Lighthouse to 90, make a module rubric-clean, research and write a brief). The LEAD classifies the task into a measure / evaluate / research backend pipeline and repeats modify→judge until the gate is satisfied or the round cap is hit.
-- **Data-driven pipeline registry** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as YAML; inspect them with `openspec pipeline show|list|classify|resume`. Adding a task type = adding one file, zero code.
-- **Auto-decompose (portfolio fan-out)** — a task too large for one reviewable diff is split into multiple independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
-- **Context sensing & handoff** — `openspec agent context` measures real occupancy; `/opsx:handoff` writes a distillate checkpoint; workers self-handoff at soft budgets under relay caps, stall detection, and a LEAD-first escalation ladder.
-- **Session relay** — when the LEAD itself runs low on context it can, with your OK, launch a successor Claude Code session; a compact-recovery hook re-anchors on the handoff distillate after an auto-compact.
-- **Worker reuse policy** — configurable planner/implementer reuse across dependent child changes (the `reuse` config block) with `reusedFrom` lineage.
-- **Iterative review-loop** + companion commands: `/opsx:review-cycle`, `/opsx:ship`, `/opsx:verify-enhanced`, `/opsx:office-hours`, `/opsx:retro`.
-- **Safety & recovery hooks** — `safety-check.sh` (guards destructive commands) and `compact-recovery.sh` (re-anchors after compaction).
-
-> Tunables and defaults for `handoff` / `reuse` / capability tiers are documented in [docs/opsx-workflow-guide.md §3.7](docs/opsx-workflow-guide.md#37-context-awareness-and-handoff-openspec-agent-context--opsxhandoff). Built-in pipelines live under [`pipelines/`](pipelines/).
-
-## Install (fork release)
-
-This fork is distributed as a packaged tarball from [GitHub Releases](https://github.com/DumoeDss/OpenSpec/releases), not from npm. It is **aligned with upstream v1.5.0** and versioned independently starting at `0.1.0`.
-
-**Requires Node.js `>=20.19.0`** (per `engines.node`). The chrome-use tooling additionally needs **Node 22+**.
-
-> [!WARNING]
-> This fork installs the same `openspec` global binary as upstream. npm's global bin is first-installer-wins, so **uninstall any upstream `openspec` first** to avoid a conflict:
+> If you previously installed this fork under the old `openspec` binary, remove it first:
 >
 > ```bash
 > npm uninstall -g @fission-ai/openspec
 > ```
 
-Download the `.tgz` asset from the [latest release](https://github.com/DumoeDss/OpenSpec/releases/latest), then install it globally:
-
-```bash
-# after downloading the release asset into the current directory
-npm install -g ./fission-ai-openspec-0.1.0.tgz
-```
-
 Then initialize in your project:
 
 ```bash
 cd your-project
-openspec init
+rasen init
+```
+
+`rasen init` creates an `openspec/` workspace (specs and changes) and installs the `/opsx:*` slash commands for your AI coding tool. The CLI is `rasen`; the workspace directory and the `opsx:` command prefix are unchanged from upstream, so existing OpenSpec projects work as-is.
+
+To refresh AI guidance and pick up the latest slash commands after upgrading:
+
+```bash
+rasen update
 ```
 
 ### chrome-use prerequisites
@@ -99,6 +61,16 @@ The `chrome-use` expert drives your everyday Chrome over the Chrome DevTools Pro
 - **Node.js 22 or newer** (the CDP proxy tooling requires it).
 - Chrome started with remote debugging enabled — open `chrome://inspect/#remote-debugging` (or launch Chrome with `--remote-debugging-port`).
 - On the **first CDP connection**, Chrome shows an **"Allow"** permission popup — approve it to let the tooling attach.
+
+## What you get
+
+- **Spec-driven workflow** — every change is a folder with a proposal, specs, a design, and a task list. Agree on what to build before code is written: `/opsx:propose → /opsx:apply → /opsx:archive`.
+- **`opsx` pipeline family** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as data (YAML); inspect them with `rasen pipeline show|list|classify|resume`. Adding a task type is adding one file, zero code.
+- **`/opsx:auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
+- **`/opsx:goal` goal-driven iteration** — a sibling to `/opsx:auto` for tasks whose "done" is a condition, not a document (drive Lighthouse to 90, make a module rubric-clean, research and write a brief). The LEAD classifies the task into a measure / evaluate / research backend and repeats modify → judge until the gate is satisfied or the round cap is hit.
+- **Auto-decompose** — a task too large for one reviewable diff is split into independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
+- **chrome-use** — an expert that drives your real Chrome via CDP: navigate, click, capture network traffic, inject JS, read cookies and `localStorage`, wait on requests — for logged-in pages, SPAs, and anything a plain fetch can't reach.
+- **Context sensing & handoff** — `rasen agent context` measures real occupancy; `/opsx:handoff` writes a distillate checkpoint; workers self-hand-off at soft budgets, and a compact-recovery hook re-anchors on the distillate after an auto-compact, so long runs survive context limits.
 
 ## See it in action
 
@@ -128,168 +100,26 @@ AI:  Implementing tasks...
      All tasks complete!
 
 You: /opsx:archive
-AI:  Archived to openspec/changes/archive/2025-01-23-add-dark-mode/
+AI:  Archived to openspec/changes/archive/2026-01-23-add-dark-mode/
      Specs updated. Ready for the next feature.
 ```
 
-<details>
-<summary><strong>OpenSpec Dashboard</strong></summary>
+## Telemetry & privacy
 
-<p align="center">
-  <img src="assets/openspec_dashboard.png" alt="OpenSpec dashboard preview" width="90%">
-</p>
+Rasen collects anonymous usage telemetry to understand which commands are used. It sends **only** the command name, the rasen version, an anonymous UUID, and your OS and Node version — **no paths, arguments, or project data**, ever.
 
-</details>
-
-## Why teams adopt OpenSpec
-
-Solo, OpenSpec keeps you and your AI honest on a single repo. On a team, the hard part moves: a feature spans the API server, the web app, and a shared library; requirements are owned by one team and consumed by others; planning starts before any code exists.
-
-**[Stores](docs/stores-beta/user-guide.md)** are the answer — planning in a repo of its own. The same `openspec/` shape you already know (specs and changes), shared by `git push` like anything else. One source of truth your whole team and every coding agent can read, across every repo.
-
-- **Cross-repo features** — one change, one plan, even when the code lands in three repos.
-- **Shared requirements** — a platform team owns the specs; product teams reference them read-only, right where their coding agent can read them. No drifting wiki.
-- **Plan before code** — capture the plan in the store now; the code repos catch up later.
-
-> Stores are in **beta**. Start with the [Stores User Guide](docs/stores-beta/user-guide.md).
-
-## Quick Start
-
-**Requires Node.js 20.19.0 or higher.**
-
-Install OpenSpec globally:
+To opt out, set either:
 
 ```bash
-npm install -g @fission-ai/openspec@latest
+export RASEN_TELEMETRY=0
+# or the cross-tool standard:
+export DO_NOT_TRACK=1
 ```
 
-Then navigate to your project directory and initialize:
-
-```bash
-cd your-project
-openspec init
-```
-
-Now talk to your AI:
-
-- **Not sure what to build yet?** Start with `/opsx:explore`, a no-stakes thinking partner that reads your code, weighs options, and shapes a plan before anything is written. ([Explore guide](docs/explore.md))
-- **Already know what you want?** Go straight to `/opsx:propose <what-you-want-to-build>`.
-
-The default profile is `full`, so every workflow command (`/opsx:new`, `/opsx:continue`, `/opsx:ff`, `/opsx:verify`, `/opsx:bulk-archive`, `/opsx:onboard`, and more) is installed out of the box. To slim down, run `openspec config profile` and apply with `openspec update`.
-
-> [!NOTE]
-> Not sure if your tool is supported? [View the full list](docs/supported-tools.md) – we support 25+ tools and growing.
->
-> Also works with pnpm, yarn, bun, and nix. [See installation options](docs/installation.md).
-
-## Docs
-
-**Start here:** the **[Documentation Home](docs/README.md)** maps everything. New to OpenSpec? Read [Getting Started](docs/getting-started.md), then [How Commands Work](docs/how-commands-work.md) (where you actually type `/opsx:propose`).
-
-→ **[Getting Started](docs/getting-started.md)**: first steps<br>
-→ **[Explore First](docs/explore.md)**: think it through with `/opsx:explore` before you commit<br>
-→ **[How Commands Work](docs/how-commands-work.md)**: where slash commands run vs the CLI<br>
-→ **[Core Concepts at a Glance](docs/overview.md)**: the whole mental model, one page<br>
-→ **[Examples & Recipes](docs/examples.md)**: real changes, start to finish<br>
-→ **[Workflows](docs/workflows.md)**: combos and patterns<br>
-→ **[Existing Projects](docs/existing-projects.md)**: adopt OpenSpec on a brownfield codebase<br>
-→ **[Editing a Change](docs/editing-changes.md)**: update artifacts, go back, reconcile manual edits<br>
-→ **[Commands](docs/commands.md)**: slash commands & skills<br>
-→ **[CLI](docs/cli.md)**: terminal reference<br>
-→ **[Stores](docs/stores-beta/user-guide.md)**: plan in a separate repo, shared across your team (beta)<br>
-→ **[Supported Tools](docs/supported-tools.md)**: tool integrations & install paths<br>
-→ **[Concepts](docs/concepts.md)**: how it all fits<br>
-→ **[Multi-Language](docs/multi-language.md)**: multi-language support<br>
-→ **[Customization](docs/customization.md)**: make it yours<br>
-→ **[FAQ](docs/faq.md)** · **[Troubleshooting](docs/troubleshooting.md)** · **[Glossary](docs/glossary.md)**: quick help
-
-
-## Community schemas
-
-Third-party schema bundles distributed via standalone repositories — these provide opinionated workflows that integrate OpenSpec with other tools, similar to how [github/spec-kit's community extension catalog](https://github.com/github/spec-kit/tree/main/extensions) handles tool integrations.
-
-→ **[Browse the catalog](docs/customization.md#community-schemas)** in the customization docs.
-
-
-## Why OpenSpec?
-
-AI coding assistants are powerful but unpredictable when requirements live only in chat history. OpenSpec adds a lightweight spec layer so you agree on what to build before any code is written.
-
-- **Agree before you build** — human and AI align on specs before code gets written
-- **Stay organized** — each change gets its own folder with proposal, specs, design, and tasks
-- **Work fluidly** — update any artifact anytime, no rigid phase gates
-- **Use your tools** — works with 30+ AI assistants via slash commands
-
-### How we compare
-
-**vs. [Spec Kit](https://github.com/github/spec-kit)** (GitHub) — Thorough but heavyweight. Rigid phase gates, lots of Markdown, Python setup. OpenSpec is lighter and lets you iterate freely.
-
-**vs. [Kiro](https://kiro.dev)** (AWS) — Powerful but you're locked into their IDE and limited to Claude models. OpenSpec works with the tools you already use.
-
-**vs. nothing** — AI coding without specs means vague prompts and unpredictable results. OpenSpec brings predictability without the ceremony.
-
-## Updating OpenSpec
-
-**Upgrade the package**
-
-```bash
-npm install -g @fission-ai/openspec@latest
-```
-
-**Refresh agent instructions**
-
-Run this inside each project to regenerate AI guidance and ensure the latest slash commands are active:
-
-```bash
-openspec update
-```
-
-## Usage Notes
-
-**Model selection**: OpenSpec works best with high-reasoning models. We recommend Codex 5.5 and Opus 4.7 for both planning and implementation.
-
-**Context hygiene**: OpenSpec benefits from a clean context window. Clear your context before starting implementation and maintain good context hygiene throughout your session.
-
-## Contributing
-
-**Small fixes** — Bug fixes, typo corrections, and minor improvements can be submitted directly as PRs.
-
-**Larger changes** — For new features, significant refactors, or architectural changes, please submit an OpenSpec change proposal first so we can align on intent and goals before implementation begins.
-
-When writing proposals, keep the OpenSpec philosophy in mind: we serve a wide variety of users across different coding agents, models, and use cases. Changes should work well for everyone.
-
-**AI-generated code is welcome** — as long as it's been tested and verified. PRs containing AI-generated code should mention the coding agent and model used (e.g., "Generated with Claude Code using claude-opus-4-5-20251101").
-
-### Development
-
-- Install dependencies: `pnpm install`
-- Build: `pnpm run build`
-- Test: `pnpm test`
-- Develop CLI locally: `pnpm run dev` or `pnpm run dev:cli`
-- Conventional commits (one-line): `type(scope): subject`
-
-## Other
-
-<details>
-<summary><strong>Telemetry</strong></summary>
-
-OpenSpec collects anonymous usage stats.
-
-We collect only command names and version to understand usage patterns. No arguments, paths, content, or PII. Automatically disabled in CI.
-
-**Opt-out:** `export OPENSPEC_TELEMETRY=0` or `export DO_NOT_TRACK=1`
-
-</details>
-
-<details>
-<summary><strong>Maintainers & Advisors</strong></summary>
-
-See [MAINTAINERS.md](MAINTAINERS.md) for the list of core maintainers and advisors who help guide the project.
-
-</details>
-
-
+Telemetry is also **automatically disabled in CI**.
 
 ## License
 
-MIT
+MIT — Copyright (c) 2024 OpenSpec Contributors and Copyright (c) 2026 DumoeDss. See [LICENSE](./LICENSE).
+
+Issues and feedback: [github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen).
