@@ -1201,13 +1201,13 @@ The system SHALL do the thing differently.
   });
 
   describe('error handling', () => {
-    it('should throw error when openspec directory does not exist', async () => {
+    it('should report no active changes when openspec directory does not exist', async () => {
       // Remove openspec directory
       await fs.rm(path.join(tempDir, 'openspec'), { recursive: true });
-      
+
       await expect(
         archiveCommand.execute('any-change', { yes: true })
-      ).rejects.toThrow("No Rasen changes directory found. Run 'rasen init' first.");
+      ).rejects.toThrow("Change 'any-change' not found. No active changes exist in this root.");
     });
   });
 
