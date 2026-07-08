@@ -40,5 +40,5 @@ not_found_handling = "none"
 # defense-in-depth (JSON array or comma list); when unset, a valid Access JWT for
 # this AUD suffices because the Access policy already pins the maintainer email.
 [vars]
-ACCESS_TEAM_DOMAIN = ""
-ACCESS_AUD = ""
+ACCESS_TEAM_DOMAIN = "atelierai.cloudflareaccess.com"
+ACCESS_AUD = "82ce43e23510344a1fb944320e67b2851a3651aec16d62e0d37f2fe59facdac5"
