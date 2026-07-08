@@ -51,6 +51,7 @@ This is an **orchestration-focused fork** of [OpenSpec](https://github.com/Fissi
 What this fork adds:
 
 - **`/opsx:auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
+- **`/opsx:goal` goal-driven iteration** — a sibling entry to `/opsx:auto` for tasks whose "done" is a condition, not a document (drive Lighthouse to 90, make a module rubric-clean, research and write a brief). The LEAD classifies the task into a measure / evaluate / research backend pipeline and repeats modify→judge until the gate is satisfied or the round cap is hit.
 - **Data-driven pipeline registry** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as YAML; inspect them with `openspec pipeline show|list|classify|resume`. Adding a task type = adding one file, zero code.
 - **Auto-decompose (portfolio fan-out)** — a task too large for one reviewable diff is split into multiple independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
 - **Context sensing & handoff** — `openspec agent context` measures real occupancy; `/opsx:handoff` writes a distillate checkpoint; workers self-handoff at soft budgets under relay caps, stall detection, and a LEAD-first escalation ladder.

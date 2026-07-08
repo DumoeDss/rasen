@@ -213,6 +213,20 @@ rules:
 /opsx:archive   # Move to archive when done (prompts to sync specs if needed)
 ```
 
+### 目标驱动迭代（`/opsx:goal`）
+
+`/opsx:auto` 假设产物是一份代码变更文档（propose → apply → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**：把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。`/opsx:goal` 就是给这类任务用的入口。它重复 **修改 → 判定**，直到闸门达标或轮次上限。
+
+你只看到一个命令。LEAD 据任务分类，选**恰好一条**后端 pipeline（显式覆盖总赢）：
+
+| 选择子 / 关键词 | 后端 pipeline | 闸门 | 尾部 |
+|---|---|---|---|
+| `measure` —— `score` `latency` `lighthouse` `benchmark` `p99` `memory` | **goal-loop-measure** | 一条确定性命令产出 `{score, passed}` | ship → archive |
+| `evaluate` —— `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | 一个 fresh reviewer worker 判 `{satisfied, gaps}` | ship → archive |
+| `research` —— `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | 一个 fresh reviewer worker | report（无 ship）|
+
+流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/opsx:goal` 与 `/opsx:auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
+
 ## 何时更新 vs. 重新开始
 
 你始终可以在实现前编辑提案或规格。但什么时候"改进"变成了"这是不同的工作"？

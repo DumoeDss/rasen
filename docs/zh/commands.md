@@ -27,6 +27,7 @@
 | `/opsx:bulk-archive` | 一次性归档多个变更 |
 | `/opsx:onboard` | 完整工作流的引导式教程 |
 | `/opsx:review-cycle` | 迭代式审查循环 —— 审查、分诊、修复、复审增量，循环直至干净或上报 |
+| `/opsx:goal` | 目标驱动迭代 —— 针对一个 measure 或 evaluate 闸门重复「修改→判定」，直到达标或轮次上限（性能优化、rubric 达标代码、研究 brief）|
 
 默认全局 profile 为 `full` —— 所有工作流命令开箱即用。要精简为核心命令，运行 `openspec config profile core`（或用 `openspec config profile` 选择自定义子集），然后在你的项目中运行 `openspec update`。
 
@@ -431,6 +432,57 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 **提示：**
 - 在实现**之后**针对实时 diff 使用；若只需单次验证门禁，请改用 `/opsx:verify`
 - 循环是有界的 —— 若上报，开放发现与轮次历史会交给人类，而非静默通过
+
+---
+
+### `/opsx:goal`
+
+面向「完成」是一个**条件**而非一份文档的任务——把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。它是 `/opsx:auto` 的平级入口：LEAD 分类任务、选**恰好一条**后端 pipeline，然后重复 **修改 → 判定** 直到闸门达标或轮次上限。与 `/opsx:auto` 共用同一套编排手册（LEAD + 角色隔离 worker、档位、run-state、gate、resume）。完整章节见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
+
+**语法：**
+```text
+/opsx:goal [measure|evaluate|research] <任务>
+/opsx:goal --pipeline goal-loop-<变体> <任务>
+```
+
+**参数：**
+| 参数 | 必需 | 描述 |
+|----------|----------|-------------|
+| `measure\|evaluate\|research` | 否 | 强制指定后端 pipeline；不带则由 LEAD 按关键词分类（显式总赢；歧义默认 `evaluate`）|
+| `任务` | 是 | 要迭代逼近的目标的自然语言描述 |
+
+**功能说明：**
+- **define-goal** 阶段 —— 把任务翻译成 `goal-plan.md`：目标、具体的闸门（`{kind: measure, command, threshold/target}` 或 `{kind: evaluate, goal, rubric}`）、工作产物（`code` | `prose`）、`maxRounds`。该阶段带 gate——你在首轮跑之前确认 measure 命令
+- **iterate** 循环 —— 每轮 dispatch 暖复用的 implementer，然后跑闸门：**measure** 跑一条确定性命令（`{score, passed}`）；**evaluate** dispatch 一个 fresh reviewer worker（`{satisfied, gaps}`）。每轮记录追加进 `goal-run.json`（权威的循环位置）
+- **尾部** —— measure/evaluate → `ship` → `archive`（迭代出的代码正常交付）；research → `report`（汇总成最终文档；无代���可 ship）
+- 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底；轮次用尽标注为 `maxRounds-exhausted`——绝不谎报成功
+
+**后端 pipeline 族：**
+
+| 任务中的关键词 | 选中的 pipeline | 闸门（考官） | 工作产物 | 尾部 |
+|---|---|---|---|---|
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure —— 一条确定性命令 | 代码 | ship → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate —— 一个 fresh reviewer | 代码 | ship → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate —— 一个 fresh reviewer | 散文 | report |
+
+**示例：**
+```text
+You: /opsx:goal drive the Lighthouse performance score to 90
+
+AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
+     取 DAG：define-goal -> iterate（measure 闸门）-> ship -> archive
+     ▸ planner -> goal-plan.md（gate: measure, command: lighthouse --output=json, threshold: 90）
+     ⏸ gate：确认 measure 命令？ -> 你：继续
+     ▸ implementer（第 1 轮）-> 改性能热点路径
+     ▸ measure 闸门：score 82（未达标）-> 记入 goal-run.json
+     ▸ implementer（第 2 轮，暖复用）-> 继续改
+     ▸ measure 闸门：score 91（达标）-> ship -> archive
+```
+
+**提示：**
+- 当产物是一个靠迭代满足的*条件*时用 `/opsx:goal`；当产物是一份代码变更文档时用 `/opsx:auto`
+- 中途 kill 后运行 `openspec pipeline resume <change>`——goal-loop 的 resume 协议读 `goal-run.json` 最后一条记录，从正确的轮次续跑
+- `define-goal` 的 gate 是「measure.command 是任意 shell」的安全阀——继续前先审一眼该命令
 
 ---
 

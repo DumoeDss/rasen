@@ -62,6 +62,9 @@ openspec pipeline list --json                     # 列出 package/user/project 
 | **small-feature** _(默认)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → 自适应 verify → ship → archive |
 | **auto-decompose** | **decompose**(条件性首步，LEAD 自审、非人类 gate) → propose → apply → verify → review-loop → ship → archive；取了 decompose 就扇出成多个子 change，每个子跑 `childPipeline`（默认 small-feature，见 §2.7）|
+| **goal-loop-measure** | define-goal → iterate（measure 闸门，循环至达标/maxRounds）→ ship → archive —— 由 `/opsx:goal` 驱动，**见 §9** |
+| **goal-loop-evaluate** | define-goal → iterate（evaluate 闸门，循环）→ ship → archive —— 由 `/opsx:goal` 驱动，**见 §9** |
+| **goal-loop-research** | define-goal → iterate（evaluate 闸门，循环）→ report —— 由 `/opsx:goal` 驱动，**见 §9** |
 
 > 全部内置流水线的 **ship 和 archive 阶段都显式指定 `model: sonnet`**——这两个阶段是机械执行（跑测试/push/建 PR、归档/合并 spec），不需要大模型推理；不指定 `model` 时 worker 会继承主 agent 的模型，平白多花成本。自定义流水线也建议照此为 ship/archive 写上 `model: sonnet`。
 
@@ -441,3 +444,134 @@ stages:
 - Codex worker 记录 `threadId` / `turnId`，跨重启后优先用 `thread/resume(threadId)` 继续同一个 Codex thread。
 
 `openspec pipeline resume <change> --json` 会把两类恢复句柄都放在 `workers` 中，并用 `runtime` 区分。
+
+---
+
+## 9. 目标驱动迭代：`/opsx:goal`
+
+`/opsx:auto` 假设产物是一份可 review 的单次代码变更（propose → apply → verify → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**，不是一份文档：把 Lighthouse 分数刷到 90、让某模块满足一套 rubric、研究并写一份 brief。`/opsx:goal` 就是给这类任务用的入口：它重复 **修改 → 判定**，直到闸门达标或轮次上限。
+
+> 当产物是一个靠迭代满足的*条件*时用 `/opsx:goal`；当产物是一份代码变更文档时用 `/opsx:auto`。两者共用同一套编排手册（LEAD + 角色隔离 worker、档位、run-state、gate、resume）——`/opsx:goal` 是一个平级入口，不是第二套系统。
+
+### 9.1 一个入口，LEAD 分流到三条同构后端 pipeline
+
+你只看到一个命令。LEAD 据任务分类，选**恰好一条**后端 pipeline（显式覆盖总赢）：
+
+```text
+/opsx:goal <任务>                        # LEAD 按关键词分类
+/opsx:goal measure <任务>                # 强制 measure 变体
+/opsx:goal evaluate <任务>               # 强制 evaluate 变体
+/opsx:goal research <任务>               # 强制 research 变体
+/opsx:goal --pipeline goal-loop-<变体> <任务>   # 显式指定 pipeline 名
+```
+
+**分类关键词**（仅作建议；显式优先）。歧义时默认 **evaluate**（质量判定是最通用的闸门；如果任务其实可量化，define-goal 阶段可以再把 measure 命令精化出来）。
+
+| 任务中的关键词 | 选中的 pipeline | 闸门（考官） | 工作产物 | 尾部 |
+|---|---|---|---|---|
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure —— 一条确定性命令产出 `{score, passed}` | 代码 | ship → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate —— 一个 fresh reviewer worker 判 `{satisfied, gaps}` | 代码 | ship → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate —— 一个 fresh reviewer worker 判 | 散文（研究 + 写作） | report |
+
+每条 pipeline 都是**同构**的——恰好一种闸门类型、一种 iterate-skill 风味、一种尾部。没有运行时条件、没有闸门组合。这是刻意的：早先一个把 measure+evaluate 闸门组合在一起的单 pipeline 设计被三个缺陷否决了（AND 语义的 stall 漏洞、未强制的条件尾部、被敷衍的 generic skill）；一族同构 pipeline 把三者一并消解。
+
+```bash
+openspec pipeline show goal-loop-measure        # 查看 DAG + loop 元数据
+openspec pipeline show goal-loop-measure --json  # { name, buildOrder, stages }
+```
+
+`iterate` 阶段带 `loop: { kind: goal, gate: {...} }`。LEAD 通过 playbook 的 **Step L** 解释它（每轮单次 dispatch、暖复用 implementer、闸门、`goal-run.json`）。
+
+### 9.2 流程：define-goal → iterate → 尾部
+
+1. **define-goal**（planner，`openspec-goal-plan`）—— 把任务翻译成 `goal-plan.md`：`goal`（自然语言）、具体的 `gate`（`{kind: measure, command, threshold/target, direction}` 或 `{kind: evaluate, goal, rubric}`）、`workProduct`（`code` | `prose`）、`maxRounds`。该阶段带 `gate: true`——用户暂停以在首轮跑之前**确认 measure 命令**（这是「measure.command 是任意 shell」的安全阀）。它**不**产出 proposal/design/specs；产物是迭代后的代码或文档，不是一份变更规格。
+2. **iterate**（implementer，`openspec-goal-iterate`）—— 循环体。LEAD 在首轮前把 `goal-plan.md` 里的具体闸门配置合并进 run-state 的 `loopConfig`。每轮：dispatch **暖复用**的 implementer（所有轮同一个 worker，就像 review-cycle 复用 fixer thread），然后跑闸门：
+   - **measure** —— 运行 `gate.command`，解析 `{score, passed, detail}`。命令失败（非零退出 / 超时 / 无法解析的 JSON）记为 `{round, error}` 并按未达标处理——**不会死锁**。
+   - **evaluate** —— dispatch 一个 **fresh reviewer worker**（≠ implementer——author ≠ verifier），必须返回结构化的 `{satisfied: boolean, gaps: string[]}`。
+3. **尾部** —— measure/evaluate → `ship` → `archive`（迭代出的代码正常交付）；research → `report`（`openspec-goal-report` skill 把整轮 run 汇总成最终文档——没有代码要 ship）。
+
+### 9.3 `goal-run.json` —— 循环位置的权威脊柱
+
+每轮往 change 目录的 `goal-run.json` 追加一条记录：
+
+```json
+{ "round": 2, "score": 87, "measurePassed": false, "detail": "...", "gitTreeFingerprint": "abc123" }
+```
+
+`goal-run.json` 是**权威的**循环位置。run-state（`auto-run.json`）带注入的 `loopConfig`（生效的闸门配置）和一份 best-effort 的 `loopProgress` 缓存（当前轮、上次分数、stall 连击、`historyRef → goal-run.json`）；两者冲突时以 `goal-run.json` 为准。这也是跨 implementer relay 存活的关键：implementer 是暖复用的，但当其上下文撞线时，它走标准的 Step H.3 self-handoff，LEAD 暖播种继任者去读盘上的记录。
+
+### 9.4 边界与 stall —— 绝不谎报、绝不静默烧轮
+
+- **`maxRounds` 上限（默认 5）。** 循环是有界的。轮次用尽且闸门仍未达标时，run 照常进尾部，但 outcome 标记为 `maxRounds-exhausted`——**绝不谎报成功**。
+- **`loopStallLimit`（默认 2）。** 一轮算有进展 = （measure 在且分数朝目标移动——`gte` 上升 / `lte` 下降）或（evaluate 在且 gap 集合收缩或新达标）。第 1 轮总算进展。`loopStallLimit` 连续无进展轮触发 LEAD 策略评审阶梯（Step H.5——换打法 / 改播种 / 升级），而非静默烧轮。
+
+### 9.5 中断后续跑
+
+跑到一半 kill 掉，然后：
+
+```bash
+openspec pipeline resume <change> --json   # 下一个未完成阶段 + worker 指针
+```
+
+goal-loop 的 resume 协议读 `goal-run.json` 的**最后一条记录**：
+
+| 最后一条记录 | 续跑动作 |
+|---|---|
+| 闸门**已达标** | 直接进尾部（**不重跑**已达标的那一轮）|
+| **未达标**（该轮完成、有记录）| 从 **lastRound + 1** 起跑（fresh dispatch，种子带前轮 gap）——该轮已有判定记录，不重跑 |
+| **无记录**（define-goal 完成、iterate 在首判前就死了）| dispatch 第 1 轮 |
+
+续跑某一轮之前，LEAD **可以**先在当前 tree 上重判一次（抓 flaky 命令或外部改动达标的状态）；`gitTreeFingerprint` 用来检测 tree 是否在自己之下被改动。
+
+### 9.6 完整示例
+
+**measure —— 把 Lighthouse 性能分刷到 90。**
+```text
+You: /opsx:goal drive the Lighthouse performance score to 90
+
+AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
+     取 DAG：define-goal -> iterate（measure 闸门）-> ship -> archive
+     ▸ planner -> goal-plan.md（gate: measure, command: lighthouse --output=json,
+        threshold: 90, direction: gte, workProduct: code, maxRounds: 5）
+     ⏸ gate：确认 measure 命令？ -> 你：继续
+     ▸ implementer（第 1 轮）-> 改性能热点路径
+     ▸ measure 闸门：score 82（未达标）-> 记入 goal-run.json
+     ▸ implementer（第 2 轮，暖复用，种子带 score 82）-> 继续改
+     ▸ measure 闸门：score 91（达标）-> 记入
+     ▸ ship -> archive   (outcome: satisfied)
+```
+
+**evaluate —— 让某模块满足 rubric。**
+```text
+You: /opsx:goal make the auth module error-handling satisfy this rubric
+
+AI:  关键词 "rubric" -> goal-loop-evaluate
+     ▸ planner -> goal-plan.md（gate: evaluate, goal: "auth 错误处理满足
+        rubric", rubric: "不得吞错误；每条失败路径都返回类型化错误",
+        workProduct: code, maxRounds: 5）
+     ⏸ gate：确认？ -> 你：继续
+     ▸ implementer（第 1 轮）-> 重构错误路径
+     ▸ evaluate 闸门：FRESH reviewer worker -> { satisfied: false, gaps: [...] }
+     ▸ implementer（第 2 轮，暖复用，种子带 gaps）-> 逐条修
+     ▸ evaluate 闸门：FRESH reviewer -> { satisfied: true } -> 记入
+     ▸ ship -> archive   (outcome: satisfied)
+```
+
+**research —— 研究并写一份 brief。**
+```text
+You: /opsx:goal research and write a brief on WebGPU compute adoption
+
+AI:  关键词 "research" + "write brief" -> goal-loop-research
+     ▸ planner -> goal-plan.md（gate: evaluate, goal: "一份覆盖 WebGPU compute
+        采用情况的 brief", workProduct: prose, maxRounds: 5）
+     ⏸ gate：确认？ -> 你：继续
+     ▸ implementer（第 1 轮）-> 内联研究（web search/fetch），起草 brief
+        （上下文消耗大 -> pipeline 降低后的 implementer 阈值 0.35 在需要时更早
+         走 Step H.3 relay）
+     ▸ evaluate 闸门：FRESH reviewer -> { satisfied: false, gaps: ["缺浏览器支持矩阵"] }
+     ▸ implementer（第 2 轮，暖复用）-> 补上矩阵
+     ▸ evaluate 闸门：FRESH reviewer -> { satisfied: true } -> 记入
+     ▸ report -> 最终 brief + run 摘要   (无 ship/archive；outcome: satisfied)
+```
+
+> **速查**：`/opsx:goal <任务>`（或 `measure|evaluate|research` 选择子 / `--pipeline goal-loop-<变体>`）；每轮记录落 `goal-run.json`；`maxRounds` 用尽会诚实标注；`openspec pipeline resume <change>` 从最后一条记录续跑。循环语义在 LEAD playbook（Step L），由与 `/opsx:auto` 同一套编排驱动。

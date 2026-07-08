@@ -213,6 +213,20 @@ Works through tasks, checking them off as you go. If you're juggling multiple ch
 /opsx:archive   # Move to archive when done (prompts to sync specs if needed)
 ```
 
+### Goal-driven iteration (`/opsx:goal`)
+
+`/opsx:auto` assumes the product is a code-change document (propose → apply → ship). Some tasks don't fit that shape — their "done" is a **condition**: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/opsx:goal` is the entry point for those. It repeats **modify → judge** until a gate is satisfied or a round cap is hit.
+
+You see one command. The LEAD classifies the task and selects ONE backend pipeline (explicit override always wins):
+
+| Selector / keywords | Backend pipeline | Gate | Tail |
+|---|---|---|---|
+| `measure` — `score` `latency` `lighthouse` `benchmark` `p99` `memory` | **goal-loop-measure** | a deterministic command emits `{score, passed}` | ship → archive |
+| `evaluate` — `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | a fresh reviewer worker judges `{satisfied, gaps}` | ship → archive |
+| `research` — `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | a fresh reviewer worker | report (no ship) |
+
+The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/opsx:goal` shares the same orchestration playbook as `/opsx:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
+
 ## When to Update vs. Start Fresh
 
 You can always edit your proposal or specs before implementation. But when does refining become "this is different work"?

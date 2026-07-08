@@ -27,6 +27,7 @@ For workflow patterns and when to use each command, see [Workflows](workflows.md
 | `/opsx:bulk-archive` | Archive multiple changes at once |
 | `/opsx:onboard` | Guided tutorial through the complete workflow |
 | `/opsx:review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
+| `/opsx:goal` | Goal-driven iteration — repeat modify→judge against a measure or evaluate gate until satisfied or the round cap is hit (perf optimization, rubric-clean code, research brief) |
 
 The default global profile is `full` — all workflow commands are installed out of the box. To slim down to the essentials, run `openspec config profile core` (or pick a custom subset with `openspec config profile`), then run `openspec update` in your project.
 
@@ -431,6 +432,57 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 **Tips:**
 - Use AFTER implementation, against the live diff; for a single verification gate use `/opsx:verify` instead
 - The loop is bounded — if it escalates, the open findings and round history go to a human, not to a silent pass
+
+---
+
+### `/opsx:goal`
+
+Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/opsx:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/opsx:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
+
+**Syntax:**
+```text
+/opsx:goal [measure|evaluate|research] <task>
+/opsx:goal --pipeline goal-loop-<variant> <task>
+```
+
+**Arguments:**
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `measure\|evaluate\|research` | No | Force a backend pipeline; without it the LEAD classifies by keyword (explicit always wins; ambiguous defaults to `evaluate`) |
+| `task` | Yes | Natural-language description of the goal to iterate toward |
+
+**What it does:**
+- **define-goal** stage — translates the task into `goal-plan.md`: the goal, the concrete gate (`{kind: measure, command, threshold/target}` or `{kind: evaluate, goal, rubric}`), the work product (`code` | `prose`), and `maxRounds`. This stage has a gate — you confirm a measure command before any round runs
+- **iterate** loop — each round dispatches a warm-reused implementer, then runs the gate: **measure** runs a deterministic command (`{score, passed}`); **evaluate** dispatches a fresh reviewer worker (`{satisfied, gaps}`). Each round is recorded in `goal-run.json` (the authoritative loop position)
+- **tail** — measure/evaluate → `ship` → `archive` (the iterated code is delivered normally); research → `report` (summarized into a final document; no code to ship)
+- Bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2); rounds exhausted are marked `maxRounds-exhausted` — never reported as success
+
+**Backend pipeline family:**
+
+| Keywords in the task | Selected pipeline | Gate (examiner) | Work product | Tail |
+|---|---|---|---|---|
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure — a deterministic command | code | ship → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate — a fresh reviewer | code | ship → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate — a fresh reviewer | prose | report |
+
+**Example:**
+```text
+You: /opsx:goal drive the Lighthouse performance score to 90
+
+AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
+     Fetch DAG: define-goal -> iterate (measure gate) -> ship -> archive
+     ▸ planner -> goal-plan.md (gate: measure, command: lighthouse --output=json, threshold: 90)
+     ⏸ gate: confirm the measure command? -> You: continue
+     ▸ implementer (round 1) -> edits the perf-critical path
+     ▸ measure gate: score 82 (not passed) -> recorded to goal-run.json
+     ▸ implementer (round 2, warm-reused) -> further edits
+     ▸ measure gate: score 91 (satisfied) -> ship -> archive
+```
+
+**Tips:**
+- Use `/opsx:goal` when the product is a *condition* met by iteration; use `/opsx:auto` when the product is a code-change document
+- Kill mid-loop and run `openspec pipeline resume <change>` — the goal-loop resume protocol reads the last `goal-run.json` record and resumes at the right round
+- The `define-goal` gate is the safety valve for "measure.command is arbitrary shell" — review the command before continuing
 
 ---
 
