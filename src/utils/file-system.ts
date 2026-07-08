@@ -16,7 +16,7 @@ async function hasWritableModeAndAccess(targetPath: string): Promise<boolean> {
   try {
     const stats = await fs.stat(targetPath);
 
-    // POSIX root can often write despite mode bits, but OpenSpec should respect
+    // POSIX root can often write despite mode bits, but Rasen should respect
     // explicit read-only file/directory modes when deciding whether an install
     // path is user-writable. This also keeps permission checks deterministic in
     // root-run CI containers. On Windows, chmod mode bits are not authoritative,

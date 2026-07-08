@@ -3,7 +3,7 @@
  *
  * YC-style product validation — two modes: Startup (six forcing questions)
  * and Builder (design thinking brainstorm). Produces a design doc
- * dual-written to OpenSpec change directory.
+ * dual-written to Rasen change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -72,7 +72,7 @@ Generate a design document with sections:
 
 ### 5. Dual-Write Output
 
-**If an active OpenSpec change context exists:**
+**If an active Rasen change context exists:**
 - Write output to \`openspec/changes/<name>/office-hours-design.md\`
 - This is the change's single validation doc — a stable name within the task directory, just like \`proposal.md\`. Re-running office-hours on the same change refines this file in place.
 - This document will be automatically consumed by \`/opsx:propose\` as input context
@@ -120,7 +120,7 @@ export function getOfficeHoursCommandSkillTemplate(): SkillTemplate {
     description: 'YC-style product validation — validate demand reality before building. Two modes: Startup (six forcing questions) and Builder (design brainstorm).',
     instructions: OFFICE_HOURS_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

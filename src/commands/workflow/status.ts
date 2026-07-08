@@ -57,7 +57,7 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
     const planningHome = toPlanningHome(root);
     const projectRoot = root.path;
     const rootOutput = toRootOutput(root);
-    const newChangeHint = withStoreFlag(root, 'openspec new change <name>');
+    const newChangeHint = withStoreFlag(root, 'rasen new change <name>');
 
     // Handle no-changes case gracefully — status is informational,
     // so "no changes" is a valid state, not an error.

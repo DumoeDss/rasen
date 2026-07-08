@@ -10,7 +10,7 @@ import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 export function getFfChangeSkillTemplate(): SkillTemplate {
   return {
     name: 'openspec-ff-change',
-    description: 'Fast-forward through OpenSpec artifact creation. Use when the user wants to quickly create all artifacts needed for implementation without stepping through each one individually.',
+    description: 'Fast-forward through Rasen artifact creation. Use when the user wants to quickly create all artifacts needed for implementation without stepping through each one individually.',
     instructions: `Fast-forward through artifact creation - generate everything needed to start implementation in one go.
 
 ${STORE_SELECTION_GUIDANCE}
@@ -30,13 +30,13 @@ ${STORE_SELECTION_GUIDANCE}
 
 2. **Create the change directory**
    \`\`\`bash
-   openspec new change "<name>"
+   rasen new change "<name>"
    \`\`\`
    This creates a scaffolded change in the planning home resolved by the CLI.
 
 3. **Get the artifact build order**
    \`\`\`bash
-   openspec status --change "<name>" --json
+   rasen status --change "<name>" --json
    \`\`\`
    Parse the JSON to get:
    - \`applyRequires\`: array of artifact IDs needed before implementation (e.g., \`["tasks"]\`)
@@ -52,7 +52,7 @@ ${STORE_SELECTION_GUIDANCE}
    a. **For each artifact that is \`ready\` (dependencies satisfied)**:
       - Get instructions:
         \`\`\`bash
-        openspec instructions <artifact-id> --change "<name>" --json
+        rasen instructions <artifact-id> --change "<name>" --json
         \`\`\`
       - The instructions JSON includes:
         - \`context\`: Project background (constraints for you - do NOT include in output)
@@ -67,7 +67,7 @@ ${STORE_SELECTION_GUIDANCE}
       - Show brief progress: "✓ Created <artifact-id>"
 
    b. **Continue until all \`applyRequires\` artifacts are complete**
-      - After creating each artifact, re-run \`openspec status --change "<name>" --json\`
+      - After creating each artifact, re-run \`rasen status --change "<name>" --json\`
       - Check if every artifact ID in \`applyRequires\` has \`status: "done"\` in the artifacts array
       - Stop when all \`applyRequires\` artifacts are done
 
@@ -77,7 +77,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 5. **Show final status**
    \`\`\`bash
-   openspec status --change "<name>"
+   rasen status --change "<name>"
    \`\`\`
 
 **Output**
@@ -90,7 +90,7 @@ After completing all artifacts, summarize:
 
 **Artifact Creation Guidelines**
 
-- Follow the \`instruction\` field from \`openspec instructions\` for each artifact type
+- Follow the \`instruction\` field from \`rasen instructions\` for each artifact type
 - The schema defines what each artifact should contain - follow it
 - Read dependency artifacts for context before creating new ones
 - Use \`template\` as the structure for your output file - fill in its sections
@@ -105,7 +105,7 @@ After completing all artifacts, summarize:
 - If a change with that name already exists, suggest continuing that change instead
 - Verify each artifact file exists after writing before proceeding to next`,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }
@@ -135,13 +135,13 @@ ${STORE_SELECTION_GUIDANCE}
 
 2. **Create the change directory**
    \`\`\`bash
-   openspec new change "<name>"
+   rasen new change "<name>"
    \`\`\`
    This creates a scaffolded change in the planning home resolved by the CLI.
 
 3. **Get the artifact build order**
    \`\`\`bash
-   openspec status --change "<name>" --json
+   rasen status --change "<name>" --json
    \`\`\`
    Parse the JSON to get:
    - \`applyRequires\`: array of artifact IDs needed before implementation (e.g., \`["tasks"]\`)
@@ -157,7 +157,7 @@ ${STORE_SELECTION_GUIDANCE}
    a. **For each artifact that is \`ready\` (dependencies satisfied)**:
       - Get instructions:
         \`\`\`bash
-        openspec instructions <artifact-id> --change "<name>" --json
+        rasen instructions <artifact-id> --change "<name>" --json
         \`\`\`
       - The instructions JSON includes:
         - \`context\`: Project background (constraints for you - do NOT include in output)
@@ -172,7 +172,7 @@ ${STORE_SELECTION_GUIDANCE}
       - Show brief progress: "✓ Created <artifact-id>"
 
    b. **Continue until all \`applyRequires\` artifacts are complete**
-      - After creating each artifact, re-run \`openspec status --change "<name>" --json\`
+      - After creating each artifact, re-run \`rasen status --change "<name>" --json\`
       - Check if every artifact ID in \`applyRequires\` has \`status: "done"\` in the artifacts array
       - Stop when all \`applyRequires\` artifacts are done
 
@@ -182,7 +182,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 5. **Show final status**
    \`\`\`bash
-   openspec status --change "<name>"
+   rasen status --change "<name>"
    \`\`\`
 
 **Output**
@@ -195,7 +195,7 @@ After completing all artifacts, summarize:
 
 **Artifact Creation Guidelines**
 
-- Follow the \`instruction\` field from \`openspec instructions\` for each artifact type
+- Follow the \`instruction\` field from \`rasen instructions\` for each artifact type
 - The schema defines what each artifact should contain - follow it
 - Read dependency artifacts for context before creating new ones
 - Use \`template\` as the structure for your output file - fill in its sections

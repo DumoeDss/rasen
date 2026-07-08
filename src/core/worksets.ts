@@ -290,8 +290,8 @@ export function worksetNotFoundError(
       target: 'workset.name',
       fix:
         savedNames.length > 0
-          ? `Saved worksets: ${savedNames.join(', ')}. See them with: openspec workset list`
-          : `Create it first: openspec workset create ${name}`,
+          ? `Saved worksets: ${savedNames.join(', ')}. See them with: rasen workset list`
+          : `Create it first: rasen workset create ${name}`,
     }
   );
 }
@@ -306,7 +306,7 @@ export function withWorkset(
       'workset_exists',
       {
         target: 'workset.name',
-        fix: `Choose another name, or remove it first: openspec workset remove ${workset.name}`,
+        fix: `Choose another name, or remove it first: rasen workset remove ${workset.name}`,
       }
     );
   }

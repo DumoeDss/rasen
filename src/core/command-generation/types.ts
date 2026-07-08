@@ -12,7 +12,7 @@
 export interface CommandContent {
   /** Command identifier (e.g., 'explore', 'apply', 'new') */
   id: string;
-  /** Human-readable name (e.g., 'OpenSpec Explore') */
+  /** Human-readable name (e.g., 'Rasen Explore') */
   name: string;
   /** Brief description of command purpose */
   description: string;

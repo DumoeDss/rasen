@@ -38,7 +38,7 @@ Run rounds until a review pass returns no unresolved Blocker or Major findings, 
 
 ### Select the change
 
-If a change name is provided, use it. Otherwise infer from context, auto-select if only one active change exists, or run \`openspec list --json\` and prompt. Initialize round counter \`r = 1\` and read the configured/argument max-rounds (default 3).
+If a change name is provided, use it. Otherwise infer from context, auto-select if only one active change exists, or run \`rasen list --json\` and prompt. Initialize round counter \`r = 1\` and read the configured/argument max-rounds (default 3).
 
 ## Run the loop via the orchestration playbook
 
@@ -89,7 +89,7 @@ export function getReviewCycleSkillTemplate(): SkillTemplate {
       'Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate. Multi-agent path is primary (distinct reviewer/fixer workers, Tier A SendMessage warm resume); single-context is the fallback. Delegates each pass to openspec-review; enforces author != verifier and a max-rounds cap.',
     instructions: REVIEW_CYCLE_INSTRUCTIONS,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }

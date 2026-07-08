@@ -61,7 +61,7 @@ export class BashInstaller {
     const localCompletionDir = path.join(this.homeDir, '.local', 'share', 'bash-completion', 'completions');
 
     // For user installation, use local directory
-    return path.join(localCompletionDir, 'openspec');
+    return path.join(localCompletionDir, 'rasen');
   }
 
   /**
@@ -101,7 +101,7 @@ export class BashInstaller {
    */
   private generateBashrcConfig(completionsDir: string): string {
     return [
-      '# OpenSpec shell completions configuration',
+      '# Rasen shell completions configuration',
       `if [ -d "${completionsDir}" ]; then`,
       `  for f in "${completionsDir}"/*; do`,
       '    [ -f "$f" ] && . "$f"',
@@ -118,7 +118,7 @@ export class BashInstaller {
    */
   async configureBashrc(completionsDir: string): Promise<boolean> {
     // Check if auto-configuration is disabled
-    if (process.env.OPENSPEC_NO_AUTO_CONFIG === '1') {
+    if (process.env.RASEN_NO_AUTO_CONFIG === '1') {
       return false;
     }
 
@@ -318,7 +318,7 @@ export class BashInstaller {
       '',
       'To enable completions, add the following to your ~/.bashrc file:',
       '',
-      `  # Source OpenSpec completions`,
+      `  # Source Rasen completions`,
       `  if [ -d "${completionsDir}" ]; then`,
       `    for f in "${completionsDir}"/*; do`,
       '      [ -f "$f" ] && . "$f"',

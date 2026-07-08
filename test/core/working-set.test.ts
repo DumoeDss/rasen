@@ -46,7 +46,7 @@ describe('working-set assembly (4.1)', () => {
     expect(workingSet.members.map((member) => member.id)).toEqual(['up', 'ghost']);
     // Fetch recipe only on available references.
     expect(workingSet.members[0].fetch).toBe(
-      'openspec show <spec-id> --type spec --store up'
+      'rasen show <spec-id> --type spec --store up'
     );
     expect('fetch' in workingSet.members[1]).toBe(false);
     // Availability rule: path AND empty status.

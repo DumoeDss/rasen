@@ -55,7 +55,7 @@ describe('pipeline-registry/resolver', () => {
   describe('getUserPipelinesDir', () => {
     it('should use XDG_DATA_HOME when set', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      expect(getUserPipelinesDir()).toBe(path.join(tempDir, 'openspec', 'pipelines'));
+      expect(getUserPipelinesDir()).toBe(path.join(tempDir, 'rasen', 'pipelines'));
     });
   });
 
@@ -127,7 +127,7 @@ describe('pipeline-registry/resolver', () => {
     it('should throw PipelineLoadError for invalid user override', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'full-feature',
         'name: broken\nstages:\n  - id: a\n' // missing skill
       );
@@ -137,7 +137,7 @@ describe('pipeline-registry/resolver', () => {
     it('should detect cycles in user override pipelines', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'full-feature',
         `name: cyclic
 stages:
@@ -157,7 +157,7 @@ stages:
     it('should prefer user override over package built-in', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'full-feature',
         VALID_PIPELINE.replace('NAME', 'user-override')
       );
@@ -169,7 +169,7 @@ stages:
     it('should prefer project-local over user override', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'shared',
         VALID_PIPELINE.replace('NAME', 'user-version')
       );
@@ -210,7 +210,7 @@ stages:
     it('should maintain backward compatibility when projectRoot not provided', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'shared',
         VALID_PIPELINE.replace('NAME', 'user-version')
       );
@@ -230,7 +230,7 @@ stages:
     it('should include user override pipelines', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'custom-flow',
         VALID_PIPELINE.replace('NAME', 'custom-flow')
       );
@@ -242,7 +242,7 @@ stages:
     it('should deduplicate pipelines with same name and return sorted', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'full-feature',
         VALID_PIPELINE.replace('NAME', 'override')
       );
@@ -253,7 +253,7 @@ stages:
 
     it('should only include directories with pipeline.yaml', () => {
       process.env.XDG_DATA_HOME = tempDir;
-      const base = path.join(tempDir, 'openspec', 'pipelines');
+      const base = path.join(tempDir, 'rasen', 'pipelines');
       fs.mkdirSync(path.join(base, 'empty-dir'), { recursive: true });
       writePipeline(base, 'valid', VALID_PIPELINE.replace('NAME', 'valid'));
 
@@ -275,7 +275,7 @@ stages:
     it('should return source: user for user overrides', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'user-custom',
         VALID_PIPELINE.replace('NAME', 'user-custom')
       );
@@ -288,7 +288,7 @@ stages:
     it('should return source: project and project wins over user', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'shared',
         VALID_PIPELINE.replace('NAME', 'user-shared')
       );
@@ -341,7 +341,7 @@ ${child ? `    childPipeline: ${child}\n` : ''}  - id: propose
     it('throws a recursion-guard error when the childPipeline itself contains a decompose stage', () => {
       process.env.XDG_DATA_HOME = tempDir;
       writePipeline(
-        path.join(tempDir, 'openspec', 'pipelines'),
+        path.join(tempDir, 'rasen', 'pipelines'),
         'recursive-child',
         `name: recursive-child
 stages:

@@ -29,7 +29,7 @@ describe('ArchiveCommand', () => {
     // host machine so no-root behavior stays the implicit-root path.
     process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
 
-    // Create OpenSpec structure
+    // Create Rasen structure
     const openspecDir = path.join(tempDir, 'openspec');
     await fs.mkdir(path.join(openspecDir, 'changes'), { recursive: true });
     await fs.mkdir(path.join(openspecDir, 'specs'), { recursive: true });
@@ -956,7 +956,7 @@ E1 updated`);
       
       await expect(
         archiveCommand.execute('any-change', { yes: true })
-      ).rejects.toThrow("No OpenSpec changes directory found. Run 'openspec init' first.");
+      ).rejects.toThrow("No Rasen changes directory found. Run 'rasen init' first.");
     });
   });
 

@@ -135,7 +135,7 @@ export class ValidateCommand {
 
   /**
    * Resolve change IDs by directory existence within the resolved root — the
-   * same rule `openspec status`/`instructions` use (`getAvailableChanges`) —
+   * same rule `rasen status`/`instructions` use (`getAvailableChanges`) —
    * rather than requiring `proposal.md`. This lets `validate` resolve a
    * scaffolded or still-authoring change that the sibling commands already
    * resolve (#1182). Sorted to preserve the prior `getActiveChangeIds` ordering.
@@ -181,11 +181,11 @@ export class ValidateCommand {
 
   private printNonInteractiveHint(root: ResolvedOpenSpecRoot): void {
     console.error('Nothing to validate. Try one of:');
-    console.error(`  ${withStoreFlag(root, 'openspec validate --all')}`);
-    console.error(`  ${withStoreFlag(root, 'openspec validate --changes')}`);
-    console.error(`  ${withStoreFlag(root, 'openspec validate --specs')}`);
-    console.error(`  ${withStoreFlag(root, 'openspec validate --pipelines')}`);
-    console.error(`  ${withStoreFlag(root, 'openspec validate <item-name>')}`);
+    console.error(`  ${withStoreFlag(root, 'rasen validate --all')}`);
+    console.error(`  ${withStoreFlag(root, 'rasen validate --changes')}`);
+    console.error(`  ${withStoreFlag(root, 'rasen validate --specs')}`);
+    console.error(`  ${withStoreFlag(root, 'rasen validate --pipelines')}`);
+    console.error(`  ${withStoreFlag(root, 'rasen validate <item-name>')}`);
     console.error('Or run in an interactive terminal.');
   }
 
@@ -255,7 +255,7 @@ export class ValidateCommand {
       if (isStoreSelectedRoot(root)) {
         console.error('Pass --type change|spec.');
       } else {
-        console.error('Pass --type change|spec, or use: openspec change validate / openspec spec validate');
+        console.error('Pass --type change|spec, or use: rasen change validate / rasen spec validate');
       }
       process.exitCode = 1;
       return;
@@ -317,10 +317,10 @@ export class ValidateCommand {
     if (type === 'change') {
       bullets.push('- Ensure change has deltas in specs/: use headers ## ADDED/MODIFIED/REMOVED/RENAMED Requirements');
       bullets.push('- Each requirement MUST include at least one #### Scenario: block');
-      bullets.push(`- Debug parsed deltas: ${withStoreFlag(root, `openspec show ${id} --json --deltas-only`)}`);
+      bullets.push(`- Debug parsed deltas: ${withStoreFlag(root, `rasen show ${id} --json --deltas-only`)}`);
     } else if (type === 'pipeline') {
       bullets.push('- Ensure every stage has an `id` and `skill`, and that `requires` references existing stage ids');
-      bullets.push('- Ensure each `skill` matches a known skill (see `openspec pipeline show <name>`)');
+      bullets.push('- Ensure each `skill` matches a known skill (see `rasen pipeline show <name>`)');
       bullets.push('- Avoid dependency cycles and keep parallelGroup members mutually independent');
     } else {
       bullets.push('- Ensure spec includes ## Purpose and ## Requirements sections');
@@ -341,7 +341,7 @@ export class ValidateCommand {
 
     const DEFAULT_CONCURRENCY = 6;
     const maxSuggestions = 5; // used by nearestMatches
-    const concurrency = normalizeConcurrency(opts.concurrency) ?? normalizeConcurrency(process.env.OPENSPEC_CONCURRENCY) ?? DEFAULT_CONCURRENCY;
+    const concurrency = normalizeConcurrency(opts.concurrency) ?? normalizeConcurrency(process.env.RASEN_CONCURRENCY) ?? DEFAULT_CONCURRENCY;
     const validator = new Validator(opts.strict);
     const queue: Array<() => Promise<BulkItemResult>> = [];
 
@@ -454,7 +454,7 @@ export class ValidateCommand {
       if (firstFailure) {
         const storeFlag = isStoreSelectedRoot(root) ? ` --store ${root.storeId}` : '';
         console.log(
-          `Details: openspec validate ${firstFailure.id} --type ${firstFailure.type}${storeFlag}`
+          `Details: rasen validate ${firstFailure.id} --type ${firstFailure.type}${storeFlag}`
         );
       }
     }

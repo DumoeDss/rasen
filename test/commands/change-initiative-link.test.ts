@@ -25,7 +25,7 @@ describe('legacy repo-local change initiative metadata', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     fs.mkdirSync(path.join(tempDir, 'openspec', 'changes'), { recursive: true });
   });

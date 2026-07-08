@@ -21,7 +21,7 @@ export class FishInstaller {
    * @returns Installation path
    */
   getInstallationPath(): string {
-    return path.join(this.homeDir, '.config', 'fish', 'completions', 'openspec.fish');
+    return path.join(this.homeDir, '.config', 'fish', 'completions', 'rasen.fish');
   }
 
   /**

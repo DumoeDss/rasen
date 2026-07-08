@@ -159,8 +159,8 @@ export function toolUnavailableError(
       target: 'workset.tool',
       fix:
         alternative !== null
-          ? `Install '${opener.command}' or run: openspec workset open ${worksetName} --tool ${alternative}`
-          : `Install '${opener.command}', then rerun: openspec workset open ${worksetName}`,
+          ? `Install '${opener.command}' or run: rasen workset open ${worksetName} --tool ${alternative}`
+          : `Install '${opener.command}', then rerun: rasen workset open ${worksetName}`,
     }
   );
 }
@@ -179,7 +179,7 @@ export function noToolInstalledError(
     'workset_tool_unavailable',
     {
       target: 'workset.tool',
-      fix: `Install one of: ${commands}. Then rerun: openspec workset open ${worksetName}`,
+      fix: `Install one of: ${commands}. Then rerun: rasen workset open ${worksetName}`,
     }
   );
 }

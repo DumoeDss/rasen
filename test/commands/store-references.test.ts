@@ -21,7 +21,7 @@ describe('store references in instructions (3.1)', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
 
@@ -65,7 +65,7 @@ describe('store references in instructions (3.1)', () => {
         store_id: 'team-context',
         root: fs.realpathSync.native(storeRoot),
         specs: [{ id: 'billing', summary: 'Usage-based invoicing.' }],
-        fetch: 'openspec show <spec-id> --type spec --store team-context',
+        fetch: 'rasen show <spec-id> --type spec --store team-context',
         status: [],
       },
     ]);

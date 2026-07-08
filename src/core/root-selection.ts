@@ -1,8 +1,8 @@
 /**
- * Shared OpenSpec root resolution for normal commands.
+ * Shared Rasen root resolution for normal commands.
  *
  * Normal commands (`new change`, `status`, `instructions`, `list`, `show`,
- * `validate`, `archive`) resolve one OpenSpec root through this module:
+ * `validate`, `archive`) resolve one Rasen root through this module:
  *
  * - `--store <id>` selects a registered store's root.
  * - Without `--store`, the nearest ancestor containing `openspec/` wins.
@@ -102,7 +102,7 @@ function fromStoreError(error: unknown): never {
 }
 
 function doctorFix(id: string): string {
-  return `Run openspec store doctor ${id} to inspect it.`;
+  return `Run rasen store doctor ${id} to inspect it.`;
 }
 
 function makeRoot(
@@ -160,7 +160,7 @@ async function resolveStoreRoot(
         'no_registered_stores',
         {
           target: 'store.id',
-          fix: `Run openspec store setup ${id} or openspec store register <path> first.`,
+          fix: `Run rasen store setup ${id} or rasen store register <path> first.`,
         }
       );
     }
@@ -172,7 +172,7 @@ async function resolveStoreRoot(
       'unknown_store',
       {
         target: 'store.id',
-        fix: 'Pass a registered store id, or run openspec store list.',
+        fix: 'Pass a registered store id, or run rasen store list.',
       }
     );
   }
@@ -199,7 +199,7 @@ async function resolveStoreRoot(
       );
     case 'unhealthy_root':
       throw new RootSelectionError(
-        `Store '${id}' does not have a healthy OpenSpec root at ${storeRoot}: ${inspection.problems} ${doctorFix(id)}`,
+        `Store '${id}' does not have a healthy Rasen root at ${storeRoot}: ${inspection.problems} ${doctorFix(id)}`,
         'unhealthy_store_root',
         { target: 'openspec.root', fix: doctorFix(id) }
       );
@@ -251,7 +251,7 @@ export async function inspectRegisteredStore(
   if (!inspection.healthy) {
     const problems =
       inspection.diagnostics.map((diagnostic) => diagnostic.message).join(' ') ||
-      'OpenSpec root is missing or incomplete.';
+      'Rasen root is missing or incomplete.';
     return { kind: 'unhealthy_root', problems };
   }
 
@@ -297,7 +297,7 @@ async function resolveNearestOrDeclaredRoot(
   if (hasPlanningShape) {
     if (pointer.value !== undefined) {
       console.error(
-        `Warning: ${pointer.filePath} declares store '${pointer.value}', but this directory is a real OpenSpec root; the declaration is ignored.`
+        `Warning: ${pointer.filePath} declares store '${pointer.value}', but this directory is a real Rasen root; the declaration is ignored.`
       );
     }
     return makeRoot(nearestRoot, 'nearest');
@@ -331,7 +331,7 @@ async function resolveNearestOrDeclaredRoot(
       // they did not pass --store.
       const declarationFix =
         error.diagnostic.code === 'unknown_store'
-          ? `Register the store (openspec store register <path> --id ${pointer.value}) or edit ${pointer.filePath} to name a registered store.`
+          ? `Register the store (rasen store register <path> --id ${pointer.value}) or edit ${pointer.filePath} to name a registered store.`
           : error.diagnostic.fix;
       throw new RootSelectionError(
         `Declared in ${pointer.filePath}: ${error.message}`,
@@ -351,11 +351,11 @@ export async function resolveOpenSpecRoot(
 ): Promise<ResolvedOpenSpecRoot> {
   if (options.storePath !== undefined) {
     throw new RootSelectionError(
-      '--store-path is not supported. Register the path with openspec store register <path>, then select it with --store <id>.',
+      '--store-path is not supported. Register the path with rasen store register <path>, then select it with --store <id>.',
       'store_path_not_supported',
       {
         target: 'store.id',
-        fix: 'openspec store register <path>, then rerun with --store <id>.',
+        fix: 'rasen store register <path>, then rerun with --store <id>.',
       }
     );
   }
@@ -384,20 +384,20 @@ export async function resolveOpenSpecRoot(
 
   if (registeredIds.length > 0) {
     throw new RootSelectionError(
-      `No OpenSpec root found in the current directory or its ancestors. Registered stores: ${registeredIds.join(', ')}. Pass --store <id> to use one, or run openspec init to create a local root.`,
+      `No Rasen root found in the current directory or its ancestors. Registered stores: ${registeredIds.join(', ')}. Pass --store <id> to use one, or run rasen init to create a local root.`,
       'no_root_with_registered_stores',
       {
         target: 'openspec.root',
-        fix: `Rerun with --store <id> (registered: ${registeredIds.join(', ')}) or run openspec init.`,
+        fix: `Rerun with --store <id> (registered: ${registeredIds.join(', ')}) or run rasen init.`,
       }
     );
   }
 
   if (options.allowImplicitRoot === false) {
     throw new RootSelectionError(
-      'No OpenSpec root found from the current directory.',
+      'No Rasen root found from the current directory.',
       'no_openspec_root',
-      { target: 'openspec.root', fix: 'Run openspec init to create a root here.' }
+      { target: 'openspec.root', fix: 'Run rasen init to create a root here.' }
     );
   }
 
@@ -439,7 +439,7 @@ export function isStoreSelectedRoot(
  */
 export function emitStoreRootBanner(root: ResolvedOpenSpecRoot): void {
   if (isStoreSelectedRoot(root)) {
-    console.error(`Using OpenSpec root: ${root.storeId} (${root.path})`);
+    console.error(`Using Rasen root: ${root.storeId} (${root.path})`);
   }
 }
 

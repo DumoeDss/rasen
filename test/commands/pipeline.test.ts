@@ -756,7 +756,7 @@ stages:
 
 // The pipeline command group resolves its root through the shared root-selection
 // layer (parity with `validate --pipelines`): from a nested subdirectory it walks
-// up to the nearest qualifying OpenSpec root rather than treating the cwd as root.
+// up to the nearest qualifying Rasen root rather than treating the cwd as root.
 describe('pipeline command root selection (subdirectory)', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-pipeline-root-selection-tmp');

@@ -73,7 +73,7 @@ describe('telemetry/index', () => {
     process.env.XDG_CONFIG_HOME = tempDir;
     process.env.HOME = tempDir;
     process.env.USERPROFILE = tempDir;
-    delete process.env.OPENSPEC_TELEMETRY;
+    delete process.env.RASEN_TELEMETRY;
     delete process.env.DO_NOT_TRACK;
     delete process.env.CI;
 
@@ -97,8 +97,8 @@ describe('telemetry/index', () => {
   });
 
   describe('isTelemetryEnabled', () => {
-    it('should return false when OPENSPEC_TELEMETRY=0', async () => {
-      process.env.OPENSPEC_TELEMETRY = '0';
+    it('should return false when RASEN_TELEMETRY=0', async () => {
+      process.env.RASEN_TELEMETRY = '0';
       const { isTelemetryEnabled } = await loadTelemetry();
       expect(isTelemetryEnabled()).toBe(false);
     });
@@ -120,8 +120,8 @@ describe('telemetry/index', () => {
       expect(isTelemetryEnabled()).toBe(true);
     });
 
-    it('should prioritize OPENSPEC_TELEMETRY=0 over other settings', async () => {
-      process.env.OPENSPEC_TELEMETRY = '0';
+    it('should prioritize RASEN_TELEMETRY=0 over other settings', async () => {
+      process.env.RASEN_TELEMETRY = '0';
       const { isTelemetryEnabled } = await loadTelemetry();
       expect(isTelemetryEnabled()).toBe(false);
     });
@@ -186,7 +186,7 @@ describe('telemetry/index', () => {
     });
 
     it.each([
-      ['OPENSPEC_TELEMETRY', '0'],
+      ['RASEN_TELEMETRY', '0'],
       ['DO_NOT_TRACK', '1'],
       ['CI', 'true'],
     ])('does not send or generate an id when %s=%s', async (key, value) => {
@@ -235,7 +235,7 @@ describe('telemetry/index', () => {
 
   describe('maybeShowTelemetryNotice', () => {
     it('does not show the notice when telemetry is disabled', async () => {
-      process.env.OPENSPEC_TELEMETRY = '0';
+      process.env.RASEN_TELEMETRY = '0';
       const { maybeShowTelemetryNotice } = await loadTelemetry();
 
       await maybeShowTelemetryNotice();
@@ -252,7 +252,7 @@ describe('telemetry/index', () => {
       expect(consoleLogSpy).toHaveBeenCalledTimes(1);
       const message = String(consoleLogSpy.mock.calls[0][0]);
       expect(message).toContain('Cloudflare Worker');
-      expect(message).toContain('OPENSPEC_TELEMETRY=0');
+      expect(message).toContain('RASEN_TELEMETRY=0');
       expect(message.toLowerCase()).not.toContain('posthog');
       expect(message).not.toContain('edge.openspec.dev');
     });

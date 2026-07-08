@@ -12,7 +12,7 @@ vi.mock('../../src/core/completions/installers/zsh-installer.js', () => ({
   ZshInstaller: vi.fn().mockImplementation(() => ({
     install: vi.fn().mockResolvedValue({
       success: true,
-      installedPath: '/home/user/.oh-my-zsh/completions/_openspec',
+      installedPath: '/home/user/.oh-my-zsh/completions/_rasen',
       isOhMyZsh: true,
       message: 'Completion script installed successfully for Oh My Zsh',
       instructions: [
@@ -23,7 +23,7 @@ vi.mock('../../src/core/completions/installers/zsh-installer.js', () => ({
     }),
     uninstall: vi.fn().mockResolvedValue({
       success: true,
-      message: 'Completion script removed from /home/user/.oh-my-zsh/completions/_openspec',
+      message: 'Completion script removed from /home/user/.oh-my-zsh/completions/_rasen',
     }),
   })),
 }));
@@ -52,8 +52,8 @@ describe('CompletionCommand', () => {
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls[0][0];
-      expect(output).toContain('#compdef openspec');
-      expect(output).toContain('_openspec() {');
+      expect(output).toContain('#compdef rasen');
+      expect(output).toContain('_rasen() {');
     });
 
     it('should auto-detect Zsh shell when no shell specified', async () => {
@@ -63,7 +63,7 @@ describe('CompletionCommand', () => {
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls[0][0];
-      expect(output).toContain('#compdef openspec');
+      expect(output).toContain('#compdef rasen');
     });
 
     it('should show error when shell cannot be auto-detected', async () => {
@@ -91,7 +91,7 @@ describe('CompletionCommand', () => {
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls[0][0];
-      expect(output).toContain('#compdef openspec');
+      expect(output).toContain('#compdef rasen');
     });
   });
 
@@ -272,7 +272,7 @@ describe('CompletionCommand', () => {
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls[0][0];
-      expect(output).toContain('#compdef openspec');
+      expect(output).toContain('#compdef rasen');
     });
   });
 });

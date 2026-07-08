@@ -38,10 +38,10 @@ const DEFAULT_ATTACH_FLAG = '--add-dir';
  * is reworked. The agents (Claude Code, codex) launch in a single primary
  * cwd rather than a true combined multi-root view, which makes "where does
  * my change land?" ambiguous. Default off; set
- * OPENSPEC_ENABLE_CLI_AGENT_OPENERS=1 to restore them (internal rollback seam).
+ * RASEN_ENABLE_CLI_AGENT_OPENERS=1 to restore them (internal rollback seam).
  */
 export function isCliAgentOpenersEnabled(): boolean {
-  return process.env.OPENSPEC_ENABLE_CLI_AGENT_OPENERS === '1';
+  return process.env.RASEN_ENABLE_CLI_AGENT_OPENERS === '1';
 }
 
 /** Whether a tool can be opened right now (CLI-agent styles are gated). */

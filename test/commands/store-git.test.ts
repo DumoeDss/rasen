@@ -63,7 +63,7 @@ describe('store git lifecycle', () => {
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
 
@@ -106,7 +106,7 @@ describe('store git lifecycle', () => {
       ...process.env,
       XDG_DATA_HOME: dataHome,
       XDG_CONFIG_HOME: configHome,
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
       ...isolatedGitEnv(tempDir),
     };
     delete process.env.OPEN_SPEC_INTERACTIVE;
@@ -139,7 +139,7 @@ describe('store git lifecycle', () => {
     const committed = execFileSync('git', ['log', '--format=%s'], { cwd: storeRoot })
       .toString()
       .trim();
-    expect(committed).toBe('Initialize OpenSpec store interactive-context');
+    expect(committed).toBe('Initialize Rasen store interactive-context');
     expect(process.exitCode).toBeUndefined();
   });
 

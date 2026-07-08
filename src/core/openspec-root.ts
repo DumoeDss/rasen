@@ -154,7 +154,7 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
     if (configYamlKind !== 'missing' || configYmlKind !== 'missing') {
       inspection.diagnostics.push(missingDirectoryDiagnostic(
         'openspec_config_not_file',
-        'OpenSpec config path exists but is not a file.',
+        'Rasen config path exists but is not a file.',
         'openspec.config'
       ));
     } else {
@@ -224,7 +224,7 @@ async function ensureDefaultConfig(
 
   if (yamlKind === 'file' || ymlKind === 'file') return;
   if (yamlKind !== 'missing' || ymlKind !== 'missing') {
-    throw new Error('OpenSpec config path exists but is not a file.');
+    throw new Error('Rasen config path exists but is not a file.');
   }
 
   await FileSystemUtils.writeFile(

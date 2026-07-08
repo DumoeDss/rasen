@@ -3,9 +3,12 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 // Constants
-export const GLOBAL_CONFIG_DIR_NAME = 'openspec';
+export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
 export const GLOBAL_CONFIG_FILE_NAME = 'config.json';
-export const GLOBAL_DATA_DIR_NAME = 'openspec';
+export const GLOBAL_DATA_DIR_NAME = 'rasen';
+
+// Pre-rename brand directory name, adopted once by migrateLegacyBrandConfig().
+const LEGACY_BRAND_DIR_NAME = 'openspec';
 
 // TypeScript types
 export type Profile = 'full' | 'core' | 'custom';
@@ -35,9 +38,9 @@ const DEFAULT_CONFIG: GlobalConfig = {
 /**
  * Gets the global configuration directory path following XDG Base Directory Specification.
  *
- * - All platforms: $XDG_CONFIG_HOME/openspec/ if XDG_CONFIG_HOME is set
- * - Unix/macOS fallback: ~/.config/openspec/
- * - Windows fallback: %APPDATA%/openspec/
+ * - All platforms: $XDG_CONFIG_HOME/rasen/ if XDG_CONFIG_HOME is set
+ * - Unix/macOS fallback: ~/.config/rasen/
+ * - Windows fallback: %APPDATA%/rasen/
  */
 export function getGlobalConfigDir(): string {
   // XDG_CONFIG_HOME takes precedence on all platforms when explicitly set
@@ -66,9 +69,9 @@ export function getGlobalConfigDir(): string {
  * Gets the global data directory path following XDG Base Directory Specification.
  * Used for user data like schema overrides.
  *
- * - All platforms: $XDG_DATA_HOME/openspec/ if XDG_DATA_HOME is set
- * - Unix/macOS fallback: ~/.local/share/openspec/
- * - Windows fallback: %LOCALAPPDATA%/openspec/
+ * - All platforms: $XDG_DATA_HOME/rasen/ if XDG_DATA_HOME is set
+ * - Unix/macOS fallback: ~/.local/share/rasen/
+ * - Windows fallback: %LOCALAPPDATA%/rasen/
  */
 export interface GlobalDataDirOptions {
   env?: NodeJS.ProcessEnv;
@@ -180,4 +183,43 @@ export function saveGlobalConfig(config: GlobalConfig): void {
   }
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * One-time adoption of a pre-rename `openspec` brand directory.
+ *
+ * For each resolved new-brand directory (config and data, across every
+ * XDG / APPDATA / LOCALAPPDATA / ~/.config / ~/.local/share variant), if the
+ * new directory is absent but the sibling legacy `openspec` directory exists,
+ * recursively copy it into the new location so `config.json` (with the
+ * telemetry `anonymousId` / `noticeSeen`) carries over verbatim.
+ *
+ * Contract:
+ * - Never overwrite an existing new-brand directory (copy only when absent).
+ * - Never delete the legacy directory (copy-then-leave-original).
+ * - Best-effort: all filesystem errors are swallowed so this can never break
+ *   CLI startup. It must not silently drop data — hence copy, not move.
+ */
+export function migrateLegacyBrandConfig(): void {
+  try {
+    const targets = [getGlobalConfigDir(), getGlobalDataDir()];
+    for (const newDir of targets) {
+      try {
+        // Never overwrite an already-adopted new-brand directory.
+        if (fs.existsSync(newDir)) continue;
+
+        const legacyDir = path.join(path.dirname(newDir), LEGACY_BRAND_DIR_NAME);
+        // Nothing to adopt if the brand name did not actually change.
+        if (legacyDir === newDir) continue;
+        if (!fs.existsSync(legacyDir) || !fs.statSync(legacyDir).isDirectory()) continue;
+
+        fs.mkdirSync(path.dirname(newDir), { recursive: true });
+        fs.cpSync(legacyDir, newDir, { recursive: true });
+      } catch {
+        // Best-effort per target; a failure here must never break startup.
+      }
+    }
+  } catch {
+    // Best-effort; never break startup.
+  }
 }

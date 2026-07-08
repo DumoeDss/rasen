@@ -75,7 +75,7 @@ describe('handoff workflow', () => {
     });
 
     it('measures via the agent context probe, never guessing', () => {
-      expect(skillText).toContain('openspec agent context --latest');
+      expect(skillText).toContain('rasen agent context --latest');
       expect(skillText).toContain('--transcript');
     });
 
@@ -133,7 +133,7 @@ describe('handoff workflow', () => {
   describe('orchestration playbook Step H', () => {
     it('defines the context sensing + handoff protocol', () => {
       expect(ORCHESTRATION_PLAYBOOK).toContain('Step H — Context sensing & the handoff protocol');
-      expect(ORCHESTRATION_PLAYBOOK).toContain('openspec agent context');
+      expect(ORCHESTRATION_PLAYBOOK).toContain('rasen agent context');
       expect(ORCHESTRATION_PLAYBOOK).toContain('NEVER inject a running token countdown');
     });
 
@@ -189,7 +189,7 @@ describe('handoff workflow', () => {
     it('auto performs a one-shot non-blocking pre-flight probe', () => {
       const autoText = getAutoCommandSkillTemplate().instructions;
       expect(autoText).toContain('## 0. Pre-flight context probe (once, non-blocking)');
-      expect(autoText).toContain('openspec agent context --latest --json');
+      expect(autoText).toContain('rasen agent context --latest --json');
       expect(autoText).toContain('/opsx:handoff');
     });
 
@@ -252,7 +252,7 @@ describe('handoff workflow', () => {
 
       const skillContent = await fs.readFile(skillFile, 'utf-8');
       expect(skillContent).toContain('name: openspec-handoff');
-      expect(skillContent).toContain('openspec agent context');
+      expect(skillContent).toContain('rasen agent context');
     });
 
     it('does NOT generate handoff under the core profile', async () => {

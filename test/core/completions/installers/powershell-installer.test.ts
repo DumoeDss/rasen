@@ -146,11 +146,11 @@ describe('PowerShellInstaller', () => {
   describe('configureProfile', () => {
     const mockScriptPath = '/path/to/OpenSpecCompletion.ps1';
 
-    // Note: OPENSPEC_NO_AUTO_CONFIG check is now handled in the install() method,
+    // Note: RASEN_NO_AUTO_CONFIG check is now handled in the install() method,
     // not in configureProfile() itself
 
     it('should create profile with markers when file does not exist', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
 
       const result = await installer.configureProfile(mockScriptPath);
@@ -163,7 +163,7 @@ describe('PowerShellInstaller', () => {
     });
 
     it('should prepend markers and config when file exists without markers', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
       await fs.writeFile(profilePath, '# My custom PowerShell config\nWrite-Host "Hello"');
@@ -182,12 +182,12 @@ describe('PowerShellInstaller', () => {
     // Skip on Windows: Windows has dual profile paths (PowerShell Core + Windows PowerShell 5.1),
     // so even if one profile is already configured, the second one will be configured and return true
     it.skipIf(process.platform === 'win32')('should skip configuration when script line already exists', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
       const initialContent = [
-        '# OPENSPEC:START - OpenSpec completion (managed block, do not edit manually)',
+        '# OPENSPEC:START - Rasen completion (managed block, do not edit manually)',
         `. "${mockScriptPath}"`,
         '# OPENSPEC:END',
         '',
@@ -207,7 +207,7 @@ describe('PowerShellInstaller', () => {
     });
 
     it('should preserve user content outside markers', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
@@ -236,7 +236,7 @@ describe('PowerShellInstaller', () => {
     });
 
     it('should generate correct PowerShell syntax in config', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
 
       await installer.configureProfile(mockScriptPath);
@@ -250,7 +250,7 @@ describe('PowerShellInstaller', () => {
     // Skip on Windows: fs.chmod() doesn't reliably restrict write access on Windows
     // (admin users can bypass read-only attribute, and CI runners often have elevated privileges)
     it.skipIf(process.platform === 'win32')('should return false on write permission error', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
       await fs.writeFile(profilePath, '# Test');
@@ -267,7 +267,7 @@ describe('PowerShellInstaller', () => {
     });
 
     it.skipIf(process.platform === 'win32')('should not create profile directory when parent is not writable', async () => {
-      const originalNoAutoConfig = process.env.OPENSPEC_NO_AUTO_CONFIG;
+      const originalNoAutoConfig = process.env.RASEN_NO_AUTO_CONFIG;
       const restrictedHome = path.join(testHomeDir, 'restricted-home');
       await fs.mkdir(restrictedHome);
       await fs.chmod(restrictedHome, 0o555);
@@ -276,10 +276,10 @@ describe('PowerShellInstaller', () => {
 
       let result = true;
       try {
-        delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+        delete process.env.RASEN_NO_AUTO_CONFIG;
         result = await restrictedInstaller.configureProfile(mockScriptPath);
       } finally {
-        restoreEnvValue('OPENSPEC_NO_AUTO_CONFIG', originalNoAutoConfig);
+        restoreEnvValue('RASEN_NO_AUTO_CONFIG', originalNoAutoConfig);
         await fs.chmod(restrictedHome, 0o755);
       }
 
@@ -313,7 +313,7 @@ describe('PowerShellInstaller', () => {
 
       const initialContent = [
         '# OPENSPEC:START',
-        '# OpenSpec completions',
+        '# Rasen completions',
         'if (Test-Path "/path") {',
         '    . "/path"',
         '}',
@@ -330,7 +330,7 @@ describe('PowerShellInstaller', () => {
       const content = await fs.readFile(profilePath, 'utf-8');
       expect(content).not.toContain('# OPENSPEC:START');
       expect(content).not.toContain('# OPENSPEC:END');
-      expect(content).not.toContain('# OpenSpec completions');
+      expect(content).not.toContain('# Rasen completions');
       expect(content).toContain('# My config');
     });
 
@@ -363,7 +363,7 @@ describe('PowerShellInstaller', () => {
       const initialContent = [
         '# Before',
         '# OPENSPEC:START',
-        '# OpenSpec',
+        '# Rasen',
         '# OPENSPEC:END',
         '# After',
       ].join('\n');
@@ -397,7 +397,7 @@ describe('PowerShellInstaller', () => {
   });
 
   describe('install', () => {
-    const mockCompletionScript = `# PowerShell completion script for OpenSpec
+    const mockCompletionScript = `# PowerShell completion script for Rasen
 $openspecCompleter = {
     param($wordToComplete, $commandAst, $cursorPosition)
     # Completion logic here
@@ -406,7 +406,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
 `;
 
     it('should install completion script for the first time', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const result = await installer.install(mockCompletionScript);
 
       expect(result.success).toBe(true);
@@ -416,7 +416,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should create parent directories if they do not exist', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const result = await installer.install(mockCompletionScript);
 
       expect(result.success).toBe(true);
@@ -426,7 +426,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should write completion script content correctly', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const targetPath = installer.getInstallationPath();
@@ -435,7 +435,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should detect when already installed with same content', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const result = await installer.install(mockCompletionScript);
@@ -446,7 +446,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should update when content is different', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const updatedScript = mockCompletionScript + '\n# Updated version';
@@ -458,7 +458,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should create backup when updating existing installation', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const updatedScript = mockCompletionScript + '\n# Updated';
@@ -473,7 +473,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should configure PowerShell profile when not disabled', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const result = await installer.install(mockCompletionScript);
 
       expect(result.success).toBe(true);
@@ -482,13 +482,13 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       expect(result.instructions).toBeUndefined();
     });
 
-    // Note: OPENSPEC_NO_AUTO_CONFIG support was removed from PowerShell installer
+    // Note: RASEN_NO_AUTO_CONFIG support was removed from PowerShell installer
     // Profile is now always auto-configured if possible
 
     // Skip on Windows: fs.chmod() doesn't reliably restrict write access on Windows
     // (admin users can bypass read-only attribute, and CI runners often have elevated privileges)
     it.skipIf(process.platform === 'win32')('should provide instructions when profile cannot be configured', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       // Make profile directory read-only to prevent configuration
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
@@ -507,7 +507,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should include backup path in message when updating', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const updatedScript = mockCompletionScript + '\n# Updated';
@@ -552,7 +552,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should handle empty completion script', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const result = await installer.install('');
 
       expect(result.success).toBe(true);
@@ -562,7 +562,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should handle completion script with special characters', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const specialScript = `# PowerShell with special chars: ' " \` $ @\n$test = "value"`;
 
       const result = await installer.install(specialScript);
@@ -596,7 +596,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     }
 
     it('should preserve UTF-16 LE BOM when configuring profile', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
@@ -620,7 +620,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should preserve UTF-16 LE BOM when removing profile config', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
@@ -641,7 +641,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       expect(raw[0]).toBe(0xff);
       expect(raw[1]).toBe(0xfe);
 
-      // Verify content: original line kept, OpenSpec block removed
+      // Verify content: original line kept, Rasen block removed
       const content = raw.subarray(2).toString('utf16le');
       expect(content).toContain('. "C:\\Code\\profile.ps1"');
       expect(content).not.toContain('# OPENSPEC:START');
@@ -649,7 +649,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should preserve UTF-8 BOM when configuring profile', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
@@ -669,7 +669,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should skip UTF-16 BE profile and leave it unchanged', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       process.env.PROFILE = path.join(testHomeDir, 'custom-profile.ps1');
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
@@ -689,7 +689,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should handle plain UTF-8 files without BOM (no regression)', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
@@ -710,14 +710,14 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should round-trip UTF-16 LE through install → uninstall without corruption', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
 
       const originalText = '. "C:\\Code\\SystemConfig\\Powershell\\profile.ps1"\r\n';
       await writeUtf16LeFile(profilePath, originalText);
 
-      // Install adds the OpenSpec block
+      // Install adds the Rasen block
       const mockScript = '# completion script';
       await installer.install(mockScript);
 
@@ -729,7 +729,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       expect(content).toContain('# OPENSPEC:START');
       expect(content).toContain(originalText.trimEnd());
 
-      // Uninstall removes the OpenSpec block
+      // Uninstall removes the Rasen block
       await installer.uninstall();
 
       raw = await fs.readFile(profilePath);
@@ -748,7 +748,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
 `;
 
     it('should successfully uninstall when completion script exists', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const result = await installer.uninstall();
@@ -758,7 +758,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should remove the completion file', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
       const targetPath = installer.getInstallationPath();
 
@@ -769,7 +769,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should remove profile configuration', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
       const profilePath = installer.getProfilePath();
 
@@ -788,7 +788,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should accept yes option parameter', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const result = await installer.uninstall({ yes: true });
@@ -798,17 +798,17 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it.skipIf(process.platform === 'win32')('should uninstall read-only completion script when parent directory is writable', async () => {
-      const originalNoAutoConfig = process.env.OPENSPEC_NO_AUTO_CONFIG;
+      const originalNoAutoConfig = process.env.RASEN_NO_AUTO_CONFIG;
       const targetPath = installer.getInstallationPath();
       let result: Awaited<ReturnType<PowerShellInstaller['uninstall']>> | undefined;
 
       try {
-        delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+        delete process.env.RASEN_NO_AUTO_CONFIG;
         await installer.install(mockCompletionScript);
         await fs.chmod(targetPath, 0o444);
         result = await installer.uninstall();
       } finally {
-        restoreEnvValue('OPENSPEC_NO_AUTO_CONFIG', originalNoAutoConfig);
+        restoreEnvValue('RASEN_NO_AUTO_CONFIG', originalNoAutoConfig);
         await fs.chmod(targetPath, 0o644).catch(() => undefined);
       }
 
@@ -818,7 +818,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     });
 
     it('should handle both script and config removal', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
 
       const targetPath = installer.getInstallationPath();
@@ -842,7 +842,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
     // Skip on Windows: fs.chmod() on directories doesn't restrict write access on Windows
     // Windows uses ACLs which Node.js chmod doesn't control
     it.skipIf(process.platform === 'win32')('should return failure on permission error', async () => {
-      delete process.env.OPENSPEC_NO_AUTO_CONFIG;
+      delete process.env.RASEN_NO_AUTO_CONFIG;
       await installer.install(mockCompletionScript);
       const targetPath = installer.getInstallationPath();
       const parentDir = path.dirname(targetPath);

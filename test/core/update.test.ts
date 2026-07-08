@@ -77,7 +77,7 @@ describe('UpdateCommand', () => {
       });
 
       await expect(updateCommand.execute(testDir)).rejects.toThrow(
-        "No OpenSpec directory found. Run 'openspec init' first."
+        "No Rasen directory found. Run 'rasen init' first."
       );
     });
 
@@ -866,9 +866,9 @@ metadata:
         'old'
       );
 
-      // Create legacy CLAUDE.md with OpenSpec markers
+      // Create legacy CLAUDE.md with Rasen markers
       const legacyContent = `${OPENSPEC_MARKERS.start}
-# OpenSpec Instructions
+# Rasen Instructions
 
 These instructions are for AI assistants.
 ${OPENSPEC_MARKERS.end}
@@ -883,12 +883,12 @@ ${OPENSPEC_MARKERS.end}
 
       // Should show v1 upgrade message
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Upgrading to the new OpenSpec')
+        expect.stringContaining('Upgrading to the new Rasen')
       );
 
       // Should show marker removal message (config files are never deleted, only have markers removed)
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Removed OpenSpec markers from CLAUDE.md')
+        expect.stringContaining('Removed Rasen markers from CLAUDE.md')
       );
 
       // Config file should still exist (never deleted)
@@ -916,9 +916,9 @@ ${OPENSPEC_MARKERS.end}
         'old'
       );
 
-      // Create legacy CLAUDE.md with OpenSpec markers
+      // Create legacy CLAUDE.md with Rasen markers
       const legacyContent = `${OPENSPEC_MARKERS.start}
-# OpenSpec Instructions
+# Rasen Instructions
 ${OPENSPEC_MARKERS.end}
 `;
       await fs.writeFile(path.join(testDir, 'CLAUDE.md'), legacyContent);
@@ -930,7 +930,7 @@ ${OPENSPEC_MARKERS.end}
 
       // Should show v1 upgrade message
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Upgrading to the new OpenSpec')
+        expect.stringContaining('Upgrading to the new Rasen')
       );
 
       // Should show warning about --force
@@ -1046,14 +1046,14 @@ ${OPENSPEC_MARKERS.end}
         call.map(arg => String(arg)).join(' ')
       );
       const hasLegacyMessage = calls.some(call =>
-        call.includes('Upgrading to the new OpenSpec')
+        call.includes('Upgrading to the new Rasen')
       );
       expect(hasLegacyMessage).toBe(false);
 
       consoleSpy.mockRestore();
     });
 
-    it('should remove OpenSpec marker block from mixed content files', async () => {
+    it('should remove Rasen marker block from mixed content files', async () => {
       // Set up a configured tool
       const skillsDir = path.join(testDir, '.claude', 'skills');
       await fs.mkdir(path.join(skillsDir, 'openspec-explore'), {
@@ -1064,13 +1064,13 @@ ${OPENSPEC_MARKERS.end}
         'old'
       );
 
-      // Create CLAUDE.md with mixed content (user content + OpenSpec markers)
+      // Create CLAUDE.md with mixed content (user content + Rasen markers)
       const mixedContent = `# My Project
 
 Some user-defined instructions here.
 
 ${OPENSPEC_MARKERS.start}
-# OpenSpec Instructions
+# Rasen Instructions
 
 These instructions are for AI assistants.
 ${OPENSPEC_MARKERS.end}
@@ -1087,7 +1087,7 @@ More user content after markers.
 
       // Should show marker removal message
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Removed OpenSpec markers from CLAUDE.md')
+        expect.stringContaining('Removed Rasen markers from CLAUDE.md')
       );
 
       // File should still exist
@@ -1449,7 +1449,7 @@ More user content after markers.
         call.includes('The core profile now includes sync')
       )).toBe(true);
       expect(calls.some(call =>
-        call.includes('openspec config profile core') && call.includes('openspec update')
+        call.includes('rasen config profile core') && call.includes('rasen update')
       )).toBe(true);
 
       expect(await FileSystemUtils.fileExists(
@@ -1666,7 +1666,7 @@ content
         call.map(arg => String(arg)).join(' ')
       );
       const hasNewToolMessage = calls.some(call =>
-        call.includes("Detected new tool: Cursor. Run 'openspec init' to add it.")
+        call.includes("Detected new tool: Cursor. Run 'rasen init' to add it.")
       );
       expect(hasNewToolMessage).toBe(true);
 
@@ -1698,7 +1698,7 @@ content
       expect(consolidatedCalls).toHaveLength(1);
       expect(consolidatedCalls[0]).toContain('GitHub Copilot');
       expect(consolidatedCalls[0]).toContain('Windsurf');
-      expect(consolidatedCalls[0]).toContain("Run 'openspec init' to add them.");
+      expect(consolidatedCalls[0]).toContain("Run 'rasen init' to add them.");
 
       const repeatedSingularCalls = calls.filter(call =>
         call.includes('Detected new tool:')

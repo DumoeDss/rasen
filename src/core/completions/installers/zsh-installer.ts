@@ -56,13 +56,13 @@ export class ZshInstaller {
     if (isOhMyZsh) {
       // Oh My Zsh custom completions directory
       return {
-        path: path.join(this.homeDir, '.oh-my-zsh', 'custom', 'completions', '_openspec'),
+        path: path.join(this.homeDir, '.oh-my-zsh', 'custom', 'completions', '_rasen'),
         isOhMyZsh: true,
       };
     } else {
       // Standard Zsh completions directory
       return {
-        path: path.join(this.homeDir, '.zsh', 'completions', '_openspec'),
+        path: path.join(this.homeDir, '.zsh', 'completions', '_rasen'),
         isOhMyZsh: false,
       };
     }
@@ -105,7 +105,7 @@ export class ZshInstaller {
    */
   private generateZshrcConfig(completionsDir: string): string {
     return [
-      '# OpenSpec shell completions configuration',
+      '# Rasen shell completions configuration',
       `fpath=("${completionsDir}" $fpath)`,
       'autoload -Uz compinit',
       'compinit',
@@ -121,7 +121,7 @@ export class ZshInstaller {
    */
   async configureZshrc(completionsDir: string): Promise<boolean> {
     // Check if auto-configuration is disabled
-    if (process.env.OPENSPEC_NO_AUTO_CONFIG === '1') {
+    if (process.env.RASEN_NO_AUTO_CONFIG === '1') {
       return false;
     }
 
@@ -152,7 +152,7 @@ export class ZshInstaller {
   }
 
   /**
-   * Check if .zshrc has OpenSpec configuration markers
+   * Check if .zshrc has Rasen configuration markers
    *
    * @returns true if .zshrc exists and has markers
    */
@@ -414,7 +414,7 @@ export class ZshInstaller {
         messages.push(`Completion script removed from ${targetPath}`);
       }
       if (zshrcCleaned && !isOhMyZsh) {
-        messages.push('Removed OpenSpec configuration from ~/.zshrc');
+        messages.push('Removed Rasen configuration from ~/.zshrc');
       }
 
       return {

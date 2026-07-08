@@ -23,7 +23,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 1. **If no change name provided, prompt for selection**
 
-   Run \`openspec list --json\` to get available changes. Use the **AskUserQuestion tool** to let the user select.
+   Run \`rasen list --json\` to get available changes. Use the **AskUserQuestion tool** to let the user select.
 
    Show changes that have delta specs (under \`specs/\` directory).
 
@@ -33,7 +33,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    Run:
    \`\`\`bash
-   openspec status --change "<name>" --json
+   rasen status --change "<name>" --json
    \`\`\`
 
 3. **Find delta specs**
@@ -148,7 +148,7 @@ Main specs are now updated. The change remains active - archive when implementat
 - Show what you're changing as you go
 - The operation should be idempotent - running twice should give same result`,
     license: 'MIT',
-    compatibility: 'Requires openspec CLI.',
+    compatibility: 'Requires rasen CLI.',
     metadata: { author: 'openspec', version: '1.0' },
   };
 }
@@ -171,7 +171,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 1. **If no change name provided, prompt for selection**
 
-   Run \`openspec list --json\` to get available changes. Use the **AskUserQuestion tool** to let the user select.
+   Run \`rasen list --json\` to get available changes. Use the **AskUserQuestion tool** to let the user select.
 
    Show changes that have delta specs (under \`specs/\` directory).
 
@@ -181,7 +181,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    Run:
    \`\`\`bash
-   openspec status --change "<name>" --json
+   rasen status --change "<name>" --json
    \`\`\`
 
 3. **Find delta specs**

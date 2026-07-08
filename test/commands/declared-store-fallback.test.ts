@@ -23,7 +23,7 @@ describe('declared store fallback (3.2)', () => {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
       OPEN_SPEC_INTERACTIVE: '0',
-      OPENSPEC_TELEMETRY: '0',
+      RASEN_TELEMETRY: '0',
     };
     globalDataDir = getGlobalDataDir({ env });
 
@@ -69,7 +69,7 @@ describe('declared store fallback (3.2)', () => {
       env,
     });
     expect(statusHuman.exitCode).toBe(0);
-    expect(statusHuman.stderr).toContain('Using OpenSpec root: team-context');
+    expect(statusHuman.stderr).toContain('Using Rasen root: team-context');
 
     // Hint continuity: follow-ups carry --store (JSON nextSteps is the
     // surface that prints them).

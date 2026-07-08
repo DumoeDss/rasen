@@ -4,7 +4,7 @@
  * The LEAD (the `auto` workflow) records progress for a change in
  * `openspec/changes/<name>/auto-run.json` while it drives a pipeline. This
  * module is the canonical typed contract for that file: the schema the LEAD
- * writes to, the reader `openspec pipeline resume` consumes, and a helper to
+ * writes to, the reader `rasen pipeline resume` consumes, and a helper to
  * derive completed stages. State is durable on disk so a run survives a dead
  * worker, a new session, or a Tier B/C cold re-spawn.
  */

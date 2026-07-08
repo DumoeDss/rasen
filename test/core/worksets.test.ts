@@ -206,7 +206,7 @@ describe('worksets core', () => {
         ).diagnostic;
         expect(diagnostic.code).toBe('workset_exists');
         expect(diagnostic.fix).toBe(
-          'Choose another name, or remove it first: openspec workset remove platform'
+          'Choose another name, or remove it first: rasen workset remove platform'
         );
       }
     });
@@ -226,7 +226,7 @@ describe('worksets core', () => {
         ).diagnostic;
         expect(diagnostic.code).toBe('workset_not_found');
         expect(diagnostic.fix).toBe(
-          'Saved worksets: platform. See them with: openspec workset list'
+          'Saved worksets: platform. See them with: rasen workset list'
         );
       }
 
@@ -238,7 +238,7 @@ describe('worksets core', () => {
           error as { diagnostic: { fix?: string } }
         ).diagnostic;
         expect(diagnostic.fix).toBe(
-          'Create it first: openspec workset create absent'
+          'Create it first: rasen workset create absent'
         );
       }
     });

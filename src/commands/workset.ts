@@ -106,7 +106,7 @@ function worksetCliOpenerDisabledError(
     'workset_cli_opener_disabled',
     {
       target: 'workset.tool',
-      fix: `Open in VS Code or Cursor: openspec workset open ${name} --tool code`,
+      fix: `Open in VS Code or Cursor: rasen workset open ${name} --tool code`,
     }
   );
 }
@@ -252,7 +252,7 @@ class WorksetCommand {
       }
 
       console.log(
-        `Open it any time with: openspec workset open ${workset.name}`
+        `Open it any time with: rasen workset open ${workset.name}`
       );
     } catch (error) {
       emitFailure(options.json, { workset: null, status: [] }, error, 'workset_error');
@@ -266,7 +266,7 @@ class WorksetCommand {
     if (!name) {
       throw new StoreError('Pass a workset name.', 'workset_name_required', {
         target: 'workset.name',
-        fix: 'openspec workset create <name> --member <path>',
+        fix: 'rasen workset create <name> --member <path>',
       });
     }
 
@@ -279,7 +279,7 @@ class WorksetCommand {
         'workset_members_required',
         {
           target: 'workset.member',
-          fix: `openspec workset create ${name} --member <path> --member <name>=<path>`,
+          fix: `rasen workset create ${name} --member <path> --member <name>=<path>`,
         }
       );
     }
@@ -309,7 +309,7 @@ class WorksetCommand {
 
       if (worksets.length === 0) {
         console.log(
-          'No worksets saved. Create one with: openspec workset create'
+          'No worksets saved. Create one with: rasen workset create'
         );
         return;
       }
@@ -343,7 +343,7 @@ class WorksetCommand {
           'workset_open_json_unsupported',
           {
             target: 'workset.tool',
-            fix: 'Inspect worksets with: openspec workset list --json',
+            fix: 'Inspect worksets with: rasen workset list --json',
           }
         );
       }
@@ -375,7 +375,7 @@ class WorksetCommand {
             'workset_no_members_available',
             {
               target: 'workset.member',
-              fix: `Recompose it: openspec workset remove ${name} --yes && openspec workset create ${name} --member <path>`,
+              fix: `Recompose it: rasen workset remove ${name} --yes && rasen workset create ${name} --member <path>`,
             }
           );
         }
@@ -424,7 +424,7 @@ class WorksetCommand {
             'workset_tool_required',
             {
               target: 'workset.tool',
-              fix: `openspec workset open ${name} --tool <id>`,
+              fix: `rasen workset open ${name} --tool <id>`,
             }
           );
         }
@@ -472,7 +472,7 @@ class WorksetCommand {
           if (alternative !== null) {
             throw new StoreError(error.message, 'workset_launch_failed', {
               target: 'workset.tool',
-              fix: `Run: openspec workset open ${name} --tool ${alternative}`,
+              fix: `Run: rasen workset open ${name} --tool ${alternative}`,
             });
           }
         }
@@ -522,7 +522,7 @@ class WorksetCommand {
             'workset_remove_confirmation_required',
             {
               target: 'workset.name',
-              fix: `openspec workset remove ${name} --yes`,
+              fix: `rasen workset remove ${name} --yes`,
             }
           );
         }
@@ -564,7 +564,7 @@ export function registerWorksetCommand(program: Command): void {
     COMMAND_REGISTRY.find((entry) => entry.name === 'workset')?.description ??
     'Compose, keep, and open personal working views (purely local)';
   const workset = program.command('workset').description(groupDescription);
-  // Parsed at the group level so `openspec workset --json` keeps the
+  // Parsed at the group level so `rasen workset --json` keeps the
   // one-JSON-document contract instead of a raw Commander error. The
   // parent option matches anywhere; actions read optsWithGlobals().
   workset.addOption(new Option('--json', 'Output as JSON').hideHelp());
@@ -636,8 +636,8 @@ export function registerWorksetCommand(program: Command): void {
     );
     const message =
       attempted.length > 0
-        ? `Unknown command '${attempted[0]}' for 'openspec workset'. Workset subcommands: ${subcommandsLine}.`
-        : `Missing subcommand for 'openspec workset'. Workset subcommands: ${subcommandsLine}.`;
+        ? `Unknown command '${attempted[0]}' for 'rasen workset'. Workset subcommands: ${subcommandsLine}.`
+        : `Missing subcommand for 'rasen workset'. Workset subcommands: ${subcommandsLine}.`;
     if (workset.opts().json) {
       printJson({
         status: [

@@ -80,9 +80,9 @@ describe('auto workflow (orchestrated autopilot)', () => {
     });
 
     it('sources the pipeline DAG from the registry CLI, not hard-coded inline', () => {
-      expect(skillText).toContain('openspec pipeline classify');
-      expect(skillText).toContain('openspec pipeline show');
-      expect(skillText).toContain('openspec pipeline resume');
+      expect(skillText).toContain('rasen pipeline classify');
+      expect(skillText).toContain('rasen pipeline show');
+      expect(skillText).toContain('rasen pipeline resume');
       expect(skillText.toLowerCase()).toContain('do not hard-code');
       expect(skillText).toContain('buildOrder');
     });

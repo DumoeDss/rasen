@@ -20,8 +20,8 @@ vi.mock('../../../src/prompts/searchable-multi-select.js', () => ({
 }));
 
 /**
- * Real-run coverage for phase0d-sidecar-install: drive `openspec init` then
- * `openspec update` against a temp project and assert expert-skill sidecars land
+ * Real-run coverage for phase0d-sidecar-install: drive `rasen init` then
+ * `rasen update` against a temp project and assert expert-skill sidecars land
  * alongside SKILL.md and that update is idempotent.
  */
 describe('skill sidecar install (init + update real run)', () => {

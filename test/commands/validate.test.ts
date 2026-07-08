@@ -42,7 +42,7 @@ describe('top-level validate command', () => {
       '',
       '#### Scenario: Apply alpha delta',
       '- **GIVEN** the test change delta',
-      '- **WHEN** openspec validate runs',
+      '- **WHEN** rasen validate runs',
       '- **THEN** the validator reports the change as valid',
     ].join('\n');
     const c1DeltaDir = path.join(changesDir, 'c1', 'specs', 'alpha');
@@ -119,7 +119,7 @@ describe('top-level validate command', () => {
       '',
       '#### Scenario: Validate CRLF change',
       '- **GIVEN** a change proposal saved with CRLF line endings',
-      '- **WHEN** a developer runs openspec validate on the proposal',
+      '- **WHEN** a developer runs rasen validate on the proposal',
       '- **THEN** validation succeeds without section errors',
     ]);
 
@@ -140,7 +140,7 @@ describe('top-level validate command', () => {
     '',
     '#### Scenario: Validate scaffolded change',
     '- **GIVEN** a change directory with no proposal.md',
-    '- **WHEN** openspec validate runs',
+    '- **WHEN** rasen validate runs',
     '- **THEN** the change resolves and its deltas are validated',
   ].join('\n');
 
@@ -214,7 +214,7 @@ describe('top-level validate command (pipelines)', () => {
 
   beforeEach(async () => {
     await fs.mkdir(pipelinesDir, { recursive: true });
-    // A bare openspec/pipelines/ dir is not a qualifying OpenSpec root under
+    // A bare openspec/pipelines/ dir is not a qualifying Rasen root under
     // canonical root selection; give testDir a planning shape so commands
     // resolve it (instead of walking up to the repo root).
     await fs.mkdir(path.join(testDir, 'openspec', 'specs'), { recursive: true });

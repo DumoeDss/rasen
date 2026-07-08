@@ -199,7 +199,7 @@ export class ArchiveCommand {
     try {
       await fs.access(changesDir);
     } catch {
-      throw new Error("No OpenSpec changes directory found. Run 'openspec init' first.");
+      throw new Error("No Rasen changes directory found. Run 'rasen init' first.");
     }
 
     // Get change name interactively if not provided
@@ -208,7 +208,7 @@ export class ArchiveCommand {
         throw new ArchiveBlockedError(
           'archive_change_name_required',
           'A change name is required: archive --json is non-interactive.',
-          withStoreFlag(root, 'openspec archive <change-name> --json')
+          withStoreFlag(root, 'rasen archive <change-name> --json')
         );
       }
       const selectedChange = await this.selectChange(changesDir);
@@ -304,7 +304,7 @@ export class ArchiveCommand {
           throw new ArchiveBlockedError(
             'archive_validation_failed',
             `Validation failed for change '${changeName}'.`,
-            `Run ${withStoreFlag(root, `openspec validate ${changeName}`)} for details, fix the errors, or rerun with --no-validate.`
+            `Run ${withStoreFlag(root, `rasen validate ${changeName}`)} for details, fix the errors, or rerun with --no-validate.`
           );
         }
         console.log(chalk.red('\nValidation failed. Please fix the errors before archiving.'));
@@ -316,7 +316,7 @@ export class ArchiveCommand {
         throw new ArchiveBlockedError(
           'archive_confirmation_required',
           'Skipping validation requires confirmation: rerun with --yes.',
-          withStoreFlag(root, 'openspec archive <change-name> --json --no-validate --yes')
+          withStoreFlag(root, 'rasen archive <change-name> --json --no-validate --yes')
         );
       }
     } else {
@@ -400,7 +400,7 @@ export class ArchiveCommand {
             throw new ArchiveBlockedError(
               'archive_confirmation_required',
               `Updating ${specUpdates.length} spec(s) requires confirmation: rerun with --yes.`,
-              withStoreFlag(root, 'openspec archive <change-name> --json --yes')
+              withStoreFlag(root, 'rasen archive <change-name> --json --yes')
             );
           }
           const { confirm } = await import('@inquirer/prompts');
@@ -448,7 +448,7 @@ export class ArchiveCommand {
                   throw new ArchiveBlockedError(
                     'archive_spec_validation_failed',
                     `Rebuilt spec for '${specName}' failed validation. No files were changed.`,
-                    `Run ${withStoreFlag(root, `openspec validate ${specName}`)} after fixing the change deltas.`
+                    `Run ${withStoreFlag(root, `rasen validate ${specName}`)} after fixing the change deltas.`
                   );
                 }
                 console.log(chalk.red(`\nValidation errors in rebuilt spec for ${specName} (will not write changes):`));

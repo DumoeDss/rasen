@@ -7,7 +7,7 @@ import {
 import { POWERSHELL_DYNAMIC_HELPERS } from '../templates/powershell-templates.js';
 
 /**
- * Generates PowerShell completion scripts for the OpenSpec CLI.
+ * Generates PowerShell completion scripts for the Rasen CLI.
  * Uses Register-ArgumentCompleter for command completion.
  */
 export class PowerShellGenerator implements CompletionGenerator {
@@ -46,11 +46,11 @@ export class PowerShellGenerator implements CompletionGenerator {
     const helpers = POWERSHELL_DYNAMIC_HELPERS;
 
     // Assemble final script with template literal
-    return `# PowerShell completion script for OpenSpec CLI
+    return `# PowerShell completion script for Rasen CLI
 # Auto-generated - do not edit manually
 
 ${helpers}
-$openspecCompleter = {
+$rasenCompleter = {
     param($wordToComplete, $commandAst, $cursorPosition)
 
     $tokens = $commandAst.ToString() -split "\\s+"
@@ -74,7 +74,7 @@ ${commandCases}
     }
 }
 
-Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
+Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
 `;
   }
 
