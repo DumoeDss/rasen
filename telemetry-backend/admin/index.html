@@ -35,7 +35,7 @@
   .controls .inline { flex-direction: row; align-items: center; gap: .45rem;
     text-transform: none; letter-spacing: 0; font-size: .85rem; color: var(--fg); }
   select { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
-    border-radius: 8px; padding: .38rem .55rem; font-size: .85rem; min-width: 8.5rem; }
+    border-radius: 8px; padding: .38rem .55rem; font-size: .85rem; min-width: 8.5rem; max-width: 16rem; }
   select:hover { border-color: var(--accent); }
   input[type=checkbox] { accent-color: var(--accent); width: 1rem; height: 1rem; }
   .controls .spacer { flex: 1; }
@@ -63,9 +63,11 @@
   .chart .area { fill: var(--accent-soft); }
   .chart .dot { fill: var(--accent); }
   .chart .axis { fill: var(--muted); font-size: 10px; }
-  table { width: 100%; border-collapse: collapse; background: var(--panel);
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; background: var(--panel);
     border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
   th, td { text-align: left; padding: .55rem .85rem; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th.num, td.num { width: 6.5rem; }
   th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
   tbody tr:last-child td { border-bottom: none; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -236,7 +238,7 @@ function renderBreakdown(id, key, data) {
   const items = data.items || [];
   if (!items.length) { tbody.innerHTML = '<tr><td class="muted" colspan="3">No data.</td></tr>'; return; }
   tbody.innerHTML = items.map((r) =>
-    '<tr><td>' + escapeHtml(r[key] || '(none)') + '</td><td class="num">' + fmt(r.events) + '</td><td class="num">' + fmt(r.users) + '</td></tr>'
+    '<tr><td title="' + escapeHtml(r[key] || '(none)') + '">' + escapeHtml(r[key] || '(none)') + '</td><td class="num">' + fmt(r.events) + '</td><td class="num">' + fmt(r.users) + '</td></tr>'
   ).join('');
 }
 
@@ -249,7 +251,10 @@ function populateFilter(selectId, key, data) {
   if (current && !values.includes(current)) values.unshift(current);
   const uniq = Array.from(new Set(values)).sort();
   sel.innerHTML = '<option value="">All</option>' +
-    uniq.map((v) => '<option value="' + escapeHtml(v) + '"' + (v === current ? ' selected' : '') + '>' + escapeHtml(v) + '</option>').join('');
+    uniq.map((v) => {
+      const label = v.length > 40 ? v.slice(0, 40) + '…' : v;
+      return '<option value="' + escapeHtml(v) + '"' + (v === current ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+    }).join('');
   sel.value = current;
 }
 
