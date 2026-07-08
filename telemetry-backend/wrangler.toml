@@ -1,0 +1,8 @@
+name = "openspec-telemetry"
+main = "src/index.ts"
+account_id = "5cc51d8388c780c03fb4c6161bd403c4"
+compatibility_date = "2025-07-08"
+
+[[analytics_engine_datasets]]
+binding = "TELEMETRY"
+dataset = "openspec_telemetry"
