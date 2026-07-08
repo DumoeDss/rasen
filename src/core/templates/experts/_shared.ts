@@ -119,20 +119,25 @@ not already running. Expect \`node: ok\`, \`chrome: ok (port NNNN)\`, \`proxy: r
 Then open a background tab and reuse its \`targetId\` on all subsequent calls:
 
 \`\`\`bash
-TAB=$(curl -s "localhost:3456/new?url=about:blank" | jq -r .targetId)
+TAB=$(curl --noproxy '*' -s "localhost:3456/new?url=about:blank" | jq -r .targetId)
 \`\`\`
 
 Tabs are isolated per \`targetId\` (the shared proxy serves multiple sub-agents).
-Close yours when done: \`curl "localhost:3456/close?target=$TAB"\`.`;
+Close yours when done: \`curl --noproxy '*' "localhost:3456/close?target=$TAB"\`.
+
+**Every curl below passes \`--noproxy '*'\`** — on a machine with a configured
+\`HTTP(S)_PROXY\`, \`curl localhost:3456\` is otherwise hijacked by the proxy and
+returns 502. Keep the flag on every call; it bypasses the proxy for that one localhost
+request regardless of environment.`;
 
 export const CHROME_USE_SNAPSHOT = `\`/snapshot\` is your primary tool for understanding and interacting with pages. It
 returns a serialized interactive DOM tree — each element with a stable \`@ref\`, an
 ARIA \`role\`, its \`name\`/text, and its \`tag\`.
 
 \`\`\`bash
-curl "localhost:3456/snapshot?target=$TAB"            # mode=i (default): interactive elements
-curl "localhost:3456/snapshot?target=$TAB&mode=C"     # + non-ARIA clickables (@c refs)
-curl "localhost:3456/snapshot?target=$TAB&mode=D"     # diff vs this tab's previous snapshot
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB"            # mode=i (default): interactive elements
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=C"     # + non-ARIA clickables (@c refs)
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=D"     # diff vs this tab's previous snapshot
 \`\`\`
 
 **Modes:**
@@ -143,8 +148,8 @@ curl "localhost:3456/snapshot?target=$TAB&mode=D"     # diff vs this tab's previ
 **Interacting with what you found:** the snapshot is an inventory — act on elements by
 CSS selector via \`/click\`, \`/clickAt\`, or \`/eval\`:
 \`\`\`bash
-curl -sX POST "localhost:3456/click?target=$TAB" -d 'button[type=submit]'
-curl -sX POST "localhost:3456/eval?target=$TAB"  -d 'document.querySelector("#email").value="user@test.com"'
+curl --noproxy '*' -sX POST "localhost:3456/click?target=$TAB" -d 'button[type=submit]'
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB"  -d 'document.querySelector("#email").value="user@test.com"'
 \`\`\`
 
 The diff baseline is per-tab and in-memory (reset if the proxy restarts). Re-snapshot
@@ -299,7 +304,7 @@ This is the **primary mode** for developers verifying their work. When the user 
    - View/template/component files → which pages render them
    - Model/service files → which pages use those models (check controllers that reference them)
    - CSS/style files → which pages include those stylesheets
-   - API endpoints → test them directly with \`curl -sX POST "localhost:3456/eval?target=$TAB" -d "await fetch('/api/...').then(r => r.status)"\`
+   - API endpoints → test them directly with \`curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "await fetch('/api/...').then(r => r.status)"\`
    - Static pages (markdown, HTML) → navigate to them directly
 
    **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
@@ -307,8 +312,8 @@ This is the **primary mode** for developers verifying their work. When the user 
 3. **Detect the running app** — check common local dev ports:
    \`\`\`bash
    for PORT in 3000 4000 8080; do
-     TAB=$(curl -s "localhost:3456/new?url=http://localhost:$PORT" | jq -r .targetId)
-     [ "$(curl -s "localhost:3456/info?target=$TAB" | jq -r .ready)" = "complete" ] \\
+     TAB=$(curl --noproxy '*' -s "localhost:3456/new?url=http://localhost:$PORT" | jq -r .targetId)
+     [ "$(curl --noproxy '*' -s "localhost:3456/info?target=$TAB" | jq -r .ready)" = "complete" ] \\
        && { echo "Found app on :$PORT (tab $TAB)"; break; }
    done
    \`\`\`
@@ -357,19 +362,19 @@ Run full mode, then load \`baseline.json\` from a previous run. Diff: which issu
 **If the user specified auth credentials:**
 
 \`\`\`bash
-curl "localhost:3456/navigate?target=$TAB&url=<login-url>"
-curl "localhost:3456/snapshot?target=$TAB&mode=i"                # find the login form
-curl -sX POST "localhost:3456/eval?target=$TAB" -d 'document.querySelector("#email").value="user@example.com"'
-curl -sX POST "localhost:3456/eval?target=$TAB" -d 'document.querySelector("#password").value="[REDACTED]"'   # NEVER include real passwords in report
-curl -sX POST "localhost:3456/click?target=$TAB" -d '#submit'    # submit
-curl "localhost:3456/snapshot?target=$TAB&mode=D"                # verify login succeeded
+curl --noproxy '*' "localhost:3456/navigate?target=$TAB&url=<login-url>"
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=i"                # find the login form
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d 'document.querySelector("#email").value="user@example.com"'
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d 'document.querySelector("#password").value="[REDACTED]"'   # NEVER include real passwords in report
+curl --noproxy '*' -sX POST "localhost:3456/click?target=$TAB" -d '#submit'    # submit
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=D"                # verify login succeeded
 \`\`\`
 
 **If the user provided a cookie file:**
 
 \`\`\`bash
-curl -sX POST "localhost:3456/cookies?target=$TAB" -d @cookies.json
-curl "localhost:3456/navigate?target=$TAB&url=<target-url>"
+curl --noproxy '*' -sX POST "localhost:3456/cookies?target=$TAB" -d @cookies.json
+curl --noproxy '*' "localhost:3456/navigate?target=$TAB&url=<target-url>"
 \`\`\`
 
 **If 2FA/OTP is required:** Ask the user for the code and wait.
@@ -381,11 +386,11 @@ curl "localhost:3456/navigate?target=$TAB&url=<target-url>"
 Get a map of the application:
 
 \`\`\`bash
-curl "localhost:3456/navigate?target=$TAB&url=<target-url>"
-curl "localhost:3456/snapshot?target=$TAB&mode=i"                                          # interactive inventory
-curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/initial.png&full=true"
-curl -sX POST "localhost:3456/eval?target=$TAB" -d '[...document.links].map(a => a.textContent.trim()+" -> "+a.href)'   # map navigation
-curl "localhost:3456/console/enable?target=$TAB"; curl "localhost:3456/console?target=$TAB&level=error"                 # errors on landing?
+curl --noproxy '*' "localhost:3456/navigate?target=$TAB&url=<target-url>"
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=i"                                          # interactive inventory
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/initial.png&full=true"
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d '[...document.links].map(a => a.textContent.trim()+" -> "+a.href)'   # map navigation
+curl --noproxy '*' "localhost:3456/console/enable?target=$TAB"; curl --noproxy '*' "localhost:3456/console?target=$TAB&level=error"                 # errors on landing?
 \`\`\`
 
 **Detect framework** (note in report metadata):
@@ -401,10 +406,10 @@ curl "localhost:3456/console/enable?target=$TAB"; curl "localhost:3456/console?t
 Visit pages systematically. At each page:
 
 \`\`\`bash
-curl "localhost:3456/navigate?target=$TAB&url=<page-url>"
-curl "localhost:3456/snapshot?target=$TAB&mode=i"
-curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/page-name.png&full=true"
-curl "localhost:3456/console?target=$TAB&level=error"
+curl --noproxy '*' "localhost:3456/navigate?target=$TAB&url=<page-url>"
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=i"
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/page-name.png&full=true"
+curl --noproxy '*' "localhost:3456/console?target=$TAB&level=error"
 \`\`\`
 
 Then follow the **per-page exploration checklist** (see \`qa/references/issue-taxonomy.md\`):
@@ -417,9 +422,9 @@ Then follow the **per-page exploration checklist** (see \`qa/references/issue-ta
 6. **Console** — Any new JS errors after interactions?
 7. **Responsiveness** — Check mobile viewport if relevant:
    \`\`\`bash
-   curl "localhost:3456/viewport?target=$TAB&width=375&height=812&mobile=true"
-   curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/page-mobile.png"
-   curl "localhost:3456/viewport?target=$TAB&width=1280&height=720"
+   curl --noproxy '*' "localhost:3456/viewport?target=$TAB&width=375&height=812&mobile=true"
+   curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/page-mobile.png"
+   curl --noproxy '*' "localhost:3456/viewport?target=$TAB&width=1280&height=720"
    \`\`\`
 
 **Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
@@ -440,10 +445,10 @@ Document each issue **immediately when found** — don't batch them.
 5. Write repro steps referencing screenshots
 
 \`\`\`bash
-curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-001-step-1.png"
-curl -sX POST "localhost:3456/click?target=$TAB" -d '#submit'
-curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-001-result.png"
-curl "localhost:3456/snapshot?target=$TAB&mode=D"
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-001-step-1.png"
+curl --noproxy '*' -sX POST "localhost:3456/click?target=$TAB" -d '#submit'
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-001-result.png"
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=D"
 \`\`\`
 
 **Static bugs** (typos, layout issues, missing images):
@@ -451,7 +456,7 @@ curl "localhost:3456/snapshot?target=$TAB&mode=D"
 2. Describe what's wrong
 
 \`\`\`bash
-curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-002.png&full=true"
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-002.png&full=true"
 \`\`\`
 
 **Write each issue to the report immediately** using the template format from \`qa/templates/qa-report-template.md\`.
@@ -592,7 +597,7 @@ Run full audit, then load previous \`design-baseline.json\`. Compare: per-catego
 The most uniquely designer-like output. Form a gut reaction before analyzing anything.
 
 1. Navigate to the target URL
-2. Take a full-page desktop screenshot: \`curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/first-impression.png&full=true"\`
+2. Take a full-page desktop screenshot: \`curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/first-impression.png&full=true"\`
 3. Write the **First Impression** using this structured critique format:
    - "The site communicates **[what]**." (what it says at a glance — competence? playfulness? confusion?)
    - "I notice **[observation]**." (what stands out, positive or negative — be specific)
@@ -609,19 +614,23 @@ Extract the actual design system the site uses (not what a DESIGN.md says, but w
 
 \`\`\`bash
 # Fonts in use (capped at 500 elements to avoid timeout)
-curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).map(e => getComputedStyle(e).fontFamily))])"
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).map(e => getComputedStyle(e).fontFamily))])"
 
 # Color palette in use
-curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).flatMap(e => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]).filter(c => c !== 'rgba(0, 0, 0, 0)'))])"
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).flatMap(e => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]).filter(c => c !== 'rgba(0, 0, 0, 0)'))])"
 
 # Heading hierarchy
-curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => ({tag:h.tagName, text:h.textContent.trim().slice(0,50), size:getComputedStyle(h).fontSize, weight:getComputedStyle(h).fontWeight})))"
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => ({tag:h.tagName, text:h.textContent.trim().slice(0,50), size:getComputedStyle(h).fontSize, weight:getComputedStyle(h).fontWeight})))"
 
 # Touch target audit (find undersized interactive elements)
-curl -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...document.querySelectorAll('a,button,input,[role=button]')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && (r.width<44||r.height<44)}).map(e => ({tag:e.tagName, text:(e.textContent||'').trim().slice(0,30), w:Math.round(e.getBoundingClientRect().width), h:Math.round(e.getBoundingClientRect().height)})).slice(0,20))"
+curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "JSON.stringify([...document.querySelectorAll('a,button,input,[role=button]')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && (r.width<44||r.height<44)}).map(e => ({tag:e.tagName, text:(e.textContent||'').trim().slice(0,30), w:Math.round(e.getBoundingClientRect().width), h:Math.round(e.getBoundingClientRect().height)})).slice(0,20))"
 
-# Performance baseline — LCP/FCP/CLS + resource timing
-curl "localhost:3456/perf?target=$TAB"
+# Performance baseline — LCP/FCP/CLS + resource timing.
+# The audit tab opens in the background and never renders, so paint/LCP come back
+# null; pass &activate=true to briefly foreground it and sample real paint metrics
+# (this steals focus for ~1.5s). Without it, treat null paint as "not rendered",
+# not a page problem — check the returned "visibility"/"note" fields.
+curl --noproxy '*' "localhost:3456/perf?target=$TAB&activate=true"
 \`\`\`
 
 Structure findings as an **Inferred Design System**:
@@ -639,19 +648,19 @@ After extraction, offer: *"Want me to save this as your DESIGN.md? I can lock in
 For each page in scope:
 
 \`\`\`bash
-curl "localhost:3456/navigate?target=$TAB&url=<url>"
-curl "localhost:3456/snapshot?target=$TAB&mode=i"
-curl "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/{page}-annotated.png&full=true"
-curl "localhost:3456/responsive?target=$TAB&screenshot=true&dir=$REPORT_DIR/screenshots"
-curl "localhost:3456/console/enable?target=$TAB"; curl "localhost:3456/console?target=$TAB&level=error"
-curl "localhost:3456/perf?target=$TAB"
+curl --noproxy '*' "localhost:3456/navigate?target=$TAB&url=<url>"
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=i"
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/{page}-annotated.png&full=true"
+curl --noproxy '*' "localhost:3456/responsive?target=$TAB&screenshot=true&dir=$REPORT_DIR/screenshots"
+curl --noproxy '*' "localhost:3456/console/enable?target=$TAB"; curl --noproxy '*' "localhost:3456/console?target=$TAB&level=error"
+curl --noproxy '*' "localhost:3456/perf?target=$TAB&activate=true"   # &activate=true: background audit tab won't render paint/LCP otherwise (steals focus ~1.5s)
 \`\`\`
 
 ### Auth Detection
 
 After the first navigation, check if the URL changed to a login-like path:
 \`\`\`bash
-curl "localhost:3456/info?target=$TAB"
+curl --noproxy '*' "localhost:3456/info?target=$TAB"
 \`\`\`
 If URL contains \`/login\`, \`/signin\`, \`/auth\`, or \`/sso\`: the site requires authentication. AskUserQuestion: "This site requires authentication. Provide a logged-in browser session (or import cookies for the domain) before continuing the audit."
 
@@ -678,7 +687,7 @@ Apply these at each page. Each finding gets an impact rating (high/medium/polish
 - Weight contrast: >=2 weights used for hierarchy
 - No blacklisted fonts (Papyrus, Comic Sans, Lobster, Impact, Jokerman)
 - If primary font is Inter/Roboto/Open Sans/Poppins → flag as potentially generic
-- \`text-wrap: balance\` or \`text-pretty\` on headings (check via \`curl -sX POST "localhost:3456/eval?target=$TAB" -d 'getComputedStyle(document.querySelector("<heading>")).textWrap'\`)
+- \`text-wrap: balance\` or \`text-pretty\` on headings (check via \`curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d 'getComputedStyle(document.querySelector("<heading>")).textWrap'\`)
 - Curly quotes used, not straight quotes
 - Ellipsis character (\`…\`) not three dots (\`...\`)
 - \`font-variant-numeric: tabular-nums\` on number columns
@@ -738,7 +747,7 @@ Apply these at each page. Each finding gets an impact rating (high/medium/polish
 - Easing: ease-out for entering, ease-in for exiting, ease-in-out for moving
 - Duration: 50-700ms range (nothing slower unless page transition)
 - Purpose: every animation communicates something (state change, attention, spatial relationship)
-- \`prefers-reduced-motion\` respected (check: \`curl -sX POST "localhost:3456/eval?target=$TAB" -d "matchMedia('(prefers-reduced-motion: reduce)').matches"\`)
+- \`prefers-reduced-motion\` respected (check: \`curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "matchMedia('(prefers-reduced-motion: reduce)').matches"\`)
 - No \`transition: all\` — properties listed explicitly
 - Only \`transform\` and \`opacity\` animated (not layout properties like width, height, top, left)
 
@@ -782,9 +791,9 @@ The test: would a human designer at a respected studio ever ship this?
 Walk 2-3 key user flows and evaluate the *feel*, not just the function:
 
 \`\`\`bash
-curl "localhost:3456/snapshot?target=$TAB&mode=i"
-curl -sX POST "localhost:3456/click?target=$TAB" -d '<selector>'   # perform action
-curl "localhost:3456/snapshot?target=$TAB&mode=D"                  # diff to see what changed
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=i"
+curl --noproxy '*' -sX POST "localhost:3456/click?target=$TAB" -d '<selector>'   # perform action
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=D"                  # diff to see what changed
 \`\`\`
 
 Evaluate:
@@ -1402,8 +1411,8 @@ SKETCH_FILE="/tmp/gstack-sketch-$(date +%s).html"
 **Step 3: Render and capture**
 
 \`\`\`bash
-TAB=$(curl -s "localhost:3456/new?url=file://$SKETCH_FILE" | jq -r .targetId)
-curl "localhost:3456/screenshot?target=$TAB&file=/tmp/gstack-sketch.png&full=true"
+TAB=$(curl --noproxy '*' -s "localhost:3456/new?url=file://$SKETCH_FILE" | jq -r .targetId)
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=/tmp/gstack-sketch.png&full=true"
 \`\`\`
 
 If the chrome-use proxy is not available (\`check-deps.mjs\` failed), skip the render

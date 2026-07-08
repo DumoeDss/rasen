@@ -3,6 +3,7 @@
 ## 基础信息
 
 - 地址：`http://localhost:3456`
+- **curl 一律加 `--noproxy '*'`**：本机若配置了 `HTTP(S)_PROXY`，`curl localhost:3456` 会被代理劫持返回 502；`--noproxy '*'` 让这一条 localhost 请求绕过代理，与环境无关。下文示例均已带上。
 - 启动：`node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &`
 - 启动后持续运行，不建议主动停止（重启需 Chrome 重新授权）
 - 强制停止：`pkill -f cdp-proxy.mjs`
@@ -37,7 +38,7 @@
 `{title, url, ready}`。
 
 ### POST /eval?target=ID
-执行 JS 表达式（body 是 JS），支持 `await`。返回 `{ value }` 或 `{ error }`。
+执行 JS 表达式（body 是 JS），支持裸顶层 `await`（`replMode`，DevTools 控制台同款语义）。返回 `{ value }` 或 `{ error }`。
 
 ### POST /click?target=ID
 JS 层点击（`el.click()`），body 是 CSS 选择器。
@@ -107,16 +108,16 @@ JS 层点击（`el.click()`），body 是 CSS 选择器。
 逆向一个"点了按钮才发的提交请求"：
 
 ```bash
-TAB=$(curl -s http://localhost:3456/targets | jq -r '.[0].targetId')
+TAB=$(curl --noproxy '*' -s http://localhost:3456/targets | jq -r '.[0].targetId')
 
 # 1. 开抓包，开 body
-curl -s "http://localhost:3456/network/enable?target=$TAB&body=true"
+curl --noproxy '*' -s "http://localhost:3456/network/enable?target=$TAB&body=true"
 
 # 2. 在另一个 shell 里启动等待（阻塞）
-curl -s "http://localhost:3456/network/wait?target=$TAB&url_pattern=/api/.*/submit&method=POST&timeout=60000&include_body=true" > /tmp/captured.json &
+curl --noproxy '*' -s "http://localhost:3456/network/wait?target=$TAB&url_pattern=/api/.*/submit&method=POST&timeout=60000&include_body=true" > /tmp/captured.json &
 
 # 3. 触发动作（用户点 / 自己 click）
-curl -s -X POST "http://localhost:3456/clickAt?target=$TAB" -d 'button[data-action=submit]'
+curl --noproxy '*' -s -X POST "http://localhost:3456/clickAt?target=$TAB" -d 'button[data-action=submit]'
 
 # 4. wait 一返回，POST body / 签名头 / 响应都在 /tmp/captured.json
 wait
@@ -201,8 +202,13 @@ body：`{key,value}` 或 `{k1:v1, k2:v2}`。非字符串值会被 `JSON.stringif
 
 每次调用都会把当前树写入 per-`targetId` 基线（进程内存，proxy 重启丢失），供后续 `mode=D` 比较。返回 `{mode, total, elements}`。
 
-### GET /perf?target=ID
-页面性能指标：`{fp, fcp, lcp, cls, longTasks:{count,tasks}, navTiming:{ttfb,domContentLoaded,load,transferSize}, resources:{count,byType,transferBytes}}`。同步读取缓冲的 Performance 条目；指标视页面渲染状态而定，缺失项返回 `null`（不报错）。
+### GET /perf?target=ID[&activate=true]
+页面性能指标：`{fp, fcp, lcp, cls, longTasks:{count,tasks}, navTiming:{ttfb,domContentLoaded,load,transferSize}, resources:{count,byType,transferBytes}, visibility, note?}`。缺失项返回 `null`（不报错）。
+
+- `lcp` 走 buffered `PerformanceObserver`（`getEntriesByType('largest-contentful-paint')` 按规范恒空），曾前台渲染过的 tab 即使当前在后台也能取到已记录的 LCP。`fp`/`fcp` 读 `getEntriesByType('paint')`（渲染过就有）。
+- `visibility` 恒返回该 tab 的 `document.visibilityState`。
+- **后台 tab 注意**：chrome-use 开的是后台 tab，从未前台渲染时 paint/LCP 物理不存在，返回 `null` 并附 `note` 说明——这不是页面问题。
+- `activate=true`（opt-in，默认 false）：采样前先 `Target.activateTarget` 把 tab 提到前台、等 ~1200ms 让 paint 发生再采样，从而拿到真实 fp/fcp/lcp。**代价**：这会把被测 tab 切到前台且不自动切回（CDP 无可靠的"当前前台 tab"信号），故默认关闭，仅在需要后台 tab 真实 paint 时显式开启。
 
 ### GET /viewport?target=ID&width=W&height=H[&scale=S&mobile=true]
 `Emulation.setDeviceMetricsOverride` 施加设备视口模拟，**不改真实窗口尺寸**。返回 `{applied}`。override 会残留在 tab 上，通过再次 `/viewport` 复位或关闭 tab 清除。
@@ -215,7 +221,8 @@ body：`{key,value}` 或 `{k1:v1, k2:v2}`。非字符串值会被 `JSON.stringif
 ## /eval 使用提示
 
 - POST body 为任意 JS 表达式，返回 `{ value }` 或 `{ error }`
-- 支持 `awaitPromise`：可以写 async 表达式
+- 支持裸顶层 `await`（`replMode: true`）：直接写 `await fetch('/api').then(r => r.status)`，无需 `(async()=>{...})()` 包裹。例：`curl --noproxy '*' -sX POST "localhost:3456/eval?target=$TAB" -d "await fetch('https://example.com').then(r => r.status)"` → `{ value: 200 }`
+- `replMode` 下每次调用是独立的控制台求值，`let`/`const` 绑定不跨调用保留（每次 evaluate 本就是全新上下文，非回归）
 - 返回值必须是可序列化的（字符串、数字、对象），DOM 节点不能直接返回，需要提取属性
 - 提取大量数据时用 `JSON.stringify()` 包裹，确保返回字符串
 - 根据页面实际 DOM 结构编写选择器，不要套用固定模板
