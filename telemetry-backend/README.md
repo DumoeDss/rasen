@@ -199,35 +199,84 @@ script runs **before** any static asset is served, and it calls
 `run_worker_first`, the static-assets runtime would answer `/admin` before the
 Worker runs and leak the panel — so it is a tested, load-bearing invariant.)
 
-### Stats API
+### Stats API (v2 — two-layer hot/cold)
 
-Read-only JSON over the Analytics Engine dataset via the CF SQL API
-(`src/stats.ts`). Event counts use `SUM(_sample_interval)` (sampling-accurate);
-distinct-user counts use `count(DISTINCT index1)` and are flagged
-`usersApproximate: true`.
+Read-only JSON aggregates (`src/stats.ts`). Event counts use
+`SUM(_sample_interval)` (sampling-accurate); distinct-user counts are flagged
+`usersApproximate: true`. Every response carries `source: "hot" | "cold"`.
+
+**Two layers.** A `range` parameter selects the serving layer:
+
+- `range=7d` / `30d` / `90d` → **hot** layer: live Analytics Engine via the CF
+  SQL API (fine-grained, within the ~90-day retention). `source: "hot"`.
+- `range=all` → **cold** layer: the durable D1 rollup store (day-grained, all
+  history). `source: "cold"`.
+- No `range` → back-compat: the legacy `days` param (clamped 1..30, default 14)
+  on the hot layer.
 
 | Endpoint                     | Returns                                             |
 | ---------------------------- | --------------------------------------------------- |
 | `GET /api/admin/overview`    | total events + distinct users for last 24h and 7d   |
-| `GET /api/admin/dau?days=N`  | daily event + distinct-user series (N clamped 1..30, default 14) |
-| `GET /api/admin/commands?days=N` | per-command breakdown (events desc)             |
-| `GET /api/admin/versions?days=N` | per-version breakdown                            |
+| `GET /api/admin/dau`         | daily event + distinct-user series                  |
+| `GET /api/admin/commands`    | per-command breakdown (events desc)                 |
+| `GET /api/admin/versions`    | per-version breakdown                               |
+| `GET /api/admin/os`          | per-os breakdown                                    |
+| `POST /api/admin/backfill`   | one-time historical backfill → `{ ok, days, rows }` |
+
+Shared query parameters (all endpoints): `range` (above); `hideTest` (default
+**true** — excludes smoke-test traffic where version = `0.0.0`, on both layers;
+`hideTest=false` includes it); and optional `command` / `version` / `os` equality
+filters. Filter values are validated before use — any value with a quote,
+semicolon, backslash, or control character is rejected with **400**
+(`invalid_filter`), guarding the SQL-API text body against injection.
+
+> **Cold-layer distinct users are an upper bound.** Per-day distinct-user counts
+> are not additive across days (summing over-counts returning users), so
+> all-history `users` totals from the cold layer are an approximate ceiling.
+> Events are additive and are the primary metric.
 
 Graceful degradation (deploy is always safe):
 
-- `TELEMETRY_SQL_TOKEN` unset → stats endpoints return **503** with a hint (never
-  a crash); the panel shows a "read token not configured" notice.
-- CF SQL API upstream error → **502/503** with the upstream status echoed in the
-  hint.
+- `TELEMETRY_SQL_TOKEN` unset → hot-layer endpoints return **503** with a hint
+  (never a crash); the panel shows a backend-unavailable notice.
+- `ROLLUPS` D1 binding missing/erroring → cold-layer (`range=all`) reads return
+  **503** (`cold_store_unavailable`); ingest and the hot layer are unaffected.
+- CF SQL API upstream error → **502/503** with the upstream status in the hint.
+
+### Permanent rollup store (D1) + daily cron
+
+Analytics Engine retains raw events only ~90 days. A D1 database
+(`rasen-telemetry-rollups`, binding `ROLLUPS`) holds day-grained **aggregate
+counts** permanently — one row per `(date, command, version, os, node_version)`
+with an event count and an approximate distinct-user count, and **no
+`distinctId`** (privacy contract unchanged).
+
+- **Daily cron** `"0 1 * * *"` (01:00 UTC): a `scheduled` handler
+  (`src/rollups.ts` `runDailyRollup`) aggregates the prior UTC day from Analytics
+  Engine and UPSERTs it into D1. It is a **pure bypass** — no shared code with the
+  ingest hot path, and a SQL/token failure is a clean no-op that the next cron
+  retries.
+- **Backfill** (`runBackfill`, `POST /api/admin/backfill`): a maintainer-only,
+  Access-gated one-shot that aggregates all retained history by day + dimensions
+  and UPSERTs every row.
+- **Idempotency:** both share the composite PK + `ON CONFLICT ... DO UPDATE`, so a
+  cron re-run or an overlapping backfill replaces counts in place — never doubles.
+
+Operator setup (create DB, migration, deploy, backfill) is in
+[RUNBOOK.md](./RUNBOOK.md) Step 4.
 
 ### Panel
 
 `admin/index.html` is a single self-contained file (vanilla JS + `fetch` + inline
 SVG chart) — no bundler, no build step, no credentials in the browser. It renders
-overview cards, a DAU line chart, and command/version tables; on `403` it shows a
-"reload to re-authenticate through Cloudflare Access" banner, on `503` a
-"read token not configured" notice, and annotates distinct-user figures as
-approximate.
+a control bar (time-range selector `7d/30d/90d/all`, command/version/os filter
+dropdowns populated from the breakdown responses, and a hide-test-traffic checkbox
+defaulting **on**), a data-source badge (recent live vs. historical aggregates)
+driven by the `source` field, overview cards, a dual-series events+users trend
+chart, and command/version tables. On `403` it shows a "reload to re-authenticate
+through Cloudflare Access" banner, on `503` a backend-unavailable notice, and
+annotates distinct-user figures as approximate (with the cold-layer upper-bound
+caveat).
 
 ### Local development / tests
 

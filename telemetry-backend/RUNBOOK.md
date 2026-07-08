@@ -122,10 +122,102 @@ against an inactive zone fails. `workers.dev` keeps serving regardless.
 
 ---
 
+## Step 4 — Permanent rollup store (D1) + daily cron + backfill
+
+Analytics Engine only retains raw events on a ~90-day rolling window. A D1
+database (`rasen-telemetry-rollups`, binding `ROLLUPS`) holds **day-grained
+aggregate counts** permanently, fed by a daily cron and a one-time backfill. The
+store holds only aggregate counts per `(date, command, version, os,
+node_version)` — never any `distinctId` (the privacy contract is unchanged).
+
+This is already provisioned (`database_id` `6ef1574a-b82c-4433-aab4-9d719ad4524b`,
+region APAC). The steps below are the reference procedure / for a rebuild.
+
+1. **Create the database** (once):
+
+   ```bash
+   wrangler d1 create rasen-telemetry-rollups
+   # copy the printed database_id
+   ```
+
+   **Fallback if this fails on a missing `d1` OAuth scope** (`wrangler` was
+   authorized without D1 permissions): do NOT retry blindly. Create the database
+   in the dashboard instead — **Workers & Pages → D1 SQL Database → Create** →
+   name it `rasen-telemetry-rollups` → copy its **Database ID**.
+
+2. **Wire it in `wrangler.toml`** (top-level tables, alongside the existing
+   config — do not disturb `workers_dev`, `routes`, `[assets]`, or `[vars]`):
+
+   ```toml
+   [[d1_databases]]
+   binding = "ROLLUPS"
+   database_name = "rasen-telemetry-rollups"
+   database_id = "<database_id from step 1>"
+
+   [triggers]
+   crons = ["0 1 * * *"]   # 01:00 UTC daily — aggregates the prior UTC day
+   ```
+
+3. **Apply the schema** (create the `rollups` table):
+
+   ```bash
+   # optional local iteration first: add --local
+   wrangler d1 execute rasen-telemetry-rollups --remote --file migrations/0001_rollups.sql
+   ```
+
+4. **Deploy** — this activates the `scheduled` handler, the backfill route, and
+   the stats-v2 hot/cold layers:
+
+   ```bash
+   wrangler deploy
+   # deploy output must list `schedule: 0 1 * * *`
+   ```
+
+5. **One-time historical backfill** — seed the store with all history currently
+   retained in Analytics Engine (before daily rollups began). This is a
+   maintainer-only endpoint behind the same Access gate, so invoke it **from a
+   browser signed into Cloudflare Access** (or any client that carries a valid
+   `Cf-Access-Jwt-Assertion`):
+
+   ```
+   POST https://telemetry.rasen.io/api/admin/backfill
+   ```
+
+   From the signed-in panel's origin you can run it in the browser devtools
+   console:
+
+   ```js
+   await fetch('/api/admin/backfill', { method: 'POST' }).then(r => r.json())
+   // → { ok: true, days: <N>, rows: <M> }
+   ```
+
+   It is idempotent (shares the daily rollup's key tuple + UPSERT), so re-running
+   it never double-counts. Unauthenticated requests return `403`.
+
+6. **Verify rows landed:**
+
+   ```bash
+   wrangler d1 execute rasen-telemetry-rollups --remote \
+     --command "SELECT date, count(*) AS tuples, SUM(events) AS events FROM rollups GROUP BY date ORDER BY date"
+   ```
+
+   After the backfill (or the first 01:00 UTC cron), this lists one or more days
+   with tuple/event counts.
+
+> Note: `wrangler dev --test-scheduled` cannot exercise the rollup against real
+> data locally — the `TELEMETRY_SQL_TOKEN` secret lives only on the deployed
+> Worker (remote-dev previews do not carry `wrangler secret put` secrets). Trust
+> the daily cron / the authenticated backfill for real population; the unit tests
+> cover the aggregation and UPSERT-idempotency logic.
+
+---
+
 ## Quick reference — what each missing piece does
 
 | Missing                                   | Effect                                            |
 | ----------------------------------------- | ------------------------------------------------- |
 | `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`       | all admin paths → `403` (fail-closed)             |
-| `TELEMETRY_SQL_TOKEN`                     | `/api/admin/*` → `503` with hint (panel notice)   |
+| `TELEMETRY_SQL_TOKEN`                     | hot-layer `/api/admin/*` → `503` with hint (panel notice) |
+| `ROLLUPS` D1 binding                      | cold-layer (`range=all`) reads → `503`; ingest + hot layer unaffected |
+| `[triggers] crons`                        | no daily rollup; cold store stops growing (backfill still works) |
 | `rasen.io` zone not Active                | admin reachable only via `workers.dev` (still gated) |

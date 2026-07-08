@@ -9,6 +9,7 @@
   :root {
     --bg: #0f1115; --panel: #171a21; --border: #262b36; --fg: #e6e9ef;
     --muted: #8b93a7; --accent: #6ea8fe; --accent-soft: #6ea8fe22; --warn: #e0a458;
+    --users: #7ee0b8; --cold: #b98cff; --cold-soft: #b98cff22;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
@@ -26,6 +27,22 @@
     border: 1px solid var(--border); background: var(--panel); }
   .banner.warn { border-color: var(--warn); background: #e0a4581a; }
   .banner.hidden { display: none; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: .85rem 1rem; margin-bottom: 1.5rem; }
+  .controls label { color: var(--muted); font-size: .72rem; text-transform: uppercase;
+    letter-spacing: .04em; display: flex; flex-direction: column; gap: .3rem; }
+  .controls .inline { flex-direction: row; align-items: center; gap: .45rem;
+    text-transform: none; letter-spacing: 0; font-size: .85rem; color: var(--fg); }
+  select { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 8px; padding: .38rem .55rem; font-size: .85rem; min-width: 8.5rem; }
+  select:hover { border-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); width: 1rem; height: 1rem; }
+  .controls .spacer { flex: 1; }
+  .badge { font-size: .72rem; font-weight: 600; padding: .3rem .6rem; border-radius: 999px;
+    border: 1px solid var(--border); white-space: nowrap; }
+  .badge.hot { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .badge.cold { color: var(--cold); border-color: var(--cold); background: var(--cold-soft); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 1rem; margin-bottom: 1.75rem; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
@@ -35,10 +52,14 @@
   section { margin-bottom: 2rem; }
   section h2 { font-size: .95rem; font-weight: 600; margin: 0 0 .75rem; }
   .approx { color: var(--warn); font-size: .72rem; font-weight: 500; }
+  .legend { display: inline-flex; gap: 1rem; font-size: .72rem; color: var(--muted); margin-left: .5rem; }
+  .legend .k { display: inline-flex; align-items: center; gap: .3rem; }
+  .legend .sw { width: .8rem; height: .2rem; border-radius: 2px; display: inline-block; }
   .chart { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
   svg { display: block; width: 100%; height: auto; }
   .chart .gridline { stroke: var(--border); stroke-width: 1; }
   .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .chart .line-users { fill: none; stroke: var(--users); stroke-width: 1.5; stroke-dasharray: 4 3; }
   .chart .area { fill: var(--accent-soft); }
   .chart .dot { fill: var(--accent); }
   .chart .axis { fill: var(--muted); font-size: 10px; }
@@ -63,6 +84,29 @@
 <main>
   <div id="banner" class="banner hidden"></div>
 
+  <div class="controls">
+    <label>Time range
+      <select id="range">
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="90d">Last 90 days</option>
+        <option value="all">All history</option>
+      </select>
+    </label>
+    <label>Command
+      <select id="fCommand"><option value="">All</option></select>
+    </label>
+    <label>Version
+      <select id="fVersion"><option value="">All</option></select>
+    </label>
+    <label>OS
+      <select id="fOs"><option value="">All</option></select>
+    </label>
+    <label class="inline"><input type="checkbox" id="hideTest" checked /> Hide test traffic (0.0.0)</label>
+    <span class="spacer"></span>
+    <span id="sourceBadge" class="badge hot">–</span>
+  </div>
+
   <section>
     <div class="cards" id="overview">
       <div class="card"><div class="label">Events · 24h</div><div class="value" id="ev24">–</div></div>
@@ -73,7 +117,13 @@
   </section>
 
   <section>
-    <h2>Daily activity <span class="approx">· users approximate (sampled)</span></h2>
+    <h2>Activity trend
+      <span class="approx">· users approximate (sampled)</span>
+      <span class="legend">
+        <span class="k"><span class="sw" style="background:var(--accent)"></span>events</span>
+        <span class="k"><span class="sw" style="background:var(--users)"></span>users</span>
+      </span>
+    </h2>
     <div class="chart" id="dauChart"><p class="muted" style="margin:0">Loading…</p></div>
   </section>
 
@@ -89,7 +139,8 @@
         <tbody id="versions"><tr><td class="muted" colspan="3">Loading…</td></tr></tbody></table>
     </section>
   </div>
-  <p class="muted" style="font-size:.75rem">* distinct-user counts are approximate under Analytics Engine sampling.</p>
+  <p class="muted" style="font-size:.75rem">* distinct-user counts are approximate under Analytics Engine sampling. On the
+  all-history (cold) layer, distinct users are an upper bound because per-day counts are not additive; events are exact.</p>
 </main>
 
 <script>
@@ -103,9 +154,22 @@ function showBanner(msg, warn) {
 }
 function clearBanner() { $('banner').className = 'banner hidden'; }
 
+// Build the shared query string from the current controls.
+function currentParams() {
+  const p = new URLSearchParams();
+  p.set('range', $('range').value);
+  p.set('hideTest', $('hideTest').checked ? 'true' : 'false');
+  const c = $('fCommand').value, v = $('fVersion').value, o = $('fOs').value;
+  if (c) p.set('command', c);
+  if (v) p.set('version', v);
+  if (o) p.set('os', o);
+  return p.toString();
+}
+const apiPath = (endpoint) => '/api/admin/' + endpoint + '?' + currentParams();
+
 // Returns parsed JSON, or throws { status } so callers can branch on 403/503.
-async function api(path) {
-  const res = await fetch(path, { headers: { 'accept': 'application/json' } });
+async function api(endpoint) {
+  const res = await fetch(apiPath(endpoint), { headers: { 'accept': 'application/json' } });
   if (!res.ok) {
     let body = {};
     try { body = await res.json(); } catch {}
@@ -114,6 +178,17 @@ async function api(path) {
     throw err;
   }
   return res.json();
+}
+
+function renderSource(source) {
+  const b = $('sourceBadge');
+  if (source === 'cold') {
+    b.className = 'badge cold';
+    b.textContent = 'historical aggregates (rollup store)';
+  } else {
+    b.className = 'badge hot';
+    b.textContent = 'recent live data (Analytics Engine)';
+  }
 }
 
 function renderOverview(o) {
@@ -129,22 +204,23 @@ function renderDau(d) {
   if (!series.length) { el.innerHTML = '<p class="muted" style="margin:0">No data in window.</p>'; return; }
   const W = 900, H = 240, pad = { l: 44, r: 12, t: 12, b: 24 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
-  const max = Math.max(1, ...series.map((p) => p.events));
+  const max = Math.max(1, ...series.map((p) => p.events), ...series.map((p) => p.users));
   const n = series.length;
   const x = (i) => pad.l + (n === 1 ? iw / 2 : (i * iw) / (n - 1));
   const y = (v) => pad.t + ih - (v / max) * ih;
-  const pts = series.map((p, i) => [x(i), y(p.events)]);
-  const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
-  const area = 'M' + pad.l + ' ' + (pad.t + ih) + ' ' + pts.map((p) => 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ') + ' L' + (pad.l + iw) + ' ' + (pad.t + ih) + ' Z';
+  const path = (key) => series.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[key]).toFixed(1)).join(' ');
+  const evPts = series.map((p, i) => [x(i), y(p.events)]);
+  const area = 'M' + pad.l + ' ' + (pad.t + ih) + ' ' + evPts.map((p) => 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ') + ' L' + (pad.l + iw) + ' ' + (pad.t + ih) + ' Z';
   const ticks = [0, 0.5, 1].map((f) => { const v = Math.round(max * f); return { y: y(v), v }; });
   const dayLabel = (s) => String(s).slice(5, 10) || String(s);
-  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="daily events">';
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="events and users per day">';
   ticks.forEach((t) => {
     svg += '<line class="gridline" x1="' + pad.l + '" y1="' + t.y.toFixed(1) + '" x2="' + (pad.l + iw) + '" y2="' + t.y.toFixed(1) + '"/>';
     svg += '<text class="axis" x="' + (pad.l - 6) + '" y="' + (t.y + 3).toFixed(1) + '" text-anchor="end">' + fmt(t.v) + '</text>';
   });
-  svg += '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>';
-  pts.forEach((p) => { svg += '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.5"/>'; });
+  svg += '<path class="area" d="' + area + '"/><path class="line" d="' + path('events') + '"/>';
+  svg += '<path class="line-users" d="' + path('users') + '"/>';
+  evPts.forEach((p) => { svg += '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.5"/>'; });
   const step = Math.ceil(n / 8);
   series.forEach((p, i) => {
     if (i % step === 0 || i === n - 1) {
@@ -164,6 +240,19 @@ function renderBreakdown(id, key, data) {
   ).join('');
 }
 
+// Fill a filter <select> from a breakdown's items, preserving the current
+// selection (and keeping it present even if it fell out of the filtered list).
+function populateFilter(selectId, key, data) {
+  const sel = $(selectId);
+  const current = sel.value;
+  const values = (data.items || []).map((r) => r[key]).filter((v) => v != null && v !== '');
+  if (current && !values.includes(current)) values.unshift(current);
+  const uniq = Array.from(new Set(values)).sort();
+  sel.innerHTML = '<option value="">All</option>' +
+    uniq.map((v) => '<option value="' + escapeHtml(v) + '"' + (v === current ? ' selected' : '') + '>' + escapeHtml(v) + '</option>').join('');
+  sel.value = current;
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -171,27 +260,29 @@ function escapeHtml(s) {
 async function load() {
   clearBanner();
   try {
-    const [overview, dau, commands, versions] = await Promise.all([
-      api('/api/admin/overview'),
-      api('/api/admin/dau?days=14'),
-      api('/api/admin/commands?days=14'),
-      api('/api/admin/versions?days=14'),
+    const [overview, dau, commands, versions, os] = await Promise.all([
+      api('overview'), api('dau'), api('commands'), api('versions'), api('os'),
     ]);
+    renderSource(overview.source);
     renderOverview(overview);
     renderDau(dau);
     renderBreakdown('commands', 'command', commands);
     renderBreakdown('versions', 'version', versions);
+    populateFilter('fCommand', 'command', commands);
+    populateFilter('fVersion', 'version', versions);
+    populateFilter('fOs', 'os', os);
   } catch (err) {
     if (err.status === 403) {
       showBanner('Your Cloudflare Access session is missing or expired. Reload this page to re-authenticate through Cloudflare Access.', true);
     } else if (err.status === 503) {
-      showBanner('Stats read token is not configured. Set TELEMETRY_SQL_TOKEN on the Worker (see RUNBOOK.md), then refresh.', true);
+      showBanner('Stats backend unavailable: ' + (err.message || 'the read token or rollup store is not configured (see RUNBOOK.md)') + '.', true);
     } else {
       showBanner('Could not load stats: ' + (err.message || 'unknown error') + '.', true);
     }
   }
 }
 
+['range', 'fCommand', 'fVersion', 'fOs', 'hideTest'].forEach((id) => $(id).addEventListener('change', load));
 $('refresh').addEventListener('click', load);
 load();
 </script>

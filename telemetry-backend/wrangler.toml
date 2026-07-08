@@ -47,3 +47,18 @@ html_handling = "none"
 [vars]
 ACCESS_TEAM_DOMAIN = "atelierai.cloudflareaccess.com"
 ACCESS_AUD = "82ce43e23510344a1fb944320e67b2851a3651aec16d62e0d37f2fe59facdac5"
+
+# Cold store: permanent day-grained rollups of the Analytics Engine data before
+# its ~90-day rolling window expires. Holds ONLY aggregate counts per
+# (date, command, version, os, node_version) — never any distinctId. Fed by the
+# daily [triggers] cron below and the one-time POST /api/admin/backfill endpoint.
+[[d1_databases]]
+binding = "ROLLUPS"
+database_name = "rasen-telemetry-rollups"
+database_id = "6ef1574a-b82c-4433-aab4-9d719ad4524b"
+
+# Daily rollup at 01:00 UTC — after the prior UTC day has fully closed. The
+# scheduled handler aggregates [startOfDay(-1), startOfDay) from Analytics Engine
+# and UPSERTs it into ROLLUPS. Pure bypass of the ingest hot path.
+[triggers]
+crons = ["0 1 * * *"]
