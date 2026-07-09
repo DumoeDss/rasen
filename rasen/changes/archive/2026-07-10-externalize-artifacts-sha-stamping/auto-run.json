@@ -63,12 +63,17 @@
       "note": "task 5.3 live-smoke satisfied by this ship+archive pair (repo-mode); store-mode live smoke remains a follow-up"
     },
     "archive": {
-      "status": "in_progress",
+      "status": "done",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
-      }
+      },
+      "commit": "85f5500d089e49119b9568ba173106546ab019ba",
+      "specsSynced": "3 (1 new sha-cross-stamping + 2 added-req)",
+      "specsValidate": "114/114 strict",
+      "liveValidation": "## Archive append two-write + ship-referencing commit message, both as specced",
+      "gateOverride": "task 5.3 hard gate: LEAD explicit override, satisfied by ship+archive pair"
     }
   },
   "rounds": 2,
