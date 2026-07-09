@@ -1,0 +1,17 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "gatesSkipped": "user directive: 不用gate",
+  "runtimes": { "planner": "claude", "implementer": "claude", "reviewer": "claude", "fixer": "claude", "shipper": "claude" },
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner" }, "note": "4/4 artifacts, validate clean, durable findings appended to planning-context.md" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer" }, "note": "14/14 tasks ticked; 3 source files changed; .claude/skills regenerated (untracked, not repo content)" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer", "transcript": "0cbb209b-b00a-48e9-b602-0f89230621b4/subagents/agent-areviewer-d1738403ba9c79d5.jsonl" }, "note": "review-report.md written; 0 Blocker / 1 Major / 2 Minor / 1 Trivial; templates tests 6/6 green" },
+    "review-loop": { "status": "done", "rounds": 1, "verdict": "CLEAN (non-author confirmed)", "resolved": ["minor-phase5-consultation-gate", "minor-consultation-routing"], "acceptedKnown": { "major-migration-bundle": "LEAD ruling — commit bundles in-flight rebrand edits at whole-file granularity; documented in ship-log", "trivial-stale-openspec-skills": "migration cleanup, out of scope" }, "workers": { "fixer": "implementer (warm reuse, 12.8% at probe)", "reReviewer": "reviewer (warm reuse, 9.5% at probe)" } },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper" } },
+    "archive":     { "status": "pending" }
+  },
+  "rounds": 0,
+  "openFindings": []
+}
