@@ -83,6 +83,12 @@ export const RunStateStageSchema = z.object({
   worker: z.union([z.string(), RunStateWorkerSchema]).optional(),
   note: z.string().optional(),
   handoffs: z.array(StageHandoffRecordSchema).optional(),
+  // autopilot-gate-policy: recorded ONLY when this stage's gate was
+  // auto-approved rather than confirmed by a human, e.g.
+  // "auto-approved (--no-gate)" or "auto-approved (autopilot.gates: off)".
+  // A human-confirmed gate leaves this unset — the presence of the field is
+  // itself the audit signal, distinguishing an auto-approval from a Continue.
+  gateDecision: z.string().optional(),
 }).passthrough();
 export type RunStateStage = z.infer<typeof RunStateStageSchema>;
 
@@ -117,6 +123,17 @@ export const RunStateSchema = z
     pipeline: z.string(),
     classification: z.string().optional(),
     tier: z.enum(['A', 'B', 'C']).optional(),
+    // autopilot-gate-policy: the resolved gate policy for this run, recorded
+    // once at run start (precedence flag > autopilot.gates config > default
+    // on — see resolveAutopilotGatePolicy in project-config.ts) so `pipeline
+    // resume` can read it back without the user re-passing `--no-gate`.
+    // Absent on runs from before this capability existed (defaults to on).
+    gatePolicy: z
+      .object({
+        effective: z.enum(['on', 'off']),
+        source: z.enum(['flag', 'config', 'default']),
+      })
+      .optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),
     sessionHandoff: SessionHandoffSchema.optional(),
     completed: z.array(z.string()).optional(),

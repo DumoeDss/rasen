@@ -54,6 +54,39 @@ describe('pipeline run-state', () => {
       expect(s.customNote).toBe('x');
     });
 
+    // autopilot-gate-policy: the resolved gate policy recorded at run start,
+    // plus a per-stage gateDecision left when a gate was auto-approved rather
+    // than confirmed by a human.
+    it('parses a recorded gatePolicy and a stage gateDecision', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          gatePolicy: { effective: 'off', source: 'flag' },
+          stages: {
+            propose: {
+              status: 'done',
+              gateDecision: 'auto-approved (--no-gate)',
+            },
+          },
+        })
+      );
+      expect(s.gatePolicy).toEqual({ effective: 'off', source: 'flag' });
+      expect(s.stages?.propose.gateDecision).toBe('auto-approved (--no-gate)');
+    });
+
+    it('a run-state with no gatePolicy leaves it undefined (older runs pre-date this field)', () => {
+      const s = parseRunState('{"pipeline":"small-feature"}');
+      expect(s.gatePolicy).toBeUndefined();
+    });
+
+    it('rejects an invalid gatePolicy.effective value', () => {
+      expect(() =>
+        parseRunState(
+          JSON.stringify({ pipeline: 'small-feature', gatePolicy: { effective: 'maybe', source: 'flag' } })
+        )
+      ).toThrow(RunStateValidationError);
+    });
+
     it('throws on malformed JSON', () => {
       expect(() => parseRunState('{ not json }')).toThrow();
     });

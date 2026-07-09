@@ -54,7 +54,7 @@ Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
 rasen pipeline show <name> --json   # -> { name, description, buildOrder, stages }
 \`\`\`
 
-Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: true\` lets the user confirm a measure command before any round runs.
+Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: 'vet'\` lets the user confirm a measure command before any round runs — this is the hard safety carve-out (autopilot-gate-policy): unlike an ordinary \`gate: true\` stage, it is NEVER auto-approved, even under \`--no-gate\` or an \`autopilot.gates: off\` project default.
 
 ## 3. Execute the pipeline as the LEAD
 
@@ -89,7 +89,7 @@ satisfied | maxRounds-exhausted | in-progress
 
 ## Guardrails
 
-- Always pause at the define-goal gate — never skip human confirmation of the goal + gate: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries).
+- Always pause at the define-goal gate — it is \`gate: 'vet'\`, so never skip human confirmation of the goal + gate even under \`--no-gate\`: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries).
 - Save run-state + goal-run.json so the loop is resumable.
 - Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command).
 - If the loop stalls (loopStallLimit consecutive no-progress rounds), run the Step H.5 escalation ladder before interrupting a human.`;
