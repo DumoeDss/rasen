@@ -63,7 +63,7 @@ ${ORCHESTRATION_PLAYBOOK}
 ## Termination Invariants (non-negotiable)
 
 - **maxRounds cap (default 5).** The loop is bounded. On exhaustion, proceed to the tail but mark \`outcome: maxRounds-exhausted\` — NEVER report success when the gate was never satisfied.
-- **author != verifier.** For an evaluate gate, a FRESH reviewer worker (≠ the implementer) judges each round. For a measure gate, the neutral command is the verifier.
+- **author != verifier.** For an evaluate gate, a FRESH reviewer worker (≠ the implementer) judges each round. For a measure gate, the neutral command is the verifier. **Under Tier C** (no subagent), an evaluate gate degrades to a **second, freshly-reset single-context pass** seeded ONLY with goal + rubric + the artifact (NOT the implementation transcript), recorded as the Tier-C fallback; if that is impossible, goal-loop-evaluate is **unsupported under Tier C** — the implementer NEVER self-certifies the rubric (see playbook Step L).
 - **loopStallLimit (default 2).** Consecutive no-progress rounds trigger the LEAD strategy review (Step H.5) — never silently burn rounds.
 - **Flat hierarchy.** The implementer NEVER spawns child subagents. Research is done inline by the implementer + Step H.3 relay.
 
@@ -89,7 +89,7 @@ satisfied | maxRounds-exhausted | in-progress
 
 ## Guardrails
 
-- Always pause at the define-goal gate — never skip human confirmation of a measure command.
+- Always pause at the define-goal gate — never skip human confirmation of the goal + gate: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries).
 - Save run-state + goal-run.json so the loop is resumable.
 - Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command).
 - If the loop stalls (loopStallLimit consecutive no-progress rounds), run the Step H.5 escalation ladder before interrupting a human.`;

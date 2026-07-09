@@ -1,0 +1,20 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "prompt-audit-fixes",
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner2", "reuse": "warm 18.7%" }, "note": "D1-D11; orchestration-worker-lifecycle NEW + 5 ADDED-only deltas; parity gap for auto/review-cycle/goal/ship/verify-enhanced relayed to child 5" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer3", "seededFrom": ["handoff/implementer-retired-1.md (implementer2, retired-between-children @31.4%)", "LEAD child-3 brief"] }, "note": "27/27; 6 files; 6/6 tests; 30 hashes (15 PREAMBLE embedders both maps); 3 grep spot-checks on parity-uncovered output; NEW debt found: rasen-goal/goal-plan absent from generation registry entirely → child 5" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer4" }, "note": "0B/0Ma/1Mi/1T r1; independent grep verification of parity-uncovered output" },
+    "review-loop": { "status": "done", "rounds": 2, "verdict": "CLEAN APPROVED (non-author confirmed)", "resolved": ["minor-gate-absolute-backref", "trivial-embedder-count", "minor2-stepG-S1-wording"], "leadRulings": { "D6-child-gate-default": "upheld auto-continue (no-directive portfolio → record child gates, don't pause; irreversible actions collapse to single portfolio-level delivery decision); surfaced to user as reversible product decision" } },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper", "reuse": "warm" } },
+    "archive":     { "status": "pending" }
+  },
+  "notes": [
+    "_orchestration.ts/auto/goal edits are parity-uncovered — verification adds 3 hand-grep spot-checks on regenerated output",
+    "SH-5 PREAMBLE edit moves all ~19 PREAMBLE-embedder hashes (covered, hand-paste)"
+  ],
+  "rounds": 0,
+  "openFindings": []
+}

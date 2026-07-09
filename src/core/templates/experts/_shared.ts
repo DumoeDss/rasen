@@ -97,6 +97,8 @@ AskUserQuestion is a **decision tool, not a conversation tool.** Before every As
 
 Never let a noticed issue silently pass. The whole point is proactive communication.
 
+**Scope (dispatched leaf workers override this section):** every absolute above — \`solo\`'s "**investigate and offer to fix proactively**" / "**Default to action**", the "**ANY workflow step**" reach of See-Something-Say-Something, and "**Never let a noticed issue silently pass**" — is scoped to **interactive / standalone** sessions, where you can actually reach the user to offer a fix. When you are a **dispatched leaf worker** (a one-unit-of-work dispatch under the LEAD; see the dispatched-mode contract), this whole section is OVERRIDDEN: an out-of-scope issue you notice goes into your \`DONE\` **durable-findings** for the LEAD to triage — you do NOT investigate it, fix it, or ask the user about it (you cannot reach the user, and investigating breaks your one-unit-of-work isolation). Recording it in durable-findings IS "not letting it silently pass" — it is the dispatched-mode form of the same discipline. This is consistent with the dispatched-mode one-unit-of-work contract; it does NOT reopen the report-only dispatched contract.
+
 ## Completion Status Protocol
 
 When completing a skill workflow, report status using one of:

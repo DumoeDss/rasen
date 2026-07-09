@@ -72,13 +72,19 @@ When the \`propose\` stage has **leadReview** enabled (via the \`--review-plan\`
 - **Tier C exception:** under the single-context fallback the LEAD itself authored the proposal, so leadReview would be a self-review. There, do NOT count it as a non-author check — degrade it to an explicit human-confirmation gate before apply, and record it as a fallback in run-state.
 When leadReview is not enabled, proceed from propose to the next stage without the extra review.
 
-## 5. Adaptive Bug-Fix verify
+## 5. verify stage — verifyPolicy semantics
 
-For a \`verify\` stage with **verifyPolicy=adaptive**:
+A \`verify\` stage carries a **verifyPolicy** of \`adaptive\` (default), \`standard\`, or \`light\`. Every value has defined behavior — none is dead config:
+
+**\`adaptive\` (default) — scale the verification passes to the diff size:**
 - Run the unit-test gate first. Record the gate's command, result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state it ran against in run-state — the ship stage's evidence-based test gate consumes this to decide whether tests must be re-run.
 - **Simple** fix (single file / non-core path / tests sufficient) AND tests green -> verify passes; skip the review loop.
 - **Complex** fix (multiple files / core paths / insufficient coverage) -> spawn a dedicated test/verification worker for deeper checking AND enter the review-cycle loop.
-Compute the simple/complex determination from the diff and record it in run-state.
+- Compute the simple/complex determination from the diff and record it in run-state.
+
+**\`standard\` — a single verify pass, no review-cycle loop.** Run the verify worker once over the diff, record its verdict + the test-gate evidence (command/result/tree fingerprint) as under \`adaptive\`, and proceed on a clean verdict; do NOT enter the bounded review->fix loop. Open Blocker/Major findings still block \`ship\` (escalate per Step H) — "no loop" narrows the passes, it does not waive the finding-gate.
+
+**\`light\` — skip verification when the diff is trivial** (e.g. docs-only or tests-only, no product-source change). Record the skip and its basis (the trivial-diff determination) in run-state. If the diff is NOT trivial, do not honor \`light\` — fall back to \`standard\` and note the fallback, so a mis-tagged non-trivial change is never shipped unverified.
 
 ## Resume
 
@@ -121,7 +127,7 @@ Frontier: <parent>-ui, <parent>-docs
 
 ## Guardrails
 
-- Always pause at gate stages — never skip human confirmation.
+- Always pause at gate stages — never skip human confirmation (for a decomposed portfolio's child-pipeline gates, this resolves per the playbook's Step G child-gate semantics: parent directive > child gate).
 - If a stage is stuck (relay caps, stalled handoffs, exhausted review rounds), run the playbook's Step H escalation ladder — LEAD strategy review first, then park the stage as \`escalated\` and continue unblocked work; surface parked items at the next gate or the run-end report. Hard-stop only on failures the ladder cannot express (e.g. corrupted state).
 - The user can interrupt at any time and switch to manual.
 - Save run-state so the pipeline can be resumed from where it left off.
