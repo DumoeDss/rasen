@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define how the autopilot's ordinary human-confirmation gates (`gate: true`) resolve under an explicit unattended-run directive — the `--no-gate` flag and the `autopilot.gates` project config — including the recorded-decision audit trail and the `vet` gate exemption.
+
+## Requirements
 
 ### Requirement: --no-gate auto-approves ordinary gates in autopilot
 
