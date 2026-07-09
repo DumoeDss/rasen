@@ -3,7 +3,8 @@
 **Date:** 2026-07-09
 **Mode:** local
 **Branch:** main
-**Commit:** (see `git log -1 -- rasen/changes/office-hours-dialogue-override src/core/templates/experts/_shared.ts src/core/templates/experts/office-hours.ts test/core/templates/skill-templates-parity.test.ts`)
+**Commit:** 401bb5afa1452e4e31d4df96ce08ec170cbb33cb
+**Tree:** f0c1df2ced6f2f62a2e105a4fad8dd0cc04273b8
 **Status:** Committed (delivery deferred — user delivers manually later)
 
 ## What Shipped
