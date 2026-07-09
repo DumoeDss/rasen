@@ -294,7 +294,13 @@ export const StageSchema = z
     childPipeline: z.string().min(1).optional(),
     role: StageRoleSchema.optional(),
     requires: z.array(z.string()).default([]),
-    gate: z.boolean().default(false),
+    // Stage-level PAUSE gate (distinct from the goal-loop `loop.gate`
+    // measure/evaluate discriminated union below, which configures the
+    // iterate loop's stop condition — do not confuse the two). `true` pauses
+    // for human confirmation, `false` does not, and `'vet'` marks a gate that
+    // MUST always pause — never auto-approved by `--no-gate` or an
+    // `autopilot.gates: off` project default (autopilot-gate-policy).
+    gate: z.union([z.boolean(), z.literal('vet')]).default(false),
     loop: StageLoopSchema.optional(),
     parallelGroup: z.string().optional(),
     // Freeform condition label, e.g. 'always', 'security-relevant',

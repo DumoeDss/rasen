@@ -85,6 +85,20 @@ export const ProjectConfigSchema = z.object({
     })
     .optional()
     .describe('Archive behavior configuration'),
+
+  // Optional: autopilot behavior configuration. Extensible - future
+  // autopilot fields join this same map.
+  autopilot: z
+    .object({
+      gates: z
+        .enum(['on', 'off'])
+        .optional()
+        .describe(
+          'Default autopilot gate policy: on (gates pause, default) or off (ordinary gates auto-approved)'
+        ),
+    })
+    .optional()
+    .describe('Autopilot behavior configuration'),
 });
 
 /** Valid `archive.timing` values. */
@@ -92,6 +106,9 @@ export type ArchiveTiming = 'on-merge' | 'in-ship';
 
 /** Valid `archive.destination` values. */
 export type ArchiveDestination = 'in-repo' | 'external' | 'prune';
+
+/** Valid `autopilot.gates` values. */
+export type AutopilotGatePolicy = 'on' | 'off';
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -351,6 +368,26 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
         config.archive = archive;
       } else {
         console.warn(`Invalid 'archive' field in config (must be an object)`);
+      }
+    }
+
+    // Parse autopilot field: an optional map with an optional `gates` field.
+    // Non-map -> whole block dropped with a warning. An invalid field -> that
+    // field dropped with a warning, siblings (and future fields) still parse.
+    if (raw.autopilot !== undefined) {
+      if (raw.autopilot && typeof raw.autopilot === 'object' && !Array.isArray(raw.autopilot)) {
+        const autopilotRaw = raw.autopilot as Record<string, unknown>;
+        const autopilot: ProjectConfig['autopilot'] = {};
+        if (autopilotRaw.gates !== undefined) {
+          if (autopilotRaw.gates === 'on' || autopilotRaw.gates === 'off') {
+            autopilot.gates = autopilotRaw.gates;
+          } else {
+            console.warn(`Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`);
+          }
+        }
+        config.autopilot = autopilot;
+      } else {
+        console.warn(`Invalid 'autopilot' field in config (must be an object)`);
       }
     }
 
@@ -668,6 +705,39 @@ export function resolveArchiveDestinationValue(
   config: ProjectConfig | null | undefined
 ): ArchiveDestination {
   return config?.archive?.destination ?? 'in-repo';
+}
+
+// -----------------------------------------------------------------------------
+// Autopilot gate policy (config axis)
+// -----------------------------------------------------------------------------
+
+/** The resolved autopilot gate policy plus which layer produced it. */
+export interface ResolvedGatePolicy {
+  effective: AutopilotGatePolicy;
+  source: 'flag' | 'config' | 'default';
+}
+
+/**
+ * Resolves the effective autopilot gate policy with precedence: the run
+ * argument (`--no-gate`) first, then the project config default
+ * (`autopilot.gates`), then the built-in default (gates ON). Every consumer
+ * (the `/rasen:auto` gate-policy resolution, run-state recording) MUST
+ * resolve through this function so precedence is applied identically
+ * everywhere. An absent or previously-dropped `autopilot.gates` value falls
+ * back to the built-in default without failing config parsing.
+ */
+export function resolveAutopilotGatePolicy(
+  config: ProjectConfig | null | undefined,
+  noGateFlag: boolean
+): ResolvedGatePolicy {
+  if (noGateFlag) {
+    return { effective: 'off', source: 'flag' };
+  }
+  const configValue = config?.autopilot?.gates;
+  if (configValue === 'on' || configValue === 'off') {
+    return { effective: configValue, source: 'config' };
+  }
+  return { effective: 'on', source: 'default' };
 }
 
 // -----------------------------------------------------------------------------

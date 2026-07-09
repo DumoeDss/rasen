@@ -61,6 +61,49 @@ stages:
       expect(stage.verifyPolicy).toBeUndefined();
     });
 
+    // autopilot-gate-policy: the stage gate widens from boolean to
+    // boolean | 'vet'. This is a DIFFERENT field from the goal-loop
+    // `loop.gate` measure/evaluate union tested below — do not confuse them.
+    describe('gate: boolean | vet (autopilot-gate-policy)', () => {
+      const stageYaml = (gate: string) => `
+name: gate-test
+stages:
+  - id: only
+    skill: rasen-propose
+    gate: ${gate}
+`;
+
+      it('parses gate: true', () => {
+        const pipeline = parsePipeline(stageYaml('true'));
+        expect(pipeline.stages[0].gate).toBe(true);
+      });
+
+      it('parses gate: false', () => {
+        const pipeline = parsePipeline(stageYaml('false'));
+        expect(pipeline.stages[0].gate).toBe(false);
+      });
+
+      it("parses gate: 'vet'", () => {
+        const pipeline = parsePipeline(stageYaml('vet'));
+        expect(pipeline.stages[0].gate).toBe('vet');
+      });
+
+      it('defaults to false when gate is omitted', () => {
+        const yaml = `
+name: gate-omitted
+stages:
+  - id: only
+    skill: rasen-propose
+`;
+        const pipeline = parsePipeline(yaml);
+        expect(pipeline.stages[0].gate).toBe(false);
+      });
+
+      it('rejects an invalid gate value', () => {
+        expect(() => parsePipeline(stageYaml('maybe'))).toThrow();
+      });
+    });
+
     it('should apply default maxRounds of 3 for review-cycle loop', () => {
       const yaml = `
 name: loop-default

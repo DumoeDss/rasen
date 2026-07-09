@@ -5,8 +5,9 @@
  * the goal (NL), the gate (measure XOR evaluate — chosen by task nature), the
  * work product (code | prose), and maxRounds. It does NOT produce
  * proposal/design/specs — a goal-loop is condition-driven, not document-driven.
- * The `gate: true` on the stage lets the user confirm a measure command (also
- * the safety valve for "measure.command is arbitrary shell").
+ * The `gate: 'vet'` on the stage lets the user confirm a measure command (also
+ * the safety valve for "measure.command is arbitrary shell") — it is the hard
+ * autopilot-gate-policy carve-out, never auto-approved by `--no-gate`.
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -60,7 +61,7 @@ Pick exactly ONE gate type by task nature — never both:
 
 ## measure.command safety
 
-\`measure.command\` is arbitrary shell. The define-goal stage carries \`gate: true\`, so the user confirms the command before any round runs. Prefer commands that are read-only or idempotent. State the command plainly in goal-plan.md so the user can vet it at the gate. Do NOT add sandbox enforcement beyond that confirmation.
+\`measure.command\` is arbitrary shell. The define-goal stage carries \`gate: 'vet'\`, so the user confirms the command before any round runs — and, unlike an ordinary gate, this confirmation is NEVER auto-approved by \`--no-gate\` or an \`autopilot.gates: off\` project default (autopilot-gate-policy). Prefer commands that are read-only or idempotent. State the command plainly in goal-plan.md so the user can vet it at the gate. Do NOT add sandbox enforcement beyond that confirmation.
 
 ## Constraints
 

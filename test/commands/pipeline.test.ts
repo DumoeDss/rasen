@@ -265,6 +265,26 @@ stages:
       expect(result.stdout).not.toContain('loop=review-cycle');
     });
 
+    // autopilot-gate-policy: define-goal's gate widened from true to 'vet'.
+    // --json reports the exact string value; the human table surfaces it
+    // distinctly as `gate(vet)` so an operator can tell it apart from an
+    // ordinary skippable gate at a glance.
+    it("reports define-goal gate as 'vet' in --json and renders gate(vet) in human-readable show", async () => {
+      const jsonResult = await runCLI(['pipeline', 'show', 'goal-loop-measure', '--json'], {
+        cwd: testDir,
+      });
+      expect(jsonResult.exitCode).toBe(0);
+      const json = JSON.parse(jsonResult.stdout.trim());
+      const defineGoal = json.stages.find((s: any) => s.id === 'define-goal');
+      expect(defineGoal.gate).toBe('vet');
+      const ship = json.stages.find((s: any) => s.id === 'ship');
+      expect(ship.gate).toBe(true);
+
+      const humanResult = await runCLI(['pipeline', 'show', 'goal-loop-measure'], { cwd: testDir });
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('gate(vet)');
+    });
+
     // Regression guard: the goal-loop generalization must not have changed the
     // review-cycle label on the existing built-in pipelines.
     it('still renders the review-cycle loop label for small-feature (no regression)', async () => {
@@ -419,6 +439,46 @@ stages:
       expect(json.next).toBe('verify');
       expect(json.ready).toEqual(['verify']);
       expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
+    });
+
+    // autopilot-gate-policy: resume reads the recorded gate policy so a
+    // --no-gate run does not need to re-pass the flag on resume.
+    it('surfaces the recorded gatePolicy in json and text output', async () => {
+      const changeDir = path.join(changesDir, 'gated-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          gatePolicy: { effective: 'off', source: 'flag' },
+          completed: ['propose'],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'gated-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.gatePolicy).toEqual({ effective: 'off', source: 'flag' });
+
+      const textResult = await runCLI(['pipeline', 'resume', 'gated-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Gate policy: off (flag)');
+    });
+
+    it('omits gatePolicy when the run-state predates this capability', async () => {
+      const changeDir = path.join(changesDir, 'ungated-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'ungated-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(Object.prototype.hasOwnProperty.call(json, 'gatePolicy')).toBe(false);
     });
 
     it('surfaces per-stage warm-seed worker pointers (agentId/transcript)', async () => {
