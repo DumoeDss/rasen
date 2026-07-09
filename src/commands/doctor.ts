@@ -305,6 +305,7 @@ export function registerDoctorCommand(program: Command): void {
     .command('doctor')
     .description(description)
     .option('--store <id>', COMMON_FLAGS.store.description)
+    .option('--project <id>', COMMON_FLAGS.project.description)
     .addOption(
       new Option('--store-path <path>', 'Removed; register the store and use --store').hideHelp()
     )

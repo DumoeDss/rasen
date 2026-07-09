@@ -63,6 +63,7 @@ describe('store references in instructions (3.1)', () => {
     expect(payload.references).toEqual([
       {
         store_id: 'team-context',
+        type: 'store',
         root: fs.realpathSync.native(storeRoot),
         specs: [{ id: 'billing', summary: 'Usage-based invoicing.' }],
         fetch: 'rasen show <spec-id> --type spec --store team-context',

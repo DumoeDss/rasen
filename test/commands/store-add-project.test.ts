@@ -117,6 +117,30 @@ describe('store add-project', () => {
     expect(targetConfig.match(/my-project/gu)?.length).toBe(1);
   });
 
+  it('the idempotent rerun note is namespace-aware ("Project", not "Store") (F-3)', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('my-project');
+
+    await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+    const second = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+
+    expect(second.exitCode).toBe(0);
+    const payload = parseJson(second);
+    expect(payload.status).toEqual([
+      expect.objectContaining({
+        code: 'store_already_registered',
+        message: expect.stringContaining("Project 'my-project'"),
+      }),
+    ]);
+    expect(payload.status[0].message).not.toContain("Store 'my-project'");
+  });
+
   it("indexes the added project's specs when the target store is selected for instructions", async () => {
     await registerTargetStore();
     const projectRoot = makeProject('my-project', 'billing');
@@ -143,9 +167,10 @@ describe('store add-project', () => {
     expect(payload.references).toEqual([
       {
         store_id: 'my-project',
+        type: 'project',
         root: fs.realpathSync.native(projectRoot),
         specs: [{ id: 'billing', summary: 'Project-local spec.' }],
-        fetch: 'rasen show <spec-id> --type spec --store my-project',
+        fetch: 'rasen show <spec-id> --type spec --project my-project',
         status: [],
       },
     ]);
@@ -196,7 +221,7 @@ describe('store add-project', () => {
     expect(fs.existsSync(path.join(projectRoot, '.rasen-store', 'store.yaml'))).toBe(false);
   });
 
-  it('rejects adding a store to itself', async () => {
+  it('rejects adding a store to itself (same directory)', async () => {
     await registerTargetStore();
 
     const result = await runCLI(
@@ -207,8 +232,107 @@ describe('store add-project', () => {
     expect(result.exitCode).not.toBe(0);
     const payload = parseJson(result);
     expect(payload.status[0].message).toContain('cannot be added to itself');
+    expect(payload.status[0].code).toBe('store_add_project_self_reference');
     // No reference written on rejection.
     const targetConfig = fs.readFileSync(path.join(targetStoreRoot, 'rasen', 'config.yaml'), 'utf-8');
     expect(targetConfig).not.toContain('references');
+  });
+
+  it('registers a project into the project namespace, distinct from the store namespace', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('my-project');
+
+    const result = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+    expect(result.exitCode).toBe(0);
+
+    const list = await runCLI(['store', 'list', '--json'], { cwd: tempDir, env });
+    const listPayload = parseJson(list);
+    const projectEntry = listPayload.stores.find((s: any) => s.id === 'my-project');
+    expect(projectEntry.type).toBe('project');
+
+    const targetConfig = fs.readFileSync(path.join(targetStoreRoot, 'rasen', 'config.yaml'), 'utf-8');
+    expect(targetConfig).toContain('project:my-project');
+  });
+
+  it('allows a project with the same id as the target store at a different path (D6)', async () => {
+    await registerTargetStore();
+    // Same basename as the target store ("team-context") but under a
+    // different parent directory, so the inferred id collides while the
+    // canonical path does not — the self-reference guard compares paths.
+    const projectRoot = makeProject('elsewhere/team-context');
+
+    const result = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const payload = parseJson(result);
+    expect(payload.project.id).toBe('team-context');
+    expect(payload.target.id).toBe('team-context');
+    expect(payload.target.reference_added).toBe(true);
+
+    const list = await runCLI(['store', 'list', '--json'], { cwd: tempDir, env });
+    const listPayload = parseJson(list);
+    const storeEntry = listPayload.stores.find((s: any) => s.id === 'team-context' && s.type === 'store');
+    const projectEntry = listPayload.stores.find((s: any) => s.id === 'team-context' && s.type === 'project');
+    expect(storeEntry).toBeDefined();
+    expect(projectEntry).toBeDefined();
+    expect(storeEntry.root).not.toBe(projectEntry.root);
+  });
+
+  it('a project name colliding with a store name is not reported as a conflict', async () => {
+    await registerTargetStore();
+    await registerStore({ id: 'my-project', localPath: makeProject('some-other-store'), globalDataDir });
+    const projectRoot = makeProject('my-project');
+
+    const result = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const payload = parseJson(result);
+    expect(payload.project.id).toBe('my-project');
+  });
+
+  it('CLI e2e: --store and --project select their own same-named entries, and store list differentiates them (8.2)', async () => {
+    await registerTargetStore();
+    const storeRoot = path.join(tempDir, 'elftia-store-checkout');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'elftia', localPath: storeRoot, globalDataDir });
+
+    const projectRoot = makeProject('elftia');
+    const add = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+    expect(add.exitCode).toBe(0);
+
+    const viaStore = await runCLI(['list', '--store', 'elftia', '--json'], { cwd: tempDir, env });
+    expect(viaStore.exitCode).toBe(0);
+    expect(parseJson(viaStore).root.path).toBe(fs.realpathSync.native(storeRoot));
+
+    const viaProject = await runCLI(['list', '--project', 'elftia', '--json'], {
+      cwd: tempDir,
+      env,
+    });
+    expect(viaProject.exitCode).toBe(0);
+    expect(parseJson(viaProject).root.path).toBe(fs.realpathSync.native(projectRoot));
+
+    const both = await runCLI(['list', '--store', 'elftia', '--project', 'elftia', '--json'], {
+      cwd: tempDir,
+      env,
+    });
+    expect(both.exitCode).not.toBe(0);
+    expect(parseJson(both).status[0].code).toBe('store_project_mutually_exclusive');
+
+    const storeList = await runCLI(['store', 'list', '--json'], { cwd: tempDir, env });
+    const entries = parseJson(storeList).stores.filter((s: any) => s.id === 'elftia');
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e: any) => e.type).sort()).toEqual(['project', 'store']);
   });
 });

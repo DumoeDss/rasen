@@ -2,14 +2,16 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { randomUUID } from 'node:crypto';
 
 import {
+  emitStoreRootBanner,
   resolveOpenSpecRoot,
   resolveRootForCommand,
   RootSelectionError,
+  withStoreFlag,
 } from '../../src/core/root-selection.js';
 import {
   writeStoreMetadataState,
@@ -60,9 +62,15 @@ describe('resolveOpenSpecRoot', () => {
 
   async function registerStore(
     id: string,
-    options: { healthyRoot?: boolean; metadataId?: string | null } = {}
+    options: {
+      healthyRoot?: boolean;
+      metadataId?: string | null;
+      type?: 'store' | 'project';
+      dirName?: string;
+    } = {}
   ): Promise<string> {
-    const storeRoot = mkdir(`stores/${id}`);
+    const type = options.type ?? 'store';
+    const storeRoot = mkdir(`stores/${options.dirName ?? id}`);
     if (options.healthyRoot !== false) {
       createOpenSpecRoot(storeRoot);
     }
@@ -74,10 +82,11 @@ describe('resolveOpenSpecRoot', () => {
     }
 
     const existing = fs.existsSync(path.join(globalDataDir, 'stores', 'registry.yaml'));
+    const { readStoreRegistryState, registryKeyFor } = await import(
+      '../../src/core/store/foundation.js'
+    );
     const registryStores = existing
-      ? (await import('../../src/core/store/foundation.js').then((m) =>
-          m.readStoreRegistryState({ globalDataDir })
-        ))?.stores ?? {}
+      ? (await readStoreRegistryState({ globalDataDir }))?.stores ?? {}
       : {};
 
     await writeStoreRegistryState(
@@ -85,7 +94,10 @@ describe('resolveOpenSpecRoot', () => {
         version: 1,
         stores: {
           ...registryStores,
-          [id]: { backend: { type: 'git', local_path: storeRoot } },
+          [registryKeyFor(type, id)]: {
+            ...(type === 'project' ? { type } : {}),
+            backend: { type: 'git', local_path: storeRoot },
+          },
         },
       },
       { globalDataDir }
@@ -537,6 +549,132 @@ describe('resolveOpenSpecRoot', () => {
       expect(xdgGlobalDataDir).not.toBe(globalDataDir);
       const xdgState = await readProjectRegistryState({ globalDataDir: xdgGlobalDataDir });
       expect(xdgState?.projects[canonicalPath]).toBeUndefined();
+    });
+  });
+
+  describe('--project selection (store-project-namespace)', () => {
+    it('resolves a project root with full parity to a store root', async () => {
+      const projectRoot = await registerStore('elftia', { type: 'project' });
+
+      const root = await resolveOpenSpecRoot({ project: 'elftia', globalDataDir });
+
+      expect(root.source).toBe('store');
+      expect(root.storeId).toBe('elftia');
+      expect(root.storeType).toBe('project');
+      expect(root.path).toBe(projectRoot);
+      expect(root.changesDir).toBe(path.join(projectRoot, 'rasen', 'changes'));
+      expect(root.specsDir).toBe(path.join(projectRoot, 'rasen', 'specs'));
+      expect(root.archiveDir).toBe(path.join(projectRoot, 'rasen', 'changes', 'archive'));
+      expect(root.defaultSchema).toBe('spec-driven');
+    });
+
+    it('lets a store and a project of the same id coexist and resolve independently', async () => {
+      const storeRoot = await registerStore('elftia', { type: 'store', dirName: 'elftia-store' });
+      const projectRoot = await registerStore('elftia', {
+        type: 'project',
+        dirName: 'elftia-project',
+      });
+      expect(storeRoot).not.toBe(projectRoot);
+
+      const store = await resolveOpenSpecRoot({ store: 'elftia', globalDataDir });
+      const project = await resolveOpenSpecRoot({ project: 'elftia', globalDataDir });
+
+      expect(store.path).toBe(storeRoot);
+      expect(store.storeType).toBe('store');
+      expect(project.path).toBe(projectRoot);
+      expect(project.storeType).toBe('project');
+    });
+
+    it('rejects an unknown project id and lists registered project ids', async () => {
+      await registerStore('elftia', { type: 'project' });
+
+      const error = await expectRootSelectionError(
+        resolveOpenSpecRoot({ project: 'other-project', globalDataDir }),
+        'unknown_store'
+      );
+      expect(error.message).toContain("'other-project'");
+      expect(error.message).toContain('elftia');
+    });
+
+    it('rejects both --store and --project in a single invocation before resolving', async () => {
+      await registerStore('elftia', { type: 'store' });
+
+      const error = await expectRootSelectionError(
+        resolveOpenSpecRoot({ store: 'elftia', project: 'elftia', globalDataDir }),
+        'store_project_mutually_exclusive'
+      );
+      expect(error.message).toContain('--store');
+      expect(error.message).toContain('--project');
+    });
+
+    it('rejects both flags in resolveRootForCommand JSON mode with a single diagnostic payload', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        const root = await resolveRootForCommand(
+          { store: 'elftia', project: 'elftia' },
+          { json: true, globalDataDir }
+        );
+        expect(root).toBeNull();
+        expect(logSpy).toHaveBeenCalledTimes(1);
+        const payload = JSON.parse(logSpy.mock.calls[0][0] as string);
+        expect(payload.status[0].code).toBe('store_project_mutually_exclusive');
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+
+    it('backward-compat golden test: a pre-split registry file resolves via --store and is never rewritten (8.1)', async () => {
+      const storeRoot = mkdir('stores/elftia');
+      createOpenSpecRoot(storeRoot);
+      await writeStoreMetadataState(storeRoot, { version: 1, id: 'elftia' });
+
+      const registryPath = path.join(globalDataDir, 'stores', 'registry.yaml');
+      fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+      const legacyContent = `version: 1\nstores:\n  elftia:\n    backend:\n      type: git\n      local_path: ${storeRoot}\n`;
+      fs.writeFileSync(registryPath, legacyContent);
+
+      const root = await resolveOpenSpecRoot({ store: 'elftia', globalDataDir });
+
+      expect(root.path).toBe(storeRoot);
+      expect(root.storeId).toBe('elftia');
+      expect(root.storeType).toBe('store');
+      // Resolution is read-only: the pre-split registry file on disk is
+      // byte-identical after resolving through it.
+      expect(fs.readFileSync(registryPath, 'utf-8')).toBe(legacyContent);
+    });
+
+    describe('root hints (emitStoreRootBanner / withStoreFlag)', () => {
+      it('renders --project in the banner and follow-up hints for a project-selected root', async () => {
+        await registerStore('elftia', { type: 'project' });
+        const root = await resolveOpenSpecRoot({ project: 'elftia', globalDataDir });
+
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+          emitStoreRootBanner(root);
+          expect(errorSpy).toHaveBeenCalledWith(
+            expect.stringContaining('project elftia')
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+
+        expect(withStoreFlag(root, 'rasen list')).toBe('rasen list --project elftia');
+      });
+
+      it('keeps the store banner/hint wording unchanged for a store-selected root', async () => {
+        await registerStore('elftia', { type: 'store' });
+        const root = await resolveOpenSpecRoot({ store: 'elftia', globalDataDir });
+
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+          emitStoreRootBanner(root);
+          expect(errorSpy).toHaveBeenCalledWith('Using Rasen root: elftia (' + root.path + ')');
+        } finally {
+          errorSpy.mockRestore();
+        }
+
+        expect(withStoreFlag(root, 'rasen list')).toBe('rasen list --store elftia');
+      });
     });
   });
 });

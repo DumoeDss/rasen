@@ -71,6 +71,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
     ],
   },
   {
@@ -111,6 +112,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       COMMON_FLAGS.noInteractive,
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
     ],
   },
   {
@@ -146,6 +148,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         takesValue: true,
       },
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
     ],
   },
   {
@@ -177,6 +180,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Output as JSON (non-interactive)',
       },
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
     ],
   },
   {
@@ -195,6 +199,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
     ],
   },
   {
@@ -215,6 +220,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
     ],
   },
   {
@@ -264,6 +270,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           },
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
         ],
       },
     ],
@@ -321,7 +328,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'add-project',
-        description: "Register an in-repo project as a store and add it to a target store's references",
+        description: "Register an in-repo project into the project namespace and add it to a target store's references",
         acceptsPositional: true,
         positionals: [{ name: 'path', type: 'path' }],
         flags: [
@@ -344,6 +351,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         acceptsPositional: true,
         positionals: [{ name: 'id' }],
         flags: [
+          {
+            name: 'project-namespace',
+            description: 'Target the project namespace for <id> instead of the store namespace',
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -356,6 +367,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           {
             name: 'yes',
             description: 'Confirm local store folder deletion',
+          },
+          {
+            name: 'project-namespace',
+            description: 'Target the project namespace for <id> instead of the store namespace',
           },
           COMMON_FLAGS.json,
         ],
@@ -380,6 +395,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         acceptsPositional: true,
         positionals: [{ name: 'id', optional: true }],
         flags: [
+          {
+            name: 'project-namespace',
+            description: 'Limit to the project namespace entry for [id]',
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -391,6 +410,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     flags: [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
       {
         name: 'code-workspace',
         description: 'Also write a VS Code workspace file for the set',
@@ -408,6 +428,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     flags: [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
+      COMMON_FLAGS.project,
       {
         name: 'gc',
         description: 'Remove dangling machine-home registry entries and their orphaned home directories',
@@ -811,14 +832,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'list',
         description: 'List available pipelines (project > user > package)',
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
       {
         name: 'show',
         description: 'Show a pipeline stage DAG and build order',
         acceptsPositional: true,
         positionals: [{ name: 'name' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
       {
         name: 'agents',
@@ -853,6 +874,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           },
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
         ],
       },
       {
@@ -860,7 +882,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Suggest a pipeline for a task (advisory keyword heuristic)',
         acceptsPositional: true,
         positionals: [{ name: 'task' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
       {
         name: 'resume',
@@ -868,7 +890,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         acceptsPositional: true,
         positionalType: 'change-id',
         positionals: [{ name: 'change', type: 'change-id' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
     ],
   },

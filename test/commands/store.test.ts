@@ -813,10 +813,12 @@ describe('store command', () => {
       stores: [
         {
           id: 'alpha-context',
+          type: 'store',
           root: path.join(tempDir, 'missing-alpha'),
         },
         {
           id: 'zeta-context',
+          type: 'store',
           root: path.join(tempDir, 'missing-zeta'),
         },
       ],
@@ -986,6 +988,151 @@ describe('store command', () => {
           },
         },
       },
+    });
+  });
+
+  describe('project-namespace lifecycle (F-1)', () => {
+    async function registerSharedIdPair(): Promise<{ storeRoot: string; projectRoot: string }> {
+      const storeRoot = mkdir('elftia-store');
+      const projectRoot = mkdir('elftia-project');
+      await writeStoreMetadataState(storeRoot, { version: 1, id: 'elftia' });
+      await writeStoreMetadataState(projectRoot, { version: 1, id: 'elftia' });
+      await writeStoreRegistryState(
+        {
+          version: 1,
+          stores: {
+            elftia: {
+              backend: { type: 'git', local_path: expectedExistingPath(storeRoot) },
+            },
+            'project:elftia': {
+              type: 'project',
+              backend: { type: 'git', local_path: expectedExistingPath(projectRoot) },
+            },
+          },
+        },
+        { globalDataDir }
+      );
+      return { storeRoot, projectRoot };
+    }
+
+    it('unregisters only the project entry with --project, leaving a same-id store untouched', async () => {
+      await registerSharedIdPair();
+
+      const result = await runCLI(
+        ['store', 'unregister', 'elftia', '--project-namespace', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const registry = await readStoreRegistryState({ globalDataDir });
+      expect(registry?.stores['project:elftia']).toBeUndefined();
+      expect(registry?.stores['elftia']).toBeDefined();
+    });
+
+    it('unregisters only the store entry without --project, leaving a same-id project untouched (backward compat)', async () => {
+      await registerSharedIdPair();
+
+      const result = await runCLI(
+        ['store', 'unregister', 'elftia', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const registry = await readStoreRegistryState({ globalDataDir });
+      expect(registry?.stores['elftia']).toBeUndefined();
+      expect(registry?.stores['project:elftia']).toBeDefined();
+    });
+
+    it('removes only the project entry with --project, leaving a same-id store untouched', async () => {
+      await registerSharedIdPair();
+
+      const result = await runCLI(
+        ['store', 'remove', 'elftia', '--project-namespace', '--yes', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const registry = await readStoreRegistryState({ globalDataDir });
+      expect(registry?.stores['project:elftia']).toBeUndefined();
+      expect(registry?.stores['elftia']).toBeDefined();
+    });
+
+    it('hints --project when a bare-id lookup misses but a project entry exists', async () => {
+      const projectRoot = mkdir('project-only');
+      await writeStoreMetadataState(projectRoot, { version: 1, id: 'project-only' });
+      await writeStoreRegistryState(
+        {
+          version: 1,
+          stores: {
+            'project:project-only': {
+              type: 'project',
+              backend: { type: 'git', local_path: expectedExistingPath(projectRoot) },
+            },
+          },
+        },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(
+        ['store', 'unregister', 'project-only', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const status = parseJson(result).status[0];
+      expect(status.code).toBe('store_not_found');
+      expect(status.fix).toContain('--project-namespace');
+    });
+
+    it('hints dropping --project when a --project lookup misses but a store entry exists', async () => {
+      const storeRoot = mkdir('store-only');
+      await writeStoreMetadataState(storeRoot, { version: 1, id: 'store-only' });
+      await writeStoreRegistryState(
+        {
+          version: 1,
+          stores: {
+            'store-only': {
+              backend: { type: 'git', local_path: expectedExistingPath(storeRoot) },
+            },
+          },
+        },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(
+        ['store', 'unregister', 'store-only', '--project-namespace', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const status = parseJson(result).status[0];
+      expect(status.code).toBe('store_not_found');
+      expect(status.fix).toContain('Rerun without --project-namespace');
+    });
+
+    it('doctor without --project reports both entries of a shared id, each carrying its own type', async () => {
+      await registerSharedIdPair();
+
+      const result = await runCLI(['store', 'doctor', 'elftia', '--json'], { cwd: tempDir, env });
+
+      expect(result.exitCode).toBe(0);
+      const stores = parseJson(result).stores;
+      expect(stores).toHaveLength(2);
+      expect(stores.map((store: any) => store.type).sort()).toEqual(['project', 'store']);
+    });
+
+    it('doctor --project reports only the project entry of a shared id', async () => {
+      await registerSharedIdPair();
+
+      const result = await runCLI(
+        ['store', 'doctor', 'elftia', '--project-namespace', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const stores = parseJson(result).stores;
+      expect(stores).toHaveLength(1);
+      expect(stores[0].type).toBe('project');
     });
   });
 

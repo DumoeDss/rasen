@@ -26,8 +26,10 @@ export interface ChangeNextStepsInput {
   changeName: string;
   artifactStatuses: ChangeStatusPolicyArtifact[];
   allArtifactsComplete: boolean;
-  /** Selected store id; next-step commands must carry it. */
+  /** Selected store or project id; next-step commands must carry it. */
   storeId?: string;
+  /** Namespace of storeId; absent/'store' renders --store, 'project' renders --project. */
+  storeType?: 'store' | 'project';
 }
 
 export interface ActionContextInput {
@@ -67,7 +69,8 @@ export function buildNextSteps(input: ChangeNextStepsInput): string[] {
   const steps: string[] = [];
 
   if (readyArtifact) {
-    const storeFlag = input.storeId ? ` --store ${input.storeId}` : '';
+    const flagName = input.storeType === 'project' ? '--project' : '--store';
+    const storeFlag = input.storeId ? ` ${flagName} ${input.storeId}` : '';
     steps.push(
       `Run rasen instructions ${readyArtifact.id} --change "${input.changeName}"${storeFlag} --json before writing that artifact.`
     );

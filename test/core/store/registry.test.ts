@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+  assertNoRegisteredStoreConflict,
   getStoreMetadataPath,
   getGlobalDataDir,
   prepareStoreCleanup,
@@ -19,6 +20,8 @@ import {
   unregisterStoreRegistration,
   writeStoreMetadataState,
   writeStoreRegistryState,
+  type StoreGitBackendConfig,
+  type StoreRegistryState,
 } from '../../../src/core/index.js';
 
 describe('store registry facade', () => {
@@ -295,6 +298,7 @@ describe('store registry facade', () => {
     expect(stores).toEqual([
       {
         id: 'acme-context',
+        type: 'store',
         storeRoot: expect.any(String),
         backend: {
           type: 'git',
@@ -303,6 +307,7 @@ describe('store registry facade', () => {
       },
       {
         id: 'zeta-context',
+        type: 'store',
         storeRoot: expect.any(String),
         backend: {
           type: 'git',
@@ -556,5 +561,86 @@ describe('store registry facade', () => {
     const registry = await readStoreRegistryState({ globalDataDir: tempDir });
     expect(registry?.stores['team-context']).toBeUndefined();
     expect(fs.existsSync(getStoreMetadataPath(storeRoot))).toBe(true);
+  });
+
+  describe('assertNoRegisteredStoreConflict — (type, id) / (type, path) scoping', () => {
+    function backendAt(localPath: string): StoreGitBackendConfig {
+      return { type: 'git', local_path: localPath };
+    }
+
+    function registryWith(entries: {
+      key: string;
+      type?: 'store' | 'project';
+      localPath: string;
+    }[]): StoreRegistryState {
+      return {
+        version: 1,
+        stores: Object.fromEntries(
+          entries.map(({ key, type, localPath }) => [
+            key,
+            { ...(type ? { type } : {}), backend: backendAt(localPath) },
+          ])
+        ),
+      };
+    }
+
+    it('allows a project to share a store id (same-id, different-type)', () => {
+      const registry = registryWith([{ key: 'elftia', localPath: mkdir('elftia-store') }]);
+
+      expect(() =>
+        assertNoRegisteredStoreConflict(
+          registry,
+          'project',
+          'elftia',
+          backendAt(mkdir('elftia-project'))
+        )
+      ).not.toThrow();
+    });
+
+    it('rejects same-id within one namespace with an --as hint naming the taken id', () => {
+      const registry = registryWith([
+        { key: 'project:elftia', type: 'project', localPath: mkdir('elftia-project') },
+      ]);
+
+      expect(() =>
+        assertNoRegisteredStoreConflict(
+          registry,
+          'project',
+          'elftia',
+          backendAt(mkdir('elftia-project-2'))
+        )
+      ).toThrowError(
+        expect.objectContaining({
+          diagnostic: expect.objectContaining({
+            code: 'store_id_conflict',
+            fix: expect.stringContaining('--as'),
+          }),
+        })
+      );
+    });
+
+    it('rejects same canonical path within one namespace', () => {
+      const sharedPath = mkdir('shared-checkout');
+      const registry = registryWith([
+        { key: 'project:elftia', type: 'project', localPath: sharedPath },
+      ]);
+
+      expect(() =>
+        assertNoRegisteredStoreConflict(registry, 'project', 'elftia-2', backendAt(sharedPath))
+      ).toThrowError(
+        expect.objectContaining({
+          diagnostic: expect.objectContaining({ code: 'store_path_conflict' }),
+        })
+      );
+    });
+
+    it('does not conflict on path across namespaces (same path, different type)', () => {
+      const sharedPath = mkdir('cross-namespace-checkout');
+      const registry = registryWith([{ key: 'elftia', localPath: sharedPath }]);
+
+      expect(() =>
+        assertNoRegisteredStoreConflict(registry, 'project', 'elftia', backendAt(sharedPath))
+      ).not.toThrow();
+    });
   });
 });

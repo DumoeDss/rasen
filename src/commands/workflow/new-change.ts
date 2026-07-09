@@ -32,6 +32,7 @@ export interface NewChangeOptions {
   goal?: string;
   schema?: string;
   store?: string;
+  project?: string;
   storePath?: string;
   initiative?: string;
   areas?: string;
