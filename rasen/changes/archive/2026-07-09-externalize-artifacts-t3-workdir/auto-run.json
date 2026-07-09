@@ -47,10 +47,25 @@
       ]
     },
     "ship": {
-      "status": "in_progress"
+      "status": "done",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      },
+      "commit": "ab3fe7e",
+      "shipLogCommit": "5425020",
+      "tree": "41680af8b7a63d52714cd739aa5785e670d386ee",
+      "testGate": "spot-verify 4 suites 121/0 (full 2251/0 pre-ship)",
+      "delivery": "local"
     },
     "archive": {
-      "status": "pending"
+      "status": "in_progress",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      }
     }
   },
   "rounds": 1,
