@@ -34,3 +34,4 @@ rules:
     - Use existing constants and lists - don't invent detection mechanisms
     - Prefer explicit lookups over pattern matching or regex
     - If we generate it, we track it by name in a constant
+projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
