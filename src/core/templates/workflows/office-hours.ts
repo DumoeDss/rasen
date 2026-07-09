@@ -1,9 +1,10 @@
 /**
  * Office-Hours Rasen Workflow Command
  *
- * YC-style product validation — two modes: Startup (six forcing questions)
- * and Builder (design thinking brainstorm). Produces a design doc
- * dual-written to Rasen change directory.
+ * YC-style product validation — routes by product: Diagnosis (six forcing
+ * questions validating a venture) or Design (fork-first feedback and
+ * convergence on a design or plan). Produces a design doc dual-written to
+ * the Rasen change directory.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -12,9 +13,9 @@ const OFFICE_HOURS_INSTRUCTIONS = `YC-style product validation — integrates /o
 
 ${STORE_SELECTION_GUIDANCE}
 
-Two modes:
-- **Startup mode**: Six forcing questions that expose demand reality
-- **Builder mode**: Design thinking brainstorm for side projects, hackathons, learning, and open source
+Routes by product, not by mode or identity:
+- **Diagnosis product**: Six forcing questions that expose demand reality — validates whether a venture is worth building
+- **Design product**: Fork-first feedback and convergence on a design or plan already in hand, or a vague idea still being shaped
 
 ## When to Use
 
@@ -24,13 +25,13 @@ Positioned between /rasen:explore (technical exploration) and /rasen:propose (cr
 
 ## Steps
 
-### 1. Mode Selection
+### 1. Product Routing
 
-Route the session by mode (this routing is the command's value-add). The six-questions / builder descriptions below ALSO serve as the **fallback pre-brief** used only if the \`/office-hours\` expert is unavailable (Step 2) — they are NOT a facilitation script run alongside the expert.
+Route the session by which product the user is buying — the object of the request, not their identity (this routing is the command's value-add). The six-questions / design-feedback descriptions below ALSO serve as the **fallback pre-brief** used only if the \`/office-hours\` expert is unavailable (Step 2) — they are NOT a facilitation script run alongside the expert.
 
-If no mode is specified, prompt the user:
+If the product isn't clear from the opening message, prompt the user:
 
-- **Startup mode**: For validating whether something is worth building. Asks six forcing questions covering:
+- **Diagnosis product**: For validating whether a venture is worth building. Asks six forcing questions covering:
   1. Problem — What specific problem are you solving?
   2. Audience — Who exactly has this problem? How many?
   3. Existing Alternatives — What do people use today? Why is that insufficient?
@@ -38,7 +39,7 @@ If no mode is specified, prompt the user:
   5. Risks — What could kill this? Technical risks, market risks, timing risks?
   6. Success Metrics — How will you know this is working? First milestone?
 
-- **Builder mode**: For design thinking brainstorm sessions. Explores:
+- **Design product**: For fork-first feedback and design thinking sessions. Explores:
   - Architecture options and trade-offs
   - Implementation approaches
   - Technology choices
@@ -46,15 +47,15 @@ If no mode is specified, prompt the user:
 
 ### 2. Delegate the session to the /office-hours expert (single facilitation authority)
 
-**The \`/office-hours\` expert skill (\`rasen-office-hours\`) is the single authority for session facilitation.** Invoke it to run the session — it holds the full, hardened facilitation logic (the forcing questions, premise challenge, alternatives generation, the Consultation posture, and the dialogue discipline). Do NOT re-run the question set inline as a separate second pass; this command's value-add is **lifecycle integration** (mode routing in Step 1, the dual-write location in Step 4, and the \`/rasen:propose\` handoff), NOT facilitation.
+**The \`/office-hours\` expert skill (\`rasen-office-hours\`) is the single authority for session facilitation.** Invoke it to run the session — it holds the full, hardened facilitation logic (the forcing questions, the fork-scan procedure, and the dialogue discipline). Do NOT re-run the question set inline as a separate second pass; this command's value-add is **lifecycle integration** (product routing in Step 1, the dual-write location in Step 4, and the \`/rasen:propose\` handoff), NOT facilitation.
 
-**Fallback (only when the expert is unavailable):** if the \`/office-hours\` expert skill cannot be invoked, run the inline six-questions (Startup) / brainstorm (Builder) description from Step 1 as a pre-brief and carry the session yourself. This is a documented fallback, never a second facilitation pass alongside the expert. **Precedence: when both the inline description and the expert exist, the expert wins.**
+**Fallback (only when the expert is unavailable):** if the \`/office-hours\` expert skill cannot be invoked, run the inline product-routed description from Step 1 as a pre-brief and carry the session yourself. This is a documented fallback, never a second facilitation pass alongside the expert. **Precedence: when both the inline description and the expert exist, the expert wins.**
 
 ### 3. Produce the design document (once)
 
 The session produces the design document **exactly once** (whether facilitated by the expert or, in the fallback, inline) — never a second doc-production pass. Sections:
 - Executive Summary
-- Problem Statement (Startup) / Idea Overview (Builder)
+- Problem Statement (Diagnosis) / Idea Overview (Design)
 - Key Findings / Design Decisions
 - Recommended Next Steps
 - Open Questions
@@ -83,7 +84,7 @@ After the session, suggest:
 \`\`\`
 ## Office Hours: <topic>
 
-**Mode:** Startup | Builder
+**Product:** Diagnosis | Design
 **Date:** <date>
 
 ### Summary
@@ -106,7 +107,7 @@ The \`/rasen:propose\` command auto-detects this session's design doc and incorp
 export function getOfficeHoursCommandSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen-office-hours-command',
-    description: 'YC-style product validation — validate demand reality before building. Two modes: Startup (six forcing questions) and Builder (design brainstorm).',
+    description: 'YC-style product validation — validate demand reality before building. Routes by product: Diagnosis (six forcing questions) or Design (fork-first feedback and brainstorm).',
     instructions: OFFICE_HOURS_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
