@@ -19,8 +19,8 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 |-----------|---------|-----------------:|
 | Target URL | (auto-detect or required) | \`https://myapp.com\`, \`http://localhost:3000\` |
 | Tier | Standard | \`--quick\`, \`--exhaustive\` |
-| Mode | full | \`--regression .openspec/qa-reports/baseline.json\` |
-| Output dir | \`.openspec/qa-reports/\` | \`Output to /tmp/qa\` |
+| Mode | full | \`--regression .rasen/qa-reports/baseline.json\` |
+| Output dir | \`.rasen/qa-reports/\` | \`Output to /tmp/qa\` |
 | Scope | Full app (or diff-scoped) | \`Focus on the billing page\` |
 | Auth | None | \`Sign in to user@example.com\`, \`Import cookies from cookies.json\` |
 
@@ -32,6 +32,8 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 **If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
 
 **Check for clean working tree:**
+
+**Dispatched mode:** skip this clean-tree check entirely. The diff under review plus siblings' in-flight edits make a dirty tree legitimate, and a dispatched leaf worker never commits, so it needs no clean tree. (Standalone only, below.)
 
 \`\`\`bash
 git status --porcelain
@@ -60,7 +62,7 @@ ${TEST_BOOTSTRAP}
 **Create output directories:**
 
 \`\`\`bash
-mkdir -p .openspec/qa-reports/screenshots
+mkdir -p .rasen/qa-reports/screenshots
 \`\`\`
 
 ---
@@ -69,10 +71,10 @@ mkdir -p .openspec/qa-reports/screenshots
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check \`~/.openspec/projects/\` for recent \`*-test-plan-*.md\` files for this repo
+1. **Project-scoped test plans:** Check \`~/.rasen/projects/\` for recent \`*-test-plan-*.md\` files for this repo
    \`\`\`bash
    SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-   ls -t ~/.openspec/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ls -t ~/.rasen/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    \`\`\`
 2. **Conversation context:** Check if a prior planning or review step produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -90,7 +92,7 @@ Record baseline health score at end of Phase 6.
 ## Output Structure
 
 \`\`\`
-.openspec/qa-reports/
+.rasen/qa-reports/
 ├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
 ├── screenshots/
 │   ├── initial.png                        # Landing page annotated screenshot
@@ -120,7 +122,9 @@ Mark issues that cannot be fixed from source code (e.g., third-party widget bugs
 
 ## Phase 8: Fix Loop
 
-For each fixable issue, in severity order:
+**Dispatched mode:** do NOT run the fix loop and do NOT commit. Report every issue as a finding tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label) for the LEAD to route to a non-author fixer. Phases 8 and 9 (fix loop, per-fix commit, regression tests, final re-QA) are standalone only.
+
+**Standalone mode.** For each fixable issue, in severity order:
 
 ### 8a. Locate source
 
@@ -195,7 +199,7 @@ The test MUST:
   \`\`\`
   // Regression: ISSUE-NNN — {what broke}
   // Found by /qa on {YYYY-MM-DD}
-  // Report: .openspec/qa-reports/qa-report-{domain}-{date}.md
+  // Report: .rasen/qa-reports/qa-report-{domain}-{date}.md
   \`\`\`
 
 Test type decision:
@@ -253,15 +257,17 @@ After all fixes are applied:
 
 ## Phase 10: Report
 
-Write the report to both local and project-scoped locations:
+**Dispatched mode:** write ONLY \`qa-report.md\` in the change directory, each issue tagged with a canonical severity; skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
 
-**Local:** \`.openspec/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
+**Standalone mode.** Write the report to both local and project-scoped locations:
+
+**Local:** \`.rasen/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
+SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
 \`\`\`
-Write to \`~/.openspec/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md\`
+Write to \`~/.rasen/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md\`
 
 **Per-issue additions** (beyond standard report template):
 - Fix Status: verified / best-effort / reverted / deferred
@@ -300,9 +306,9 @@ If the repo has a \`TODOS.md\`:
 
 export function getQaSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:qa',
+    name: 'rasen:qa',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

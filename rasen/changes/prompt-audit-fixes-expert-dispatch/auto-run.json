@@ -1,0 +1,20 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "prompt-audit-fixes",
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner2" }, "note": "3 spec capabilities; KEEP/ADAPT/CUT modal adjudication in design.md" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer2" }, "note": "28/28 tasks; 9 files (8 source + parity test); scope verified clean" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer2", "transcript": "0cbb209b-b00a-48e9-b602-0f89230621b4/subagents/agent-areviewer2-aa9241236f6a9b19.jsonl" }, "note": "0B/0Ma/1Mi/2T/1Info; 6/6 tests (rebrand session adopted the 11 getOpsx hashes in shared tree); meta: dispatched-mode contract governed reviewer unambiguously" },
+    "review-loop": { "status": "done", "rounds": 1, "verdict": "CLEAN (non-author confirmed)", "resolved": ["minor-regression-iron-rule", "trivial-fixfirst-bullet"], "acceptedKnown": ["chrome-use parity blind spot (pre-existing; relay to later child)", "test file bundles 11 cross-session getOpsx hashes (document at ship)"] },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper", "reuse": "warm 10.7%" } },
+    "archive":     { "status": "pending" }
+  },
+  "acceptedKnown": [
+    "parity suite 5/6 in LIVE tree: 1 fail on 11 getOpsx*CommandTemplate function-payload hashes moved by the concurrent rebrand session's UNCOMMITTED edits; attributed by import graph (command templates do not consume PREAMBLE/_orchestration); our pathspec commit is self-consistent (fresh checkout green); resolves when rebrand ships",
+    "pnpm build broken by another session's in-flight pnpm-workspace.yaml — use `node build.js` directly (identical)"
+  ],
+  "rounds": 0,
+  "openFindings": []
+}

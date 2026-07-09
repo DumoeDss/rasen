@@ -16,8 +16,8 @@ You are a QA engineer. Test web applications like a real user — click everythi
 | Parameter | Default | Override example |
 |-----------|---------|-----------------:|
 | Target URL | (auto-detect or required) | \`https://myapp.com\`, \`http://localhost:3000\` |
-| Mode | full | \`--quick\`, \`--regression .openspec/qa-reports/baseline.json\` |
-| Output dir | \`.openspec/qa-reports/\` | \`Output to /tmp/qa\` |
+| Mode | full | \`--quick\`, \`--regression .rasen/qa-reports/baseline.json\` |
+| Output dir | \`.rasen/qa-reports/\` | \`Output to /tmp/qa\` |
 | Scope | Full app (or diff-scoped) | \`Focus on the billing page\` |
 | Auth | None | \`Sign in to user@example.com\`, \`Import cookies from cookies.json\` |
 
@@ -30,7 +30,7 @@ ${CHROME_USE_SETUP}
 **Create output directories:**
 
 \`\`\`bash
-REPORT_DIR=".openspec/qa-reports"
+REPORT_DIR=".rasen/qa-reports"
 mkdir -p "$REPORT_DIR/screenshots"
 \`\`\`
 
@@ -40,10 +40,10 @@ mkdir -p "$REPORT_DIR/screenshots"
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check \`~/.openspec/projects/\` for recent \`*-test-plan-*.md\` files for this repo
+1. **Project-scoped test plans:** Check \`~/.rasen/projects/\` for recent \`*-test-plan-*.md\` files for this repo
    \`\`\`bash
    SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-   ls -t ~/.openspec/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ls -t ~/.rasen/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    \`\`\`
 2. **Conversation context:** Check if a prior planning or review step produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -56,20 +56,22 @@ ${QA_METHODOLOGY}
 
 ## Output
 
-Write the report to both local and project-scoped locations:
+**Dispatched mode:** write ONLY \`qa-report.md\` in the change directory, each issue tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label); skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
 
-**Local:** \`.openspec/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
+**Standalone mode.** Write the report to both local and project-scoped locations:
+
+**Local:** \`.rasen/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
+SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
 \`\`\`
-Write to \`~/.openspec/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md\`
+Write to \`~/.rasen/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md\`
 
 ### Output Structure
 
 \`\`\`
-.openspec/qa-reports/
+.rasen/qa-reports/
 ├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
 ├── screenshots/
 │   ├── initial.png                        # Landing page annotated screenshot
@@ -91,9 +93,9 @@ Report filenames use the domain and date: \`qa-report-myapp-com-2026-03-12.md\`
 
 export function getQaOnlySkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:qa-only',
+    name: 'rasen:qa-only',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
