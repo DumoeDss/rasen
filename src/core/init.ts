@@ -52,6 +52,7 @@ import {
   generateSkillContent,
   copySkillSidecars,
   deduplicateForDelivery,
+  COMMAND_IDS,
   type ToolSkillStatus,
 } from './shared/index.js';
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
@@ -94,6 +95,11 @@ const WORKFLOW_TO_SKILL_DIR: Record<string, string> = {
   'auto-command': 'rasen-auto',
   'review-cycle': 'rasen-review-cycle',
   'handoff': 'rasen-handoff',
+  // Goal-loop workflow family (opt-in)
+  'goal-plan': 'rasen-goal-plan',
+  'goal-iterate': 'rasen-goal-iterate',
+  'goal-report': 'rasen-goal-report',
+  'goal-command': 'rasen-goal',
 };
 
 // -----------------------------------------------------------------------------
@@ -679,10 +685,11 @@ export class InitCommand {
           const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
           removedSkillCount += await this.removeSkillDirs(skillsDir);
         }
-        // commands-first: remove workflow skill dirs replaced by commands
+        // commands-first: remove workflow skill dirs replaced by commands,
+        // but spare skill-only workflows (no command counterpart to replace them)
         if (delivery === 'commands-first') {
           const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
-          removedSkillCount += await this.removeSkillDirs(skillsDir);
+          removedSkillCount += await this.removeSkillDirs(skillsDir, true);
         }
 
         // Generate commands if delivery includes commands
@@ -913,10 +920,22 @@ export class InitCommand {
     }).start();
   }
 
-  private async removeSkillDirs(skillsDir: string): Promise<number> {
+  /**
+   * Removes skill directories for workflows when delivery changed to commands-only.
+   * When `restrictToCommandCounterparts` is true (commands-first), only removes
+   * skill dirs for workflows that have a command counterpart (COMMAND_IDS) — a
+   * skill-only workflow (e.g. the goal-loop's internal stage skills) has no
+   * command replacing it, so its skill dir is its only delivery vehicle and
+   * must survive.
+   */
+  private async removeSkillDirs(skillsDir: string, restrictToCommandCounterparts = false): Promise<number> {
     let removed = 0;
 
     for (const workflow of ALL_WORKFLOWS) {
+      if (restrictToCommandCounterparts && !(COMMAND_IDS as readonly string[]).includes(workflow)) {
+        continue;
+      }
+
       const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
       if (!dirName) continue;
 
