@@ -123,10 +123,14 @@ export const ReuseModeSchema = z.enum(['auto', 'never']);
 export type ReuseMode = z.infer<typeof ReuseModeSchema>;
 
 /**
- * A reuse threshold: the fraction of context headroom in (0, 1] a worker must
- * have before it may take on a whole new child change. Numerically identical to
- * HandoffThresholdSchema's rule, kept separate so its validation message
- * vocabulary ("reuse threshold") stays self-describing.
+ * A reuse threshold: the maximum context OCCUPANCY in (0, 1] at which a worker
+ * may take on a whole new child change — the orchestrator reuses the worker when
+ * measured occupancy `pct <= threshold`, retires it otherwise (playbook Step
+ * G.1.3). It is an occupancy CEILING, not required headroom; stricter (lower)
+ * than the handoff threshold, because taking on a fresh change needs more free
+ * context than finishing the task in hand. Numerically in the same (0, 1] range
+ * as HandoffThresholdSchema, kept separate so its validation message vocabulary
+ * ("reuse threshold") stays self-describing.
  */
 const ReuseThresholdSchema = z
   .number()
