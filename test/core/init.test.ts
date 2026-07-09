@@ -26,6 +26,7 @@ vi.mock('../../src/prompts/searchable-multi-select.js', () => ({
 describe('InitCommand', () => {
   let testDir: string;
   let configTempDir: string;
+  let dataTempDir: string;
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(async () => {
@@ -36,6 +37,10 @@ describe('InitCommand', () => {
     configTempDir = path.join(os.tmpdir(), `openspec-config-init-${Date.now()}`);
     await fs.mkdir(configTempDir, { recursive: true });
     process.env.XDG_CONFIG_HOME = configTempDir;
+    // Isolate the global data dir (machine home / project registry) too.
+    dataTempDir = path.join(os.tmpdir(), `openspec-data-init-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.mkdir(dataTempDir, { recursive: true });
+    process.env.XDG_DATA_HOME = dataTempDir;
 
     // Mock console.log to suppress output during tests
     vi.spyOn(console, 'log').mockImplementation(() => { });
@@ -49,6 +54,7 @@ describe('InitCommand', () => {
     process.env = originalEnv;
     await fs.rm(testDir, { recursive: true, force: true });
     await fs.rm(configTempDir, { recursive: true, force: true });
+    await fs.rm(dataTempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
 
@@ -307,8 +313,12 @@ describe('InitCommand', () => {
       const initCommand = new InitCommand({ tools: 'claude', force: true });
       await initCommand.execute(testDir);
 
+      // Init must not overwrite an existing config's content - but it now
+      // also mints a projectId (task 4.1) via a lazy append, so the
+      // original content is a preserved prefix rather than byte-identical.
       const content = await fs.readFile(configPath, 'utf-8');
-      expect(content).toBe(existingContent);
+      expect(content.startsWith(existingContent.trimEnd())).toBe(true);
+      expect(content).toContain('projectId: ');
     });
 
     it('should handle non-existent target directory', async () => {
@@ -807,6 +817,102 @@ describe('InitCommand - profile and detection features', () => {
 
     const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
     expect(await fileExists(skillFile)).toBe(true);
+  });
+});
+
+describe('InitCommand machine-home registration', () => {
+  let testDir: string;
+  let configTempDir: string;
+  let dataTempDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `openspec-init-home-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.mkdir(testDir, { recursive: true });
+    originalEnv = { ...process.env };
+    configTempDir = path.join(os.tmpdir(), `openspec-config-home-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.mkdir(configTempDir, { recursive: true });
+    process.env.XDG_CONFIG_HOME = configTempDir;
+    dataTempDir = path.join(os.tmpdir(), `openspec-data-home-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.mkdir(dataTempDir, { recursive: true });
+    process.env.XDG_DATA_HOME = dataTempDir;
+
+    vi.spyOn(console, 'log').mockImplementation(() => { });
+    confirmMock.mockReset();
+    confirmMock.mockResolvedValue(true);
+    showWelcomeScreenMock.mockClear();
+    searchableMultiSelectMock.mockReset();
+  });
+
+  afterEach(async () => {
+    process.env = originalEnv;
+    await fs.rm(testDir, { recursive: true, force: true });
+    await fs.rm(configTempDir, { recursive: true, force: true });
+    await fs.rm(dataTempDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('registers the project and creates its machine home on fresh init', async () => {
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    const configPath = path.join(testDir, 'rasen', 'config.yaml');
+    const configContent = await fs.readFile(configPath, 'utf-8');
+    expect(configContent).toMatch(/projectId: [0-9a-f-]{36}/);
+
+    const registryPath = path.join(dataTempDir, 'rasen', 'projects', 'registry.json');
+    expect(await fileExists(registryPath)).toBe(true);
+    const registry = JSON.parse(await fs.readFile(registryPath, 'utf-8'));
+    const entries = Object.values(registry.projects) as Array<{ home: string }>;
+    expect(entries).toHaveLength(1);
+
+    const homeDir = path.join(dataTempDir, 'rasen', 'projects', entries[0].home);
+    expect(await directoryExists(homeDir)).toBe(true);
+
+    const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call.join(' '))
+      .join('\n');
+    expect(logged).toContain('Machine home:');
+  });
+
+  it('preserves projectId, registry entry, and home directory on re-init', async () => {
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+    const configPath = path.join(testDir, 'rasen', 'config.yaml');
+    const firstContent = await fs.readFile(configPath, 'utf-8');
+    const firstMatch = firstContent.match(/projectId: ([0-9a-f-]{36})/);
+    expect(firstMatch).not.toBeNull();
+
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+    const secondContent = await fs.readFile(configPath, 'utf-8');
+    const secondMatch = secondContent.match(/projectId: ([0-9a-f-]{36})/);
+    expect(secondMatch?.[1]).toBe(firstMatch?.[1]);
+
+    const registryPath = path.join(dataTempDir, 'rasen', 'projects', 'registry.json');
+    const registry = JSON.parse(await fs.readFile(registryPath, 'utf-8'));
+    expect(Object.keys(registry.projects)).toHaveLength(1);
+  });
+
+  it('downgrades a registry write failure to a warning without failing init', async () => {
+    // Point XDG_DATA_HOME at a FILE, not a directory: any attempt to mkdir
+    // a subdirectory underneath it fails with ENOTDIR.
+    const blockedDataDir = path.join(os.tmpdir(), `openspec-data-blocked-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.writeFile(blockedDataDir, 'not a directory');
+    process.env.XDG_DATA_HOME = blockedDataDir;
+
+    await expect(
+      new InitCommand({ tools: 'claude', force: true }).execute(testDir)
+    ).resolves.not.toThrow();
+
+    // Repo-side setup still completed.
+    const configPath = path.join(testDir, 'rasen', 'config.yaml');
+    expect(await fileExists(configPath)).toBe(true);
+
+    const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call.join(' '))
+      .join('\n');
+    expect(logged).toContain('Machine home registration failed');
+    expect(logged).not.toContain('Machine home:');
+
+    await fs.rm(blockedDataDir, { force: true });
   });
 });
 

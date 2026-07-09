@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
+import { resolveProjectHome } from './project-home.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
   hasLegacyWorkspace,
@@ -201,8 +202,33 @@ export class InitCommand {
     // Create config.yaml if needed
     const configStatus = await this.createConfig(openspecPath, extendMode);
 
+    // Establish machine-home identity and registration (task 4.1). Best
+    // effort: a registration failure never fails init - the repo-side
+    // setup above has already completed.
+    const machineHome = await this.registerMachineHome(projectPath);
+
     // Display success message
-    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus);
+    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome);
+  }
+
+  /**
+   * Mints/preserves the project's identity and registers it in the
+   * machine-wide project registry, creating its home directory. Failures
+   * (unwritable global data dir, missing config, etc.) downgrade to a
+   * warning shown in the success summary - the repo-side setup this method
+   * runs after has already completed.
+   */
+  private async registerMachineHome(
+    projectPath: string
+  ): Promise<{ homeDir: string } | { warning: string }> {
+    try {
+      const home = await resolveProjectHome(projectPath, { ensure: true });
+      return { homeDir: home!.homeDir };
+    } catch (error) {
+      return {
+        warning: `Machine home registration failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -762,7 +788,8 @@ export class InitCommand {
       removedCommandCount: number;
       removedSkillCount: number;
     },
-    configStatus: 'created' | 'exists' | 'skipped'
+    configStatus: 'created' | 'exists' | 'skipped',
+    machineHome: { homeDir: string } | { warning: string }
   ): void {
     console.log();
     console.log(chalk.bold('Rasen Setup Complete'));
@@ -827,6 +854,13 @@ export class InitCommand {
       console.log(`Config: ${WORKSPACE_DIR_NAME}/${configName} (exists)`);
     } else {
       console.log(chalk.dim(`Config: skipped (non-interactive mode)`));
+    }
+
+    // Machine home (task 4.1)
+    if ('homeDir' in machineHome) {
+      console.log(`Machine home: ${machineHome.homeDir}`);
+    } else {
+      console.log(chalk.yellow(`  ⚠ ${machineHome.warning}`));
     }
 
     // Getting started (task 7.6: show propose if in profile)

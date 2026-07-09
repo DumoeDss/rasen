@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { FileSystemUtils } from '../utils/file-system.js';
 import { WORKSPACE_DIR_NAME } from './config.js';
@@ -261,9 +262,12 @@ async function ensureDefaultConfig(
     throw new Error('Rasen config path exists but is not a file.');
   }
 
+  // Mints the projectId directly into the fresh config (the "fresh-config
+  // path" serializeConfig supports) rather than a separate append write -
+  // this site creates the file, so there is no existing content to preserve.
   await FileSystemUtils.writeFile(
     configYamlPath,
-    serializeConfig({ schema: DEFAULT_OPENSPEC_SCHEMA })
+    serializeConfig({ schema: DEFAULT_OPENSPEC_SCHEMA, projectId: randomUUID() })
   );
   ledger.push({
     relativePath: relativeArtifact(WORKSPACE_CONFIG_YAML, 'file'),

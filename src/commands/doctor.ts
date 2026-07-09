@@ -17,7 +17,14 @@ import {
   readProjectConfig,
   resolveConfigFilePath,
 } from '../core/project-config.js';
+import {
+  findDanglingProjectEntries,
+  findProjectRegistryEntry,
+  gcProjectRegistry,
+  type GcProjectRegistryResult,
+} from '../core/project-registry.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
+import { StoreError } from '../core/store/errors.js';
 import { gatherRelationshipData } from './shared-gather.js';
 import {
   inspectRelationships,
@@ -101,10 +108,62 @@ async function gatherHealth(
     }
   }
 
+  // Machine home (task 6.1): probe-only lookup, never mints or registers.
+  // A corrupt/unreadable registry.json must surface as a diagnostic here
+  // (MAJOR-2) - doctor IS the registry's reporting surface - rather than
+  // silently defaulting to "not registered" with zero dangling entries,
+  // which would actively mislead the one command whose job is to say so.
+  try {
+    const machineHomeEntry = await findProjectRegistryEntry(root.path);
+    if (machineHomeEntry) {
+      input.machineHomeEntry = {
+        path: machineHomeEntry.canonicalPath,
+        projectId: machineHomeEntry.entry.projectId,
+        home: machineHomeEntry.entry.home,
+        lastSeen: machineHomeEntry.entry.lastSeen,
+      };
+    }
+    const danglingProjectEntries = await findDanglingProjectEntries();
+    input.danglingProjectEntries = danglingProjectEntries.map((dangling) => ({
+      path: dangling.path,
+      home: dangling.entry.home,
+    }));
+  } catch (error) {
+    input.machineHomeError =
+      error instanceof StoreError
+        ? { message: error.message, ...(error.diagnostic.fix ? { fix: error.diagnostic.fix } : {}) }
+        : { message: error instanceof Error ? error.message : String(error) };
+  }
+
   return {
     health: inspectRelationships(input),
     declaredReferenceCount: projectConfig?.references?.length ?? 0,
   };
+}
+
+function formatGcResult(result: GcProjectRegistryResult) {
+  return {
+    removed_entries: result.removedEntries.map((removed) => ({
+      path: removed.path,
+      home: removed.entry.home,
+    })),
+    removed_homes: result.removedHomes,
+  };
+}
+
+function printGcSummary(result: GcProjectRegistryResult): void {
+  console.log('');
+  console.log('Machine home GC');
+  if (result.removedEntries.length === 0) {
+    console.log('  Nothing to remove.');
+    return;
+  }
+  for (const removed of result.removedEntries) {
+    console.log(`  - Removed entry: ${removed.path} (home: ${removed.entry.home})`);
+  }
+  for (const home of result.removedHomes) {
+    console.log(`  - Deleted orphaned home: ${home}`);
+  }
 }
 
 function printDiagnosticLines(prefix: string, status: { message: string; fix?: string }[]): void {
@@ -169,6 +228,28 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
     (entry) => entry.store_id
   );
 
+  console.log('');
+  console.log('Machine home');
+  if (health.machineHome.error) {
+    console.log(`  Error: ${health.machineHome.error.message}`);
+    if (health.machineHome.error.fix) {
+      console.log(`  Fix: ${health.machineHome.error.fix}`);
+    }
+  } else if (health.machineHome.registered && health.machineHome.entry) {
+    console.log(`  Home: ${health.machineHome.entry.home}`);
+    console.log(`  Project id: ${health.machineHome.entry.project_id}`);
+    console.log(`  Last seen: ${health.machineHome.entry.last_seen}`);
+  } else {
+    console.log('  Not registered');
+  }
+  if (health.machineHome.dangling.length > 0) {
+    console.log(`  Dangling entries: ${health.machineHome.dangling.length}`);
+    for (const dangling of health.machineHome.dangling) {
+      console.log(`    - ${dangling.path} (home: ${dangling.home})`);
+    }
+    console.log('    Fix: rasen doctor --gc');
+  }
+
   for (const entry of health.status) {
     console.log('');
     console.log(`Note: ${entry.message}`);
@@ -191,7 +272,8 @@ export function registerDoctorCommand(program: Command): void {
       new Option('--store-path <path>', 'Removed; register the store and use --store').hideHelp()
     )
     .option('--json', 'Output as JSON')
-    .action(async (options: { store?: string; storePath?: string; json?: boolean }) => {
+    .option('--gc', 'Remove dangling machine-home registry entries and their orphaned home directories')
+    .action(async (options: { store?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
       try {
         const root = await resolveRootForCommand(
           { store: options.store, storePath: options.storePath },
@@ -201,13 +283,21 @@ export function registerDoctorCommand(program: Command): void {
           return;
         }
 
+        // --gc is the explicit opt-in write path (task 6.2); doctor stays
+        // read-only by default. Runs before gathering health so the report
+        // reflects the post-GC registry state.
+        const gcResult = options.gc ? await gcProjectRegistry() : null;
+
         const { health, declaredReferenceCount } = await gatherHealth(root);
 
         if (options.json) {
-          printJson(health);
+          printJson(gcResult ? { ...health, gc: formatGcResult(gcResult) } : health);
           return;
         }
         printHumanHealth(health, declaredReferenceCount);
+        if (gcResult) {
+          printGcSummary(gcResult);
+        }
       } catch (error) {
         emitFailure(options.json, FAILURE_PAYLOAD, error, 'doctor_failed');
       }

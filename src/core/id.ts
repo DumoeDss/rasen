@@ -17,6 +17,20 @@ export const KEBAB_ID_FIX =
   'Use kebab-case with lowercase letters, numbers, and single hyphen separators.';
 
 /**
+ * Best-effort kebab-casing: lowercases, collapses runs of non-alphanumeric
+ * characters into a single hyphen, and trims leading/trailing hyphens. A
+ * non-empty result always satisfies `isKebabId`. Callers decide the fallback
+ * for an empty result (e.g. a name that kebab-cases to nothing).
+ */
+export function toKebabCase(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '');
+}
+
+/**
  * The folder-safe-name grammar (store ids layer the kebab grammar on
  * top of it; workset member labels use it alone). Returns a problem
  * description, or null when valid.

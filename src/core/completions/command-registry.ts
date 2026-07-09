@@ -385,6 +385,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     flags: [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
+      {
+        name: 'gc',
+        description: 'Remove dangling machine-home registry entries and their orphaned home directories',
+      },
     ],
   },
   {

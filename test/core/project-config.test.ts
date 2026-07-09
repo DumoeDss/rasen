@@ -6,6 +6,7 @@ import {
   readProjectConfig,
   validateConfigRules,
   suggestSchemas,
+  ensureProjectIdInConfig,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -691,6 +692,154 @@ rules:
       // 'abcdefghijk' has large Levenshtein distance from all schemas
       expect(message).not.toContain('Did you mean');
       expect(message).toContain('Available schemas:');
+    });
+  });
+
+  describe('projectId parsing', () => {
+    it('exposes a valid projectId unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: 6f9c1e2a-3b44-4b7e-9d15-2f8a1c0e5d21\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        projectId: '6f9c1e2a-3b44-4b7e-9d15-2f8a1c0e5d21',
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops a non-string projectId with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: [not, a, string]\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'projectId' field")
+      );
+    });
+
+    it('does not warn when projectId is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ensureProjectIdInConfig', () => {
+    // Minting now locks under the project registry (MINOR-3). Give every
+    // test in this block its own globalDataDir so the lock file never
+    // touches the real machine registry.
+    let globalDataDir: string;
+
+    beforeEach(() => {
+      globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-test-config-gdd-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(globalDataDir, { recursive: true, force: true });
+    });
+
+    it('throws when no config file exists', async () => {
+      await expect(ensureProjectIdInConfig(tempDir, { globalDataDir })).rejects.toThrow(/rasen init/);
+    });
+
+    it('mints and appends a projectId, preserving existing content and comments', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const original = 'schema: spec-driven\n\n# a helpful comment\ncontext: |\n  Tech stack: TS\n';
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), original);
+
+      const projectId = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+      expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+      const written = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
+      expect(written).toContain(original.trimEnd());
+      expect(written).toContain(`projectId: ${projectId}`);
+      expect(written).toContain('# a helpful comment');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.projectId).toBe(projectId);
+    });
+
+    it('is idempotent when a projectId already exists', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: existing-id\n'
+      );
+
+      const first = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+      const second = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+      expect(first).toBe('existing-id');
+      expect(second).toBe('existing-id');
+    });
+
+    it('honors config.yml', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yml'), 'schema: spec-driven\n');
+
+      const projectId = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+      const written = fs.readFileSync(path.join(configDir, 'config.yml'), 'utf-8');
+      expect(written).toContain(`projectId: ${projectId}`);
+      expect(fs.existsSync(path.join(configDir, 'config.yaml'))).toBe(false);
+    });
+
+    it('reverts the append when post-write validation fails', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const original = 'schema: spec-driven\n';
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(configPath, original);
+
+      const writeFileSpy = vi
+        .spyOn(fs.promises, 'writeFile')
+        .mockImplementationOnce(async (target, content) => {
+          // Simulate the append landing corrupted (fails the re-read validation).
+          await fs.promises.writeFile(target as string, `${content}\n: not: valid: yaml: [`, 'utf-8');
+        });
+
+      await expect(ensureProjectIdInConfig(tempDir, { globalDataDir })).rejects.toThrow(/did not validate/);
+      writeFileSpy.mockRestore();
+
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(original);
+    });
+
+    it('serializes concurrent minting so two racing callers agree on one id (MINOR-3)', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const [first, second] = await Promise.all([
+        ensureProjectIdInConfig(tempDir, { globalDataDir }),
+        ensureProjectIdInConfig(tempDir, { globalDataDir }),
+      ]);
+
+      expect(first).toBe(second);
+      const config = readProjectConfig(tempDir);
+      expect(config?.projectId).toBe(first);
+      // Exactly one projectId line landed - no divergence, no duplication.
+      const written = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
+      expect(written.match(/^projectId:/gmu)?.length).toBe(1);
     });
   });
 });
