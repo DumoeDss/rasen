@@ -15,14 +15,14 @@ describe('auto workflow (orchestrated autopilot)', () => {
     it('is registered as a skill template with the expected dirName and name', () => {
       const skill = getSkillTemplates().find(s => s.workflowId === 'auto-command');
       expect(skill).toBeDefined();
-      expect(skill?.dirName).toBe('openspec-opsx-auto');
-      expect(skill?.template.name).toBe('openspec-opsx-auto');
+      expect(skill?.dirName).toBe('rasen-auto');
+      expect(skill?.template.name).toBe('rasen-auto');
     });
 
-    it('is registered as a command template (/opsx:auto)', () => {
+    it('is registered as a command template (/rasen:auto)', () => {
       const command = getCommandTemplates().find(c => c.id === 'auto-command');
       expect(command).toBeDefined();
-      expect(command?.template.name).toBe('OPSX: Auto');
+      expect(command?.template.name).toBe('Rasen: Auto');
       expect(command?.template.category).toBe('Workflow');
       expect(getCommandContents().find(c => c.id === 'auto-command')).toBeDefined();
     });
@@ -50,7 +50,7 @@ describe('auto workflow (orchestrated autopilot)', () => {
     it('pre-flight offers automatic session relay alongside continue/manual', () => {
       expect(skillText).toContain('automatic relay now');
       expect(skillText).toContain('Step H.7');
-      expect(skillText).toContain('/opsx:handoff');
+      expect(skillText).toContain('/rasen:handoff');
     });
 
     it('defaults to the small-feature pipeline (no auto-escalation)', () => {

@@ -6,7 +6,7 @@ import { execSync } from 'child_process';
 describe('spec command', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-spec-command-tmp');
-  const specsDir = path.join(testDir, 'openspec', 'specs');
+  const specsDir = path.join(testDir, 'rasen', 'specs');
   const openspecBin = path.join(projectRoot, 'bin', 'rasen.js');
   
   

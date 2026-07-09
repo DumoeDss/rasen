@@ -15,14 +15,14 @@ describe('ship workflow (delivery modes + evidence-based test gate)', () => {
     it('is registered as a skill template with the expected dirName and name', () => {
       const skill = getSkillTemplates().find(s => s.workflowId === 'ship-command');
       expect(skill).toBeDefined();
-      expect(skill?.dirName).toBe('openspec-opsx-ship');
-      expect(skill?.template.name).toBe('openspec-opsx-ship');
+      expect(skill?.dirName).toBe('rasen-ship');
+      expect(skill?.template.name).toBe('rasen-ship');
     });
 
-    it('is registered as a command template (/opsx:ship)', () => {
+    it('is registered as a command template (/rasen:ship)', () => {
       const command = getCommandTemplates().find(c => c.id === 'ship-command');
       expect(command).toBeDefined();
-      expect(command?.template.name).toBe('OPSX: Ship');
+      expect(command?.template.name).toBe('Rasen: Ship');
       expect(command?.template.category).toBe('Workflow');
       expect(getCommandContents().find(c => c.id === 'ship-command')).toBeDefined();
     });

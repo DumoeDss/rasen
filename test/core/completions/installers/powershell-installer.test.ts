@@ -20,7 +20,7 @@ describe('PowerShellInstaller', () => {
   };
 
   beforeEach(async () => {
-    testHomeDir = path.join(os.tmpdir(), `openspec-powershell-test-${randomUUID()}`);
+    testHomeDir = path.join(os.tmpdir(), `rasen-powershell-test-${randomUUID()}`);
     await fs.mkdir(testHomeDir, { recursive: true });
     installer = new PowerShellInstaller(testHomeDir);
     originalPlatform = process.platform;

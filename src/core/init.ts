@@ -1,7 +1,7 @@
 /**
  * Init Command
  *
- * Sets up Rasen with Agent Skills and /opsx:* slash commands.
+ * Sets up Rasen with Agent Skills and /rasen:* slash commands.
  * This is the unified setup command that replaces both the old init and experimental commands.
  */
 
@@ -13,10 +13,17 @@ import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
+import {
+  hasLegacyWorkspace,
+  hasRasenWorkspace,
+  migrateWorkspace,
+  formatMigrationSummary,
+} from './workspace-migration.js';
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import {
   AI_TOOLS,
   OPENSPEC_DIR_NAME,
+  WORKSPACE_DIR_NAME,
   AIToolOption,
 } from './config.js';
 import { PALETTE } from './styles/palette.js';
@@ -30,11 +37,9 @@ import {
 } from './command-generation/index.js';
 import {
   detectLegacyArtifacts,
-  cleanupLegacyArtifacts,
-  formatCleanupSummary,
-  formatDetectionSummary,
+  cleanupMarkerBlocks,
+  formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
-  type LegacyDetectionResult,
 } from './legacy-cleanup.js';
 import {
   SKILL_NAMES,
@@ -69,25 +74,25 @@ const PROGRESS_SPINNER = {
 };
 
 const WORKFLOW_TO_SKILL_DIR: Record<string, string> = {
-  'explore': 'openspec-explore',
-  'new': 'openspec-new-change',
-  'continue': 'openspec-continue-change',
-  'apply': 'openspec-apply-change',
-  'ff': 'openspec-ff-change',
-  'sync': 'openspec-sync-specs',
-  'archive': 'openspec-archive-change',
-  'bulk-archive': 'openspec-bulk-archive-change',
-  'verify': 'openspec-verify-change',
-  'onboard': 'openspec-onboard',
-  'propose': 'openspec-propose',
-  // OPSX fusion workflow commands
-  'office-hours-command': 'openspec-opsx-office-hours',
-  'verify-enhanced-command': 'openspec-verify-enhanced',
-  'ship-command': 'openspec-opsx-ship',
-  'retro-command': 'openspec-opsx-retro',
-  'auto-command': 'openspec-opsx-auto',
-  'review-cycle': 'openspec-review-cycle',
-  'handoff': 'openspec-handoff',
+  'explore': 'rasen-explore',
+  'new': 'rasen-new-change',
+  'continue': 'rasen-continue-change',
+  'apply': 'rasen-apply-change',
+  'ff': 'rasen-ff-change',
+  'sync': 'rasen-sync-specs',
+  'archive': 'rasen-archive-change',
+  'bulk-archive': 'rasen-bulk-archive-change',
+  'verify': 'rasen-verify-change',
+  'onboard': 'rasen-onboard',
+  'propose': 'rasen-propose',
+  // Rasen fusion workflow commands
+  'office-hours-command': 'rasen-office-hours-command',
+  'verify-enhanced-command': 'rasen-verify-enhanced',
+  'ship-command': 'rasen-ship',
+  'retro-command': 'rasen-retro',
+  'auto-command': 'rasen-auto',
+  'review-cycle': 'rasen-review-cycle',
+  'handoff': 'rasen-handoff',
 };
 
 // -----------------------------------------------------------------------------
@@ -153,8 +158,11 @@ export class InitCommand {
       }
     }
 
-    // Check for legacy artifacts and handle cleanup
-    await this.handleLegacyCleanup(projectPath, extendMode);
+    // Offer to migrate a legacy openspec/ workspace when no rasen/ exists yet.
+    await this.offerWorkspaceMigration(projectPath, extendMode);
+
+    // Report (never remove) legacy-namespace artifacts for coexistence clarity.
+    await this.noticeLegacyArtifacts(projectPath);
 
     // Detect available tools in the project (task 7.1)
     const detectedTools = getAvailableTools(projectPath);
@@ -236,58 +244,91 @@ export class InitCommand {
   // LEGACY CLEANUP
   // ═══════════════════════════════════════════════════════════
 
-  private async handleLegacyCleanup(projectPath: string, extendMode: boolean): Promise<void> {
-    // Detect legacy artifacts
-    const detection = await detectLegacyArtifacts(projectPath);
-
-    if (!detection.hasLegacyArtifacts) {
-      return; // No legacy artifacts found
-    }
-
-    // Show what was detected
-    console.log();
-    console.log(formatDetectionSummary(detection));
-    console.log();
-
-    const canPrompt = this.canPromptInteractively();
-
-    if (this.force || !canPrompt) {
-      // --force flag or non-interactive mode: proceed with cleanup automatically.
-      // Legacy slash commands are 100% Rasen-managed, and config file cleanup
-      // only removes markers (never deletes files), so auto-cleanup is safe.
-      await this.performLegacyCleanup(projectPath, detection);
+  /**
+   * When a legacy `openspec/` workspace exists but no `rasen/` workspace does,
+   * offer copy-only migration. Declined or non-interactive runs proceed with a
+   * fresh empty workspace (and a hint that `rasen migrate` remains available).
+   */
+  private async offerWorkspaceMigration(projectPath: string, extendMode: boolean): Promise<void> {
+    // extendMode means a rasen/ workspace already exists — never migrate over it.
+    if (extendMode || hasRasenWorkspace(projectPath) || !hasLegacyWorkspace(projectPath)) {
       return;
     }
 
-    // Interactive mode: prompt for confirmation
+    const canPrompt = this.canPromptInteractively();
+    if (!canPrompt) {
+      console.log(
+        chalk.dim(
+          'Detected a legacy openspec/ workspace. Creating a fresh rasen/ workspace; run "rasen migrate" to copy the existing content over (copy-only, originals untouched).'
+        )
+      );
+      return;
+    }
+
     const { confirm } = await import('@inquirer/prompts');
-    const shouldCleanup = await confirm({
-      message: 'Upgrade and clean up legacy files?',
+    const shouldMigrate = await confirm({
+      message: 'A legacy openspec/ workspace was found. Copy it into a new rasen/ workspace? (copy-only; openspec/ is left untouched)',
       default: true,
     });
 
-    if (!shouldCleanup) {
-      console.log(chalk.dim('Initialization cancelled.'));
-      console.log(chalk.dim('Run with --force to skip this prompt, or manually remove legacy files.'));
-      process.exit(0);
+    if (!shouldMigrate) {
+      console.log(chalk.dim('Skipping migration. Run "rasen migrate" later to copy openspec/ into rasen/.'));
+      return;
     }
 
-    await this.performLegacyCleanup(projectPath, detection);
+    const summary = migrateWorkspace(projectPath);
+    console.log();
+    console.log(formatMigrationSummary(summary));
+    console.log();
+
+    // Only inside the migrate flow, and only on explicit consent (default no),
+    // may rasen remove OpenSpec marker blocks from shared config files: in
+    // coexistence they may be upstream OpenSpec's active configuration.
+    await this.offerMarkerCleanup(projectPath);
   }
 
-  private async performLegacyCleanup(projectPath: string, detection: LegacyDetectionResult): Promise<void> {
-    const spinner = ora('Cleaning up legacy files...').start();
+  /**
+   * Consent-gated (default no) removal of OpenSpec marker blocks from shared
+   * config files. Runs only inside the migrate flow. Never deletes files or
+   * touches command/skill artifacts. No-op non-interactively.
+   */
+  private async offerMarkerCleanup(projectPath: string): Promise<void> {
+    if (!this.canPromptInteractively()) return;
 
-    const result = await cleanupLegacyArtifacts(projectPath, detection);
+    const detection = await detectLegacyArtifacts(projectPath);
+    if (detection.configFilesToUpdate.length === 0) return;
 
-    spinner.succeed('Legacy files cleaned up');
-
-    const summary = formatCleanupSummary(result);
-    if (summary) {
-      console.log();
-      console.log(summary);
+    const { confirm } = await import('@inquirer/prompts');
+    const shouldClean = await confirm({
+      message: `Remove OpenSpec marker blocks from ${detection.configFilesToUpdate.join(', ')}? (they may be used by upstream OpenSpec)`,
+      default: false,
+    });
+    if (!shouldClean) {
+      console.log(chalk.dim('Keeping marker blocks. You can remove them manually anytime.'));
+      return;
     }
 
+    const { modifiedFiles, errors } = await cleanupMarkerBlocks(projectPath, detection);
+    if (modifiedFiles.length > 0) {
+      console.log(chalk.dim(`Removed OpenSpec markers from: ${modifiedFiles.join(', ')}`));
+    }
+    for (const error of errors) {
+      console.log(chalk.yellow(`  ⚠ ${error}`));
+    }
+  }
+
+  /**
+   * Prints a one-time coexistence notice when legacy-namespace command/skill
+   * artifacts or shared-config marker blocks are detected. Never removes or
+   * modifies anything (D4: rasen cannot reliably distinguish an old rasen
+   * install from an active upstream OpenSpec install).
+   */
+  private async noticeLegacyArtifacts(projectPath: string): Promise<void> {
+    const detection = await detectLegacyArtifacts(projectPath);
+    const notice = formatLegacyCoexistenceNotice(detection);
+    if (!notice) return;
+    console.log();
+    console.log(notice);
     console.log();
   }
 
@@ -777,13 +818,13 @@ export class InitCommand {
 
     // Config status
     if (configStatus === 'created') {
-      console.log(`Config: openspec/config.yaml (schema: ${DEFAULT_SCHEMA})`);
+      console.log(`Config: ${WORKSPACE_DIR_NAME}/config.yaml (schema: ${DEFAULT_SCHEMA})`);
     } else if (configStatus === 'exists') {
       // Show actual filename (config.yaml or config.yml)
       const configYaml = path.join(projectPath, OPENSPEC_DIR_NAME, 'config.yaml');
       const configYml = path.join(projectPath, OPENSPEC_DIR_NAME, 'config.yml');
       const configName = fs.existsSync(configYaml) ? 'config.yaml' : fs.existsSync(configYml) ? 'config.yml' : 'config.yaml';
-      console.log(`Config: openspec/${configName} (exists)`);
+      console.log(`Config: ${WORKSPACE_DIR_NAME}/${configName} (exists)`);
     } else {
       console.log(chalk.dim(`Config: skipped (non-interactive mode)`));
     }
@@ -795,10 +836,10 @@ export class InitCommand {
     console.log();
     if (activeWorkflows.includes('propose')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /opsx:propose "your idea"');
+      console.log('  Start your first change: /rasen:propose "your idea"');
     } else if (activeWorkflows.includes('new')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /opsx:new "your idea"');
+      console.log('  Start your first change: /rasen:new "your idea"');
     } else {
       console.log("Done. Run 'rasen config profile' to configure your workflows.");
     }

@@ -8,9 +8,9 @@ Here's the entire idea in five words: **agree first, then build confidently.**
 
 Everything in OpenSpec is built from five concepts. Learn these and the rest is detail.
 
-**1. Specs are the truth.** A spec describes how your system behaves *right now*. It lives in `openspec/specs/`, organized by domain (`auth/`, `payments/`, `ui/`). Specs are made of requirements ("the system SHALL expire sessions after 30 minutes") and scenarios (concrete given/when/then examples). Think of specs as the single agreed-upon answer to "what does this software do?"
+**1. Specs are the truth.** A spec describes how your system behaves *right now*. It lives in `rasen/specs/`, organized by domain (`auth/`, `payments/`, `ui/`). Specs are made of requirements ("the system SHALL expire sessions after 30 minutes") and scenarios (concrete given/when/then examples). Think of specs as the single agreed-upon answer to "what does this software do?"
 
-**2. A change is one unit of work.** When you want to add, modify, or remove behavior, you create a change: a folder in `openspec/changes/` holding everything about that work in one place. A proposal, a design, a task list, and the spec edits. One change, one folder, one feature.
+**2. A change is one unit of work.** When you want to add, modify, or remove behavior, you create a change: a folder in `rasen/changes/` holding everything about that work in one place. A proposal, a design, a task list, and the spec edits. One change, one folder, one feature.
 
 **3. Delta specs describe what's changing, not the whole world.** Inside a change, you don't rewrite the entire spec. You write a small delta: `ADDED` this requirement, `MODIFIED` that one, `REMOVED` this other one. This is the trick that makes OpenSpec good at editing existing systems, not just green-field ones. You describe the diff, not the destination.
 
@@ -49,16 +49,16 @@ Two folders. `specs/` is what's true. `changes/` is what you're proposing. Archi
 In the default setup, your day looks like this. Optionally think it through first; then one command drafts the plan, you read it, the next builds it, and the last files it away.
 
 ```text
-/opsx:explore                   →  (optional) think it through with the AI first
-/opsx:propose add-dark-mode     →  AI drafts proposal, specs, design, tasks
+/rasen:explore                   →  (optional) think it through with the AI first
+/rasen:propose add-dark-mode     →  AI drafts proposal, specs, design, tasks
         (you read and adjust the plan)
-/opsx:apply                     →  AI builds it, checking off tasks
-/opsx:archive                   →  specs updated, change archived
+/rasen:apply                     →  AI builds it, checking off tasks
+/rasen:archive                   →  specs updated, change archived
 ```
 
-**When in doubt, start by exploring.** `/opsx:explore` is a no-stakes thinking partner: it reads your code, lays out options, and turns a fuzzy idea into a concrete plan before any artifact exists. It's the best antidote to an AI that will otherwise build *something* from a vague prompt. Already know exactly what you want? Skip straight to `/opsx:propose`. Either way, explore ships in the default profile, so it's always there. See the [Explore guide](explore.md).
+**When in doubt, start by exploring.** `/rasen:explore` is a no-stakes thinking partner: it reads your code, lays out options, and turns a fuzzy idea into a concrete plan before any artifact exists. It's the best antidote to an AI that will otherwise build *something* from a vague prompt. Already know exactly what you want? Skip straight to `/rasen:propose`. Either way, explore ships in the default profile, so it's always there. See the [Explore guide](explore.md).
 
-Those are slash commands, typed in your AI assistant's chat. Setup (`openspec init`) happens in your terminal. If that split is new to you, read [How Commands Work](how-commands-work.md) first; it's the most common point of confusion.
+Those are slash commands, typed in your AI assistant's chat. Setup (`rasen init`) happens in your terminal. If that split is new to you, read [How Commands Work](how-commands-work.md) first; it's the most common point of confusion.
 
 ## "Enablers, not gates"
 

@@ -4,32 +4,32 @@ description: >-
   and archive.
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
     requires: []
     gate: true
 
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: implementer
     requires: [propose]
     gate: true
 
   - id: verify
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     requires: [apply]
     verifyPolicy: adaptive
 
   - id: ship
-    skill: openspec-opsx-ship
+    skill: rasen-ship
     role: shipper
     requires: [verify]
     gate: true
     model: sonnet
 
   - id: archive
-    skill: openspec-archive-change
+    skill: rasen-archive-change
     role: shipper
     requires: [ship]
     model: sonnet

@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,7 +43,7 @@ export function getUserPipelinesDir(): string {
  * @returns The path to the project's pipelines directory
  */
 export function getProjectPipelinesDir(projectRoot: string): string {
-  return path.join(projectRoot, 'openspec', 'pipelines');
+  return path.join(projectRoot, WORKSPACE_DIR_NAME, 'pipelines');
 }
 
 /**

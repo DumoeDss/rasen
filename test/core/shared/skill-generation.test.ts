@@ -21,8 +21,8 @@ describe('skill-generation', () => {
       const templates = getSkillTemplates();
       const reviewCycle = templates.find(t => t.workflowId === 'review-cycle');
       expect(reviewCycle).toBeDefined();
-      expect(reviewCycle?.dirName).toBe('openspec-review-cycle');
-      expect(reviewCycle?.template.name).toBe('openspec-review-cycle');
+      expect(reviewCycle?.dirName).toBe('rasen-review-cycle');
+      expect(reviewCycle?.template.name).toBe('rasen-review-cycle');
     });
 
     it('should have unique directory names', () => {
@@ -36,21 +36,21 @@ describe('skill-generation', () => {
       const templates = getSkillTemplates();
       const dirNames = templates.map(t => t.dirName);
 
-      expect(dirNames).toContain('openspec-explore');
-      expect(dirNames).toContain('openspec-new-change');
-      expect(dirNames).toContain('openspec-continue-change');
-      expect(dirNames).toContain('openspec-apply-change');
-      expect(dirNames).toContain('openspec-ff-change');
-      expect(dirNames).toContain('openspec-sync-specs');
-      expect(dirNames).toContain('openspec-archive-change');
-      expect(dirNames).toContain('openspec-bulk-archive-change');
-      expect(dirNames).toContain('openspec-verify-change');
-      expect(dirNames).toContain('openspec-onboard');
-      expect(dirNames).toContain('openspec-propose');
-      expect(dirNames).toContain('openspec-goal-plan');
-      expect(dirNames).toContain('openspec-goal-iterate');
-      expect(dirNames).toContain('openspec-goal-report');
-      expect(dirNames).toContain('openspec-opsx-goal');
+      expect(dirNames).toContain('rasen-explore');
+      expect(dirNames).toContain('rasen-new-change');
+      expect(dirNames).toContain('rasen-continue-change');
+      expect(dirNames).toContain('rasen-apply-change');
+      expect(dirNames).toContain('rasen-ff-change');
+      expect(dirNames).toContain('rasen-sync-specs');
+      expect(dirNames).toContain('rasen-archive-change');
+      expect(dirNames).toContain('rasen-bulk-archive-change');
+      expect(dirNames).toContain('rasen-verify-change');
+      expect(dirNames).toContain('rasen-onboard');
+      expect(dirNames).toContain('rasen-propose');
+      expect(dirNames).toContain('rasen-goal-plan');
+      expect(dirNames).toContain('rasen-goal-iterate');
+      expect(dirNames).toContain('rasen-goal-report');
+      expect(dirNames).toContain('rasen-goal');
     });
 
     it('should have valid template structure', () => {
@@ -103,7 +103,7 @@ describe('skill-generation', () => {
       expect(filtered).toHaveLength(20);
       const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
       expect(workflowTemplates).toHaveLength(1);
-      expect(workflowTemplates[0].dirName).toBe('openspec-propose');
+      expect(workflowTemplates[0].dirName).toBe('rasen-propose');
     });
   });
 
@@ -117,7 +117,7 @@ describe('skill-generation', () => {
       const templates = getCommandTemplates();
       const reviewCycle = templates.find(t => t.id === 'review-cycle');
       expect(reviewCycle).toBeDefined();
-      expect(reviewCycle?.template.name).toBe('OPSX: Review Cycle');
+      expect(reviewCycle?.template.name).toBe('Rasen: Review Cycle');
       expect(reviewCycle?.template.category).toBe('Workflow');
     });
 
@@ -228,7 +228,7 @@ describe('skill-generation', () => {
     }
 
     beforeEach(() => {
-      target = mkdtempSync(join(tmpdir(), 'openspec-sidecar-'));
+      target = mkdtempSync(join(tmpdir(), 'rasen-sidecar-'));
     });
 
     afterEach(() => {
@@ -332,7 +332,7 @@ describe('skill-generation', () => {
 
       expect(content).toContain('license: MIT');
       expect(content).toContain('compatibility: Requires rasen CLI.');
-      expect(content).toContain('author: openspec');
+      expect(content).toContain('author: rasen');
       expect(content).toContain('version: "1.0"');
       expect(content).toContain('generatedBy: "0.24.0"');
     });
@@ -390,28 +390,28 @@ describe('skill-generation', () => {
       const template = {
         name: 'transform-test',
         description: 'Test transform callback',
-        instructions: 'Use /opsx:new to start and /opsx:apply to implement.',
+        instructions: 'Use /rasen:new to start and /rasen:apply to implement.',
       };
 
-      const transformer = (text: string) => text.replace(/\/opsx:/g, '/opsx-');
+      const transformer = (text: string) => text.replace(/\/rasen:/g, '/rasen-');
       const content = generateSkillContent(template, '0.23.0', transformer);
 
-      expect(content).toContain('/opsx-new');
-      expect(content).toContain('/opsx-apply');
-      expect(content).not.toContain('/opsx:new');
-      expect(content).not.toContain('/opsx:apply');
+      expect(content).toContain('/rasen-new');
+      expect(content).toContain('/rasen-apply');
+      expect(content).not.toContain('/rasen:new');
+      expect(content).not.toContain('/rasen:apply');
     });
 
     it('should not transform instructions when callback is undefined', () => {
       const template = {
         name: 'no-transform-test',
         description: 'Test without transform',
-        instructions: 'Use /opsx:new to start.',
+        instructions: 'Use /rasen:new to start.',
       };
 
       const content = generateSkillContent(template, '0.23.0', undefined);
 
-      expect(content).toContain('/opsx:new');
+      expect(content).toContain('/rasen:new');
     });
 
     it('should support custom transformInstructions logic', () => {

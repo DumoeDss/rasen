@@ -15,7 +15,7 @@ import {
   writeStoreRegistryState,
 } from '../../src/core/store/foundation.js';
 import type { ResolvedOpenSpecRoot } from '../../src/core/root-selection.js';
-import { createOpenSpecRoot, writeSpec } from '../helpers/openspec-fixtures.js';
+import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 
 describe('reference index assembly', () => {
   let tempDir: string;
@@ -23,8 +23,8 @@ describe('reference index assembly', () => {
   let savedXdgDataHome: string | undefined;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-references-'));
-    globalDataDir = path.join(tempDir, 'data', 'openspec');
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-references-'));
+    globalDataDir = path.join(tempDir, 'data', 'rasen');
     // Backstop: store calls below thread `globalDataDir`, but if a future
     // edit forgets one, the path resolver falls back to XDG_DATA_HOME and
     // then to the real ~/.local/share/openspec. Pin XDG at the temp dir so
@@ -84,7 +84,7 @@ describe('reference index assembly', () => {
     return {
       path: rootDir,
       source: 'nearest',
-      changesDir: path.join(rootDir, 'openspec', 'changes'),
+      changesDir: path.join(rootDir, 'rasen', 'changes'),
       defaultSchema: 'spec-driven',
     } as ResolvedOpenSpecRoot;
   }
@@ -145,7 +145,7 @@ describe('reference index assembly', () => {
   });
 
   it('renders a verbatim clone fix when the declaration carries a remote (3.3)', async () => {
-    const checkout = path.join(os.homedir(), 'openspec', 'missing-context');
+    const checkout = path.join(os.homedir(), 'rasen', 'missing-context');
     const entries = await assembleReferenceIndex({
       references: [{ id: 'missing-context', remote: 'https://192.0.2.1/team.git' }],
       resolvedRoot: appRoot(),
@@ -279,7 +279,7 @@ describe('reference index assembly', () => {
         path: root,
         source: 'store',
         storeId: 'self-store',
-        changesDir: path.join(root, 'openspec', 'changes'),
+        changesDir: path.join(root, 'rasen', 'changes'),
         defaultSchema: 'spec-driven',
       } as ResolvedOpenSpecRoot,
       globalDataDir,
@@ -301,7 +301,7 @@ describe('reference index assembly', () => {
         path: storeRoot,
         source: 'store',
         storeId: 'self-context',
-        changesDir: path.join(storeRoot, 'openspec', 'changes'),
+        changesDir: path.join(storeRoot, 'rasen', 'changes'),
         defaultSchema: 'spec-driven',
       } as ResolvedOpenSpecRoot,
       globalDataDir,
@@ -313,7 +313,7 @@ describe('reference index assembly', () => {
       resolvedRoot: {
         path: storeRoot,
         source: 'nearest',
-        changesDir: path.join(storeRoot, 'openspec', 'changes'),
+        changesDir: path.join(storeRoot, 'rasen', 'changes'),
         defaultSchema: 'spec-driven',
       } as ResolvedOpenSpecRoot,
       globalDataDir,

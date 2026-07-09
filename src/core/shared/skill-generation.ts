@@ -30,7 +30,7 @@ import {
   getOpsxVerifyCommandTemplate,
   getOpsxOnboardCommandTemplate,
   getOpsxProposeCommandTemplate,
-  // OPSX fusion workflow commands
+  // Rasen fusion workflow commands
   getOfficeHoursCommandSkillTemplate,
   getOpsxOfficeHoursCommandTemplate,
   getVerifyEnhancedSkillTemplate,
@@ -157,53 +157,53 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
  */
 export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemplateEntry[] {
   const workflowSkills: SkillTemplateEntry[] = [
-    { template: getExploreSkillTemplate(), dirName: 'openspec-explore', workflowId: 'explore' },
-    { template: getNewChangeSkillTemplate(), dirName: 'openspec-new-change', workflowId: 'new' },
-    { template: getContinueChangeSkillTemplate(), dirName: 'openspec-continue-change', workflowId: 'continue' },
-    { template: getApplyChangeSkillTemplate(), dirName: 'openspec-apply-change', workflowId: 'apply' },
-    { template: getFfChangeSkillTemplate(), dirName: 'openspec-ff-change', workflowId: 'ff' },
-    { template: getSyncSpecsSkillTemplate(), dirName: 'openspec-sync-specs', workflowId: 'sync' },
-    { template: getArchiveChangeSkillTemplate(), dirName: 'openspec-archive-change', workflowId: 'archive' },
-    { template: getBulkArchiveChangeSkillTemplate(), dirName: 'openspec-bulk-archive-change', workflowId: 'bulk-archive' },
-    { template: getVerifyChangeSkillTemplate(), dirName: 'openspec-verify-change', workflowId: 'verify' },
-    { template: getOnboardSkillTemplate(), dirName: 'openspec-onboard', workflowId: 'onboard' },
-    { template: getOpsxProposeSkillTemplate(), dirName: 'openspec-propose', workflowId: 'propose' },
-    // OPSX fusion workflow commands
-    { template: getOfficeHoursCommandSkillTemplate(), dirName: 'openspec-opsx-office-hours', workflowId: 'office-hours-command' },
-    { template: getVerifyEnhancedSkillTemplate(), dirName: 'openspec-verify-enhanced', workflowId: 'verify-enhanced-command' },
-    { template: getShipCommandSkillTemplate(), dirName: 'openspec-opsx-ship', workflowId: 'ship-command' },
-    { template: getRetroCommandSkillTemplate(), dirName: 'openspec-opsx-retro', workflowId: 'retro-command' },
-    { template: getAutoCommandSkillTemplate(), dirName: 'openspec-opsx-auto', workflowId: 'auto-command' },
-    { template: getReviewCycleSkillTemplate(), dirName: 'openspec-review-cycle', workflowId: 'review-cycle' },
-    { template: getHandoffSkillTemplate(), dirName: 'openspec-handoff', workflowId: 'handoff' },
+    { template: getExploreSkillTemplate(), dirName: 'rasen-explore', workflowId: 'explore' },
+    { template: getNewChangeSkillTemplate(), dirName: 'rasen-new-change', workflowId: 'new' },
+    { template: getContinueChangeSkillTemplate(), dirName: 'rasen-continue-change', workflowId: 'continue' },
+    { template: getApplyChangeSkillTemplate(), dirName: 'rasen-apply-change', workflowId: 'apply' },
+    { template: getFfChangeSkillTemplate(), dirName: 'rasen-ff-change', workflowId: 'ff' },
+    { template: getSyncSpecsSkillTemplate(), dirName: 'rasen-sync-specs', workflowId: 'sync' },
+    { template: getArchiveChangeSkillTemplate(), dirName: 'rasen-archive-change', workflowId: 'archive' },
+    { template: getBulkArchiveChangeSkillTemplate(), dirName: 'rasen-bulk-archive-change', workflowId: 'bulk-archive' },
+    { template: getVerifyChangeSkillTemplate(), dirName: 'rasen-verify-change', workflowId: 'verify' },
+    { template: getOnboardSkillTemplate(), dirName: 'rasen-onboard', workflowId: 'onboard' },
+    { template: getOpsxProposeSkillTemplate(), dirName: 'rasen-propose', workflowId: 'propose' },
+    // Rasen fusion workflow commands
+    { template: getOfficeHoursCommandSkillTemplate(), dirName: 'rasen-office-hours-command', workflowId: 'office-hours-command' },
+    { template: getVerifyEnhancedSkillTemplate(), dirName: 'rasen-verify-enhanced', workflowId: 'verify-enhanced-command' },
+    { template: getShipCommandSkillTemplate(), dirName: 'rasen-ship', workflowId: 'ship-command' },
+    { template: getRetroCommandSkillTemplate(), dirName: 'rasen-retro', workflowId: 'retro-command' },
+    { template: getAutoCommandSkillTemplate(), dirName: 'rasen-auto', workflowId: 'auto-command' },
+    { template: getReviewCycleSkillTemplate(), dirName: 'rasen-review-cycle', workflowId: 'review-cycle' },
+    { template: getHandoffSkillTemplate(), dirName: 'rasen-handoff', workflowId: 'handoff' },
     // Goal-loop workflow skills (stage skills + entry command)
-    { template: getGoalPlanSkillTemplate(), dirName: 'openspec-goal-plan', workflowId: 'goal-plan' },
-    { template: getGoalIterateSkillTemplate(), dirName: 'openspec-goal-iterate', workflowId: 'goal-iterate' },
-    { template: getGoalReportSkillTemplate(), dirName: 'openspec-goal-report', workflowId: 'goal-report' },
-    { template: getGoalCommandSkillTemplate(), dirName: 'openspec-opsx-goal', workflowId: 'goal-command' },
+    { template: getGoalPlanSkillTemplate(), dirName: 'rasen-goal-plan', workflowId: 'goal-plan' },
+    { template: getGoalIterateSkillTemplate(), dirName: 'rasen-goal-iterate', workflowId: 'goal-iterate' },
+    { template: getGoalReportSkillTemplate(), dirName: 'rasen-goal-report', workflowId: 'goal-report' },
+    { template: getGoalCommandSkillTemplate(), dirName: 'rasen-goal', workflowId: 'goal-command' },
   ];
 
   // Expert skills are always installed regardless of workflowFilter
   const expertSkills: SkillTemplateEntry[] = [
-    { template: getBenchmarkSkillTemplate(), dirName: 'openspec-benchmark', workflowId: 'benchmark' },
-    { template: getCarefulSkillTemplate(), dirName: 'openspec-careful', workflowId: 'careful' },
-    { template: getChromeUseSkillTemplate(), dirName: 'openspec-chrome-use', workflowId: 'chrome-use' },
-    { template: getCodebaseDesignSkillTemplate(), dirName: 'openspec-codebase-design', workflowId: 'codebase-design' },
-    { template: getCodexSkillTemplate(), dirName: 'openspec-codex', workflowId: 'codex' },
-    { template: getCsoSkillTemplate(), dirName: 'openspec-cso', workflowId: 'cso' },
-    { template: getDesignConsultationSkillTemplate(), dirName: 'openspec-design-consultation', workflowId: 'design-consultation' },
-    { template: getDesignReviewSkillTemplate(), dirName: 'openspec-design-review', workflowId: 'design-review' },
-    { template: getFreezeSkillTemplate(), dirName: 'openspec-freeze', workflowId: 'freeze' },
-    { template: getGuardSkillTemplate(), dirName: 'openspec-guard', workflowId: 'guard' },
-    { template: getInvestigateSkillTemplate(), dirName: 'openspec-investigate', workflowId: 'investigate' },
-    { template: getNavigatorSkillTemplate(), dirName: 'openspec-navigator', workflowId: 'navigator' },
-    { template: getOfficeHoursSkillTemplate(), dirName: 'openspec-office-hours', workflowId: 'office-hours' },
-    { template: getPrototypeSkillTemplate(), dirName: 'openspec-prototype', workflowId: 'prototype' },
-    { template: getQaSkillTemplate(), dirName: 'openspec-qa', workflowId: 'qa' },
-    { template: getQaOnlySkillTemplate(), dirName: 'openspec-qa-only', workflowId: 'qa-only' },
-    { template: getReviewSkillTemplate(), dirName: 'openspec-review', workflowId: 'review' },
-    { template: getTddSkillTemplate(), dirName: 'openspec-tdd', workflowId: 'tdd' },
-    { template: getUnfreezeSkillTemplate(), dirName: 'openspec-unfreeze', workflowId: 'unfreeze' },
+    { template: getBenchmarkSkillTemplate(), dirName: 'rasen-benchmark', workflowId: 'benchmark' },
+    { template: getCarefulSkillTemplate(), dirName: 'rasen-careful', workflowId: 'careful' },
+    { template: getChromeUseSkillTemplate(), dirName: 'rasen-chrome-use', workflowId: 'chrome-use' },
+    { template: getCodebaseDesignSkillTemplate(), dirName: 'rasen-codebase-design', workflowId: 'codebase-design' },
+    { template: getCodexSkillTemplate(), dirName: 'rasen-codex', workflowId: 'codex' },
+    { template: getCsoSkillTemplate(), dirName: 'rasen-cso', workflowId: 'cso' },
+    { template: getDesignConsultationSkillTemplate(), dirName: 'rasen-design-consultation', workflowId: 'design-consultation' },
+    { template: getDesignReviewSkillTemplate(), dirName: 'rasen-design-review', workflowId: 'design-review' },
+    { template: getFreezeSkillTemplate(), dirName: 'rasen-freeze', workflowId: 'freeze' },
+    { template: getGuardSkillTemplate(), dirName: 'rasen-guard', workflowId: 'guard' },
+    { template: getInvestigateSkillTemplate(), dirName: 'rasen-investigate', workflowId: 'investigate' },
+    { template: getNavigatorSkillTemplate(), dirName: 'rasen-navigator', workflowId: 'navigator' },
+    { template: getOfficeHoursSkillTemplate(), dirName: 'rasen-office-hours', workflowId: 'office-hours' },
+    { template: getPrototypeSkillTemplate(), dirName: 'rasen-prototype', workflowId: 'prototype' },
+    { template: getQaSkillTemplate(), dirName: 'rasen-qa', workflowId: 'qa' },
+    { template: getQaOnlySkillTemplate(), dirName: 'rasen-qa-only', workflowId: 'qa-only' },
+    { template: getReviewSkillTemplate(), dirName: 'rasen-review', workflowId: 'review' },
+    { template: getTddSkillTemplate(), dirName: 'rasen-tdd', workflowId: 'tdd' },
+    { template: getUnfreezeSkillTemplate(), dirName: 'rasen-unfreeze', workflowId: 'unfreeze' },
   ];
 
   if (!workflowFilter) return [...workflowSkills, ...expertSkills];
@@ -232,7 +232,7 @@ export function getCommandTemplates(workflowFilter?: readonly string[]): Command
     { template: getOpsxVerifyCommandTemplate(), id: 'verify' },
     { template: getOpsxOnboardCommandTemplate(), id: 'onboard' },
     { template: getOpsxProposeCommandTemplate(), id: 'propose' },
-    // OPSX fusion workflow commands
+    // Rasen fusion workflow commands
     { template: getOpsxOfficeHoursCommandTemplate(), id: 'office-hours-command' },
     { template: getOpsxVerifyEnhancedCommandTemplate(), id: 'verify-enhanced-command' },
     { template: getOpsxShipCommandTemplate(), id: 'ship-command' },
@@ -315,7 +315,7 @@ description: ${template.description}
 ${disableModelInvocationLine}license: ${template.license || 'MIT'}
 compatibility: ${template.compatibility || 'Requires rasen CLI.'}
 metadata:
-  author: ${template.metadata?.author || 'openspec'}
+  author: ${template.metadata?.author || 'rasen'}
   version: "${template.metadata?.version || '1.0'}"
   generatedBy: "${generatedByVersion}"
 ---

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import {
   getStoreMetadataPath,
   getStoreMetadataDir,
+  copyForwardLegacyStoreMetadata,
   listStoreRegistryEntries,
   readStoreRegistryState,
   readOptionalStoreMetadataState,
@@ -244,6 +245,10 @@ async function ensureStoreMetadata(
     });
     return true;
   }
+
+  // Metadata exists — if it lives only under the legacy `.openspec-store/`
+  // name, copy it forward to `.rasen-store/` (copy-only; legacy untouched).
+  await copyForwardLegacyStoreMetadata(storeRoot);
 
   if (metadata.id !== id) {
     throw new StoreError(

@@ -12,7 +12,7 @@ import {
   mergeOpenerTable,
 } from '../../src/core/openers.js';
 
-const CONFIG_PATH = '/home/dev/.config/openspec/config.json';
+const CONFIG_PATH = '/home/dev/.config/rasen/config.json';
 
 describe('openers core', () => {
   describe('built-in table', () => {
@@ -108,7 +108,7 @@ describe('openers core', () => {
       // listOpenerChoices hides CLI-agent (attach-dirs) tools by default;
       // this suite asserts the full table, so enable them.
       process.env.RASEN_ENABLE_CLI_AGENT_OPENERS = '1';
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-openers-'));
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-openers-'));
     });
 
     afterEach(() => {

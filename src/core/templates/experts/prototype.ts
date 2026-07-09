@@ -37,9 +37,9 @@ The _answer_ is the only thing worth keeping from a prototype. Capture it somewh
 
 export function getPrototypeSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:prototype',
+    name: 'rasen:prototype',
     description: '|',
     instructions: `${BODY.trim()}\n\n${CHANGE_CONTEXT_CAPTURE_GUIDANCE}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

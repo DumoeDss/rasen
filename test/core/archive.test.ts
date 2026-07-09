@@ -20,7 +20,7 @@ describe('ArchiveCommand', () => {
 
   beforeEach(async () => {
     // Create temp directory
-    tempDir = path.join(os.tmpdir(), `openspec-archive-test-${Date.now()}`);
+    tempDir = path.join(os.tmpdir(), `rasen-archive-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
 
     // Change to temp directory
@@ -31,7 +31,7 @@ describe('ArchiveCommand', () => {
     process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
 
     // Create Rasen structure
-    const openspecDir = path.join(tempDir, 'openspec');
+    const openspecDir = path.join(tempDir, 'rasen');
     await fs.mkdir(path.join(openspecDir, 'changes'), { recursive: true });
     await fs.mkdir(path.join(openspecDir, 'specs'), { recursive: true });
     await fs.mkdir(path.join(openspecDir, 'changes', 'archive'), { recursive: true });
@@ -74,7 +74,7 @@ describe('ArchiveCommand', () => {
     it('should archive a change successfully', async () => {
       // Create a test change
       const changeName = 'test-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Create tasks.md with completed tasks
@@ -85,7 +85,7 @@ describe('ArchiveCommand', () => {
       await archiveCommand.execute(changeName, { yes: true });
       
       // Check that change was moved to archive
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       
       expect(archives.length).toBe(1);
@@ -97,7 +97,7 @@ describe('ArchiveCommand', () => {
 
     it('should warn about incomplete tasks', async () => {
       const changeName = 'incomplete-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Create tasks.md with incomplete tasks
@@ -116,7 +116,7 @@ describe('ArchiveCommand', () => {
     it('detects incomplete tasks in nested glob tasks.md files (#1202 data-safety gate)', async () => {
       // Before the fix the gate read a fixed changes/<name>/tasks.md, saw zero
       // tasks for a glob-tasks change, and let an unfinished change archive.
-      const schemaDir = path.join(tempDir, 'openspec', 'schemas', 'glob-tasks');
+      const schemaDir = path.join(tempDir, 'rasen', 'schemas', 'glob-tasks');
       await fs.mkdir(schemaDir, { recursive: true });
       await fs.writeFile(
         path.join(schemaDir, 'schema.yaml'),
@@ -142,7 +142,7 @@ describe('ArchiveCommand', () => {
       );
 
       const changeName = 'glob-incomplete-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(path.join(changeDir, 'backend'), { recursive: true });
       await fs.mkdir(path.join(changeDir, 'frontend'), { recursive: true });
       await fs.writeFile(path.join(changeDir, '.openspec.yaml'), 'schema: glob-tasks\n');
@@ -159,7 +159,7 @@ describe('ArchiveCommand', () => {
 
     it('should update specs when archiving (delta-based ADDED) and include change name in skeleton', async () => {
       const changeName = 'spec-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'test-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
@@ -180,7 +180,7 @@ Then expected result happens`;
       await archiveCommand.execute(changeName, { yes: true, noValidate: true });
       
       // Verify spec was created from skeleton and ADDED requirement applied
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'test-capability', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'test-capability', 'spec.md');
       const updatedContent = await fs.readFile(mainSpecPath, 'utf-8');
       expect(updatedContent).toContain('# test-capability Specification');
       expect(updatedContent).toContain('## Purpose');
@@ -192,7 +192,7 @@ Then expected result happens`;
 
     it('should allow REMOVED requirements when creating new spec file (issue #403)', async () => {
       const changeName = 'new-spec-with-removed';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'gift-card');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
@@ -224,7 +224,7 @@ The system SHALL support logo and backgroundColor fields for gift cards.
       );
       
       // Verify spec was created with only ADDED requirements
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'gift-card', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'gift-card', 'spec.md');
       const updatedContent = await fs.readFile(mainSpecPath, 'utf-8');
       expect(updatedContent).toContain('# gift-card Specification');
       expect(updatedContent).toContain('### Requirement: Logo and Background Color');
@@ -234,7 +234,7 @@ The system SHALL support logo and backgroundColor fields for gift cards.
       expect(updatedContent).not.toContain('### Requirement: Thumbnail Field');
       
       // Verify change was archived successfully
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBeGreaterThan(0);
       expect(archives.some(a => a.includes(changeName))).toBe(true);
@@ -242,7 +242,7 @@ The system SHALL support logo and backgroundColor fields for gift cards.
 
     it('should still error on MODIFIED when creating new spec file', async () => {
       const changeName = 'new-spec-with-modified';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'new-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
@@ -270,18 +270,18 @@ Modified content.`;
       expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
       
       // Verify spec was NOT created
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'new-capability', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'new-capability', 'spec.md');
       await expect(fs.access(mainSpecPath)).rejects.toThrow();
       
       // Verify change was NOT archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
 
     it('should still error on RENAMED when creating new spec file', async () => {
       const changeName = 'new-spec-with-renamed';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'another-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
@@ -308,11 +308,11 @@ New feature description.
       expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
       
       // Verify spec was NOT created
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'another-capability', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'another-capability', 'spec.md');
       await expect(fs.access(mainSpecPath)).rejects.toThrow();
       
       // Verify change was NOT archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
@@ -325,12 +325,12 @@ New feature description.
 
     it('should throw error if archive already exists', async () => {
       const changeName = 'duplicate-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Create existing archive with same date
       const date = new Date().toISOString().split('T')[0];
-      const archivePath = path.join(tempDir, 'openspec', 'changes', 'archive', `${date}-${changeName}`);
+      const archivePath = path.join(tempDir, 'rasen', 'changes', 'archive', `${date}-${changeName}`);
       await fs.mkdir(archivePath, { recursive: true });
       
       // Try to archive
@@ -341,7 +341,7 @@ New feature description.
 
     it('should handle changes without tasks.md', async () => {
       const changeName = 'no-tasks-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Execute archive without tasks.md
@@ -353,14 +353,14 @@ New feature description.
       );
       
       // Verify change was archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBe(1);
     });
 
     it('should handle changes without specs', async () => {
       const changeName = 'no-specs-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Execute archive without specs
@@ -372,14 +372,14 @@ New feature description.
       );
       
       // Verify change was archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBe(1);
     });
 
     it('should skip spec updates when --skip-specs flag is used', async () => {
       const changeName = 'skip-specs-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'test-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
@@ -396,11 +396,11 @@ New feature description.
       );
       
       // Verify spec was NOT copied to main specs
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'test-capability', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'test-capability', 'spec.md');
       await expect(fs.access(mainSpecPath)).rejects.toThrow();
       
       // Verify change was still archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBe(1);
       expect(archives[0]).toMatch(new RegExp(`\\d{4}-\\d{2}-\\d{2}-${changeName}`));
@@ -408,7 +408,7 @@ New feature description.
 
     it('should skip validation when commander sets validate to false (--no-validate)', async () => {
       const changeName = 'skip-validation-flag';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'unstable-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
@@ -436,7 +436,7 @@ The system will log all events.
         expect(deltaSpy).not.toHaveBeenCalled();
         expect(specContentSpy).not.toHaveBeenCalled();
 
-        const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+        const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
         const archives = await fs.readdir(archiveDir);
         expect(archives.length).toBe(1);
         expect(archives[0]).toMatch(new RegExp(`\\d{4}-\\d{2}-\\d{2}-${changeName}`));
@@ -451,7 +451,7 @@ The system will log all events.
       const mockConfirm = confirm as unknown as ReturnType<typeof vi.fn>;
       
       const changeName = 'decline-specs-feature';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'test-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
@@ -489,11 +489,11 @@ Then expected result happens`;
       );
       
       // Verify spec was NOT copied to main specs
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'test-capability', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'test-capability', 'spec.md');
       await expect(fs.access(mainSpecPath)).rejects.toThrow();
       
       // Verify change was still archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBe(1);
       expect(archives[0]).toMatch(new RegExp(`\\d{4}-\\d{2}-\\d{2}-${changeName}`));
@@ -501,12 +501,12 @@ Then expected result happens`;
 
     it('should support header trim-only normalization for matching', async () => {
       const changeName = 'normalize-headers';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'alpha');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
       // Create existing main spec with a requirement (no extra trailing spaces)
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'alpha');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'alpha');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# alpha Specification
 
@@ -537,12 +537,12 @@ Updated details.`;
 
     it('should apply operations in order: RENAMED → REMOVED → MODIFIED → ADDED', async () => {
       const changeName = 'apply-order';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'beta');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
       // Main spec with two requirements A and B
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'beta');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'beta');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# beta Specification
 
@@ -589,12 +589,12 @@ content D`;
 
     it('should delete a spec whose requirements are all REMOVED by the delta (zero-requirements deletion)', async () => {
       const changeName = 'zero-req-deletion';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'theta');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
       // Existing main spec with a single requirement
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'theta');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'theta');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# theta Specification
 
@@ -639,14 +639,14 @@ The system SHALL do theta.
       expect(console.log).not.toHaveBeenCalledWith('Aborted. No files were changed.');
 
       // The change was archived (the delta moves to archive as usual)
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(true);
 
       // The post-archive main-specs tree validates strictly — mirrors the delta's
       // "validate --strict SHALL pass afterward": no emptied spec is left to fail min(1).
       const strictValidator = new Validator(true);
-      const specsRoot = path.join(tempDir, 'openspec', 'specs');
+      const specsRoot = path.join(tempDir, 'rasen', 'specs');
       for (const entry of await fs.readdir(specsRoot)) {
         const specFile = path.join(specsRoot, entry, 'spec.md');
         try { await fs.access(specFile); } catch { continue; }
@@ -657,11 +657,11 @@ The system SHALL do theta.
 
     it('should NOT delete a spec that still has a surviving requirement (zero-req safety boundary)', async () => {
       const changeName = 'partial-removal-keeps-spec';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'iota');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'iota');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'iota');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# iota Specification
 
@@ -705,19 +705,19 @@ The system SHALL remove this.
         expect.stringContaining("Deleting spec 'iota'")
       );
 
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(true);
     });
 
     it('should abort with error when MODIFIED/REMOVED reference non-existent requirements', async () => {
       const changeName = 'validate-missing';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'gamma');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
       // Main spec with no requirements
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'gamma');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'gamma');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# gamma Specification
 
@@ -748,7 +748,7 @@ new text
     });
 
     it('should abort stale MODIFIED blocks that would drop current scenarios (issue #1246)', async () => {
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'stale-modified');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'stale-modified');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainSpecPath = path.join(mainSpecDir, 'spec.md');
       const baseSpec = `# stale-modified Specification
@@ -767,7 +767,7 @@ The system SHALL support the shared rule.
       await fs.writeFile(mainSpecPath, baseSpec);
 
       const changeA = 'modify-shared-a';
-      const changeADir = path.join(tempDir, 'openspec', 'changes', changeA);
+      const changeADir = path.join(tempDir, 'rasen', 'changes', changeA);
       const changeASpecDir = path.join(changeADir, 'specs', 'stale-modified');
       await fs.mkdir(changeASpecDir, { recursive: true });
       await fs.writeFile(path.join(changeASpecDir, 'spec.md'), `# Stale Modified - Change A
@@ -786,7 +786,7 @@ The system SHALL support the shared rule.
 - **THEN** it succeeds`);
 
       const changeB = 'modify-shared-b';
-      const changeBDir = path.join(tempDir, 'openspec', 'changes', changeB);
+      const changeBDir = path.join(tempDir, 'rasen', 'changes', changeB);
       const changeBSpecDir = path.join(changeBDir, 'specs', 'stale-modified');
       await fs.mkdir(changeBSpecDir, { recursive: true });
       await fs.writeFile(path.join(changeBSpecDir, 'spec.md'), `# Stale Modified - Change B
@@ -819,7 +819,7 @@ The system SHALL support the shared rule.
       expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
 
       await expect(fs.access(changeBDir)).resolves.not.toThrow();
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeA))).toBe(true);
       expect(archives.some(a => a.includes(changeB))).toBe(false);
@@ -827,11 +827,11 @@ The system SHALL support the shared rule.
 
     it('should abort with a structural error when target spec hides requirements outside ## Requirements', async () => {
       const changeName = 'hidden-requirement-target';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'delta-target');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'delta-target');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'delta-target');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const malformedMain = `# delta-target Specification
 
@@ -882,19 +882,19 @@ The system SHALL do B differently.
       const still = await fs.readFile(path.join(mainSpecDir, 'spec.md'), 'utf-8');
       expect(still).toBe(malformedMain);
 
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
 
     it('should require MODIFIED to reference the NEW header when a rename exists (error format)', async () => {
       const changeName = 'rename-modify-new-header';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'delta');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
       // Main spec with Old
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'delta');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'delta');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# delta Specification
 
@@ -951,14 +951,14 @@ new body`;
 
     it('should process multiple specs atomically (any failure aborts all)', async () => {
       const changeName = 'multi-spec-atomic';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const spec1Dir = path.join(changeDir, 'specs', 'epsilon');
       const spec2Dir = path.join(changeDir, 'specs', 'zeta');
       await fs.mkdir(spec1Dir, { recursive: true });
       await fs.mkdir(spec2Dir, { recursive: true });
 
       // Existing main specs
-      const epsilonMain = path.join(tempDir, 'openspec', 'specs', 'epsilon', 'spec.md');
+      const epsilonMain = path.join(tempDir, 'rasen', 'specs', 'epsilon', 'spec.md');
       await fs.mkdir(path.dirname(epsilonMain), { recursive: true });
       await fs.writeFile(epsilonMain, `# epsilon Specification
 
@@ -970,7 +970,7 @@ Epsilon purpose.
 ### Requirement: E1
 e1`);
 
-      const zetaMain = path.join(tempDir, 'openspec', 'specs', 'zeta', 'spec.md');
+      const zetaMain = path.join(tempDir, 'rasen', 'specs', 'zeta', 'spec.md');
       await fs.mkdir(path.dirname(zetaMain), { recursive: true });
       await fs.writeFile(zetaMain, `# zeta Specification
 
@@ -1007,18 +1007,18 @@ E1 updated`);
 
     it('should display aggregated totals across multiple specs', async () => {
       const changeName = 'multi-spec-totals';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const spec1Dir = path.join(changeDir, 'specs', 'omega');
       const spec2Dir = path.join(changeDir, 'specs', 'psi');
       await fs.mkdir(spec1Dir, { recursive: true });
       await fs.mkdir(spec2Dir, { recursive: true });
 
       // Existing main specs
-      const omegaMain = path.join(tempDir, 'openspec', 'specs', 'omega', 'spec.md');
+      const omegaMain = path.join(tempDir, 'rasen', 'specs', 'omega', 'spec.md');
       await fs.mkdir(path.dirname(omegaMain), { recursive: true });
       await fs.writeFile(omegaMain, `# omega Specification\n\n## Purpose\nOmega purpose.\n\n## Requirements\n\n### Requirement: O1\no1`);
 
-      const psiMain = path.join(tempDir, 'openspec', 'specs', 'psi', 'spec.md');
+      const psiMain = path.join(tempDir, 'rasen', 'specs', 'psi', 'spec.md');
       await fs.mkdir(path.dirname(psiMain), { recursive: true });
       await fs.writeFile(psiMain, `# psi Specification\n\n## Purpose\nPsi purpose.\n\n## Requirements\n\n### Requirement: P1\np1`);
 
@@ -1041,7 +1041,7 @@ E1 updated`);
     // the failure, mirroring the JSON-mode behavior.
     it('sets exit code 1 when delta spec validation fails', async () => {
       const changeName = 'exit-delta-fail';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'bad-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
@@ -1068,14 +1068,14 @@ The system will log all events.
       );
 
       // Change must NOT have been archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
 
     it('sets exit code 1 when spec rebuild fails (MODIFIED on new spec)', async () => {
       const changeName = 'exit-rebuild-fail';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'new-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
@@ -1098,10 +1098,10 @@ Modified content.`;
       expect(process.exitCode).toBe(1);
       expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
 
-      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'new-capability', 'spec.md');
+      const mainSpecPath = path.join(tempDir, 'rasen', 'specs', 'new-capability', 'spec.md');
       await expect(fs.access(mainSpecPath)).rejects.toThrow();
 
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
@@ -1114,13 +1114,13 @@ Modified content.`;
       // test uses the same spy pattern) to force the rebuilt spec invalid
       // while buildUpdatedSpec runs for real — exercising the exit-code fix.
       const changeName = 'exit-rebuilt-validate-fail';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       const changeSpecDir = path.join(changeDir, 'specs', 'rebuilt-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
 
       // Existing main spec so MODIFIED targets a real spec and buildUpdatedSpec
       // succeeds (does not throw).
-      const mainSpecDir = path.join(tempDir, 'openspec', 'specs', 'rebuilt-capability');
+      const mainSpecDir = path.join(tempDir, 'rasen', 'specs', 'rebuilt-capability');
       await fs.mkdir(mainSpecDir, { recursive: true });
       const mainContent = `# rebuilt-capability Specification
 
@@ -1177,7 +1177,7 @@ The system SHALL do the thing differently.
         expect(still).toBe(mainContent);
 
         // Change must NOT have been archived
-        const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+        const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
         const archives = await fs.readdir(archiveDir);
         expect(archives.some(a => a.includes(changeName))).toBe(false);
       } finally {
@@ -1187,14 +1187,14 @@ The system SHALL do the thing differently.
 
     it('leaves exit code 0 on successful archive (no leak from prior test)', async () => {
       const changeName = 'exit-ok';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
 
       await archiveCommand.execute(changeName, { yes: true });
 
       expect(process.exitCode).toBeUndefined();
 
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.some(a => a.includes(changeName))).toBe(true);
     });
@@ -1203,7 +1203,7 @@ The system SHALL do the thing differently.
   describe('error handling', () => {
     it('should report no active changes when openspec directory does not exist', async () => {
       // Remove openspec directory
-      await fs.rm(path.join(tempDir, 'openspec'), { recursive: true });
+      await fs.rm(path.join(tempDir, 'rasen'), { recursive: true });
 
       await expect(
         archiveCommand.execute('any-change', { yes: true })
@@ -1219,8 +1219,8 @@ The system SHALL do the thing differently.
       // Create test changes
       const change1 = 'feature-a';
       const change2 = 'feature-b';
-      await fs.mkdir(path.join(tempDir, 'openspec', 'changes', change1), { recursive: true });
-      await fs.mkdir(path.join(tempDir, 'openspec', 'changes', change2), { recursive: true });
+      await fs.mkdir(path.join(tempDir, 'rasen', 'changes', change1), { recursive: true });
+      await fs.mkdir(path.join(tempDir, 'rasen', 'changes', change2), { recursive: true });
       
       // Mock select to return first change
       mockSelect.mockResolvedValueOnce(change1);
@@ -1238,7 +1238,7 @@ The system SHALL do the thing differently.
       }));
       
       // Verify the selected change was archived
-      const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives[0]).toContain(change1);
     });
@@ -1248,7 +1248,7 @@ The system SHALL do the thing differently.
       const mockConfirm = confirm as unknown as ReturnType<typeof vi.fn>;
       
       const changeName = 'incomplete-interactive';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Create tasks.md with incomplete tasks
@@ -1273,7 +1273,7 @@ The system SHALL do the thing differently.
       const mockConfirm = confirm as unknown as ReturnType<typeof vi.fn>;
       
       const changeName = 'cancel-test';
-      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       
       // Create tasks.md with incomplete tasks

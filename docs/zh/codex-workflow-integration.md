@@ -29,7 +29,7 @@
 - 跨重启后，Claude subagent 的 `agentId` 已经不是活句柄，只能读 `agent-<agentId>.jsonl` transcript 暖播种一个新 worker。
 - `auto-run.json` 每个 stage 记录 `role` / `agentId` / `transcript`。
 - `portfolio-run.json` 顶层 `planner` 记录 propose 专属 persistent planner。
-- `openspec pipeline resume <change> --json` 会读取 run-state，暴露 `workers`、`inProgressStages`、`openFindings`、portfolio 的 `planner` 等信息。
+- `rasen pipeline resume <change> --json` 会读取 run-state，暴露 `workers`、`inProgressStages`、`openFindings`、portfolio 的 `planner` 等信息。
 
 本地 Codex plugin for Claude Code 已经提供了另一个模型：
 
@@ -199,7 +199,7 @@ effort?: string;
 - Claude：`agentId || transcript`
 - Codex：`threadId`
 
-`openspec pipeline resume --json` 的输出可以继续叫 `workers`，但每个 entry 带 `runtime`，例如：
+`rasen pipeline resume --json` 的输出可以继续叫 `workers`，但每个 entry 带 `runtime`，例如：
 
 ```json
 {
@@ -218,7 +218,7 @@ effort?: string;
 
 第一次 propose：
 
-1. LEAD 写 `openspec/changes/<id>/planning-context.md`。
+1. LEAD 写 `rasen/changes/<id>/planning-context.md`。
 2. Codex bridge 创建持久 thread：
    - `thread/start({ cwd, sandbox: "workspace-write", ephemeral: false, threadName })`
    - `turn/start({ prompt })`
@@ -227,12 +227,12 @@ effort?: string;
    - 生成 `proposal.md` / `design.md` / `specs/<cap>/spec.md` / `tasks.md`。
    - 追加关键发现到 `planning-context.md`。
    - final message 只返回摘要、写入文件列表、验证建议。
-4. LEAD 运行 `openspec validate <change> --strict` 或至少 `openspec status --change <id> --json` 做结构校验。
+4. LEAD 运行 `rasen validate <change> --strict` 或至少 `rasen status --change <id> --json` 做结构校验。
 5. `auto-run.json` 的 `stages.propose.worker.threadId` 写入 Codex thread。
 
 后续恢复同一个 propose：
 
-1. `openspec pipeline resume <change> --json` 返回 propose worker 的 `threadId`。
+1. `rasen pipeline resume <change> --json` 返回 propose worker 的 `threadId`。
 2. Codex bridge `thread/resume(threadId)`。
 3. `turn/start("Continue the propose stage...")`，并附上当前缺失/需修订的 artifact 清单。
 
@@ -294,7 +294,7 @@ OPSX 推荐第二种作为主路径，因为 review-loop 需要结构化 finding
 
 Codex review thread 写入：
 
-- `openspec/changes/<id>/review-report.md`
+- `rasen/changes/<id>/review-report.md`
 - `auto-run.json.stages.verify.worker.threadId`
 - `auto-run.json.openFindings`
 
@@ -309,7 +309,7 @@ Codex review thread 写入：
 修复：
 
 - 第一阶段仍建议 Claude implementer/fixer 负责修，保持当前 author/verifier 分离模型。
-- 修复后 LEAD 计算 fix delta，写入 `openspec/changes/<id>/review-delta-round-<n>.md`。
+- 修复后 LEAD 计算 fix delta，写入 `rasen/changes/<id>/review-delta-round-<n>.md`。
 
 复审：
 
@@ -371,7 +371,7 @@ Codex stage prompt 应由 OpenSpec 生成，而不是自由拼接。建议包含
 - role：planner/reviewer/fixer。
 - change：change id 与目录。
 - stage contract：必须读哪些文件、必须写哪些文件。
-- current artifacts：`openspec show <change>` / `openspec status --json` 摘要。
+- current artifacts：`rasen show <change>` / `rasen status --json` 摘要。
 - scope：diff/base branch/current working tree。
 - resume context：如果是 resume，说明上一轮 thread 已有上下文，并附本轮 delta / missing artifacts。
 - output contract：final message 格式；review 可带 JSON schema。
@@ -395,7 +395,7 @@ Codex bridge 返回：
 LEAD / executor 必须做二次确认：
 
 - artifact stage：检查目标文件是否真的存在。
-- propose：跑 `openspec validate <change>` 或 `openspec status --json`。
+- propose：跑 `rasen validate <change>` 或 `rasen status --json`。
 - review：解析 final JSON 或检查 report 文件。
 - write sandbox 阶段：记录 `touchedFiles`，必要时要求人工 gate。
 
@@ -514,7 +514,7 @@ LEAD / executor 必须做二次确认：
 - 扩展 `RunStateWorkerSchema`，支持 `runtime/threadId/turnId/jobId`。
 - 扩展 `stageWorkers()`，让 `threadId` 也算 warm-seedable/resumable。
 - 扩展 `PortfolioStateSchema.planner`，接受 Codex worker ref。
-- `openspec pipeline resume --json` 输出 runtime-aware workers。
+- `rasen pipeline resume --json` 输出 runtime-aware workers。
 - 更新 `_orchestration.ts`：说明 Claude 与 Codex 的恢复差异。
 
 ### 第二层：Codex bridge
@@ -522,7 +522,7 @@ LEAD / executor 必须做二次确认：
 - 新增 `CodexAppServerClient`。
 - 新增 `runCodexTurn()` / `resumeCodexTurn()` / `runCodexReview()`。
 - 新增可选 broker lifecycle。
-- 新增 `openspec codex setup/status` 或内部 availability check。
+- 新增 `rasen codex setup/status` 或内部 availability check。
 - 测试 fake app-server，覆盖 start/resume/failure/cancel。
 
 ### 第三层：workflow executor

@@ -1,3 +1,4 @@
+import { COMMAND_PREFIX } from '../../config.js';
 /**
  * Qoder Command Adapter
  *
@@ -9,14 +10,14 @@ import type { CommandContent, ToolCommandAdapter } from '../types.js';
 
 /**
  * Qoder adapter for command generation.
- * File path: .qoder/commands/opsx/<id>.md
+ * File path: .qoder/commands/rasen/<id>.md
  * Frontmatter: name, description, category, tags
  */
 export const qoderAdapter: ToolCommandAdapter = {
   toolId: 'qoder',
 
   getFilePath(commandId: string): string {
-    return path.join('.qoder', 'commands', 'opsx', `${commandId}.md`);
+    return path.join('.qoder', 'commands', COMMAND_PREFIX, `${commandId}.md`);
   },
 
   formatFile(content: CommandContent): string {

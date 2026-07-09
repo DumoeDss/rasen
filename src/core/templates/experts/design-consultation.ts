@@ -36,7 +36,7 @@ Look for office-hours output:
 
 \`\`\`bash
 SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-ls ~/.openspec/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls ~/.rasen/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 \`\`\`
 
@@ -354,9 +354,9 @@ List all decisions. Flag any that used agent defaults without explicit user conf
 
 export function getDesignConsultationSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:design-consultation',
+    name: 'rasen:design-consultation',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

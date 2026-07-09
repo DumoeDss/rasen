@@ -16,26 +16,26 @@ stages:
     condition: needs-decomposition
 
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
     requires: [decompose]
     gate: true
 
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: implementer
     requires: [propose]
     gate: true
 
   - id: verify
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     requires: [apply]
     condition: always
     verifyPolicy: standard
 
   - id: review-loop
-    skill: openspec-review-cycle
+    skill: rasen-review-cycle
     role: fixer
     requires: [verify]
     loop:
@@ -43,14 +43,14 @@ stages:
       maxRounds: 3
 
   - id: ship
-    skill: openspec-opsx-ship
+    skill: rasen-ship
     role: shipper
     requires: [review-loop]
     gate: true
     model: sonnet
 
   - id: archive
-    skill: openspec-archive-change
+    skill: rasen-archive-change
     role: shipper
     requires: [ship]
     model: sonnet

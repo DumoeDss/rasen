@@ -17,27 +17,27 @@ type WorkflowId = (typeof ALL_WORKFLOWS)[number];
  * Maps workflow IDs to their skill directory names.
  */
 export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
-  'explore': 'openspec-explore',
-  'new': 'openspec-new-change',
-  'continue': 'openspec-continue-change',
-  'apply': 'openspec-apply-change',
-  'ff': 'openspec-ff-change',
-  'sync': 'openspec-sync-specs',
-  'archive': 'openspec-archive-change',
-  'bulk-archive': 'openspec-bulk-archive-change',
-  'verify': 'openspec-verify-change',
-  'onboard': 'openspec-onboard',
-  'propose': 'openspec-propose',
-  // OPSX fusion workflow commands
-  'office-hours-command': 'openspec-opsx-office-hours',
-  'verify-enhanced-command': 'openspec-verify-enhanced',
-  'ship-command': 'openspec-opsx-ship',
-  'retro-command': 'openspec-opsx-retro',
-  'auto-command': 'openspec-opsx-auto',
+  'explore': 'rasen-explore',
+  'new': 'rasen-new-change',
+  'continue': 'rasen-continue-change',
+  'apply': 'rasen-apply-change',
+  'ff': 'rasen-ff-change',
+  'sync': 'rasen-sync-specs',
+  'archive': 'rasen-archive-change',
+  'bulk-archive': 'rasen-bulk-archive-change',
+  'verify': 'rasen-verify-change',
+  'onboard': 'rasen-onboard',
+  'propose': 'rasen-propose',
+  // Rasen fusion workflow commands
+  'office-hours-command': 'rasen-office-hours-command',
+  'verify-enhanced-command': 'rasen-verify-enhanced',
+  'ship-command': 'rasen-ship',
+  'retro-command': 'rasen-retro',
+  'auto-command': 'rasen-auto',
   // Iterative review loop (opt-in)
-  'review-cycle': 'openspec-review-cycle',
+  'review-cycle': 'rasen-review-cycle',
   // Context handoff (opt-in)
-  'handoff': 'openspec-handoff',
+  'handoff': 'rasen-handoff',
 };
 
 function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {

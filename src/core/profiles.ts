@@ -28,7 +28,7 @@ export const ALL_WORKFLOWS = [
   'bulk-archive',
   'verify',
   'onboard',
-  // OPSX fusion workflow commands
+  // Rasen fusion workflow commands
   'office-hours-command',
   'verify-enhanced-command',
   'ship-command',

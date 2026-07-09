@@ -66,7 +66,7 @@ describe('telemetry/index', () => {
   }
 
   beforeEach(() => {
-    tempDir = path.join(os.tmpdir(), `openspec-telemetry-test-${randomUUID()}`);
+    tempDir = path.join(os.tmpdir(), `rasen-telemetry-test-${randomUUID()}`);
     fs.mkdirSync(tempDir, { recursive: true });
 
     originalEnv = { ...process.env };
@@ -198,7 +198,7 @@ describe('telemetry/index', () => {
 
       expect(requestSpy).not.toHaveBeenCalled();
       // No anonymous id persisted → no config file written under the temp home.
-      expect(fs.existsSync(path.join(tempDir, 'openspec', 'config.json'))).toBe(false);
+      expect(fs.existsSync(path.join(tempDir, 'rasen', 'config.json'))).toBe(false);
     });
   });
 

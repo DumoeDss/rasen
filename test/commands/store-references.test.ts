@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
-import { createOpenSpecRoot, writeSpec } from '../helpers/openspec-fixtures.js';
+import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 
 describe('store references in instructions (3.1)', () => {
   let tempDir: string;
@@ -16,7 +16,7 @@ describe('store references in instructions (3.1)', () => {
   let storeRoot: string;
 
   beforeEach(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-store-refs-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-refs-'));
     env = {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
@@ -33,7 +33,7 @@ describe('store references in instructions (3.1)', () => {
     appRepo = path.join(tempDir, 'app-repo');
     createOpenSpecRoot(appRepo);
     fs.writeFileSync(
-      path.join(appRepo, 'openspec', 'config.yaml'),
+      path.join(appRepo, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - team-context\n'
     );
   });
@@ -105,7 +105,7 @@ describe('store references in instructions (3.1)', () => {
   });
 
   it('omits the references field entirely when none are declared', async () => {
-    fs.writeFileSync(path.join(appRepo, 'openspec', 'config.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(path.join(appRepo, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     await createChange(appRepo, 'plain-change');
 
     const result = await runCLI(
@@ -120,7 +120,7 @@ describe('store references in instructions (3.1)', () => {
     // A store whose config copy-pasted its own id: the omitted-not-empty
     // contract must hold so field presence stays a reliable signal.
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - team-context\n'
     );
     await createChange(appRepo, 'self-ref-change', ['--store', 'team-context']);
@@ -142,7 +142,7 @@ describe('store references in instructions (3.1)', () => {
     writeSpec(upstreamRoot, 'platform-rules', '## Purpose\n\nPlatform rules.\n');
     await registerStore({ id: 'upstream-context', localPath: upstreamRoot, globalDataDir });
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - upstream-context\n'
     );
 
@@ -163,7 +163,7 @@ describe('store references in instructions (3.1)', () => {
     // team-context references upstream-context; the app repo references
     // only team-context. upstream-context must not appear.
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - upstream-context\n'
     );
 
@@ -214,7 +214,7 @@ describe('store references in instructions (3.1)', () => {
     // No per-change link metadata in the app repo's change.
     const metadataPath = path.join(
       appRepo,
-      'openspec',
+      'rasen',
       'changes',
       'parity-check',
       '.openspec.yaml'
@@ -238,7 +238,7 @@ describe('store references in instructions (3.1)', () => {
     expect(fetchResult.stdout).toContain('Usage-based invoicing.');
 
     // The design lands in the app repo's own root, citing the store spec.
-    const changeDir = path.join(appRepo, 'openspec', 'changes', 'billing-rework');
+    const changeDir = path.join(appRepo, 'rasen', 'changes', 'billing-rework');
     fs.writeFileSync(
       path.join(changeDir, 'proposal.md'),
       '## Why\n\nDerives from team-context/billing (see referenced stores).\n\n## What Changes\n\n- **invoicing:** Rework invoicing\n'

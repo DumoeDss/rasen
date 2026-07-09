@@ -1,3 +1,4 @@
+import { COMMAND_PREFIX } from '../../config.js';
 /**
  * Windsurf Command Adapter
  *
@@ -19,14 +20,14 @@ function formatTagsArray(tags: string[]): string {
 
 /**
  * Windsurf adapter for command generation.
- * File path: .windsurf/workflows/opsx-<id>.md
+ * File path: .windsurf/workflows/rasen-<id>.md
  * Frontmatter: name, description, category, tags
  */
 export const windsurfAdapter: ToolCommandAdapter = {
   toolId: 'windsurf',
 
   getFilePath(commandId: string): string {
-    return path.join('.windsurf', 'workflows', `opsx-${commandId}.md`);
+    return path.join('.windsurf', 'workflows', `${COMMAND_PREFIX}-${commandId}.md`);
   },
 
   formatFile(content: CommandContent): string {

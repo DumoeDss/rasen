@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,7 +43,7 @@ export function getUserSchemasDir(): string {
  * @returns The path to the project's schemas directory
  */
 export function getProjectSchemasDir(projectRoot: string): string {
-  return path.join(projectRoot, 'openspec', 'schemas');
+  return path.join(projectRoot, WORKSPACE_DIR_NAME, 'schemas');
 }
 
 /**

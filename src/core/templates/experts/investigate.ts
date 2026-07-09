@@ -224,9 +224,9 @@ Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 
 export function getInvestigateSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:investigate',
+    name: 'rasen:investigate',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

@@ -1,5 +1,5 @@
 /**
- * Goal OPSX Workflow Command
+ * Goal Rasen Workflow Command
  *
  * Single user-facing entry for goal-driven iteration. The LEAD runs the
  * pre-flight + classification, selects ONE backend goal-loop pipeline
@@ -8,7 +8,7 @@
  *  - goal-loop-measure  — measure gate, code iterate, ship -> archive
  *  - goal-loop-evaluate — evaluate gate, code iterate, ship -> archive
  *  - goal-loop-research — evaluate gate, prose/research iterate, report tail
- * This mirrors how \`/opsx:auto\` classifies among full/small/bug-fix today; it
+ * This mirrors how \`/rasen:auto\` classifies among full/small/bug-fix today; it
  * does NOT reimplement orchestration (it embeds the shared playbook).
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
@@ -23,15 +23,15 @@ You are the **LEAD**. You classify the task, select ONE backend goal-loop pipeli
 
 ## When to Use
 
-Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse budget", "make this rubric-clean", "research and write a report on X". Use \`/opsx:auto\` for tasks whose product is a single reviewable code change (propose -> apply -> verify -> ship); use \`/opsx:goal\` when the product is a *condition* met by iteration.
+Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse budget", "make this rubric-clean", "research and write a report on X". Use \`/rasen:auto\` for tasks whose product is a single reviewable code change (propose -> apply -> verify -> ship); use \`/rasen:goal\` when the product is a *condition* met by iteration.
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via /opsx:handoff. Proceed on the user's say-so; below the threshold, proceed silently.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via /rasen:handoff. Proceed on the user's say-so; below the threshold, proceed silently.
 
 ## 1. Classify and select the backend pipeline (explicit wins)
 
-**Input**: \`/opsx:goal [measure|evaluate|research] [--pipeline goal-loop-<variant>] <task description>\`.
+**Input**: \`/rasen:goal [measure|evaluate|research] [--pipeline goal-loop-<variant>] <task description>\`.
 
 Choose the pipeline in this order:
 1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is one of \`measure\` / \`evaluate\` / \`research\` (a variant selector), use the matching \`goal-loop-<variant>\` pipeline. Strip the selector token; the rest is the task description.
@@ -96,19 +96,19 @@ satisfied | maxRounds-exhausted | in-progress
 
 export function getGoalCommandSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-opsx-goal',
+    name: 'rasen-goal',
     description:
       'Goal-driven iteration entry — the LEAD classifies the task (measure | evaluate | research), selects one backend goal-loop pipeline, and drives it via the shared orchestration playbook. Repeats modify -> judge until a gate is satisfied or maxRounds is hit.',
     instructions: GOAL_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxGoalCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Goal',
+    name: 'Rasen: Goal',
     description:
       'Goal-driven iteration — LEAD classifies and drives a measure | evaluate | research goal-loop pipeline to a gate condition or maxRounds',
     category: 'Workflow',

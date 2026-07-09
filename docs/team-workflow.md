@@ -9,7 +9,7 @@ The short answer: a change is just files, and OpenSpec never touches git. So it 
 OpenSpec reads and writes plain Markdown under `openspec/`. It never commits, branches, pushes, or pulls in your project — and it never clones or syncs a [store](stores-beta/user-guide.md) on its own. That means:
 
 - **You commit `openspec/` like any source.** Specs, active changes, and the archive are part of your project's history. (Yes, commit the whole folder — see the [FAQ](faq.md#should-i-commit-the-openspec-folder-to-git).)
-- **A change is a folder you version like code.** `openspec/changes/add-dark-mode/` is just files on a branch.
+- **A change is a folder you version like code.** `rasen/changes/add-dark-mode/` is just files on a branch.
 - **Everything below is convention, not enforcement.** OpenSpec won't make you do it this way; it just fits cleanly.
 
 ## The everyday loop
@@ -19,17 +19,17 @@ The workflow that works well maps a change onto a branch and a pull request:
 ```
 git switch -c add-dark-mode        start a branch, as usual
    │
-/opsx:propose add-dark-mode        draft the plan (proposal + specs + tasks)
+/rasen:propose add-dark-mode        draft the plan (proposal + specs + tasks)
    │
 REVIEW THE PLAN                    you read it before any code — see Reviewing a Change
    │
-/opsx:apply                        build it; artifacts + code change together
+/rasen:apply                        build it; artifacts + code change together
    │
 git commit && open a PR            the PR contains the spec delta AND the code
    │
 teammate reviews, merges
    │
-/opsx:archive                      fold the delta into specs/, move the change to archive/
+/rasen:archive                      fold the delta into specs/, move the change to archive/
 ```
 
 The plan and the code live side by side in the same branch, so your teammates review both together, and six months later the archived spec still explains why the code looks the way it does.
@@ -48,12 +48,12 @@ A reviewer who disagrees with the *approach* can say so against the proposal, ch
 
 ## When to archive
 
-Archiving folds a change's deltas into your main `openspec/specs/` and moves the change folder to `openspec/changes/archive/YYYY-MM-DD-<name>/`. Because `specs/` is the **shared source of truth**, the timing matters on a team. Two workable conventions:
+Archiving folds a change's deltas into your main `rasen/specs/` and moves the change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/`. Because `specs/` is the **shared source of truth**, the timing matters on a team. Two workable conventions:
 
 - **Archive after the PR merges (recommended).** The branch carries the active change; once it's merged to your main branch, archive there (often a tiny follow-up commit or a scheduled cleanup). This keeps the shared `specs/` moving forward only with work that actually shipped.
 - **Archive inside the PR.** Simpler for small teams: the same PR that adds the code also syncs and archives. The tradeoff is that your `specs/` diff and your code diff land together, which can make the PR noisier.
 
-Pick one and be consistent. Either way, `/opsx:archive` checks that tasks are complete and offers to sync first, so nothing merges half-finished by accident.
+Pick one and be consistent. Either way, `/rasen:archive` checks that tasks are complete and offers to sync first, so nothing merges half-finished by accident.
 
 ## Two people, parallel changes
 
@@ -61,7 +61,7 @@ Because changes are separate folders, they don't collide:
 
 - **Different changes, different people — no problem.** `add-dark-mode` and `rate-limit-login` are different folders on different branches; they never touch each other until they both archive.
 - **One change, one owner.** Two people editing the same change folder conflict exactly like two people editing the same file. Keep a change to a single author, or split it into two changes (another reason to [right-size](writing-specs.md#right-size-the-change)).
-- **The one place conflicts show up is `specs/`.** If two changes both modify the *same* requirement, archiving the second one will conflict in `openspec/specs/…/spec.md` — resolve it like any merge conflict, keeping the requirement that reflects reality. This is rare, and it's a feature: it's git telling you two changes disagreed about how the system should behave.
+- **The one place conflicts show up is `specs/`.** If two changes both modify the *same* requirement, archiving the second one will conflict in `rasen/specs/…/spec.md` — resolve it like any merge conflict, keeping the requirement that reflects reality. This is rare, and it's a feature: it's git telling you two changes disagreed about how the system should behave.
 
 ## When planning outgrows one repo
 

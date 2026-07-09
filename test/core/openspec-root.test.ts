@@ -14,7 +14,7 @@ describe('Rasen root helper', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-root-helper-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-root-helper-'));
   });
 
   afterEach(() => {
@@ -22,9 +22,9 @@ describe('Rasen root helper', () => {
   });
 
   function createHealthyRoot(root: string, configName = 'config.yaml'): void {
-    fs.mkdirSync(path.join(root, 'openspec', 'specs'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'openspec', 'changes', 'archive'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'openspec', configName), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
+    fs.mkdirSync(path.join(root, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'rasen', 'changes', 'archive'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'rasen', configName), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
   }
 
   it('inspects a healthy root with config.yaml', async () => {
@@ -36,7 +36,7 @@ describe('Rasen root helper', () => {
       present: true,
       config: {
         present: true,
-        path: 'openspec/config.yaml',
+        path: 'rasen/config.yaml',
       },
       diagnostics: [],
     }));
@@ -50,14 +50,14 @@ describe('Rasen root helper', () => {
       healthy: true,
       config: {
         present: true,
-        path: 'openspec/config.yml',
+        path: 'rasen/config.yml',
       },
     }));
   });
 
   it('reports missing root pieces without mutating files', async () => {
     const root = path.join(tempDir, 'store');
-    fs.mkdirSync(path.join(root, 'openspec', 'changes'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'rasen', 'changes'), { recursive: true });
 
     const inspection = await inspectOpenSpecRoot(root);
 
@@ -65,13 +65,13 @@ describe('Rasen root helper', () => {
     expect(inspection.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       'openspec_config_missing',
     ]);
-    expect(fs.existsSync(path.join(root, 'openspec', 'changes', 'archive'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'rasen', 'changes', 'archive'))).toBe(false);
   });
 
   it('accepts roots before changes, applied specs, or archives exist', async () => {
     const root = path.join(tempDir, 'store');
-    fs.mkdirSync(path.join(root, 'openspec'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'openspec', 'config.yaml'), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
+    fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
 
     const inspection = await inspectOpenSpecRoot(root);
 
@@ -86,9 +86,9 @@ describe('Rasen root helper', () => {
 
   it('reports malformed optional planning paths without throwing', async () => {
     const root = path.join(tempDir, 'store');
-    fs.mkdirSync(path.join(root, 'openspec'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'openspec', 'config.yaml'), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
-    fs.writeFileSync(path.join(root, 'openspec', 'changes'), 'not a directory\n');
+    fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
+    fs.writeFileSync(path.join(root, 'rasen', 'changes'), 'not a directory\n');
 
     const inspection = await inspectOpenSpecRoot(root);
 
@@ -106,14 +106,14 @@ describe('Rasen root helper', () => {
     const result = await ensureOpenSpecRoot(root);
 
     expect(result.createdArtifacts).toEqual([
-      'openspec/',
-      'openspec/specs/',
-      'openspec/changes/',
-      'openspec/changes/archive/',
-      'openspec/config.yaml',
+      'rasen/',
+      'rasen/specs/',
+      'rasen/changes/',
+      'rasen/changes/archive/',
+      'rasen/config.yaml',
     ]);
     expect(result.inspection.healthy).toBe(true);
-    expect(fs.readFileSync(path.join(root, 'openspec', 'config.yaml'), 'utf-8')).toContain(
+    expect(fs.readFileSync(path.join(root, 'rasen', 'config.yaml'), 'utf-8')).toContain(
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}`
     );
   });
@@ -121,16 +121,16 @@ describe('Rasen root helper', () => {
   it('preserves existing config and user files', async () => {
     const root = path.join(tempDir, 'store');
     createHealthyRoot(root, 'config.yml');
-    fs.writeFileSync(path.join(root, 'openspec', 'specs', 'note.md'), 'keep me\n');
+    fs.writeFileSync(path.join(root, 'rasen', 'specs', 'note.md'), 'keep me\n');
 
     const result = await ensureOpenSpecRoot(root);
 
     expect(result.createdArtifacts).toEqual([]);
-    expect(fs.existsSync(path.join(root, 'openspec', 'config.yaml'))).toBe(false);
-    expect(fs.readFileSync(path.join(root, 'openspec', 'config.yml'), 'utf-8')).toBe(
+    expect(fs.existsSync(path.join(root, 'rasen', 'config.yaml'))).toBe(false);
+    expect(fs.readFileSync(path.join(root, 'rasen', 'config.yml'), 'utf-8')).toBe(
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`
     );
-    expect(fs.readFileSync(path.join(root, 'openspec', 'specs', 'note.md'), 'utf-8')).toBe(
+    expect(fs.readFileSync(path.join(root, 'rasen', 'specs', 'note.md'), 'utf-8')).toBe(
       'keep me\n'
     );
   });
@@ -142,7 +142,7 @@ describe('Rasen root helper', () => {
 
     await rollbackCreatedPaths(result.createdPaths);
 
-    expect(fs.existsSync(path.join(root, 'openspec'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'rasen'))).toBe(false);
     expect(fs.readFileSync(path.join(root, 'user.md'), 'utf-8')).toBe('mine\n');
   });
 });

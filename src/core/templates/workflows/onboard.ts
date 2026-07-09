@@ -9,12 +9,12 @@ import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getOnboardSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-onboard',
+    name: 'rasen-onboard',
     description: 'Guided onboarding for Rasen - walk through a complete workflow cycle with narration and real codebase work.',
     instructions: getOnboardInstructions(),
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
@@ -37,7 +37,7 @@ rasen --version 2>&1 || echo "CLI_NOT_INSTALLED"
 \`\`\`
 
 **If CLI not installed:**
-> Rasen CLI is not installed. Install it first, then come back to \`/opsx:onboard\`.
+> Rasen CLI is not installed. Install it first, then come back to \`/rasen:onboard\`.
 
 Stop here if not installed.
 
@@ -164,7 +164,7 @@ Spend 1-2 minutes investigating the relevant code:
 │   [Optional: ASCII diagram if helpful]  │
 └─────────────────────────────────────────┘
 
-Explore mode (\`/opsx:explore\`) is for this kind of thinking—investigating before implementing. You can use it anytime you need to think through a problem.
+Explore mode (\`/rasen:explore\`) is for this kind of thinking—investigating before implementing. You can use it anytime you need to think through a problem.
 
 Now let's create a change to hold our work.
 \`\`\`
@@ -480,25 +480,25 @@ This same rhythm works for any size change—a small fix or a major feature.
 
  | Command           | What it does                               |
  |-------------------|--------------------------------------------|
- | \`/opsx:propose\` | Create a change and generate all artifacts |
- | \`/opsx:explore\` | Think through problems before/during work  |
- | \`/opsx:apply\`   | Implement tasks from a change              |
- | \`/opsx:archive\` | Archive a completed change                 |
+ | \`/rasen:propose\` | Create a change and generate all artifacts |
+ | \`/rasen:explore\` | Think through problems before/during work  |
+ | \`/rasen:apply\`   | Implement tasks from a change              |
+ | \`/rasen:archive\` | Archive a completed change                 |
 
 **Additional commands:**
 
  | Command            | What it does                                             |
  |--------------------|----------------------------------------------------------|
- | \`/opsx:new\`      | Start a new change, step through artifacts one at a time |
- | \`/opsx:continue\` | Continue working on an existing change                   |
- | \`/opsx:ff\`       | Fast-forward: create all artifacts at once               |
- | \`/opsx:verify\`   | Verify implementation matches artifacts                  |
+ | \`/rasen:new\`      | Start a new change, step through artifacts one at a time |
+ | \`/rasen:continue\` | Continue working on an existing change                   |
+ | \`/rasen:ff\`       | Fast-forward: create all artifacts at once               |
+ | \`/rasen:verify\`   | Verify implementation matches artifacts                  |
 
 ---
 
 ## What's Next?
 
-Try \`/opsx:propose\` on something you actually want to build. You've got the rhythm now!
+Try \`/rasen:propose\` on something you actually want to build. You've got the rhythm now!
 \`\`\`
 
 ---
@@ -513,8 +513,8 @@ If the user says they need to stop, want to pause, or seem disengaged:
 No problem! Your change is saved at the \`changeRoot\` reported by \`rasen status --change "<name>" --json\`.
 
 To pick up where we left off later:
-- \`/opsx:continue <name>\` - Resume artifact creation
-- \`/opsx:apply <name>\` - Jump to implementation (if tasks exist)
+- \`/rasen:continue <name>\` - Resume artifact creation
+- \`/rasen:apply <name>\` - Jump to implementation (if tasks exist)
 
 The work won't be lost. Come back whenever you're ready.
 \`\`\`
@@ -532,21 +532,21 @@ If the user says they just want to see the commands or skip the tutorial:
 
  | Command                  | What it does                               |
  |--------------------------|--------------------------------------------|
- | \`/opsx:propose <name>\` | Create a change and generate all artifacts |
- | \`/opsx:explore\`        | Think through problems (no code changes)   |
- | \`/opsx:apply <name>\`   | Implement tasks                            |
- | \`/opsx:archive <name>\` | Archive when done                          |
+ | \`/rasen:propose <name>\` | Create a change and generate all artifacts |
+ | \`/rasen:explore\`        | Think through problems (no code changes)   |
+ | \`/rasen:apply <name>\`   | Implement tasks                            |
+ | \`/rasen:archive <name>\` | Archive when done                          |
 
 **Additional commands:**
 
  | Command                   | What it does                        |
  |---------------------------|-------------------------------------|
- | \`/opsx:new <name>\`      | Start a new change, step by step    |
- | \`/opsx:continue <name>\` | Continue an existing change         |
- | \`/opsx:ff <name>\`       | Fast-forward: all artifacts at once |
- | \`/opsx:verify <name>\`   | Verify implementation               |
+ | \`/rasen:new <name>\`      | Start a new change, step by step    |
+ | \`/rasen:continue <name>\` | Continue an existing change         |
+ | \`/rasen:ff <name>\`       | Fast-forward: all artifacts at once |
+ | \`/rasen:verify <name>\`   | Verify implementation               |
 
-Try \`/opsx:propose\` to start your first change.
+Try \`/rasen:propose\` to start your first change.
 \`\`\`
 
 Exit gracefully.
@@ -566,7 +566,7 @@ Exit gracefully.
 
 export function getOpsxOnboardCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Onboard',
+    name: 'Rasen: Onboard',
     description: 'Guided onboarding - walk through a complete Rasen workflow cycle with narration',
     category: 'Workflow',
     tags: ['workflow', 'onboarding', 'tutorial', 'learning'],

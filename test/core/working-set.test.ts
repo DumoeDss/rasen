@@ -12,9 +12,9 @@ const root = {
   path: '/team/store',
   source: 'store',
   storeId: 'team-context',
-  changesDir: '/team/store/openspec/changes',
-  specsDir: '/team/store/openspec/specs',
-  archiveDir: '/team/store/openspec/changes/archive',
+  changesDir: '/team/store/rasen/changes',
+  specsDir: '/team/store/rasen/specs',
+  archiveDir: '/team/store/rasen/changes/archive',
   defaultSchema: 'spec-driven',
 } as ResolvedOpenSpecRoot;
 

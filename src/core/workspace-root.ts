@@ -2,24 +2,25 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { FileSystemUtils } from '../utils/file-system.js';
+import { WORKSPACE_DIR_NAME } from './config.js';
 import { serializeConfig } from './config-prompts.js';
 import {
   makeStoreDiagnostic,
   type StoreDiagnostic,
 } from './store/errors.js';
 
-export const OPENSPEC_ROOT_DIR = 'openspec';
-export const OPENSPEC_CONFIG_YAML = 'openspec/config.yaml';
-export const OPENSPEC_CONFIG_YML = 'openspec/config.yml';
-export const OPENSPEC_SPECS_DIR = 'openspec/specs';
-export const OPENSPEC_CHANGES_DIR = 'openspec/changes';
-export const OPENSPEC_ARCHIVE_DIR = 'openspec/changes/archive';
+export const WORKSPACE_ROOT_DIR = WORKSPACE_DIR_NAME;
+export const WORKSPACE_CONFIG_YAML = `${WORKSPACE_DIR_NAME}/config.yaml`;
+export const WORKSPACE_CONFIG_YML = `${WORKSPACE_DIR_NAME}/config.yml`;
+export const WORKSPACE_SPECS_DIR = `${WORKSPACE_DIR_NAME}/specs`;
+export const WORKSPACE_CHANGES_DIR = `${WORKSPACE_DIR_NAME}/changes`;
+export const WORKSPACE_ARCHIVE_DIR = `${WORKSPACE_DIR_NAME}/changes/archive`;
 export const DEFAULT_OPENSPEC_SCHEMA = 'spec-driven';
 export const DIRECTORY_ANCHOR_FILE_NAME = '.gitkeep';
 
 // Git cannot track empty directories, so setup anchors otherwise-empty
 // conventional store directories for teammates who clone the repo later.
-export const ANCHORED_OPENSPEC_DIRS = [OPENSPEC_SPECS_DIR, OPENSPEC_ARCHIVE_DIR] as const;
+export const ANCHORED_WORKSPACE_DIRS = [WORKSPACE_SPECS_DIR, WORKSPACE_ARCHIVE_DIR] as const;
 
 type PathKind = 'missing' | 'directory' | 'file' | 'other';
 
@@ -143,14 +144,14 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
     return inspection;
   }
 
-  const openspecPath = path.join(storeRoot, OPENSPEC_ROOT_DIR);
+  const openspecPath = path.join(storeRoot, WORKSPACE_ROOT_DIR);
   const openspecKind = await pathKind(openspecPath);
   inspection.present = openspecKind === 'directory';
 
   if (openspecKind === 'missing') {
     inspection.diagnostics.push(missingDirectoryDiagnostic(
       'openspec_root_missing',
-      'Missing openspec/ directory.',
+      'Missing rasen/ directory.',
       'openspec.root'
     ));
     return inspection;
@@ -159,18 +160,18 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
   if (openspecKind !== 'directory') {
     inspection.diagnostics.push(missingDirectoryDiagnostic(
       'openspec_root_not_directory',
-      'openspec/ exists but is not a directory.',
+      'rasen/ exists but is not a directory.',
       'openspec.root'
     ));
     return inspection;
   }
 
-  const configYamlKind = await pathKind(path.join(storeRoot, OPENSPEC_CONFIG_YAML));
-  const configYmlKind = await pathKind(path.join(storeRoot, OPENSPEC_CONFIG_YML));
+  const configYamlKind = await pathKind(path.join(storeRoot, WORKSPACE_CONFIG_YAML));
+  const configYmlKind = await pathKind(path.join(storeRoot, WORKSPACE_CONFIG_YML));
   if (configYamlKind === 'file') {
-    inspection.config = { present: true, path: OPENSPEC_CONFIG_YAML };
+    inspection.config = { present: true, path: WORKSPACE_CONFIG_YAML };
   } else if (configYmlKind === 'file') {
-    inspection.config = { present: true, path: OPENSPEC_CONFIG_YML };
+    inspection.config = { present: true, path: WORKSPACE_CONFIG_YML };
   } else {
     inspection.config = { present: false };
     if (configYamlKind !== 'missing' || configYmlKind !== 'missing') {
@@ -182,7 +183,7 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
     } else {
       inspection.diagnostics.push(missingDirectoryDiagnostic(
         'openspec_config_missing',
-        'Missing openspec/config.yaml or openspec/config.yml.',
+        'Missing rasen/config.yaml or rasen/config.yml.',
         'openspec.config'
       ));
     }
@@ -192,7 +193,7 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
     inspection,
     storeRoot,
     'specs',
-    OPENSPEC_SPECS_DIR,
+    WORKSPACE_SPECS_DIR,
     'openspec_specs_not_directory',
     'openspec.specs'
   );
@@ -200,7 +201,7 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
     inspection,
     storeRoot,
     'changes',
-    OPENSPEC_CHANGES_DIR,
+    WORKSPACE_CHANGES_DIR,
     'openspec_changes_not_directory',
     'openspec.changes'
   );
@@ -209,7 +210,7 @@ export async function inspectOpenSpecRoot(storeRoot: string): Promise<OpenSpecRo
       inspection,
       storeRoot,
       'archive',
-      OPENSPEC_ARCHIVE_DIR,
+      WORKSPACE_ARCHIVE_DIR,
       'openspec_archive_not_directory',
       'openspec.archive'
     );
@@ -250,8 +251,8 @@ async function ensureDefaultConfig(
   storeRoot: string,
   ledger: CreatedPathLedgerEntry[]
 ): Promise<void> {
-  const configYamlPath = path.join(storeRoot, OPENSPEC_CONFIG_YAML);
-  const configYmlPath = path.join(storeRoot, OPENSPEC_CONFIG_YML);
+  const configYamlPath = path.join(storeRoot, WORKSPACE_CONFIG_YAML);
+  const configYmlPath = path.join(storeRoot, WORKSPACE_CONFIG_YML);
   const yamlKind = await pathKind(configYamlPath);
   const ymlKind = await pathKind(configYmlPath);
 
@@ -265,7 +266,7 @@ async function ensureDefaultConfig(
     serializeConfig({ schema: DEFAULT_OPENSPEC_SCHEMA })
   );
   ledger.push({
-    relativePath: relativeArtifact(OPENSPEC_CONFIG_YAML, 'file'),
+    relativePath: relativeArtifact(WORKSPACE_CONFIG_YAML, 'file'),
     absolutePath: configYamlPath,
     kind: 'file',
   });
@@ -306,14 +307,14 @@ export async function ensureOpenSpecRoot(
     throw new Error('Store root is not a directory.');
   }
 
-  await ensureDirectory(storeRoot, OPENSPEC_ROOT_DIR, ledger);
-  await ensureDirectory(storeRoot, OPENSPEC_SPECS_DIR, ledger);
-  await ensureDirectory(storeRoot, OPENSPEC_CHANGES_DIR, ledger);
-  await ensureDirectory(storeRoot, OPENSPEC_ARCHIVE_DIR, ledger);
+  await ensureDirectory(storeRoot, WORKSPACE_ROOT_DIR, ledger);
+  await ensureDirectory(storeRoot, WORKSPACE_SPECS_DIR, ledger);
+  await ensureDirectory(storeRoot, WORKSPACE_CHANGES_DIR, ledger);
+  await ensureDirectory(storeRoot, WORKSPACE_ARCHIVE_DIR, ledger);
   await ensureDefaultConfig(storeRoot, ledger);
 
   if (options.anchorEmptyDirectories) {
-    for (const relativeDir of ANCHORED_OPENSPEC_DIRS) {
+    for (const relativeDir of ANCHORED_WORKSPACE_DIRS) {
       await ensureDirectoryAnchor(storeRoot, relativeDir, ledger);
     }
   }

@@ -1,6 +1,6 @@
 # Supported Tools
 
-OpenSpec works with many AI coding assistants. When you run `openspec init`, OpenSpec configures selected tools using your active profile/workflow selection and delivery mode.
+OpenSpec works with many AI coding assistants. When you run `rasen init`, OpenSpec configures selected tools using your active profile/workflow selection and delivery mode.
 
 ## How It Works
 
@@ -16,7 +16,7 @@ By default, OpenSpec uses the `core` profile, which includes:
 - `sync`
 - `archive`
 
-You can enable expanded workflows (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`) via `openspec config profile`, then run `openspec update`.
+You can enable expanded workflows (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`) via `rasen config profile`, then run `rasen update`.
 
 ## Tool Directory Reference
 
@@ -63,16 +63,16 @@ For CI/CD or scripted setup, use `--tools` (and optionally `--profile`):
 
 ```bash
 # Configure specific tools
-openspec init --tools claude,cursor
+rasen init --tools claude,cursor
 
 # Configure all supported tools
-openspec init --tools all
+rasen init --tools all
 
 # Skip tool configuration
-openspec init --tools none
+rasen init --tools none
 
 # Override profile for this init run
-openspec init --profile core
+rasen init --profile core
 ```
 
 **Available tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `vibe`, `windsurf`

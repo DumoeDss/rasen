@@ -33,14 +33,10 @@ import {
 } from './shared/index.js';
 import {
   detectLegacyArtifacts,
-  cleanupLegacyArtifacts,
-  formatCleanupSummary,
-  formatDetectionSummary,
-  getToolsFromLegacyArtifacts,
+  formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
-  type LegacyDetectionResult,
 } from './legacy-cleanup.js';
-import { isInteractive } from '../utils/interactive.js';
+import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, type Delivery, type Profile } from './global-config.js';
 import { getProfileWorkflows, ALL_WORKFLOWS } from './profiles.js';
 import { getAvailableTools } from './available-tools.js';
@@ -91,9 +87,17 @@ export class UpdateCommand {
     const resolvedProjectPath = path.resolve(projectPath);
     const openspecPath = path.join(resolvedProjectPath, OPENSPEC_DIR_NAME);
 
-    // 1. Check openspec directory exists
+    // 1. Require a rasen/ workspace. A legacy-only project (openspec/ but no
+    // rasen/) is pointed at migration and left untouched; anything else is an
+    // uninitialized project.
     if (!await FileSystemUtils.directoryExists(openspecPath)) {
-      throw new Error(`No Rasen directory found. Run 'rasen init' first.`);
+      if (hasLegacyWorkspace(resolvedProjectPath)) {
+        throw new Error(
+          'A legacy openspec/ workspace was found but no rasen/ workspace. ' +
+            'Run "rasen migrate" to copy it (copy-only; openspec/ is left untouched), or "rasen init" to start fresh.'
+        );
+      }
+      throw new Error("No rasen project found. Run 'rasen init' to set up.");
     }
 
     // 2. Perform one-time migration if needed before any legacy upgrade generation.
@@ -112,17 +116,15 @@ export class UpdateCommand {
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
 
-    // 4. Detect and handle legacy artifacts + upgrade legacy tools using effective config
-    const newlyConfiguredTools = await this.handleLegacyCleanup(
-      resolvedProjectPath,
-      desiredWorkflows,
-      delivery
-    );
+    // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
+    // refreshes only rasen-namespace artifacts; upstream/older-rasen `opsx`
+    // command files and `openspec-*` skill dirs are left untouched (D4).
+    await this.noticeLegacyArtifacts(resolvedProjectPath);
 
     // 5. Find configured tools
     const configuredTools = getConfiguredToolsForProfileSync(resolvedProjectPath);
 
-    if (configuredTools.length === 0 && newlyConfiguredTools.length === 0) {
+    if (configuredTools.length === 0) {
       console.log(chalk.yellow('No configured tools found.'));
       console.log(chalk.dim('Run "rasen init" to set up tools.'));
       return;
@@ -302,24 +304,11 @@ export class UpdateCommand {
       console.log(chalk.dim(`Removed: ${removedDeselectedSkillCount} skill directories (deselected workflows)`));
     }
 
-    // 12. Show onboarding message for newly configured tools from legacy upgrade
-    if (newlyConfiguredTools.length > 0) {
-      console.log();
-      console.log(chalk.bold('Getting started:'));
-      console.log('  /opsx:new       Start a new change');
-      console.log('  /opsx:continue  Create the next artifact');
-      console.log('  /opsx:apply     Implement tasks');
-      console.log();
-      console.log(`Learn more: ${chalk.cyan('https://github.com/DumoeDss/rasen')}`);
-    }
+    // 12. Detect new tool directories not currently configured
+    this.detectNewTools(resolvedProjectPath, configuredTools);
 
-    const configuredAndNewTools = [...new Set([...configuredTools, ...newlyConfiguredTools])];
-
-    // 13. Detect new tool directories not currently configured
-    this.detectNewTools(resolvedProjectPath, configuredAndNewTools);
-
-    // 14. Display note about extra workflows not in profile
-    this.displayExtraWorkflowsNote(resolvedProjectPath, configuredAndNewTools, desiredWorkflows);
+    // 13. Display note about extra workflows not in profile
+    this.displayExtraWorkflowsNote(resolvedProjectPath, configuredTools, desiredWorkflows);
     this.displayOldCoreCustomProfileNote(profile, globalConfig.workflows);
 
     // 15. List affected tools
@@ -562,222 +551,19 @@ export class UpdateCommand {
     return removed;
   }
 
+
   /**
-   * Detect and handle legacy Rasen artifacts.
-   * Unlike init, update warns but continues if legacy files found in non-interactive mode.
-   * Returns array of tool IDs that were newly configured during legacy upgrade.
+   * Prints a one-time coexistence notice when legacy-namespace command/skill
+   * artifacts or shared-config marker blocks are detected. Never removes,
+   * rewrites, or refreshes them: they may belong to upstream OpenSpec or an
+   * older rasen install (D4). update only refreshes rasen-namespace artifacts.
    */
-  private async handleLegacyCleanup(
-    projectPath: string,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][],
-    delivery: Delivery
-  ): Promise<string[]> {
-    // Detect legacy artifacts
+  private async noticeLegacyArtifacts(projectPath: string): Promise<void> {
     const detection = await detectLegacyArtifacts(projectPath);
-
-    if (!detection.hasLegacyArtifacts) {
-      return []; // No legacy artifacts found
-    }
-
-    // Show what was detected
+    const notice = formatLegacyCoexistenceNotice(detection);
+    if (!notice) return;
     console.log();
-    console.log(formatDetectionSummary(detection));
+    console.log(notice);
     console.log();
-
-    const canPrompt = isInteractive();
-
-    if (this.force) {
-      // --force flag: proceed with cleanup automatically
-      await this.performLegacyCleanup(projectPath, detection);
-      // Then upgrade legacy tools to new skills
-      return this.upgradeLegacyTools(projectPath, detection, canPrompt, desiredWorkflows, delivery);
-    }
-
-    if (!canPrompt) {
-      // Non-interactive mode without --force: warn and continue
-      // (Unlike init, update doesn't abort - user may just want to update skills)
-      console.log(chalk.yellow('⚠ Run with --force to auto-cleanup legacy files, or run interactively.'));
-      console.log();
-      return [];
-    }
-
-    // Interactive mode: prompt for confirmation
-    const { confirm } = await import('@inquirer/prompts');
-    const shouldCleanup = await confirm({
-      message: 'Upgrade and clean up legacy files?',
-      default: true,
-    });
-
-    if (shouldCleanup) {
-      await this.performLegacyCleanup(projectPath, detection);
-      // Then upgrade legacy tools to new skills
-      return this.upgradeLegacyTools(projectPath, detection, canPrompt, desiredWorkflows, delivery);
-    } else {
-      console.log(chalk.dim('Skipping legacy cleanup. Continuing with skill update...'));
-      console.log();
-      return [];
-    }
-  }
-
-  /**
-   * Perform cleanup of legacy artifacts.
-   */
-  private async performLegacyCleanup(projectPath: string, detection: LegacyDetectionResult): Promise<void> {
-    const spinner = ora('Cleaning up legacy files...').start();
-
-    const result = await cleanupLegacyArtifacts(projectPath, detection);
-
-    spinner.succeed('Legacy files cleaned up');
-
-    const summary = formatCleanupSummary(result);
-    if (summary) {
-      console.log();
-      console.log(summary);
-    }
-
-    console.log();
-  }
-
-  /**
-   * Upgrade legacy tools to new skills system.
-   * Returns array of tool IDs that were newly configured.
-   */
-  private async upgradeLegacyTools(
-    projectPath: string,
-    detection: LegacyDetectionResult,
-    canPrompt: boolean,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][],
-    delivery: Delivery
-  ): Promise<string[]> {
-    // Get tools that had legacy artifacts
-    const legacyTools = getToolsFromLegacyArtifacts(detection);
-
-    if (legacyTools.length === 0) {
-      return [];
-    }
-
-    // Get currently configured tools
-    const configuredTools = getConfiguredToolsForProfileSync(projectPath);
-    const configuredSet = new Set(configuredTools);
-
-    // Filter to tools that aren't already configured
-    const unconfiguredLegacyTools = legacyTools.filter((t) => !configuredSet.has(t));
-
-    if (unconfiguredLegacyTools.length === 0) {
-      return [];
-    }
-
-    // Get valid tools (those with skillsDir)
-    const validToolIds = new Set(getToolsWithSkillsDir());
-    const validUnconfiguredTools = unconfiguredLegacyTools.filter((t) => validToolIds.has(t));
-
-    if (validUnconfiguredTools.length === 0) {
-      return [];
-    }
-
-    // Show what tools were detected from legacy artifacts
-    console.log(chalk.bold('Tools detected from legacy artifacts:'));
-    for (const toolId of validUnconfiguredTools) {
-      const tool = AI_TOOLS.find((t) => t.value === toolId);
-      console.log(`  • ${tool?.name || toolId}`);
-    }
-    console.log();
-
-    let selectedTools: string[];
-
-    if (this.force || !canPrompt) {
-      // Non-interactive with --force: auto-select detected tools
-      selectedTools = validUnconfiguredTools;
-      console.log(`Setting up skills for: ${selectedTools.join(', ')}`);
-    } else {
-      // Interactive mode: prompt for tool selection with detected tools pre-selected
-      const { searchableMultiSelect } = await import('../prompts/searchable-multi-select.js');
-
-      const sortedChoices = validUnconfiguredTools.map((toolId) => {
-        const tool = AI_TOOLS.find((t) => t.value === toolId);
-        return {
-          name: tool?.name || toolId,
-          value: toolId,
-          configured: false,
-          preSelected: true, // Pre-select all detected legacy tools
-        };
-      });
-
-      selectedTools = await searchableMultiSelect({
-        message: 'Select tools to set up with the new skill system:',
-        pageSize: 15,
-        choices: sortedChoices,
-        validate: (_selected: string[]) => true, // Allow empty selection (user can skip)
-      });
-
-      if (selectedTools.length === 0) {
-        console.log(chalk.dim('Skipping tool setup.'));
-        console.log();
-        return [];
-      }
-    }
-
-    // Create skills/commands for selected tools using effective profile+delivery.
-    const newlyConfigured: string[] = [];
-    const shouldGenerateSkills = delivery !== 'commands';
-    const shouldGenerateCommands = delivery !== 'skills';
-    const { skills: skillTemplates, commands: commandContents } = deduplicateForDelivery(
-      delivery,
-      shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [],
-      shouldGenerateCommands ? getCommandContents(desiredWorkflows) : []
-    );
-
-    for (const toolId of selectedTools) {
-      const tool = AI_TOOLS.find((t) => t.value === toolId);
-      if (!tool?.skillsDir) continue;
-
-      const spinner = ora(`Setting up ${tool.name}...`).start();
-
-      try {
-        const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
-
-        // Create skill files when delivery includes skills
-        if (shouldGenerateSkills) {
-          for (const { template, dirName, workflowId } of skillTemplates) {
-            const skillDir = path.join(skillsDir, dirName);
-            const skillFile = path.join(skillDir, 'SKILL.md');
-
-            // Use hyphen-based command references for OpenCode
-            const transformer = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-            const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
-            await FileSystemUtils.writeFile(skillFile, skillContent);
-
-            // Copy the skill's sidecar reference files so its relative-path
-            // references resolve at the install target (idempotent overwrite).
-            copySkillSidecars(workflowId, skillDir);
-          }
-        }
-
-        // Create commands when delivery includes commands
-        if (shouldGenerateCommands) {
-          const adapter = CommandAdapterRegistry.get(tool.value);
-          if (adapter) {
-            const generatedCommands = generateCommands(commandContents, adapter);
-
-            for (const cmd of generatedCommands) {
-              const commandFile = path.isAbsolute(cmd.path) ? cmd.path : path.join(projectPath, cmd.path);
-              await FileSystemUtils.writeFile(commandFile, cmd.fileContent);
-            }
-          }
-        }
-
-        spinner.succeed(`Setup complete for ${tool.name}`);
-        newlyConfigured.push(toolId);
-      } catch (error) {
-        spinner.fail(`Failed to set up ${tool.name}`);
-        console.log(chalk.red(`  ${error instanceof Error ? error.message : String(error)}`));
-      }
-    }
-
-    if (newlyConfigured.length > 0) {
-      console.log();
-    }
-
-    return newlyConfigured;
   }
 }

@@ -59,15 +59,15 @@ You're "in planning phase", then "in implementation phase", then "done". But rea
 ## Setup
 
 ```bash
-# Make sure you have openspec installed — skills are automatically generated
-openspec init
+# Make sure you have rasen installed — skills are automatically generated
+rasen init
 ```
 
 This creates skills in `.claude/skills/` (or equivalent) that AI coding assistants auto-detect.
 
-By default, OpenSpec uses the `core` workflow profile (`propose`, `explore`, `apply`, `sync`, `archive`). If you want the expanded workflow commands (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`), configure them with `openspec config profile` and apply with `openspec update`.
+By default, OpenSpec uses the `core` workflow profile (`propose`, `explore`, `apply`, `sync`, `archive`). If you want the expanded workflow commands (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`), configure them with `rasen config profile` and apply with `rasen update`.
 
-During setup, you'll be prompted to create a **project config** (`openspec/config.yaml`). This is optional but recommended.
+During setup, you'll be prompted to create a **project config** (`rasen/config.yaml`). This is optional but recommended.
 
 ## Project Configuration
 
@@ -75,10 +75,10 @@ Project config lets you set defaults and inject project-specific context into al
 
 ### Creating Config
 
-Config is created during `openspec init`, or manually:
+Config is created during `rasen init`, or manually:
 
 ```yaml
-# openspec/config.yaml
+# rasen/config.yaml
 schema: spec-driven
 
 context: |
@@ -110,7 +110,7 @@ rules:
 **Schema precedence** (highest to lowest):
 1. CLI flag (`--schema <name>`)
 2. Change metadata (`.openspec.yaml` in change directory)
-3. Project config (`openspec/config.yaml`)
+3. Project config (`rasen/config.yaml`)
 4. Default (`spec-driven`)
 
 **Context injection:**
@@ -142,10 +142,10 @@ rules:
 
 **"Unknown artifact ID in rules: X"**
 - Check artifact IDs match your schema (see list above)
-- Run `openspec schemas --json` to see artifact IDs for each schema
+- Run `rasen schemas --json` to see artifact IDs for each schema
 
 **Config not being applied:**
-- Ensure file is at `openspec/config.yaml` (not `.yml`)
+- Ensure file is at `rasen/config.yaml` (not `.yml`)
 - Check YAML syntax with a validator
 - Config changes take effect immediately (no restart needed)
 
@@ -157,65 +157,65 @@ rules:
 
 | Command | What it does |
 |---------|--------------|
-| `/opsx:propose` | Create a change and generate planning artifacts in one step (default quick path) |
-| `/opsx:explore` | Think through ideas, investigate problems, clarify requirements |
-| `/opsx:new` | Start a new change scaffold (expanded workflow) |
-| `/opsx:continue` | Create the next artifact (expanded workflow) |
-| `/opsx:ff` | Fast-forward planning artifacts (expanded workflow) |
-| `/opsx:apply` | Implement tasks, updating artifacts as needed |
-| `/opsx:verify` | Validate implementation against artifacts (expanded workflow) |
-| `/opsx:sync` | Sync delta specs to main (default workflow, optional) |
-| `/opsx:archive` | Archive when done |
-| `/opsx:bulk-archive` | Archive multiple completed changes (expanded workflow) |
-| `/opsx:onboard` | Guided walkthrough of an end-to-end change (expanded workflow) |
+| `/rasen:propose` | Create a change and generate planning artifacts in one step (default quick path) |
+| `/rasen:explore` | Think through ideas, investigate problems, clarify requirements |
+| `/rasen:new` | Start a new change scaffold (expanded workflow) |
+| `/rasen:continue` | Create the next artifact (expanded workflow) |
+| `/rasen:ff` | Fast-forward planning artifacts (expanded workflow) |
+| `/rasen:apply` | Implement tasks, updating artifacts as needed |
+| `/rasen:verify` | Validate implementation against artifacts (expanded workflow) |
+| `/rasen:sync` | Sync delta specs to main (default workflow, optional) |
+| `/rasen:archive` | Archive when done |
+| `/rasen:bulk-archive` | Archive multiple completed changes (expanded workflow) |
+| `/rasen:onboard` | Guided walkthrough of an end-to-end change (expanded workflow) |
 
 ## Usage
 
 ### Explore an idea
 ```
-/opsx:explore
+/rasen:explore
 ```
-Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/opsx:propose` (default) or `/opsx:new`/`/opsx:ff` (expanded).
+Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/rasen:propose` (default) or `/rasen:new`/`/rasen:ff` (expanded).
 
 ### Start a new change
 ```
-/opsx:propose
+/rasen:propose
 ```
 Creates the change and generates planning artifacts needed before implementation.
 
 If you've enabled expanded workflows, you can instead use:
 
 ```text
-/opsx:new        # scaffold only
-/opsx:continue   # create one artifact at a time
-/opsx:ff         # create all planning artifacts at once
+/rasen:new        # scaffold only
+/rasen:continue   # create one artifact at a time
+/rasen:ff         # create all planning artifacts at once
 ```
 
 ### Create artifacts
 ```
-/opsx:continue
+/rasen:continue
 ```
 Shows what's ready to create based on dependencies, then creates one artifact. Use repeatedly to build up your change incrementally.
 
 ```
-/opsx:ff add-dark-mode
+/rasen:ff add-dark-mode
 ```
 Creates all planning artifacts at once. Use when you have a clear picture of what you're building.
 
 ### Implement (the fluid part)
 ```
-/opsx:apply
+/rasen:apply
 ```
-Works through tasks, checking them off as you go. If you're juggling multiple changes, you can run `/opsx:apply <name>`; otherwise it should infer from the conversation and prompt you to choose if it can't tell.
+Works through tasks, checking them off as you go. If you're juggling multiple changes, you can run `/rasen:apply <name>`; otherwise it should infer from the conversation and prompt you to choose if it can't tell.
 
 ### Finish up
 ```
-/opsx:archive   # Move to archive when done (prompts to sync specs if needed)
+/rasen:archive   # Move to archive when done (prompts to sync specs if needed)
 ```
 
-### Goal-driven iteration (`/opsx:goal`)
+### Goal-driven iteration (`/rasen:goal`)
 
-`/opsx:auto` assumes the product is a code-change document (propose → apply → ship). Some tasks don't fit that shape — their "done" is a **condition**: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/opsx:goal` is the entry point for those. It repeats **modify → judge** until a gate is satisfied or a round cap is hit.
+`/rasen:auto` assumes the product is a code-change document (propose → apply → ship). Some tasks don't fit that shape — their "done" is a **condition**: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/rasen:goal` is the entry point for those. It repeats **modify → judge** until a gate is satisfied or a round cap is hit.
 
 You see one command. The LEAD classifies the task and selects ONE backend pipeline (explicit override always wins):
 
@@ -225,7 +225,7 @@ You see one command. The LEAD classifies the task and selects ONE backend pipeli
 | `evaluate` — `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | a fresh reviewer worker judges `{satisfied, gaps}` | ship → archive |
 | `research` — `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | a fresh reviewer worker | report (no ship) |
 
-The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/opsx:goal` shares the same orchestration playbook as `/opsx:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
+The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen:goal` shares the same orchestration playbook as `/rasen:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
 
 ## When to Update vs. Start Fresh
 
@@ -315,7 +315,7 @@ Think of it like git branches:
 
 ## What's Different?
 
-| | Legacy (`/openspec:proposal`) | OPSX (`/opsx:*`) |
+| | Legacy (`/openspec:proposal`) | OPSX (`/rasen:*`) |
 |---|---|---|
 | **Structure** | One big proposal document | Discrete artifacts with dependencies |
 | **Workflow** | Linear phases: plan → implement → archive | Fluid actions — do anything anytime |
@@ -498,13 +498,13 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
 **OPSX** — agent queries for rich context:
 
 ```
-  User: "/opsx:continue"
+  User: "/rasen:continue"
            │
            ▼
   ┌──────────────────────────────────────────────────────────────────────────┐
   │  Step 1: Query current state                                             │
   │  ┌────────────────────────────────────────────────────────────────────┐  │
-  │  │  $ openspec status --change "add-auth" --json                      │  │
+  │  │  $ rasen status --change "add-auth" --json                      │  │
   │  │                                                                    │  │
   │  │  {                                                                 │  │
   │  │    "artifacts": [                                                  │  │
@@ -518,7 +518,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
   │                                                                          │
   │  Step 2: Get rich instructions for ready artifact                        │
   │  ┌────────────────────────────────────────────────────────────────────┐  │
-  │  │  $ openspec instructions specs --change "add-auth" --json          │  │
+  │  │  $ rasen instructions specs --change "add-auth" --json          │  │
   │  │                                                                    │  │
   │  │  {                                                                 │  │
   │  │    "template": "# Specification\n\n## ADDED Requirements...",      │  │
@@ -555,7 +555,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
 **OPSX** — natural iteration:
 
 ```
-  /opsx:new ───► /opsx:continue ───► /opsx:apply ───► /opsx:archive
+  /rasen:new ───► /rasen:continue ───► /rasen:apply ───► /rasen:archive
       │                │                  │
       │                │                  ├── "The design is wrong"
       │                │                  │
@@ -564,7 +564,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
       │                │            and continue!
       │                │                  │
       │                │                  ▼
-      │                │         /opsx:apply picks up
+      │                │         /rasen:apply picks up
       │                │         where you left off
       │                │
       │                └── Creates ONE artifact, shows what's unlocked
@@ -578,16 +578,16 @@ Create custom workflows using the schema management commands:
 
 ```bash
 # Create a new schema from scratch (interactive)
-openspec schema init my-workflow
+rasen schema init my-workflow
 
 # Or fork an existing schema as a starting point
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 
 # Validate your schema structure
-openspec schema validate my-workflow
+rasen schema validate my-workflow
 
 # See where a schema resolves from (useful for debugging)
-openspec schema which my-workflow
+rasen schema which my-workflow
 ```
 
 Schemas are stored in `openspec/schemas/` (project-local, version controlled) or `~/.local/share/openspec/schemas/` (user global).
@@ -643,28 +643,28 @@ Schemas define what artifacts exist and their dependencies. Currently available:
 
 ```bash
 # List available schemas
-openspec schemas
+rasen schemas
 
 # See all schemas with their resolution sources
-openspec schema which --all
+rasen schema which --all
 
 # Create a new schema interactively
-openspec schema init my-workflow
+rasen schema init my-workflow
 
 # Fork an existing schema for customization
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 
 # Validate schema structure before use
-openspec schema validate my-workflow
+rasen schema validate my-workflow
 ```
 
 ## Tips
 
-- Use `/opsx:explore` to think through an idea before committing to a change
-- `/opsx:ff` when you know what you want, `/opsx:continue` when exploring
-- During `/opsx:apply`, if something's wrong — fix the artifact, then continue
+- Use `/rasen:explore` to think through an idea before committing to a change
+- `/rasen:ff` when you know what you want, `/rasen:continue` when exploring
+- During `/rasen:apply`, if something's wrong — fix the artifact, then continue
 - Tasks track progress via checkboxes in `tasks.md`
-- Check status anytime: `openspec status --change "name"`
+- Check status anytime: `rasen status --change "name"`
 
 ## Feedback
 

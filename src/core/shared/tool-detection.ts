@@ -12,17 +12,17 @@ import { AI_TOOLS } from '../config.js';
  * Names of skill directories created by rasen init.
  */
 export const SKILL_NAMES = [
-  'openspec-explore',
-  'openspec-new-change',
-  'openspec-continue-change',
-  'openspec-apply-change',
-  'openspec-ff-change',
-  'openspec-sync-specs',
-  'openspec-archive-change',
-  'openspec-bulk-archive-change',
-  'openspec-verify-change',
-  'openspec-onboard',
-  'openspec-propose',
+  'rasen-explore',
+  'rasen-new-change',
+  'rasen-continue-change',
+  'rasen-apply-change',
+  'rasen-ff-change',
+  'rasen-sync-specs',
+  'rasen-archive-change',
+  'rasen-bulk-archive-change',
+  'rasen-verify-change',
+  'rasen-onboard',
+  'rasen-propose',
 ] as const;
 
 export type SkillName = (typeof SKILL_NAMES)[number];
@@ -42,7 +42,7 @@ export const COMMAND_IDS = [
   'verify',
   'onboard',
   'propose',
-  // OPSX fusion workflow commands
+  // Rasen fusion workflow commands
   'office-hours-command',
   'verify-enhanced-command',
   'ship-command',
@@ -148,7 +148,7 @@ export function extractGeneratedByVersion(skillFilePath: string): string | null 
     // ---
     // ...
     // metadata:
-    //   author: openspec
+    //   author: rasen
     //   version: "1.0"
     //   generatedBy: "0.23.0"
     // ---

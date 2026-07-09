@@ -172,7 +172,7 @@ describe('pipeline-registry/built-ins', () => {
       const stages = pipeline.stages;
       const last = stages[stages.length - 1];
       expect(last.id).toBe('report');
-      expect(last.skill).toBe('openspec-goal-report');
+      expect(last.skill).toBe('rasen-goal-report');
       // Research writes prose — there is no code to ship/archive.
       const ids = stages.map(s => s.id);
       expect(ids).not.toContain('ship');

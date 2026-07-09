@@ -42,6 +42,7 @@ import {
 import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/index.js';
 import { migrateLegacyBrandConfig } from '../core/global-config.js';
 import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
+import { isInteractive } from '../utils/interactive.js';
 
 const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
 
@@ -213,6 +214,62 @@ program
     try {
       const updateCommand = new UpdateCommand({ force: options?.force });
       await updateCommand.execute(targetPath);
+    } catch (error) {
+      failWithError(error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('migrate [path]')
+  .description('Copy a legacy openspec/ workspace into rasen/ (copy-only; originals untouched)')
+  .option('--no-interactive', 'Do not prompt (skips optional marker-block cleanup)')
+  .action(async (targetPath = '.', options?: { interactive?: boolean }) => {
+    try {
+      const projectRoot = path.resolve(targetPath);
+      const { migrateWorkspace, formatMigrationSummary, hasLegacyWorkspace } =
+        await import('../core/workspace-migration.js');
+
+      if (!hasLegacyWorkspace(projectRoot)) {
+        console.log(
+          'No legacy openspec/ workspace found here. Run "rasen init" to create a new rasen/ workspace.'
+        );
+        return;
+      }
+
+      const summary = migrateWorkspace(projectRoot);
+      console.log(formatMigrationSummary(summary));
+      if (summary.failed.length > 0) {
+        process.exitCode = 1;
+      }
+
+      // Consent-gated (default no) marker-block cleanup: only inside the migrate
+      // flow, and only when interactive, may rasen remove OpenSpec marker blocks
+      // from shared config files (they may belong to upstream OpenSpec).
+      if (isInteractive(options)) {
+        const { detectLegacyArtifacts, cleanupMarkerBlocks } = await import(
+          '../core/legacy-cleanup.js'
+        );
+        const detection = await detectLegacyArtifacts(projectRoot);
+        if (detection.configFilesToUpdate.length > 0) {
+          const { confirm } = await import('@inquirer/prompts');
+          const shouldClean = await confirm({
+            message: `Remove OpenSpec marker blocks from ${detection.configFilesToUpdate.join(', ')}? (they may be used by upstream OpenSpec)`,
+            default: false,
+          });
+          if (shouldClean) {
+            const { modifiedFiles, errors } = await cleanupMarkerBlocks(projectRoot, detection);
+            if (modifiedFiles.length > 0) {
+              console.log(`Removed OpenSpec markers from: ${modifiedFiles.join(', ')}`);
+            }
+            for (const error of errors) {
+              console.log(`  ⚠ ${error}`);
+            }
+          } else {
+            console.log('Keeping marker blocks. You can remove them manually anytime.');
+          }
+        }
+      }
     } catch (error) {
       failWithError(error);
       process.exit(1);

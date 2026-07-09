@@ -1,5 +1,5 @@
 /**
- * Ship OPSX Workflow Command
+ * Ship Rasen Workflow Command
  *
  * Self-contained release workflow — commit, resolve the delivery mode
  * (pr / push / local), run tests only when evidence demands it, then deliver.
@@ -33,12 +33,12 @@ If a change name is provided, use it. Otherwise:
 Run all checks before shipping:
 
 **a. Verification Status**
-- Check if \`openspec/changes/<name>/review-report.md\` exists (or \`review-cycle-report.md\` from the review loop, or any other expert \`*-report.md\` — any of these counts as verification evidence)
-- If no verification report found, warn: "No verification report found. Run /opsx:verify first."
+- Check if \`rasen/changes/<name>/review-report.md\` exists (or \`review-cycle-report.md\` from the review loop, or any other expert \`*-report.md\` — any of these counts as verification evidence)
+- If no verification report found, warn: "No verification report found. Run /rasen:verify first."
 - Prompt user to confirm proceeding without verification
 
 **b. Task Completion**
-- Read \`openspec/changes/<name>/tasks.md\`
+- Read \`rasen/changes/<name>/tasks.md\`
 - Verify all tasks are marked complete (\`- [x]\`)
 - If incomplete tasks exist, list them and prompt for confirmation
 
@@ -96,7 +96,7 @@ If tests run and any in-branch test fails, **STOP** and do NOT deliver (a genuin
 
 **PR Body Generation (pr mode):**
 
-If \`openspec/changes/<name>/proposal.md\` exists:
+If \`rasen/changes/<name>/proposal.md\` exists:
 - Extract "Why" and "What Changes" sections
 - Use as PR body with proper markdown formatting
 - Derive PR title from change name or proposal summary
@@ -117,7 +117,7 @@ If no proposal.md:
 
 ### 4. Write Ship Log
 
-After successful delivery in ANY mode, write \`openspec/changes/<name>/ship-log.md\`:
+After successful delivery in ANY mode, write \`rasen/changes/<name>/ship-log.md\`:
 
 \`\`\`markdown
 # Ship Log: <change-name>
@@ -139,7 +139,7 @@ After successful delivery in ANY mode, write \`openspec/changes/<name>/ship-log.
 - Tests: ran green | skipped — green at <evidence source>, tree <fingerprint>
 
 ## Deployment
-Status: Pending (run /opsx:ship --deploy to continue)   (pr mode only)
+Status: Pending (run /rasen:ship --deploy to continue)   (pr mode only)
 \`\`\`
 
 ### 5. Optional: Land and Deploy (pr mode only)
@@ -168,8 +168,8 @@ If CI fails:
 ### 6. Post-Ship
 
 After shipping, suggest:
-- Run \`/opsx:retro\` for a retrospective on the change
-- Run \`/opsx:archive\` to archive the completed change
+- Run \`/rasen:retro\` for a retrospective on the change
+- Run \`/rasen:archive\` to archive the completed change
 - Update project documentation (README, architecture notes, changelog) to match what shipped, so the docs do not drift from the release
 
 ## Output
@@ -190,24 +190,24 @@ After shipping, suggest:
 
 ### Next Steps
 - Monitor CI: gh pr checks 42
-- Deploy: /opsx:ship --deploy
-- Retro: /opsx:retro <change-name>
+- Deploy: /rasen:ship --deploy
+- Retro: /rasen:retro <change-name>
 \`\`\``;
 
 export function getShipCommandSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-opsx-ship',
+    name: 'rasen-ship',
     description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to change directory.',
     instructions: SHIP_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxShipCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Ship',
+    name: 'Rasen: Ship',
     description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver',
     category: 'Workflow',
     tags: ['workflow', 'release', 'ship', 'deploy'],

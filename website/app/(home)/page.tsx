@@ -94,7 +94,7 @@ function Terminal() {
         </div>
         <pre className="overflow-x-auto p-4 text-sm leading-relaxed">
           <code>
-            <span className="text-fd-primary">/opsx:propose</span> add-dark-mode
+            <span className="text-fd-primary">/rasen:propose</span> add-dark-mode
             {'\n'}
             <span className="text-fd-muted-foreground">
               {'  '}✓ proposal.md — why we are doing this, what changes{'\n'}
@@ -103,13 +103,13 @@ function Terminal() {
               {'  '}✓ tasks.md — implementation checklist{'\n'}
             </span>
             {'\n'}
-            <span className="text-fd-primary">/opsx:apply</span>
+            <span className="text-fd-primary">/rasen:apply</span>
             {'\n'}
             <span className="text-fd-muted-foreground">
               {'  '}✓ working through tasks, checking each one off…{'\n'}
             </span>
             {'\n'}
-            <span className="text-fd-primary">/opsx:archive</span>
+            <span className="text-fd-primary">/rasen:archive</span>
             {'\n'}
             <span className="text-fd-muted-foreground">
               {'  '}✓ specs updated · change filed away · ready for the next one
@@ -244,23 +244,23 @@ function FiveIdeas() {
 const STEPS = [
   {
     icon: Compass,
-    cmd: '/opsx:explore',
+    cmd: '/rasen:explore',
     label: 'optional',
     body: 'A no-stakes thinking partner. It reads your code, weighs options, and turns a fuzzy idea into a concrete plan.',
   },
   {
     icon: FileText,
-    cmd: '/opsx:propose',
+    cmd: '/rasen:propose',
     body: 'The AI drafts the proposal, spec deltas, design, and a task list. You read it and adjust before any code is written.',
   },
   {
     icon: Hammer,
-    cmd: '/opsx:apply',
+    cmd: '/rasen:apply',
     body: 'The AI builds it, working through the tasks and checking each one off as it goes.',
   },
   {
     icon: Archive,
-    cmd: '/opsx:archive',
+    cmd: '/rasen:archive',
     body: 'Spec deltas merge into the truth and the change is filed away with a date stamp. Ready for the next one.',
   },
 ];

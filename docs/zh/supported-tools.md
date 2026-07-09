@@ -1,6 +1,6 @@
 # 支持的工具
 
-OpenSpec 兼容多种 AI 编程助手。当你运行 `openspec init` 时，OpenSpec 会根据你激活的 profile/workflow 选择和交付模式来配置选定的工具。
+OpenSpec 兼容多种 AI 编程助手。当你运行 `rasen init` 时，OpenSpec 会根据你激活的 profile/workflow 选择和交付模式来配置选定的工具。
 
 ## 工作原理
 
@@ -16,7 +16,7 @@ OpenSpec 兼容多种 AI 编程助手。当你运行 `openspec init` 时，OpenS
 - `sync`
 - `archive`
 
-你可以通过 `openspec config profile` 启用扩展工作流（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），然后运行 `openspec update`。
+你可以通过 `rasen config profile` 启用扩展工作流（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），然后运行 `rasen update`。
 
 ## 工具目录参考
 
@@ -63,16 +63,16 @@ OpenSpec 兼容多种 AI 编程助手。当你运行 `openspec init` 时，OpenS
 
 ```bash
 # 配置特定工具
-openspec init --tools claude,cursor
+rasen init --tools claude,cursor
 
 # 配置所有支持的工具
-openspec init --tools all
+rasen init --tools all
 
 # 跳过工具配置
-openspec init --tools none
+rasen init --tools none
 
 # 为本次 init 运行覆盖 profile
-openspec init --profile core
+rasen init --profile core
 ```
 
 **可用的工具 ID（`--tools`）：** `amazon-q`、`antigravity`、`auggie`、`bob`、`claude`、`cline`、`codex`、`forgecode`、`codebuddy`、`continue`、`costrict`、`crush`、`cursor`、`factory`、`gemini`、`github-copilot`、`iflow`、`junie`、`kilocode`、`kimi`、`kiro`、`lingma`、`opencode`、`pi`、`qoder`、`qwen`、`roocode`、`trae`、`vibe`、`windsurf`

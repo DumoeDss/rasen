@@ -8,11 +8,11 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 | 方面 | 旧版 | OPSX |
 |--------|--------|------|
-| **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/opsx:propose`, `/opsx:apply`, `/opsx:sync`, `/opsx:archive`（扩展工作流命令可选） |
+| **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/rasen:propose`, `/rasen:apply`, `/rasen:sync`, `/rasen:archive`（扩展工作流命令可选） |
 | **工作流** | 一次性创建所有产物 | 渐进式或一次性创建——由你选择 |
 | **回退** | 笨拙的阶段门控 | 自然——随时更新任何产物 |
 | **定制** | 固定结构 | Schema 驱动，完全可定制 |
-| **配置** | `CLAUDE.md` 标记 + `project.md` | 简洁的配置在 `openspec/config.yaml` |
+| **配置** | `CLAUDE.md` 标记 + `project.md` | 简洁的配置在 `rasen/config.yaml` |
 
 **理念变化：** 工作不是线性的。OPSX 不再假装它是线性的。
 
@@ -24,9 +24,9 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 迁移过程以保留为设计原则：
 
-- **`openspec/changes/` 中的活跃变更** — 完全保留。你可以使用 OPSX 命令继续它们。
+- **`rasen/changes/` 中的活跃变更** — 完全保留。你可以使用 OPSX 命令继续它们。
 - **已归档的变更** — 不受影响。你的历史记录保持完整。
-- **`openspec/specs/` 中的主规格** — 不受影响。这些是你的真实数据源。
+- **`rasen/specs/` 中的主规格** — 不受影响。这些是你的真实数据源。
 - **你在 CLAUDE.md、AGENTS.md 等文件中的内容** — 保留。只有 OpenSpec 标记块会被移除；你写的所有内容都会保留。
 
 ### 什么会被移除
@@ -36,7 +36,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 | 内容 | 原因 |
 |------|-----|
 | 旧版斜杠命令目录/文件 | 被新的 skills 系统替代 |
-| `openspec/AGENTS.md` | 已过时的工作流触发器 |
+| `rasen/AGENTS.md` | 已过时的工作流触发器 |
 | `CLAUDE.md`、`AGENTS.md` 等中的 OpenSpec 标记 | 不再需要 |
 
 **各工具的旧版命令位置**（示例——你的工具可能有所不同）：
@@ -60,7 +60,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 **`openspec/project.md`** — 这个文件不会被自动删除，因为它可能包含你编写的项目上下文。你需要：
 
 1. 审查其内容
-2. 将有用的上下文移到 `openspec/config.yaml`（参见下方指导）
+2. 将有用的上下文移到 `rasen/config.yaml`（参见下方指导）
 3. 准备好后删除该文件
 
 **为什么我们做了这个改变：**
@@ -82,17 +82,17 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 ## 运行迁移
 
-`openspec init` 和 `openspec update` 都会检测旧版文件并引导你完成相同的清理过程。根据你的情况选择合适的命令：
+`rasen init` 和 `rasen update` 都会检测旧版文件并引导你完成相同的清理过程。根据你的情况选择合适的命令：
 
 - 新安装默认使用 `core` 配置文件（`propose`、`explore`、`apply`、`sync`、`archive`）。
 - 迁移安装会在需要时通过写入 `custom` 配置文件来保留你之前安装的工作流。
 
-### 使用 `openspec init`
+### 使用 `rasen init`
 
 如果你想添加新工具或重新配置已设置的工具，请运行此命令：
 
 ```bash
-openspec init
+rasen init
 ```
 
 init 命令会检测旧版文件并引导你完成清理：
@@ -107,7 +107,7 @@ as before.
 Files to remove
 No user content to preserve:
   • .claude/commands/openspec/
-  • openspec/AGENTS.md
+  • rasen/AGENTS.md
 
 Files to update
 OpenSpec markers will be removed, your content preserved:
@@ -118,7 +118,7 @@ Needs your attention
   • openspec/project.md
     We won't delete this file. It may contain useful project context.
 
-    The new openspec/config.yaml has a "context:" section for planning
+    The new rasen/config.yaml has a "context:" section for planning
     context. This is included in every OpenSpec request and works more
     reliably than the old project.md approach.
 
@@ -132,16 +132,16 @@ Needs your attention
 
 1. 旧版斜杠命令目录被移除
 2. OpenSpec 标记从 `CLAUDE.md`、`AGENTS.md` 等文件中剥离（你的内容保留）
-3. `openspec/AGENTS.md` 被删除
+3. `rasen/AGENTS.md` 被删除
 4. 新的 skills 安装到 `.claude/skills/`
-5. `openspec/config.yaml` 使用默认 schema 创建
+5. `rasen/config.yaml` 使用默认 schema 创建
 
-### 使用 `openspec update`
+### 使用 `rasen update`
 
 如果你只想迁移并将现有工具刷新到最新版本，请运行此命令：
 
 ```bash
-openspec update
+rasen update
 ```
 
 update 命令也会检测并清理旧版产物，然后刷新生成的 skills/commands 以匹配你当前的 profile 和 delivery 设置。
@@ -151,7 +151,7 @@ update 命令也会检测并清理旧版产物，然后刷新生成的 skills/co
 用于脚本化迁移：
 
 ```bash
-openspec init --force --tools claude
+rasen init --force --tools claude
 ```
 
 `--force` 标志跳过提示并自动接受清理。
@@ -160,7 +160,7 @@ openspec init --force --tools claude
 
 ## 将 project.md 迁移到 config.yaml
 
-旧的 `openspec/project.md` 是一个自由格式的 markdown 文件，用于项目上下文。新的 `openspec/config.yaml` 是结构化的，而且关键的是——**会被注入到每个规划请求中**，这样你的约定在 AI 工作时始终存在。
+旧的 `openspec/project.md` 是一个自由格式的 markdown 文件，用于项目上下文。新的 `rasen/config.yaml` 是结构化的，而且关键的是——**会被注入到每个规划请求中**，这样你的约定在 AI 工作时始终存在。
 
 ### 之前 (project.md)
 
@@ -284,32 +284,32 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 | 命令 | 用途 |
 |---------|---------|
-| `/opsx:propose` | 创建变更并一步生成规划产物 |
-| `/opsx:explore` | 无结构地思考想法 |
-| `/opsx:apply` | 从 tasks.md 执行任务 |
-| `/opsx:archive` | 完成并归档变更 |
+| `/rasen:propose` | 创建变更并一步生成规划产物 |
+| `/rasen:explore` | 无结构地思考想法 |
+| `/rasen:apply` | 从 tasks.md 执行任务 |
+| `/rasen:archive` | 完成并归档变更 |
 
 **扩展工作流（自定义选择）：**
 
 | 命令 | 用途 |
 |---------|---------|
-| `/opsx:new` | 创建新的变更脚手架 |
-| `/opsx:continue` | 创建下一个产物（一次一个） |
-| `/opsx:ff` | 快进——一次创建规划产物 |
-| `/opsx:verify` | 验证实现是否匹配规格 |
-| `/opsx:sync` | 将 delta specs 合并到主 specs |
-| `/opsx:bulk-archive` | 一次归档多个变更 |
-| `/opsx:onboard` | 引导式端到端入门工作流 |
+| `/rasen:new` | 创建新的变更脚手架 |
+| `/rasen:continue` | 创建下一个产物（一次一个） |
+| `/rasen:ff` | 快进——一次创建规划产物 |
+| `/rasen:verify` | 验证实现是否匹配规格 |
+| `/rasen:sync` | 将 delta specs 合并到主 specs |
+| `/rasen:bulk-archive` | 一次归档多个变更 |
+| `/rasen:onboard` | 引导式端到端入门工作流 |
 
-使用 `openspec config profile` 启用扩展命令，然后运行 `openspec update`。
+使用 `rasen config profile` 启用扩展命令，然后运行 `rasen update`。
 
 ### 从旧版命令映射
 
 | 旧版 | OPSX 对应命令 |
 |--------|-----------------|
-| `/openspec:proposal` | `/opsx:propose`（默认）或 `/opsx:new` 然后 `/opsx:ff`（扩展） |
-| `/openspec:apply` | `/opsx:apply` |
-| `/openspec:archive` | `/opsx:archive` |
+| `/openspec:proposal` | `/rasen:propose`（默认）或 `/rasen:new` 然后 `/rasen:ff`（扩展） |
+| `/openspec:apply` | `/rasen:apply` |
+| `/openspec:archive` | `/rasen:archive` |
 
 ### 新功能
 
@@ -317,13 +317,13 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 **细粒度产物创建：**
 ```
-/opsx:continue
+/rasen:continue
 ```
 根据依赖关系一次创建一个产物。当你想逐步审查时使用此命令。
 
 **探索模式：**
 ```
-/opsx:explore
+/rasen:explore
 ```
 在提交变更之前，与伙伴一起思考想法。
 
@@ -381,7 +381,7 @@ OPSX 使用操作而非阶段：
                      specs, design)
 ```
 
-当你运行 `/opsx:continue` 时，它会检查哪些已就绪并���供下一个产物。你也可以按任意顺序创建多个就绪的产物。
+当你运行 `/rasen:continue` 时，它会检查哪些已就绪并���供下一个产物。你也可以按任意顺序创建多个就绪的产物。
 
 ### Skills 与 Commands
 
@@ -416,7 +416,7 @@ Skills 被多种 AI 编码工具识别，并提供更丰富的元数据。
 **有来自旧版工作流的活跃变更？**
 
 ```
-/opsx:apply add-my-feature
+/rasen:apply add-my-feature
 ```
 
 OPSX 会读取现有产物并从你离开的地方继续。
@@ -424,7 +424,7 @@ OPSX 会读取现有产物并从你离开的地方继续。
 **想为现有变更添加更多产物？**
 
 ```
-/opsx:continue add-my-feature
+/rasen:continue add-my-feature
 ```
 
 根据已有内容显示哪些可以创建。
@@ -432,7 +432,7 @@ OPSX 会读取现有产物并从你离开的地方继续。
 **需要查看状态？**
 
 ```bash
-openspec status --change add-my-feature
+rasen status --change add-my-feature
 ```
 
 ---
@@ -470,7 +470,7 @@ rules:
 
 1. **CLI 标志**: `--schema <name>`（最高优先级）
 2. **变更元数据**: 变更目录中的 `.openspec.yaml`
-3. **项目配置**: `openspec/config.yaml`
+3. **项目配置**: `rasen/config.yaml`
 4. **默认值**: `spec-driven`
 
 ### 可用的 Schema
@@ -482,7 +482,7 @@ rules:
 列出所有可用的 schema：
 
 ```bash
-openspec schemas
+rasen schemas
 ```
 
 ### 自定义 Schema
@@ -490,13 +490,13 @@ openspec schemas
 创建你自己的工作流：
 
 ```bash
-openspec schema init my-workflow
+rasen schema init my-workflow
 ```
 
 或 fork 一个现有的：
 
 ```bash
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 ```
 
 详见 [定制指南](customization.md)。
@@ -510,7 +510,7 @@ openspec schema fork spec-driven my-workflow
 你正在 CI 或非交互式环境中运行。使用：
 
 ```bash
-openspec init --force
+rasen init --force
 ```
 
 ### 迁移后命令未出现
@@ -526,12 +526,12 @@ openspec init --force
 运行以下命令查看有效的产物 ID：
 
 ```bash
-openspec schemas --json
+rasen schemas --json
 ```
 
 ### 配置未生效
 
-1. 确保文件位于 `openspec/config.yaml`（不是 `.yml`）
+1. 确保文件位于 `rasen/config.yaml`（不是 `.yml`）
 2. 验证 YAML 语法
 3. 配置更改立即生效——无需重启
 
@@ -570,21 +570,21 @@ project/
 ### 已移除的内容
 
 - `.claude/commands/openspec/` — 被 `.claude/skills/` 替代
-- `openspec/AGENTS.md` — 已过时
+- `rasen/AGENTS.md` — 已过时
 - `openspec/project.md` — 迁移到 `config.yaml`，然后删除
 - `CLAUDE.md`、`AGENTS.md` 等文件中的 OpenSpec 标记块
 
 ### 命令速查表
 
 ```text
-/opsx:propose      快速开始（默认 core profile）
-/opsx:apply        执行任务
-/opsx:archive      完成并归档
+/rasen:propose      快速开始（默认 core profile）
+/rasen:apply        执行任务
+/rasen:archive      完成并归档
 
 # 扩展工作流（如果启用）：
-/opsx:new          创建变更脚手架
-/opsx:continue     创建下一个产物
-/opsx:ff           创建规划产物
+/rasen:new          创建变更脚手架
+/rasen:continue     创建下一个产物
+/rasen:ff           创建规划产物
 ```
 
 ---

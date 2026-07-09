@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
-import { createOpenSpecRoot, writeSpec } from '../helpers/openspec-fixtures.js';
+import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
 
@@ -16,7 +16,7 @@ describe('rasen doctor (3.6)', () => {
   let storeRoot: string;
 
   beforeEach(async () => {
-    tempDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-doctor-')));
+    tempDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-doctor-')));
     env = {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
       XDG_CONFIG_HOME: path.join(tempDir, 'config'),
@@ -51,7 +51,7 @@ describe('rasen doctor (3.6)', () => {
     writeSpec(upstream, 'rules', '## Purpose\n\nRules.\n');
     await registerStore({ id: 'upstream-context', localPath: upstream, globalDataDir });
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - upstream-context\n'
     );
 
@@ -94,8 +94,8 @@ describe('rasen doctor (3.6)', () => {
 
     // Declared-pointer session.
     const pointerRepo = mkdir('app-repo');
-    fs.mkdirSync(path.join(pointerRepo, 'openspec'), { recursive: true });
-    fs.writeFileSync(path.join(pointerRepo, 'openspec', 'config.yaml'), 'store: team-context\n');
+    fs.mkdirSync(path.join(pointerRepo, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(pointerRepo, 'rasen', 'config.yaml'), 'store: team-context\n');
     const declared = await runCLI(['doctor', '--json'], { cwd: pointerRepo, env });
     expect(parseJson(declared).root.source).toBe('declared');
     expect(parseJson(declared).store.id).toBe('team-context');
@@ -114,7 +114,7 @@ describe('rasen doctor (3.6)', () => {
 
   it('shows broken relationships with pasteable fixes at exit 0', async () => {
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\n' +
         'references:\n  - { id: design-system, remote: https://192.0.2.1/ds.git }\n'
     );
@@ -138,7 +138,7 @@ describe('rasen doctor (3.6)', () => {
 
   it('distinguishes an empty registry from an unreadable one', async () => {
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - ghost-context\n'
     );
 
@@ -163,20 +163,20 @@ describe('rasen doctor (3.6)', () => {
   it('surfaces both-shapes and inert-pointer wrong turns', async () => {
     // Both shapes: a real root whose config declares a pointer.
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nstore: team-context\n'
     );
     const bothShapes = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
     expect(parseJson(bothShapes).status[0]).toEqual(
       expect.objectContaining({ code: 'root_pointer_ignored' })
     );
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'config.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
 
     // Inert pointer declarations, including from a subdirectory.
     const pointerRepo = mkdir('app-repo');
-    fs.mkdirSync(path.join(pointerRepo, 'openspec'), { recursive: true });
+    fs.mkdirSync(path.join(pointerRepo, 'rasen'), { recursive: true });
     fs.writeFileSync(
-      path.join(pointerRepo, 'openspec', 'config.yaml'),
+      path.join(pointerRepo, 'rasen', 'config.yaml'),
       'store: team-context\nreferences:\n  - wrong-context\n'
     );
     const subdir = mkdir('app-repo/packages/api');
@@ -190,7 +190,7 @@ describe('rasen doctor (3.6)', () => {
 
   it('notes remote divergence as info in the store section', async () => {
     fs.writeFileSync(
-      path.join(storeRoot, '.openspec-store', 'store.yaml'),
+      path.join(storeRoot, '.rasen-store', 'store.yaml'),
       'version: 1\nid: team-context\nremote: https://192.0.2.1/canon.git\n'
     );
     const { execFileSync } = await import('node:child_process');
@@ -240,7 +240,7 @@ describe('rasen doctor (3.6)', () => {
 
   it('distinguishes self-reference omission from none declared', async () => {
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - team-context\n'
     );
     const result = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
@@ -250,7 +250,7 @@ describe('rasen doctor (3.6)', () => {
 
   it('surfaces a malformed pointer on a real root', async () => {
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nstore: [broken]\n'
     );
     const result = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
@@ -261,7 +261,7 @@ describe('rasen doctor (3.6)', () => {
   });
 
   it('is read-only and changes nothing elsewhere', async () => {
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'config.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     const rootBefore = snapshot(storeRoot);
     const dataBefore = snapshot(path.join(tempDir, 'data'));
 

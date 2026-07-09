@@ -1,3 +1,4 @@
+import { COMMAND_PREFIX } from '../../config.js';
 /**
  * Bob Shell Command Adapter
  *
@@ -12,14 +13,14 @@ import { escapeYamlValue } from '../yaml.js';
 
 /**
  * Bob Shell adapter for command generation.
- * File path: .bob/commands/opsx-<id>.md
+ * File path: .bob/commands/rasen-<id>.md
  * Frontmatter: description, argument-hint
  */
 export const bobAdapter: ToolCommandAdapter = {
   toolId: 'bob',
 
   getFilePath(commandId: string): string {
-    return path.join('.bob', 'commands', `opsx-${commandId}.md`);
+    return path.join('.bob', 'commands', `${COMMAND_PREFIX}-${commandId}.md`);
   },
 
   formatFile(content: CommandContent): string {

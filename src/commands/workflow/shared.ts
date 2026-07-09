@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../../core/config.js';
 /**
  * Shared Types and Utilities for Artifact Workflow Commands
  *
@@ -120,7 +121,7 @@ export function getStatusIndicator(status: 'done' | 'ready' | 'blocked'): string
  */
 export async function getAvailableChanges(
   projectRoot: string,
-  changesDir = path.join(projectRoot, 'openspec', 'changes')
+  changesDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes')
 ): Promise<string[]> {
   const changesPath = changesDir;
   try {
@@ -141,7 +142,7 @@ export async function getAvailableChanges(
 export async function validateChangeExists(
   changeName: string | undefined,
   projectRoot: string,
-  changesDir = path.join(projectRoot, 'openspec', 'changes'),
+  changesDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes'),
   hints: { newChangeHint?: string } = {}
 ): Promise<string> {
   // Hints must stay pasteable: callers with a selected store pass a

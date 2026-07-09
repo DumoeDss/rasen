@@ -5,68 +5,68 @@ description: >-
   cycle to drive fixes, then ship, archive, and retrospective.
 stages:
   - id: office-hours
-    skill: openspec-opsx-office-hours
+    skill: rasen-office-hours-command
     role: planner
     requires: []
     gate: true
 
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
     requires: [office-hours]
     leadReview: true
     gate: true
 
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: implementer
     requires: [propose]
     gate: true
 
   - id: review
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: always
 
   - id: cso
-    skill: openspec:cso
+    skill: rasen:cso
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: security-relevant
 
   - id: benchmark
-    skill: openspec:benchmark
+    skill: rasen:benchmark
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: performance-sensitive
 
   - id: design-review
-    skill: openspec:design-review
+    skill: rasen:design-review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa
-    skill: openspec:qa
+    skill: rasen:qa
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa-only
-    skill: openspec:qa-only
+    skill: rasen:qa-only
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: non-ui
 
   - id: review-loop
-    skill: openspec-review-cycle
+    skill: rasen-review-cycle
     role: fixer
     requires: [review, cso, benchmark, design-review, qa, qa-only]
     loop:
@@ -74,19 +74,19 @@ stages:
       maxRounds: 3
 
   - id: ship
-    skill: openspec-opsx-ship
+    skill: rasen-ship
     role: shipper
     requires: [review-loop]
     gate: true
     model: sonnet
 
   - id: archive
-    skill: openspec-archive-change
+    skill: rasen-archive-change
     role: shipper
     requires: [ship]
     model: sonnet
 
   - id: retro
-    skill: openspec-opsx-retro
+    skill: rasen-retro
     role: reviewer
     requires: [archive]

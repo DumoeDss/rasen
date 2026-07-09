@@ -14,7 +14,7 @@ describe('ensureClaudeAgentTeams', () => {
   const readSettings = () => JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'));
 
   beforeEach(() => {
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-claude-settings-'));
+    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-claude-settings-'));
   });
   afterEach(() => {
     fs.rmSync(projectRoot, { recursive: true, force: true });

@@ -185,7 +185,7 @@ describe('command completion registry', () => {
     ]);
 
     // The pipeline command group resolves its root identically to validate, so
-    // every subcommand accepts --store (opsx-pipeline-registry spec). It is a
+    // every subcommand accepts --store (rasen-pipeline-registry spec). It is a
     // distinct inspection surface, carved out separately in the guidance.
     expect(pipelineStore.sort()).toEqual([
       'pipeline agents',

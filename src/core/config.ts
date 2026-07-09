@@ -1,5 +1,18 @@
-export const OPENSPEC_DIR_NAME = 'openspec';
+// Brand namespace identifiers (single source of truth).
+// rasen owns a complete namespace distinct from upstream OpenSpec so the two
+// can coexist in the same project without collision.
+export const WORKSPACE_DIR_NAME = 'rasen';
+export const LEGACY_WORKSPACE_DIR_NAME = 'openspec';
+export const COMMAND_PREFIX = 'rasen';
+export const LEGACY_COMMAND_PREFIX = 'opsx';
+export const SKILL_PREFIX = 'rasen';
 
+// Back-compat alias: existing code refers to OPENSPEC_DIR_NAME as the workspace
+// directory name. It now points at the rasen workspace.
+export const OPENSPEC_DIR_NAME = WORKSPACE_DIR_NAME;
+
+// Legacy marker pair — recognized ONLY to identify pre-existing legacy artifacts
+// (upstream OpenSpec or older rasen installs). Never written into new content.
 export const OPENSPEC_MARKERS = {
   start: '<!-- OPENSPEC:START -->',
   end: '<!-- OPENSPEC:END -->'

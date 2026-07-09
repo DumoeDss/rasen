@@ -25,7 +25,13 @@ import { StoreError } from './errors.js';
 
 const fs = nodeFs.promises;
 
-export const STORE_METADATA_DIR_NAME = '.openspec-store';
+export const STORE_METADATA_DIR_NAME = '.rasen-store';
+/**
+ * Legacy metadata directory name. Recognized on read for stores created before
+ * the rebrand; never written (the next write copies metadata forward under the
+ * rasen name, leaving the legacy directory untouched).
+ */
+export const LEGACY_STORE_METADATA_DIR_NAME = '.openspec-store';
 export const STORE_METADATA_FILE_NAME = 'store.yaml';
 export const STORES_DIR_NAME = 'stores';
 export const STORE_REGISTRY_FILE_NAME = 'registry.yaml';
@@ -86,11 +92,39 @@ export function getStoreMetadataDir(storeRoot: string): string {
   return joinStorePath(storeRoot, STORE_METADATA_DIR_NAME);
 }
 
+export function getLegacyStoreMetadataDir(storeRoot: string): string {
+  return joinStorePath(storeRoot, LEGACY_STORE_METADATA_DIR_NAME);
+}
+
+/** Canonical (rasen) metadata path — the write target. */
 export function getStoreMetadataPath(storeRoot: string): string {
   return joinStorePath(
     getStoreMetadataDir(storeRoot),
     STORE_METADATA_FILE_NAME
   );
+}
+
+/** Legacy metadata path — read-compat only, never written. */
+export function getLegacyStoreMetadataPath(storeRoot: string): string {
+  return joinStorePath(
+    getLegacyStoreMetadataDir(storeRoot),
+    STORE_METADATA_FILE_NAME
+  );
+}
+
+/**
+ * Resolves the metadata file to READ from: the rasen path when present, else
+ * the legacy path when present, else the rasen path (so a missing-metadata read
+ * yields a consistent ENOENT on the canonical location).
+ */
+export async function resolveReadableStoreMetadataPath(
+  storeRoot: string
+): Promise<string> {
+  const canonical = getStoreMetadataPath(storeRoot);
+  if (await pathIsFile(canonical)) return canonical;
+  const legacy = getLegacyStoreMetadataPath(storeRoot);
+  if (await pathIsFile(legacy)) return legacy;
+  return canonical;
 }
 
 export function validateStoreId(id: string): string {
@@ -171,7 +205,7 @@ function storeStateDiagnostic(label: string): {
     return {
       code: 'invalid_store_metadata',
       target: 'store.metadata',
-      fix: 'Repair .openspec-store/store.yaml.',
+      fix: 'Repair .rasen-store/store.yaml.',
     };
   }
 
@@ -295,7 +329,8 @@ export function listStoreRegistryEntries(
 }
 
 export async function isStoreRoot(candidateRoot: string): Promise<boolean> {
-  return pathIsFile(getStoreMetadataPath(candidateRoot));
+  if (await pathIsFile(getStoreMetadataPath(candidateRoot))) return true;
+  return pathIsFile(getLegacyStoreMetadataPath(candidateRoot));
 }
 
 export async function readStoreRegistryState(
@@ -353,7 +388,7 @@ export async function readStoreMetadataState(
   storeRoot: string
 ): Promise<StoreMetadataState> {
   return parseStoreMetadataState(
-    await fs.readFile(getStoreMetadataPath(storeRoot), 'utf-8')
+    await fs.readFile(await resolveReadableStoreMetadataPath(storeRoot), 'utf-8')
   );
 }
 
@@ -379,6 +414,25 @@ export async function writeStoreMetadataState(
     getStoreMetadataPath(storeRoot),
     serializeStoreMetadataState(state)
   );
+}
+
+/**
+ * Copies legacy `.openspec-store/store.yaml` forward to `.rasen-store/` when the
+ * store's metadata lives only under the legacy name. Copy-only: the legacy
+ * directory is left untouched. No-op when the rasen metadata already exists or
+ * there is no legacy metadata to migrate. Returns true when a copy was made.
+ */
+export async function copyForwardLegacyStoreMetadata(
+  storeRoot: string
+): Promise<boolean> {
+  if (await pathIsFile(getStoreMetadataPath(storeRoot))) return false;
+  if (!(await pathIsFile(getLegacyStoreMetadataPath(storeRoot)))) return false;
+
+  const legacyState = parseStoreMetadataState(
+    await fs.readFile(getLegacyStoreMetadataPath(storeRoot), 'utf-8')
+  );
+  await writeStoreMetadataState(storeRoot, legacyState);
+  return true;
 }
 
 export async function resolveGitStoreBackendConfig(

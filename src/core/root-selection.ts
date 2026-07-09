@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from './config.js';
 /**
  * Shared Rasen root resolution for normal commands.
  *
@@ -5,7 +6,7 @@
  * `validate`, `archive`) resolve one Rasen root through this module:
  *
  * - `--store <id>` selects a registered store's root.
- * - Without `--store`, the nearest ancestor containing `openspec/` wins.
+ * - Without `--store`, the nearest ancestor containing `rasen/` wins.
  *   Leftover workspace view state is never considered a root here.
  * - With no nearest root, registered stores produce a selection hint error;
  *   otherwise commands may treat the current directory as an implicit root.
@@ -31,8 +32,13 @@ import {
   validateStoreId,
 } from './store/foundation.js';
 import { getStoreRootForBackend } from './store/registry.js';
-import { inspectOpenSpecRoot } from './openspec-root.js';
-import { findRepoPlanningRootSync, type PlanningHome } from './planning-home.js';
+import { inspectOpenSpecRoot } from './workspace-root.js';
+import {
+  findRepoPlanningRootSync,
+  findLegacyWorkspaceRootSync,
+  legacyWorkspaceGuidance,
+  type PlanningHome,
+} from './planning-home.js';
 import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 
@@ -112,9 +118,9 @@ function makeRoot(
 ): ResolvedOpenSpecRoot {
   return {
     path: rootPath,
-    changesDir: path.join(rootPath, 'openspec', 'changes'),
-    specsDir: path.join(rootPath, 'openspec', 'specs'),
-    archiveDir: path.join(rootPath, 'openspec', 'changes', 'archive'),
+    changesDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'changes'),
+    specsDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'specs'),
+    archiveDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'changes', 'archive'),
     defaultSchema: 'spec-driven',
     source,
     ...(storeId ? { storeId } : {}),
@@ -259,16 +265,16 @@ export async function inspectRegisteredStore(
 }
 
 /**
- * Classifies the nearest `openspec/` directory (slice 3.2): a planning
+ * Classifies the nearest `rasen/` directory (slice 3.2): a planning
  * shape (specs/ or changes/ directories) is a real root and wins —
  * fallback never override. A config-only directory with a `store:`
  * pointer resolves the declared store; without one, it stays a root
  * (today's behavior for freshly initialized minimal roots).
  */
 /**
- * The nearest-root walk, qualified: an `openspec/` DIRECTORY alone is
+ * The nearest-root walk, qualified: a `rasen/` DIRECTORY alone is
  * not a root — it must carry a planning shape or a config file.
- * Without this, the recommended `~/openspec/<id>` store layout would
+ * Without this, the recommended `~/rasen/<id>` store layout would
  * make $HOME a phantom root that captures every command under the
  * home tree.
  */
@@ -394,6 +400,17 @@ export async function resolveOpenSpecRoot(
   }
 
   if (options.allowImplicitRoot === false) {
+    const legacyRoot = findLegacyWorkspaceRootSync(startPath);
+    if (legacyRoot) {
+      throw new RootSelectionError(
+        legacyWorkspaceGuidance(legacyRoot),
+        'legacy_workspace_detected',
+        {
+          target: 'openspec.root',
+          fix: 'Run rasen migrate (copy-only) or rasen init.',
+        }
+      );
+    }
     throw new RootSelectionError(
       'No Rasen root found from the current directory.',
       'no_openspec_root',

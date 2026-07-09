@@ -21,10 +21,10 @@ describe('planning home paths', () => {
   });
 
   it('resolves repo-local projects with foreign workspace.yaml as repo planning homes', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-planning-home-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-planning-home-'));
     tempDirs.push(tempDir);
     const repoRoot = path.join(tempDir, 'foreign-tool-repo');
-    const changesDir = path.join(repoRoot, 'openspec', 'changes');
+    const changesDir = path.join(repoRoot, 'rasen', 'changes');
 
     fs.mkdirSync(changesDir, { recursive: true });
     fs.writeFileSync(

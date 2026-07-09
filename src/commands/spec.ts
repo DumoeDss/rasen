@@ -7,8 +7,9 @@ import type { Spec } from '../core/schemas/index.js';
 import type { RootOutput } from '../core/root-selection.js';
 import { isInteractive } from '../utils/interactive.js';
 import { getSpecIds } from '../utils/item-discovery.js';
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
 
-const SPECS_DIR = 'openspec/specs';
+const SPECS_DIR = `${WORKSPACE_DIR_NAME}/specs`;
 
 interface ShowOptions {
   json?: boolean;
@@ -74,7 +75,7 @@ export class SpecCommand {
   // deprecated noun-form commands stay cwd-based.
   constructor(rootPath?: string) {
     this.rootPath = rootPath;
-    this.specsDir = rootPath ? join(rootPath, 'openspec', 'specs') : SPECS_DIR;
+    this.specsDir = rootPath ? join(rootPath, WORKSPACE_DIR_NAME, 'specs') : SPECS_DIR;
   }
 
   async show(specId?: string, options: ShowOptions = {}): Promise<void> {

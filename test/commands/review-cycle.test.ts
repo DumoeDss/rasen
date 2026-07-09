@@ -53,17 +53,17 @@ describe('review-cycle workflow', () => {
     it('is registered as a skill template with the expected dirName and name', () => {
       const skill = getSkillTemplates().find(s => s.workflowId === 'review-cycle');
       expect(skill).toBeDefined();
-      expect(skill?.dirName).toBe('openspec-review-cycle');
-      expect(skill?.template.name).toBe('openspec-review-cycle');
+      expect(skill?.dirName).toBe('rasen-review-cycle');
+      expect(skill?.template.name).toBe('rasen-review-cycle');
     });
 
     it('is registered as a command template with a clean (no -command suffix) id', () => {
       const command = getCommandTemplates().find(c => c.id === 'review-cycle');
       expect(command).toBeDefined();
-      expect(command?.template.name).toBe('OPSX: Review Cycle');
+      expect(command?.template.name).toBe('Rasen: Review Cycle');
       expect(command?.template.category).toBe('Workflow');
 
-      // The command id becomes the generated slash command: /opsx:review-cycle
+      // The command id becomes the generated slash command: /rasen:review-cycle
       const content = getCommandContents().find(c => c.id === 'review-cycle');
       expect(content).toBeDefined();
     });
@@ -77,8 +77,8 @@ describe('review-cycle workflow', () => {
       expect(commandText).toBe(skillText);
     });
 
-    it('delegates each review pass to the openspec-review engine (does not fork it)', () => {
-      expect(skillText).toContain('openspec-review');
+    it('delegates each review pass to the rasen-review engine (does not fork it)', () => {
+      expect(skillText).toContain('rasen-review');
     });
 
     it('encodes the review -> triage -> fix -> re-review(delta) loop', () => {
@@ -168,9 +168,9 @@ describe('review-cycle workflow', () => {
       expect(skillText).toContain('run-state');
     });
 
-    it('shares the playbook with /opsx:auto (it is auto\'s loop stage)', () => {
+    it('shares the playbook with /rasen:auto (it is auto\'s loop stage)', () => {
       expect(skillText.toLowerCase()).toContain('shares the orchestration playbook with');
-      expect(skillText).toContain('/opsx:auto');
+      expect(skillText).toContain('/rasen:auto');
     });
   });
 
@@ -180,10 +180,10 @@ describe('review-cycle workflow', () => {
     let originalEnv: NodeJS.ProcessEnv;
 
     beforeEach(async () => {
-      testDir = path.join(os.tmpdir(), `openspec-review-cycle-test-${Date.now()}`);
+      testDir = path.join(os.tmpdir(), `rasen-review-cycle-test-${Date.now()}`);
       await fs.mkdir(testDir, { recursive: true });
       originalEnv = { ...process.env };
-      configTempDir = path.join(os.tmpdir(), `openspec-review-cycle-config-${Date.now()}`);
+      configTempDir = path.join(os.tmpdir(), `rasen-review-cycle-config-${Date.now()}`);
       await fs.mkdir(configTempDir, { recursive: true });
       process.env.XDG_CONFIG_HOME = configTempDir;
 
@@ -212,20 +212,20 @@ describe('review-cycle workflow', () => {
 
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
-      const skillFile = path.join(testDir, '.claude', 'skills', 'openspec-review-cycle', 'SKILL.md');
-      const commandFile = path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle.md');
+      const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle', 'SKILL.md');
+      const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
 
       expect(await fileExists(skillFile)).toBe(true);
       expect(await fileExists(commandFile)).toBe(true);
 
       const skillContent = await fs.readFile(skillFile, 'utf-8');
-      expect(skillContent).toContain('name: openspec-review-cycle');
-      expect(skillContent).toContain('openspec-review');
+      expect(skillContent).toContain('name: rasen-review-cycle');
+      expect(skillContent).toContain('rasen-review');
 
       const commandContent = await fs.readFile(commandFile, 'utf-8');
-      expect(commandContent).toContain('name: "OPSX: Review Cycle"');
+      expect(commandContent).toContain('name: "Rasen: Review Cycle"');
       // No ugly -command suffix in the generated slash command file name.
-      const suffixed = path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle-command.md');
+      const suffixed = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle-command.md');
       expect(await fileExists(suffixed)).toBe(false);
     });
 
@@ -240,12 +240,12 @@ describe('review-cycle workflow', () => {
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
       // A core skill IS generated (sanity that generation ran)...
-      const coreSkill = path.join(testDir, '.claude', 'skills', 'openspec-propose', 'SKILL.md');
+      const coreSkill = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
       expect(await fileExists(coreSkill)).toBe(true);
 
       // ...but review-cycle is opt-in and must be absent.
-      const skillFile = path.join(testDir, '.claude', 'skills', 'openspec-review-cycle', 'SKILL.md');
-      const commandFile = path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle.md');
+      const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle', 'SKILL.md');
+      const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
       expect(await fileExists(skillFile)).toBe(false);
       expect(await fileExists(commandFile)).toBe(false);
     });
@@ -259,7 +259,7 @@ describe('review-cycle workflow', () => {
         workflows: ['propose', 'review-cycle'],
       });
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
-      const skillDir = path.join(testDir, '.claude', 'skills', 'openspec-review-cycle');
+      const skillDir = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle');
       expect(await fileExists(path.join(skillDir, 'SKILL.md'))).toBe(true);
 
       // 2) Re-init with commands-only delivery: skills are removed via
@@ -277,7 +277,7 @@ describe('review-cycle workflow', () => {
       expect(await fileExists(skillDir)).toBe(false);
       // The command file replaces it.
       expect(
-        await fileExists(path.join(testDir, '.claude', 'commands', 'opsx', 'review-cycle.md')),
+        await fileExists(path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md')),
       ).toBe(true);
     });
   });

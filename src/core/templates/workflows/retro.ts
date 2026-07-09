@@ -1,5 +1,5 @@
 /**
- * Retro OPSX Workflow Command
+ * Retro Rasen Workflow Command
  *
  * Engineering retrospective — analyzes commit history, work patterns,
  * and code quality metrics. Supports change-scoped, general, and global
@@ -24,9 +24,9 @@ Use when: "retro", "retrospective", "what did we ship?", "weekly retro", "global
 
 Parse the input to determine retro scope:
 
-- \`/opsx:retro <change-name>\` → **Change-scoped**: analyze a specific change
-- \`/opsx:retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
-- \`/opsx:retro global\` → **Global**: cross-project retrospective
+- \`/rasen:retro <change-name>\` → **Change-scoped**: analyze a specific change
+- \`/rasen:retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
+- \`/rasen:retro global\` → **Global**: cross-project retrospective
 
 ### 2A. Change-Scoped Retro
 
@@ -77,7 +77,7 @@ Run the same git-analysis contract as 2B, but across every accessible repository
 - Aggregate shipping streaks and work patterns across projects and compare productivity between them
 - If only the current repo is accessible, note that and report it as a single-project global retro
 
-Do NOT persist gstack-style \`.context/retros/*.json\` snapshots or run history-compare against them — write only to OPSX's own report path (Step 4).
+Do NOT persist gstack-style \`.context/retros/*.json\` snapshots or run history-compare against them — write only to Rasen's own report path (Step 4).
 
 ### 3. Generate Report
 
@@ -147,11 +147,11 @@ Do NOT persist gstack-style \`.context/retros/*.json\` snapshots or run history-
 
 ### 4. Write Report
 
-**Change-scoped:** Write to \`openspec/changes/<name>/retro.md\`
+**Change-scoped:** Write to \`rasen/changes/<name>/retro.md\`
 
-**General:** Write to \`openspec/retro-latest.md\`
+**General:** Write to \`rasen/retro-latest.md\`
 
-**Global:** Write to \`openspec/retro-global-latest.md\`
+**Global:** Write to \`rasen/retro-global-latest.md\`
 
 ### 5. Display Summary
 
@@ -162,24 +162,24 @@ After writing the report:
 
 ## Integration Notes
 
-- Change-scoped retro is most valuable after \`/opsx:ship\` completes
-- The retro report is consumed by \`/opsx:archive\` as part of the archive quality summary
+- Change-scoped retro is most valuable after \`/rasen:ship\` completes
+- The retro report is consumed by \`/rasen:archive\` as part of the archive quality summary
 - General retro can be run weekly as a habit — suggest it proactively at the end of a work week`;
 
 export function getRetroCommandSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-opsx-retro',
+    name: 'rasen-retro',
     description: 'Engineering retrospective — analyze what shipped, patterns, and learnings. Supports change-scoped, general, and global modes.',
     instructions: RETRO_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxRetroCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Retro',
+    name: 'Rasen: Retro',
     description: 'Engineering retrospective — analyze what shipped, patterns, and learnings',
     category: 'Workflow',
     tags: ['workflow', 'retrospective', 'analysis'],

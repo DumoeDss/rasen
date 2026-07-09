@@ -19,7 +19,7 @@ export { getOnboardSkillTemplate, getOpsxOnboardCommandTemplate } from './workfl
 export { getOpsxProposeSkillTemplate, getOpsxProposeCommandTemplate } from './workflows/propose.js';
 export { getFeedbackSkillTemplate } from './workflows/feedback.js';
 
-// OPSX fusion workflow commands
+// Rasen fusion workflow commands
 export { getOfficeHoursCommandSkillTemplate, getOpsxOfficeHoursCommandTemplate } from './workflows/office-hours.js';
 export { getVerifyEnhancedSkillTemplate, getOpsxVerifyEnhancedCommandTemplate } from './workflows/verify-enhanced.js';
 export { getShipCommandSkillTemplate, getOpsxShipCommandTemplate } from './workflows/ship.js';

@@ -1,5 +1,5 @@
 /**
- * Verify-Enhanced OPSX Workflow Command
+ * Verify-Enhanced Rasen Workflow Command
  *
  * Enhanced verification combining Rasen artifact consistency checks
  * with gstack expert reviews (code review, security, QA, design review).
@@ -77,10 +77,10 @@ Report any inconsistencies found.
 ### 5. Save Reports
 
 Write reports to the change directory:
-- \`openspec/changes/<name>/review-report.md\` — code review findings
-- \`openspec/changes/<name>/cso-report.md\` — security audit (if /cso ran)
-- \`openspec/changes/<name>/qa-report.md\` — QA findings (if /qa ran)
-- \`openspec/changes/<name>/design-review-report.md\` — design review (if /design-review ran)
+- \`rasen/changes/<name>/review-report.md\` — code review findings
+- \`rasen/changes/<name>/cso-report.md\` — security audit (if /cso ran)
+- \`rasen/changes/<name>/qa-report.md\` — QA findings (if /qa ran)
+- \`rasen/changes/<name>/design-review-report.md\` — design review (if /design-review ran)
 
 ### 6. Consolidated Summary
 
@@ -114,25 +114,25 @@ Display a summary with pass/fail status for each stage:
 
 ## Integration Notes
 
-- This command coexists with the original \`openspec-verify-change\` skill (pure artifact consistency check)
+- This command coexists with the original \`rasen-verify-change\` skill (pure artifact consistency check)
 - The enhanced version adds expert review layers on top of artifact checks
-- Reports written to the change directory are consumed by \`/opsx:retro\` and \`/opsx:archive\`
-- \`/opsx:ship\` checks for verification reports before proceeding`;
+- Reports written to the change directory are consumed by \`/rasen:retro\` and \`/rasen:archive\`
+- \`/rasen:ship\` checks for verification reports before proceeding`;
 
 export function getVerifyEnhancedSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-verify-enhanced',
+    name: 'rasen-verify-enhanced',
     description: 'Enhanced verification — artifact checks + code review + security audit + browser QA + visual audit. Auto-scales by change size.',
     instructions: VERIFY_ENHANCED_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxVerifyEnhancedCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Verify Enhanced',
+    name: 'Rasen: Verify Enhanced',
     description: 'Enhanced verification — artifact checks + code review + security audit + browser QA + visual audit',
     category: 'Workflow',
     tags: ['workflow', 'verification', 'review', 'security', 'qa'],

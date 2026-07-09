@@ -40,12 +40,12 @@ Write a final report (e.g. \`report.md\` or the artifact named in goal-plan.md) 
 
 export function getGoalReportSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-goal-report',
+    name: 'rasen-goal-report',
     description:
       'Goal-loop report tail (shipper role, research pipeline only) — summarizes goal-run.json into a final report artifact. No code to ship; surfaces maxRounds-exhausted honestly.',
     instructions: GOAL_REPORT_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

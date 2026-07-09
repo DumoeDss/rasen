@@ -371,7 +371,7 @@ describe('global-config', () => {
   });
 
   describe('migrateLegacyBrandConfig', () => {
-    it('adopts a legacy rasen config dir, preserving anonymousId', () => {
+    it('adopts a legacy openspec config dir, preserving anonymousId', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
       process.env.XDG_DATA_HOME = tempDir;
 

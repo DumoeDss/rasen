@@ -10,38 +10,38 @@ For workflow patterns and when to use each command, see [Workflows](workflows.md
 
 | Command | Purpose |
 |---------|---------|
-| `/opsx:propose` | Create a change and generate planning artifacts in one step |
-| `/opsx:explore` | Think through ideas before committing to a change |
-| `/opsx:apply` | Implement tasks from the change |
-| `/opsx:sync` | Merge delta specs into main specs |
-| `/opsx:archive` | Archive a completed change |
+| `/rasen:propose` | Create a change and generate planning artifacts in one step |
+| `/rasen:explore` | Think through ideas before committing to a change |
+| `/rasen:apply` | Implement tasks from the change |
+| `/rasen:sync` | Merge delta specs into main specs |
+| `/rasen:archive` | Archive a completed change |
 
 ### Expanded Workflow Commands (custom workflow selection)
 
 | Command | Purpose |
 |---------|---------|
-| `/opsx:new` | Start a new change scaffold |
-| `/opsx:continue` | Create the next artifact based on dependencies |
-| `/opsx:ff` | Fast-forward: create all planning artifacts at once |
-| `/opsx:verify` | Validate implementation matches artifacts |
-| `/opsx:bulk-archive` | Archive multiple changes at once |
-| `/opsx:onboard` | Guided tutorial through the complete workflow |
-| `/opsx:review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
-| `/opsx:goal` | Goal-driven iteration — repeat modify→judge against a measure or evaluate gate until satisfied or the round cap is hit (perf optimization, rubric-clean code, research brief) |
+| `/rasen:new` | Start a new change scaffold |
+| `/rasen:continue` | Create the next artifact based on dependencies |
+| `/rasen:ff` | Fast-forward: create all planning artifacts at once |
+| `/rasen:verify` | Validate implementation matches artifacts |
+| `/rasen:bulk-archive` | Archive multiple changes at once |
+| `/rasen:onboard` | Guided tutorial through the complete workflow |
+| `/rasen:review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
+| `/rasen:goal` | Goal-driven iteration — repeat modify→judge against a measure or evaluate gate until satisfied or the round cap is hit (perf optimization, rubric-clean code, research brief) |
 
-The default global profile is `full` — all workflow commands are installed out of the box. To slim down to the essentials, run `openspec config profile core` (or pick a custom subset with `openspec config profile`), then run `openspec update` in your project.
+The default global profile is `full` — all workflow commands are installed out of the box. To slim down to the essentials, run `rasen config profile core` (or pick a custom subset with `rasen config profile`), then run `rasen update` in your project.
 
 ---
 
 ## Command Reference
 
-### `/opsx:propose`
+### `/rasen:propose`
 
 Create a new change and generate planning artifacts in one step. This is the default start command in the `core` profile.
 
 **Syntax:**
 ```text
-/opsx:propose [change-name-or-description]
+/rasen:propose [change-name-or-description]
 ```
 
 **Arguments:**
@@ -50,29 +50,29 @@ Create a new change and generate planning artifacts in one step. This is the def
 | `change-name-or-description` | No | Kebab-case name or plain-language change description |
 
 **What it does:**
-- Creates `openspec/changes/<change-name>/`
+- Creates `rasen/changes/<change-name>/`
 - Generates artifacts needed before implementation (for `spec-driven`: proposal, specs, design, tasks)
-- Stops when the change is ready for `/opsx:apply`
+- Stops when the change is ready for `/rasen:apply`
 
 **Example:**
 ```text
-You: /opsx:propose add-dark-mode
+You: /rasen:propose add-dark-mode
 
-AI:  Created openspec/changes/add-dark-mode/
+AI:  Created rasen/changes/add-dark-mode/
      ✓ proposal.md
      ✓ specs/ui/spec.md
      ✓ design.md
      ✓ tasks.md
-     Ready for implementation. Run /opsx:apply.
+     Ready for implementation. Run /rasen:apply.
 ```
 
 **Tips:**
 - Use this for the fastest end-to-end path
-- If you want step-by-step artifact control, enable expanded workflows and use `/opsx:new` + `/opsx:continue`
+- If you want step-by-step artifact control, enable expanded workflows and use `/rasen:new` + `/rasen:continue`
 
 ---
 
-### `/opsx:explore`
+### `/rasen:explore`
 
 > **Start here when you're unsure.** Explore is a no-stakes thinking partner: it reads your codebase, compares options, and sharpens a fuzzy idea into a concrete plan before any change exists. It ships in the default profile. For the full case and more examples, see the [Explore First](explore.md) guide.
 
@@ -80,7 +80,7 @@ Think through ideas, investigate problems, and clarify requirements before commi
 
 **Syntax:**
 ```
-/opsx:explore [topic]
+/rasen:explore [topic]
 ```
 
 **Arguments:**
@@ -93,11 +93,11 @@ Think through ideas, investigate problems, and clarify requirements before commi
 - Investigates the codebase to answer questions
 - Compares options and approaches
 - Creates visual diagrams to clarify thinking
-- Can transition to `/opsx:propose` (default) or `/opsx:new` (expanded workflow) when insights crystallize
+- Can transition to `/rasen:propose` (default) or `/rasen:new` (expanded workflow) when insights crystallize
 
 **Example:**
 ```text
-You: /opsx:explore
+You: /rasen:explore
 
 AI:  What would you like to explore?
 
@@ -117,7 +117,7 @@ AI:  Let me investigate your current auth setup...
 
 You: Let's go with JWT. Can we start a change for that?
 
-AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
+AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
 ```
 
 **Tips:**
@@ -128,15 +128,15 @@ AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
 
 ---
 
-### `/opsx:new`
+### `/rasen:new`
 
-Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `/opsx:continue` or `/opsx:ff`.
+Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `/rasen:continue` or `/rasen:ff`.
 
 This command is part of the expanded workflow set (not included in the default `core` profile).
 
 **Syntax:**
 ```
-/opsx:new [change-name] [--schema <schema-name>]
+/rasen:new [change-name] [--schema <schema-name>]
 ```
 
 **Arguments:**
@@ -146,42 +146,42 @@ This command is part of the expanded workflow set (not included in the default `
 | `--schema` | No | Workflow schema to use (default: from config or `spec-driven`) |
 
 **What it does:**
-- Creates `openspec/changes/<change-name>/` directory
+- Creates `rasen/changes/<change-name>/` directory
 - Creates `.openspec.yaml` metadata file in the change folder
 - Shows the first artifact template ready for creation
 - Prompts for change name and schema if not provided
 
 **What it creates:**
 ```
-openspec/changes/<change-name>/
+rasen/changes/<change-name>/
 └── .openspec.yaml    # Change metadata (schema, created date)
 ```
 
 **Example:**
 ```
-You: /opsx:new add-dark-mode
+You: /rasen:new add-dark-mode
 
-AI:  Created openspec/changes/add-dark-mode/
+AI:  Created rasen/changes/add-dark-mode/
      Schema: spec-driven
 
      Ready to create: proposal
-     Use /opsx:continue to create it, or /opsx:ff to create all artifacts.
+     Use /rasen:continue to create it, or /rasen:ff to create all artifacts.
 ```
 
 **Tips:**
 - Use descriptive names: `add-feature`, `fix-bug`, `refactor-module`
 - Avoid generic names like `update`, `changes`, `wip`
-- Schema can also be set in project config (`openspec/config.yaml`)
+- Schema can also be set in project config (`rasen/config.yaml`)
 
 ---
 
-### `/opsx:continue`
+### `/rasen:continue`
 
 Create the next artifact in the dependency chain. Creates one artifact at a time for incremental progress.
 
 **Syntax:**
 ```
-/opsx:continue [change-name]
+/rasen:continue [change-name]
 ```
 
 **Arguments:**
@@ -198,7 +198,7 @@ Create the next artifact in the dependency chain. Creates one artifact at a time
 
 **Example:**
 ```
-You: /opsx:continue
+You: /rasen:continue
 
 AI:  Change: add-dark-mode
 
@@ -212,10 +212,10 @@ AI:  Change: add-dark-mode
 
      [Reads proposal.md, creates specs based on requirements]
 
-     ✓ Created openspec/changes/add-dark-mode/specs/ui/spec.md
+     ✓ Created rasen/changes/add-dark-mode/specs/ui/spec.md
 
      Now available: tasks
-     Run /opsx:continue to create the next artifact.
+     Run /rasen:continue to create the next artifact.
 ```
 
 **Tips:**
@@ -226,13 +226,13 @@ AI:  Change: add-dark-mode
 
 ---
 
-### `/opsx:ff`
+### `/rasen:ff`
 
 Fast-forward through artifact creation. Creates all planning artifacts at once.
 
 **Syntax:**
 ```
-/opsx:ff [change-name]
+/rasen:ff [change-name]
 ```
 
 **Arguments:**
@@ -248,7 +248,7 @@ Fast-forward through artifact creation. Creates all planning artifacts at once.
 
 **Example:**
 ```
-You: /opsx:ff add-dark-mode
+You: /rasen:ff add-dark-mode
 
 AI:  Fast-forwarding add-dark-mode...
 
@@ -258,24 +258,24 @@ AI:  Fast-forwarding add-dark-mode...
      ✓ Creating tasks.md
 
      All planning artifacts complete!
-     Ready for implementation. Run /opsx:apply to begin.
+     Ready for implementation. Run /rasen:apply to begin.
 ```
 
 **Tips:**
 - Use when you have a clear picture of what you're building
-- Faster than `/opsx:continue` for straightforward changes
+- Faster than `/rasen:continue` for straightforward changes
 - You can still edit artifacts afterward
 - Good for small to medium features
 
 ---
 
-### `/opsx:apply`
+### `/rasen:apply`
 
 Implement tasks from the change. Works through the task list, writing code and checking off items.
 
 **Syntax:**
 ```
-/opsx:apply [change-name]
+/rasen:apply [change-name]
 ```
 
 **Arguments:**
@@ -291,7 +291,7 @@ Implement tasks from the change. Works through the task list, writing code and c
 
 **Example:**
 ```
-You: /opsx:apply
+You: /rasen:apply
 
 AI:  Implementing add-dark-mode...
 
@@ -319,13 +319,13 @@ AI:  Implementing add-dark-mode...
 
 ---
 
-### `/opsx:verify`
+### `/rasen:verify`
 
 Validate that implementation matches your change artifacts. Checks completeness, correctness, and coherence.
 
 **Syntax:**
 ```
-/opsx:verify [change-name]
+/rasen:verify [change-name]
 ```
 
 **Arguments:**
@@ -349,7 +349,7 @@ Validate that implementation matches your change artifacts. Checks completeness,
 
 **Example:**
 ```
-You: /opsx:verify
+You: /rasen:verify
 
 AI:  Verifying add-dark-mode...
 
@@ -387,13 +387,13 @@ AI:  Verifying add-dark-mode...
 
 ---
 
-### `/opsx:review-cycle`
+### `/rasen:review-cycle`
 
 Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `openspec-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
 
 **Syntax:**
 ```
-/opsx:review-cycle [change-name]
+/rasen:review-cycle [change-name]
 ```
 
 **Arguments:**
@@ -417,7 +417,7 @@ A finding is resolved only when a reviewer who did NOT author the fix confirms i
 
 **Example:**
 ```
-You: /opsx:review-cycle add-dark-mode
+You: /rasen:review-cycle add-dark-mode
 
 AI:  Review Cycle: add-dark-mode (round 1/3)
      Findings: 1 Blocker, 2 Major
@@ -430,19 +430,19 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 ```
 
 **Tips:**
-- Use AFTER implementation, against the live diff; for a single verification gate use `/opsx:verify` instead
+- Use AFTER implementation, against the live diff; for a single verification gate use `/rasen:verify` instead
 - The loop is bounded — if it escalates, the open findings and round history go to a human, not to a silent pass
 
 ---
 
-### `/opsx:goal`
+### `/rasen:goal`
 
-Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/opsx:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/opsx:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
+Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/rasen:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/rasen:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
 
 **Syntax:**
 ```text
-/opsx:goal [measure|evaluate|research] <task>
-/opsx:goal --pipeline goal-loop-<variant> <task>
+/rasen:goal [measure|evaluate|research] <task>
+/rasen:goal --pipeline goal-loop-<variant> <task>
 ```
 
 **Arguments:**
@@ -467,7 +467,7 @@ Goal-driven iteration for tasks whose "done" is a **condition**, not a document 
 
 **Example:**
 ```text
-You: /opsx:goal drive the Lighthouse performance score to 90
+You: /rasen:goal drive the Lighthouse performance score to 90
 
 AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
      Fetch DAG: define-goal -> iterate (measure gate) -> ship -> archive
@@ -480,19 +480,19 @@ AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
 ```
 
 **Tips:**
-- Use `/opsx:goal` when the product is a *condition* met by iteration; use `/opsx:auto` when the product is a code-change document
-- Kill mid-loop and run `openspec pipeline resume <change>` — the goal-loop resume protocol reads the last `goal-run.json` record and resumes at the right round
+- Use `/rasen:goal` when the product is a *condition* met by iteration; use `/rasen:auto` when the product is a code-change document
+- Kill mid-loop and run `rasen pipeline resume <change>` — the goal-loop resume protocol reads the last `goal-run.json` record and resumes at the right round
 - The `define-goal` gate is the safety valve for "measure.command is arbitrary shell" — review the command before continuing
 
 ---
 
-### `/opsx:sync`
+### `/rasen:sync`
 
 **Optional command.** Merge delta specs from a change into main specs. Archive will prompt to sync if needed, so you typically don't need to run this manually.
 
 **Syntax:**
 ```
-/opsx:sync [change-name]
+/rasen:sync [change-name]
 ```
 
 **Arguments:**
@@ -503,27 +503,27 @@ AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
 **What it does:**
 - Reads delta specs from change folder
 - Parses ADDED/MODIFIED/REMOVED/RENAMED sections
-- Merges changes into main `openspec/specs/` directory
+- Merges changes into main `rasen/specs/` directory
 - Preserves existing content not mentioned in delta
 - Does not archive the change (remains active)
 
 **Example:**
 ```text
-You: /opsx:sync
+You: /rasen:sync
 
 AI:  Syncing add-dark-mode delta specs...
 
-     Reading: openspec/changes/add-dark-mode/specs/ui/spec.md
-     Target:  openspec/specs/ui/spec.md
+     Reading: rasen/changes/add-dark-mode/specs/ui/spec.md
+     Target:  rasen/specs/ui/spec.md
 
      Changes to apply:
      ✓ ADDED: Theme Selection requirement (2 scenarios)
      ✓ ADDED: Accessibility requirement (1 scenario)
 
      Merging...
-     ✓ openspec/specs/ui/spec.md updated
+     ✓ rasen/specs/ui/spec.md updated
 
-     Change remains active. Run /opsx:archive when ready to complete.
+     Change remains active. Run /rasen:archive when ready to complete.
 ```
 
 **When to use manually:**
@@ -543,13 +543,13 @@ AI:  Syncing add-dark-mode delta specs...
 
 ---
 
-### `/opsx:archive`
+### `/rasen:archive`
 
 Archive a completed change. Finalizes the change and moves it to the archive folder.
 
 **Syntax:**
 ```
-/opsx:archive [change-name]
+/rasen:archive [change-name]
 ```
 
 **Arguments:**
@@ -561,12 +561,12 @@ Archive a completed change. Finalizes the change and moves it to the archive fol
 - Checks artifact completion status
 - Checks task completion (warns if incomplete)
 - Offers to sync delta specs if not already synced
-- Moves change folder to `openspec/changes/archive/YYYY-MM-DD-<name>/`
+- Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/`
 - Preserves all artifacts for audit trail
 
 **Example:**
 ```text
-You: /opsx:archive
+You: /rasen:archive
 
 AI:  Archiving add-dark-mode...
 
@@ -581,8 +581,8 @@ AI:  Archiving add-dark-mode...
 
 You: Yes
 
-AI:  ✓ Synced specs to openspec/specs/ui/spec.md
-     ✓ Moved to openspec/changes/archive/2025-01-24-add-dark-mode/
+AI:  ✓ Synced specs to rasen/specs/ui/spec.md
+     ✓ Moved to rasen/changes/archive/2025-01-24-add-dark-mode/
 
      Change archived successfully.
 ```
@@ -591,17 +591,17 @@ AI:  ✓ Synced specs to openspec/specs/ui/spec.md
 - Archive won't block on incomplete tasks, but will warn
 - Delta specs can be synced during archive or beforehand
 - Archived changes are preserved for history
-- Use `/opsx:verify` first to catch issues
+- Use `/rasen:verify` first to catch issues
 
 ---
 
-### `/opsx:bulk-archive`
+### `/rasen:bulk-archive`
 
 Archive multiple completed changes at once. Handles spec conflicts between changes.
 
 **Syntax:**
 ```
-/opsx:bulk-archive [change-names...]
+/rasen:bulk-archive [change-names...]
 ```
 
 **Arguments:**
@@ -618,7 +618,7 @@ Archive multiple completed changes at once. Handles spec conflicts between chang
 
 **Example:**
 ```
-You: /opsx:bulk-archive
+You: /rasen:bulk-archive
 
 AI:  Found 3 completed changes:
      - add-dark-mode (8/8 tasks complete)
@@ -651,13 +651,13 @@ AI:  ✓ Archived add-dark-mode
 
 ---
 
-### `/opsx:onboard`
+### `/rasen:onboard`
 
 Guided onboarding through the complete OpenSpec workflow. An interactive tutorial using your actual codebase.
 
 **Syntax:**
 ```
-/opsx:onboard
+/rasen:onboard
 ```
 
 **What it does:**
@@ -671,19 +671,19 @@ Guided onboarding through the complete OpenSpec workflow. An interactive tutoria
 **Phases:**
 1. Welcome and codebase analysis
 2. Finding an improvement opportunity
-3. Creating a change (`/opsx:new`)
+3. Creating a change (`/rasen:new`)
 4. Writing the proposal
 5. Creating specs
 6. Writing the design
 7. Creating tasks
-8. Implementing tasks (`/opsx:apply`)
+8. Implementing tasks (`/rasen:apply`)
 9. Verifying implementation
 10. Archiving the change
 11. Summary and next steps
 
 **Example:**
 ```
-You: /opsx:onboard
+You: /rasen:onboard
 
 AI:  Welcome to OpenSpec!
 
@@ -717,7 +717,7 @@ Different AI tools use slightly different command syntax. Use the format that ma
 
 | Tool | Syntax Example |
 |------|----------------|
-| Claude Code | `/opsx:propose`, `/opsx:apply` |
+| Claude Code | `/rasen:propose`, `/rasen:apply` |
 | Cursor | `/opsx-propose`, `/opsx-apply` |
 | Windsurf | `/opsx-propose`, `/opsx-apply` |
 | Copilot (IDE) | `/opsx-propose`, `/opsx-apply` |
@@ -757,8 +757,8 @@ Legacy changes can be continued with OPSX commands. The artifact structure is co
 The command couldn't identify which change to work on.
 
 **Solutions:**
-- Specify the change name explicitly: `/opsx:apply add-dark-mode`
-- Check that the change folder exists: `openspec list`
+- Specify the change name explicitly: `/rasen:apply add-dark-mode`
+- Check that the change folder exists: `rasen list`
 - Verify you're in the right project directory
 
 ### "No artifacts ready"
@@ -766,7 +766,7 @@ The command couldn't identify which change to work on.
 All artifacts are either complete or blocked by missing dependencies.
 
 **Solutions:**
-- Run `openspec status --change <name>` to see what's blocking
+- Run `rasen status --change <name>` to see what's blocking
 - Check if required artifacts exist
 - Create missing dependency artifacts first
 
@@ -775,17 +775,17 @@ All artifacts are either complete or blocked by missing dependencies.
 The specified schema doesn't exist.
 
 **Solutions:**
-- List available schemas: `openspec schemas`
+- List available schemas: `rasen schemas`
 - Check spelling of schema name
-- Create the schema if it's custom: `openspec schema init <name>`
+- Create the schema if it's custom: `rasen schema init <name>`
 
 ### Commands not recognized
 
 The AI tool doesn't recognize OpenSpec commands.
 
 **Solutions:**
-- Ensure OpenSpec is initialized: `openspec init`
-- Regenerate skills: `openspec update`
+- Ensure OpenSpec is initialized: `rasen init`
+- Regenerate skills: `rasen update`
 - Check that `.claude/skills/` directory exists (for Claude Code)
 - Restart your AI tool to pick up new skills
 
@@ -794,10 +794,10 @@ The AI tool doesn't recognize OpenSpec commands.
 The AI creates incomplete or incorrect artifacts.
 
 **Solutions:**
-- Add project context in `openspec/config.yaml`
+- Add project context in `rasen/config.yaml`
 - Add per-artifact rules for specific guidance
 - Provide more detail in your change description
-- Use `/opsx:continue` instead of `/opsx:ff` for more control
+- Use `/rasen:continue` instead of `/rasen:ff` for more control
 
 ---
 

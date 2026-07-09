@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
 /**
  * The relationship-data gather shared by doctor and context (4.1): one
  * registry snapshot, the health-mode reference index, and the root
@@ -13,7 +14,7 @@ import {
   type ProjectConfig,
 } from '../core/project-config.js';
 import { assembleReferenceIndex, type ReferenceIndexEntry } from '../core/references.js';
-import { inspectOpenSpecRoot, type OpenSpecRootInspection } from '../core/openspec-root.js';
+import { inspectOpenSpecRoot, type OpenSpecRootInspection } from '../core/workspace-root.js';
 import type { ResolvedOpenSpecRoot } from '../core/root-selection.js';
 
 export interface RelationshipData {
@@ -31,7 +32,7 @@ export async function gatherRelationshipData(
 
   const projectConfig = readProjectConfig(root.path);
   const storeConfigPath =
-    resolveConfigFilePath(root.path) ?? path.join(root.path, 'openspec', 'config.yaml');
+    resolveConfigFilePath(root.path) ?? path.join(root.path, WORKSPACE_DIR_NAME, 'config.yaml');
 
   const referenceEntries = await assembleReferenceIndex({
     references: projectConfig?.references ?? [],

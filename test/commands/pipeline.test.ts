@@ -8,7 +8,7 @@ const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'] as const;
 describe('pipeline command', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-pipeline-command-tmp');
-  const changesDir = path.join(testDir, 'openspec', 'changes');
+  const changesDir = path.join(testDir, 'rasen', 'changes');
 
   beforeEach(async () => {
     await fs.mkdir(changesDir, { recursive: true });
@@ -88,14 +88,14 @@ describe('pipeline command', () => {
         source: 'default',
       });
       expect(stage.id).toBe('propose');
-      expect(stage.skill).toBe('openspec-propose');
+      expect(stage.skill).toBe('rasen-propose');
       expect(stage.gate).toBe(true);
       // build order length equals stage count
       expect(json.buildOrder.length).toBe(json.stages.length);
     });
 
     it('resolves role-level and stage-level Codex runtime choices via --json', async () => {
-      const pipelineDir = path.join(testDir, 'openspec', 'pipelines', 'codex-mix');
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'codex-mix');
       await fs.mkdir(pipelineDir, { recursive: true });
       await fs.writeFile(
         path.join(pipelineDir, 'pipeline.yaml'),
@@ -109,10 +109,10 @@ agents:
   reviewer: claude
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
   - id: verify
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -157,7 +157,7 @@ stages:
     });
 
     it('surfaces the resolved per-stage handoff config (stage > role > pipeline)', async () => {
-      const pipelineDir = path.join(testDir, 'openspec', 'pipelines', 'handoff-mix');
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'handoff-mix');
       await fs.mkdir(pipelineDir, { recursive: true });
       await fs.writeFile(
         path.join(pipelineDir, 'pipeline.yaml'),
@@ -171,14 +171,14 @@ handoff:
   stallLimit: 3
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
   - id: review
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     requires: [propose]
   - id: fix
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: fixer
     requires: [review]
     handoff:
@@ -200,7 +200,7 @@ stages:
     });
 
     it('surfaces the resolved reuse config at the top level (declared block)', async () => {
-      const pipelineDir = path.join(testDir, 'openspec', 'pipelines', 'reuse-mix');
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'reuse-mix');
       await fs.mkdir(pipelineDir, { recursive: true });
       await fs.writeFile(
         path.join(pipelineDir, 'pipeline.yaml'),
@@ -213,10 +213,10 @@ reuse:
     planner: 0.5
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: implementer
     requires: [propose]
 `,
@@ -286,13 +286,13 @@ stages:
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.name).toBe('small-feature');
-      expect(json.overridePath).toContain(path.join('openspec', 'pipelines', 'small-feature', 'pipeline.yaml'));
+      expect(json.overridePath).toContain(path.join('rasen', 'pipelines', 'small-feature', 'pipeline.yaml'));
       expect(json.agents.planner).toBe('codex');
       expect(json.agents.reviewer).toBe('codex');
       expect(json.effectiveRoles.planner).toBe('codex');
       expect(json.effectiveRoles.implementer).toBe('claude');
 
-      const overridePath = path.join(testDir, 'openspec', 'pipelines', 'small-feature', 'pipeline.yaml');
+      const overridePath = path.join(testDir, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml');
       await expect(fs.stat(overridePath)).resolves.toBeDefined();
 
       const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], { cwd: testDir });
@@ -766,9 +766,9 @@ describe('pipeline command root selection (subdirectory)', () => {
   beforeEach(async () => {
     // A planning shape (specs/ + changes/) makes testDir a qualifying root; a
     // bare openspec/pipelines/ dir alone does NOT qualify (see root-selection).
-    await fs.mkdir(path.join(testDir, 'openspec', 'specs'), { recursive: true });
-    await fs.mkdir(path.join(testDir, 'openspec', 'changes'), { recursive: true });
-    const pipelineDir = path.join(testDir, 'openspec', 'pipelines', PROJECT_PIPELINE);
+    await fs.mkdir(path.join(testDir, 'rasen', 'specs'), { recursive: true });
+    await fs.mkdir(path.join(testDir, 'rasen', 'changes'), { recursive: true });
+    const pipelineDir = path.join(testDir, 'rasen', 'pipelines', PROJECT_PIPELINE);
     await fs.mkdir(pipelineDir, { recursive: true });
     await fs.writeFile(
       path.join(pipelineDir, 'pipeline.yaml'),
@@ -776,7 +776,7 @@ describe('pipeline command root selection (subdirectory)', () => {
         `name: ${PROJECT_PIPELINE}`,
         'stages:',
         '  - id: propose',
-        '    skill: openspec-propose',
+        '    skill: rasen-propose',
         '    role: planner',
       ].join('\n'),
       'utf-8'

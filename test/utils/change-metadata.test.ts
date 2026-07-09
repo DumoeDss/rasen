@@ -124,8 +124,8 @@ describe('writeChangeMetadata', () => {
   let changeDir: string;
 
   beforeEach(async () => {
-    testDir = path.join(os.tmpdir(), `openspec-test-${randomUUID()}`);
-    changeDir = path.join(testDir, 'openspec', 'changes', 'test-change');
+    testDir = path.join(os.tmpdir(), `rasen-test-${randomUUID()}`);
+    changeDir = path.join(testDir, 'rasen', 'changes', 'test-change');
     await fs.mkdir(changeDir, { recursive: true });
   });
 
@@ -161,8 +161,8 @@ describe('readChangeMetadata', () => {
   let changeDir: string;
 
   beforeEach(async () => {
-    testDir = path.join(os.tmpdir(), `openspec-test-${randomUUID()}`);
-    changeDir = path.join(testDir, 'openspec', 'changes', 'test-change');
+    testDir = path.join(os.tmpdir(), `rasen-test-${randomUUID()}`);
+    changeDir = path.join(testDir, 'rasen', 'changes', 'test-change');
     await fs.mkdir(changeDir, { recursive: true });
   });
 
@@ -238,8 +238,8 @@ describe('resolveSchemaForChange', () => {
   let changeDir: string;
 
   beforeEach(async () => {
-    testDir = path.join(os.tmpdir(), `openspec-test-${randomUUID()}`);
-    changeDir = path.join(testDir, 'openspec', 'changes', 'test-change');
+    testDir = path.join(os.tmpdir(), `rasen-test-${randomUUID()}`);
+    changeDir = path.join(testDir, 'rasen', 'changes', 'test-change');
     await fs.mkdir(changeDir, { recursive: true });
   });
 
@@ -279,7 +279,7 @@ describe('resolveSchemaForChange', () => {
 
   it('should use project config schema when no metadata exists', async () => {
     // Create project config
-    const configDir = path.join(testDir, 'openspec');
+    const configDir = path.join(testDir, 'rasen');
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(
       path.join(configDir, 'config.yaml'),
@@ -293,7 +293,7 @@ describe('resolveSchemaForChange', () => {
 
   it('should prefer change metadata over project config', async () => {
     // Create project config
-    const configDir = path.join(testDir, 'openspec');
+    const configDir = path.join(testDir, 'rasen');
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(
       path.join(configDir, 'config.yaml'),
@@ -311,7 +311,7 @@ describe('resolveSchemaForChange', () => {
 
   it('should prefer explicit schema over all config sources', async () => {
     // Create project config
-    const configDir = path.join(testDir, 'openspec');
+    const configDir = path.join(testDir, 'rasen');
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(
       path.join(configDir, 'config.yaml'),
@@ -330,7 +330,7 @@ describe('resolveSchemaForChange', () => {
 
   it('should test full precedence order: CLI > metadata > config > default', async () => {
     // Setup all levels
-    const configDir = path.join(testDir, 'openspec');
+    const configDir = path.join(testDir, 'rasen');
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(
       path.join(configDir, 'config.yaml'),

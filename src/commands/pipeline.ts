@@ -36,6 +36,7 @@ import {
   isPortfolioComplete,
   getProjectPipelinesDir,
   resolveChildPipelineName,
+  mapLegacySkillId,
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
@@ -387,6 +388,18 @@ export class PipelineCommand {
     const buildOrder = graph.getBuildOrder();
     const completed = completedStages(runState);
     const completedSet = new Set(completed);
+
+    // A project-local or user-override pipeline authored before the rebrand can
+    // still name legacy `openspec-*`/`openspec:*` skill IDs that no installed
+    // skill answers to. Surface each stale stage skill with its rasen mapping so
+    // the resumer can fix the pipeline instead of dispatching a dead ID.
+    const legacySkillHints = pipeline.stages
+      .filter((stage) => stage.skill)
+      .map((stage) => {
+        const mapped = mapLegacySkillId(stage.skill as string);
+        return mapped ? { stage: stage.id, from: stage.skill as string, to: mapped } : null;
+      })
+      .filter((hint): hint is { stage: string; from: string; to: string } => hint !== null);
     // getNextStages can return several ready stages (parallel frontier); report
     // the full set as `ready`, and keep `next` as its first member for callers
     // that want a single cursor.
@@ -436,6 +449,8 @@ export class PipelineCommand {
       // no new keys unless a run actually recorded handoffs.
       ...(sessionHandoff ? { sessionHandoff } : {}),
       ...(Object.keys(handoffs).length > 0 ? { handoffs } : {}),
+      // Legacy skill-ID hints only when a stale pipeline was resolved.
+      ...(legacySkillHints.length > 0 ? { legacySkillHints } : {}),
     };
 
     if (options.json) {
@@ -457,6 +472,14 @@ export class PipelineCommand {
     }
     if (openFindings.length > 0) {
       console.log(`Open findings: ${openFindings.length} (resolve before ship)`);
+    }
+    if (legacySkillHints.length > 0) {
+      console.log(
+        `Legacy skill IDs in pipeline '${runState.pipeline}' (update the pipeline yaml):`
+      );
+      for (const hint of legacySkillHints) {
+        console.log(`  stage ${hint.stage}: ${hint.from} -> ${hint.to}`);
+      }
     }
     if (warmSeedable.length > 0) {
       console.log(`Resume handles available (worker sessions/transcripts): ${warmSeedable.join(', ')}`);

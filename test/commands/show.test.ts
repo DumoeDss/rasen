@@ -6,8 +6,8 @@ import { execSync } from 'child_process';
 describe('top-level show command', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-show-command-tmp');
-  const changesDir = path.join(testDir, 'openspec', 'changes');
-  const specsDir = path.join(testDir, 'openspec', 'specs');
+  const changesDir = path.join(testDir, 'rasen', 'changes');
+  const specsDir = path.join(testDir, 'rasen', 'specs');
   const openspecBin = path.join(projectRoot, 'bin', 'rasen.js');
 
 

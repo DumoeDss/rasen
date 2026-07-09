@@ -88,7 +88,7 @@ export type RunStateStage = z.infer<typeof RunStateStageSchema>;
 
 /**
  * Session-level handoff pointer: written when a whole session (the LEAD)
- * distills its state via `/opsx:handoff` so a fresh session reads the
+ * distills its state via `/rasen:handoff` so a fresh session reads the
  * distillate before warm-seeding from raw transcripts. `n` is the relay
  * generation (1st handoff = 1); records without it are generation 1.
  */

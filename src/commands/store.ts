@@ -27,6 +27,7 @@ import {
   type SetupStoreInput,
 } from '../core/store/index.js';
 import { isInteractive } from '../utils/interactive.js';
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
 
 interface StoreSetupOptions {
   path?: string;
@@ -242,7 +243,7 @@ async function promptStoreId(): Promise<string> {
 async function promptStorePath(id: string): Promise<string> {
   const { input } = await import('@inquirer/prompts');
   // Suggest a visible, user-owned location — never the managed XDG data dir.
-  const defaultPath = ['~', 'openspec', id].join('/');
+  const defaultPath = ['~', WORKSPACE_DIR_NAME, id].join('/');
 
   return input({
     message: 'Where should this store live?',
@@ -264,7 +265,7 @@ async function resolveSetupInput(
       'store_setup_id_required',
       {
         target: 'store.id',
-        fix: 'rasen store setup <id> --path ~/openspec/<id> --json',
+        fix: `rasen store setup <id> --path ~/${WORKSPACE_DIR_NAME}/<id> --json`,
       }
     );
   }
@@ -275,7 +276,7 @@ async function resolveSetupInput(
       'store_setup_path_required',
       {
         target: 'store.root',
-        fix: `rasen store setup ${id ?? '<id>'} --path ~/openspec/${id ?? '<id>'}`,
+        fix: `rasen store setup ${id ?? '<id>'} --path ~/${WORKSPACE_DIR_NAME}/${id ?? '<id>'}`,
       }
     );
   }
@@ -442,7 +443,7 @@ function printListHuman(payload: StoreListOutput): void {
     console.log('No stores registered.');
     console.log('');
     console.log('Next:');
-    console.log('  rasen store setup team-context --path ~/openspec/team-context');
+    console.log(`  rasen store setup team-context --path ~/${WORKSPACE_DIR_NAME}/team-context`);
     console.log('  rasen store register /path/to/store');
     return;
   }
@@ -670,7 +671,7 @@ export function registerStoreCommand(program: Command): void {
   store
     .command('setup [id]')
     .description('Create and register a local store')
-    .option('--path <path>', 'Folder where the store should live (for example ~/openspec/<id>)')
+    .option('--path <path>', `Folder where the store should live (for example ~/${WORKSPACE_DIR_NAME}/<id>)`)
     .option('--init-git', 'Initialize a Git repository with an initial commit (default)')
     .option('--no-init-git', 'Skip every Git action: no init, no initial commit')
     .option('--remote <url>', 'Canonical clone source recorded in store.yaml')

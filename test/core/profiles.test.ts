@@ -20,7 +20,7 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 18 workflows (11 base + 5 OPSX fusion + review-cycle + handoff)', () => {
+    it('should contain all 18 workflows (11 base + 5 Rasen fusion + review-cycle + handoff)', () => {
       expect(ALL_WORKFLOWS).toHaveLength(18);
     });
 
@@ -28,7 +28,7 @@ describe('profiles', () => {
       const expected = [
         'propose', 'explore', 'new', 'continue', 'apply',
         'ff', 'sync', 'archive', 'bulk-archive', 'verify', 'onboard',
-        // OPSX fusion workflow commands
+        // Rasen fusion workflow commands
         'office-hours-command', 'verify-enhanced-command', 'ship-command',
         'retro-command', 'auto-command',
         // Iterative review loop (opt-in)

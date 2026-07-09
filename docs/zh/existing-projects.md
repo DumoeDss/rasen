@@ -10,16 +10,16 @@
 
 ```bash
 $ cd your-existing-project
-$ openspec init          # adds openspec/ and your AI tool's commands
+$ rasen init          # adds openspec/ and your AI tool's commands
 ```
 
 然后，在你的 AI 聊天里：
 
 ```text
-/opsx:explore            # optional: have the AI read the area you'll touch
-/opsx:propose <a real, small change you actually need>
-/opsx:apply
-/opsx:archive
+/rasen:explore            # optional: have the AI read the area you'll touch
+/rasen:propose <a real, small change you actually need>
+/rasen:apply
+/rasen:archive
 ```
 
 现在你的规格精确描述了那次变更所触及的系统部分，仅此而已。这是正确的。其余那 8 万行代码你不必再操心。
@@ -30,7 +30,7 @@ OpenSpec 的变更以**增量（delta）**的形式编写：`ADDED`、`MODIFIED`
 
 这正是存量项目工作所需要的。你很少从零开始构建。你是在加一个字段、修一处重定向、收紧一个超时。增量让你能够精确指定那一次改动，而不必先写一份把周围一切都包进去的 40 页规格。
 
-所以你的 `openspec/specs/` 目录一开始并不是完整填满的。它近乎为空，然后逐步积累。每一次归档的变更都把它的增量并入其中。`auth/` 的规格只在你做过若干次 auth 相关变更之后才变得详尽——而这恰好就是你希望它详尽的时候。
+所以你的 `rasen/specs/` 目录一开始并不是完整填满的。它近乎为空，然后逐步积累。每一次归档的变更都把它的增量并入其中。`auth/` 的规格只在你做过若干次 auth 相关变更之后才变得详尽——而这恰好就是你希望它详尽的时候。
 
 如果你想了解更深的机制，参见[概念：增量规格](concepts.md#增量规格delta-specs)。
 
@@ -38,10 +38,10 @@ OpenSpec 的变更以**增量（delta）**的形式编写：`ADDED`、`MODIFIED`
 
 挑一个小而真实的东西。不是玩具，也不是重写。一个你这周本来就要做的变更。小的初次变更能让你在低风险下学会这套工作流。
 
-**第 1 步：让 AI 阅读相关区域。** 这正是 `/opsx:explore` 在不熟悉或庞大的代码库上发挥价值的地方。把它指向你即将触及的部分，让它在提出任何建议之前先摸清现状是如何运作的。
+**第 1 步：让 AI 阅读相关区域。** 这正是 `/rasen:explore` 在不熟悉或庞大的代码库上发挥价值的地方。把它指向你即将触及的部分，让它在提出任何建议之前先摸清现状是如何运作的。
 
 ```text
-You: /opsx:explore
+You: /rasen:explore
 
 AI:  What would you like to explore?
 
@@ -59,29 +59,29 @@ AI:  Let me trace it... [reads the router, middleware stack, and config]
 **第 2 步：提出变更。** 提案及其增量规格只捕获这一次变更。
 
 ```text
-You: /opsx:propose add-api-rate-limiting
+You: /rasen:propose add-api-rate-limiting
 ```
 
-**第 3 步：构建并归档**，使用 `/opsx:apply` 和 `/opsx:archive`，和任何变更一样。归档之后，你就拥有了一份关于限流行为的真实规格，它诞生于一次你本来就要做的变更。
+**第 3 步：构建并归档**，使用 `/rasen:apply` 和 `/rasen:archive`，和任何变更一样。归档之后，你就拥有了一份关于限流行为的真实规格，它诞生于一次你本来就要做的变更。
 
 ## 想要一次带讲解的导览？用 onboard
 
-如果你更愿意看着整个循环在你自己的代码上、带着讲解地完整发生一遍，扩展命令 `/opsx:onboard` 正是为此而生：它会扫描你的代码库，找出一处小而安全的改进，然后带着你走完提出、构建和归档，并解释每一步。
+如果你更愿意看着整个循环在你自己的代码上、带着讲解地完整发生一遍，扩展命令 `/rasen:onboard` 正是为此而生：它会扫描你的代码库，找出一处小而安全的改进，然后带着你走完提出、构建和归档，并解释每一步。
 
 先开启扩展命令：
 
 ```bash
-$ openspec config profile      # select the expanded workflows
-$ openspec update              # apply them to this project
+$ rasen config profile      # select the expanded workflows
+$ rasen update              # apply them to this project
 ```
 
 然后在聊天里：
 
 ```text
-/opsx:onboard
+/rasen:onboard
 ```
 
-这是在真实项目上最温和的入门方式，而且它最终会留给你一个真实的（小的）变更，你可以保留也可以丢弃。参见[命令：`/opsx:onboard`](commands.md#opsxonboard)。
+这是在真实项目上最温和的入门方式，而且它最终会留给你一个真实的（小的）变更，你可以保留也可以丢弃。参见[命令：`/rasen:onboard`](commands.md#opsxonboard)。
 
 ## “但我已经有需求文档了”
 
@@ -92,17 +92,17 @@ $ openspec update              # apply them to this project
 坦白的原因是：OpenSpec 的规格刻意以行为为先，并以变更为范围。一份 40 页的 PRD 是另一种产物，承担另一种职责。强行做一次性的批量转换，往往会产出一份庞大、过时、没人信任的规格。让规格从真实的变更中长出来，才能保持准确。
 
 ```text
-You: /opsx:explore
+You: /rasen:explore
 You: Here's the section of our PRD about checkout. I'm implementing the
      "guest checkout" requirement next.
      [paste the relevant requirement]
 AI:  [reads it, asks clarifying questions, then helps scope a change]
-You: /opsx:propose add-guest-checkout
+You: /rasen:propose add-guest-checkout
 ```
 
 ## 在大型代码库中组织规格
 
-规格存放在 `openspec/specs/` 下，按**领域（domain）**分组：领域是一个与你的团队思考系统方式相匹配的逻辑区域。你不必预先把整套分类法设计好。当你在某个区域的第一次变更需要一个领域文件夹时，再创建它即可。
+规格存放在 `rasen/specs/` 下，按**领域（domain）**分组：领域是一个与你的团队思考系统方式相匹配的逻辑区域。你不必预先把整套分类法设计好。当你在某个区域的第一次变更需要一个领域文件夹时，再创建它即可。
 
 常见的领域划分方式：
 
@@ -123,7 +123,7 @@ You: /opsx:propose add-guest-checkout
 - **抵制把一切都回填的冲动。** 为你并没有在改动的代码写规格，感觉很有产出，但通常并非如此。这些规格会过时，因为没有东西逼着它们去追踪现实。让真实的变更来驱动你的规格。
 - **让早期的变更保持小。** 你的头几次变更，与其说是在交付，不如说是在学节奏。紧凑的范围能让循环变快、教训变便宜。
 - **把 `openspec/` 提交进 git。** 你的规格和归档应当与它们所描述的代码一起纳入版本控制。
-- **给 AI 上下文。** 在有着强约定的大型代码库上，把 `openspec/config.yaml` 的 `context:` 填好，这样每一次提案都会尊重你的技术栈和模式。参见[自定义](customization.md#项目配置)。
+- **给 AI 上下文。** 在有着强约定的大型代码库上，把 `rasen/config.yaml` 的 `context:` 填好，这样每一次提案都会尊重你的技术栈和模式。参见[自定义](customization.md#项目配置)。
 
 ## 接下来去哪里
 
