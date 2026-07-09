@@ -9,7 +9,10 @@
  * the change directory). Archive timing (`archive.timing` from the same
  * status payload) decides whether spec sync + bookkeeping run inside this
  * ship stage (`in-ship`) or are deferred to a later archive gated on merge
- * confirmation (`on-merge`, the default).
+ * confirmation (`on-merge`, the default). When timing is `in-ship`, archive
+ * destination (`archive.destination`/`archiveDir`, same payload) decides
+ * where that bookkeeping lands (in-repo move / external move / prune
+ * delete) — identical branch to `/rasen:archive`'s bookkeeping step.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -20,7 +23,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 PR body comes from proposal summary. Ship log recorded to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or \`ship-log.md\` already lives there).
 
-Resolve \`archive.timing\` from the same status payload (\`archive.timing\`, default \`on-merge\` when absent). Recorded ship-log facts (delivery mode, PR URL, archived-in-ship marker) for a delivery that already happened always outrank a later re-resolved config value — the timing axis is consulted only for decisions not yet taken.
+Resolve \`archive.timing\` from the same status payload (\`archive.timing\`, default \`on-merge\` when absent). Under **in-ship** timing, also resolve \`archive.destination\` (\`in-repo\` | \`external\` | \`prune\`) and \`archive.archiveDir\` (absent for \`prune\` and for an unresolvable \`external\`) from the same payload — the in-ship bookkeeping move/delete in step 3b branches on these exactly like \`/rasen:archive\`'s bookkeeping step. Recorded ship-log facts (delivery mode, PR URL, archived-in-ship/pruned-in-ship marker) for a delivery that already happened always outrank a later re-resolved config value — the timing and destination axes are consulted only for decisions not yet taken.
 
 ## When to Use
 
@@ -77,14 +80,17 @@ Resolution precedence (first match wins):
 NEVER resolve an integration base by falling back to the repository's default branch — a branch whose target you had to guess is a branch you must ask about.
 
 **b. Commit the change (all modes)**
-- **In-ship timing only, before staging/committing:** run the change's archive now, inside the ship stage, so its results ride this same delivery. Order matters — the change directory is about to move:
+- **In-ship timing only, before staging/committing:** run the change's archive bookkeeping now, inside the ship stage, so its results ride this same delivery. Order matters — the change directory is about to move or disappear:
   1. Capture what later ship steps need from the change directory FIRST: PR-body sections from \`proposal.md\`, task-completion facts.
   2. Sync delta specs into main specs (the \`rasen-sync-specs\` step — same sync the archive skill runs).
-  3. Move the change directory to \`<changesDir>/archive/YYYY-MM-DD-<name>\` (the same collision rule as \`/rasen:archive\`'s bookkeeping step).
-  4. Record \`Archived in ship: <path>\` for the ship log (step 4).
-- Stage the change's files — under in-ship timing, this also includes the synced main specs and the moved change directory from the steps above — and commit with a conventional message derived from the change name / proposal summary
+  3. **Destination-aware bookkeeping** (resolve \`archive.destination\`/\`archiveDir\` per the note above; the committed-state precondition that gates \`external\`/\`prune\` elsewhere is inherently satisfied here — this move/delete happens immediately BEFORE ship's own commit of the change's files, so nothing uncommitted is being destroyed):
+     - \`in-repo\` (default, or the fallback for \`external\` with no \`archiveDir\` in the payload — state the fallback explicitly, never escalate it to deletion): move the change directory to \`<changesDir>/archive/YYYY-MM-DD-<name>\` (the same collision rule as \`/rasen:archive\`'s bookkeeping step).
+     - \`external\`: move the change directory to \`<archiveDir>/YYYY-MM-DD-<name>\` instead — the repo-side removal rides this delivery; the archive copy stays machine-local.
+     - \`prune\`: delete the change directory (no move) — no archive copy anywhere; git history is the archive. \`prune\` still requires its own named confirmation before deleting, even inside ship.
+  4. Record the destination outcome for the ship log (step 4): \`Archived in ship: <path>\` (in-repo/external) or \`Pruned: true\` (prune — the literal token \`Pruned:\`, unified with every other prune writer: \`/rasen:archive\`, \`/rasen:bulk-archive\`) — so a later archive invocation on this name recognizes the outcome via its ship-log tombstone check.
+- Stage the change's files — under in-ship timing, this also includes the synced main specs and, for \`in-repo\`/\`external\`, the moved change directory from the steps above (a \`prune\`d change directory no longer exists to stage) — and commit with a conventional message derived from the change name / proposal summary
 - Pre-commit hooks (lint, format) may reject the commit: fix the reported issues and retry — NEVER bypass with \`--no-verify\`
-- If the working tree is already clean, skip this step (on-merge timing only — in-ship timing always has the sync + move above to commit)
+- If the working tree is already clean, skip this step (on-merge timing only — in-ship timing always has the sync + move/delete above to commit)
 
 **c. Merge the integration base (pr mode ONLY)**
 - \`git fetch origin <base> && git merge origin/<base> --no-edit\` so the test gate runs against the merged state — \`<base>\` is the base resolved in (a), never a guessed default
@@ -144,7 +150,8 @@ After successful delivery in ANY mode, write \`ship-log.md\` to the work directo
 **Base:** <base-branch>            (pr mode only)
 **PR:** <PR-URL>                   (pr mode only)
 **Status:** PR Created | Pushed | Committed (delivery deferred to portfolio level)
-**Archived in ship:** <path>       (in-ship timing only — omit this line under on-merge)
+**Archived in ship:** <path>       (in-ship timing, destination in-repo/external — omit under on-merge)
+**Pruned:** true                  (in-ship timing, destination prune — the same literal token every prune writer uses; mutually exclusive with the line above; omit under on-merge)
 
 ## Pre-Flight Results
 - Verification: <pass/skip>
@@ -183,7 +190,7 @@ If CI fails:
 ### 6. Post-Ship
 
 After shipping, guidance on archiving is timing- and mode-aware (facts recorded in the ship log, not a re-resolved config value):
-- **in-ship timing:** the change is already archived — see the ship log's \`Archived in ship:\` path. Do NOT suggest \`/rasen:archive\`; because the change directory has already moved, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early directory scan (step 1.5, before it ever calls status) and reports already-archived from the matched archive location, not from a successful status call.
+- **in-ship timing:** the change's archive bookkeeping is already done — see the ship log's \`Archived in ship:\` path (in-repo/external) or \`Pruned:\` marker (prune). Do NOT suggest \`/rasen:archive\`; because the change directory has already moved or been deleted, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early directory/external/tombstone scan (step 1.5, before it ever calls status) and reports the already-archived-or-pruned outcome, not from a successful status call.
 - **on-merge timing, \`pr\` mode:** the change stays ACTIVE during PR review — status, resume, loop, and fix-forward keep working. Do NOT suggest archiving immediately; state that archive follows merge confirmation (\`/rasen:archive\` checks the PR's merge state on each invocation, no polling).
 - **on-merge timing, \`push\`/\`local\` mode:** delivery is complete at ship with no merge event to await — suggest running \`/rasen:archive\` now.
 

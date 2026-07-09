@@ -866,7 +866,11 @@ artifacts:
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout);
-      expect(json.archive).toEqual({ timing: 'in-ship' });
+      expect(json.archive).toEqual({
+        timing: 'in-ship',
+        destination: 'in-repo',
+        archiveDir: path.join(tempDir, 'rasen', 'changes', 'archive'),
+      });
     });
 
     it('status --json exposes on-merge as the default when unconfigured', async () => {
@@ -879,7 +883,11 @@ artifacts:
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout);
-      expect(json.archive).toEqual({ timing: 'on-merge' });
+      expect(json.archive).toEqual({
+        timing: 'on-merge',
+        destination: 'in-repo',
+        archiveDir: path.join(tempDir, 'rasen', 'changes', 'archive'),
+      });
       // Existing payload fields remain present alongside the new one.
       expect(json.changeName).toBe('archive-timing-default');
       expect(json.schemaName).toBe('spec-driven');
@@ -892,6 +900,81 @@ artifacts:
       const result = await runCLI(['status', '--change', 'archive-timing-text'], { cwd: tempDir });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Archive timing: on-merge');
+    });
+  });
+
+  describe('archive.destination exposure (design externalize-artifacts-archive-dest)', () => {
+    it('status --json exposes the configured external destination and its resolved archiveDir', async () => {
+      const globalDataDir = path.join(tempDir, 'global-data-archive-dest-external');
+      await fs.writeFile(
+        path.join(tempDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\narchive:\n  destination: external\n'
+      );
+      await createTestChange('archive-dest-external');
+
+      // Register the project's machine home first (status is a read-only
+      // probe and never mints identity itself — design D2/D6).
+      const registerResult = await runCLI(['instructions', 'proposal', '--change', 'archive-dest-external', '--json'], {
+        cwd: tempDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(registerResult.exitCode).toBe(0);
+
+      const result = await runCLI(
+        ['status', '--change', 'archive-dest-external', '--json'],
+        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.archive.destination).toBe('external');
+      expect(json.archive.archiveDir).toBeDefined();
+      expect(path.isAbsolute(json.archive.archiveDir)).toBe(true);
+      expect(json.archive.archiveDir).not.toBe(path.join(tempDir, 'rasen', 'changes', 'archive'));
+    });
+
+    it('status --json omits archiveDir for an unresolvable external destination without minting identity', async () => {
+      const globalDataDir = path.join(tempDir, 'global-data-archive-dest-unresolvable');
+      await fs.writeFile(
+        path.join(tempDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\narchive:\n  destination: external\n'
+      );
+      await createTestChange('archive-dest-unresolved');
+
+      const result = await runCLI(
+        ['status', '--change', 'archive-dest-unresolved', '--json'],
+        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.archive.destination).toBe('external');
+      expect(json.archive.archiveDir).toBeUndefined();
+      // A read-only probe must never mint identity or write to the registry.
+      expect(existsSync(path.join(globalDataDir, 'projects'))).toBe(false);
+    });
+
+    it('status --json omits archiveDir for the prune destination', async () => {
+      await fs.writeFile(
+        path.join(tempDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\narchive:\n  destination: prune\n'
+      );
+      await createTestChange('archive-dest-prune');
+
+      const result = await runCLI(
+        ['status', '--change', 'archive-dest-prune', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.archive).toEqual({ timing: 'on-merge', destination: 'prune' });
+    });
+
+    it('status human output includes an Archive destination line', async () => {
+      await fs.writeFile(path.join(tempDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await createTestChange('archive-dest-text');
+
+      const result = await runCLI(['status', '--change', 'archive-dest-text'], { cwd: tempDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Archive destination: in-repo');
     });
   });
 

@@ -391,6 +391,7 @@ program
   .command('archive [change-name]')
   .description('Archive a completed change and update main specs')
   .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--confirm-prune', "Confirm a 'prune' destination's permanent deletion (separate from --yes; required in addition to it)")
   .option('--skip-specs', 'Skip spec update operations (useful for infrastructure, tooling, or doc-only changes)')
   .option('--no-validate', 'Skip validation (not recommended, requires confirmation)')
   .option('--json', 'Output as JSON (non-interactive)')

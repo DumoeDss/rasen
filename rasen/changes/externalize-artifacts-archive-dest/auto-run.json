@@ -1,0 +1,72 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "externalize-artifacts",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "worker": {
+        "role": "planner",
+        "agentId": "planner2",
+        "model": "fable"
+      },
+      "note": "3 API connection drops mid-propose, resumed each time via wake"
+    },
+    "apply": {
+      "status": "done",
+      "worker": {
+        "role": "implementer",
+        "agentId": "impl-archive-dest",
+        "model": "sonnet"
+      },
+      "testGate": {
+        "command": "npx vitest run",
+        "result": "124 files / 2304 passed / 22 skipped / 0 failed"
+      },
+      "note": "documented deviation: step-1.5 external scan probes context --json machineHome (change-independent) instead of design literal status-then-scan ordering (status throws on missing dir)"
+    },
+    "verify": {
+      "status": "done",
+      "worker": {
+        "role": "reviewer",
+        "agentId": "reviewer-archive-dest",
+        "model": "fable"
+      },
+      "verdict": "CONCERNS 0B/4M/6m/2t",
+      "report": "review-report.md"
+    },
+    "review-loop": {
+      "status": "done",
+      "fixer": "impl-archive-dest (author)",
+      "reReviewer": "reviewer-archive-dest",
+      "leadGateRun": {
+        "command": "npx vitest run (solo, post-fix)",
+        "result": "123/124 files, 2309 passed, 1 failed = init.test.ts ENOTEMPTY known Windows flake, isolate-rerun 48/48 green",
+        "note": "fix round also caught+fixed --confirm-prune missing from completions registry (real regression, now green)"
+      },
+      "verdict": "APPROVED WITH NOTES round 2",
+      "resolved": "4M + 5/6m round1; fix-round regression (--confirm-prune completions) caught+fixed",
+      "acceptedKnown": [
+        "R2 m10 c/d test residual",
+        "R3 JSON tombstone-failure signal human-only",
+        "m10 partial",
+        "stray ignored file blocks prune (fails safe)"
+      ],
+      "r1SpecTightening": "done, validate passes"
+    },
+    "ship": {
+      "status": "in_progress",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      }
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "rounds": 2,
+  "openFindings": []
+}

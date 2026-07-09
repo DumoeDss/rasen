@@ -71,13 +71,17 @@ export const ProjectConfigSchema = z.object({
     .describe('Stable project identity used by the machine-wide project registry'),
 
   // Optional: archive behavior configuration. Extensible - future fields
-  // (e.g. a destination axis) join this same map.
+  // join this same map.
   archive: z
     .object({
       timing: z
         .enum(['on-merge', 'in-ship'])
         .optional()
         .describe('When archive runs: on-merge (default) or in-ship'),
+      destination: z
+        .enum(['in-repo', 'external', 'prune'])
+        .optional()
+        .describe('Where archive bookkeeping lands: in-repo (default), external, or prune'),
     })
     .optional()
     .describe('Archive behavior configuration'),
@@ -85,6 +89,9 @@ export const ProjectConfigSchema = z.object({
 
 /** Valid `archive.timing` values. */
 export type ArchiveTiming = 'on-merge' | 'in-ship';
+
+/** Valid `archive.destination` values. */
+export type ArchiveDestination = 'in-repo' | 'external' | 'prune';
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -313,11 +320,10 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
       }
     }
 
-    // Parse archive field: an optional map with an optional `timing` field
-    // ('on-merge' | 'in-ship'). Non-map -> whole block dropped with a
-    // warning. Invalid `timing` -> field dropped with a warning, rest of
-    // the block (future fields) still parses. Extensible for child 4's
-    // destination field under the same map.
+    // Parse archive field: an optional map with optional `timing` and
+    // `destination` fields. Non-map -> whole block dropped with a warning.
+    // An invalid field -> that field dropped with a warning, siblings
+    // (and future fields) still parse.
     if (raw.archive !== undefined) {
       if (raw.archive && typeof raw.archive === 'object' && !Array.isArray(raw.archive)) {
         const archiveRaw = raw.archive as Record<string, unknown>;
@@ -327,6 +333,19 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
             archive.timing = archiveRaw.timing;
           } else {
             console.warn(`Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')`);
+          }
+        }
+        if (archiveRaw.destination !== undefined) {
+          if (
+            archiveRaw.destination === 'in-repo' ||
+            archiveRaw.destination === 'external' ||
+            archiveRaw.destination === 'prune'
+          ) {
+            archive.destination = archiveRaw.destination;
+          } else {
+            console.warn(
+              `Invalid 'archive.destination' field in config (must be 'in-repo', 'external', or 'prune')`
+            );
           }
         }
         config.archive = archive;
@@ -633,6 +652,22 @@ export async function ensureProjectIdInConfig(
  */
 export function resolveArchiveTiming(config: ProjectConfig | null | undefined): ArchiveTiming {
   return config?.archive?.timing ?? 'on-merge';
+}
+
+/**
+ * Resolves the effective archive destination, applying the `in-repo`
+ * default when the config, the `archive` block, or the `destination` field
+ * is absent or was dropped during parsing. Every consumer (status exposure,
+ * ship/archive templates, the CLI archive command) MUST resolve through
+ * this function so the default is applied identically everywhere. This
+ * decides only which value to use — the actual location resolution
+ * (`resolveArchiveDestination` in `change-work.ts`) is async and beside
+ * this function on purpose (`root.archiveDir` stays sync in-repo).
+ */
+export function resolveArchiveDestinationValue(
+  config: ProjectConfig | null | undefined
+): ArchiveDestination {
+  return config?.archive?.destination ?? 'in-repo';
 }
 
 /** Extracts a valid string `projectId` field from raw config content, or undefined. */
