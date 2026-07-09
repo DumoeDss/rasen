@@ -242,6 +242,45 @@ describe('PowerShellInstaller', () => {
       expect(content.match(/# RASEN:END/g)?.length).toBe(1);
     });
 
+    it('should dedupe to a single RASEN block when both a RASEN and an OPENSPEC block are present', async () => {
+      delete process.env.RASEN_NO_AUTO_CONFIG;
+      const profilePath = installer.getProfilePath();
+      await fs.mkdir(path.dirname(profilePath), { recursive: true });
+
+      const initialContent = [
+        '# Before',
+        '# OPENSPEC:START',
+        '# Stale legacy config',
+        '# OPENSPEC:END',
+        '',
+        '# Middle',
+        '# RASEN:START',
+        '# Stale current config',
+        '# RASEN:END',
+        '# After',
+      ].join('\n');
+
+      await fs.writeFile(profilePath, initialContent);
+
+      const result = await installer.configureProfile(mockScriptPath);
+
+      expect(result).toBe(true);
+      const content = await fs.readFile(profilePath, 'utf-8');
+
+      expect(content).toContain('# Before');
+      expect(content).toContain('# Middle');
+      expect(content).toContain('# After');
+      expect(content).toContain(`. "${mockScriptPath}"`);
+      expect(content).not.toContain('# Stale legacy config');
+      expect(content).not.toContain('# Stale current config');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
+
+      // Exactly one managed block — both families deduped to one
+      expect(content.match(/# RASEN:START/g)?.length).toBe(1);
+      expect(content.match(/# RASEN:END/g)?.length).toBe(1);
+    });
+
     it('should preserve user content outside markers and replace a legacy block in place', async () => {
       delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
@@ -486,6 +525,41 @@ describe('PowerShellInstaller', () => {
       expect(content).not.toContain('# RASEN:START');
       expect(content).not.toContain('# RASEN:END');
       expect(content).toContain('# User config');
+    });
+
+    it('should remove both a RASEN and an OPENSPEC block when both are present', async () => {
+      const profilePath = installer.getProfilePath();
+      await fs.mkdir(path.dirname(profilePath), { recursive: true });
+
+      const initialContent = [
+        '# Before',
+        '# OPENSPEC:START',
+        '# Stale legacy config',
+        '# OPENSPEC:END',
+        '',
+        '# Middle',
+        '# RASEN:START',
+        '# Stale current config',
+        '# RASEN:END',
+        '# After',
+      ].join('\n');
+
+      await fs.writeFile(profilePath, initialContent);
+
+      const result = await installer.removeProfileConfig();
+
+      expect(result).toBe(true);
+      const content = await fs.readFile(profilePath, 'utf-8');
+
+      expect(content).not.toContain('# RASEN:START');
+      expect(content).not.toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
+      expect(content).not.toContain('# Stale legacy config');
+      expect(content).not.toContain('# Stale current config');
+      expect(content).toContain('# Before');
+      expect(content).toContain('# Middle');
+      expect(content).toContain('# After');
     });
   });
 

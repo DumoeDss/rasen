@@ -359,6 +359,43 @@ describe('BashInstaller', () => {
       expect(content.match(/# RASEN:END/g)?.length).toBe(1);
     });
 
+    it('should dedupe to a single RASEN block when both a RASEN and an OPENSPEC block are present', async () => {
+      const bashrcPath = path.join(testHomeDir, '.bashrc');
+      const initialContent = [
+        '# Before',
+        '# OPENSPEC:START',
+        '# Stale legacy config',
+        '# OPENSPEC:END',
+        '',
+        '# Middle',
+        '# RASEN:START',
+        '# Stale current config',
+        '# RASEN:END',
+        '# After',
+      ].join('\n');
+
+      await fs.writeFile(bashrcPath, initialContent);
+
+      const result = await installer.configureBashrc(completionsDir);
+
+      expect(result).toBe(true);
+
+      const content = await fs.readFile(bashrcPath, 'utf-8');
+
+      expect(content).toContain('# Before');
+      expect(content).toContain('# Middle');
+      expect(content).toContain('# After');
+      expect(content).toContain(completionsDir);
+      expect(content).not.toContain('# Stale legacy config');
+      expect(content).not.toContain('# Stale current config');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
+
+      // Exactly one managed block — both families deduped to one
+      expect(content.match(/# RASEN:START/g)?.length).toBe(1);
+      expect(content.match(/# RASEN:END/g)?.length).toBe(1);
+    });
+
     it('should preserve user content outside markers', async () => {
       const bashrcPath = path.join(testHomeDir, '.bashrc');
       const userContent = [
@@ -387,6 +424,58 @@ describe('BashInstaller', () => {
       expect(content).not.toContain('# Old Rasen config');
       expect(content).toContain('# RASEN:START');
       expect(content).not.toContain('# OPENSPEC:START');
+    });
+
+    it('should not treat a user comment merely starting with the marker literal as a managed block (RASEN prefix collision)', async () => {
+      const bashrcPath = path.join(testHomeDir, '.bashrc');
+      const userContent = [
+        '# RASEN:START of my custom aliases (not related to the completion tool)',
+        'alias ll="ls -la"',
+        'alias gs="git status"',
+        '# RASEN:END of my custom aliases',
+      ].join('\n');
+
+      await fs.writeFile(bashrcPath, userContent);
+
+      const result = await installer.configureBashrc(completionsDir);
+
+      expect(result).toBe(true);
+
+      const content = await fs.readFile(bashrcPath, 'utf-8');
+
+      // The user's coincidental comment and its content must survive intact
+      expect(content).toContain('# RASEN:START of my custom aliases (not related to the completion tool)');
+      expect(content).toContain('alias ll="ls -la"');
+      expect(content).toContain('alias gs="git status"');
+      expect(content).toContain('# RASEN:END of my custom aliases');
+
+      // A genuine new bare block should have been added instead
+      expect(content).toContain(completionsDir);
+      const bareStartLines = content.split('\n').filter((line) => line.trim() === '# RASEN:START');
+      expect(bareStartLines).toHaveLength(1);
+    });
+
+    it('should not treat a user comment merely starting with the legacy marker literal as a managed block (OPENSPEC prefix collision)', async () => {
+      const bashrcPath = path.join(testHomeDir, '.bashrc');
+      const userContent = [
+        '# OPENSPEC:START of an old TODO list, unrelated to any tool',
+        'echo "remember to buy milk"',
+        '# OPENSPEC:END of that TODO list',
+      ].join('\n');
+
+      await fs.writeFile(bashrcPath, userContent);
+
+      const result = await installer.configureBashrc(completionsDir);
+
+      expect(result).toBe(true);
+
+      const content = await fs.readFile(bashrcPath, 'utf-8');
+
+      expect(content).toContain('# OPENSPEC:START of an old TODO list, unrelated to any tool');
+      expect(content).toContain('echo "remember to buy milk"');
+      expect(content).toContain('# OPENSPEC:END of that TODO list');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain(completionsDir);
     });
 
     it('should return false when RASEN_NO_AUTO_CONFIG is set', async () => {
@@ -496,6 +585,26 @@ describe('BashInstaller', () => {
       expect(newContent).not.toContain('# OPENSPEC:START');
     });
 
+    it('should not delete a user comment merely starting with the marker literal (prefix collision, not an exact bare marker line)', async () => {
+      const bashrcPath = path.join(testHomeDir, '.bashrc');
+      const userContent = [
+        '# RASEN:START of my custom aliases (not related to the completion tool)',
+        'alias ll="ls -la"',
+        'alias gs="git status"',
+        '# RASEN:END of my custom aliases',
+      ].join('\n');
+
+      await fs.writeFile(bashrcPath, userContent);
+
+      await installer.removeBashrcConfig();
+
+      // Regardless of the boolean result, the coincidental comment and its content must
+      // never be spliced out — it never formed a well-formed, bare-marker-line block.
+      const newContent = await fs.readFile(bashrcPath, 'utf-8');
+
+      expect(newContent).toBe(userContent);
+    });
+
     it('should handle permission errors gracefully', async () => {
       const invalidInstaller = new BashInstaller('/root/invalid/path');
       const result = await invalidInstaller.removeBashrcConfig();
@@ -532,6 +641,40 @@ describe('BashInstaller', () => {
       expect(newContent).not.toContain('# RASEN:END');
       expect(newContent).toContain('# My config');
       expect(newContent).toContain('alias ll="ls -la"');
+    });
+
+    it('should remove both a RASEN and an OPENSPEC block when both are present', async () => {
+      const bashrcPath = path.join(testHomeDir, '.bashrc');
+      const content = [
+        '# Before',
+        '# OPENSPEC:START',
+        '# Stale legacy config',
+        '# OPENSPEC:END',
+        '',
+        '# Middle',
+        '# RASEN:START',
+        '# Stale current config',
+        '# RASEN:END',
+        '# After',
+      ].join('\n');
+
+      await fs.writeFile(bashrcPath, content);
+
+      const result = await installer.removeBashrcConfig();
+
+      expect(result).toBe(true);
+
+      const newContent = await fs.readFile(bashrcPath, 'utf-8');
+
+      expect(newContent).not.toContain('# RASEN:START');
+      expect(newContent).not.toContain('# RASEN:END');
+      expect(newContent).not.toContain('# OPENSPEC:START');
+      expect(newContent).not.toContain('# OPENSPEC:END');
+      expect(newContent).not.toContain('# Stale legacy config');
+      expect(newContent).not.toContain('# Stale current config');
+      expect(newContent).toContain('# Before');
+      expect(newContent).toContain('# Middle');
+      expect(newContent).toContain('# After');
     });
   });
 

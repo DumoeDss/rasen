@@ -78,6 +78,43 @@ function findMarkerIndex(
   return -1;
 }
 
+/**
+ * Left-side-only variant of isMarkerOnOwnLine: only requires the marker to start its
+ * line (nothing but whitespace before it). Unlike isMarkerOnOwnLine, content trailing
+ * the marker on the same line is allowed — needed for consumers (like the PowerShell
+ * profile installer) that write a human-readable comment after the marker literal
+ * itself, e.g. "# RASEN:START - Rasen completion (managed block, do not edit manually)".
+ */
+function isMarkerAtLineStart(content: string, markerIndex: number): boolean {
+  let leftIndex = markerIndex - 1;
+  while (leftIndex >= 0 && content[leftIndex] !== '\n') {
+    const char = content[leftIndex];
+    if (char !== ' ' && char !== '\t' && char !== '\r') {
+      return false;
+    }
+    leftIndex--;
+  }
+  return true;
+}
+
+function findMarkerAtLineStart(
+  content: string,
+  marker: string,
+  fromIndex = 0
+): number {
+  let currentIndex = content.indexOf(marker, fromIndex);
+
+  while (currentIndex !== -1) {
+    if (isMarkerAtLineStart(content, currentIndex)) {
+      return currentIndex;
+    }
+
+    currentIndex = content.indexOf(marker, currentIndex + marker.length);
+  }
+
+  return -1;
+}
+
 export class FileSystemUtils {
   /**
    * Converts a path to use forward slashes (POSIX style).
@@ -243,6 +280,11 @@ export class FileSystemUtils {
    * version under a different marker literal). When found, that block is replaced in
    * place, but the content is always (re)written using the current `startMarker`/`endMarker`
    * passed above — the legacy pair is never written into new content.
+   *
+   * When blocks under more than one recognized marker family are present (e.g. an
+   * interrupted upgrade left both a current and a legacy block behind), the first block
+   * found (by position in the file) is refreshed in place and every other recognized
+   * block is removed — a profile never ends up with more than one managed block.
    */
   static async updateFileWithMarkers(
     filePath: string,
@@ -256,39 +298,39 @@ export class FileSystemUtils {
     if (await this.fileExists(filePath)) {
       existingContent = await this.readFile(filePath);
 
-      let startIndex = findMarkerIndex(existingContent, startMarker);
-      let endIndex = startIndex !== -1
-        ? findMarkerIndex(existingContent, endMarker, startIndex + startMarker.length)
-        : findMarkerIndex(existingContent, endMarker);
-      let matchedEndMarker = endMarker;
-
-      if (startIndex === -1 && endIndex === -1 && legacyMarkers) {
-        const legacyStartIndex = findMarkerIndex(existingContent, legacyMarkers.start);
-        const legacyEndIndex = legacyStartIndex !== -1
-          ? findMarkerIndex(existingContent, legacyMarkers.end, legacyStartIndex + legacyMarkers.start.length)
-          : findMarkerIndex(existingContent, legacyMarkers.end);
-
-        if (legacyStartIndex !== -1 && legacyEndIndex !== -1) {
-          startIndex = legacyStartIndex;
-          endIndex = legacyEndIndex;
-          matchedEndMarker = legacyMarkers.end;
+      // Preserve the pre-existing contract: a malformed *current* marker pair (only one
+      // of start/end present) is a hard error. A malformed legacy pair is not — it is
+      // silently skipped by findAllMarkerBlocks, same as before this function recognized
+      // multiple families.
+      const primaryMatches = findAllMarkerBlocks(existingContent, [{ start: startMarker, end: endMarker }]);
+      if (primaryMatches.length === 0) {
+        const hasStart = findMarkerIndex(existingContent, startMarker) !== -1;
+        const hasEnd = findMarkerIndex(existingContent, endMarker) !== -1;
+        if (hasStart !== hasEnd) {
+          throw new Error(`Invalid marker state in ${filePath}. Found start: ${hasStart}, Found end: ${hasEnd}`);
         }
       }
 
-      if (startIndex !== -1 && endIndex !== -1) {
-        if (endIndex < startIndex) {
-          throw new Error(
-            `Invalid marker state in ${filePath}. End marker appears before start marker.`
-          );
-        }
+      const families = [{ start: startMarker, end: endMarker }, ...(legacyMarkers ? [legacyMarkers] : [])];
+      const matches = findAllMarkerBlocks(existingContent, families);
 
-        const before = existingContent.substring(0, startIndex);
-        const after = existingContent.substring(endIndex + matchedEndMarker.length);
-        existingContent = before + startMarker + '\n' + content + '\n' + endMarker + after;
-      } else if (startIndex === -1 && endIndex === -1) {
-        existingContent = startMarker + '\n' + content + '\n' + endMarker + '\n\n' + existingContent;
+      if (matches.length > 0) {
+        const [first, ...rest] = matches;
+        let result = existingContent.substring(0, first.startIndex)
+          + startMarker + '\n' + content + '\n' + endMarker;
+        let cursor = first.endIndex + first.endMarker.length;
+
+        for (const match of rest) {
+          result += existingContent.substring(cursor, match.startIndex);
+          cursor = match.endIndex + match.endMarker.length;
+        }
+        result += existingContent.substring(cursor);
+
+        // Only collapse blank-line runs when a dedup actually dropped a block — the
+        // single-match path must stay byte-identical to the pre-multi-block-aware behavior.
+        existingContent = rest.length > 0 ? result.replace(/(\r?\n){3,}/g, '\n\n') : result;
       } else {
-        throw new Error(`Invalid marker state in ${filePath}. Found start: ${startIndex !== -1}, Found end: ${endIndex !== -1}`);
+        existingContent = startMarker + '\n' + content + '\n' + endMarker + '\n\n' + existingContent;
       }
     } else {
       existingContent = startMarker + '\n' + content + '\n' + endMarker;
@@ -335,6 +377,86 @@ export class FileSystemUtils {
       return false;
     }
   }
+}
+
+/**
+ * A single recognized marker block found in file content.
+ */
+export interface MarkerBlockMatch {
+  startIndex: number;
+  /** Index of the start of the end marker (not past it — mirrors findMarkerIndex's return). */
+  endIndex: number;
+  startMarker: string;
+  endMarker: string;
+}
+
+/**
+ * Finds every recognized marker block across one or more marker families in `content`,
+ * sorted by position (`startIndex` ascending) regardless of which family each match
+ * belongs to or the order `markerFamilies` was given in.
+ *
+ * Within a family, blocks are found left-to-right, non-overlapping (each match's search
+ * resumes after the previous match's end marker). If a family is in a malformed state —
+ * a start marker with no matching end marker found after it — that family is skipped
+ * entirely (no matches contributed for it) rather than throwing; callers that need strict
+ * validation of a specific family should check for that themselves.
+ *
+ * @param options.strict - When `true` (the default), a marker only matches if it is
+ * *alone* on its line — nothing but whitespace before or after it (mirrors the
+ * pre-existing `isMarkerOnOwnLine`/`findMarkerIndex` behavior used elsewhere in this
+ * module, e.g. `removeMarkerBlock`). This is required for bash/zsh, whose markers are
+ * always bare (`# RASEN:START`) — matching anything looser risks swallowing a user's own
+ * unrelated comment that merely happens to start with the same literal, silently deleting
+ * their content. Pass `strict: false` only for consumers whose managed-block format
+ * deliberately appends trailing text after the marker on the same line (currently just
+ * the PowerShell profile installer, e.g. `# RASEN:START - Rasen completion (managed
+ * block, do not edit manually)`) — in that mode only the left side (start-of-line) is
+ * checked.
+ *
+ * Pure function: does not read or write files.
+ */
+export function findAllMarkerBlocks(
+  content: string,
+  markerFamilies: Array<{ start: string; end: string }>,
+  options?: { strict?: boolean }
+): MarkerBlockMatch[] {
+  const strict = options?.strict ?? true;
+  const findIndex = strict ? findMarkerIndex : findMarkerAtLineStart;
+  const matches: MarkerBlockMatch[] = [];
+
+  for (const family of markerFamilies) {
+    const familyMatches: MarkerBlockMatch[] = [];
+    let cursor = 0;
+    let malformed = false;
+
+    while (cursor <= content.length) {
+      const startIndex = findIndex(content, family.start, cursor);
+      if (startIndex === -1) {
+        break;
+      }
+
+      const endIndex = findIndex(content, family.end, startIndex + family.start.length);
+      if (endIndex === -1) {
+        malformed = true;
+        break;
+      }
+
+      familyMatches.push({
+        startIndex,
+        endIndex,
+        startMarker: family.start,
+        endMarker: family.end,
+      });
+      cursor = endIndex + family.end.length;
+    }
+
+    if (!malformed) {
+      matches.push(...familyMatches);
+    }
+  }
+
+  matches.sort((a, b) => a.startIndex - b.startIndex);
+  return matches;
 }
 
 /**
