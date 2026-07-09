@@ -1241,7 +1241,7 @@ describe('store command', () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("unknown command 'new' for 'rasen store'");
       expect(result.stderr).toContain(
-        'setup, register, unregister, remove, list (ls), doctor'
+        'setup, register, unregister, remove, add-project, list (ls), doctor'
       );
       expect(result.stderr).toContain('rasen new change billing-rework --store <id>');
     });

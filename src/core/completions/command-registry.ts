@@ -320,6 +320,25 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         ],
       },
       {
+        name: 'add-project',
+        description: "Register an in-repo project as a store and add it to a target store's references",
+        acceptsPositional: true,
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [
+          {
+            name: 'to',
+            description: 'Target store to add the project to',
+            takesValue: true,
+          },
+          {
+            name: 'as',
+            description: 'Project store id override',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
         name: 'unregister',
         description: 'Forget a local store registration without deleting files',
         acceptsPositional: true,
@@ -850,6 +869,40 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         positionalType: 'change-id',
         positionals: [{ name: 'change', type: 'change-id' }],
         flags: [COMMON_FLAGS.json, COMMON_FLAGS.store],
+      },
+    ],
+  },
+  {
+    name: 'work',
+    description: 'Machine-home work-directory maintenance (migrate legacy in-repo ephemera)',
+    flags: [],
+    subcommands: [
+      {
+        name: 'migrate',
+        description: 'Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home',
+        flags: [
+          {
+            name: 'change',
+            description: 'Scope to one active or archived change',
+            takesValue: true,
+          },
+          {
+            name: 'dry-run',
+            description: 'Preview only; never move files',
+          },
+          {
+            name: 'include-tracked',
+            description: 'Also move git-tracked ephemera, leaving the deletions uncommitted',
+          },
+          {
+            name: 'json',
+            description: 'Output as JSON (non-interactive; requires --yes to execute)',
+          },
+          {
+            name: 'yes',
+            description: 'Skip the confirmation prompt (required to execute in --json mode)',
+          },
+        ],
       },
     ],
   },

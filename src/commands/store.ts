@@ -15,8 +15,10 @@ import {
   removeStore,
   resolveSetupGitEnabled,
   setupPreparedStore,
+  storeAddProject,
   unregisterStore,
   validateStoreId,
+  type StoreAddProjectResult,
   type StoreCleanupResult,
   type StoreDiagnostic,
   type StoreDoctorResult,
@@ -44,6 +46,12 @@ interface StoreRegisterOptions {
 
 interface StoreRemoveOptions {
   yes?: boolean;
+  json?: boolean;
+}
+
+interface StoreAddProjectOptions {
+  to?: string;
+  as?: string;
   json?: boolean;
 }
 
@@ -93,6 +101,23 @@ interface StoreCleanupOutput {
 
 interface StoreListOutput {
   stores: StoreOutput[];
+  status: StoreDiagnostic[];
+}
+
+interface StoreAddProjectOutput {
+  project: {
+    id: string;
+    root: string;
+    metadata_created: boolean;
+    already_registered: boolean;
+  } | null;
+  target: {
+    id: string;
+    root: string;
+    config_path: string;
+    reference_added: boolean;
+    reference_already_present: boolean;
+  } | null;
   status: StoreDiagnostic[];
 }
 
@@ -168,6 +193,25 @@ function toListOutput(result: StoreListResult): StoreListOutput {
   return {
     stores: result.stores.map(toStoreOutput),
     status: [],
+  };
+}
+
+function toAddProjectOutput(result: StoreAddProjectResult): StoreAddProjectOutput {
+  return {
+    project: {
+      id: result.project.id,
+      root: result.project.root,
+      metadata_created: result.project.metadataCreated,
+      already_registered: result.project.alreadyRegistered,
+    },
+    target: {
+      id: result.target.id,
+      root: result.target.root,
+      config_path: result.target.configPath,
+      reference_added: result.target.referenceAdded,
+      reference_already_present: result.target.referenceAlreadyPresent,
+    },
+    status: result.diagnostics,
   };
 }
 
@@ -456,6 +500,36 @@ function printListHuman(payload: StoreListOutput): void {
   }
 }
 
+function printAddProjectHuman(payload: StoreAddProjectOutput): void {
+  if (!payload.project || !payload.target) {
+    return;
+  }
+
+  console.log(`Project store: ${payload.project.id}`);
+  console.log(`Location: ${formatPathForHuman(payload.project.root)}`);
+  console.log(`Registry: ${payload.project.already_registered ? 'already registered' : 'registered'}`);
+  console.log(`Added to store: ${payload.target.id}`);
+  console.log(
+    payload.target.reference_added
+      ? `References: added to ${formatPathForHuman(payload.target.config_path)}`
+      : `References: already present in ${formatPathForHuman(payload.target.config_path)}`
+  );
+  console.log('');
+  console.log('The project remains usable in-repo; it continues to resolve as its own local Rasen root.');
+
+  if (payload.project.metadata_created) {
+    const metadataPath = path.join(payload.project.root, '.rasen-store', 'store.yaml');
+    console.log('');
+    console.log(`Store identity metadata was created at ${formatPathForHuman(metadataPath)}.`);
+    console.log('Commit it so teammates can resolve this project as a store on their own checkouts, or gitignore it to keep it machine-local.');
+    console.log('This command does not edit .gitignore and does not create a commit.');
+  }
+
+  for (const status of payload.status) {
+    console.log(`${status.severity === 'error' ? 'Issue' : 'Note'}: ${status.message}`);
+  }
+}
+
 function formatMetadataHuman(store: StoreDoctorOutput['stores'][number]): string {
   if (store.metadata.valid) return 'ok';
   if (store.metadata.present === false) return 'missing';
@@ -620,6 +694,47 @@ class StoreCommand {
     }
   }
 
+  async addProject(projectPath: string | undefined, options: StoreAddProjectOptions = {}): Promise<void> {
+    try {
+      if (!options.to) {
+        throw new StoreError(
+          'Pass --to <store-id> naming the target store.',
+          'store_add_project_to_required',
+          {
+            target: 'store.id',
+            fix: 'rasen store add-project <path> --to <store-id>',
+          }
+        );
+      }
+      if (!projectPath) {
+        throw new StoreError(
+          'Pass the project path to add.',
+          'store_add_project_path_required',
+          {
+            target: 'store.root',
+            fix: 'rasen store add-project <path> --to <store-id>',
+          }
+        );
+      }
+
+      const result = await storeAddProject({
+        projectPath,
+        targetStoreId: options.to,
+        ...(options.as !== undefined ? { id: options.as } : {}),
+      });
+      const payload = toAddProjectOutput(result);
+
+      if (options.json) {
+        printJson(payload);
+        return;
+      }
+
+      printAddProjectHuman(payload);
+    } catch (error) {
+      this.handleFailure(options.json, { project: null, target: null, status: [] }, error);
+    }
+  }
+
   async list(options: StoreJsonOptions = {}): Promise<void> {
     try {
       const payload = toListOutput(await listStores());
@@ -705,6 +820,16 @@ export function registerStoreCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (id: string, options: StoreRemoveOptions) => {
       await storeCommand.remove(id, options);
+    });
+
+  store
+    .command('add-project <path>')
+    .description('Register an in-repo project as a store and add it to a target store\'s references')
+    .option('--to <store-id>', 'Target store to add the project to (must already be registered)')
+    .option('--as <id>', 'Project store id override (ignored if the project is already a store)')
+    .option('--json', 'Output as JSON')
+    .action(async (projectPath: string, options: StoreAddProjectOptions) => {
+      await storeCommand.addProject(projectPath, options);
     });
 
   store
