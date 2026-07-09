@@ -3,19 +3,74 @@
   "classification": "small-feature",
   "tier": "A",
   "stages": {
-    "propose": { "status": "done", "note": "authored by LEAD session pre-auto (artifacts complete, validated)" },
+    "propose": {
+      "status": "done",
+      "note": "authored by LEAD session pre-auto (artifacts complete, validated)"
+    },
     "apply": {
       "status": "done",
       "note": "26/26 tasks; pnpm test 120 files / 2201 passed / 22 skipped / 0 failed (two full runs); 5.1 resolved by LEAD as per-entry tree merge (openspec/->rasen/) preserving concurrent session commit 8c47a06, zero clobber",
-      "worker": { "role": "implementer", "relay": ["implementer-1", "implementer-2", "implementer-3", "implementer-4", "implementer-5"] },
+      "worker": {
+        "role": "implementer",
+        "relay": [
+          "implementer-1",
+          "implementer-2",
+          "implementer-3",
+          "implementer-4",
+          "implementer-5"
+        ]
+      },
       "handoffs": [
-        { "n": 1, "path": "handoff/implementer-1.md", "reason": "self-assessment", "completed": ["1.1","1.2","1.3","1.4","2.1","2.2","3.1","3.3","3.4","3.6"], "at": "2026-07-09" },
-        { "n": 2, "path": "handoff/implementer-2.md", "reason": "self-assessment (silent idle)", "completed": ["3.2","3.5","2.3","2.4","4.1","4.2","4.3"], "at": "2026-07-09" },
-        { "n": 3, "path": null, "reason": "infra-death API 529 x2 (implementer-3/4, no docs; ~90% of 5.3 sweep landed on disk); implementer-5 cold-reconstructed and finished 5.2/5.3/5.4-local/6.1/6.2/6.3, wrote handoff/implementer-5.md, correctly blocked 5.1", "at": "2026-07-09" }
+        {
+          "n": 1,
+          "path": "handoff/implementer-1.md",
+          "reason": "self-assessment",
+          "completed": [
+            "1.1",
+            "1.2",
+            "1.3",
+            "1.4",
+            "2.1",
+            "2.2",
+            "3.1",
+            "3.3",
+            "3.4",
+            "3.6"
+          ],
+          "at": "2026-07-09"
+        },
+        {
+          "n": 2,
+          "path": "handoff/implementer-2.md",
+          "reason": "self-assessment (silent idle)",
+          "completed": [
+            "3.2",
+            "3.5",
+            "2.3",
+            "2.4",
+            "4.1",
+            "4.2",
+            "4.3"
+          ],
+          "at": "2026-07-09"
+        },
+        {
+          "n": 3,
+          "path": null,
+          "reason": "infra-death API 529 x2 (implementer-3/4, no docs; ~90% of 5.3 sweep landed on disk); implementer-5 cold-reconstructed and finished 5.2/5.3/5.4-local/6.1/6.2/6.3, wrote handoff/implementer-5.md, correctly blocked 5.1",
+          "at": "2026-07-09"
+        }
       ],
       "strategyAttempts": []
     },
-    "verify": { "status": "done", "worker": { "role": "reviewer", "name": "reviewer-1" }, "note": "3 Major / 5 Minor / 2 Trivial, no Blocker; review-report.md written" },
+    "verify": {
+      "status": "done",
+      "worker": {
+        "role": "reviewer",
+        "name": "reviewer-1"
+      },
+      "note": "3 Major / 5 Minor / 2 Trivial, no Blocker; review-report.md written"
+    },
     "review-loop": {
       "status": "done",
       "rounds": 2,
@@ -23,14 +78,28 @@
     },
     "ship": {
       "status": "done",
-      "worker": { "role": "shipper", "name": "shipper-1" },
+      "worker": {
+        "role": "shipper",
+        "name": "shipper-1"
+      },
       "note": "local delivery: 2ebfae9 (1336 files: 1041 renames + 272 mods + 23 new) + ca54b3b (ship-log). Co-mingled 9 expert-template files delivered via concurrent session's d380725 (their LEAD ruling, whole-file granularity) — zero residual diff verified, nothing lost. LEAD post-verified: zero peer files in commit (grep hits were commit-message attribution text), brand-guard 3/3 green."
     },
-    "archive": { "status": "in_progress", "worker": { "role": "shipper", "name": "archiver-1" } }
+    "archive": {
+      "status": "done",
+      "worker": {
+        "role": "shipper",
+        "name": "archiver-1"
+      },
+      "note": "525151e: 26 files (18 archived artifacts + 8 synced specs); validate --specs 104/0; zero peer files"
+    }
   },
   "rounds": 0,
   "openFindings": [],
-  "gatesWaived": { "by": "user", "at": "2026-07-09", "scope": "all stages — user granted full autonomous progression to archive" },
+  "gatesWaived": {
+    "by": "user",
+    "at": "2026-07-09",
+    "scope": "all stages — user granted full autonomous progression to archive"
+  },
   "escalations": [
     {
       "id": "telemetry-endpoint-brand-leak",
@@ -46,5 +115,11 @@
   "notes": [
     "CLI binary is `node bin/rasen.js`; build with `node build.js` (pnpm build broken in this env)",
     "Workspace merged: repo root is now rasen/ (openspec/ removed); this file lives at rasen/changes/rasen-full-rebrand/auto-run.json"
+  ],
+  "runComplete": true,
+  "followUps": [
+    "spec-text hygiene: cli-init/cli-update/rasen-cli-identity/skill-name-prefix main specs mix legacy openspec/opsx wording in requirements untouched by this delta (~15 in cli-init) — optional follow-up sync change",
+    "telemetry endpoint repoint (owned by telemetry session)",
+    "CI 3-platform matrix backfill after user pushes"
   ]
 }
