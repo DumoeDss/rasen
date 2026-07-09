@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -8,6 +9,7 @@ import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { getProjectHomeDir, registerProject } from '../../src/core/project-registry.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
+import { isolatedGitEnv } from '../helpers/store-git.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
 
@@ -343,6 +345,75 @@ describe('rasen doctor (3.6)', () => {
       expect(afterGc.gc.removed_entries).toEqual([{ path: canonicalPath, home: entry.home }]);
       expect(afterGc.gc.removed_homes).toEqual([entry.home]);
       expect(fs.existsSync(getProjectHomeDir(entry.home, { globalDataDir }))).toBe(false);
+    });
+
+    it('hints at migratable legacy ephemera for a registered project (migrate-legacy-ephemera 3.1)', async () => {
+      const projectId = randomUUID();
+      await registerProject({ projectRoot: storeRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const changeDir = path.join(storeRoot, 'rasen', 'changes', 'foo');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'auto-run.json'), '{}');
+
+      const json = await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env });
+      const health = parseJson(json);
+      // storeRoot is a plain (non-git) directory in this fixture, so the
+      // split is fully determined: 1 untracked, 0 tracked (review m1).
+      expect(health.machineHome.migratableEphemera).toEqual({
+        total: 1,
+        untracked: 1,
+        tracked: 0,
+        splitUnavailable: false,
+        hint: 'rasen work migrate',
+      });
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.stdout).toContain('Migratable legacy ephemera: 1 untracked');
+      expect(human.stdout).toContain('rasen work migrate');
+
+      // Doctor stays read-only: the hint never moves the file itself.
+      expect(fs.existsSync(path.join(changeDir, 'auto-run.json'))).toBe(true);
+    });
+
+    it('splits tracked from untracked in the migration hint (review m1)', async () => {
+      await registerProject(
+        { projectRoot: storeRoot, projectId: randomUUID(), mode: 'in-repo' },
+        { globalDataDir }
+      );
+      const changeDir = path.join(storeRoot, 'rasen', 'changes', 'foo');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'review-report.md'), '# review\n');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(storeRoot) };
+      execFileSync('git', ['init'], { cwd: storeRoot, stdio: 'ignore' });
+      execFileSync('git', ['add', '-A'], { cwd: storeRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: storeRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.writeFileSync(path.join(changeDir, 'auto-run.json'), '{}'); // never committed
+
+      const json = await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env });
+      const health = parseJson(json);
+      expect(health.machineHome.migratableEphemera).toEqual({
+        total: 2,
+        untracked: 1,
+        tracked: 1,
+        splitUnavailable: false,
+        hint: 'rasen work migrate',
+      });
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.stdout).toContain('1 untracked (+1 tracked, needs --include-tracked)');
+    });
+
+    it('omits the migration hint for a clean registered project', async () => {
+      await registerProject(
+        { projectRoot: storeRoot, projectId: randomUUID(), mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const json = await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env });
+      const health = parseJson(json);
+      expect(health.machineHome.migratableEphemera).toBeUndefined();
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.stdout).not.toContain('Migratable legacy ephemera');
     });
 
     it('surfaces a corrupt registry as a diagnostic instead of masking it as "Not registered" (MAJOR-2)', async () => {

@@ -235,20 +235,22 @@ describe('config profile interactive flow', () => {
     expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
   });
 
-  it('delivery picker should mark current option inline', async () => {
+  it('delivery picker should mark current option inline and offer only two choices', async () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'custom', delivery: 'commands', workflows: ['explore'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills', workflows: ['explore'] });
     select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('commands');
+    select.mockResolvedValueOnce('skills');
 
     await runConfigCommand(['profile']);
 
     expect(select).toHaveBeenCalledTimes(2);
     const secondCall = select.mock.calls[1][0];
+    expect(secondCall.choices).toHaveLength(2);
     expect(secondCall.choices).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'commands', name: 'Commands only [current]' }),
+      expect.objectContaining({ value: 'skills', name: 'Skills only [current]' }),
+      expect.objectContaining({ value: 'both', name: 'Both (skills + commands)' }),
     ]));
   });
 

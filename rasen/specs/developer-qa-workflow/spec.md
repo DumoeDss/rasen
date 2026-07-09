@@ -49,6 +49,6 @@ The smoke suite SHALL run CLI scenarios in isolated sandboxes so tests are repea
 - **AND** include at least:
   - non-interactive tool detection
   - migration when profile is unset
-  - delivery cleanup (`both -> skills`, `both -> commands`)
-  - commands-only update detection
+  - delivery cleanup (`both -> skills`)
+  - legacy commands-only install detection and healing (skills restored on update)
 

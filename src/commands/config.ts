@@ -496,7 +496,7 @@ export function registerConfigCommand(program: Command): void {
         console.log(chalk.bold('\nCurrent profile settings'));
         console.log(`  Delivery: ${currentState.delivery}`);
         console.log(`  Workflows: ${formatWorkflowSummary(currentState.workflows, currentState.profile)}`);
-        console.log(chalk.dim('  Delivery = where workflows are installed (skills, commands, or both)'));
+        console.log(chalk.dim('  Delivery = whether commands are installed alongside skills (skills are always installed)'));
         console.log(chalk.dim('  Workflows = which actions are available (propose, explore, apply, etc.)'));
         console.log();
 
@@ -549,11 +549,6 @@ export function registerConfigCommand(program: Command): void {
               value: 'skills' as Delivery,
               name: 'Skills only',
               description: 'Install workflows only as skills',
-            },
-            {
-              value: 'commands' as Delivery,
-              name: 'Commands only',
-              description: 'Install workflows only as slash commands',
             },
           ];
           for (const choice of deliveryChoices) {

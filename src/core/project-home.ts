@@ -27,6 +27,17 @@ export interface ProjectHome {
   workDir(changeName: string): string;
   /** Absolute: <homeDir>/archive — external archive destination for child 4. */
   archiveDir: string;
+  /**
+   * Absolute: <homeDir>/changes/archive/<archivedDirName>/work — the
+   * migration destination for ephemera found in an ARCHIVED change
+   * directory (`migrate-legacy-ephemera` D3). Keyed by the on-disk
+   * date-prefixed archived directory name (e.g. `2026-07-06-foo`), never
+   * the bare change name, so a migrated archive can never collide with
+   * `workDir` of a live change sharing that base name. Distinct from
+   * `archiveDir` (the external archive-destination axis, child 4) — this
+   * is a work-ephemera area, not a spec-sync/bookkeeping destination.
+   */
+  archivedWorkDir(archivedDirName: string): string;
 }
 
 export interface ResolveProjectHomeOptions {
@@ -54,6 +65,8 @@ function buildProjectHome(
     homeDir,
     workDir: (changeName: string) => FileSystemUtils.joinPath(homeDir, 'changes', changeName, 'work'),
     archiveDir: FileSystemUtils.joinPath(homeDir, 'archive'),
+    archivedWorkDir: (archivedDirName: string) =>
+      FileSystemUtils.joinPath(homeDir, 'changes', 'archive', archivedDirName, 'work'),
   };
 }
 

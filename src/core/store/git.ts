@@ -178,6 +178,84 @@ export async function gitDirectoryHasTrackedFiles(
 }
 
 /**
+ * Confirms whether `repoRoot` is inside a Git work tree, via
+ * `git rev-parse --is-inside-work-tree` — the SAME upward-walking
+ * resolution `git ls-files` itself uses to find the repo boundary, so this
+ * can never diverge from what a tracked-files query would see (unlike a
+ * plain `.git`-presence check, which would wrongly say "not a repo" for a
+ * root nested inside a parent repo's working tree).
+ *
+ * Three-way result, and callers MUST NOT collapse the last two:
+ *  - `true`: confirmed inside a work tree.
+ *  - `false`: confirmed NOT inside a work tree (git ran and said so
+ *    explicitly — the canonical "not a git repository" fatal, or a bare
+ *    repo reporting `false`).
+ *  - `null`: cannot determine (git is unavailable, or the query failed for
+ *    an unrelated reason — permission error, corrupt `.git`, transient I/O).
+ *    Coercing `null` to `false` is exactly the bug `migrate-legacy-ephemera`
+ *    review M2 found: a transient query failure on a REAL repo got silently
+ *    treated as "not a repo," so every tracked file was moved as if it were
+ *    untracked noise. Callers must fail closed on `null`, never proceed as
+ *    if untracked.
+ */
+export async function isConfirmedGitWorkTree(repoRoot: string): Promise<boolean | null> {
+  try {
+    const { stdout } = await execFileAsync('git', [
+      '-C',
+      repoRoot,
+      'rev-parse',
+      '--is-inside-work-tree',
+    ]);
+    return stdout.trim() === 'true';
+  } catch (error) {
+    if (isSpawnNotFoundError(error)) return null;
+    const stderr = (error as NodeJS.ErrnoException & { stderr?: string }).stderr ?? '';
+    if (/not a git repository/i.test(stderr)) return false;
+    // A repo exists (or existence is itself unknown) but this query failed
+    // for some other reason — unknown, not "confirmed non-repo".
+    return null;
+  }
+}
+
+/**
+ * Lists every git-tracked file under `relativeDir` (relative to `repoRoot`),
+ * as absolute paths. One read-only `git ls-files -z` query — the CLI's
+ * sanctioned git surface never runs a write command (`migrate-legacy-
+ * ephemera` D4). Returns null on ANY failure (missing binary, corrupt
+ * index, lock contention, etc.) — this function does NOT distinguish
+ * "not a repo" from "query failed on a real repo"; callers that need that
+ * distinction MUST call `isConfirmedGitWorkTree` first and only call this
+ * once that has confirmed `true` (review M2 — conflating the two here let a
+ * transient failure on a real repo silently masquerade as "no repo, treat
+ * as untracked").
+ */
+export async function gitListTrackedFiles(
+  repoRoot: string,
+  relativeDir: string
+): Promise<string[] | null> {
+  try {
+    const { stdout } = await execFileAsync('git', [
+      '-C',
+      repoRoot,
+      'ls-files',
+      '-z',
+      '--',
+      relativeDir,
+    ]);
+    return stdout
+      .split('\0')
+      .filter((entry) => entry.length > 0)
+      .map((entry) => path.join(repoRoot, entry));
+  } catch (error) {
+    if (isSpawnNotFoundError(error)) return null;
+    // Non-repo path, corrupt .git, etc. — git itself cannot answer; the
+    // caller's contract is "cannot verify tracked-ness" here too (same
+    // posture as `gitCommonDir`/`gitDir`).
+    return null;
+  }
+}
+
+/**
  * Resolves the shared `.git` directory for `repoPath` via `git rev-parse
  * --git-common-dir` — identical for every worktree of one repository, and
  * distinct across independent clones/repositories. Returns null when the

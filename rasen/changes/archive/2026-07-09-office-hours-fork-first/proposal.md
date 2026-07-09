@@ -1,0 +1,33 @@
+## Why
+
+`office-hours` currently routes sessions along three named paths — Startup interview, Builder interview, Consultation posture — selected by input specificity plus who the user claims to be. Real sessions exposed two structural defects: (1) Consultation posture treats "the design is specific" as a proxy for "the premises are verified," but the two are orthogonal — a mechanically specific design can still hang its whole recommendation on an unverified load-bearing premise, and Consultation shuts off questioning exactly when the sunk cost (and thus the value of a premise check) is highest; (2) even when the interview paths do ask the right question, they ask it *after* delivering a full stance, so the user's answer is anchored by the position they were just shown. Builder mode's divergent front half also duplicates `/rasen:explore`, and the Consultation short-circuit is a patch that bypasses the Phase 1 goal question, splitting routing logic across two places.
+
+This change replaces all three named paths with a single fork-first discipline gated by which *product* the user is buying, closing both defects at the mechanism level rather than patching the symptom.
+
+## What Changes
+
+- **Route by product, not by mode or identity.** At the end of Phase 1, the discriminator is the object of the request: validating the *venture itself* → Diagnosis product (the existing six-question script, unchanged); giving feedback on / converging a *design or plan* → Design product — even from a startup user, even when they say "poke holes." Identity is not a routing variable. The opening message can route directly when unambiguous; otherwise the existing goal question decides. Routing can flip mid-session in either direction (generalizes the existing "vibe shifts" rule).
+- **Replace Builder mode + Consultation posture with one Design product mechanism**: fork-scan → weight-bearing forks asked first (≤2/round, one at a time, with a carried recommendation) → stance analysis → Dialogue Override discussion → convergence → doc.
+  - **Fork-scan procedure** (run per topic, before any stance is delivered): list the load-bearing premises a stance would rest on; test each for branch-writability (can you write "answer A → design goes X, answer B → design goes Y"?); classify each as a **weight-bearing fork** (branch-writable and unverified → ask), a **declared assumption** (not branch-writable, or no answer flips the conclusion → state it and flag what would flip), or **already verified** (cite the evidence). Ask at most 2 weight-bearing forks per round.
+  - **Skip semantics**: an explicit skip signal downgrades every still-open weight-bearing fork to a headline declared assumption and delivers the analysis immediately; the user can reopen any assumption later. A request to discuss is never a skip signal.
+- **Dissolve Phase 3 (Premise Challenge) and Phase 4 (Alternatives Generation) as standalone legislation.** Both phases collapse into fork-scan special cases (a premise-shaped fork; a method-space fork rendered as an AskUserQuestion approach menu) and are removed as separate headers. This mechanism is shared — the Diagnosis product's six-question script also routes into it afterward for premise-checking and alternatives, replacing its own former Phase 3/4 pass.
+- **Collapse the two design-doc templates into one**, with the evaluation-framework section rendered by the user's stated goal (startup context → Demand Evidence + The Assignment; builder context → What Makes This Cool + Next Steps). The Diagnosis product keeps its existing Startup template unchanged.
+- **Remove "Builder" and "Consultation" as named modes.** What remains of Builder is a rendering parameter (which evaluation framework to render), not a flow branch.
+- **Sweep every cross-reference** to the deleted named paths in both template files — "interview paths only" carve-outs, "Consultation replaces Phases 2–4" precedence language, Phase 4.5/6 path qualifiers, the command wrapper's Step 1 mode routing and fallback pre-brief — so no dangling references to Startup/Builder/Consultation remain.
+- **No behavior change to**: the Diagnosis product's six forcing questions, escape hatch, anti-sycophancy rules, pushback patterns, Phase 4.5 founder-signal synthesis, Phase 6 three-beat close; the `/rasen:explore` template (zero diff); the shared PREAMBLE (fork-first stays local to office-hours).
+
+## Capabilities
+
+### New Capabilities
+- `office-hours-fork-first`: Product-based routing (Diagnosis vs Design product, discriminator = request object, bidirectional mid-session upgrade) and the fork-scan discipline that replaces Builder mode + Consultation posture for the Design product — weight-bearing-fork-first questioning, declared-assumption classification, skip semantics, and the single goal-conditional design-doc template.
+
+### Modified Capabilities
+- `office-hours-dialogue`: Rename Startup/Builder-scoped rules to the new Diagnosis/Design product structure; remove the Consultation-posture-specific requirements (superseded by product routing + the Design product terminal); keep answer-before-you-ask, the hard approval gate, and the post-pause proceed-vs-stop rule, rescoped to the new phase names.
+- `opsx-office-hours-command`: Replace the "Startup and Builder Modes" requirement with product routing (Diagnosis/Design); rename the fallback pre-brief's "builder description" to a product-routed description; the file-level "two modes" framing (header comment, skill description, Output Format's `Mode: Startup | Builder`) is rewritten to match.
+
+## Impact
+
+- **Source of truth (edited):** `src/core/templates/experts/office-hours.ts` (primary — all dissolved/renamed phases, the fork-scan mechanism, the collapsed design-doc template), `src/core/templates/workflows/office-hours.ts` (command wrapper — Step 1 mode routing, file header, fallback pre-brief, Output Format).
+- **Out of scope:** `/rasen:explore` template (zero diff, confirmed no shared surface with office-hours beyond the PREAMBLE), the shared PREAMBLE / Dialogue Override (unchanged, fork-first stays office-hours-local), referral detection between office-hours and explore (explicitly not added).
+- **Golden master:** `test/core/templates/skill-templates-parity.test.ts` — hashes for `rasen-office-hours` and `rasen-office-hours-command` must be recomputed and pasted (no auto-updater).
+- **Regression risk:** dangling cross-references to the deleted named paths (Startup/Builder/Consultation) left in guard clauses, precedence language, or path-qualified phase headers — the change surface has roughly a dozen such interlocks in the expert template alone.

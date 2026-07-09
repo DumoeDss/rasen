@@ -41,6 +41,48 @@ describe('relationship health composition (3.6)', () => {
     });
   });
 
+  it('omits migratableEphemera when the total is zero', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      machineHomeEntry: { path: '/team/store', projectId: 'p1', home: 'store-a1b2', lastSeen: '2026-01-01T00:00:00.000Z' },
+      migratableEphemera: { total: 0, untracked: 0, tracked: 0, splitUnavailable: false },
+    });
+
+    expect(health.machineHome.migratableEphemera).toBeUndefined();
+  });
+
+  it('surfaces migratableEphemera with the tracked/untracked split and the work-migrate hint (review m1)', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      machineHomeEntry: { path: '/team/store', projectId: 'p1', home: 'store-a1b2', lastSeen: '2026-01-01T00:00:00.000Z' },
+      migratableEphemera: { total: 3, untracked: 2, tracked: 1, splitUnavailable: false },
+    });
+
+    expect(health.machineHome.migratableEphemera).toEqual({
+      total: 3,
+      untracked: 2,
+      tracked: 1,
+      splitUnavailable: false,
+      hint: 'rasen work migrate',
+    });
+  });
+
+  it('surfaces migratableEphemera with splitUnavailable when the git query could not classify', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      machineHomeEntry: { path: '/team/store', projectId: 'p1', home: 'store-a1b2', lastSeen: '2026-01-01T00:00:00.000Z' },
+      migratableEphemera: { total: 5, untracked: 0, tracked: 0, splitUnavailable: true },
+    });
+
+    expect(health.machineHome.migratableEphemera).toEqual({
+      total: 5,
+      untracked: 0,
+      tracked: 0,
+      splitUnavailable: true,
+      hint: 'rasen work migrate',
+    });
+  });
+
   it('reports registry unreadable without inventing relationship entries', () => {
     const health = inspectRelationships({
       ...baseInput(),

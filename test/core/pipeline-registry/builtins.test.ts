@@ -72,6 +72,33 @@ describe('pipeline-registry/built-ins', () => {
     });
   }
 
+  // autopilot-gate-policy backward-compat regression: widening StageSchema.gate
+  // to accept 'vet' must not change the existing boolean gate stages of the
+  // three non-goal-loop built-ins (unaffected by this change — only the
+  // goal-loop define-goal stages flip to 'vet').
+  describe('backward-compat: existing gate: true stages are unchanged', () => {
+    it('small-feature: propose/apply/ship remain gate: true', () => {
+      const pipeline = loadPipelineByName('small-feature');
+      for (const id of ['propose', 'apply', 'ship']) {
+        expect(pipeline.stages.find((s) => s.id === id)?.gate).toBe(true);
+      }
+    });
+
+    it('bug-fix: propose/apply/ship remain gate: true', () => {
+      const pipeline = loadPipelineByName('bug-fix');
+      for (const id of ['propose', 'apply', 'ship']) {
+        expect(pipeline.stages.find((s) => s.id === id)?.gate).toBe(true);
+      }
+    });
+
+    it('full-feature: office-hours/propose/apply/ship remain gate: true', () => {
+      const pipeline = loadPipelineByName('full-feature');
+      for (const id of ['office-hours', 'propose', 'apply', 'ship']) {
+        expect(pipeline.stages.find((s) => s.id === id)?.gate).toBe(true);
+      }
+    });
+  });
+
   for (const name of DECOMPOSE_FREE_NAMES) {
     it(`${name} is decompose-free (valid as a child pipeline)`, () => {
       const pipeline = loadPipelineByName(name);
@@ -199,6 +226,28 @@ describe('pipeline-registry/built-ins', () => {
         const handoff = resolveStageHandoffConfig(iterate, pipeline);
         expect(handoff.threshold).toBe(0.5);
         expect(handoff.source).toBe('default');
+      }
+    });
+  });
+
+  // autopilot-gate-policy: define-goal is marked gate: 'vet' (never
+  // auto-approved by --no-gate) because it is where the human vets the
+  // LEAD-generated arbitrary-shell measure command before any round runs.
+  // ship stays gate: true (an ordinary, skippable gate).
+  describe('goal-loop define-goal gate is vet (autopilot-gate-policy)', () => {
+    for (const name of GOAL_LOOP_NAMES) {
+      it(`${name}: define-goal is gate: 'vet'`, () => {
+        const pipeline = loadPipelineByName(name);
+        const defineGoal = pipeline.stages.find((s) => s.id === 'define-goal');
+        expect(defineGoal?.gate).toBe('vet');
+      });
+    }
+
+    it("goal-loop-measure/evaluate: ship stays gate: true (skippable)", () => {
+      for (const name of ['goal-loop-measure', 'goal-loop-evaluate'] as const) {
+        const pipeline = loadPipelineByName(name);
+        const ship = pipeline.stages.find((s) => s.id === 'ship');
+        expect(ship?.gate).toBe(true);
       }
     });
   });

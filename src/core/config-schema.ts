@@ -15,7 +15,14 @@ export const GlobalConfigSchema = z
       .optional()
       .default('full'),
     delivery: z
-      .enum(['both', 'skills', 'commands', 'skills-first', 'commands-first'])
+      .enum(['both', 'skills'])
+      .or(
+        z
+          .enum(['commands', 'skills-first', 'commands-first'])
+          .transform((legacy) =>
+            legacy === 'skills-first' ? ('skills' as const) : ('both' as const)
+          )
+      )
       .optional()
       .default('both'),
     workflows: z

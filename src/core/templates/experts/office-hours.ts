@@ -32,7 +32,10 @@ SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || b
    \`\`\`
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
-5. **Consultation short-circuit — check the opening message first.** If the user's opening message already contains a **concrete design or plan** PLUS a **feedback request** ("what do you think," "is there a better way," "poke holes in this," "你觉得如何"), skip the goal question entirely and go straight to the **Consultation posture** (below). They already told you the goal by bringing a design to discuss — do not interrupt with a mode menu.
+5. **Product routing — check the opening message first.** The discriminator is the **object of the request**, not who the user says they are:
+   - If the request is to validate the **venture itself** — "is this worth building," "help me validate demand," "should I build this" — route to the **Diagnosis product** (below).
+   - If the request is to give feedback on / converge a **design or plan already in hand** — "what do you think," "is there a better way," "poke holes in this," "你觉得如何" — route to the **Design product** (below), even from a startup user, even when they say "poke holes." Identity is not a routing variable; the object of the request is. A startup user bringing a concrete design still routes to the Design product — the demand premise comes back on its own as a weight-bearing fork (see the Design product's fork-scan), not because you special-cased "startup."
+   - If the opening message routes unambiguously by either rule above, skip the goal question entirely and go straight to the routed product. Otherwise, ask the goal question (next step) and map the answer to a product.
 
 6. **Otherwise, ask: what's your goal with this?** This is a real question, not a formality. The answer determines everything about how the session runs.
 
@@ -47,32 +50,18 @@ SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || b
    > - **Learning** — teaching yourself to code, vibe coding, leveling up
    > - **Having fun** — side project, creative outlet, just vibing
 
-   **Mode mapping:**
-   - Startup, intrapreneurship → **Startup mode** (Phase 2A)
-   - Hackathon, open source, research, learning, having fun → **Builder mode** (Phase 2B)
+   **Product mapping** (still gated by the object of the request — see step 5 — this is the fallback when the opening message is ambiguous):
+   - Startup, intrapreneurship validating a venture → **Diagnosis product**
+   - Hackathon, open source, research, learning, having fun, or any goal answer paired with a concrete design/plan to react to → **Design product**
 
-7. **Assess product stage** (only for startup/intrapreneurship modes):
+7. **Assess product stage** (only for sessions routed to the Diagnosis product):
    - Pre-product (idea stage, no users yet)
    - Has users (people using it, not yet paying)
    - Has paying customers
 
 Output: "Here's what I understand about this project and the area you want to change: ..."
 
----
-
-## Consultation posture
-
-**When the user arrives with a concrete design already in hand and asks for feedback** — "what do you think," "is there a better way," "poke holes in this" — adopt a Consultation posture instead of the generative interview:
-
-**This posture is authoritative for the session — it replaces Phases 2, 3, and 4.** The \`Phase 4: Alternatives Generation (MANDATORY)\` header and the three "a fully formed plan still runs Phase 3 (Premise Challenge) and Phase 4 (Alternatives)" rules (in Phase 2A, Phase 2B, and Important Rules) apply ONLY to the **interview paths (Startup mode / Builder mode)**, NOT here. Precedence is one-directional: a concrete-design-plus-feedback opening routes deterministically into Consultation, which REPLACES Phases 2–4, so it does NOT trigger Phase 3 Premise Challenge or the Phase 4 alternatives-and-approval machinery. (Firing those here would re-introduce the alternatives-menu + approval-gate anti-pattern this posture exists to eliminate.)
-
-- **Skip generative questioning.** They came to discuss a specific thing, not to be interviewed from a blank slate. Do not open the AskUserQuestion option menu.
-- **Deliver analysis prose directly.** React to their design like a peer: what's strong, what's risky, what you'd change and why. Take positions.
-- **Discuss peer-to-peer** until the thinking converges. Answer their questions (per the Dialogue Override) as the primary mode of the session.
-- **Offer the doc only after convergence.** Once the discussion has settled, ask whether to distill it into a design doc. The doc is a byproduct of the conversation, not the terminus of a flow — never rush to it, and never treat it as the goal the session is driving toward.
-- **Terminal (Consultation).** On the user's explicit "yes" to distilling the converged discussion, write the design doc (Phase 5's hard gate already admits this Consultation "yes" path), then close with a **plain summary plus a \`/rasen:propose\` pointer**. SKIP Phase 4.5 (founder-signal synthesis) and Phase 6 (the founder plea / three closing beats) — those are the interview-path close for Startup/Builder sessions; a peer design review tracks no founder signals and the golden-age plea is a tone mismatch here.
-
-If the user has only a vague idea (not a concrete design), stay in the normal interview posture (Phase 2A/2B).
+**Bidirectional mid-session upgrade/downgrade.** Routing is by intent, and intent can change mid-session (generalizes the "vibe shifts" rule in the Design product below): a Design-product session whose user signals venture-validation intent ("actually, is this even worth building?", mentions revenue/customers/fundraising as the open question) upgrades to the Diagnosis product; a Diagnosis-product session whose user brings a concrete design and asks for feedback on it downgrades to the Design product. Say what you're doing when you switch — don't switch silently.
 
 ---
 
@@ -80,22 +69,22 @@ If the user has only a vague idea (not a concrete design), stay in the normal in
 
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
 
-These rules bind every question in the interview phases below (2A and 2B); **Answer before you ask** additionally binds every question in the WHOLE skill, including the Phase 3 and Phase 4 approval prompts:
+These rules bind every question in the Diagnosis product's six-question script and the Design product's fork-scan questions; **Answer before you ask** additionally binds every question in the WHOLE skill, including the fork-scan's own confirmation and approach-approval prompts:
 
 - **One question at a time.** Ask, then STOP and wait for the response before the next. Batching questions into one turn is bewildering.
 - **Carry your recommended answer.** For each question, state the answer you would give — the user reacts to a concrete position far faster than they generate one from a blank prompt.
 - **Explore before asking.** If a question can be answered by exploring the codebase, read the code instead of asking. Spend the user's attention only on what the code cannot tell you.
-- **Answer before you ask.** The user's own question is the highest-priority input. When the user asks something or wants the plan explained, answer it in prose first (per the PREAMBLE's Dialogue Override) — answering always precedes advancing at EVERY question in the skill. This binds Startup mode (2A), Builder mode (2B), AND the Phase 3 Premise Challenge confirmation and the Phase 4 approach-approval prompt: when the user asks a question at a Phase 3 or Phase 4 AskUserQuestion gate, answer it in prose before re-issuing the gate. It is not scoped to only the 2A/2B interview questions.
+- **Answer before you ask.** The user's own question is the highest-priority input. When the user asks something or wants the plan explained, answer it in prose first (per the PREAMBLE's Dialogue Override) — answering always precedes advancing at EVERY question in the skill. This binds the Diagnosis product's six questions AND the Design product's fork-scan and approach-approval prompts: when the user asks a question at a fork-scan AskUserQuestion gate, answer it in prose before re-issuing the gate. It is not scoped to only the Diagnosis product's questions.
 
 ---
 
-## Phase 2A: Startup Mode — YC Product Diagnostic
+## Diagnosis Product — YC Product Diagnostic
 
-Use this mode when the user is building a startup or doing intrapreneurship.
+Use this product when the user is validating a venture — building a startup or doing intrapreneurship.
 
 ### Operating Principles
 
-These are non-negotiable. They shape every response in this mode.
+These are non-negotiable. They shape every response in this product.
 
 **Specificity is the only currency.** Vague answers get pushed. "Enterprises in healthcare" is not a customer. "Everyone needs this" means you can't find anyone. You need a name, a role, a company, a reason.
 
@@ -238,54 +227,63 @@ If the framing is imprecise, **reframe constructively** — don't dissolve the q
 
 **Escape hatch:** Trigger this ONLY on an explicit skip signal — the user tells you to stop asking and move on ("just do it," "skip the questions," "stop asking, just write it"). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch. A request for more discussion is the opposite of impatience — do not fast-forward on it. **Proceed vs. stop (after a Dialogue Override pause):** a reply that merely signals to keep going ("proceed," "continue," "let's keep going") RESUMES the next interview question where the flow paused — it does NOT fire this escape hatch; only an explicit stop-asking signal (the phrases above) fires it. When an explicit skip signal fires:
 - Say: "I hear you. But the hard questions are the value — skipping them is like skipping the exam and going straight to the prescription. Let me ask two more, then we'll move."
-- Consult the smart routing table for the founder's product stage. Ask the 2 most critical remaining questions from that stage's list, then proceed to Phase 3.
-- If the user gives an explicit skip signal a second time, respect it — proceed to Phase 3 immediately. Don't ask a third time.
+- Consult the smart routing table for the founder's product stage. Ask the 2 most critical remaining questions from that stage's list, then proceed to the fork-scan procedure (below).
+- If the user gives an explicit skip signal a second time, respect it — proceed to the fork-scan procedure immediately. Don't ask a third time.
 - If only 1 question remains, ask it. If 0 remain, proceed directly.
-- Only allow a FULL skip (no additional questions) if the user provides a fully formed plan with real evidence — existing users, revenue numbers, specific customer names. Even then, still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives). (Interview paths only — this is the Startup real-evidence bar the Builder path and Important Rules defer to; a concrete-design-plus-feedback opening routes to the Consultation posture, which replaces Phases 2–4.)
+- Only allow a FULL skip (no additional questions) if the user provides a fully formed plan with real evidence — existing users, revenue numbers, specific customer names. Even then, still run the fork-scan procedure (below) for premise-checking and alternatives — the Diagnosis product has no private premise-challenge or alternatives pass of its own; it shares the Design product's fork-scan mechanism (see "The Design Product" below).
 
 ---
 
-## Phase 2B: Builder Mode — Design Partner
+## The Design Product
 
-Use this mode when the user is building for fun, learning, hacking on open source, at a hackathon, or doing research.
+Use this product when the user is giving feedback on, or converging, a design or plan — a concrete design already in hand ("what do you think," "is there a better way," "poke holes in this") or a vague idea that still needs shaping (generative brainstorm for a side project, hackathon, learning exercise, or open-source idea). This is a single fork-first mechanism, not two named tracks: what varies is only the evaluation framework it renders (see below) and how much the fork-scan finds to ask.
 
-### Operating Principles
+**The loop:** fork-scan → weight-bearing forks asked first → stance analysis → discussion (Dialogue Override) → convergence → doc.
 
-1. **Delight is the currency** — what makes someone say "whoa"?
-2. **Ship something you can show people.** The best version of anything is the one that exists.
-3. **The best side projects solve your own problem.** If you're building it for yourself, trust that instinct.
-4. **Explore before you optimize.** Try the weird idea first. Polish later.
+### Fork-scan procedure
 
-### Response Posture
+Run this per topic, before any stance is delivered:
 
-- **Enthusiastic, opinionated collaborator.** You're here to help them build the coolest thing possible. Riff on their ideas. Get excited about what's exciting.
-- **Help them find the most exciting version of their idea.** Don't settle for the obvious version.
-- **Suggest cool things they might not have thought of.** Bring adjacent ideas, unexpected combinations, "what if you also..." suggestions.
-- **End with concrete build steps, not business validation tasks.** The deliverable is "what to build next," not "who to interview."
+1. **List the load-bearing premises.** What premise assertions does a stance on this topic depend on? Not every premise in the world — only the ones the conclusion is actually hanging on. Useful prompts for surfacing them: Is this the right problem, or could a different framing yield a dramatically simpler or more impactful solution? What happens if nothing changes — real pain or hypothetical? What existing code already partially solves this (map existing patterns, utilities, and flows that could be reused)? For a Diagnosis-product session, also check whether the six-question evidence actually supports the direction the doc is heading, and where the gaps are.
+2. **Test each for branch-writability.** Can you write two substantively different downstreams — "answer A → design goes X, answer B → design goes Y"? If you can't write that sentence, it isn't a fork. The method space itself is a premise like any other: if there are genuinely multiple viable approaches and the user hasn't committed to one, that's branch-writable (answer A → approach X's tradeoffs, answer B → approach Y's) and becomes a weight-bearing fork; if the user already has a settled approach that isn't hanging on an unverified premise, there is no fork here and no approach menu is needed.
+3. **Classify each premise:**
+   - **Weight-bearing fork** — branch-writable AND unverified → ask it. When the fork is method-space-shaped (multiple viable approaches), render it as an AskUserQuestion approach menu: 2-3 distinct approaches, each with a one-line summary, effort, risk, and 2-3 pros/cons, with one option marked minimal-viable (fewest files, ships fastest) and one marked ideal-architecture (best long-term trajectory) where those differ, plus your recommendation and why.
+   - **Declared assumption** — not branch-writable, or no answer would flip the conclusion → state it in the analysis: "I'm assuming X; if that's wrong, here's what flips." Never turn this into a question.
+   - **Already verified** — evidence exists in the conversation or the codebase → cite the evidence directly, don't ask.
+4. **Ask at most 2 weight-bearing forks per round**, one at a time, each carrying your recommended answer (per Interview discipline's carry-your-recommended-answer rule). Any remaining weight-bearing forks fold into the analysis's Open Questions, carried forward rather than asked immediately.
 
-### Questions (generative, not interrogative)
+A startup user bringing a concrete design for feedback still runs this scan on the design's topics — the demand premise ("does anyone actually want this") is, in a startup context, always load-bearing and branch-writable (yes → build it, no → don't), so it surfaces as a weight-bearing fork on its own; no special-casing by the user's identity is needed for this to happen.
 
-Ask these **ONE AT A TIME** via AskUserQuestion. The goal is to brainstorm and sharpen the idea, not interrogate.
+### Flow ordering
 
-- **What's the coolest version of this?** What would make it genuinely delightful?
-- **Who would you show this to?** What would make them say "whoa"?
-- **What's the fastest path to something you can actually use or share?**
-- **What existing thing is closest to this, and how is yours different?**
-- **What would you add if you had unlimited time?** What's the 10x version?
+**Ordering rule: no stance that depends on an unresolved weight-bearing fork is delivered before that fork's answer lands.** The fork-scan runs first on a topic; only once its weight-bearing forks are answered (or downgraded — see Skip semantics) does the stance analysis for that topic get delivered. If the fork-scan on a topic finds zero weight-bearing forks (every premise already verified or a declared assumption), stance analysis is delivered immediately — no questions asked, no artificial pause.
 
-**Smart-skip:** If the user's initial prompt already answers a question, skip it. Only ask questions whose answers aren't yet clear.
+After a topic's stance lands, discuss peer-to-peer (per the PREAMBLE's Dialogue Override) until the thinking converges. Once convergence is reached and the user gives an explicit "yes" to distilling the discussion into a doc, proceed to the terminal (below).
 
-**STOP** after each question. Wait for the response before asking the next.
+### Skip semantics
 
-**Escape hatch:** Trigger this ONLY on an explicit skip signal ("just do it," "skip," "stop asking, just write it") or a fully formed plan → fast-track to Phase 4 (Alternatives Generation). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch — a request for more discussion is the opposite of impatience. **Proceed vs. stop (after a Dialogue Override pause):** a reply that merely signals to keep going ("proceed," "continue," "let's keep going") RESUMES the next question where the flow paused — it does NOT fire this escape hatch; only an explicit stop-asking signal (the phrases above) fires it. If the user provides a fully formed plan, skip Phase 2 entirely but still run Phase 3 and Phase 4 (interview paths only; in Startup mode a full skip still requires the Phase 2A real-evidence bar — existing users, revenue, named customers — not merely a "fully formed plan"; a concrete-design-plus-feedback opening routes to the Consultation posture, which replaces Phases 2–4).
+An explicit skip signal (the same trigger phrases as the Diagnosis product's escape hatch — "just do it," "skip the questions," "stop asking, just write it") downgrades **every still-open weight-bearing fork** to a headline declared assumption in the analysis and delivers the analysis immediately. A request for more discussion is never a skip signal — route it to the PREAMBLE's Dialogue Override, same as everywhere else in this skill. Any downgraded assumption is individually reopenable later: if the user contests one, treat that as reopening that specific fork, not the whole scan.
 
-**If the vibe shifts mid-session** — the user starts in builder mode but says "actually I think this could be a real company" or mentions customers, revenue, fundraising — upgrade to Startup mode naturally. Say something like: "Okay, now we're talking — let me ask you some harder questions." Then switch to the Phase 2A questions.
+This skip semantics governs any fork-scan pass, regardless of which product invoked it — including the fork-scan the Diagnosis product runs after its six questions — while the Diagnosis product's own six-question escape hatch (above) remains a separate, unchanged mechanism.
+
+### Evaluation framework (rendered by the user's stated goal)
+
+The framework and tone the analysis and doc render in are a parameter, not a flow branch:
+
+- **Startup context** — demand is the currency. Evaluate against: is there real evidence someone wants this (not interest — behavior, money, panic when it breaks)? What's the status quo they're living with instead? Who specifically needs this? The output includes an assignment (see the Design product's doc template).
+- **Builder context** — delight is the currency: ship something you can show people (the best version of anything is the one that exists), trust the instinct to build for your own problem, explore before you optimize. Evaluate against: what's the coolest version of this — what makes someone say "whoa"? Who would you show this to? What's the fastest path to something shareable? What's closest to this already, and how is yours different? What would the 10x version look like if you had unlimited time? Be an enthusiastic, opinionated collaborator — riff on their ideas, suggest adjacent ideas they might not have considered. The output includes concrete next-build-steps, not business-validation tasks.
+
+Use whichever lens the user's stated goal implies when framing fork-scan questions and stance analysis — this is guidance for tone and evaluation criteria, not a separate posture with its own escape hatch or phase numbering.
+
+### Terminal
+
+Once the discussion converges and the user gives an explicit "yes" to distilling it into a doc, write the design doc (see Phase 5 — the Design product's convergence "yes" is one of the two ways into that hard gate), then close with a **plain summary plus a \`/rasen:propose\` pointer**. Skip Phase 4.5 (founder-signal synthesis) and Phase 6 (the three-beat close) — those are reserved for the Diagnosis product; a converged design review tracks no founder signals and the golden-age plea is a tone mismatch here.
 
 ---
 
 ## Phase 2.5: Related Design Discovery
 
-After the user states the problem (first question in Phase 2A or 2B), search existing design docs for keyword overlap.
+After the user states the problem (first question of the Diagnosis product or the Design product), search existing design docs for keyword overlap.
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 \`\`\`bash
@@ -308,18 +306,18 @@ After understanding the problem through questioning, search for what the world t
 
 **Privacy gate:** Before searching, use AskUserQuestion: "I'd like to search for what the world thinks about this space to inform our discussion. This sends generalized category terms (not your specific idea) to a search provider. OK to proceed?"
 Options: A) Yes, search away  B) Skip — keep this session private
-If B: skip this phase entirely and proceed to Phase 3. Use only in-distribution knowledge.
+If B: skip this phase entirely and proceed to the fork-scan procedure. Use only in-distribution knowledge.
 
 When searching, use **generalized category terms** — never the user's specific product name, proprietary concept, or stealth idea. For example, search "task management app landscape" not "SuperTodo AI-powered task killer."
 
 If WebSearch is unavailable, skip this phase and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
-**Startup mode:** WebSearch for:
+**Startup-context sessions** (Diagnosis product, or Design product sessions in a startup context): WebSearch for:
 - "[problem space] startup approach {current year}"
 - "[problem space] common mistakes"
 - "why [incumbent solution] fails" OR "why [incumbent solution] works"
 
-**Builder mode:** WebSearch for:
+**Builder-context sessions** (Design product sessions in a builder context): WebSearch for:
 - "[thing being built] existing solutions"
 - "[thing being built] open source alternatives"
 - "best [thing category] {current year}"
@@ -327,67 +325,13 @@ If WebSearch is unavailable, skip this phase and note: "Search unavailable — p
 Read the top 2-3 results. Run the three-layer synthesis:
 - **[Layer 1]** What does everyone already know about this space?
 - **[Layer 2]** What are the search results and current discourse saying?
-- **[Layer 3]** Given what WE learned in Phase 2A/2B — is there a reason the conventional approach is wrong?
+- **[Layer 3]** Given what we learned through questioning so far — is there a reason the conventional approach is wrong?
 
 **Eureka check:** If Layer 3 reasoning reveals a genuine insight, name it: "EUREKA: Everyone does X because they assume [assumption]. But [evidence from our conversation] suggests that's wrong here. This means [implication]."
 
-If no eureka moment exists, say: "The conventional wisdom seems sound here. Let's build on it." Proceed to Phase 3.
+If no eureka moment exists, say: "The conventional wisdom seems sound here. Let's build on it." Proceed to the fork-scan procedure.
 
-**Important:** This search feeds Phase 3 (Premise Challenge). If you found reasons the conventional approach fails, those become premises to challenge. If conventional wisdom is solid, that raises the bar for any premise that contradicts it.
-
----
-
-## Phase 3: Premise Challenge
-
-Before proposing solutions, challenge the premises:
-
-1. **Is this the right problem?** Could a different framing yield a dramatically simpler or more impactful solution?
-2. **What happens if we do nothing?** Real pain point or hypothetical one?
-3. **What existing code already partially solves this?** Map existing patterns, utilities, and flows that could be reused.
-4. **Startup mode only:** Synthesize the diagnostic evidence from Phase 2A. Does it support this direction? Where are the gaps?
-
-Output premises as clear statements the user must agree with before proceeding:
-\`\`\`
-PREMISES:
-1. [statement] — agree/disagree?
-2. [statement] — agree/disagree?
-3. [statement] — agree/disagree?
-\`\`\`
-
-Use AskUserQuestion to confirm. If the user disagrees with a premise, revise understanding and loop back.
-
----
-
-## Phase 4: Alternatives Generation (MANDATORY on the interview paths)
-
-Produce 2-3 distinct implementation approaches. This is NOT optional **on the interview paths (Startup/Builder)**. Not run in the Consultation posture — see the Consultation posture, which is authoritative for its session and replaces Phases 2–4.
-
-For each approach:
-\`\`\`
-APPROACH A: [Name]
-  Summary: [1-2 sentences]
-  Effort:  [S/M/L/XL]
-  Risk:    [Low/Med/High]
-  Pros:    [2-3 bullets]
-  Cons:    [2-3 bullets]
-  Reuses:  [existing code/patterns leveraged]
-
-APPROACH B: [Name]
-  ...
-
-APPROACH C: [Name] (optional — include if a meaningfully different path exists)
-  ...
-\`\`\`
-
-Rules:
-- At least 2 approaches required. 3 preferred for non-trivial designs.
-- One must be the **"minimal viable"** (fewest files, smallest diff, ships fastest).
-- One must be the **"ideal architecture"** (best long-term trajectory, most elegant).
-- One can be **creative/lateral** (unexpected approach, different framing of the problem).
-
-**RECOMMENDATION:** Choose [X] because [one-line reason].
-
-Present via AskUserQuestion. Do NOT proceed without user approval of the approach.
+**Important:** This search feeds the fork-scan procedure's premise listing and classification (see "The Design Product" above — the Diagnosis product also routes into this same mechanism after its six questions). If you found reasons the conventional approach fails, those become premises the fork-scan should surface. If conventional wisdom is solid, that raises the bar for any premise that contradicts it.
 
 ---
 
@@ -395,9 +339,9 @@ ${DESIGN_SKETCH}
 
 ---
 
-## Phase 4.5: Founder Signal Synthesis (interview paths only — Startup/Builder)
+## Phase 4.5: Founder Signal Synthesis (Diagnosis product only)
 
-**Interview paths only.** The Consultation posture skips this phase and Phase 6 (see the Consultation posture terminal) — a peer design review tracks no founder signals.
+**Diagnosis product only.** The Design product skips this phase and Phase 6 (see the Design product's terminal) — a peer design review tracks no founder signals.
 
 Before writing the design doc, synthesize the founder signals you observed during the session. These will appear in the design doc ("What I noticed") and in the closing conversation (Phase 6).
 
@@ -416,7 +360,7 @@ Count the signals. You'll use this count in Phase 6 to determine which tier of c
 
 ## Phase 5: Design Doc
 
-**HARD GATE:** The precondition for writing the design doc is an **explicit user approval of an approach in Phase 4** — OR, in the Consultation posture, the user's **explicit "yes" to distilling the converged discussion into a doc**. Those are the only two ways in. A complaint, silence, or a question is NOT approval — a user asking to be answered first or to discuss more is asking for more conversation, not a doc. Do not write or begin the design doc without that explicit approval. If it is missing, return to the discussion (Dialogue Override) or re-run the Phase 4 approval question.
+**HARD GATE:** The precondition for writing the design doc is explicit user approval — either **approval of a recommended approach** when the fork-scan's method-space fork rendered an approach menu, or the **explicit "yes" to distilling a converged discussion into a doc** when no approach menu was needed (the Design product's convergence terminal). Those are the only two ways in. A complaint, silence, or a question is NOT approval — a user asking to be answered first or to discuss more is asking for more conversation, not a doc. Do not write or begin the design doc without that explicit approval. If it is missing, return to the discussion (Dialogue Override) or re-run the approach-approval question.
 
 Write the design document to the project directory.
 
@@ -434,7 +378,7 @@ If \`$PRIOR\` exists, the new doc gets a \`Supersedes:\` field referencing it. T
 
 Write to \`~/.rasen/projects/{slug}/{user}-{branch}-design-{datetime}.md\`:
 
-### Startup mode design doc template:
+### Diagnosis product design doc template:
 
 \`\`\`markdown
 # Design: {title}
@@ -447,7 +391,7 @@ Mode: Startup
 Supersedes: {prior filename — omit this line if first design on this branch}
 
 ## Problem Statement
-{from Phase 2A}
+{from the Diagnosis product's six questions}
 
 ## Demand Evidence
 {from Q1 — specific quotes, numbers, behaviors demonstrating real demand}
@@ -459,16 +403,16 @@ Supersedes: {prior filename — omit this line if first design on this branch}
 {from Q3 + Q4 — the specific human and the smallest version worth paying for}
 
 ## Constraints
-{from Phase 2A}
+{from the Diagnosis product session}
 
 ## Premises
-{from Phase 3}
+{declared assumptions and already-verified premises from the fork-scan procedure — not the weight-bearing forks, which were already asked and answered}
 
 ## Approaches Considered
 ### Approach A: {name}
-{from Phase 4}
+{from the fork-scan's method-space fork, when one was rendered as an approach menu}
 ### Approach B: {name}
-{from Phase 4}
+{from the fork-scan's method-space fork, when one was rendered as an approach menu}
 
 ## Recommended Approach
 {chosen approach with rationale}
@@ -477,7 +421,7 @@ Supersedes: {prior filename — omit this line if first design on this branch}
 {any unresolved questions from the office hours}
 
 ## Success Criteria
-{measurable criteria from Phase 2A}
+{measurable criteria from the Diagnosis product's six questions}
 
 ## Dependencies
 {blockers, prerequisites, related work}
@@ -489,7 +433,9 @@ Supersedes: {prior filename — omit this line if first design on this branch}
 {observational, mentor-like reflections referencing specific things the user said during the session. Quote their words back to them — don't characterize their behavior. 2-4 bullets.}
 \`\`\`
 
-### Builder mode design doc template:
+### Design product design doc template:
+
+The skeleton is shared; only the evaluation-framework block (marked below) renders conditionally on the user's stated goal — see "Evaluation framework" in The Design Product section above.
 
 \`\`\`markdown
 # Design: {title}
@@ -498,26 +444,23 @@ Generated by /office-hours on {date}
 Branch: {branch}
 Repo: {owner/repo}
 Status: DRAFT
-Mode: Builder
+Product: Design
 Supersedes: {prior filename — omit this line if first design on this branch}
 
 ## Problem Statement
-{from Phase 2B}
-
-## What Makes This Cool
-{the core delight, novelty, or "whoa" factor}
+{from the Design product session}
 
 ## Constraints
-{from Phase 2B}
+{from the Design product session}
 
 ## Premises
-{from Phase 3}
+{declared assumptions and already-verified premises from the fork-scan procedure — not the weight-bearing forks, which were already asked and answered}
 
 ## Approaches Considered
 ### Approach A: {name}
-{from Phase 4}
+{from the fork-scan's method-space fork, when one was rendered as an approach menu}
 ### Approach B: {name}
-{from Phase 4}
+{from the fork-scan's method-space fork, when one was rendered as an approach menu}
 
 ## Recommended Approach
 {chosen approach with rationale}
@@ -528,11 +471,30 @@ Supersedes: {prior filename — omit this line if first design on this branch}
 ## Success Criteria
 {what "done" looks like}
 
-## Next Steps
-{concrete build tasks — what to implement first, second, third}
+{EVALUATION FRAMEWORK BLOCK — render one of the two below, per the user's stated goal}
 
 ## What I noticed about how you think
 {observational, mentor-like reflections referencing specific things the user said during the session. Quote their words back to them — don't characterize their behavior. 2-4 bullets.}
+\`\`\`
+
+**Evaluation-framework block, startup context** (replaces the \`{EVALUATION FRAMEWORK BLOCK}\` placeholder above):
+
+\`\`\`markdown
+## Demand Evidence
+{specific quotes, numbers, behaviors demonstrating real demand}
+
+## The Assignment
+{one concrete real-world action the user should take next — not "go build it"}
+\`\`\`
+
+**Evaluation-framework block, builder context** (replaces the \`{EVALUATION FRAMEWORK BLOCK}\` placeholder above):
+
+\`\`\`markdown
+## What Makes This Cool
+{the core delight, novelty, or "whoa" factor}
+
+## Next Steps
+{concrete build tasks — what to implement first, second, third}
 \`\`\`
 
 ---
@@ -544,13 +506,13 @@ ${SPEC_REVIEW_LOOP}
 Present the reviewed design doc to the user via AskUserQuestion:
 - A) Approve — mark Status: APPROVED and proceed to handoff
 - B) Revise — specify which sections need changes (loop back to revise those sections)
-- C) Start over — return to Phase 2
+- C) Start over — return to the beginning of the routed product (Diagnosis or Design)
 
 ---
 
 ## Phase 6: Handoff — Founder Discovery
 
-Once the design doc is APPROVED, deliver the closing sequence. This is three beats with a deliberate pause between them. On the **interview paths (Startup/Builder), every user gets all three beats regardless of which of those two modes they are in**; the intensity varies by founder signal strength, not by mode. The **Consultation posture does NOT run this phase** — it ends at its own terminal (plain summary + \`/rasen:propose\` pointer), because the founder plea is a tone mismatch for a peer design review.
+Once the design doc is APPROVED, deliver the closing sequence. This is three beats with a deliberate pause between them. On the **Diagnosis product, every user gets all three beats**; the intensity varies by founder signal strength. The **Design product does NOT run this phase** — it ends at its own terminal (plain summary + \`/rasen:propose\` pointer), because the founder plea is a tone mismatch for a peer design review.
 
 ### Beat 1: Signal Reflection + Golden Age
 
@@ -578,7 +540,7 @@ Use the founder signal count from Phase 4.5 to select the right tier.
 
 **Decision rubric:**
 - **Top tier:** 3+ strong signals AND at least one of: named a specific user, identified revenue/payment, or described real demand evidence
-- **Middle tier:** 1-2 signals, or builder-mode user whose project clearly solves a problem others have
+- **Middle tier:** 1-2 signals
 - **Base tier:** Everyone else
 
 **Top tier** — emotional target: *"Someone believes in me."* Chosen, not marketed to.
@@ -622,7 +584,7 @@ The design doc at \`~/.rasen/projects/\` is automatically discoverable by downst
 - **Never start implementation.** This skill produces design docs, not code. Not even scaffolding.
 - **Questions ONE AT A TIME.** Never batch multiple questions into one AskUserQuestion.
 - **The assignment is mandatory.** Every session ends with a concrete real-world action — something the user should do next, not just "go build it."
-- **If user provides a fully formed plan (interview paths only):** skip Phase 2 (questioning) but still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives). Even "simple" plans benefit from premise checking and forced alternatives. This defers to the Startup Phase 2A real-evidence bar — a full skip in Startup mode still requires existing users / revenue / named customers, not merely a "fully formed plan." A concrete-design-plus-feedback opening does NOT run this rule: it routes to the Consultation posture, which is authoritative for its session and replaces Phases 2–4.
+- **If user provides a fully formed plan (Diagnosis product only):** skip the six-question script but still run the fork-scan procedure for premise-checking and alternatives. Even "simple" plans benefit from premise checking and forced alternatives. This defers to the Diagnosis product's real-evidence bar — a full skip still requires existing users / revenue / named customers, not merely a "fully formed plan." A concrete-design-plus-feedback opening does NOT run this rule: per Phase 1's product routing, it goes straight to the Design product, whose fork-scan handles premise-checking from the start.
 - **Completion status:**
   - DONE — design doc APPROVED
   - DONE_WITH_CONCERNS — design doc approved but with open questions listed

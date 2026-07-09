@@ -87,7 +87,7 @@ interface StageView {
   childPipeline: string | null;
   role: Stage['role'] | null;
   requires: string[];
-  gate: boolean;
+  gate: boolean | 'vet';
   loop: Stage['loop'] | null;
   parallelGroup: string | null;
   condition: string | null;
@@ -461,6 +461,12 @@ export class PipelineCommand {
       inProgressStages,
       escalatedStages,
       openFindings,
+      // autopilot-gate-policy: the resolved gate policy recorded at run start
+      // (see run-state.ts `gatePolicy`), so resume honors it without the user
+      // re-passing `--no-gate`. Included only when present — a run recorded
+      // before this capability existed carries no key, and the LEAD's
+      // built-in default (gates on) still applies.
+      ...(runState.gatePolicy ? { gatePolicy: runState.gatePolicy } : {}),
       // Handoff pointers are included only when present so existing callers see
       // no new keys unless a run actually recorded handoffs.
       ...(sessionHandoff ? { sessionHandoff } : {}),
@@ -504,6 +510,11 @@ export class PipelineCommand {
     if (sessionHandoff) {
       console.log(
         `Session handoff (generation ${sessionHandoffGeneration(sessionHandoff)}): ${sessionHandoff.path}`
+      );
+    }
+    if (runState.gatePolicy) {
+      console.log(
+        `Gate policy: ${runState.gatePolicy.effective} (${runState.gatePolicy.source})`
       );
     }
   }
@@ -677,7 +688,8 @@ export class PipelineCommand {
       const meta: string[] = [];
       if (stage.role) meta.push(`role=${stage.role}`);
       if (stage.requires.length > 0) meta.push(`requires=[${stage.requires.join(', ')}]`);
-      if (stage.gate) meta.push('gate');
+      if (stage.gate === 'vet') meta.push('gate(vet)');
+      else if (stage.gate) meta.push('gate');
       if (stage.loop) {
         if (stage.loop.kind === 'review-cycle') {
           meta.push(`loop=review-cycle(max ${stage.loop.maxRounds})`);

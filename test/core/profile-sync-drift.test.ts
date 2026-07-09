@@ -53,16 +53,6 @@ function setupFullCommands(projectDir: string): void {
   }
 }
 
-function setupCommandsFirstSkills(projectDir: string): void {
-  // Under commands-first, only skill-only workflows (no command counterpart,
-  // e.g. goal-plan/iterate/report) keep a skill dir — command-counterpart
-  // workflows are replaced by their command and have no skill dir.
-  for (const workflow of ALL_WORKFLOWS) {
-    if ((COMMAND_IDS as readonly string[]).includes(workflow)) continue;
-    writeSkill(projectDir, workflow);
-  }
-}
-
 describe('WORKFLOW_TO_SKILL_DIR', () => {
   it('maps the goal-loop workflow family to their rasen-goal* skill directories', () => {
     expect(WORKFLOW_TO_SKILL_DIR['goal-plan']).toBe('rasen-goal-plan');
@@ -92,12 +82,14 @@ describe('profile sync drift detection', () => {
     expect(hasDrift).toBe(true);
   });
 
-  it('detects drift for commands-only delivery when skills still exist', () => {
+  it('detects drift when skills are missing, regardless of delivery (skills are always forward-required)', () => {
     setupCoreCommands(tempDir);
-    setupCoreSkills(tempDir);
-
-    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, 'commands');
-    expect(hasDrift).toBe(true);
+    // No skills written — skills are forward-required for every selected
+    // workflow no matter the delivery setting (design D7).
+    for (const delivery of ['both', 'skills'] as const) {
+      const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, delivery);
+      expect(hasDrift).toBe(true);
+    }
   });
 
   it('detects drift when required profile workflow files are missing', () => {
@@ -133,11 +125,11 @@ describe('profile sync drift detection', () => {
     expect(hasDrift).toBe(false);
   });
 
-  it('returns false for the full profile under commands-first after a clean install, sparing skill-only goal-loop stage workflows', () => {
-    setupCommandsFirstSkills(tempDir);
-    setupFullCommands(tempDir);
-
-    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS, 'commands-first');
+  it('returns false for the full profile under skills delivery when only skills are installed (no commands required)', () => {
+    setupFullSkills(tempDir);
+    // No commands written — under 'skills' delivery, commands are not
+    // required and their absence is not drift.
+    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS, 'skills');
     expect(hasDrift).toBe(false);
   });
 });
