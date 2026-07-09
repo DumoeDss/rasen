@@ -217,6 +217,38 @@ export function readRunState(changeDir: string): RunState | null {
   }
 }
 
+/** The directory (and full file path) a run-state candidate resolved from. */
+export interface RunStateLocation {
+  dir: string;
+  path: string;
+}
+
+/**
+ * Resolves WHERE `auto-run.json` lives for a change (design D4, sticky-legacy):
+ * `workDir` first when provided and it holds the file, else `changeDir`
+ * (legacy). Returns null when neither location has one. This only locates the
+ * file; callers read it via `readRunState(location.dir)` to get the validated
+ * `RunState`, keeping `readRunState`'s existing signature and behavior intact.
+ */
+export function resolveRunStateLocation(
+  changeDir: string,
+  workDir?: string | null
+): RunStateLocation | null {
+  if (workDir) {
+    const workPath = runStatePath(workDir);
+    if (fs.existsSync(workPath)) {
+      return { dir: workDir, path: workPath };
+    }
+  }
+
+  const legacyPath = runStatePath(changeDir);
+  if (fs.existsSync(legacyPath)) {
+    return { dir: changeDir, path: legacyPath };
+  }
+
+  return null;
+}
+
 /** Validate, then write run-state to the change directory (pretty JSON). */
 export function writeRunState(changeDir: string, state: RunState): void {
   const validated = RunStateSchema.parse(state);

@@ -12,7 +12,7 @@ const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines Rasen c
 
 ${STORE_SELECTION_GUIDANCE}
 
-Automatically adjusts review depth based on task size. Reports saved to the Rasen change directory.
+Automatically adjusts review depth based on task size. Reports saved to the change's work directory (fallback: the change directory).
 
 ## When to Use
 
@@ -76,11 +76,11 @@ Report any inconsistencies found.
 
 ### 5. Save Reports
 
-Write reports to the change directory:
-- \`rasen/changes/<name>/review-report.md\` — code review findings
-- \`rasen/changes/<name>/cso-report.md\` — security audit (if /cso ran)
-- \`rasen/changes/<name>/qa-report.md\` — QA findings (if /qa ran)
-- \`rasen/changes/<name>/design-review-report.md\` — design review (if /design-review ran)
+Write reports to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or a report already lives there):
+- \`review-report.md\` — code review findings
+- \`cso-report.md\` — security audit (if /cso ran)
+- \`qa-report.md\` — QA findings (if /qa ran)
+- \`design-review-report.md\` — design review (if /design-review ran)
 
 **Canonical verdict + status line.** Map every finding across the stages onto the canonical Blocker/Major/Minor/Trivial scale defined by the \`canonical-severity-vocabulary\` in the expert PREAMBLE (reference it; do NOT re-define the scale): a Critical Issue / a stage FAIL on a blocking check → **Blocker**; a Warning → **Major**; a nice-to-fix → **Minor** or **Trivial**. Per-stage PASS/FAIL stays as a display aid in the summary below. Emit ONE machine-checkable status line into the reports you write and the conversation:
 
@@ -135,7 +135,7 @@ Display a summary with pass/fail status for each stage:
 
 - This command coexists with the original \`rasen-verify-change\` skill (pure artifact consistency check)
 - The enhanced version adds expert review layers on top of artifact checks
-- Reports written to the change directory are consumed by \`/rasen:retro\` and \`/rasen:archive\`
+- Reports written to the work directory are consumed by \`/rasen:retro\` and \`/rasen:archive\`
 - \`/rasen:ship\` checks for verification reports before proceeding`;
 
 export function getVerifyEnhancedSkillTemplate(): SkillTemplate {

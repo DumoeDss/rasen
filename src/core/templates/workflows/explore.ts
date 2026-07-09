@@ -125,11 +125,13 @@ If the user mentions a change or you detect one is relevant:
     | Scope changed              | \`proposal.md\`                |
     | New work identified        | \`tasks.md\`                   |
     | Assumption invalidated     | Relevant artifact              |
+    | Bulky raw research (scratch logs, fetched corpora) | work directory's \`research/\` (\`workDir\` from status JSON) — never a committed artifact |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
+   - "That's a lot of raw material — want me to dump it in the work directory's research/ folder and just keep the conclusion here?"
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
@@ -430,11 +432,13 @@ If the user mentions a change or you detect one is relevant:
     | Scope changed              | \`proposal.md\`                |
     | New work identified        | \`tasks.md\`                   |
     | Assumption invalidated     | Relevant artifact              |
+    | Bulky raw research (scratch logs, fetched corpora) | work directory's \`research/\` (\`workDir\` from status JSON) — never a committed artifact |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
+   - "That's a lot of raw material — want me to dump it in the work directory's research/ folder and just keep the conclusion here?"
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 

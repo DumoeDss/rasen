@@ -57,14 +57,14 @@ ${STORE_SELECTION_GUIDANCE}
 
 3.5. **Check verification verdict (HARD GATE)**
 
-   Read \`verification-report.md\` from the change directory (\`changeRoot\` from status JSON) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
+   Read \`verification-report.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
    - \`VERIFY VERDICT: BLOCKED\` → HARD GATE: REFUSE to archive by default; proceed only on an explicit, blocker-naming user override (e.g. "Archive anyway despite BLOCKED verification"); REFUSE outright non-interactively.
    - \`VERIFY VERDICT: CLEAN\` → no verification-related gate; proceed.
    - No \`verification-report.md\` → do NOT hard-gate on verification absence (a change may legitimately archive without a formal verify pass); a soft note at most.
 
 3.6. **Check delivery precondition (soft)**
 
-   Read \`ship-log.md\` from the change directory (\`changeRoot\` from status JSON):
+   Read \`ship-log.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there):
    - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
    - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
    - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.
@@ -189,14 +189,14 @@ ${STORE_SELECTION_GUIDANCE}
 
 3.5. **Check verification verdict (HARD GATE)**
 
-   Read \`verification-report.md\` from the change directory (\`changeRoot\` from status JSON) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
+   Read \`verification-report.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
    - \`VERIFY VERDICT: BLOCKED\` → HARD GATE: REFUSE to archive by default; proceed only on an explicit, blocker-naming user override (e.g. "Archive anyway despite BLOCKED verification"); REFUSE outright non-interactively.
    - \`VERIFY VERDICT: CLEAN\` → no verification-related gate; proceed.
    - No \`verification-report.md\` → do NOT hard-gate on verification absence (a change may legitimately archive without a formal verify pass); a soft note at most.
 
 3.6. **Check delivery precondition (soft)**
 
-   Read \`ship-log.md\` from the change directory (\`changeRoot\` from status JSON):
+   Read \`ship-log.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there):
    - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
    - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
    - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.

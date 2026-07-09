@@ -76,6 +76,7 @@ export {
   parseRunState,
   readRunState,
   writeRunState,
+  resolveRunStateLocation,
   completedStages,
   normalizeWorker,
   stageWorkers,
@@ -88,6 +89,7 @@ export {
   type StageStatus,
   type StageHandoffRecord,
   type SessionHandoff,
+  type RunStateLocation,
 } from './run-state.js';
 
 // Pipeline resolution
@@ -120,6 +122,7 @@ export {
   parsePortfolioState,
   readPortfolioState,
   writePortfolioState,
+  resolvePortfolioStateLocation,
   runnableChildren,
   interruptedChildren,
   escalatedChildren,
@@ -127,4 +130,5 @@ export {
   type PortfolioState,
   type PortfolioChild,
   type ChildExecutionMode,
+  type PortfolioStateLocation,
 } from './portfolio-state.js';

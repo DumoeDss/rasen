@@ -20,6 +20,7 @@ import {
   resolveCurrentPlanningHomeSync,
   type PlanningHome,
 } from '../../core/planning-home.js';
+import { resolveChangeWorkDir } from '../../core/change-work.js';
 import {
   resolveRootForCommand,
   withStoreFlag,
@@ -155,21 +156,36 @@ export async function instructionsCommand(
     });
     const isBlocked = instructions.dependencies.some((d) => !d.done);
 
+    // Instructions is the designated mutation boundary (design D2): it mints
+    // project identity on first use so this and every subsequent call for
+    // this project resolves a work directory.
+    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: true });
+
     spinner?.stop();
 
     if (options.json) {
-      console.log(JSON.stringify({ ...instructions, root: toRootOutput(root) }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ...instructions, ...(workDir ? { workDir } : {}), root: toRootOutput(root) },
+          null,
+          2
+        )
+      );
       return;
     }
 
-    printInstructionsText(instructions, isBlocked);
+    printInstructionsText(instructions, isBlocked, workDir ?? undefined);
   } catch (error) {
     spinner?.stop();
     throw error;
   }
 }
 
-export function printInstructionsText(instructions: ArtifactInstructions, isBlocked: boolean): void {
+export function printInstructionsText(
+  instructions: ArtifactInstructions,
+  isBlocked: boolean,
+  workDir?: string
+): void {
   const {
     artifactId,
     changeName,
@@ -192,6 +208,13 @@ export function printInstructionsText(instructions: ArtifactInstructions, isBloc
   // Opening tag
   console.log(`<artifact id="${artifactId}" change="${changeName}" schema="${schemaName}">`);
   console.log();
+
+  // Work dir: process ephemera (run-state, handoff docs, reports) belongs
+  // here, not in the change directory (design `change-work-dir`).
+  if (workDir) {
+    console.log(`Work dir: ${workDir}`);
+    console.log();
+  }
 
   // Warning for blocked artifacts
   if (isBlocked) {
@@ -456,6 +479,10 @@ export async function generateApplyInstructions(
     instruction = schemaInstruction?.trim() ?? 'Read context files, work through pending tasks, mark complete as you go.\nPause if you hit blockers or need clarification.';
   }
 
+  // Apply-instructions is the other designated mutation boundary (design
+  // D2): it mints project identity on first use, same as instructionsCommand.
+  const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: true });
+
   return {
     changeName,
     changeDir,
@@ -467,6 +494,7 @@ export async function generateApplyInstructions(
     missingArtifacts: missingArtifacts.length > 0 ? missingArtifacts : undefined,
     instruction,
     ...(references !== undefined ? { references } : {}),
+    ...(workDir ? { workDir } : {}),
   };
 }
 
@@ -516,10 +544,13 @@ export async function applyInstructionsCommand(options: ApplyInstructionsOptions
 }
 
 export function printApplyInstructionsText(instructions: ApplyInstructions): void {
-  const { changeName, schemaName, contextFiles, progress, tasks, state, missingArtifacts, instruction } = instructions;
+  const { changeName, schemaName, contextFiles, progress, tasks, state, missingArtifacts, instruction, workDir } = instructions;
 
   console.log(`## Apply: ${changeName}`);
   console.log(`Schema: ${schemaName}`);
+  if (workDir) {
+    console.log(`Work dir: ${workDir}`);
+  }
   console.log();
 
   if (instructions.references && instructions.references.length > 0) {

@@ -141,7 +141,7 @@ This step subsumes the "Test Gaps" category from Pass 2 — do not duplicate fin
 
 ## Step 5: Fix-First Review
 
-**Dispatched mode (report-only):** skip Steps 5b / 5c / 5d and the Greptile-triage \`AskUserQuestion\` below — apply no fixes and ask nothing. Still run 5a (classify) so the LEAD can route fixes, then emit every finding (Standards, Spec, design, coverage, adversarial) tagged with a canonical Blocker/Major/Minor/Trivial severity (see the PREAMBLE mapping: \`CRITICAL\` naming data-loss/security/corruption → Blocker, other \`CRITICAL\` → Major, \`INFORMATIONAL\` → Minor unless it names data-loss/security → Major) and write them to \`review-report.md\` in the change directory. The rest of this section (auto-fix, batched questions, Greptile replies) is standalone only.
+**Dispatched mode (report-only):** skip Steps 5b / 5c / 5d and the Greptile-triage \`AskUserQuestion\` below — apply no fixes and ask nothing. Still run 5a (classify) so the LEAD can route fixes, then emit every finding (Standards, Spec, design, coverage, adversarial) tagged with a canonical Blocker/Major/Minor/Trivial severity (see the PREAMBLE mapping: \`CRITICAL\` naming data-loss/security/corruption → Blocker, other \`CRITICAL\` → Major, \`INFORMATIONAL\` → Minor unless it names data-loss/security → Major) and write them to \`review-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory). The rest of this section (auto-fix, batched questions, Greptile replies) is standalone only.
 
 **Every finding gets action — not just critical ones.**
 

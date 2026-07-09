@@ -23,6 +23,7 @@ import {
   PipelineGraph,
   parsePipeline,
   readRunState,
+  resolveRunStateLocation,
   completedStages,
   stageWorkers,
   stagesWithStatus,
@@ -30,6 +31,7 @@ import {
   sessionHandoffGeneration,
   normalizeWorker,
   readPortfolioState,
+  resolvePortfolioStateLocation,
   runnableChildren,
   interruptedChildren,
   escalatedChildren,
@@ -52,6 +54,7 @@ import {
 } from '../core/pipeline-registry/index.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
+import { resolveChangeWorkDir } from '../core/change-work.js';
 import {
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
@@ -300,10 +303,16 @@ export class PipelineCommand {
 
     const changeDir = path.join(root.changesDir, changeName);
 
+    // Probe-only (ensure:false): resume is a read-only surface and must
+    // never mint identity or write to the repo/registry (design D2).
+    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
-    const portfolio = readPortfolioState(changeDir);
-    if (portfolio) {
+    // Sticky-legacy (design D4): workDir first, change dir fallback.
+    const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
+    const portfolio = portfolioLocation ? readPortfolioState(portfolioLocation.dir) : null;
+    if (portfolio && portfolioLocation) {
       const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
       const runnable = runnableChildren(portfolio);
       // Interrupted (in_progress) and escalated children are NOT runnable, but
@@ -324,6 +333,7 @@ export class PipelineCommand {
         change: changeName,
         isPortfolio: true as const,
         hasRunState: true as const,
+        runStateDir: portfolioLocation.dir,
         complete: isPortfolioComplete(portfolio),
         completedChildren,
         runnableChildren: runnable,
@@ -343,6 +353,7 @@ export class PipelineCommand {
         return;
       }
       console.log(`Change: ${changeName} (portfolio of ${portfolio.children.length} children)`);
+      console.log(`Run-state read from: ${portfolioLocation.dir}`);
       console.log(`Completed: ${completedChildren.length > 0 ? completedChildren.join(', ') : '(none)'}`);
       console.log(`Runnable now: ${runnable.length > 0 ? runnable.join(', ') : '(none)'}`);
       if (interrupted.length > 0) {
@@ -361,7 +372,9 @@ export class PipelineCommand {
       return;
     }
 
-    const runState = readRunState(changeDir);
+    // Sticky-legacy (design D4): workDir first, change dir fallback.
+    const runStateLocation = resolveRunStateLocation(changeDir, workDir);
+    const runState = runStateLocation ? readRunState(runStateLocation.dir) : null;
 
     // No run-state recorded yet (or not in usable form).
     if (!runState || runState.pipeline.length === 0) {
@@ -437,6 +450,9 @@ export class PipelineCommand {
       change: changeName,
       pipeline: runState.pipeline,
       hasRunState: true as const,
+      // runState is non-null only when runStateLocation resolved (see guard
+      // above), so this is always defined here.
+      runStateDir: runStateLocation!.dir,
       completed,
       next,
       ready,
@@ -461,6 +477,7 @@ export class PipelineCommand {
     const warmSeedable = Object.keys(workers);
     console.log(`Change: ${changeName}`);
     console.log(`Pipeline: ${runState.pipeline}`);
+    console.log(`Run-state read from: ${runStateLocation!.dir}`);
     console.log(`Completed: ${completed.length > 0 ? completed.join(', ') : '(none)'}`);
     console.log(`Next: ${next ?? '(complete)'}`);
     console.log(`Remaining: ${remaining.length > 0 ? remaining.join(', ') : '(none)'}`);

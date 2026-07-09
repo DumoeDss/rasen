@@ -752,6 +752,161 @@ stages:
       expect(json.planner).toEqual({ role: 'planner', agentId: 'plan-9', transcript: 'agent-plan-9.jsonl' });
     });
   });
+
+  describe('resume with external work directory (design change-work-dir)', () => {
+    function normalizePaths(str: string): string {
+      return str.replace(/\\/g, '/');
+    }
+
+    /**
+     * Mints machine identity for `testDir` (via the ensure surface,
+     * `instructions`) and returns the resolved workDir for `changeName`.
+     */
+    async function mintWorkDir(changeName: string, globalDataDir: string): Promise<string> {
+      await fs.writeFile(path.join(testDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await fs.mkdir(path.join(changesDir, changeName), { recursive: true });
+      await fs.writeFile(
+        path.join(changesDir, changeName, 'proposal.md'),
+        '## Why\nTest.\n\n## What Changes\n- test'
+      );
+      await runCLI(['instructions', 'proposal', '--change', changeName], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      const statusResult = await runCLI(['status', '--change', changeName, '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      const statusJson = JSON.parse(statusResult.stdout);
+      expect(typeof statusJson.workDir).toBe('string');
+      return statusJson.workDir as string;
+    }
+
+    it('resolves run-state from the work directory for a new-style change', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-new');
+      const workDir = await mintWorkDir('new-style-change', globalDataDir);
+      await fs.mkdir(workDir, { recursive: true });
+      await fs.writeFile(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', stages: { propose: { status: 'done' } } }, null, 2)
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'new-style-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.hasRunState).toBe(true);
+      expect(normalizePaths(json.runStateDir)).toContain('new-style-change/work');
+      expect(json.completed).toContain('propose');
+    });
+
+    it('falls back to legacy change-dir run-state when workDir has none, reporting runStateDir = change dir', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-legacy');
+      await mintWorkDir('legacy-change', globalDataDir);
+      const changeDir = path.join(changesDir, 'legacy-change');
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', stages: { propose: { status: 'done' } } }, null, 2)
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'legacy-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.hasRunState).toBe(true);
+      expect(normalizePaths(json.runStateDir)).toMatch(/legacy-change$/);
+      expect(json.completed).toContain('propose');
+    });
+
+    it('prefers the work-dir copy when both workDir and changeDir have run-state', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-both');
+      const workDir = await mintWorkDir('both-change', globalDataDir);
+      const changeDir = path.join(changesDir, 'both-change');
+      await fs.mkdir(workDir, { recursive: true });
+      await fs.writeFile(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify(
+          { pipeline: 'bug-fix', stages: { propose: { status: 'done' }, implement: { status: 'done' } } },
+          null,
+          2
+        )
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', stages: { propose: { status: 'done' } } }, null, 2)
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'both-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(normalizePaths(json.runStateDir)).toContain('both-change/work');
+      // Proves the workDir copy (2 stages done) won over the changeDir copy (1).
+      expect(json.completed).toContain('implement');
+    });
+
+    it('portfolio-state resolution follows the same workDir-first/change-dir-fallback matrix', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-portfolio');
+      const workDir = await mintWorkDir('portfolio-parent', globalDataDir);
+      await fs.mkdir(workDir, { recursive: true });
+      await fs.writeFile(
+        path.join(workDir, 'portfolio-run.json'),
+        JSON.stringify(
+          {
+            parent: 'portfolio-parent',
+            children: [
+              { id: 'child-a', pipeline: 'bug-fix', dependsOn: [], status: 'done' },
+              { id: 'child-b', pipeline: 'bug-fix', dependsOn: ['child-a'], status: 'pending' },
+            ],
+          },
+          null,
+          2
+        )
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-parent', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.isPortfolio).toBe(true);
+      expect(normalizePaths(json.runStateDir)).toContain('portfolio-parent/work');
+      expect(json.runnableChildren).toEqual(['child-b']);
+    });
+
+    // Review finding F1: a corrupt machine-global registry.json must not
+    // brick resume — it falls back to reading legacy run-state from the
+    // change directory (workDir probe degrades to null, not a thrown error).
+    it('falls back to legacy change-dir run-state (never throws) when registry.json is corrupt', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-corrupt-registry');
+      await mintWorkDir('corrupt-registry-change', globalDataDir);
+      const registryPath = path.join(globalDataDir, 'rasen', 'projects', 'registry.json');
+      await fs.writeFile(registryPath, '{not valid json');
+
+      const changeDir = path.join(changesDir, 'corrupt-registry-change');
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', stages: { propose: { status: 'done' } } }, null, 2)
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'corrupt-registry-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.hasRunState).toBe(true);
+      expect(normalizePaths(json.runStateDir)).toMatch(/corrupt-registry-change$/);
+      expect(json.completed).toContain('propose');
+    });
+  });
 });
 
 // The pipeline command group resolves its root through the shared root-selection

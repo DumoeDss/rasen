@@ -257,7 +257,7 @@ After all fixes are applied:
 
 ## Phase 10: Report
 
-**Dispatched mode:** write ONLY \`qa-report.md\` in the change directory, each issue tagged with a canonical severity; skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
+**Dispatched mode:** write ONLY \`qa-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory), each issue tagged with a canonical severity; skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
 
 **Standalone mode.** Write the report to both local and project-scoped locations:
 

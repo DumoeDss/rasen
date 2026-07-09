@@ -106,6 +106,37 @@ export function readPortfolioState(changeDir: string): PortfolioState | null {
   }
 }
 
+/** The directory (and full file path) a portfolio-state candidate resolved from. */
+export interface PortfolioStateLocation {
+  dir: string;
+  path: string;
+}
+
+/**
+ * Resolves WHERE `portfolio-run.json` lives for a parent change (design D4,
+ * sticky-legacy): `workDir` first when provided and it holds the file, else
+ * `changeDir` (legacy). Returns null when neither location has one. Mirrors
+ * `resolveRunStateLocation` — callers read via `readPortfolioState(location.dir)`.
+ */
+export function resolvePortfolioStateLocation(
+  changeDir: string,
+  workDir?: string | null
+): PortfolioStateLocation | null {
+  if (workDir) {
+    const workPath = portfolioStatePath(workDir);
+    if (fs.existsSync(workPath)) {
+      return { dir: workDir, path: workPath };
+    }
+  }
+
+  const legacyPath = portfolioStatePath(changeDir);
+  if (fs.existsSync(legacyPath)) {
+    return { dir: changeDir, path: legacyPath };
+  }
+
+  return null;
+}
+
 /** Validate, then write portfolio run-state to the parent change directory. */
 export function writePortfolioState(changeDir: string, state: PortfolioState): void {
   const validated = PortfolioStateSchema.parse(state);

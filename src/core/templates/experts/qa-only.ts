@@ -56,7 +56,7 @@ ${QA_METHODOLOGY}
 
 ## Output
 
-**Dispatched mode:** write ONLY \`qa-report.md\` in the change directory, each issue tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label); skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
+**Dispatched mode:** write ONLY \`qa-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory), each issue tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label); skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
 
 **Standalone mode.** Write the report to both local and project-scoped locations:
 

@@ -137,7 +137,7 @@ Frontier: <parent>-ui, <parent>-docs
 - NEVER parallelize children you cannot prove are independent: parallel requires no dependency edge AND no overlapping touched capabilities/specs/files AND Tier A. When uncertain, run serial. Never parallelize under Tier B/C.
 - A dependent child waits for every prerequisite to be implemented + review-clean before it starts; a shared working tree is sufficient (no forced ship/archive of the prerequisite unless the dependency is on landed/merged artifacts).
 - Decomposed children ship in **local** delivery mode (commit only — no per-child push or PR). The portfolio delivers ONCE: after ALL children complete, resolve the delivery mode at the parent level and push / create the PR there. On partial failure, completed children's commits stay local — never push a half-delivered portfolio.
-- Save portfolio run-state (\`portfolio-run.json\`) so a decomposed run is observable and resumable; on a child's failure, stop its dependent chain, keep independent done children, and escalate with the open frontier.`;
+- Save portfolio run-state (\`portfolio-run.json\`, in the resolved work directory per the playbook's Step G.7 — change-directory fallback) so a decomposed run is observable and resumable; on a child's failure, stop its dependent chain, keep independent done children, and escalate with the open frontier.`;
 
 export function getAutoCommandSkillTemplate(): SkillTemplate {
   return {

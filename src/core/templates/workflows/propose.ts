@@ -116,6 +116,7 @@ After completing all artifacts, summarize:
 - **IMPORTANT**: \`context\` and \`rules\` are constraints for YOU, not content for the file
   - Do NOT copy \`<context>\`, \`<rules>\`, \`<project_context>\` blocks into the artifact
   - These guide what you write, but should never appear in the output
+- Bulky raw research material (scratch probing logs, fetched corpora, long transcripts) belongs in the work directory's \`research/\` area (\`workDir\` from status JSON, absent → skip this) — never in a committed artifact; distill conclusions into \`design.md\` or a slim committed research doc instead
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's \`apply.requires\`)
@@ -240,6 +241,7 @@ After completing all artifacts, summarize:
 - **IMPORTANT**: \`context\` and \`rules\` are constraints for YOU, not content for the file
   - Do NOT copy \`<context>\`, \`<rules>\`, \`<project_context>\` blocks into the artifact
   - These guide what you write, but should never appear in the output
+- Bulky raw research material (scratch probing logs, fetched corpora, long transcripts) belongs in the work directory's \`research/\` area (\`workDir\` from status JSON, absent → skip this) — never in a committed artifact; distill conclusions into \`design.md\` or a slim committed research doc instead
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's \`apply.requires\`)

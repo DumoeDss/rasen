@@ -4,7 +4,9 @@
  * Self-contained release workflow — commit, resolve the delivery mode
  * (pr / push / local), run tests only when evidence demands it, then deliver.
  * The ship execution contract is inlined here (no expert delegation).
- * PR body sourced from proposal summary. Ship log written to change directory.
+ * PR body sourced from proposal summary. Ship log written to the change's
+ * external work directory (resolved via `rasen status --json`; fallback:
+ * the change directory).
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -13,7 +15,7 @@ const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mod
 
 ${STORE_SELECTION_GUIDANCE}
 
-PR body comes from proposal summary. Ship log recorded to the Rasen change directory.
+PR body comes from proposal summary. Ship log recorded to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or \`ship-log.md\` already lives there).
 
 ## When to Use
 
@@ -33,7 +35,7 @@ If a change name is provided, use it. Otherwise:
 Run all checks before shipping:
 
 **a. Verification Status**
-- Check if \`rasen/changes/<name>/verification-report.md\` (from \`/rasen:verify\`), \`review-report.md\`, \`review-cycle-report.md\` (from the review loop), or any other expert \`*-report.md\` exists — any of these counts as verification evidence
+- Check if \`verification-report.md\` (from \`/rasen:verify\`), \`review-report.md\`, \`review-cycle-report.md\` (from the review loop), or any other expert \`*-report.md\` exists in the work directory (\`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory) — any of these counts as verification evidence
 - If no verification report found, warn: "No verification report found. Run /rasen:verify first."
 - Prompt user to confirm proceeding without verification
 
@@ -117,7 +119,7 @@ If no proposal.md:
 
 ### 4. Write Ship Log
 
-After successful delivery in ANY mode, write \`rasen/changes/<name>/ship-log.md\`:
+After successful delivery in ANY mode, write \`ship-log.md\` to the work directory (fallback: \`rasen/changes/<name>/ship-log.md\`):
 
 \`\`\`markdown
 # Ship Log: <change-name>
@@ -197,7 +199,7 @@ After shipping, suggest:
 export function getShipCommandSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen-ship',
-    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to change directory.',
+    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to the work directory.',
     instructions: SHIP_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',

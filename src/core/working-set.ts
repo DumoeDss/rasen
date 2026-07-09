@@ -27,6 +27,9 @@ export interface WorkingSet {
     source: ResolvedOpenSpecRoot['source'];
     store_id?: string;
     role: 'openspec_root';
+    /** The registered machine home for this root (design `change-work-dir`,
+     * D3); probe-only, omitted for an unregistered project. */
+    machineHome?: string;
   };
   members: WorkingSetMember[];
   status: StoreDiagnostic[];

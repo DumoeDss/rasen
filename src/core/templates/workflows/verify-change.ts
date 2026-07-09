@@ -160,7 +160,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 9. **Save Report**
 
-   Write the full verification result to \`rasen/changes/<name>/verification-report.md\` — the summary scorecard, the \`VERIFY VERDICT:\` status line, and the grouped findings (Blocker/Major/Minor/Trivial, each with its recommendation). This is verify-change's canonical evidence artifact that \`/rasen:ship\`'s pre-flight looks for. Emitting the result only to the conversation is NOT sufficient.
+   Write the full verification result to \`verification-report.md\` in the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or the file already lives there) — the summary scorecard, the \`VERIFY VERDICT:\` status line, and the grouped findings (Blocker/Major/Minor/Trivial, each with its recommendation). This is verify-change's canonical evidence artifact that \`/rasen:ship\`'s pre-flight looks for. Emitting the result only to the conversation is NOT sufficient.
 
    **Test-evidence block (only when you ran tests/gates)**: if this verification executed the project's test or gate command(s), append a fingerprinted test-evidence block so \`/rasen:ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
 
@@ -357,7 +357,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 9. **Save Report**
 
-   Write the full verification result to \`rasen/changes/<name>/verification-report.md\` — the summary scorecard, the \`VERIFY VERDICT:\` status line, and the grouped findings (Blocker/Major/Minor/Trivial, each with its recommendation). This is verify-change's canonical evidence artifact that \`/rasen:ship\`'s pre-flight looks for. Emitting the result only to the conversation is NOT sufficient.
+   Write the full verification result to \`verification-report.md\` in the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or the file already lives there) — the summary scorecard, the \`VERIFY VERDICT:\` status line, and the grouped findings (Blocker/Major/Minor/Trivial, each with its recommendation). This is verify-change's canonical evidence artifact that \`/rasen:ship\`'s pre-flight looks for. Emitting the result only to the conversation is NOT sufficient.
 
    **Test-evidence block (only when you ran tests/gates)**: if this verification executed the project's test or gate command(s), append a fingerprinted test-evidence block so \`/rasen:ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
 
