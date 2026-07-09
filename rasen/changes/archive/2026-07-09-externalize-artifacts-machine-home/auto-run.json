@@ -78,15 +78,25 @@
       ]
     },
     "ship": {
+      "status": "done",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      },
+      "commit": "ed1adbd8b30856bebb34f1d35aebf8234a055efd",
+      "shipLogCommit": "273adea",
+      "tree": "141ca0c9ee6a260f3feebd0176f0a853d08ba3f0",
+      "testGate": "122 files / 2230 passed / 0 failed",
+      "delivery": "local"
+    },
+    "archive": {
       "status": "in_progress",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
       }
-    },
-    "archive": {
-      "status": "pending"
     }
   },
   "rounds": 1,
