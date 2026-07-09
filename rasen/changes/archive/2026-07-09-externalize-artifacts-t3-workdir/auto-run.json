@@ -60,12 +60,15 @@
       "delivery": "local"
     },
     "archive": {
-      "status": "in_progress",
+      "status": "done",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
-      }
+      },
+      "commit": "160294dad5bb5f877ca531654c1e10e07310e3f8",
+      "specsSynced": "13 (1 new change-work-dir + 12 modified)",
+      "specsValidate": "111/111 strict"
     }
   },
   "rounds": 1,
