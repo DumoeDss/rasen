@@ -269,7 +269,7 @@ Path: /path/to/project/openspec/schemas/my-workflow
 
 ---
 
-> **Note:** OpenSpec also supports user-level schemas at `~/.local/share/openspec/schemas/` for sharing across projects, but project-level schemas in `openspec/schemas/` are recommended since they're version-controlled with your code.
+> **Note:** OpenSpec also supports user-level schemas at `~/.rasen/schemas/` (override the location with `RASEN_HOME`) for sharing across projects, but project-level schemas in `openspec/schemas/` are recommended since they're version-controlled with your code.
 
 ---
 

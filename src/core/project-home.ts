@@ -130,7 +130,7 @@ export interface TouchProjectRegistryOptions {
  * and `lastSeen` is under 24h old), this is a lock-free read and no write
  * happens. Otherwise the entry is refreshed under the registry lock. Every
  * failure is swallowed: a broken registry must never fail or visibly slow a
- * user command (same contract as `migrateLegacyBrandConfig`).
+ * user command (same contract as `adoptLegacyMachineData`).
  */
 export async function touchProjectRegistry(
   projectRoot: string,

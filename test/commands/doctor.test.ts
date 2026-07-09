@@ -79,7 +79,7 @@ describe('rasen doctor (3.6)', () => {
       status: [],
     });
     expect(health.references).toEqual([
-      { store_id: 'upstream-context', root: upstream, status: [] },
+      { store_id: 'upstream-context', type: 'store', root: upstream, status: [] },
     ]);
     expect('specs' in health.references[0]).toBe(false);
     expect(health.status).toEqual([]);
@@ -439,6 +439,111 @@ describe('rasen doctor (3.6)', () => {
       expect(human.stdout).toContain('Machine home');
       expect(human.stdout).toContain('Error: Invalid project registry state');
       expect(human.stdout).not.toContain('Not registered');
+    });
+  });
+
+  describe('machine-root relocation (relocate-machine-home D4)', () => {
+    // These tests deliberately do NOT set XDG_DATA_HOME/XDG_CONFIG_HOME so the
+    // default ~/.rasen resolution actually engages. To keep them fully
+    // sandboxed (never touching this machine's real home), USERPROFILE/HOME
+    // AND LOCALAPPDATA/APPDATA are all redirected under a fixture directory —
+    // oldSchemeDataDir/oldSchemeConfigDir prefer LOCALAPPDATA/APPDATA over
+    // homedir on win32, so both must be redirected together.
+    let relocTempDir: string;
+    let fixtureHome: string;
+    let relocEnv: NodeJS.ProcessEnv;
+    let relocProjectRoot: string;
+
+    beforeEach(() => {
+      relocTempDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-doctor-reloc-')));
+      fixtureHome = path.join(relocTempDir, 'home');
+      relocEnv = {
+        OPEN_SPEC_INTERACTIVE: '0',
+        RASEN_TELEMETRY: '0',
+        // run-cli.ts's default isolation sets XDG_DATA_HOME/XDG_CONFIG_HOME
+        // (and blanks RASEN_HOME) to protect the real home by default; these
+        // tests need the actual default (~/.rasen) resolution to engage, so
+        // blank the XDG defaults back out (blank == unset, see resolveRasenHome).
+        XDG_DATA_HOME: '',
+        XDG_CONFIG_HOME: '',
+        USERPROFILE: fixtureHome,
+        HOME: fixtureHome,
+        LOCALAPPDATA: path.join(fixtureHome, 'AppData', 'Local'),
+        APPDATA: path.join(fixtureHome, 'AppData', 'Roaming'),
+      };
+      relocProjectRoot = path.join(relocTempDir, 'project');
+      createOpenSpecRoot(relocProjectRoot);
+    });
+
+    afterEach(() => {
+      cleanupTempPath(relocTempDir);
+    });
+
+    function oldDataDir(): string {
+      return path.join(fixtureHome, 'AppData', 'Local', 'rasen');
+    }
+
+    function newRoot(): string {
+      return path.join(fixtureHome, '.rasen');
+    }
+
+    it('reports a clean state when no old-scheme directory exists', async () => {
+      const json = await runCLI(['doctor', '--json'], { cwd: relocProjectRoot, env: relocEnv });
+      const health = parseJson(json);
+      expect(health.machineHome.relocation).toEqual({ lingering: [], pendingOrFailed: [] });
+
+      const human = await runCLI(['doctor'], { cwd: relocProjectRoot, env: relocEnv });
+      expect(human.stdout).not.toContain('Legacy data dir');
+      expect(human.stdout).not.toContain('Relocation pending');
+    });
+
+    it('notes a lingering old-scheme directory after a successful startup adoption', async () => {
+      fs.mkdirSync(path.join(oldDataDir(), 'projects'), { recursive: true });
+      fs.writeFileSync(path.join(oldDataDir(), 'projects', 'registry.json'), '{"version":1,"projects":{}}');
+
+      const human = await runCLI(['doctor'], { cwd: relocProjectRoot, env: relocEnv });
+      expect(human.exitCode).toBe(0);
+      // Startup adoption ran before doctor gathered health: the target is populated.
+      expect(fs.existsSync(path.join(newRoot(), 'projects', 'registry.json'))).toBe(true);
+      // The old directory is copy-only — never deleted — so it lingers.
+      expect(fs.existsSync(path.join(oldDataDir(), 'projects', 'registry.json'))).toBe(true);
+      expect(human.stdout).toContain(`Legacy data dir at ${oldDataDir()}`);
+      expect(human.stdout).toContain('safe to delete after verifying');
+
+      const json = await runCLI(['doctor', '--json'], { cwd: relocProjectRoot, env: relocEnv });
+      const health = parseJson(json);
+      expect(health.machineHome.relocation.lingering).toEqual([
+        { path: oldDataDir(), target: newRoot() },
+      ]);
+      expect(health.machineHome.relocation.pendingOrFailed).toEqual([]);
+    });
+
+    it('warns loudly when relocation failed and the old-scheme directory still exists', async () => {
+      fs.mkdirSync(path.join(oldDataDir(), 'projects'), { recursive: true });
+      fs.writeFileSync(path.join(oldDataDir(), 'projects', 'registry.json'), '{"version":1,"projects":{}}');
+
+      // Block adoption: the target already exists as a *file*, so every
+      // per-child copy fails during startup — this exercises the genuine
+      // failure path (as opposed to an old dir that just hasn't been
+      // encountered by the CLI yet).
+      fs.mkdirSync(fixtureHome, { recursive: true });
+      fs.writeFileSync(newRoot(), 'blocking file, not a directory\n');
+
+      const human = await runCLI(['doctor'], { cwd: relocProjectRoot, env: relocEnv });
+      expect(human.exitCode).toBe(0);
+      expect(human.stdout).toContain('Relocation pending');
+      expect(human.stdout).toContain(oldDataDir());
+      expect(human.stdout).toContain('Fix: run the CLI again to retry automatically');
+      // Doctor is read-only: the blocking file and the old dir are both untouched.
+      expect(fs.readFileSync(newRoot(), 'utf-8')).toBe('blocking file, not a directory\n');
+      expect(fs.existsSync(path.join(oldDataDir(), 'projects', 'registry.json'))).toBe(true);
+
+      const json = await runCLI(['doctor', '--json'], { cwd: relocProjectRoot, env: relocEnv });
+      const health = parseJson(json);
+      expect(health.machineHome.relocation.pendingOrFailed).toEqual([
+        { path: oldDataDir(), target: newRoot() },
+      ]);
+      expect(health.machineHome.relocation.lingering).toEqual([]);
     });
   });
 });

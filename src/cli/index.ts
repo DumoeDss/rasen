@@ -41,7 +41,7 @@ import {
   type NewChangeOptions,
 } from '../commands/workflow/index.js';
 import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/index.js';
-import { migrateLegacyBrandConfig } from '../core/global-config.js';
+import { adoptLegacyMachineData } from '../core/global-config.js';
 import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { isInteractive } from '../utils/interactive.js';
 
@@ -786,9 +786,10 @@ agentCmd
 export { program };
 
 export function runCli(argv = process.argv): void {
-  // One-time adoption of a pre-rename `openspec` global config/data dir.
-  // Best-effort and synchronous; must run before any config is read.
-  migrateLegacyBrandConfig();
+  // One-time adoption of legacy machine data (brand rename + root
+  // relocation) into the resolved config/data locations. Best-effort and
+  // synchronous; must run before any config is read.
+  adoptLegacyMachineData();
   program.parse(argv);
 }
 

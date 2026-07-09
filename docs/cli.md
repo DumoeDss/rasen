@@ -367,6 +367,8 @@ Supporting a new tool is configuration, not code. Every tool is one of two launc
 
 All workset state lives under the global data dir's `worksets/` folder (the saved views plus the generated `<name>.code-workspace` files, regenerated on every open); deleting that folder removes every trace.
 
+> **Machine data location:** the global data dir (worksets, the store registry, the project registry, user schemas/pipelines) and the global config dir (`config.json`) both default to `~/.rasen` on every platform. Set `RASEN_HOME` to relocate both to one custom directory; `XDG_DATA_HOME`/`XDG_CONFIG_HOME` are still honored below `RASEN_HOME` as compatibility aliases. Data found at the old per-platform locations is adopted into `~/.rasen` automatically and losslessly on first run after upgrading.
+
 ---
 
 ## Browsing Commands
@@ -983,7 +985,7 @@ spec-driven resolves from: package
 **Schema precedence:**
 
 1. Project: `openspec/schemas/<name>/`
-2. User: `~/.local/share/openspec/schemas/<name>/`
+2. User: `~/.rasen/schemas/<name>/` (or `$RASEN_HOME/schemas/<name>/` when set)
 3. Package: Built-in schemas
 
 ---

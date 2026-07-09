@@ -25,6 +25,7 @@ import {
 } from '../core/project-registry.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { countMigratableEphemera } from '../core/work-migration.js';
+import { checkMachineRootRelocation } from '../core/global-config.js';
 import { StoreError } from '../core/store/errors.js';
 import { gatherRelationshipData } from './shared-gather.js';
 import {
@@ -144,6 +145,15 @@ async function gatherHealth(
       error instanceof StoreError
         ? { message: error.message, ...(error.diagnostic.fix ? { fix: error.diagnostic.fix } : {}) }
         : { message: error instanceof Error ? error.message : String(error) };
+  }
+
+  // Machine-root relocation state (relocate-machine-home D4): read-only
+  // probe, machine-wide (not tied to this project's registry entry).
+  // Best-effort: a scan failure must never break doctor.
+  try {
+    input.machineRootRelocation = checkMachineRootRelocation();
+  } catch {
+    // Swallowed; the relocation note is simply omitted.
   }
 
   return {
@@ -269,6 +279,13 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
         : `${m.untracked} untracked`;
     console.log(`  Migratable legacy ephemera: ${detail} (run \`${m.hint}\`)`);
   }
+  for (const lingering of health.machineHome.relocation.lingering) {
+    console.log(`  Legacy data dir at ${lingering.path}; contents were copied to ${lingering.target}; safe to delete after verifying.`);
+  }
+  for (const pending of health.machineHome.relocation.pendingOrFailed) {
+    console.log(`  Relocation pending: ${pending.path} has not been adopted into ${pending.target}.`);
+    console.log(`    Fix: run the CLI again to retry automatically, or copy manually: cp -r "${pending.path}" "${pending.target}"`);
+  }
 
   for (const entry of health.status) {
     console.log('');
@@ -296,10 +313,10 @@ export function registerDoctorCommand(program: Command): void {
       '--gc',
       "Remove dangling machine-home registry entries and their orphaned home directories — this deletes ANY external archives inside those homes too (archive-destination's 'external' archives share the home's lifecycle; git history remains the durable record)"
     )
-    .action(async (options: { store?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
+    .action(async (options: { store?: string; project?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
       try {
         const root = await resolveRootForCommand(
-          { store: options.store, storePath: options.storePath },
+          { store: options.store, project: options.project, storePath: options.storePath },
           { json: options.json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
         );
         if (!root) {

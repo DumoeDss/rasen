@@ -98,7 +98,7 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
 
 1. **Create the file** (resolution priority project > user > package; **a same-named file overrides the built-in**, useful for customizing built-in pipelines without touching source):
    - Project level: `openspec/pipelines/<name>/pipeline.yaml`
-   - User level: `<XDG_DATA_HOME or ~/.local/share>/openspec/pipelines/<name>/pipeline.yaml`
+   - User level: `~/.rasen/pipelines/<name>/pipeline.yaml` (or `$RASEN_HOME/pipelines/<name>/pipeline.yaml` when set)
 2. **Write stages, picking `skill` from the existing ones** (this is "choosing from existing steps"):
    ```yaml
    name: hotfix

@@ -19,6 +19,16 @@ const DEFAULT_CLI_TIMEOUT_MS = 30_000;
 // pointing them at an empty temp dir yields the default config + built-in schemas.
 const isolatedConfigHome = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-config-'));
 
+// Belt-and-suspenders (relocate-machine-home task 4.2): RASEN_HOME now
+// outranks XDG_CONFIG_HOME/XDG_DATA_HOME. Blanking it here (a genuinely
+// unset RASEN_HOME resolves to undefined, not the literal empty string)
+// means an ambient RASEN_HOME in the developer's or CI's real environment
+// can never leak into a spawned CLI and silently redirect it away from the
+// XDG isolation above — while an individual test can still opt in to
+// exercising RASEN_HOME by setting it explicitly in its own `options.env`,
+// which is applied after (and so wins over) this default.
+const BLANK_RASEN_HOME = '';
+
 let buildPromise: Promise<void> | undefined;
 const activeCliChildren = new Set<ChildProcess>();
 
@@ -157,6 +167,7 @@ export async function runCLI(args: string[] = [], options: RunCLIOptions = {}): 
         {
           XDG_CONFIG_HOME: isolatedConfigHome,
           XDG_DATA_HOME: isolatedConfigHome,
+          RASEN_HOME: BLANK_RASEN_HOME,
           RASEN_TELEMETRY: '0',
           OPEN_SPEC_INTERACTIVE: '0',
         },

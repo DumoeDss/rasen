@@ -59,6 +59,16 @@ export interface MachineHomeHealth {
     splitUnavailable: boolean;
     hint: string;
   };
+  /**
+   * Machine-root relocation state (`relocate-machine-home` D4): old-scheme
+   * directories still on disk, split by whether their target already has
+   * adopted content. Always present (possibly both empty) — read-only,
+   * startup owns the adoption re-attempts.
+   */
+  relocation: {
+    lingering: Array<{ path: string; target: string }>;
+    pendingOrFailed: Array<{ path: string; target: string }>;
+  };
 }
 
 export interface InspectRelationshipsInput {
@@ -89,6 +99,8 @@ export interface InspectRelationshipsInput {
   machineHomeError?: { message: string; fix?: string };
   /** Migratable-legacy-ephemera counts (read-only scan; never computed for an unregistered project). */
   migratableEphemera?: { total: number; untracked: number; tracked: number; splitUnavailable: boolean };
+  /** Machine-root relocation probe results (`checkMachineRootRelocation`), machine-wide, not just this project. */
+  machineRootRelocation?: Array<{ path: string; target: string; targetHasContent: boolean }>;
 }
 
 function warning(code: string, message: string, fix: string): StoreDiagnostic {
@@ -170,6 +182,7 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     };
   }
 
+  const relocationChecks = input.machineRootRelocation ?? [];
   const machineHome: MachineHomeHealth = {
     registered: input.machineHomeEntry !== undefined,
     ...(input.machineHomeEntry
@@ -195,6 +208,14 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
           },
         }
       : {}),
+    relocation: {
+      lingering: relocationChecks
+        .filter((check) => check.targetHasContent)
+        .map((check) => ({ path: check.path, target: check.target })),
+      pendingOrFailed: relocationChecks
+        .filter((check) => !check.targetHasContent)
+        .map((check) => ({ path: check.path, target: check.target })),
+    },
   };
 
   return {

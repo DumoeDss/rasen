@@ -1,7 +1,7 @@
 /**
  * Copy-only migration of a legacy `openspec/` workspace into `rasen/`.
  *
- * Contract (mirrors global-config.ts `migrateLegacyBrandConfig`):
+ * Contract (mirrors global-config.ts `adoptLegacyMachineData`):
  * - Recursively COPY `openspec/{specs,changes,config.yaml,config.yml}` into
  *   `rasen/`. The source is never modified, moved, or deleted.
  * - Files that already exist at the destination are skipped, never overwritten
