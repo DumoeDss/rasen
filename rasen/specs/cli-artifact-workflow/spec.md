@@ -11,7 +11,7 @@ The system SHALL display artifact completion status for a change, including scaf
 
 #### Scenario: Show status with all states
 
-- **WHEN** user runs `openspec status --change <id>`
+- **WHEN** user runs `rasen status --change <id>`
 - **THEN** the system displays each artifact with status indicator:
   - `[x]` for completed artifacts
   - `[ ]` for ready artifacts
@@ -19,48 +19,48 @@ The system SHALL display artifact completion status for a change, including scaf
 
 #### Scenario: Status shows completion summary
 
-- **WHEN** user runs `openspec status --change <id>`
+- **WHEN** user runs `rasen status --change <id>`
 - **THEN** output includes completion percentage and count (e.g., "2/4 artifacts complete")
 
 #### Scenario: Status JSON output
 
-- **WHEN** user runs `openspec status --change <id> --json`
+- **WHEN** user runs `rasen status --change <id> --json`
 - **THEN** the system outputs JSON with changeName, schemaName, isComplete, and artifacts array
 
 #### Scenario: Status JSON includes apply requirements
 
-- **WHEN** user runs `openspec status --change <id> --json`
+- **WHEN** user runs `rasen status --change <id> --json`
 - **THEN** the system outputs JSON with:
   - `changeName`, `schemaName`, `isComplete`, `artifacts` array
   - `applyRequires`: array of artifact IDs needed for apply phase
 
 #### Scenario: Status on scaffolded change
 
-- **WHEN** user runs `openspec status --change <id>` on a change with no artifacts
+- **WHEN** user runs `rasen status --change <id>` on a change with no artifacts
 - **THEN** system displays all artifacts with their status
 - **AND** root artifacts (no dependencies) show as ready `[ ]`
 - **AND** dependent artifacts show as blocked `[-]`
 
 #### Scenario: Missing change parameter
 
-- **WHEN** user runs `openspec status` without `--change`
+- **WHEN** user runs `rasen status` without `--change`
 - **THEN** the system displays an error with list of available changes
 - **AND** includes scaffolded changes (directories without proposal.md)
 
 #### Scenario: Unknown change
 
-- **WHEN** user runs `openspec status --change unknown-id`
-- **AND** directory `openspec/changes/unknown-id/` does not exist
+- **WHEN** user runs `rasen status --change unknown-id`
+- **AND** directory `rasen/changes/unknown-id/` does not exist
 - **THEN** the system displays an error listing all available change directories
 
 ### Requirement: Next Artifact Discovery
 
-The workflow SHALL use `openspec status` output to determine what can be created next, rather than a separate next-command surface.
+The workflow SHALL use `rasen status` output to determine what can be created next, rather than a separate next-command surface.
 
 #### Scenario: Discover next artifacts from status output
 
 - **WHEN** a user needs to know which artifact to create next
-- **THEN** `openspec status --change <id>` identifies ready artifacts with `[ ]`
+- **THEN** `rasen status --change <id>` identifies ready artifacts with `[ ]`
 - **AND** no dedicated "next command" is required to continue the workflow
 
 ### Requirement: Instructions Command
@@ -69,7 +69,7 @@ The system SHALL output enriched instructions for creating an artifact, includin
 
 #### Scenario: Show enriched instructions
 
-- **WHEN** user runs `openspec instructions <artifact> --change <id>`
+- **WHEN** user runs `rasen instructions <artifact> --change <id>`
 - **THEN** the system outputs:
   - Artifact metadata (ID, output path, description)
   - Template content
@@ -78,12 +78,12 @@ The system SHALL output enriched instructions for creating an artifact, includin
 
 #### Scenario: Instructions JSON output
 
-- **WHEN** user runs `openspec instructions <artifact> --change <id> --json`
+- **WHEN** user runs `rasen instructions <artifact> --change <id> --json`
 - **THEN** the system outputs JSON matching ArtifactInstructions interface
 
 #### Scenario: Unknown artifact
 
-- **WHEN** user runs `openspec instructions unknown-artifact --change <id>`
+- **WHEN** user runs `rasen instructions unknown-artifact --change <id>`
 - **THEN** the system displays an error listing valid artifact IDs for the schema
 
 #### Scenario: Artifact with unmet dependencies
@@ -93,7 +93,7 @@ The system SHALL output enriched instructions for creating an artifact, includin
 
 #### Scenario: Instructions on scaffolded change
 
-- **WHEN** user runs `openspec instructions proposal --change <id>` on a scaffolded change
+- **WHEN** user runs `rasen instructions proposal --change <id>` on a scaffolded change
 - **THEN** system outputs template and metadata for creating the proposal
 - **AND** does not require any artifacts to already exist
 
@@ -101,15 +101,15 @@ The system SHALL output enriched instructions for creating an artifact, includin
 The system SHALL show resolved template paths for all artifacts in a schema.
 
 #### Scenario: List template paths with default schema
-- **WHEN** user runs `openspec templates`
+- **WHEN** user runs `rasen templates`
 - **THEN** the system displays each artifact with its resolved template path using the default schema
 
 #### Scenario: List template paths with custom schema
-- **WHEN** user runs `openspec templates --schema tdd`
+- **WHEN** user runs `rasen templates --schema tdd`
 - **THEN** the system displays template paths for the specified schema
 
 #### Scenario: Templates JSON output
-- **WHEN** user runs `openspec templates --json`
+- **WHEN** user runs `rasen templates --json`
 - **THEN** the system outputs JSON mapping artifact IDs to template paths
 
 #### Scenario: Template resolution source
@@ -120,19 +120,19 @@ The system SHALL show resolved template paths for all artifacts in a schema.
 The system SHALL create new change directories with validation.
 
 #### Scenario: Create valid change
-- **WHEN** user runs `openspec new change add-feature`
-- **THEN** the system creates `openspec/changes/add-feature/` directory
+- **WHEN** user runs `rasen new change add-feature`
+- **THEN** the system creates `rasen/changes/add-feature/` directory
 
 #### Scenario: Invalid change name
-- **WHEN** user runs `openspec new change "Add Feature"` with invalid name
+- **WHEN** user runs `rasen new change "Add Feature"` with invalid name
 - **THEN** the system displays validation error with guidance
 
 #### Scenario: Duplicate change name
-- **WHEN** user runs `openspec new change existing-change` for an existing change
+- **WHEN** user runs `rasen new change existing-change` for an existing change
 - **THEN** the system displays an error indicating the change already exists
 
 #### Scenario: Create with description
-- **WHEN** user runs `openspec new change add-feature --description "Add new feature"`
+- **WHEN** user runs `rasen new change add-feature --description "Add new feature"`
 - **THEN** the system creates the change directory with description in README.md
 
 ### Requirement: Schema Selection
@@ -143,7 +143,7 @@ The system SHALL support custom schema selection for workflow commands.
 - **THEN** the system uses the "spec-driven" schema
 
 #### Scenario: Custom schema
-- **WHEN** user runs `openspec status --change <id> --schema tdd`
+- **WHEN** user runs `rasen status --change <id> --schema tdd`
 - **THEN** the system uses the specified schema for artifact graph
 
 #### Scenario: Unknown schema
@@ -195,11 +195,11 @@ The system SHALL support an `apply` block in schema definitions that controls wh
 
 ### Requirement: Apply Instructions Command
 
-The system SHALL generate schema-aware apply instructions via `openspec instructions apply`.
+The system SHALL generate schema-aware apply instructions via `rasen instructions apply`.
 
 #### Scenario: Generate apply instructions
 
-- **WHEN** user runs `openspec instructions apply --change <id>`
+- **WHEN** user runs `rasen instructions apply --change <id>`
 - **AND** all required artifacts (per schema's `apply.requires`) exist
 - **THEN** the system outputs:
   - `contextFiles` mapping artifact IDs to arrays of concrete paths for all existing artifacts
@@ -208,14 +208,14 @@ The system SHALL generate schema-aware apply instructions via `openspec instruct
 
 #### Scenario: Apply blocked by missing artifacts
 
-- **WHEN** user runs `openspec instructions apply --change <id>`
+- **WHEN** user runs `rasen instructions apply --change <id>`
 - **AND** required artifacts are missing
 - **THEN** the system indicates apply is blocked
 - **AND** lists which artifacts must be created first
 
 #### Scenario: Apply instructions JSON output
 
-- **WHEN** user runs `openspec instructions apply --change <id> --json`
+- **WHEN** user runs `rasen instructions apply --change <id> --json`
 - **THEN** the system outputs JSON with:
   - `contextFiles`: object mapping artifact IDs to arrays of concrete paths for existing artifacts
   - `instruction`: the apply instruction text
@@ -228,19 +228,19 @@ The `artifact-experimental-setup` command SHALL accept a `--tool <tool-id>` flag
 
 #### Scenario: Specify tool via flag
 
-- **WHEN** user runs `openspec artifact-experimental-setup --tool cursor`
+- **WHEN** user runs `rasen artifact-experimental-setup --tool cursor`
 - **THEN** skill files are generated in `.cursor/skills/`
 - **AND** command files are generated using Cursor's frontmatter format
 
 #### Scenario: Missing tool flag
 
-- **WHEN** user runs `openspec artifact-experimental-setup` without `--tool`
+- **WHEN** user runs `rasen artifact-experimental-setup` without `--tool`
 - **THEN** the system displays an error requiring the `--tool` flag
 - **AND** lists valid tool IDs in the error message
 
 #### Scenario: Unknown tool ID
 
-- **WHEN** user runs `openspec artifact-experimental-setup --tool unknown-tool`
+- **WHEN** user runs `rasen artifact-experimental-setup --tool unknown-tool`
 - **AND** the tool ID is not in `AI_TOOLS`
 - **THEN** the system displays an error listing valid tool IDs
 
@@ -279,7 +279,7 @@ The setup command SHALL display clear output about what was generated.
 The status command SHALL provide machine-readable planning context for changes.
 
 #### Scenario: Reporting next steps
-- **WHEN** a user runs `openspec status --change <id> --json`
+- **WHEN** a user runs `rasen status --change <id> --json`
 - **THEN** the output SHALL include next step guidance for agents
 - **AND** the guidance SHALL use plain action language
 
@@ -288,7 +288,7 @@ The status command SHALL expose action context that lets agents act without hard
 
 #### Scenario: Repo-local action context
 - **GIVEN** the change is repo-local
-- **WHEN** a user runs `openspec status --change <id> --json`
+- **WHEN** a user runs `rasen status --change <id> --json`
 - **THEN** status JSON SHALL preserve existing artifact status behavior
 - **AND** it SHALL report a repo-local planning home for agents that use action context
 
@@ -297,20 +297,20 @@ Artifact and apply instructions SHALL use resolved planning paths rather than ha
 
 #### Scenario: Repo-local artifact instructions
 - **GIVEN** the change is repo-local
-- **WHEN** a user runs `openspec instructions <artifact> --change <id> --json`
+- **WHEN** a user runs `rasen instructions <artifact> --change <id> --json`
 - **THEN** instruction output SHALL preserve existing repo-local paths
 
 ### Requirement: Workflow skills use CLI artifact context
-Generated workflow skills SHALL use OpenSpec CLI output as the source of truth for artifact locations.
+Generated workflow skills SHALL use Rasen CLI output as the source of truth for artifact locations.
 
 #### Scenario: Skills inspect status before artifact work
 - **WHEN** a generated workflow skill needs to inspect or create artifacts for a change
-- **THEN** it SHALL instruct the agent to run `openspec status --change <id> --json`
+- **THEN** it SHALL instruct the agent to run `rasen status --change <id> --json`
 - **AND** it SHALL use returned planning context and artifact paths rather than assuming a repo-local change path
 
 #### Scenario: Skills use instructions before writing artifacts
 - **WHEN** a generated workflow skill is about to create or update an artifact
-- **THEN** it SHALL instruct the agent to run `openspec instructions <artifact> --change <id> --json`
+- **THEN** it SHALL instruct the agent to run `rasen instructions <artifact> --change <id> --json`
 - **AND** it SHALL write to the resolved artifact path returned by the command
 
 ### Requirement: Change-scoped workflow payloads carry the work directory

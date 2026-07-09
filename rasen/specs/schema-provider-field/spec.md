@@ -64,14 +64,14 @@ State detection for provider artifacts SHALL use the same filesystem check as re
 - **THEN** the artifact is not marked as completed
 
 ### Requirement: JSON Output Includes Provider Field
-The provider field SHALL be included in `openspec instructions --json` output.
+The provider field SHALL be included in `rasen instructions --json` output.
 
 #### Scenario: Provider field present in JSON output
-- **WHEN** `openspec instructions --json` is run for an artifact with `provider: "review"`
+- **WHEN** `rasen instructions --json` is run for an artifact with `provider: "review"`
 - **THEN** the JSON output includes `"provider": "review"` in the artifact object
 
 #### Scenario: Provider field absent in JSON output when not defined
-- **WHEN** `openspec instructions --json` is run for an artifact without a `provider` field
+- **WHEN** `rasen instructions --json` is run for an artifact without a `provider` field
 - **THEN** the JSON output does not include a `provider` key for that artifact
 
 ### Requirement: Backward-Compatible Schema Validation

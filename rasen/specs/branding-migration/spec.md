@@ -1,7 +1,7 @@
 # branding-migration Specification
 
 ## Purpose
-Replace legacy Claude Code + gstack branding — prose mentions and garryslist.org URLs — with OpenSpec branding across generated content.
+Replace legacy Claude Code + gstack branding — prose mentions and garryslist.org URLs — with Rasen branding across generated content.
 ## Requirements
 ### Requirement: CC+gstack branding replaced
 All occurrences of "CC+gstack" in `gen-skill-docs.ts` generator functions, `.tmpl` files, AND static (non-generated) skill content files under `skills/gstack/review/` SHALL be replaced with "AI-assisted".
@@ -29,7 +29,7 @@ Prose text referencing gstack as a product (not as a binary name) SHALL be updat
 - "gstack skills" (when referring to suggestions) → "expert skills"
 - "gstack browse" (when referring to the tool) → "browse"
 
-#### Scenario: Completeness section uses OpenSpec branding
+#### Scenario: Completeness section uses Rasen branding
 - **WHEN** the completeness section is generated
 - **THEN** it SHALL NOT attribute the principle to "gstack"
 - **AND** it SHALL present it as a general engineering principle

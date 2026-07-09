@@ -42,6 +42,6 @@ The absorption SHALL NOT rename the `investigate` base name, alter its expert re
 #### Scenario: No registration or count drift
 
 - **WHEN** `getSkillTemplates()` and the count assertions in `test/core/shared/skill-generation.test.ts` are evaluated
-- **THEN** the `openspec-investigate` entry SHALL be present
+- **THEN** the `rasen-investigate` entry SHALL be present
 - **AND** all expert/total counts SHALL be unchanged
 

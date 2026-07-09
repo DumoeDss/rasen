@@ -1,11 +1,11 @@
 # review-two-axis-absorption Specification
 
 ## Purpose
-Folds grill `code-review` (MIT) into the P0 `review` skill as a two-axis structure — a Standards axis (repo standards plus the Fowler smell baseline) and a Spec axis (faithful implementation of the originating OpenSpec change), run as parallel workers and reported side by side without reranking. The existing checklist-driven two-pass review is preserved as the Standards-axis content (surgical augmentation, not a restructure), and structure and registration are unchanged.
+Folds grill `code-review` (MIT) into the P0 `review` skill as a two-axis structure — a Standards axis (repo standards plus the Fowler smell baseline) and a Spec axis (faithful implementation of the originating Rasen change), run as parallel workers and reported side by side without reranking. The existing checklist-driven two-pass review is preserved as the Standards-axis content (surgical augmentation, not a restructure), and structure and registration are unchanged.
 ## Requirements
 ### Requirement: Review carries a Standards axis and a Spec axis
 
-The `review` skill SHALL express its review along two axes, reported side by side and never reranked or merged: a **Standards axis** (does the diff follow the repo's documented standards plus the Fowler smell baseline) and a **Spec axis** (does the diff faithfully implement the originating OpenSpec change). The existing checklist-driven two-pass review SHALL be preserved as the Standards axis content (surgical augmentation, not a restructure). This is adapted from grill `code-review` (MIT) and SHALL carry an attribution note.
+The `review` skill SHALL express its review along two axes, reported side by side and never reranked or merged: a **Standards axis** (does the diff follow the repo's documented standards plus the Fowler smell baseline) and a **Spec axis** (does the diff faithfully implement the originating Rasen change). The existing checklist-driven two-pass review SHALL be preserved as the Standards axis content (surgical augmentation, not a restructure). This is adapted from grill `code-review` (MIT) and SHALL carry an attribution note.
 
 #### Scenario: Both axes present and reported separately
 
@@ -13,10 +13,10 @@ The `review` skill SHALL express its review along two axes, reported side by sid
 - **THEN** it SHALL describe a Standards axis and a Spec axis
 - **AND** it SHALL instruct presenting them under separate side-by-side headings without merging or reranking findings
 
-#### Scenario: Spec axis targets the OpenSpec change
+#### Scenario: Spec axis targets the Rasen change
 
 - **WHEN** the Spec axis instructions are inspected
-- **THEN** the spec source SHALL be the originating OpenSpec change's `proposal.md` / `tasks.md`
+- **THEN** the spec source SHALL be the originating Rasen change's `proposal.md` / `tasks.md`
 - **AND** the axis SHALL check for missing/partial requirements, scope creep, and wrong-looking implementations
 - **AND** there SHALL be no reference to `/setup-matt-pocock-skills` or `docs/agents/issue-tracker.md`
 
@@ -44,5 +44,5 @@ The absorption SHALL be surgical: review's existing step structure, checklist si
 
 - **WHEN** the review skill's step headers and `getSkillTemplates()` entry are inspected
 - **THEN** the existing Step 1–5 structure SHALL remain
-- **AND** the `openspec-review` registration and all skill counts SHALL be unchanged
+- **AND** the `rasen-review` registration and all skill counts SHALL be unchanged
 

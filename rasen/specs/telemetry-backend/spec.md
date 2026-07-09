@@ -1,7 +1,7 @@
 # telemetry-backend Specification
 
 ## Purpose
-Ingest anonymous OpenSpec CLI usage events into a Cloudflare Analytics Engine dataset via a standalone Worker, so maintainers can measure adoption (daily active users, per-command and per-version breakdowns) while persisting only non-identifying data and never blocking the CLI.
+Ingest anonymous Rasen CLI usage events into a Cloudflare Analytics Engine dataset via a standalone Worker, so maintainers can measure adoption (daily active users, per-command and per-version breakdowns) while persisting only non-identifying data and never blocking the CLI.
 ## Requirements
 ### Requirement: Anonymous Usage Event Ingestion
 

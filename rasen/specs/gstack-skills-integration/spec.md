@@ -1,7 +1,7 @@
 # gstack-skills-integration Specification
 
 ## Purpose
-Integrate the expert skills into OpenSpec — their inline TypeScript template source, sidecar directory, registry entries, and installation via `openspec init`.
+Integrate the expert skills into Rasen — their inline TypeScript template source, sidecar directory, registry entries, and installation via `rasen init`.
 ## Requirements
 ### Requirement: Skill Source Directory
 
@@ -9,7 +9,7 @@ The system SHALL maintain a `skills/experts/` directory at the project package r
 
 #### Scenario: Expert source directory exists at package root
 
-- **WHEN** the OpenSpec package source tree is inspected
+- **WHEN** the Rasen package source tree is inspected
 - **THEN** a `skills/experts/` directory exists containing sidecar subdirectories for the experts that carry sidecar files
 
 #### Scenario: No SKILL.md or template under the source directory
@@ -43,7 +43,7 @@ The system SHALL register all expert skills in the `getSkillTemplates()` functio
 
 #### Scenario: Expert skills registered in getSkillTemplates
 - **WHEN** `getSkillTemplates()` is called without a workflow filter
-- **THEN** the returned array includes entries for all expert skills with dirName pattern `openspec-<skill-name>`
+- **THEN** the returned array includes entries for all expert skills with dirName pattern `rasen-<skill-name>`
 
 #### Scenario: Expert skills not filtered by workflowFilter
 - **WHEN** `getSkillTemplates(['propose', 'apply'])` is called with a workflow filter
@@ -51,21 +51,21 @@ The system SHALL register all expert skills in the `getSkillTemplates()` functio
 
 #### Scenario: Expert skill entry format
 - **WHEN** an expert skill entry is inspected
-- **THEN** it has `template` (SkillTemplate), `dirName` (string starting with `openspec-`), and `workflowId` (string matching the skill name)
+- **THEN** it has `template` (SkillTemplate), `dirName` (string starting with `rasen-`), and `workflowId` (string matching the skill name)
 
-### Requirement: Installation via openspec init
-The system SHALL install expert skill SKILL.md files to target AI tool directories during `openspec init`, alongside existing workflow skills.
+### Requirement: Installation via rasen init
+The system SHALL install expert skill SKILL.md files to target AI tool directories during `rasen init`, alongside existing workflow skills.
 
 #### Scenario: Init generates expert skill files
-- **WHEN** `openspec init` is run and Claude Code is selected
-- **THEN** SKILL.md files for all expert skills are generated in `.claude/skills/openspec-<skill-name>/SKILL.md`
+- **WHEN** `rasen init` is run and Claude Code is selected
+- **THEN** SKILL.md files for all expert skills are generated in `.claude/skills/rasen-<skill-name>/SKILL.md`
 
 #### Scenario: Init without skills directory still succeeds
-- **WHEN** `openspec init` is run and the `skills/` source directory is empty
+- **WHEN** `rasen init` is run and the `skills/` source directory is empty
 - **THEN** init succeeds, generating only workflow skill files
 
 #### Scenario: Update regenerates expert skills
-- **WHEN** `openspec update` is run
+- **WHEN** `rasen update` is run
 - **THEN** expert skill SKILL.md files are regenerated alongside workflow skill files
 
 ### Requirement: Path References Updated

@@ -8,12 +8,12 @@ Define authoring standards for generated agent instruction docs so templates, ex
 The AI instructions SHALL begin with a quick-reference section that surfaces required file structures, templates, and formatting rules before any narrative guidance.
 
 #### Scenario: Loading templates at the top
-- **WHEN** `openspec/AGENTS.md` is regenerated or updated
+- **WHEN** `rasen/AGENTS.md` is regenerated or updated
 - **THEN** the first substantive section after the title SHALL provide copy-ready headings for `proposal.md`, `tasks.md`, spec deltas, and scenario formatting
 - **AND** link each template to the corresponding workflow step for deeper reading
 
 ### Requirement: Embedded Templates and Examples
-`openspec/AGENTS.md` SHALL include complete copy/paste templates and inline examples exactly where agents make corresponding edits.
+`rasen/AGENTS.md` SHALL include complete copy/paste templates and inline examples exactly where agents make corresponding edits.
 
 #### Scenario: Providing file templates
 - **WHEN** authors reach the workflow guidance for drafting proposals and deltas
@@ -21,7 +21,7 @@ The AI instructions SHALL begin with a quick-reference section that surfaces req
 - **AND** accompany each template with a brief example showing correct header usage and scenario bullets
 
 ### Requirement: Pre-validation Checklist
-`openspec/AGENTS.md` SHALL offer a concise pre-validation checklist that highlights common formatting mistakes before running `openspec validate`.
+`rasen/AGENTS.md` SHALL offer a concise pre-validation checklist that highlights common formatting mistakes before running `rasen validate`.
 
 #### Scenario: Highlighting common validation failures
 - **WHEN** a reader reaches the validation guidance
@@ -32,7 +32,7 @@ The AI instructions SHALL begin with a quick-reference section that surfaces req
 The documentation SHALL separate beginner essentials from advanced topics so newcomers can focus on core steps without losing access to advanced workflows.
 
 #### Scenario: Organizing beginner and advanced sections
-- **WHEN** reorganizing `openspec/AGENTS.md`
+- **WHEN** reorganizing `rasen/AGENTS.md`
 - **THEN** keep an introductory section limited to the minimum steps (scaffold, draft, validate, request review)
 - **AND** move advanced topics (multi-capability changes, archiving details, tooling deep dives) into clearly labeled later sections
 - **AND** provide anchor links from the quick-reference to those advanced sections
@@ -41,7 +41,7 @@ The documentation SHALL separate beginner essentials from advanced topics so new
 Agent instruction docs SHALL explicitly teach that specs capture observable behavior contracts, while implementation details belong in design/tasks.
 
 #### Scenario: Distinguishing spec vs implementation content
-- **WHEN** `openspec/AGENTS.md` explains how to write `spec.md`
+- **WHEN** `rasen/AGENTS.md` explains how to write `spec.md`
 - **THEN** it SHALL instruct agents to include externally verifiable behavior, inputs/outputs, errors, and constraints
 - **AND** it SHALL instruct agents to avoid internal library/framework choices and class/function-level implementation details in specs
 

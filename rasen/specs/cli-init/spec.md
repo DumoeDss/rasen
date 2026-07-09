@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `openspec init` command SHALL create a complete OpenSpec directory structure in any project, enabling immediate adoption of OpenSpec conventions with support for multiple AI coding assistants.
+The `rasen init` command SHALL create a complete Rasen directory structure in any project, enabling immediate adoption of Rasen conventions with support for multiple AI coding assistants.
 ## Requirements
 ### Requirement: Progress Indicators
 
@@ -13,8 +13,8 @@ The command SHALL display progress indicators during initialization to provide c
 - **WHEN** executing initialization steps
 - **THEN** validate environment silently in background (no output unless error)
 - **AND** display progress with ora spinners:
-  - Show spinner: "⠋ Creating OpenSpec structure..."
-  - Then success: "✔ OpenSpec structure created"
+  - Show spinner: "⠋ Creating Rasen structure..."
+  - Then success: "✔ Rasen structure created"
   - Show spinner: "⠋ Configuring AI tools..."
   - Then success: "✔ AI tools configured"
 
@@ -55,9 +55,9 @@ The command SHALL provide clear, actionable next steps upon successful initializ
   - "Refreshed: <tools>" for already-configured tools that were updated
   - Count of skills and commands generated
 - **AND** display getting started section with:
-  - `/opsx:new` - Start a new change
-  - `/opsx:continue` - Create the next artifact
-  - `/opsx:apply` - Implement tasks
+  - `/rasen:new` - Start a new change
+  - `/rasen:continue` - Create the next artifact
+  - `/rasen:apply` - Implement tasks
 - **AND** display links to documentation and feedback
 
 #### Scenario: Displaying restart instruction
@@ -74,22 +74,22 @@ The command SHALL use consistent exit codes to indicate different failure modes.
 - **WHEN** the command completes
 - **THEN** return appropriate exit code:
   - 0: Success
-  - 1: General error (including when OpenSpec directory already exists)
+  - 1: General error (including when Rasen directory already exists)
   - 2: Insufficient permissions (reserved for future use)
   - 3: User cancelled operation (reserved for future use)
 
 ### Requirement: Additional AI Tool Initialization
-`openspec init` SHALL allow users to add configuration files for new AI coding assistants after the initial setup.
+`rasen init` SHALL allow users to add configuration files for new AI coding assistants after the initial setup.
 
 #### Scenario: Configuring an extra tool after initial setup
-- **GIVEN** an `openspec/` directory already exists and at least one AI tool file is present
-- **WHEN** the user runs `openspec init` and selects a different supported AI tool
-- **THEN** generate that tool's configuration files with OpenSpec markers the same way as during first-time initialization
+- **GIVEN** a `rasen/` directory already exists and at least one AI tool file is present
+- **WHEN** the user runs `rasen init` and selects a different supported AI tool
+- **THEN** generate that tool's configuration files with Rasen markers the same way as during first-time initialization
 - **AND** leave existing tool configuration files unchanged except for managed sections that need refreshing
 - **AND** exit with code 0 and display a success summary highlighting the newly added tool files
 
 ### Requirement: Success Output Enhancements
-`openspec init` SHALL summarize tool actions when initialization or extend mode completes.
+`rasen init` SHALL summarize tool actions when initialization or extend mode completes.
 
 #### Scenario: Showing tool summary
 - **WHEN** the command completes successfully
@@ -97,12 +97,12 @@ The command SHALL use consistent exit codes to indicate different failure modes.
 - **AND** personalize the "Next steps" header using the names of the selected tools, defaulting to a generic label when none remain
 
 ### Requirement: Exit Code Adjustments
-`openspec init` SHALL treat extend mode without new native tool selections as a successful refresh.
+`rasen init` SHALL treat extend mode without new native tool selections as a successful refresh.
 
 #### Scenario: Allowing empty extend runs
-- **WHEN** OpenSpec is already initialized and the user selects no additional natively supported tools
+- **WHEN** Rasen is already initialized and the user selects no additional natively supported tools
 - **THEN** complete successfully without requiring additional tool setup
-- **AND** preserve the existing OpenSpec structure and config files
+- **AND** preserve the existing Rasen structure and config files
 - **AND** exit with code 0
 
 ### Requirement: Non-Interactive Mode
@@ -124,7 +124,7 @@ The command SHALL support non-interactive operation through command-line options
 #### Scenario: Skip tool configuration non-interactively
 
 - **WHEN** run with `--tools none`
-- **THEN** create only the openspec directory structure
+- **THEN** create only the rasen directory structure
 - **AND** skip skill and command generation
 - **AND** create config only when config creation conditions are met
 
@@ -143,7 +143,7 @@ The command SHALL support non-interactive operation through command-line options
 #### Scenario: Missing --tools in non-interactive mode
 
 - **GIVEN** prompts are unavailable in non-interactive execution
-- **WHEN** user runs `openspec init` without `--tools`
+- **WHEN** user runs `rasen init` without `--tools`
 - **THEN** fail with exit code 1
 - **AND** instruct to use `--tools all`, `--tools none`, or explicit tool IDs
 
@@ -192,7 +192,7 @@ The init command SHALL generate commands based on profile AND delivery settings,
 
 #### Scenario: Kimi CLI skips command-file generation
 - **WHEN** the user selects Kimi CLI during initialization
-- **THEN** OpenSpec SHALL treat it as a supported tool with `skillsDir: '.kimi'`
+- **THEN** Rasen SHALL treat it as a supported tool with `skillsDir: '.kimi'`
 - **AND** command-file generation SHALL be skipped because no Kimi adapter is registered
 
 ### Requirement: Config File Generation
@@ -221,16 +221,16 @@ All init success output, next-step hints, and generated artifact references SHAL
 
 - **WHEN** `rasen init` completes successfully
 - **THEN** the next-step hints reference `/rasen:*` commands and the `rasen/` workspace
-- **AND** no hint references `/opsx:*` or an `openspec/` path
+- **AND** no hint references `/rasen:*` or a `rasen/` path
 
 ### Requirement: Experimental Command Alias
 
 The command SHALL maintain backward compatibility with the experimental command.
 
-#### Scenario: Running openspec experimental
+#### Scenario: Running rasen experimental
 
-- **WHEN** user runs `openspec experimental`
-- **THEN** delegate to `openspec init`
+- **WHEN** user runs `rasen experimental`
+- **THEN** delegate to `rasen init`
 - **AND** the command SHALL be hidden from help output
 
 ### Requirement: Tool auto-detection
@@ -253,35 +253,35 @@ The init command SHALL detect installed AI tools by scanning for their configura
 The init command SHALL work with sensible defaults and tool confirmation, minimizing required user input.
 
 #### Scenario: Init with detected tools (interactive)
-- **WHEN** user runs `openspec init` interactively and tool directories are detected
+- **WHEN** user runs `rasen init` interactively and tool directories are detected
 - **THEN** the system SHALL show detected tools pre-selected
 - **THEN** the system SHALL ask for confirmation (not full selection)
 - **THEN** the system SHALL use default profile (`core`) and delivery (`both`)
 
 #### Scenario: Init with no detected tools (interactive)
-- **WHEN** user runs `openspec init` interactively and no tool directories are detected
+- **WHEN** user runs `rasen init` interactively and no tool directories are detected
 - **THEN** the system SHALL prompt for tool selection
 - **THEN** the system SHALL use default profile (`core`) and delivery (`both`)
 
 #### Scenario: Non-interactive with detected tools
-- **WHEN** user runs `openspec init` non-interactively (e.g., in CI)
+- **WHEN** user runs `rasen init` non-interactively (e.g., in CI)
 - **AND** tool directories are detected
 - **THEN** the system SHALL use detected tools automatically without prompting
 - **THEN** the system SHALL use default profile and delivery
 
 #### Scenario: Non-interactive with no detected tools
-- **WHEN** user runs `openspec init` non-interactively
+- **WHEN** user runs `rasen init` non-interactively
 - **AND** no tool directories are detected
 - **THEN** the system SHALL fail with exit code 1
 - **AND** display message to use `--tools` flag
 
 #### Scenario: Non-interactive with explicit tools
-- **WHEN** user runs `openspec init --tools claude`
+- **WHEN** user runs `rasen init --tools claude`
 - **THEN** the system SHALL use specified tools
 - **THEN** the system SHALL NOT prompt for any input
 
 #### Scenario: Interactive with explicit tools
-- **WHEN** user runs `openspec init --tools claude` interactively
+- **WHEN** user runs `rasen init --tools claude` interactively
 - **THEN** the system SHALL use specified tools (ignoring auto-detection)
 - **THEN** the system SHALL NOT prompt for tool selection
 - **THEN** the system SHALL proceed with default profile and delivery
@@ -290,32 +290,32 @@ The init command SHALL work with sensible defaults and tool confirmation, minimi
 - **WHEN** init completes successfully
 - **AND** `propose` is in the active profile
 - **THEN** the system SHALL display a tool-appropriate success message
-- **THEN** for tools using colon syntax (Claude Code): "Start your first change: /opsx:propose \"your idea\""
-- **THEN** for tools using hyphen syntax (Cursor, others): "Start your first change: /opsx-propose \"your idea\""
+- **THEN** for tools using colon syntax (Claude Code): "Start your first change: /rasen:propose \"your idea\""
+- **THEN** for tools using hyphen syntax (Cursor, others): "Start your first change: /rasen-propose \"your idea\""
 
 #### Scenario: Init success message (propose not installed, new installed)
 - **WHEN** init completes successfully
 - **AND** `propose` is NOT in the active profile
 - **AND** `new` is in the active profile
-- **THEN** for tools using colon syntax: "Start your first change: /opsx:new \"your idea\""
-- **THEN** for tools using hyphen syntax: "Start your first change: /opsx-new \"your idea\""
+- **THEN** for tools using colon syntax: "Start your first change: /rasen:new \"your idea\""
+- **THEN** for tools using hyphen syntax: "Start your first change: /rasen-new \"your idea\""
 
 #### Scenario: Init success message (neither propose nor new)
 - **WHEN** init completes successfully
 - **AND** neither `propose` nor `new` is in the active profile
-- **THEN** the system SHALL display: "Done. Run 'openspec config profile' to configure your workflows."
+- **THEN** the system SHALL display: "Done. Run 'rasen config profile' to configure your workflows."
 
 ### Requirement: Init performs migration on existing projects
 The init command SHALL perform one-time migration when re-initializing an existing project, using the same shared migration logic as the update command.
 
 #### Scenario: Re-init on existing project (no profile set)
-- **WHEN** user runs `openspec init` on a project with existing workflow files
+- **WHEN** user runs `rasen init` on a project with existing workflow files
 - **AND** global config does not contain a `profile` field
 - **THEN** the system SHALL perform one-time migration before proceeding (see `specs/cli-update/spec.md`)
 - **THEN** the system SHALL proceed with init using the migrated config
 
 #### Scenario: Init on new project (no existing workflows)
-- **WHEN** user runs `openspec init` on a project with no existing workflow files
+- **WHEN** user runs `rasen init` on a project with no existing workflow files
 - **AND** global config does not contain a `profile` field
 - **THEN** the system SHALL NOT perform migration
 - **THEN** the system SHALL use `core` profile defaults
@@ -332,12 +332,12 @@ The init command SHALL read and apply settings from global config.
 - **THEN** init SHALL install only skill files, not commands
 
 #### Scenario: Override via flags
-- **WHEN** user runs `openspec init --profile core`
+- **WHEN** user runs `rasen init --profile core`
 - **THEN** the system SHALL use the flag value instead of config value
 - **THEN** the system SHALL NOT update the global config
 
 #### Scenario: Invalid profile override
-- **WHEN** user runs `openspec init --profile <invalid>`
+- **WHEN** user runs `rasen init --profile <invalid>`
 - **AND** `<invalid>` is not one of `core` or `custom`
 - **THEN** the system SHALL exit with code 1
 - **THEN** the system SHALL display a validation error listing allowed profile values
@@ -346,18 +346,18 @@ The init command SHALL read and apply settings from global config.
 The init command SHALL apply the resolved profile (`--profile` override or global config) directly without prompting for confirmation.
 
 #### Scenario: Init with custom profile (interactive)
-- **WHEN** user runs `openspec init` interactively
+- **WHEN** user runs `rasen init` interactively
 - **AND** global config specifies `profile: "custom"` with workflows
 - **THEN** the system SHALL proceed directly using the custom profile workflows
 - **AND** the system SHALL NOT show a profile confirmation prompt
 
 #### Scenario: Non-interactive init with custom profile
-- **WHEN** user runs `openspec init` non-interactively
+- **WHEN** user runs `rasen init` non-interactively
 - **AND** global config specifies a custom profile
 - **THEN** the system SHALL proceed without confirmation
 
 #### Scenario: Init with core profile
-- **WHEN** user runs `openspec init` interactively
+- **WHEN** user runs `rasen init` interactively
 - **AND** profile is `core` (default)
 - **THEN** the system SHALL proceed directly without a profile confirmation prompt
 
@@ -365,19 +365,19 @@ The init command SHALL apply the resolved profile (`--profile` override or globa
 The init command SHALL NOT remove workflows that are already installed, but SHALL respect delivery setting.
 
 #### Scenario: Existing custom installation
-- **WHEN** user has custom profile with extra workflows and runs `openspec init` with core profile
+- **WHEN** user has custom profile with extra workflows and runs `rasen init` with core profile
 - **THEN** the system SHALL NOT remove extra workflows
 - **THEN** the system SHALL regenerate core workflow files, overwriting existing content with latest templates
 
 #### Scenario: Init with different delivery setting
-- **WHEN** user runs `openspec init` on existing project
+- **WHEN** user runs `rasen init` on existing project
 - **AND** delivery setting differs from what's installed (e.g., was `both`, now `skills`)
 - **THEN** the system SHALL generate files matching current delivery setting
 - **THEN** the system SHALL delete files that don't match delivery (e.g., commands removed if `skills`)
 - **THEN** this applies to all workflows, including extras not in profile
 
 #### Scenario: Re-init applies delivery cleanup even when templates are current
-- **WHEN** user runs `openspec init` on an existing project
+- **WHEN** user runs `rasen init` on an existing project
 - **AND** existing files are already on current template versions
 - **AND** delivery changed since the previous init
 - **THEN** the system SHALL still remove files that no longer match delivery
@@ -415,7 +415,7 @@ The init command SHALL show detected tools and ask for confirmation.
 
 ## Why
 
-Manual creation of OpenSpec structure is error-prone and creates adoption friction. A standardized init command ensures:
+Manual creation of Rasen structure is error-prone and creates adoption friction. A standardized init command ensures:
 - Consistent structure across all projects
 - Proper AI instruction files are always included
 - Quick onboarding for new projects

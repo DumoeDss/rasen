@@ -1,7 +1,7 @@
 # store-registration Specification
 
 ## Purpose
-Govern how an OpenSpec store root is inspected and registered, so a fresh or empty store (no `changes/`, `specs/`, or `archive/` yet) registers cleanly, a repository whose planning is externalized via a `store:` pointer is rejected as a root, and commands run against such a store report a friendly empty state instead of an initialization error.
+Govern how a Rasen store root is inspected and registered, so a fresh or empty store (no `changes/`, `specs/`, or `archive/` yet) registers cleanly, a repository whose planning is externalized via a `store:` pointer is rejected as a root, and commands run against such a store report a friendly empty state instead of an initialization error.
 
 ## Requirements
 
@@ -59,7 +59,7 @@ When registering a store without an explicit path, the default checkout location
 
 ### Requirement: Reject a Config-Only Pointer Repo as a Store Root
 
-Registering a store SHALL reject a repository whose `openspec/config.yaml` declares a `store:` pointer (its planning is externalized) because such a repo is not itself a store root. A malformed `store:` pointer SHALL also be rejected. A repo with real planning shape SHALL be unaffected.
+Registering a store SHALL reject a repository whose `rasen/config.yaml` declares a `store:` pointer (its planning is externalized) because such a repo is not itself a store root. A malformed `store:` pointer SHALL also be rejected. A repo with real planning shape SHALL be unaffected.
 
 #### Scenario: Declared pointer is rejected
 
@@ -79,16 +79,16 @@ Registering a store SHALL reject a repository whose `openspec/config.yaml` decla
 
 ### Requirement: Commands Tolerate a Missing Changes Directory
 
-The `archive` and `list` commands SHALL treat a missing `openspec/changes/` directory as an empty change set rather than throwing an initialization error, so that commands run against a fresh/empty store do not crash.
+The `archive` and `list` commands SHALL treat a missing `rasen/changes/` directory as an empty change set rather than throwing an initialization error, so that commands run against a fresh/empty store do not crash.
 
 #### Scenario: Archive against an empty store lists no changes instead of throwing
 
-- **WHEN** `archive` runs and `openspec/changes/` does not exist
+- **WHEN** `archive` runs and `rasen/changes/` does not exist
 - **THEN** the missing-directory `ENOENT` is swallowed (non-ENOENT errors are rethrown) and the active-change list is empty
 - **AND** the command reports that the requested change is not found because no active changes exist in this root, rather than a "no changes directory" init error
 
 #### Scenario: List against an empty store shows the empty state
 
-- **WHEN** `list` runs and `openspec/changes/` does not exist
+- **WHEN** `list` runs and `rasen/changes/` does not exist
 - **THEN** directory reading returns an empty set (ENOENT swallowed, other errors rethrown)
 - **AND** the command displays "No active changes found." and exits 0

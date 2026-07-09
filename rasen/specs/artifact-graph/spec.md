@@ -129,7 +129,7 @@ The system SHALL support self-contained schema directories with co-located templ
 - **THEN** artifacts can reference templates relative to the schema's templates directory
 
 #### Scenario: User schema override
-- **WHEN** a schema directory exists at `${XDG_DATA_HOME}/openspec/schemas/<name>/`
+- **WHEN** a schema directory exists at `${XDG_DATA_HOME}/rasen/schemas/<name>/`
 - **THEN** the system uses that directory instead of the built-in
 
 #### Scenario: Built-in schema fallback

@@ -9,8 +9,8 @@ Pipeline definitions SHALL accept an optional `reuse` block at pipeline level (n
 
 #### Scenario: Valid reuse config parses
 - **WHEN** a pipeline.yaml declares `reuse: { planner: auto, implementer: never, threshold: 0.4, roles: { planner: 0.5 } }`
-- **THEN** `openspec validate <name> --type pipeline` SHALL pass
-- **AND** `openspec pipeline show <name> --json` SHALL expose the resolved reuse config
+- **THEN** `rasen validate <name> --type pipeline` SHALL pass
+- **AND** `rasen pipeline show <name> --json` SHALL expose the resolved reuse config
 
 #### Scenario: Invalid reuse config rejected
 - **WHEN** a pipeline.yaml declares a `planner` or `implementer` mode other than `auto`/`never`, a `threshold` (top-level or per-role) outside `(0, 1]`, or an unknown key inside the `reuse` block
@@ -30,9 +30,9 @@ The effective reuse config SHALL resolve field-wise as: for each role's threshol
 - **AND** pipelines without a `reuse` block SHALL parse exactly as before
 
 ### Requirement: Worker-record reuse lineage
-The run-state reader SHALL accept an optional `reusedFrom` marker on a worker record — the id of a prior child change whose context the worker's transcript already carries — and `openspec pipeline resume` SHALL surface it unchanged for any worker that has it.
+The run-state reader SHALL accept an optional `reusedFrom` marker on a worker record — the id of a prior child change whose context the worker's transcript already carries — and `rasen pipeline resume` SHALL surface it unchanged for any worker that has it.
 
 #### Scenario: Resume surfaces a reused worker's lineage
 - **WHEN** `auto-run.json` records a stage worker with `reusedFrom: "child-1"` (alongside a transcript or agentId)
-- **THEN** `openspec pipeline resume <change> --json` SHALL include `reusedFrom: "child-1"` on that worker
+- **THEN** `rasen pipeline resume <change> --json` SHALL include `reusedFrom: "child-1"` on that worker
 - **AND** run-states whose workers omit `reusedFrom` SHALL parse and resume exactly as before

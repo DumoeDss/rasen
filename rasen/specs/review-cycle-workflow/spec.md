@@ -1,23 +1,23 @@
 # review-cycle-workflow Specification
 
 ## Purpose
-Provide an iterative review → triage → fix → re-review loop (the `/opsx:review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
+Provide an iterative review → triage → fix → re-review loop (the `/rasen:review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
 ## Requirements
 ### Requirement: Review-Cycle Skill and Command Templates
 
-The system SHALL provide a SkillTemplate and a CommandTemplate for the review-cycle workflow in `src/core/templates/workflows/review-cycle.ts`, registered through the existing skill/command generation pipeline so that `openspec init` installs them when the workflow is selected.
+The system SHALL provide a SkillTemplate and a CommandTemplate for the review-cycle workflow in `src/core/templates/workflows/review-cycle.ts`, registered through the existing skill/command generation pipeline so that `rasen init` installs them when the workflow is selected.
 
 #### Scenario: Template file exports
 
 - **WHEN** the template file is loaded
-- **THEN** it SHALL export `getReviewCycleSkillTemplate()` returning a SkillTemplate named `openspec-review-cycle`
-- **AND** it SHALL export `getOpsxReviewCycleCommandTemplate()` returning a CommandTemplate for `/opsx:review-cycle`
+- **THEN** it SHALL export `getReviewCycleSkillTemplate()` returning a SkillTemplate named `rasen-review-cycle`
+- **AND** it SHALL export `getOpsxReviewCycleCommandTemplate()` returning a CommandTemplate for `/rasen:review-cycle`
 - **AND** both templates SHALL follow the same pattern as existing workflow templates (e.g. `ship.ts`, `verify-enhanced.ts`)
 
 #### Scenario: Delegates to the review engine, does not fork it
 
 - **WHEN** the review-cycle instructions describe how to run a review pass
-- **THEN** they SHALL invoke the existing `openspec-review` skill as the review engine
+- **THEN** they SHALL invoke the existing `rasen-review` skill as the review engine
 - **AND** they SHALL NOT reimplement the review heuristics inline
 
 ### Requirement: Iterative Review-Fix-Re-Review Loop
@@ -134,7 +134,7 @@ The review-cycle workflow SHALL consume the shared `opsx-orchestration` playbook
 
 - **WHEN** the review-cycle instructions describe how the loop is driven
 - **THEN** they SHALL reference the `opsx-orchestration` playbook for tier detection, role-isolated dispatch, run-state, and escalation
-- **AND** SHALL continue to delegate each review pass to the `openspec-review` engine without forking it
+- **AND** SHALL continue to delegate each review pass to the `rasen-review` engine without forking it
 
 ### Requirement: Gate-Run Test Evidence Is Recorded for Ship
 

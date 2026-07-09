@@ -1,7 +1,7 @@
 # openspec-config-extensions Specification
 
 ## Purpose
-Extend the global config with `proactive` and `repoMode` fields and embed their values into generated skill instructions at `openspec init`.
+Extend the global config with `proactive` and `repoMode` fields and embed their values into generated skill instructions at `rasen init`.
 
 ## Requirements
 ### Requirement: GlobalConfig supports proactive field
@@ -26,14 +26,14 @@ The `GlobalConfig` interface SHALL include an optional `repoMode` field of type 
 - **WHEN** `getGlobalConfig()` is called and config.json does not contain `repoMode`
 - **THEN** the returned config SHALL have `repoMode === 'collaborative'`
 
-### Requirement: openspec init embeds config values in skill instructions
-When `openspec init` generates expert skill SKILL.md files, the `proactive` and `repoMode` config values SHALL be embedded in the instructions content via a transform callback.
+### Requirement: rasen init embeds config values in skill instructions
+When `rasen init` generates expert skill SKILL.md files, the `proactive` and `repoMode` config values SHALL be embedded in the instructions content via a transform callback.
 
 #### Scenario: Proactive false embedded in skill content
-- **WHEN** `openspec init` runs with global config `proactive: false`
+- **WHEN** `rasen init` runs with global config `proactive: false`
 - **THEN** the generated expert skill instructions SHALL contain guidance to not proactively suggest skills
 
 #### Scenario: RepoMode solo embedded in skill content
-- **WHEN** `openspec init` runs with global config `repoMode: "solo"`
+- **WHEN** `rasen init` runs with global config `repoMode: "solo"`
 - **THEN** the generated expert skill instructions SHALL indicate solo repo mode behavior (proactive fixing)
 

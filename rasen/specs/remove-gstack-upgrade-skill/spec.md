@@ -14,8 +14,8 @@ The gstack-upgrade expert skill SHALL be fully removed. The expert template and 
 - the `/gstack-upgrade` row in `skills/gstack/docs/AGENTS.md` SHALL be removed
 - the `gstack-update-check` reference in `skills/gstack/docs/ARCHITECTURE.md` SHALL be removed
 
-#### Scenario: openspec init does not generate gstack-upgrade
-- **WHEN** `openspec init` is run
+#### Scenario: rasen init does not generate gstack-upgrade
+- **WHEN** `rasen init` is run
 - **THEN** no `openspec-gstack-upgrade/` directory SHALL be created under the skills directory
 
 #### Scenario: Build succeeds without gstack-upgrade

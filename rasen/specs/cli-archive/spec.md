@@ -1,11 +1,11 @@
 # CLI Archive Command Specification
 
 ## Purpose
-The archive command moves completed changes from the active changes directory to the archive folder with date-based naming, following OpenSpec conventions.
+The archive command moves completed changes from the active changes directory to the archive folder with date-based naming, following Rasen conventions.
 
 ## Command Syntax
 ```bash
-openspec archive [change-name] [--yes|-y]
+rasen archive [change-name] [--yes|-y]
 ```
 
 Options:
@@ -150,7 +150,7 @@ The command SHALL handle various error conditions gracefully.
 
 - **WHEN** errors occur
 - **THEN** handle the following conditions:
-  - Missing openspec/changes/ directory
+  - Missing rasen/changes/ directory
   - Change not found
   - Archive target already exists
   - File system permissions issues
@@ -161,7 +161,7 @@ The archive command SHALL support a `--skip-specs` flag that skips all spec upda
 
 #### Scenario: Skipping spec updates with flag
 
-- **WHEN** executing `openspec archive <change> --skip-specs`
+- **WHEN** executing `rasen archive <change> --skip-specs`
 - **THEN** skip spec discovery and update confirmation
 - **AND** proceed directly to moving the change to archive
 - **AND** display a message indicating specs were skipped

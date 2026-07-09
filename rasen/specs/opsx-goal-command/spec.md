@@ -1,46 +1,46 @@
 # opsx-goal-command Specification
 
 ## Purpose
-Define the `/opsx:goal` command and its backing skill templates — the single user-facing entry to the goal-loop family, LEAD classification and explicit override semantics, and the three goal-loop skill templates (plan, iterate, report) registered through the existing generation pipeline.
+Define the `/rasen:goal` command and its backing skill templates — the single user-facing entry to the goal-loop family, LEAD classification and explicit override semantics, and the three goal-loop skill templates (plan, iterate, report) registered through the existing generation pipeline.
 
 ## Requirements
 ### Requirement: Goal Command and Skill Templates
 
-The system SHALL provide an `openspec-opsx-goal` SkillTemplate and an `OPSX: Goal` CommandTemplate in `src/core/templates/workflows/` (mirroring `auto.ts`'s structure), plus three goal-loop skill templates — `openspec-goal-plan`, `openspec-goal-iterate`, and `openspec-goal-report` — all registered through the existing skill/command generation pipeline so `openspec init` installs them when the workflow is selected.
+The system SHALL provide a `rasen-goal` SkillTemplate and a `Rasen: Goal` CommandTemplate in `src/core/templates/workflows/` (mirroring `auto.ts`'s structure), plus three goal-loop skill templates — `rasen-goal-plan`, `rasen-goal-iterate`, and `rasen-goal-report` — all registered through the existing skill/command generation pipeline so `rasen init` installs them when the workflow is selected.
 
 #### Scenario: Templates export and register
 
 - **WHEN** the template files are loaded
-- **THEN** the goal command module SHALL export a SkillTemplate named `openspec-opsx-goal` and a CommandTemplate for `/opsx:goal`
-- **AND** the three skill modules SHALL export `SkillTemplate`s named `openspec-goal-plan`, `openspec-goal-iterate`, and `openspec-goal-report`
+- **THEN** the goal command module SHALL export a SkillTemplate named `rasen-goal` and a CommandTemplate for `/rasen:goal`
+- **AND** the three skill modules SHALL export `SkillTemplate`s named `rasen-goal-plan`, `rasen-goal-iterate`, and `rasen-goal-report`
 - **AND** all four SHALL be registered in `getSkillTemplates()` and the command in `getCommandTemplates()` in `src/core/shared/skill-generation.ts`, and re-exported from `src/core/templates/skill-templates.ts`
 
 #### Scenario: Goal-plan skill produces a goal plan, not a proposal
 
-- **WHEN** the `openspec-goal-plan` skill runs at the `define-goal` stage
+- **WHEN** the `rasen-goal-plan` skill runs at the `define-goal` stage
 - **THEN** it SHALL produce a `goal-plan.md` containing a natural-language `goal`, a `gate` (`{kind: measure, command, threshold/target, direction}` OR `{kind: evaluate, goal, rubric}`), a `workProduct` (`code` | `prose`), and `maxRounds`
 - **AND** it SHALL NOT produce a proposal, design, or specs
 
 #### Scenario: Goal-iterate skill is work-product-aware and never spawns children
 
-- **WHEN** the `openspec-goal-iterate` skill runs at the `iterate` loop stage
+- **WHEN** the `rasen-goal-iterate` skill runs at the `iterate` loop stage
 - **THEN** for a `code` work product it SHALL edit code toward the goal and MAY self-run the measure command informally during its dispatch
 - **AND** for a `prose` work product it SHALL research (web search/fetch) and write/refine the document inline
 - **AND** it SHALL NOT spawn child subagents (flat-hierarchy invariant)
 
 #### Scenario: Goal-report skill summarizes the run
 
-- **WHEN** the `openspec-goal-report` skill runs at the research pipeline's `report` tail stage
+- **WHEN** the `rasen-goal-report` skill runs at the research pipeline's `report` tail stage
 - **THEN** it SHALL summarize `goal-run.json` (rounds, scores or satisfaction, outcome) into a final report artifact
 - **AND** it SHALL NOT ship or archive code
 
 ### Requirement: LEAD Classifies and Selects a Backend Pipeline
 
-The `/opsx:goal` command SHALL present a single user-facing entry. The LEAD SHALL run its pre-flight and classify the task, selecting ONE backend pipeline from `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`. Classification keywords SHALL be suggestions only (an explicit selector always wins): score/latency/optimize/lighthouse/benchmark/p99/memory/throughput → measure; rubric/quality/clean/standard/refactor-quality → evaluate; research/investigate/write report or brief/autoresearch/literature → research.
+The `/rasen:goal` command SHALL present a single user-facing entry. The LEAD SHALL run its pre-flight and classify the task, selecting ONE backend pipeline from `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`. Classification keywords SHALL be suggestions only (an explicit selector always wins): score/latency/optimize/lighthouse/benchmark/p99/memory/throughput → measure; rubric/quality/clean/standard/refactor-quality → evaluate; research/investigate/write report or brief/autoresearch/literature → research.
 
 #### Scenario: Single entry with LEAD classification
 
-- **WHEN** a user runs `/opsx:goal <task>` with no selector
+- **WHEN** a user runs `/rasen:goal <task>` with no selector
 - **THEN** the LEAD SHALL classify the task and select one backend pipeline
 - **AND** SHALL display the chosen pipeline and let the user change it before proceeding
 
@@ -52,16 +52,16 @@ The `/opsx:goal` command SHALL present a single user-facing entry. The LEAD SHAL
 
 ### Requirement: Explicit Override Wins
 
-An explicit pipeline selection SHALL always override LEAD classification. The user MAY select the backend directly with a leading selector token (`/opsx:goal measure|evaluate|research <task>`) or with `--pipeline goal-loop-<variant>`.
+An explicit pipeline selection SHALL always override LEAD classification. The user MAY select the backend directly with a leading selector token (`/rasen:goal measure|evaluate|research <task>`) or with `--pipeline goal-loop-<variant>`.
 
 #### Scenario: Selector token overrides classification
 
-- **WHEN** `/opsx:goal measure <task>` is invoked
+- **WHEN** `/rasen:goal measure <task>` is invoked
 - **THEN** the LEAD SHALL select the `goal-loop-measure` pipeline regardless of its own classification suggestion
 - **AND** SHALL strip the selector token; the rest is the task description
 
 #### Scenario: Pipeline flag overrides classification
 
-- **WHEN** `/opsx:goal --pipeline goal-loop-research <task>` is invoked
+- **WHEN** `/rasen:goal --pipeline goal-loop-research <task>` is invoked
 - **THEN** the LEAD SHALL select the `goal-loop-research` pipeline
 - **AND** explicit selection SHALL win over both classification and the default

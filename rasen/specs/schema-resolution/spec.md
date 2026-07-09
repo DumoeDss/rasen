@@ -5,29 +5,29 @@ Define project-local schema resolution behavior, including precedence order (pro
 ## Requirements
 ### Requirement: Project-local schema resolution
 
-The system SHALL resolve schemas from the project-local directory (`./openspec/schemas/<name>/`) with highest priority when a `projectRoot` is provided.
+The system SHALL resolve schemas from the project-local directory (`./rasen/schemas/<name>/`) with highest priority when a `projectRoot` is provided.
 
 #### Scenario: Project-local schema takes precedence over user override
-- **WHEN** a schema named "my-workflow" exists at `./openspec/schemas/my-workflow/schema.yaml`
-- **AND** a schema named "my-workflow" exists at `~/.local/share/openspec/schemas/my-workflow/schema.yaml`
+- **WHEN** a schema named "my-workflow" exists at `./rasen/schemas/my-workflow/schema.yaml`
+- **AND** a schema named "my-workflow" exists at `~/.local/share/rasen/schemas/my-workflow/schema.yaml`
 - **AND** `getSchemaDir("my-workflow", projectRoot)` is called
 - **THEN** the system SHALL return the project-local path
 
 #### Scenario: Project-local schema takes precedence over package built-in
-- **WHEN** a schema named "spec-driven" exists at `./openspec/schemas/spec-driven/schema.yaml`
+- **WHEN** a schema named "spec-driven" exists at `./rasen/schemas/spec-driven/schema.yaml`
 - **AND** "spec-driven" is a package built-in schema
 - **AND** `getSchemaDir("spec-driven", projectRoot)` is called
 - **THEN** the system SHALL return the project-local path
 
 #### Scenario: Falls back to user override when no project-local schema
-- **WHEN** no schema named "my-workflow" exists at `./openspec/schemas/my-workflow/`
-- **AND** a schema named "my-workflow" exists at `~/.local/share/openspec/schemas/my-workflow/schema.yaml`
+- **WHEN** no schema named "my-workflow" exists at `./rasen/schemas/my-workflow/`
+- **AND** a schema named "my-workflow" exists at `~/.local/share/rasen/schemas/my-workflow/schema.yaml`
 - **AND** `getSchemaDir("my-workflow", projectRoot)` is called
 - **THEN** the system SHALL return the user override path
 
 #### Scenario: Falls back to package built-in when no project-local or user schema
-- **WHEN** no schema named "spec-driven" exists at `./openspec/schemas/spec-driven/`
-- **AND** no schema named "spec-driven" exists at `~/.local/share/openspec/schemas/spec-driven/`
+- **WHEN** no schema named "spec-driven" exists at `./rasen/schemas/spec-driven/`
+- **AND** no schema named "spec-driven" exists at `~/.local/share/rasen/schemas/spec-driven/`
 - **AND** "spec-driven" is a package built-in schema
 - **AND** `getSchemaDir("spec-driven", projectRoot)` is called
 - **THEN** the system SHALL return the package built-in path
@@ -43,14 +43,14 @@ The system SHALL provide a `getProjectSchemasDir(projectRoot)` function that ret
 
 #### Scenario: Returns correct path
 - **WHEN** `getProjectSchemasDir("/path/to/project")` is called
-- **THEN** the system SHALL return `/path/to/project/openspec/schemas`
+- **THEN** the system SHALL return `/path/to/project/rasen/schemas`
 
 ### Requirement: List schemas includes project-local
 
 The system SHALL include project-local schemas when listing available schemas if `projectRoot` is provided.
 
 #### Scenario: Project-local schemas appear in list
-- **WHEN** a schema named "team-flow" exists at `./openspec/schemas/team-flow/schema.yaml`
+- **WHEN** a schema named "team-flow" exists at `./rasen/schemas/team-flow/schema.yaml`
 - **AND** `listSchemas(projectRoot)` is called
 - **THEN** the returned list SHALL include "team-flow"
 
@@ -68,12 +68,12 @@ The system SHALL include project-local schemas when listing available schemas if
 The system SHALL indicate `source: 'project'` for project-local schemas in `listSchemasWithInfo()` results.
 
 #### Scenario: Project-local schema shows project source
-- **WHEN** a schema named "team-flow" exists at `./openspec/schemas/team-flow/schema.yaml`
+- **WHEN** a schema named "team-flow" exists at `./rasen/schemas/team-flow/schema.yaml`
 - **AND** `listSchemasWithInfo(projectRoot)` is called
 - **THEN** the schema info for "team-flow" SHALL have `source: 'project'`
 
 #### Scenario: User override schema shows user source
-- **WHEN** a schema named "my-custom" exists only at `~/.local/share/openspec/schemas/my-custom/`
+- **WHEN** a schema named "my-custom" exists only at `~/.local/share/rasen/schemas/my-custom/`
 - **AND** `listSchemasWithInfo(projectRoot)` is called
 - **THEN** the schema info for "my-custom" SHALL have `source: 'user'`
 
@@ -84,26 +84,26 @@ The system SHALL indicate `source: 'project'` for project-local schemas in `list
 
 ### Requirement: Schemas command shows source
 
-The `openspec schemas` command SHALL display the source of each schema.
+The `rasen schemas` command SHALL display the source of each schema.
 
 #### Scenario: Display format includes source
-- **WHEN** user runs `openspec schemas`
+- **WHEN** user runs `rasen schemas`
 - **THEN** the output SHALL show each schema with its source label (project, user, or package)
 
 ### Requirement: Use config schema as default for new changes
 
-The system SHALL use the schema field from `openspec/config.yaml` as the default when creating new changes without explicit `--schema` flag and no planning-home default applies.
+The system SHALL use the schema field from `rasen/config.yaml` as the default when creating new changes without explicit `--schema` flag and no planning-home default applies.
 
 #### Scenario: Create change without --schema flag and config exists
-- **WHEN** user runs `openspec new change foo`, no planning-home default applies, and config contains `schema: "tdd"`
+- **WHEN** user runs `rasen new change foo`, no planning-home default applies, and config contains `schema: "tdd"`
 - **THEN** system creates change with schema "tdd"
 
 #### Scenario: Create change without --schema flag and no config
-- **WHEN** user runs `openspec new change foo`, no planning-home default applies, and no config file exists
+- **WHEN** user runs `rasen new change foo`, no planning-home default applies, and no config file exists
 - **THEN** system creates change with default schema "spec-driven"
 
 #### Scenario: Create change with explicit --schema flag
-- **WHEN** user runs `openspec new change foo --schema custom` and config contains `schema: "tdd"`
+- **WHEN** user runs `rasen new change foo --schema custom` and config contains `schema: "tdd"`
 - **THEN** system creates change with schema "custom" (CLI flag overrides config)
 
 ### Requirement: Resolve schema with updated precedence order
@@ -128,10 +128,10 @@ The system SHALL resolve the schema for a change using the following precedence 
 
 ### Requirement: Support project-local schema names in config
 
-The system SHALL allow the config schema field to reference project-local schemas defined in `openspec/schemas/`.
+The system SHALL allow the config schema field to reference project-local schemas defined in `rasen/schemas/`.
 
 #### Scenario: Config references project-local schema
-- **WHEN** config contains `schema: "my-workflow"` and `openspec/schemas/my-workflow/` exists
+- **WHEN** config contains `schema: "my-workflow"` and `rasen/schemas/my-workflow/` exists
 - **THEN** system resolves to the project-local schema
 
 #### Scenario: Config references non-existent schema
@@ -152,7 +152,7 @@ The system SHALL display schema error with fuzzy match suggestions, list of avai
 
 #### Scenario: Error message includes fix instructions
 - **WHEN** config references invalid schema
-- **THEN** error message includes "Fix: Edit openspec/config.yaml and change 'schema: X' to a valid schema name"
+- **THEN** error message includes "Fix: Edit rasen/config.yaml and change 'schema: X' to a valid schema name"
 
 #### Scenario: Error distinguishes built-in vs project-local schemas
 - **WHEN** error lists available schemas

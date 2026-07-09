@@ -5,7 +5,7 @@ Establishes three grill methodology expert skills — `codebase-design`, `tdd`, 
 ## Requirements
 ### Requirement: Four grill expert skills exist as source templates
 
-The system SHALL carry three expert skills adapted from the grill sources (MIT, Matt Pocock), by explicit name: `codebase-design`, `tdd`, `prototype`. (`domain-modeling` was part of the original adaptation but was removed 2026-07-07: its repo-root CONTEXT.md/ADR working style conflicts with the OpenSpec change-directory flow.) Each SHALL have its prompt as an inline template string in `src/core/templates/experts/<name>.ts` whose body preserves the grill source substance (leading-word vocabulary and checkable completion criteria) and whose emitted frontmatter follows the fork convention (`name`, a `description`, `allowed-tools`), with the `${PREAMBLE}` shared constant interpolated near the top. Each SHALL carry its grill reference files as sidecars in `skills/experts/<name>/`.
+The system SHALL carry three expert skills adapted from the grill sources (MIT, Matt Pocock), by explicit name: `codebase-design`, `tdd`, `prototype`. (`domain-modeling` was part of the original adaptation but was removed 2026-07-07: its repo-root CONTEXT.md/ADR working style conflicts with the Rasen change-directory flow.) Each SHALL have its prompt as an inline template string in `src/core/templates/experts/<name>.ts` whose body preserves the grill source substance (leading-word vocabulary and checkable completion criteria) and whose emitted frontmatter follows the fork convention (`name`, a `description`, `allowed-tools`), with the `${PREAMBLE}` shared constant interpolated near the top. Each SHALL carry its grill reference files as sidecars in `skills/experts/<name>/`.
 
 #### Scenario: Each skill has a template and preamble reference
 
@@ -30,18 +30,18 @@ The system SHALL carry three expert skills adapted from the grill sources (MIT, 
 
 ### Requirement: Four skills registered as expert templates
 
-Each surviving grill skill SHALL be registered through the full expert wiring chain, by explicit file lookup: an expert template `src/core/templates/experts/<name>.ts` returning `name: 'openspec:<name>'`; an export in `src/core/templates/experts/index.ts`; a re-export in `src/core/templates/skill-templates.ts`; and an import plus a `getSkillTemplates()` entry in `src/core/shared/skill-generation.ts` with `dirName: 'openspec-<name>'` and `workflowId: '<name>'`. The `domain-modeling` wiring SHALL be absent at every point in that chain.
+Each surviving grill skill SHALL be registered through the full expert wiring chain, by explicit file lookup: an expert template `src/core/templates/experts/<name>.ts` returning `name: 'rasen:<name>'`; an export in `src/core/templates/experts/index.ts`; a re-export in `src/core/templates/skill-templates.ts`; and an import plus a `getSkillTemplates()` entry in `src/core/shared/skill-generation.ts` with `dirName: 'rasen-<name>'` and `workflowId: '<name>'`. The `domain-modeling` wiring SHALL be absent at every point in that chain.
 
 #### Scenario: getSkillTemplates returns the surviving experts
 
 - **WHEN** `getSkillTemplates()` is called without a filter
-- **THEN** the returned array SHALL include entries with dirNames `openspec-codebase-design`, `openspec-tdd`, and `openspec-prototype`
+- **THEN** the returned array SHALL include entries with dirNames `rasen-codebase-design`, `rasen-tdd`, and `rasen-prototype`
 - **AND** SHALL NOT include `openspec-domain-modeling` or any `openspec-gstack-*` dirName
 
 #### Scenario: init generates the surviving expert skill files
 
-- **WHEN** `openspec init` is run and Claude Code is selected
-- **THEN** `SKILL.md` files SHALL be generated at `.claude/skills/openspec-codebase-design/`, `openspec-tdd/`, and `openspec-prototype/`
+- **WHEN** `rasen init` is run and Claude Code is selected
+- **THEN** `SKILL.md` files SHALL be generated at `.claude/skills/rasen-codebase-design/`, `rasen-tdd/`, and `rasen-prototype/`
 
 #### Scenario: Build succeeds with the surviving template imports
 
