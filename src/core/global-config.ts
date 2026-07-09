@@ -2,6 +2,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
+import {
+  PROJECTS_DIR_NAME,
+  PROJECT_REGISTRY_FILE_NAME,
+  parseProjectRegistryState,
+  type ProjectRegistryState,
+} from './project-registry.js';
+
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
 export const GLOBAL_CONFIG_FILE_NAME = 'config.json';
@@ -291,12 +298,94 @@ function isExistingDirectory(target: string): boolean {
 }
 
 /**
+ * Best-effort read of a `projects/registry.json` for D2 home-name mapping.
+ * Never throws: a missing file, unreadable file, or invalid content all
+ * resolve to `null` so adoption/presence-checking falls back to a
+ * name-based comparison instead of failing.
+ */
+function readProjectsRegistryBestEffort(projectsDir: string): ProjectRegistryState | null {
+  try {
+    const registryPath = path.join(projectsDir, PROJECT_REGISTRY_FILE_NAME);
+    if (!fs.existsSync(registryPath)) return null;
+    return parseProjectRegistryState(fs.readFileSync(registryPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the destination home NAME for adopting an old `projects/<oldHome>/`
+ * directory (D2): maps the old home's `projectId` (read from the OLD
+ * registry) to the CURRENT registry's home for that same `projectId`, so
+ * content merges into the referenced home rather than landing under a stale
+ * name that `doctor --gc` would treat as unreferenced. Falls back to the old
+ * home name — still lossless — when either registry is missing/unreadable or
+ * no current entry shares the `projectId`; the GC sweep is a backstop, not a
+ * silent deleter of referenced data.
+ *
+ * The schema does not enforce `home`/`projectId` uniqueness across OLD
+ * registry entries (it's an unconstrained `Record<string, Entry>`), and
+ * legacy/pre-relocation registries are exactly the data most likely to carry
+ * that anomaly. Trusting an ambiguous mapping would let two DIFFERENT old
+ * homes resolve to the SAME destination name: the second would be silently
+ * dropped by the caller's never-overwrite guard, and this same function
+ * (shared with the presence check) would then misreport it as "adopted" —
+ * the false-positive "safe to delete" signal `rasen doctor` surfaces. Any
+ * ambiguity (an old home with more than one registry entry disagreeing on
+ * `projectId`, or a `projectId` claimed by more than one old home) falls
+ * back to the old home's own name for every home in the ambiguous group
+ * instead of picking an arbitrary "winner" — that name is guaranteed
+ * collision-free (it is a real, unique directory name on disk), so no
+ * destination collision can occur even when the registry lies.
+ */
+function resolveAdoptedHomeName(
+  oldHome: string,
+  oldRegistry: ProjectRegistryState | null,
+  currentRegistry: ProjectRegistryState | null,
+  warn: (message: string) => void = () => {}
+): string {
+  if (!oldRegistry || !currentRegistry) return oldHome;
+
+  const oldEntries = Object.values(oldRegistry.projects).filter((entry) => entry.home === oldHome);
+  if (oldEntries.length === 0) return oldHome;
+
+  const distinctProjectIds = new Set(oldEntries.map((entry) => entry.projectId));
+  if (distinctProjectIds.size > 1) {
+    warn(
+      `Warning: old registry has ambiguous entries for home "${oldHome}" (multiple projectIds); adopting it under its own name instead of mapping to the current registry.`
+    );
+    return oldHome;
+  }
+
+  const projectId = oldEntries[0].projectId;
+  const homesSharingProjectId = new Set(
+    Object.values(oldRegistry.projects)
+      .filter((entry) => entry.projectId === projectId)
+      .map((entry) => entry.home)
+  );
+  if (homesSharingProjectId.size > 1) {
+    warn(
+      `Warning: old registry maps projectId "${projectId}" to multiple homes (${[...homesSharingProjectId].sort().join(', ')}); adopting "${oldHome}" under its own name to avoid a destination collision.`
+    );
+    return oldHome;
+  }
+
+  const currentEntry = Object.values(currentRegistry.projects).find(
+    (entry) => entry.projectId === projectId
+  );
+  return currentEntry ? currentEntry.home : oldHome;
+}
+
+/**
  * True when every top-level child of `oldDir` is present at `target` — the
  * per-child evidence that `oldDir` was actually adopted into `target`, not
  * merely "target happens to be non-empty" (which could be unrelated content,
  * or a partially-failed adoption where only some children made it over). An
  * `oldDir` with zero children has nothing to check for, so an existing
- * target trivially counts as "adopted."
+ * target trivially counts as "adopted." The `projects/` child is checked at
+ * the finer D1 grain (below) rather than as one atomic presence check, so a
+ * top-level `projects/` that exists but still has pending per-home content
+ * correctly reads as NOT fully adopted.
  */
 function oldDirFullyPresentIn(oldDir: string, target: string): boolean {
   if (!isExistingDirectory(target)) return false;
@@ -307,7 +396,151 @@ function oldDirFullyPresentIn(oldDir: string, target: string): boolean {
     return false;
   }
   if (children.length === 0) return true;
-  return children.every((child) => fs.existsSync(path.join(target, child)));
+  return children.every((child) => {
+    if (child === PROJECTS_DIR_NAME) {
+      return projectsSubtreeFullyPresentIn(path.join(oldDir, child), path.join(target, child));
+    }
+    return fs.existsSync(path.join(target, child));
+  });
+}
+
+/**
+ * `projects/`-specific presence check at the D1 grain: recurses one level
+ * and maps each old home to its current name (D2) the same way adoption
+ * does, so an already-fully-adopted `projects/` subtree reads as adopted and
+ * a partially-adopted one does not.
+ */
+function projectsSubtreeFullyPresentIn(oldProjectsDir: string, targetProjectsDir: string): boolean {
+  if (!isExistingDirectory(targetProjectsDir)) return false;
+  let children: string[];
+  try {
+    children = fs.readdirSync(oldProjectsDir);
+  } catch {
+    return false;
+  }
+  if (children.length === 0) return true;
+
+  const oldRegistry = readProjectsRegistryBestEffort(oldProjectsDir);
+  const currentRegistry = readProjectsRegistryBestEffort(targetProjectsDir);
+
+  return children.every((child) => {
+    if (!isExistingDirectory(path.join(oldProjectsDir, child))) {
+      return fs.existsSync(path.join(targetProjectsDir, child));
+    }
+    const destName = resolveAdoptedHomeName(child, oldRegistry, currentRegistry);
+    return fs.existsSync(path.join(targetProjectsDir, destName));
+  });
+}
+
+/**
+ * Copies one source path into `destChild` inside `targetDir`, all-or-nothing:
+ * copied to a temp name and renamed into place, so a mid-copy crash never
+ * leaves a partial child at its real name. Failures are reported via `warn`,
+ * never thrown, and the temp name is best-effort cleaned up.
+ */
+function adoptSingleChild(
+  srcChild: string,
+  destChild: string,
+  targetDir: string,
+  warn: (message: string) => void
+): void {
+  const tempChild = path.join(
+    targetDir,
+    `.adopt-tmp-${path.basename(destChild)}-${process.pid}-${Date.now()}`
+  );
+  try {
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.cpSync(srcChild, tempChild, { recursive: true });
+    fs.renameSync(tempChild, destChild);
+  } catch (error) {
+    try {
+      fs.rmSync(tempChild, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup only.
+    }
+    warn(
+      `Warning: could not adopt "${srcChild}" into "${destChild}" (${
+        error instanceof Error ? error.message : String(error)
+      }). Finish manually, e.g.: cp -r "${srcChild}" "${destChild}"`
+    );
+  }
+}
+
+/**
+ * Adopts the `projects/` subtree at a finer grain than `adoptChildrenInto`'s
+ * top-level-child atom (D1): called only when the target `projects/` already
+ * exists (the fast path — target absent — stays the atomic whole-child copy
+ * in `adoptChildrenInto`). Recurses into each old `projects/<home>/`
+ * individually, still per-home all-or-nothing and never-overwrite, and lands
+ * each one under the CURRENT registry's home name for the same `projectId`
+ * (D2) rather than its old name. `projects/registry.json` itself is copied
+ * only when the target lacks one entirely — never overwritten, since it is
+ * read-only input to the mapping above (the "recorded facts over
+ * recomputation" invariant).
+ *
+ * Never-overwrite skips are reported, but as ONE summary line per call
+ * rather than one line per skipped item: this runs on every CLI startup
+ * (`adoptLegacyMachineData` is called before `program.parse`), and a machine
+ * with many already-adopted legacy homes would otherwise print one line per
+ * home on every single command — confirmed live as a real output-volume
+ * regression. The count still makes every skip visible without the spam;
+ * per-item detail is recoverable by comparing the old and new `projects/`
+ * directories directly (no new CLI surface added for it).
+ */
+function adoptProjectsSubtree(
+  sourceProjectsDir: string,
+  targetProjectsDir: string,
+  warn: (message: string) => void
+): void {
+  let children: string[];
+  try {
+    children = fs.readdirSync(sourceProjectsDir);
+  } catch {
+    return;
+  }
+
+  const oldRegistry = readProjectsRegistryBestEffort(sourceProjectsDir);
+  const currentRegistry = readProjectsRegistryBestEffort(targetProjectsDir);
+
+  let skippedCount = 0;
+
+  for (const child of children) {
+    const srcChild = path.join(sourceProjectsDir, child);
+
+    if (child === PROJECT_REGISTRY_FILE_NAME) {
+      const destChild = path.join(targetProjectsDir, child);
+      if (fs.existsSync(destChild)) {
+        // Never overwrite the current registry — read-only input to the
+        // mapping above.
+        skippedCount++;
+        continue;
+      }
+      adoptSingleChild(srcChild, destChild, targetProjectsDir, warn);
+      continue;
+    }
+
+    if (!isExistingDirectory(srcChild)) continue; // only home directories are per-child adoption units here
+
+    const destName = resolveAdoptedHomeName(child, oldRegistry, currentRegistry, warn);
+    const destChild = path.join(targetProjectsDir, destName);
+    if (fs.existsSync(destChild)) {
+      // Never overwrite existing target content (per-home grain) — including
+      // one masking a registry anomaly (resolveAdoptedHomeName already
+      // warned about that case specifically).
+      skippedCount++;
+      continue;
+    }
+
+    adoptSingleChild(srcChild, destChild, targetProjectsDir, warn);
+  }
+
+  if (skippedCount > 0) {
+    warn(
+      `Note: ${skippedCount} legacy project ${
+        skippedCount === 1 ? 'directory was' : 'directories were'
+      } left behind, unadopted, under "${sourceProjectsDir}" (targets already exist). Compare it against "${targetProjectsDir}" to finish merging any of them manually.`
+    );
+  }
 }
 
 /**
@@ -315,8 +548,11 @@ function oldDirFullyPresentIn(oldDir: string, target: string): boolean {
  * per child: a child is copied to a temp name inside the target and renamed
  * into place, so a mid-copy crash never leaves a partial child at its real
  * name. A child that already exists at the target is left untouched (never
- * overwritten). Failures are per-child (one bad child never blocks the
- * others) and are reported via `warn`, never thrown.
+ * overwritten) — EXCEPT `projects/`, which recurses one level via
+ * `adoptProjectsSubtree` when the target already has a `projects/` dir (D1):
+ * a pre-existing target `projects/` no longer skips the whole legacy
+ * subtree. Failures are per-child (one bad child never blocks the others)
+ * and are reported via `warn`, never thrown.
  */
 function adoptChildrenInto(sourceDir: string, targetDir: string, warn: (message: string) => void): void {
   let children: string[];
@@ -329,25 +565,17 @@ function adoptChildrenInto(sourceDir: string, targetDir: string, warn: (message:
   for (const child of children) {
     const srcChild = path.join(sourceDir, child);
     const destChild = path.join(targetDir, child);
+
+    if (child === PROJECTS_DIR_NAME && fs.existsSync(destChild)) {
+      if (isExistingDirectory(srcChild)) {
+        adoptProjectsSubtree(srcChild, destChild, warn);
+      }
+      continue;
+    }
+
     if (fs.existsSync(destChild)) continue; // never overwrite existing target content
 
-    const tempChild = path.join(targetDir, `.adopt-tmp-${child}-${process.pid}-${Date.now()}`);
-    try {
-      fs.mkdirSync(targetDir, { recursive: true });
-      fs.cpSync(srcChild, tempChild, { recursive: true });
-      fs.renameSync(tempChild, destChild);
-    } catch (error) {
-      try {
-        fs.rmSync(tempChild, { recursive: true, force: true });
-      } catch {
-        // Best-effort cleanup only.
-      }
-      warn(
-        `Warning: could not adopt "${srcChild}" into "${destChild}" (${
-          error instanceof Error ? error.message : String(error)
-        }). Finish manually, e.g.: cp -r "${srcChild}" "${destChild}"`
-      );
-    }
+    adoptSingleChild(srcChild, destChild, targetDir, warn);
   }
 }
 

@@ -545,5 +545,36 @@ describe('rasen doctor (3.6)', () => {
       ]);
       expect(health.machineHome.relocation.lingering).toEqual([]);
     });
+
+    // Round-1 review-loop follow-on: the startup adoption's never-overwrite
+    // skip note (global-config.ts adoptProjectsSubtree) is emitted via
+    // console.error (stderr) unconditionally before any command output runs,
+    // including --json commands. Confirm the two streams stay genuinely
+    // separate: stdout must remain parseable JSON, and the skip note must be
+    // observable on stderr, not interleaved into stdout.
+    it('keeps startup adoption skip notes on stderr, never corrupting --json stdout', async () => {
+      // Force a per-home skip: the SAME home dir already exists at both the
+      // old scheme dir and the (about-to-be-created) new root.
+      fs.mkdirSync(path.join(oldDataDir(), 'projects', 'already-there'), { recursive: true });
+      fs.writeFileSync(path.join(oldDataDir(), 'projects', 'already-there', 'marker.txt'), 'old\n');
+      fs.mkdirSync(path.join(newRoot(), 'projects', 'already-there'), { recursive: true });
+      fs.writeFileSync(path.join(newRoot(), 'projects', 'already-there', 'marker.txt'), 'current\n');
+
+      const json = await runCLI(['doctor', '--json'], { cwd: relocProjectRoot, env: relocEnv });
+
+      // stdout must be valid, parseable JSON — untouched by the skip note.
+      expect(() => JSON.parse(json.stdout)).not.toThrow();
+      const health = parseJson(json);
+      expect(health.machineHome).toBeDefined();
+
+      // The skip note landed on stderr, not stdout.
+      expect(json.stderr).toContain('left behind');
+      expect(json.stdout).not.toContain('left behind');
+
+      // Never-overwrite held: neither home was clobbered.
+      expect(
+        fs.readFileSync(path.join(newRoot(), 'projects', 'already-there', 'marker.txt'), 'utf-8')
+      ).toBe('current\n');
+    });
   });
 });

@@ -41,6 +41,10 @@ describe('skill sidecar install (init + update real run)', () => {
     originalEnv = { ...process.env };
     configTempDir = path.join(os.tmpdir(), `rasen-sidecar-cfg-${randomUUID()}`);
     await fs.mkdir(configTempDir, { recursive: true });
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME — clear it so this suite's XDG isolation
+    // actually resolves into configTempDir.
+    delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = configTempDir;
 
     vi.spyOn(console, 'log').mockImplementation(() => {});

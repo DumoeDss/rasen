@@ -33,6 +33,10 @@ describe('InitCommand', () => {
     testDir = path.join(os.tmpdir(), `openspec-init-test-${Date.now()}`);
     await fs.mkdir(testDir, { recursive: true });
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME/XDG_DATA_HOME — clear it so this suite's XDG
+    // isolation below actually applies.
+    delete process.env.RASEN_HOME;
     // Use a temp dir for global config to avoid reading real config
     configTempDir = path.join(os.tmpdir(), `openspec-config-init-${Date.now()}`);
     await fs.mkdir(configTempDir, { recursive: true });
@@ -543,6 +547,10 @@ describe('InitCommand - profile and detection features', () => {
     testDir = path.join(os.tmpdir(), `openspec-init-profile-test-${Date.now()}`);
     await fs.mkdir(testDir, { recursive: true });
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME — clear it so this suite's XDG isolation
+    // actually resolves into configTempDir.
+    delete process.env.RASEN_HOME;
     // Use a temp dir for global config to avoid polluting real config
     configTempDir = path.join(os.tmpdir(), `openspec-config-test-${Date.now()}`);
     await fs.mkdir(configTempDir, { recursive: true });
@@ -861,6 +869,10 @@ describe('InitCommand machine-home registration', () => {
     testDir = path.join(os.tmpdir(), `openspec-init-home-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await fs.mkdir(testDir, { recursive: true });
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME/XDG_DATA_HOME — clear it so this suite's XDG
+    // isolation below actually applies.
+    delete process.env.RASEN_HOME;
     configTempDir = path.join(os.tmpdir(), `openspec-config-home-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await fs.mkdir(configTempDir, { recursive: true });
     process.env.XDG_CONFIG_HOME = configTempDir;

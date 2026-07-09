@@ -143,6 +143,10 @@ describe('config profile interactive flow', () => {
     originalTTY = (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
     originalExitCode = process.exitCode;
 
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME — clear it so this suite's XDG isolation
+    // actually resolves into tempDir.
+    delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
     process.chdir(tempDir);
     (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;

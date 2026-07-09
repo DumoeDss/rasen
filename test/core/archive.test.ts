@@ -19,6 +19,7 @@ describe('ArchiveCommand', () => {
   const originalConsoleLog = console.log;
   const originalExitCode = process.exitCode;
   const originalXdgDataHome = process.env.XDG_DATA_HOME;
+  const originalRasenHome = process.env.RASEN_HOME;
 
   beforeEach(async () => {
     // Create temp directory
@@ -29,7 +30,11 @@ describe('ArchiveCommand', () => {
     process.chdir(tempDir);
 
     // Isolate root resolution from any real store registry on the
-    // host machine so no-root behavior stays the implicit-root path.
+    // host machine so no-root behavior stays the implicit-root path. The
+    // global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_DATA_HOME — clear it so this suite's XDG isolation
+    // actually applies.
+    delete process.env.RASEN_HOME;
     process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
 
     // Create Rasen structure
@@ -59,6 +64,11 @@ describe('ArchiveCommand', () => {
       delete process.env.XDG_DATA_HOME;
     } else {
       process.env.XDG_DATA_HOME = originalXdgDataHome;
+    }
+    if (originalRasenHome === undefined) {
+      delete process.env.RASEN_HOME;
+    } else {
+      process.env.RASEN_HOME = originalRasenHome;
     }
 
     // Clear mocks

@@ -406,6 +406,95 @@ describe('project-registry', () => {
       });
       fs.rmSync(repoRoot, { recursive: true, force: true });
     });
+
+    // D3: a freshly created shared home is named after the MAIN repo
+    // regardless of whether the worktree or the main repo registers first.
+    it('names a fresh shared home after the main repo even when the worktree registers first', async () => {
+      const repoRoot = makeProjectDir('rasen-main-repo');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      // A worktree path whose basename would, under the old (path-basename)
+      // derivation, wrongly become the shared home's permanent name.
+      const worktreePath = path.join(path.dirname(repoRoot), `feature-branch-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+
+      const projectId = randomUUID();
+
+      // Worktree registers FIRST (fresh projectId => case 2c, the base-name
+      // derivation under test).
+      const worktree = await registerProject(
+        { projectRoot: worktreePath, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const expectedBaseHome = deriveHomeBaseName(repoRoot, projectId);
+      expect(worktree.entry.home).toBe(expectedBaseHome);
+      expect(worktree.entry.home.startsWith('feature-branch')).toBe(false);
+
+      // The main repo registering afterward must share the SAME home (case 2a).
+      const main = await registerProject(
+        { projectRoot: repoRoot, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      expect(main.entry.home).toBe(worktree.entry.home);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    // Self-heal (D3): re-registering a worktree entry at its own path (the
+    // touchProjectRegistry case-1 path-exact refresh) must never rename or
+    // re-create the home directory.
+    it('does not rename the home directory when a worktree entry self-heals', async () => {
+      const repoRoot = makeProjectDir('rasen-selfheal-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const worktreePath = path.join(path.dirname(repoRoot), `selfheal-worktree-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+
+      const projectId = randomUUID();
+      const first = await registerProject(
+        { projectRoot: worktreePath, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      // Re-register the SAME path (case 1, path-exact — what a self-heal
+      // touch does) after the home directory already exists on disk.
+      const refreshed = await registerProject(
+        { projectRoot: worktreePath, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      expect(refreshed.entry.home).toBe(first.entry.home);
+      expect(fs.existsSync(getProjectHomeDir(first.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
   });
 
   describe('Windows path canonicalization', () => {
