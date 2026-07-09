@@ -17,6 +17,7 @@
 // Cold-layer binding type. Type-only import — erased at build time, so there is
 // no runtime import cycle with rollups.ts (which imports runSql/DATASET here).
 import type { RollupsEnv } from './rollups';
+import { HOT_HYGIENE_PREDICATE, coldHygienePredicate } from './filter';
 
 const ACCOUNT_ID = '5cc51d8388c780c03fb4c6161bd403c4';
 const SQL_API_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/analytics_engine/sql`;
@@ -174,7 +175,7 @@ function parseFilters(url: URL): Filters | { error: string } {
 // Extra predicates (test filter + dimension equality) for a hot-layer query.
 // Values are pre-validated by parseFilters, so interpolation is safe here.
 function hotWhere(opts: QueryOpts): string {
-  const parts: string[] = [];
+  const parts: string[] = [HOT_HYGIENE_PREDICATE];
   if (opts.hideTest) parts.push("blob2 != '0.0.0'");
   if (opts.filters.command) parts.push(`blob1 = '${opts.filters.command}'`);
   if (opts.filters.version) parts.push(`blob2 = '${opts.filters.version}'`);
@@ -252,6 +253,9 @@ function coldWhere(opts: QueryOpts, base?: string): { clause: string; binds: unk
   const parts: string[] = [];
   const binds: unknown[] = [];
   if (base) parts.push(base);
+  const hygiene = coldHygienePredicate();
+  parts.push(hygiene.sql);
+  binds.push(...hygiene.binds);
   if (opts.hideTest) parts.push("version != '0.0.0'");
   if (opts.filters.command) {
     parts.push('command = ?');

@@ -12,6 +12,7 @@
  * tuple and the same UPSERT, so they are safe to overlap and safe to repeat.
  */
 import { runSql, DATASET, EVENTS, USERS, type StatsEnv } from './stats';
+import { HOT_HYGIENE_PREDICATE } from './filter';
 
 // --- minimal D1 binding surface (hand-written, no @cloudflare/workers-types dep) ---
 
@@ -119,6 +120,7 @@ export async function runDailyRollup(
     `${EVENTS}, ${USERS} FROM ${DATASET} ` +
     `WHERE timestamp >= toStartOfDay(NOW() - INTERVAL '${lo}' DAY) ` +
     `AND timestamp < toStartOfDay(NOW() - INTERVAL '${hi}' DAY) ` +
+    `AND ${HOT_HYGIENE_PREDICATE} ` +
     `GROUP BY command, version, os, node_version`;
 
   const res = await runSql(env, sql);
@@ -153,6 +155,7 @@ export async function runBackfill(
     `SELECT toStartOfDay(timestamp) AS day, ` +
     `blob1 AS command, blob2 AS version, blob3 AS os, blob4 AS node_version, ` +
     `${EVENTS}, ${USERS} FROM ${DATASET} ` +
+    `WHERE ${HOT_HYGIENE_PREDICATE} ` +
     `GROUP BY day, command, version, os, node_version ORDER BY day`;
 
   const res = await runSql(env, sql);
