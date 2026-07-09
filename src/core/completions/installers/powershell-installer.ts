@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { FileSystemUtils } from '../../../utils/file-system.js';
+import { FileSystemUtils, findAllMarkerBlocks } from '../../../utils/file-system.js';
 import { InstallationResult } from '../factory.js';
 
 /**
@@ -27,31 +27,6 @@ export class PowerShellInstaller {
     start: '# OPENSPEC:START',
     end: '# OPENSPEC:END',
   };
-
-  /**
-   * Finds the character range of an existing managed block in profile content,
-   * searching the current marker family first, then the legacy family.
-   *
-   * @param content - Profile file content
-   * @returns The matched range (end exclusive, past the end marker) and which marker
-   * pair matched, or undefined if no managed block is present under either family
-   */
-  private findManagedBlockRange(
-    content: string
-  ): { startIndex: number; endIndex: number; markers: { start: string; end: string } } | undefined {
-    for (const markers of [this.PROFILE_MARKERS, this.LEGACY_PROFILE_MARKERS]) {
-      const startIndex = content.indexOf(markers.start);
-      if (startIndex === -1) {
-        continue;
-      }
-      const endIndex = content.indexOf(markers.end, startIndex);
-      if (endIndex === -1) {
-        continue;
-      }
-      return { startIndex, endIndex: endIndex + markers.end.length, markers };
-    }
-    return undefined;
-  }
 
   constructor(homeDir: string = os.homedir()) {
     this.homeDir = homeDir;
@@ -241,14 +216,25 @@ export class PowerShellInstaller {
           }
         }
 
-        // Check if already configured under the current markers
+        // Check if already configured under the current markers. PowerShell's managed
+        // block always appends a trailing description after the start marker on the same
+        // line (see managedBlockLines below), so this consumer opts into the relaxed
+        // line-start-only match — bash/zsh keep the strict default via updateFileWithMarkers.
         const scriptLine = `. "${scriptPath}"`;
-        const existingBlock = this.findManagedBlockRange(profileContent);
+        const existingBlocks = findAllMarkerBlocks(
+          profileContent,
+          [this.PROFILE_MARKERS, this.LEGACY_PROFILE_MARKERS],
+          { strict: false }
+        );
 
-        if (existingBlock?.markers === this.PROFILE_MARKERS && profileContent.includes(scriptLine)) {
-          continue; // Already configured with current markers, skip
+        if (
+          existingBlocks.length === 1 &&
+          existingBlocks[0].startMarker === this.PROFILE_MARKERS.start &&
+          profileContent.includes(scriptLine)
+        ) {
+          continue; // Already configured with current markers and no orphan to clean up, skip
         }
-        if (!existingBlock && profileContent.includes(scriptLine)) {
+        if (existingBlocks.length === 0 && profileContent.includes(scriptLine)) {
           continue; // Script already referenced outside a managed block, skip
         }
 
@@ -259,11 +245,20 @@ export class PowerShellInstaller {
         ].join('\n');
 
         let newContent: string;
-        if (existingBlock) {
-          // Replace the existing block (current or legacy) in place — no duplicate block
-          const before = profileContent.substring(0, existingBlock.startIndex);
-          const after = profileContent.substring(existingBlock.endIndex);
-          newContent = before + managedBlockLines + after;
+        if (existingBlocks.length > 0) {
+          // Replace the first block (by position) in place with fresh content; drop every
+          // other recognized block so a profile never ends up with more than one.
+          const [first, ...rest] = existingBlocks;
+          let result = profileContent.substring(0, first.startIndex) + managedBlockLines;
+          let cursor = first.endIndex + first.endMarker.length;
+
+          for (const match of rest) {
+            result += profileContent.substring(cursor, match.startIndex);
+            cursor = match.endIndex + match.endMarker.length;
+          }
+          result += profileContent.substring(cursor);
+
+          newContent = rest.length > 0 ? result.replace(/(\r?\n){3,}/g, '\n\n') : result;
         } else {
           // Append a new managed block
           newContent = profileContent + ['', managedBlockLines, ''].join('\n');
@@ -312,19 +307,41 @@ export class PowerShellInstaller {
           continue;
         }
 
-        // Remove the managed block under either the current or legacy marker family
-        const existingBlock = this.findManagedBlockRange(profileContent);
+        // Remove every managed block under either the current or legacy marker family.
+        // Relaxed line-start-only match, same reasoning as configureProfile() above.
+        const existingBlocks = findAllMarkerBlocks(
+          profileContent,
+          [this.PROFILE_MARKERS, this.LEGACY_PROFILE_MARKERS],
+          { strict: false }
+        );
 
-        if (!existingBlock) {
+        if (existingBlocks.length === 0) {
           continue; // No managed block found under either marker family
         }
 
-        // Remove the block (including markers and surrounding newlines)
-        const beforeBlock = profileContent.substring(0, existingBlock.startIndex);
-        const afterBlock = profileContent.substring(existingBlock.endIndex);
+        // Cursor-splice out every block's span, collecting the surrounding pieces.
+        const pieces: string[] = [];
+        let cursor = 0;
+        for (const match of existingBlocks) {
+          pieces.push(profileContent.substring(cursor, match.startIndex));
+          cursor = match.endIndex + match.endMarker.length;
+        }
+        pieces.push(profileContent.substring(cursor));
 
-        // Clean up extra newlines
-        const newContent = (beforeBlock.trimEnd() + '\n' + afterBlock.trimStart()).trim() + '\n';
+        // Trim the edge of each piece that touches a removed block, then join and trim
+        // the whole result — generalizes the single-block before/after trim to N blocks.
+        const trimmedPieces = pieces.map((piece, index) => {
+          let result = piece;
+          if (index > 0) {
+            result = result.trimStart();
+          }
+          if (index < pieces.length - 1) {
+            result = result.trimEnd();
+          }
+          return result;
+        });
+
+        const newContent = trimmedPieces.join('\n').trim() + '\n';
 
         if (!(await FileSystemUtils.canWriteFile(profilePath))) {
           throw new Error(`Path is not writable: ${profilePath}`);

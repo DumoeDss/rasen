@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { FileSystemUtils, removeMarkerBlock } from '../../src/utils/file-system.js';
+import { FileSystemUtils, removeMarkerBlock, findAllMarkerBlocks } from '../../src/utils/file-system.js';
 
 describe('FileSystemUtils.updateFileWithMarkers', () => {
   let testDir: string;
@@ -284,6 +284,101 @@ ${END_MARKER}
       expect(secondResult).toBe(firstResult);
     });
   });
+
+  describe('multi-family dedupe (both current and legacy blocks present)', () => {
+    const LEGACY_START = '<!-- OPENSPEC-LEGACY:START -->';
+    const LEGACY_END = '<!-- OPENSPEC-LEGACY:END -->';
+
+    it('should refresh the first block found in place and remove every other recognized block', async () => {
+      const filePath = path.join(testDir, 'both-families.md');
+      const existingFile = [
+        '# Before',
+        LEGACY_START,
+        'Old legacy content',
+        LEGACY_END,
+        '',
+        '# Middle',
+        START_MARKER,
+        'Old current content',
+        END_MARKER,
+        '# After',
+      ].join('\n');
+
+      await fs.writeFile(filePath, existingFile);
+
+      await FileSystemUtils.updateFileWithMarkers(
+        filePath,
+        'Fresh content',
+        START_MARKER,
+        END_MARKER,
+        { start: LEGACY_START, end: LEGACY_END }
+      );
+
+      const result = await fs.readFile(filePath, 'utf-8');
+
+      expect(result).toContain('# Before');
+      expect(result).toContain('# Middle');
+      expect(result).toContain('# After');
+      expect(result).toContain('Fresh content');
+      expect(result).not.toContain('Old legacy content');
+      expect(result).not.toContain('Old current content');
+      expect(result).not.toContain(LEGACY_START);
+      expect(result).not.toContain(LEGACY_END);
+
+      // Exactly one managed block — no duplicate and no orphan
+      expect(result.match(new RegExp(START_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))?.length).toBe(1);
+      expect(result.match(new RegExp(END_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))?.length).toBe(1);
+
+      // The dedupe target is the first block found by position (legacy, here) — it is
+      // refreshed in place, so the fresh block lands before "# Middle", not after it.
+      expect(result.indexOf(START_MARKER)).toBeLessThan(result.indexOf('# Middle'));
+    });
+  });
+
+  describe('coincidental marker-prefix collisions (strictness regression guard)', () => {
+    // Regression guard for a verifier-caught issue: updateFileWithMarkers() must keep
+    // requiring the marker literal ALONE on its own line (no trailing text) — the same
+    // strictness bash/zsh had before findAllMarkerBlocks existed. A user's own comment
+    // that merely *starts* with the marker literal (e.g. a section-header convention
+    // unrelated to this tool) must never be mistaken for a managed block and must never
+    // have its content deleted.
+    const RASEN_START = '# RASEN:START';
+    const RASEN_END = '# RASEN:END';
+
+    it('should not match — and must not delete — a user comment that merely starts with the start marker literal plus trailing text', async () => {
+      const filePath = path.join(testDir, 'coincidental-prefix.md');
+      const userContent = [
+        '# RASEN:START of my custom aliases (not related to the completion tool)',
+        'alias ll="ls -la"',
+        'alias gs="git status"',
+        '# RASEN:END of my custom aliases',
+      ].join('\n');
+
+      await fs.writeFile(filePath, userContent);
+
+      await FileSystemUtils.updateFileWithMarkers(
+        filePath,
+        'Fresh content',
+        RASEN_START,
+        RASEN_END
+      );
+
+      const result = await fs.readFile(filePath, 'utf-8');
+
+      // The user's coincidental comment and its content must survive completely intact —
+      // it must not be treated as a managed block and spliced out.
+      expect(result).toContain('# RASEN:START of my custom aliases (not related to the completion tool)');
+      expect(result).toContain('alias ll="ls -la"');
+      expect(result).toContain('alias gs="git status"');
+      expect(result).toContain('# RASEN:END of my custom aliases');
+
+      // A genuine new bare-marker block should have been appended instead (no matching
+      // block found, so updateFileWithMarkers falls back to prepend-new-block behavior).
+      expect(result).toContain('Fresh content');
+      const bareStartLines = result.split('\n').filter((line) => line.trim() === RASEN_START);
+      expect(bareStartLines).toHaveLength(1);
+    });
+  });
 });
 
 describe('removeMarkerBlock', () => {
@@ -443,6 +538,100 @@ export EDITOR="vim"`;
       expect(result).toContain('export EDITOR');
       expect(result).not.toContain('alias openspec');
       expect(result).not.toContain(SHELL_START);
+    });
+  });
+});
+
+describe('findAllMarkerBlocks', () => {
+  const CURRENT = { start: '# RASEN:START', end: '# RASEN:END' };
+  const LEGACY = { start: '# OPENSPEC:START', end: '# OPENSPEC:END' };
+
+  it('should return an empty array when no recognized family is present', () => {
+    const content = 'Plain content\nwith no markers at all';
+    expect(findAllMarkerBlocks(content, [CURRENT, LEGACY])).toEqual([]);
+  });
+
+  it('should find a single block when only one family is present', () => {
+    const content = `Before\n${CURRENT.start}\nManaged\n${CURRENT.end}\nAfter`;
+    const matches = findAllMarkerBlocks(content, [CURRENT, LEGACY]);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].startMarker).toBe(CURRENT.start);
+    expect(matches[0].endMarker).toBe(CURRENT.end);
+  });
+
+  it('should find blocks from both families and sort by position, regardless of array or file order', () => {
+    // The legacy block appears first in the file; the family array lists current first —
+    // the result must still be ordered by position in the file, not family order.
+    const content = [
+      '# Before',
+      LEGACY.start,
+      'Legacy block',
+      LEGACY.end,
+      '# Middle',
+      CURRENT.start,
+      'Current block',
+      CURRENT.end,
+      '# After',
+    ].join('\n');
+
+    const matches = findAllMarkerBlocks(content, [CURRENT, LEGACY]);
+
+    expect(matches).toHaveLength(2);
+    expect(matches[0].startMarker).toBe(LEGACY.start);
+    expect(matches[1].startMarker).toBe(CURRENT.start);
+    expect(matches[0].startIndex).toBeLessThan(matches[1].startIndex);
+  });
+
+  it('should skip a malformed family (start marker with no matching end) without throwing', () => {
+    const content = [
+      '# Before',
+      LEGACY.start, // dangling — no matching OPENSPEC:END anywhere in the content
+      'Dangling legacy content',
+      CURRENT.start,
+      'Current block',
+      CURRENT.end,
+    ].join('\n');
+
+    let matches: ReturnType<typeof findAllMarkerBlocks> | undefined;
+    expect(() => {
+      matches = findAllMarkerBlocks(content, [CURRENT, LEGACY]);
+    }).not.toThrow();
+
+    expect(matches).toHaveLength(1);
+    expect(matches![0].startMarker).toBe(CURRENT.start);
+  });
+
+  describe('strict option (default true)', () => {
+    it('should reject a marker with trailing text on the same line by default (strict)', () => {
+      const content = [
+        `${CURRENT.start} of my custom aliases (not related to the completion tool)`,
+        'alias ll="ls -la"',
+        `${CURRENT.end} of my custom aliases`,
+      ].join('\n');
+
+      expect(findAllMarkerBlocks(content, [CURRENT, LEGACY])).toEqual([]);
+      expect(findAllMarkerBlocks(content, [CURRENT, LEGACY], { strict: true })).toEqual([]);
+    });
+
+    it('should match a marker with trailing text on the same line when strict: false', () => {
+      const content = [
+        `${CURRENT.start} - Rasen completion (managed block, do not edit manually)`,
+        'some managed content',
+        CURRENT.end,
+      ].join('\n');
+
+      const matches = findAllMarkerBlocks(content, [CURRENT, LEGACY], { strict: false });
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0].startMarker).toBe(CURRENT.start);
+      expect(matches[0].endMarker).toBe(CURRENT.end);
+    });
+
+    it('should still reject a marker with non-whitespace text BEFORE it on the line even when strict: false', () => {
+      const content = `echo "${CURRENT.start}"\nsome content\n${CURRENT.end}`;
+
+      expect(findAllMarkerBlocks(content, [CURRENT, LEGACY], { strict: false })).toEqual([]);
     });
   });
 });

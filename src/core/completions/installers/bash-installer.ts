@@ -179,25 +179,37 @@ export class BashInstaller {
       // Read file content
       const content = await fs.readFile(bashrcPath, 'utf-8');
 
-      // Check if either the current or a legacy marker family is present
-      const markers = this.resolvePresentMarkers(content);
-      if (!markers) {
+      // Check which marker families (current and/or legacy) are present at all
+      const presentFamilies = this.resolveAllPresentMarkers(content);
+      if (presentFamilies.length === 0) {
         // No recognized markers, nothing to remove
         return true;
       }
 
-      // Remove content between markers (including markers)
+      // Remove content between markers (including markers) for every present family,
+      // re-deriving line indices from the current state of `lines` after each splice.
+      // A family whose markers aren't placed as a well-formed line-block is skipped
+      // rather than failing the whole removal.
       const lines = content.split('\n');
-      const startIndex = lines.findIndex((line) => line.trim() === markers.start);
-      const endIndex = lines.findIndex((line) => line.trim() === markers.end);
+      let removedAny = false;
 
-      if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-        // Invalid marker placement
-        return false;
+      for (const markers of presentFamilies) {
+        const startIndex = lines.findIndex((line) => line.trim() === markers.start);
+        const endIndex = lines.findIndex((line) => line.trim() === markers.end);
+
+        if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+          // Invalid marker placement for this family — skip and continue with others
+          continue;
+        }
+
+        lines.splice(startIndex, endIndex - startIndex + 1);
+        removedAny = true;
       }
 
-      // Remove lines between markers (inclusive)
-      lines.splice(startIndex, endIndex - startIndex + 1);
+      if (!removedAny) {
+        // Recognized markers were present but none formed a valid, removable block
+        return false;
+      }
 
       // Remove trailing empty lines
       while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
@@ -216,20 +228,21 @@ export class BashInstaller {
   }
 
   /**
-   * Determines which marker family (current `RASEN` or legacy `OPENSPEC`) is present
-   * in the given .bashrc content, preferring the current family if both are present.
+   * Determines which marker families (current `RASEN` and/or legacy `OPENSPEC`) are
+   * present in the given .bashrc content.
    *
    * @param content - .bashrc file content
-   * @returns The present marker pair, or undefined if neither family is found
+   * @returns Every present marker pair, in current-then-legacy order; empty if neither is found
    */
-  private resolvePresentMarkers(content: string): { start: string; end: string } | undefined {
+  private resolveAllPresentMarkers(content: string): Array<{ start: string; end: string }> {
+    const present: Array<{ start: string; end: string }> = [];
     if (content.includes(this.BASHRC_MARKERS.start) && content.includes(this.BASHRC_MARKERS.end)) {
-      return this.BASHRC_MARKERS;
+      present.push(this.BASHRC_MARKERS);
     }
     if (content.includes(this.LEGACY_BASHRC_MARKERS.start) && content.includes(this.LEGACY_BASHRC_MARKERS.end)) {
-      return this.LEGACY_BASHRC_MARKERS;
+      present.push(this.LEGACY_BASHRC_MARKERS);
     }
-    return undefined;
+    return present;
   }
 
   /**
