@@ -120,9 +120,9 @@ Good interfaces make testing natural:
 
 export function getCodebaseDesignSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:codebase-design',
+    name: 'rasen:codebase-design',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

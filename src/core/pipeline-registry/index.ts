@@ -106,6 +106,9 @@ export {
   type PipelineInfo,
 } from './resolver.js';
 
+// Legacy skill-ID recognition (resume old->new hinting)
+export { mapLegacySkillId } from './legacy-skill.js';
+
 // Portfolio run-state (portfolio-run.json) — multi-change observability + resume
 export {
   PORTFOLIO_STATE_FILENAME,

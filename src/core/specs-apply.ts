@@ -1,3 +1,5 @@
+import { WORKSPACE_DIR_NAME } from './config.js';
+import { WORKSPACE_SPECS_DIR } from './workspace-root.js';
 /**
  * Spec Application Logic
  *
@@ -384,7 +386,7 @@ export async function writeUpdatedSpec(
   if (options.silent) return;
 
   const specName = path.basename(path.dirname(update.target));
-  console.log(`Applying changes to ${options.displayPath ?? `openspec/specs/${specName}/spec.md`}:`);
+  console.log(`Applying changes to ${options.displayPath ?? `${WORKSPACE_SPECS_DIR}/${specName}/spec.md`}:`);
   if (counts.added) console.log(`  + ${counts.added} added`);
   if (counts.modified) console.log(`  ~ ${counts.modified} modified`);
   if (counts.removed) console.log(`  - ${counts.removed} removed`);
@@ -451,8 +453,8 @@ export async function applySpecs(
     silent?: boolean;
   } = {}
 ): Promise<SpecsApplyOutput> {
-  const changeDir = path.join(projectRoot, 'openspec', 'changes', changeName);
-  const mainSpecsDir = path.join(projectRoot, 'openspec', 'specs');
+  const changeDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', changeName);
+  const mainSpecsDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'specs');
 
   // Verify change exists
   try {
@@ -532,14 +534,14 @@ export async function applySpecs(
       await fs.writeFile(p.update.target, p.rebuilt);
 
       if (!options.silent) {
-        console.log(`Applying changes to openspec/specs/${capability}/spec.md:`);
+        console.log(`Applying changes to ${WORKSPACE_SPECS_DIR}/${capability}/spec.md:`);
         if (p.counts.added) console.log(`  + ${p.counts.added} added`);
         if (p.counts.modified) console.log(`  ~ ${p.counts.modified} modified`);
         if (p.counts.removed) console.log(`  - ${p.counts.removed} removed`);
         if (p.counts.renamed) console.log(`  → ${p.counts.renamed} renamed`);
       }
     } else if (!options.silent) {
-      console.log(`Would apply changes to openspec/specs/${capability}/spec.md:`);
+      console.log(`Would apply changes to ${WORKSPACE_SPECS_DIR}/${capability}/spec.md:`);
       if (p.counts.added) console.log(`  + ${p.counts.added} added`);
       if (p.counts.modified) console.log(`  ~ ${p.counts.modified} modified`);
       if (p.counts.removed) console.log(`  - ${p.counts.removed} removed`);

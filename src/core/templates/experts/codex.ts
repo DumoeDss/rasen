@@ -336,9 +336,9 @@ If token count is not available, display: \`Tokens: unknown\`
 
 export function getCodexSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:codex',
+    name: 'rasen:codex',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

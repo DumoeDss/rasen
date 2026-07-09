@@ -30,7 +30,7 @@ describe('worksets core', () => {
   let globalDataDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-worksets-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-worksets-'));
     globalDataDir = path.join(tempDir, 'data');
   });
 

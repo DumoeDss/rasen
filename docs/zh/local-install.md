@@ -12,25 +12,25 @@
 ### npm
 
 ```bash
-npm install --save-dev @fission-ai/openspec
+npm install --save-dev rasen
 ```
 
 ### pnpm
 
 ```bash
-pnpm add -D @fission-ai/openspec
+pnpm add -D rasen
 ```
 
 ### yarn
 
 ```bash
-yarn add -D @fission-ai/openspec
+yarn add -D rasen
 ```
 
 ### bun
 
 ```bash
-bun add -D @fission-ai/openspec
+bun add -D rasen
 ```
 
 安装后，`openspec` 命令位于 `node_modules/.bin/openspec`。
@@ -55,7 +55,7 @@ pnpm link /path/to/OpenSpec
 取消链接：
 
 ```bash
-pnpm unlink @fission-ai/openspec
+pnpm unlink rasen
 ```
 
 ### 方式二：npm link
@@ -67,14 +67,14 @@ npm link
 
 # 2. 在目标项目中使用链接
 cd /path/to/your-project
-npm link @fission-ai/openspec
+npm link rasen
 ```
 
 取消链接：
 
 ```bash
 cd /path/to/your-project
-npm unlink @fission-ai/openspec
+npm unlink rasen
 
 cd /path/to/OpenSpec
 npm unlink
@@ -112,23 +112,23 @@ npm install --save-dev /path/to/OpenSpec/fission-ai-openspec-x.x.x.tgz
 ### npx / pnpx（推荐）
 
 ```bash
-npx openspec --version
-npx openspec init
-npx openspec status
+npx rasen --version
+npx rasen init
+npx rasen status
 ```
 
 ### pnpm exec
 
 ```bash
-pnpm exec openspec --version
-pnpm exec openspec init
+pnpm exec rasen --version
+pnpm exec rasen init
 ```
 
 ### yarn exec
 
 ```bash
-yarn openspec --version
-yarn openspec init
+yarn rasen --version
+yarn rasen init
 ```
 
 ### package.json scripts
@@ -139,8 +139,8 @@ yarn openspec init
 {
   "scripts": {
     "openspec": "openspec",
-    "openspec:init": "openspec init",
-    "openspec:status": "openspec status"
+    "openspec:init": "rasen init",
+    "openspec:status": "rasen status"
   }
 }
 ```
@@ -148,7 +148,7 @@ yarn openspec init
 然后运行：
 
 ```bash
-npm run openspec -- init
+npm run rasen -- init
 pnpm openspec:init
 ```
 
@@ -161,19 +161,19 @@ pnpm openspec:init
 Windows 下：
 
 ```bash
-.\node_modules\.bin\openspec --version
+.\node_modules\.bin\rasen --version
 ```
 
 ## 验证安装
 
 ```bash
-npx openspec --version
+npx rasen --version
 ```
 
 ## 初始化项目
 
 ```bash
-npx openspec init
+npx rasen init
 ```
 
 按照交互式提示选择 AI 工具和配置。详见 [Getting Started](getting-started.md)。
@@ -216,5 +216,5 @@ steps:
     with:
       node-version: '20'
   - run: pnpm install --frozen-lockfile
-  - run: npx openspec status
+  - run: npx rasen status
 ```

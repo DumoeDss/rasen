@@ -22,7 +22,7 @@ describe('pipeline command store root selection', () => {
 
   beforeEach(async () => {
     tempDir = fs.realpathSync.native(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-pipeline-store-root-'))
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipeline-store-root-'))
     );
     env = {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
@@ -41,9 +41,9 @@ describe('pipeline command store root selection', () => {
   });
 
   function createOpenSpecRoot(rootDir: string): void {
-    fs.mkdirSync(path.join(rootDir, 'openspec', 'specs'), { recursive: true });
-    fs.mkdirSync(path.join(rootDir, 'openspec', 'changes', 'archive'), { recursive: true });
-    fs.writeFileSync(path.join(rootDir, 'openspec', 'config.yaml'), 'schema: spec-driven\n');
+    fs.mkdirSync(path.join(rootDir, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, 'rasen', 'changes', 'archive'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
   }
 
   async function registerStoreFixture(id: string): Promise<string> {
@@ -54,7 +54,7 @@ describe('pipeline command store root selection', () => {
   }
 
   function writeStorePipeline(name: string, content: string): void {
-    const dir = path.join(storeRoot, 'openspec', 'pipelines', name);
+    const dir = path.join(storeRoot, 'rasen', 'pipelines', name);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'pipeline.yaml'), content, 'utf-8');
   }
@@ -71,7 +71,7 @@ describe('pipeline command store root selection', () => {
 
   it('resume reads run-state from the store change directory (hasRunState:true)', async () => {
     // A change with recorded run-state lives in the STORE, not the cwd.
-    const changeDir = path.join(storeRoot, 'openspec', 'changes', 'wip-change');
+    const changeDir = path.join(storeRoot, 'rasen', 'changes', 'wip-change');
     fs.mkdirSync(changeDir, { recursive: true });
     // bug-fix build order: propose -> apply -> verify -> ship -> archive
     fs.writeFileSync(
@@ -94,7 +94,7 @@ describe('pipeline command store root selection', () => {
     expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
 
     // No local openspec/ was scaffolded in the unrelated cwd.
-    expect(fs.existsSync(path.join(appRepo, 'openspec'))).toBe(false);
+    expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
   });
 
   it('list and validate --pipelines report the same store pipeline set', async () => {
@@ -104,7 +104,7 @@ describe('pipeline command store root selection', () => {
         'name: store-only-pipeline',
         'stages:',
         '  - id: propose',
-        '    skill: openspec-propose',
+        '    skill: rasen-propose',
         '    role: planner',
       ].join('\n')
     );
@@ -148,13 +148,13 @@ describe('pipeline command store root selection', () => {
     // The override landed under the STORE root, not the cwd.
     const overridePath = path.join(
       storeRoot,
-      'openspec',
+      'rasen',
       'pipelines',
       'small-feature',
       'pipeline.yaml'
     );
     expect(fs.existsSync(overridePath)).toBe(true);
-    expect(fs.existsSync(path.join(appRepo, 'openspec'))).toBe(false);
+    expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
 
     // A root-aware validate of the store sees the override as a valid pipeline.
     const validate = await runCLI(

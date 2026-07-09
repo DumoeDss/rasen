@@ -4,7 +4,7 @@
 
 ## 快速设置
 
-在你的 `openspec/config.yaml` 中添加语言指令：
+在你的 `rasen/config.yaml` 中添加语言指令：
 
 ```yaml
 schema: spec-driven
@@ -104,7 +104,7 @@ context: |
 
 ```bash
 # 查看 instructions——应显示你的语言上下文
-openspec instructions proposal --change my-change
+rasen instructions proposal --change my-change
 
 # 输出会包含你的语言上下文
 ```

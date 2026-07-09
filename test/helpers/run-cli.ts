@@ -12,12 +12,12 @@ const cliEntry = path.join(projectRoot, 'dist', 'cli', 'index.js');
 const DEFAULT_CLI_TIMEOUT_MS = 30_000;
 
 // Isolate global-config / data reads from the developer's machine. Otherwise a
-// spawned CLI reads ~/.config|%APPDATA%/openspec/config.json, so a local custom
+// spawned CLI reads ~/.config|%APPDATA%/rasen/config.json, so a local custom
 // profile/delivery (e.g. `delivery: commands-first`) makes skill-generation e2e
 // tests fail (commands generated instead of skills). XDG_CONFIG_HOME and
 // XDG_DATA_HOME take precedence on all platforms (see getGlobalConfigDir), so
 // pointing them at an empty temp dir yields the default config + built-in schemas.
-const isolatedConfigHome = mkdtempSync(path.join(os.tmpdir(), 'openspec-test-config-'));
+const isolatedConfigHome = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-config-'));
 
 let buildPromise: Promise<void> | undefined;
 const activeCliChildren = new Set<ChildProcess>();

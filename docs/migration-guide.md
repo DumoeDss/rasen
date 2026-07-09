@@ -8,11 +8,11 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 
 | Aspect | Legacy | OPSX |
 |--------|--------|------|
-| **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Default: `/opsx:propose`, `/opsx:apply`, `/opsx:sync`, `/opsx:archive` (expanded workflow commands optional) |
+| **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Default: `/rasen:propose`, `/rasen:apply`, `/rasen:sync`, `/rasen:archive` (expanded workflow commands optional) |
 | **Workflow** | Create all artifacts at once | Create incrementally or all at once—your choice |
 | **Going back** | Awkward phase gates | Natural—update any artifact anytime |
 | **Customization** | Fixed structure | Schema-driven, fully hackable |
-| **Configuration** | `CLAUDE.md` with markers + `project.md` | Clean config in `openspec/config.yaml` |
+| **Configuration** | `CLAUDE.md` with markers + `project.md` | Clean config in `rasen/config.yaml` |
 
 **The philosophy change:** Work isn't linear. OPSX stops pretending it is.
 
@@ -24,9 +24,9 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 
 The migration process is designed with preservation in mind:
 
-- **Active changes in `openspec/changes/`** — Completely preserved. You can continue them with OPSX commands.
+- **Active changes in `rasen/changes/`** — Completely preserved. You can continue them with OPSX commands.
 - **Archived changes** — Untouched. Your history remains intact.
-- **Main specs in `openspec/specs/`** — Untouched. These are your source of truth.
+- **Main specs in `rasen/specs/`** — Untouched. These are your source of truth.
 - **Your content in CLAUDE.md, AGENTS.md, etc.** — Preserved. Only the OpenSpec marker blocks are removed; everything you wrote stays.
 
 ### What Gets Removed
@@ -36,7 +36,7 @@ Only OpenSpec-managed files that are being replaced:
 | What | Why |
 |------|-----|
 | Legacy slash command directories/files | Replaced by the new skills system |
-| `openspec/AGENTS.md` | Obsolete workflow trigger |
+| `rasen/AGENTS.md` | Obsolete workflow trigger |
 | OpenSpec markers in `CLAUDE.md`, `AGENTS.md`, etc. | No longer needed |
 
 **Legacy command locations by tool** (examples—your tool may vary):
@@ -60,7 +60,7 @@ One file requires manual migration:
 **`openspec/project.md`** — This file isn't deleted automatically because it may contain project context you've written. You'll need to:
 
 1. Review its contents
-2. Move useful context to `openspec/config.yaml` (see guidance below)
+2. Move useful context to `rasen/config.yaml` (see guidance below)
 3. Delete the file when ready
 
 **Why we made this change:**
@@ -82,17 +82,17 @@ Don't worry about getting it perfect. We're still learning what works best here,
 
 ## Running the Migration
 
-Both `openspec init` and `openspec update` detect legacy files and guide you through the same cleanup process. Use whichever fits your situation:
+Both `rasen init` and `rasen update` detect legacy files and guide you through the same cleanup process. Use whichever fits your situation:
 
 - New installs default to profile `core` (`propose`, `explore`, `apply`, `sync`, `archive`).
 - Migrated installs preserve your previously installed workflows by writing a `custom` profile when needed.
 
-### Using `openspec init`
+### Using `rasen init`
 
 Run this if you want to add new tools or reconfigure which tools are set up:
 
 ```bash
-openspec init
+rasen init
 ```
 
 The init command detects legacy files and guides you through cleanup:
@@ -107,7 +107,7 @@ as before.
 Files to remove
 No user content to preserve:
   • .claude/commands/openspec/
-  • openspec/AGENTS.md
+  • rasen/AGENTS.md
 
 Files to update
 OpenSpec markers will be removed, your content preserved:
@@ -118,7 +118,7 @@ Needs your attention
   • openspec/project.md
     We won't delete this file. It may contain useful project context.
 
-    The new openspec/config.yaml has a "context:" section for planning
+    The new rasen/config.yaml has a "context:" section for planning
     context. This is included in every OpenSpec request and works more
     reliably than the old project.md approach.
 
@@ -132,16 +132,16 @@ Needs your attention
 
 1. Legacy slash command directories are removed
 2. OpenSpec markers are stripped from `CLAUDE.md`, `AGENTS.md`, etc. (your content stays)
-3. `openspec/AGENTS.md` is deleted
+3. `rasen/AGENTS.md` is deleted
 4. New skills are installed in `.claude/skills/`
-5. `openspec/config.yaml` is created with a default schema
+5. `rasen/config.yaml` is created with a default schema
 
-### Using `openspec update`
+### Using `rasen update`
 
 Run this if you just want to migrate and refresh your existing tools to the latest version:
 
 ```bash
-openspec update
+rasen update
 ```
 
 The update command also detects and cleans up legacy artifacts, then refreshes generated skills/commands to match your current profile and delivery settings.
@@ -151,7 +151,7 @@ The update command also detects and cleans up legacy artifacts, then refreshes g
 For scripted migrations:
 
 ```bash
-openspec init --force --tools claude
+rasen init --force --tools claude
 ```
 
 The `--force` flag skips prompts and auto-accepts cleanup.
@@ -160,7 +160,7 @@ The `--force` flag skips prompts and auto-accepts cleanup.
 
 ## Migrating project.md to config.yaml
 
-The old `openspec/project.md` was a freeform markdown file for project context. The new `openspec/config.yaml` is structured and—critically—**injected into every planning request** so your conventions are always present when the AI works.
+The old `openspec/project.md` was a freeform markdown file for project context. The new `rasen/config.yaml` is structured and—critically—**injected into every planning request** so your conventions are always present when the AI works.
 
 ### Before (project.md)
 
@@ -284,32 +284,32 @@ Command availability is profile-dependent:
 
 | Command | Purpose |
 |---------|---------|
-| `/opsx:propose` | Create a change and generate planning artifacts in one step |
-| `/opsx:explore` | Think through ideas with no structure |
-| `/opsx:apply` | Implement tasks from tasks.md |
-| `/opsx:archive` | Finalize and archive the change |
+| `/rasen:propose` | Create a change and generate planning artifacts in one step |
+| `/rasen:explore` | Think through ideas with no structure |
+| `/rasen:apply` | Implement tasks from tasks.md |
+| `/rasen:archive` | Finalize and archive the change |
 
 **Expanded workflow (custom selection):**
 
 | Command | Purpose |
 |---------|---------|
-| `/opsx:new` | Start a new change scaffold |
-| `/opsx:continue` | Create the next artifact (one at a time) |
-| `/opsx:ff` | Fast-forward—create planning artifacts at once |
-| `/opsx:verify` | Validate implementation matches specs |
-| `/opsx:sync` | Merge delta specs into main specs |
-| `/opsx:bulk-archive` | Archive multiple changes at once |
-| `/opsx:onboard` | Guided end-to-end onboarding workflow |
+| `/rasen:new` | Start a new change scaffold |
+| `/rasen:continue` | Create the next artifact (one at a time) |
+| `/rasen:ff` | Fast-forward—create planning artifacts at once |
+| `/rasen:verify` | Validate implementation matches specs |
+| `/rasen:sync` | Merge delta specs into main specs |
+| `/rasen:bulk-archive` | Archive multiple changes at once |
+| `/rasen:onboard` | Guided end-to-end onboarding workflow |
 
-Enable expanded commands with `openspec config profile`, then run `openspec update`.
+Enable expanded commands with `rasen config profile`, then run `rasen update`.
 
 ### Command Mapping from Legacy
 
 | Legacy | OPSX Equivalent |
 |--------|-----------------|
-| `/openspec:proposal` | `/opsx:propose` (default) or `/opsx:new` then `/opsx:ff` (expanded) |
-| `/openspec:apply` | `/opsx:apply` |
-| `/openspec:archive` | `/opsx:archive` |
+| `/openspec:proposal` | `/rasen:propose` (default) or `/rasen:new` then `/rasen:ff` (expanded) |
+| `/openspec:apply` | `/rasen:apply` |
+| `/openspec:archive` | `/rasen:archive` |
 
 ### New Capabilities
 
@@ -317,13 +317,13 @@ These capabilities are part of the expanded workflow command set.
 
 **Granular artifact creation:**
 ```
-/opsx:continue
+/rasen:continue
 ```
 Creates one artifact at a time based on dependencies. Use this when you want to review each step.
 
 **Exploration mode:**
 ```
-/opsx:explore
+/rasen:explore
 ```
 Think through ideas with a partner before committing to a change.
 
@@ -381,7 +381,7 @@ Artifacts form a directed graph. Dependencies are enablers, not gates:
                      specs, design)
 ```
 
-When you run `/opsx:continue`, it checks what's ready and offers the next artifact. You can also create multiple ready artifacts in any order.
+When you run `/rasen:continue`, it checks what's ready and offers the next artifact. You can also create multiple ready artifacts in any order.
 
 ### Skills vs Commands
 
@@ -416,7 +416,7 @@ Your in-progress changes work seamlessly with OPSX commands.
 **Have an active change from the legacy workflow?**
 
 ```
-/opsx:apply add-my-feature
+/rasen:apply add-my-feature
 ```
 
 OPSX reads the existing artifacts and continues from where you left off.
@@ -424,7 +424,7 @@ OPSX reads the existing artifacts and continues from where you left off.
 **Want to add more artifacts to an existing change?**
 
 ```
-/opsx:continue add-my-feature
+/rasen:continue add-my-feature
 ```
 
 Shows what's ready to create based on what already exists.
@@ -432,7 +432,7 @@ Shows what's ready to create based on what already exists.
 **Need to see status?**
 
 ```bash
-openspec status --change add-my-feature
+rasen status --change add-my-feature
 ```
 
 ---
@@ -470,7 +470,7 @@ When determining which schema to use, OPSX checks in order:
 
 1. **CLI flag**: `--schema <name>` (highest priority)
 2. **Change metadata**: `.openspec.yaml` in the change directory
-3. **Project config**: `openspec/config.yaml`
+3. **Project config**: `rasen/config.yaml`
 4. **Default**: `spec-driven`
 
 ### Available Schemas
@@ -482,7 +482,7 @@ When determining which schema to use, OPSX checks in order:
 List all available schemas:
 
 ```bash
-openspec schemas
+rasen schemas
 ```
 
 ### Custom Schemas
@@ -490,13 +490,13 @@ openspec schemas
 Create your own workflow:
 
 ```bash
-openspec schema init my-workflow
+rasen schema init my-workflow
 ```
 
 Or fork an existing one:
 
 ```bash
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 ```
 
 See [Customization](customization.md) for details.
@@ -510,7 +510,7 @@ See [Customization](customization.md) for details.
 You're running in a CI or non-interactive environment. Use:
 
 ```bash
-openspec init --force
+rasen init --force
 ```
 
 ### Commands not appearing after migration
@@ -526,12 +526,12 @@ Check that your `rules:` keys match your schema's artifact IDs:
 Run this to see valid artifact IDs:
 
 ```bash
-openspec schemas --json
+rasen schemas --json
 ```
 
 ### Config not being applied
 
-1. Ensure the file is at `openspec/config.yaml` (not `.yml`)
+1. Ensure the file is at `rasen/config.yaml` (not `.yml`)
 2. Validate YAML syntax
 3. Config changes take effect immediately—no restart needed
 
@@ -570,21 +570,21 @@ project/
 ### What's Gone
 
 - `.claude/commands/openspec/` — replaced by `.claude/skills/`
-- `openspec/AGENTS.md` — obsolete
+- `rasen/AGENTS.md` — obsolete
 - `openspec/project.md` — migrate to `config.yaml`, then delete
 - OpenSpec marker blocks in `CLAUDE.md`, `AGENTS.md`, etc.
 
 ### Command Cheatsheet
 
 ```text
-/opsx:propose      Start quickly (default core profile)
-/opsx:apply        Implement tasks
-/opsx:archive      Finish and archive
+/rasen:propose      Start quickly (default core profile)
+/rasen:apply        Implement tasks
+/rasen:archive      Finish and archive
 
 # Expanded workflow (if enabled):
-/opsx:new          Scaffold a change
-/opsx:continue     Create next artifact
-/opsx:ff           Create planning artifacts
+/rasen:new          Scaffold a change
+/rasen:continue     Create next artifact
+/rasen:ff           Create planning artifacts
 ```
 
 ---

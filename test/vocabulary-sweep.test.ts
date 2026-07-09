@@ -87,7 +87,11 @@ describe('vocabulary sweep', () => {
     // The command-group deletion slice's ledger records exactly these
     // survivors; a new (workspace|initiative)_ token in src/ must be a
     // deliberate decision recorded in the ledger, not drift.
-    const allowed = new Set(['initiative_option_removed']);
+    // workspace_detected: the token surfaced (via the pattern below) from the
+    // RootSelectionError code `legacy_workspace_detected`, emitted when root
+    // resolution finds a legacy openspec/ workspace but no rasen/ one and points
+    // the user at `rasen migrate` (rasen-full-rebrand slice 1.4). Deliberate.
+    const allowed = new Set(['initiative_option_removed', 'workspace_detected']);
     const found = new Set<string>();
     const pattern = /(workspace|initiative)_[a-z_]+/g;
 

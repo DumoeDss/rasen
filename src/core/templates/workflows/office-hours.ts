@@ -1,5 +1,5 @@
 /**
- * Office-Hours OPSX Workflow Command
+ * Office-Hours Rasen Workflow Command
  *
  * YC-style product validation — two modes: Startup (six forcing questions)
  * and Builder (design thinking brainstorm). Produces a design doc
@@ -8,7 +8,7 @@
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
-const OFFICE_HOURS_INSTRUCTIONS = `YC-style product validation — integrates /office-hours into the OPSX workflow.
+const OFFICE_HOURS_INSTRUCTIONS = `YC-style product validation — integrates /office-hours into the Rasen workflow.
 
 ${STORE_SELECTION_GUIDANCE}
 
@@ -20,7 +20,7 @@ Two modes:
 
 Use when: "is this worth building?", "office hours", "validate my idea", "brainstorm this", "I have an idea", "product validation".
 
-Positioned between /opsx:explore (technical exploration) and /opsx:propose (create change).
+Positioned between /rasen:explore (technical exploration) and /rasen:propose (create change).
 
 ## Steps
 
@@ -73,21 +73,21 @@ Generate a design document with sections:
 ### 5. Dual-Write Output
 
 **If an active Rasen change context exists:**
-- Write output to \`openspec/changes/<name>/office-hours-design.md\`
+- Write output to \`rasen/changes/<name>/office-hours-design.md\`
 - This is the change's single validation doc — a stable name within the task directory, just like \`proposal.md\`. Re-running office-hours on the same change refines this file in place.
-- This document will be automatically consumed by \`/opsx:propose\` as input context
+- This document will be automatically consumed by \`/rasen:propose\` as input context
 
 **If no active change exists:**
-- Derive a descriptive kebab-case slug from the topic (e.g. "real-time collaboration" → \`real-time-collaboration\`), exactly the way \`/opsx:propose\` derives a change name from a description
-- Write output to \`openspec/office-hours/<topic-slug>.md\` — **one file per topic**, so separate validation sessions never overwrite each other (do NOT use a single fixed filename)
+- Derive a descriptive kebab-case slug from the topic (e.g. "real-time collaboration" → \`real-time-collaboration\`), exactly the way \`/rasen:propose\` derives a change name from a description
+- Write output to \`rasen/office-hours/<topic-slug>.md\` — **one file per topic**, so separate validation sessions never overwrite each other (do NOT use a single fixed filename)
 - If that exact filename already exists for an UNRELATED topic, disambiguate with a short suffix (\`-2\`, \`-alt\`, …) rather than overwriting
 - Inform the user of the path and that they can reference it when creating a new change
 
 ### 6. Next Steps
 
 After the session, suggest:
-- Run \`/opsx:propose\` to create a formal change proposal based on the design doc
-- Or continue exploring with \`/opsx:explore\`
+- Run \`/rasen:propose\` to create a formal change proposal based on the design doc
+- Or continue exploring with \`/rasen:explore\`
 
 ## Output Format
 
@@ -112,22 +112,22 @@ After the session, suggest:
 
 ## Downstream Integration
 
-The \`/opsx:propose\` command auto-detects \`office-hours-design.md\` in the change directory and incorporates its insights into the proposal.`;
+The \`/rasen:propose\` command auto-detects \`office-hours-design.md\` in the change directory and incorporates its insights into the proposal.`;
 
 export function getOfficeHoursCommandSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-opsx-office-hours',
+    name: 'rasen-office-hours-command',
     description: 'YC-style product validation — validate demand reality before building. Two modes: Startup (six forcing questions) and Builder (design brainstorm).',
     instructions: OFFICE_HOURS_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxOfficeHoursCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Office Hours',
+    name: 'Rasen: Office Hours',
     description: 'YC-style product validation — validate demand reality before building',
     category: 'Workflow',
     tags: ['workflow', 'validation', 'product'],

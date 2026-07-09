@@ -65,17 +65,20 @@ describe('command file id mapping', () => {
 
   it('returns a legacy path only for suffixed ids', () => {
     expect(getLegacyCommandFilePath(claudeAdapter, 'ship-command')).toBe(
-      path.join('.claude', 'commands', 'opsx', 'ship-command.md')
+      path.join('.claude', 'commands', 'rasen', 'ship-command.md')
     );
     expect(getLegacyCommandFilePath(claudeAdapter, 'explore')).toBeNull();
   });
 
-  it('lists current path first, then legacy path when it differs', () => {
+  it('lists current path first, then legacy suffix and legacy-prefix variants', () => {
     expect(getCommandFilePathCandidates(claudeAdapter, 'auto-command')).toEqual([
+      path.join('.claude', 'commands', 'rasen', 'auto.md'),
+      path.join('.claude', 'commands', 'rasen', 'auto-command.md'),
       path.join('.claude', 'commands', 'opsx', 'auto.md'),
       path.join('.claude', 'commands', 'opsx', 'auto-command.md'),
     ]);
     expect(getCommandFilePathCandidates(claudeAdapter, 'explore')).toEqual([
+      path.join('.claude', 'commands', 'rasen', 'explore.md'),
       path.join('.claude', 'commands', 'opsx', 'explore.md'),
     ]);
   });
@@ -85,7 +88,7 @@ describe('command file id mapping', () => {
       const content = getCommandContents([workflowId])[0];
       expect(content).toBeDefined();
       const generated = generateCommand(content, claudeAdapter);
-      expect(generated.path).toBe(path.join('.claude', 'commands', 'opsx', `${fileId}.md`));
+      expect(generated.path).toBe(path.join('.claude', 'commands', 'rasen', `${fileId}.md`));
     }
   });
 });
@@ -124,10 +127,10 @@ describe('fusion command generation for the claude tool', () => {
     vi.restoreAllMocks();
   });
 
-  it('generates short filenames (/opsx:ship, not /opsx:ship-command)', async () => {
+  it('generates short filenames (/rasen:ship, not /rasen:ship-command)', async () => {
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
-    const commandsDir = path.join(testDir, '.claude', 'commands', 'opsx');
+    const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
     for (const [workflowId, fileId] of FUSION_WORKFLOWS) {
       expect(await fileExists(path.join(commandsDir, `${fileId}.md`))).toBe(true);
       expect(await fileExists(path.join(commandsDir, `${workflowId}.md`))).toBe(false);
@@ -135,7 +138,7 @@ describe('fusion command generation for the claude tool', () => {
   });
 
   it('removes legacy -command suffixed files on re-init', async () => {
-    const commandsDir = path.join(testDir, '.claude', 'commands', 'opsx');
+    const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
     await fs.mkdir(commandsDir, { recursive: true });
     await fs.writeFile(path.join(commandsDir, 'ship-command.md'), '# legacy\n', 'utf-8');
 
@@ -151,7 +154,7 @@ describe('fusion command generation for the claude tool', () => {
     const workflows = ['propose', ...FUSION_WORKFLOWS.map(([workflowId]) => workflowId)];
     expect(hasToolProfileOrDeliveryDrift(testDir, 'claude', workflows, 'both')).toBe(false);
 
-    const legacyFile = path.join(testDir, '.claude', 'commands', 'opsx', 'auto-command.md');
+    const legacyFile = path.join(testDir, '.claude', 'commands', 'rasen', 'auto-command.md');
     await fs.writeFile(legacyFile, '# legacy\n', 'utf-8');
     expect(hasToolProfileOrDeliveryDrift(testDir, 'claude', workflows, 'both')).toBe(true);
   });

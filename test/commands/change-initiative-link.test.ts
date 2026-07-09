@@ -27,7 +27,7 @@ describe('legacy repo-local change initiative metadata', () => {
       OPEN_SPEC_INTERACTIVE: '0',
       RASEN_TELEMETRY: '0',
     };
-    fs.mkdirSync(path.join(tempDir, 'openspec', 'changes'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'rasen', 'changes'), { recursive: true });
   });
 
   afterEach(() => {
@@ -45,7 +45,7 @@ describe('legacy repo-local change initiative metadata', () => {
   }
 
   function changeDir(id: string): string {
-    return path.join(tempDir, 'openspec', 'changes', id);
+    return path.join(tempDir, 'rasen', 'changes', id);
   }
 
   function createLegacyLinkedChange(id: string): string {

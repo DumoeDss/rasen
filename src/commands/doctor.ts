@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
 /**
  * `rasen doctor` (slice 3.6): the root-scoped relationship-health
  * report. Read-only — it answers "are the roots this work relates to
@@ -94,7 +95,7 @@ async function gatherHealth(
       if (fields.length > 0) {
         const filePath =
           resolveConfigFilePath(pointerRoot) ??
-          path.join(pointerRoot, 'openspec', 'config.yaml');
+          path.join(pointerRoot, WORKSPACE_DIR_NAME, 'config.yaml');
         input.inertPointerDeclarations = { filePath, fields };
       }
     }

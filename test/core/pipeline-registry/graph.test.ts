@@ -10,7 +10,7 @@ describe('pipeline-registry/graph', () => {
 
   const stage = (id: string, requires: string[] = []): PipelineYaml['stages'][number] => ({
     id,
-    skill: 'openspec-propose',
+    skill: 'rasen-propose',
     requires,
     gate: false,
     leadReview: false,
@@ -30,7 +30,7 @@ describe('pipeline-registry/graph', () => {
 name: my-pipeline
 stages:
   - id: doc
-    skill: openspec-propose
+    skill: rasen-propose
 `;
       const graph = PipelineGraph.fromYamlContent(yaml);
       expect(graph.getName()).toBe('my-pipeline');

@@ -37,9 +37,9 @@ To deactivate, end the conversation or start a new one. Hooks are session-scoped
 
 export function getCarefulSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:careful',
+    name: 'rasen:careful',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

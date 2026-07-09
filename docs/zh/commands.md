@@ -10,38 +10,38 @@
 
 | 命令 | 用途 |
 |---------|---------|
-| `/opsx:propose` | 一步创建变更并生成规划产物 |
-| `/opsx:explore` | 在提交变更之前深入思考想法 |
-| `/opsx:apply` | 实施变更中的任务 |
-| `/opsx:sync` | 将增量规格合并到主规格中 |
-| `/opsx:archive` | 归档已完成的变更 |
+| `/rasen:propose` | 一步创建变更并生成规划产物 |
+| `/rasen:explore` | 在提交变更之前深入思考想法 |
+| `/rasen:apply` | 实施变更中的任务 |
+| `/rasen:sync` | 将增量规格合并到主规格中 |
+| `/rasen:archive` | 归档已完成的变更 |
 
 ### 扩展工作流命令（自定义工作流选择）
 
 | 命令 | 用途 |
 |---------|---------|
-| `/opsx:new` | 开始新的变更脚手架 |
-| `/opsx:continue` | 根据依赖关系创建下一个产物 |
-| `/opsx:ff` | 快进：一次性创建所有规划产物 |
-| `/opsx:verify` | 验证实现是否与产物匹配 |
-| `/opsx:bulk-archive` | 一次性归档多个变更 |
-| `/opsx:onboard` | 完整工作流的引导式教程 |
-| `/opsx:review-cycle` | 迭代式审查循环 —— 审查、分诊、修复、复审增量，循环直至干净或上报 |
-| `/opsx:goal` | 目标驱动迭代 —— 针对一个 measure 或 evaluate 闸门重复「修改→判定」，直到达标或轮次上限（性能优化、rubric 达标代码、研究 brief）|
+| `/rasen:new` | 开始新的变更脚手架 |
+| `/rasen:continue` | 根据依赖关系创建下一个产物 |
+| `/rasen:ff` | 快进：一次性创建所有规划产物 |
+| `/rasen:verify` | 验证实现是否与产物匹配 |
+| `/rasen:bulk-archive` | 一次性归档多个变更 |
+| `/rasen:onboard` | 完整工作流的引导式教程 |
+| `/rasen:review-cycle` | 迭代式审查循环 —— 审查、分诊、修复、复审增量，循环直至干净或上报 |
+| `/rasen:goal` | 目标驱动迭代 —— 针对一个 measure 或 evaluate 闸门重复「修改→判定」，直到达标或轮次上限（性能优化、rubric 达标代码、研究 brief）|
 
-默认全局 profile 为 `full` —— 所有工作流命令开箱即用。要精简为核心命令，运行 `openspec config profile core`（或用 `openspec config profile` 选择自定义子集），然后在你的项目中运行 `openspec update`。
+默认全局 profile 为 `full` —— 所有工作流命令开箱即用。要精简为核心命令，运行 `rasen config profile core`（或用 `rasen config profile` 选择自定义子集），然后在你的项目中运行 `rasen update`。
 
 ---
 
 ## 命令参考
 
-### `/opsx:propose`
+### `/rasen:propose`
 
 一步创建新变更并生成规划产物。这是 `core` profile 中的默认启动命令。
 
 **语法：**
 ```text
-/opsx:propose [change-name-or-description]
+/rasen:propose [change-name-or-description]
 ```
 
 **参数：**
@@ -50,29 +50,29 @@
 | `change-name-or-description` | 否 | kebab-case 名称或自然语言的变更描述 |
 
 **功能说明：**
-- 创建 `openspec/changes/<change-name>/`
+- 创建 `rasen/changes/<change-name>/`
 - 生成实现之前所需的产物（对于 `spec-driven`：proposal、specs、design、tasks）
-- 当变更准备好执行 `/opsx:apply` 时停止
+- 当变更准备好执行 `/rasen:apply` 时停止
 
 **示例：**
 ```text
-You: /opsx:propose add-dark-mode
+You: /rasen:propose add-dark-mode
 
-AI:  Created openspec/changes/add-dark-mode/
+AI:  Created rasen/changes/add-dark-mode/
      ✓ proposal.md
      ✓ specs/ui/spec.md
      ✓ design.md
      ✓ tasks.md
-     Ready for implementation. Run /opsx:apply.
+     Ready for implementation. Run /rasen:apply.
 ```
 
 **提示：**
 - 使用此命令可获得最快的端到端路径
-- 如果你想逐步控制产物，启用扩展工作流并使用 `/opsx:new` + `/opsx:continue`
+- 如果你想逐步控制产物，启用扩展工作流并使用 `/rasen:new` + `/rasen:continue`
 
 ---
 
-### `/opsx:explore`
+### `/rasen:explore`
 
 > **不确定时从这里开始。** Explore 是一个零成本的思考伙伴：它阅读你的代码库、比较各种方案，并在任何变更发生之前把一个模糊的想法打磨成具体的计划。它在默认 profile 中提供。完整论述和更多示例请参阅 [先探索](explore.md) 指南。
 
@@ -80,7 +80,7 @@ AI:  Created openspec/changes/add-dark-mode/
 
 **语法：**
 ```
-/opsx:explore [topic]
+/rasen:explore [topic]
 ```
 
 **参数：**
@@ -93,11 +93,11 @@ AI:  Created openspec/changes/add-dark-mode/
 - 调查代码库以回答问题
 - 比较选项和方法
 - 创建可视化图表以理清思路
-- 当想法成形时可以过渡到 `/opsx:propose`（默认）或 `/opsx:new`（扩展工作流）
+- 当想法成形时可以过渡到 `/rasen:propose`（默认）或 `/rasen:new`（扩展工作流）
 
 **示例：**
 ```text
-You: /opsx:explore
+You: /rasen:explore
 
 AI:  What would you like to explore?
 
@@ -117,7 +117,7 @@ AI:  Let me investigate your current auth setup...
 
 You: Let's go with JWT. Can we start a change for that?
 
-AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
+AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
 ```
 
 **提示：**
@@ -128,15 +128,15 @@ AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
 
 ---
 
-### `/opsx:new`
+### `/rasen:new`
 
-开始新的变更脚手架。创建变更文件夹，等待你使用 `/opsx:continue` 或 `/opsx:ff` 生成产物。
+开始新的变更脚手架。创建变更文件夹，等待你使用 `/rasen:continue` 或 `/rasen:ff` 生成产物。
 
 此命令属于扩展工作流集（不包含在默认的 `core` profile 中）。
 
 **语法：**
 ```
-/opsx:new [change-name] [--schema <schema-name>]
+/rasen:new [change-name] [--schema <schema-name>]
 ```
 
 **参数：**
@@ -146,42 +146,42 @@ AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
 | `--schema` | 否 | 要使用的工作流 schema（默认：来自配置或 `spec-driven`） |
 
 **功能说明：**
-- 创建 `openspec/changes/<change-name>/` 目录
+- 创建 `rasen/changes/<change-name>/` 目录
 - 在变更文件夹中创建 `.openspec.yaml` 元数据文件
 - 显示第一个准备创建的产物模板
 - 如果未提供变更名称和 schema，会进行提示
 
 **创建的内容：**
 ```
-openspec/changes/<change-name>/
+rasen/changes/<change-name>/
 └── .openspec.yaml    # Change metadata (schema, created date)
 ```
 
 **示例：**
 ```
-You: /opsx:new add-dark-mode
+You: /rasen:new add-dark-mode
 
-AI:  Created openspec/changes/add-dark-mode/
+AI:  Created rasen/changes/add-dark-mode/
      Schema: spec-driven
 
      Ready to create: proposal
-     Use /opsx:continue to create it, or /opsx:ff to create all artifacts.
+     Use /rasen:continue to create it, or /rasen:ff to create all artifacts.
 ```
 
 **提示：**
 - 使用描述性名称：`add-feature`、`fix-bug`、`refactor-module`
 - 避免使用通用名称如 `update`、`changes`、`wip`
-- Schema 也可以在项目配置中设置（`openspec/config.yaml`）
+- Schema 也可以在项目配置中设置（`rasen/config.yaml`）
 
 ---
 
-### `/opsx:continue`
+### `/rasen:continue`
 
 在依赖链中创建下一个产物。每次创建一个产物以实现增量进展。
 
 **语法：**
 ```
-/opsx:continue [change-name]
+/rasen:continue [change-name]
 ```
 
 **参数：**
@@ -198,7 +198,7 @@ AI:  Created openspec/changes/add-dark-mode/
 
 **示例：**
 ```
-You: /opsx:continue
+You: /rasen:continue
 
 AI:  Change: add-dark-mode
 
@@ -212,10 +212,10 @@ AI:  Change: add-dark-mode
 
      [Reads proposal.md, creates specs based on requirements]
 
-     ✓ Created openspec/changes/add-dark-mode/specs/ui/spec.md
+     ✓ Created rasen/changes/add-dark-mode/specs/ui/spec.md
 
      Now available: tasks
-     Run /opsx:continue to create the next artifact.
+     Run /rasen:continue to create the next artifact.
 ```
 
 **提示：**
@@ -226,13 +226,13 @@ AI:  Change: add-dark-mode
 
 ---
 
-### `/opsx:ff`
+### `/rasen:ff`
 
 快进式创建产物。一次性创建所有规划产物。
 
 **语法：**
 ```
-/opsx:ff [change-name]
+/rasen:ff [change-name]
 ```
 
 **参数：**
@@ -248,7 +248,7 @@ AI:  Change: add-dark-mode
 
 **示例：**
 ```
-You: /opsx:ff add-dark-mode
+You: /rasen:ff add-dark-mode
 
 AI:  Fast-forwarding add-dark-mode...
 
@@ -258,24 +258,24 @@ AI:  Fast-forwarding add-dark-mode...
      ✓ Creating tasks.md
 
      All planning artifacts complete!
-     Ready for implementation. Run /opsx:apply to begin.
+     Ready for implementation. Run /rasen:apply to begin.
 ```
 
 **提示：**
 - 当你对要构建的内容有清晰想法时使用
-- 对于简单直接的变更，比 `/opsx:continue` 更快
+- 对于简单直接的变更，比 `/rasen:continue` 更快
 - 之后仍然可以编辑产物
 - 适合中小型功能
 
 ---
 
-### `/opsx:apply`
+### `/rasen:apply`
 
 实施变更中的任务。按任务列表逐项工作，编写代码并勾选完成项。
 
 **语法：**
 ```
-/opsx:apply [change-name]
+/rasen:apply [change-name]
 ```
 
 **参数：**
@@ -291,7 +291,7 @@ AI:  Fast-forwarding add-dark-mode...
 
 **示例：**
 ```
-You: /opsx:apply
+You: /rasen:apply
 
 AI:  Implementing add-dark-mode...
 
@@ -319,13 +319,13 @@ AI:  Implementing add-dark-mode...
 
 ---
 
-### `/opsx:verify`
+### `/rasen:verify`
 
 验证实现是否与变更产物匹配。检查完整性、正确性和一致性。
 
 **语法：**
 ```
-/opsx:verify [change-name]
+/rasen:verify [change-name]
 ```
 
 **参数：**
@@ -349,7 +349,7 @@ AI:  Implementing add-dark-mode...
 
 **示例：**
 ```
-You: /opsx:verify
+You: /rasen:verify
 
 AI:  Verifying add-dark-mode...
 
@@ -387,13 +387,13 @@ AI:  Verifying add-dark-mode...
 
 ---
 
-### `/opsx:review-cycle`
+### `/rasen:review-cycle`
 
 通过迭代循环把变更推进到「真正干净」：`review → triage → fix → re-review(Δ) → {pass | loop | escalate}`。它不重新实现审查器 —— 每一轮都委托给始终安装的 `openspec-review` 引擎。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` profile 中）。
 
 **语法：**
 ```
-/opsx:review-cycle [change-name]
+/rasen:review-cycle [change-name]
 ```
 
 **参数：**
@@ -417,7 +417,7 @@ AI:  Verifying add-dark-mode...
 
 **示例：**
 ```
-You: /opsx:review-cycle add-dark-mode
+You: /rasen:review-cycle add-dark-mode
 
 AI:  Review Cycle: add-dark-mode (round 1/3)
      Findings: 1 Blocker, 2 Major
@@ -430,19 +430,19 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 ```
 
 **提示：**
-- 在实现**之后**针对实时 diff 使用；若只需单次验证门禁，请改用 `/opsx:verify`
+- 在实现**之后**针对实时 diff 使用；若只需单次验证门禁，请改用 `/rasen:verify`
 - 循环是有界的 —— 若上报，开放发现与轮次历史会交给人类，而非静默通过
 
 ---
 
-### `/opsx:goal`
+### `/rasen:goal`
 
-面向「完成」是一个**条件**而非一份文档的任务——把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。它是 `/opsx:auto` 的平级入口：LEAD 分类任务、选**恰好一条**后端 pipeline，然后重复 **修改 → 判定** 直到闸门达标或轮次上限。与 `/opsx:auto` 共用同一套编排手册（LEAD + 角色隔离 worker、档位、run-state、gate、resume）。完整章节见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
+面向「完成」是一个**条件**而非一份文档的任务——把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。它是 `/rasen:auto` 的平级入口：LEAD 分类任务、选**恰好一条**后端 pipeline，然后重复 **修改 → 判定** 直到闸门达标或轮次上限。与 `/rasen:auto` 共用同一套编排手册（LEAD + 角色隔离 worker、档位、run-state、gate、resume）。完整章节见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
 
 **语法：**
 ```text
-/opsx:goal [measure|evaluate|research] <任务>
-/opsx:goal --pipeline goal-loop-<变体> <任务>
+/rasen:goal [measure|evaluate|research] <任务>
+/rasen:goal --pipeline goal-loop-<变体> <任务>
 ```
 
 **参数：**
@@ -467,7 +467,7 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 
 **示例：**
 ```text
-You: /opsx:goal drive the Lighthouse performance score to 90
+You: /rasen:goal drive the Lighthouse performance score to 90
 
 AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
      取 DAG：define-goal -> iterate（measure 闸门）-> ship -> archive
@@ -480,19 +480,19 @@ AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
 ```
 
 **提示：**
-- 当产物是一个靠迭代满足的*条件*时用 `/opsx:goal`；当产物是一份代码变更文档时用 `/opsx:auto`
-- 中途 kill 后运行 `openspec pipeline resume <change>`——goal-loop 的 resume 协议读 `goal-run.json` 最后一条记录，从正确的轮次续跑
+- 当产物是一个靠迭代满足的*条件*时用 `/rasen:goal`；当产物是一份代码变更文档时用 `/rasen:auto`
+- 中途 kill 后运行 `rasen pipeline resume <change>`——goal-loop 的 resume 协议读 `goal-run.json` 最后一条记录，从正确的轮次续跑
 - `define-goal` 的 gate 是「measure.command 是任意 shell」的安全阀——继续前先审一眼该命令
 
 ---
 
-### `/opsx:sync`
+### `/rasen:sync`
 
 **可选命令。** 将变更中的增量规格合并到主规格中。归档时会在需要时提示同步，因此通常不需要手动运行此命令。
 
 **语法：**
 ```
-/opsx:sync [change-name]
+/rasen:sync [change-name]
 ```
 
 **参数：**
@@ -503,27 +503,27 @@ AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
 **功能说明：**
 - 从变更文件夹读取增量规格
 - 解析 ADDED/MODIFIED/REMOVED/RENAMED 部分
-- 将变更合并到主 `openspec/specs/` 目录
+- 将变更合并到主 `rasen/specs/` 目录
 - 保留增量中未提及的现有内容
 - 不归档变更（保持活动状态）
 
 **示例：**
 ```text
-You: /opsx:sync
+You: /rasen:sync
 
 AI:  Syncing add-dark-mode delta specs...
 
-     Reading: openspec/changes/add-dark-mode/specs/ui/spec.md
-     Target:  openspec/specs/ui/spec.md
+     Reading: rasen/changes/add-dark-mode/specs/ui/spec.md
+     Target:  rasen/specs/ui/spec.md
 
      Changes to apply:
      ✓ ADDED: Theme Selection requirement (2 scenarios)
      ✓ ADDED: Accessibility requirement (1 scenario)
 
      Merging...
-     ✓ openspec/specs/ui/spec.md updated
+     ✓ rasen/specs/ui/spec.md updated
 
-     Change remains active. Run /opsx:archive when ready to complete.
+     Change remains active. Run /rasen:archive when ready to complete.
 ```
 
 **何时手动使用：**
@@ -543,13 +543,13 @@ AI:  Syncing add-dark-mode delta specs...
 
 ---
 
-### `/opsx:archive`
+### `/rasen:archive`
 
 归档已完成的变更。最终确认变更并将其移至归档文件夹。
 
 **语法：**
 ```
-/opsx:archive [change-name]
+/rasen:archive [change-name]
 ```
 
 **参数：**
@@ -561,12 +561,12 @@ AI:  Syncing add-dark-mode delta specs...
 - 检查产物完成状态
 - 检查任务完成情况（未完成时发出警告）
 - 如果增量规格尚未同步，提供同步选项
-- 将变更文件夹移至 `openspec/changes/archive/YYYY-MM-DD-<name>/`
+- 将变更文件夹移至 `rasen/changes/archive/YYYY-MM-DD-<name>/`
 - 保留所有产物以供审计追溯
 
 **示例：**
 ```text
-You: /opsx:archive
+You: /rasen:archive
 
 AI:  Archiving add-dark-mode...
 
@@ -581,8 +581,8 @@ AI:  Archiving add-dark-mode...
 
 You: Yes
 
-AI:  ✓ Synced specs to openspec/specs/ui/spec.md
-     ✓ Moved to openspec/changes/archive/2025-01-24-add-dark-mode/
+AI:  ✓ Synced specs to rasen/specs/ui/spec.md
+     ✓ Moved to rasen/changes/archive/2025-01-24-add-dark-mode/
 
      Change archived successfully.
 ```
@@ -591,17 +591,17 @@ AI:  ✓ Synced specs to openspec/specs/ui/spec.md
 - 归档不会因未完成的任务而阻塞，但会发出警告
 - 增量规格可以在归档时或之前同步
 - 已归档的变更会保留以供历史记录
-- 先使用 `/opsx:verify` 来发现问题
+- 先使用 `/rasen:verify` 来发现问题
 
 ---
 
-### `/opsx:bulk-archive`
+### `/rasen:bulk-archive`
 
 一次性归档多个已完成的变更。处理变更之间的规格冲突。
 
 **语法：**
 ```
-/opsx:bulk-archive [change-names...]
+/rasen:bulk-archive [change-names...]
 ```
 
 **参数：**
@@ -618,7 +618,7 @@ AI:  ✓ Synced specs to openspec/specs/ui/spec.md
 
 **示例：**
 ```
-You: /opsx:bulk-archive
+You: /rasen:bulk-archive
 
 AI:  Found 3 completed changes:
      - add-dark-mode (8/8 tasks complete)
@@ -651,13 +651,13 @@ AI:  ✓ Archived add-dark-mode
 
 ---
 
-### `/opsx:onboard`
+### `/rasen:onboard`
 
 通过完整 OpenSpec 工作流的引导式入门教程。使用你的实际代码库进行交互式教学。
 
 **语法：**
 ```
-/opsx:onboard
+/rasen:onboard
 ```
 
 **功能说明：**
@@ -671,19 +671,19 @@ AI:  ✓ Archived add-dark-mode
 **阶段：**
 1. 欢迎和代码库分析
 2. 寻找改进机会
-3. 创建变更（`/opsx:new`）
+3. 创建变更（`/rasen:new`）
 4. 编写提案
 5. 创建规格
 6. 编写设计
 7. 创建任务
-8. 实施任务（`/opsx:apply`）
+8. 实施任务（`/rasen:apply`）
 9. 验证实现
 10. 归档变更
 11. 总结和后续步骤
 
 **示例：**
 ```
-You: /opsx:onboard
+You: /rasen:onboard
 
 AI:  Welcome to OpenSpec!
 
@@ -717,7 +717,7 @@ AI:  Welcome to OpenSpec!
 
 | 工具 | 语法示例 |
 |------|----------------|
-| Claude Code | `/opsx:propose`, `/opsx:apply` |
+| Claude Code | `/rasen:propose`, `/rasen:apply` |
 | Cursor | `/opsx-propose`, `/opsx-apply` |
 | Windsurf | `/opsx-propose`, `/opsx-apply` |
 | Copilot (IDE) | `/opsx-propose`, `/opsx-apply` |
@@ -757,8 +757,8 @@ AI:  Welcome to OpenSpec!
 命令无法识别要处理的变更。
 
 **解决方案：**
-- 明确指定变更名称：`/opsx:apply add-dark-mode`
-- 检查变更文件夹是否存在：`openspec list`
+- 明确指定变更名称：`/rasen:apply add-dark-mode`
+- 检查变更文件夹是否存在：`rasen list`
 - 确认你在正确的项目目录中
 
 ### "No artifacts ready"
@@ -766,7 +766,7 @@ AI:  Welcome to OpenSpec!
 所有产物要么已完成，要么被缺失的依赖阻塞。
 
 **解决方案：**
-- 运行 `openspec status --change <name>` 查看阻塞原因
+- 运行 `rasen status --change <name>` 查看阻塞原因
 - 检查所需的产物是否存在
 - 先创建缺失的依赖产物
 
@@ -775,17 +775,17 @@ AI:  Welcome to OpenSpec!
 指定的 schema 不存在。
 
 **解决方案：**
-- 列出可用的 schema：`openspec schemas`
+- 列出可用的 schema：`rasen schemas`
 - 检查 schema 名称的拼写
-- 如果是自定义 schema，则创建它：`openspec schema init <name>`
+- 如果是自定义 schema，则创建它：`rasen schema init <name>`
 
 ### 命令无法识别
 
 AI 工具不识别 OpenSpec 命令。
 
 **解决方案：**
-- 确保 OpenSpec 已初始化：`openspec init`
-- 重新生成技能：`openspec update`
+- 确保 OpenSpec 已初始化：`rasen init`
+- 重新生成技能：`rasen update`
 - 检查 `.claude/skills/` 目录是否存在（对于 Claude Code）
 - 重启你的 AI 工具以加载新技能
 
@@ -794,10 +794,10 @@ AI 工具不识别 OpenSpec 命令。
 AI 创建了不完整或不正确的产物。
 
 **解决方案：**
-- 在 `openspec/config.yaml` 中添加项目上下文
+- 在 `rasen/config.yaml` 中添加项目上下文
 - 为特定指导添加每个产物的规则
 - 在变更描述中提供更多细节
-- 使用 `/opsx:continue` 替代 `/opsx:ff` 以获得更多控制
+- 使用 `/rasen:continue` 替代 `/rasen:ff` 以获得更多控制
 
 ---
 

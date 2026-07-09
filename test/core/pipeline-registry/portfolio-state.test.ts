@@ -21,7 +21,7 @@ describe('portfolio run-state', () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-portfolio-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-portfolio-'));
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });

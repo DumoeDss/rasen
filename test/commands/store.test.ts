@@ -27,7 +27,7 @@ async function runStoreCommand(args: string[]): Promise<void> {
   const { registerStoreCommand } = await import('../../src/commands/store.js');
   const program = new Command();
   registerStoreCommand(program);
-  await program.parseAsync(['node', 'openspec', 'store', ...args]);
+  await program.parseAsync(['node', 'rasen', 'store', ...args]);
 }
 
 async function getPromptMocks(): Promise<{
@@ -57,7 +57,7 @@ describe('store command', () => {
   beforeEach(() => {
     vi.resetModules();
 
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-store-command-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-command-'));
     dataHome = path.join(tempDir, 'data');
     configHome = path.join(tempDir, 'config');
     env = {
@@ -97,16 +97,16 @@ describe('store command', () => {
   }
 
   function expectHealthyOpenSpecRoot(root: string): void {
-    expect(fs.existsSync(path.join(root, 'openspec', 'config.yaml')) || fs.existsSync(path.join(root, 'openspec', 'config.yml'))).toBe(true);
-    expect(fs.existsSync(path.join(root, 'openspec', 'specs'))).toBe(true);
-    expect(fs.existsSync(path.join(root, 'openspec', 'changes'))).toBe(true);
-    expect(fs.existsSync(path.join(root, 'openspec', 'changes', 'archive'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'rasen', 'config.yaml')) || fs.existsSync(path.join(root, 'rasen', 'config.yml'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'rasen', 'specs'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'rasen', 'changes'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'rasen', 'changes', 'archive'))).toBe(true);
   }
 
   function expectNoGeneratedAgentOrBetaArtifacts(root: string): void {
     for (const artifact of [
       'initiatives',
-      '.openspec-workspace',
+      '.rasen-workspace',
       'workspace.yaml',
       'AGENTS.md',
       '.codex',
@@ -153,18 +153,18 @@ describe('store command', () => {
       already_registered: false,
     });
     expect(payload.created_files).toEqual([
-      'openspec/',
-      'openspec/specs/',
-      'openspec/changes/',
-      'openspec/changes/archive/',
-      'openspec/config.yaml',
-      'openspec/specs/.gitkeep',
-      'openspec/changes/archive/.gitkeep',
-      '.openspec-store/store.yaml',
+      'rasen/',
+      'rasen/specs/',
+      'rasen/changes/',
+      'rasen/changes/archive/',
+      'rasen/config.yaml',
+      'rasen/specs/.gitkeep',
+      'rasen/changes/archive/.gitkeep',
+      '.rasen-store/store.yaml',
     ]);
     expect(payload.status).toEqual([]);
     expectHealthyOpenSpecRoot(storeRoot);
-    expect(fs.readFileSync(path.join(storeRoot, 'openspec', 'config.yaml'), 'utf-8')).toContain(
+    expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8')).toContain(
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}`
     );
     expectNoGeneratedAgentOrBetaArtifacts(storeRoot);
@@ -216,7 +216,7 @@ describe('store command', () => {
     // The suggested location is a visible user path, never the XDG data dir.
     expect(input).toHaveBeenCalledWith(expect.objectContaining({
       message: 'Where should this store live?',
-      default: '~/openspec/guided-context',
+      default: '~/rasen/guided-context',
     }));
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenNthCalledWith(1, {
@@ -287,14 +287,14 @@ describe('store command', () => {
       committed: false,
     });
     expect(payload.created_files).toEqual([
-      'openspec/',
-      'openspec/specs/',
-      'openspec/changes/',
-      'openspec/changes/archive/',
-      'openspec/config.yaml',
-      'openspec/specs/.gitkeep',
-      'openspec/changes/archive/.gitkeep',
-      '.openspec-store/store.yaml',
+      'rasen/',
+      'rasen/specs/',
+      'rasen/changes/',
+      'rasen/changes/archive/',
+      'rasen/config.yaml',
+      'rasen/specs/.gitkeep',
+      'rasen/changes/archive/.gitkeep',
+      '.rasen-store/store.yaml',
     ]);
     expect(fs.existsSync(path.join(storeRoot, '.git'))).toBe(true);
     expectHealthyOpenSpecRoot(storeRoot);
@@ -303,7 +303,7 @@ describe('store command', () => {
   it('preserves an existing healthy Rasen root during setup', async () => {
     const storeRoot = mkdir('team-context');
     createHealthyOpenSpecRoot(storeRoot, 'config.yml');
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'specs', 'note.md'), 'keep\n');
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'specs', 'note.md'), 'keep\n');
 
     const result = await runCLI(
       ['store', 'setup', 'team-context', '--path', storeRoot, '--no-init-git', '--json'],
@@ -315,14 +315,14 @@ describe('store command', () => {
     // First-time accept of an existing root anchors its empty directories
     // (specs/ has user content here, so only archive/ gets an anchor).
     expect(payload.created_files).toEqual([
-      'openspec/changes/archive/.gitkeep',
-      '.openspec-store/store.yaml',
+      'rasen/changes/archive/.gitkeep',
+      '.rasen-store/store.yaml',
     ]);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec', 'config.yaml'))).toBe(false);
-    expect(fs.readFileSync(path.join(storeRoot, 'openspec', 'config.yml'), 'utf-8')).toBe(
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'config.yaml'))).toBe(false);
+    expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yml'), 'utf-8')).toBe(
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`
     );
-    expect(fs.readFileSync(path.join(storeRoot, 'openspec', 'specs', 'note.md'), 'utf-8')).toBe('keep\n');
+    expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'specs', 'note.md'), 'utf-8')).toBe('keep\n');
   });
 
   it('ignores old beta files inside an otherwise healthy root', async () => {
@@ -372,8 +372,8 @@ describe('store command', () => {
 
   it('refuses to convert a config-only store pointer repo into a store', async () => {
     const pointerRoot = mkdir('app-repo');
-    fs.mkdirSync(path.join(pointerRoot, 'openspec'), { recursive: true });
-    fs.writeFileSync(path.join(pointerRoot, 'openspec', 'config.yaml'), 'store: team-context\n');
+    fs.mkdirSync(path.join(pointerRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(pointerRoot, 'rasen', 'config.yaml'), 'store: team-context\n');
 
     const setup = await runCLI(
       ['store', 'setup', 'app-context', '--path', pointerRoot, '--no-init-git', '--json'],
@@ -392,15 +392,15 @@ describe('store command', () => {
     expect(parseJson(register).status[0]).toEqual(expect.objectContaining({
       code: 'store_root_pointer_declared',
     }));
-    expect(fs.existsSync(path.join(pointerRoot, 'openspec', 'specs'))).toBe(false);
-    expect(fs.existsSync(path.join(pointerRoot, 'openspec', 'changes'))).toBe(false);
+    expect(fs.existsSync(path.join(pointerRoot, 'rasen', 'specs'))).toBe(false);
+    expect(fs.existsSync(path.join(pointerRoot, 'rasen', 'changes'))).toBe(false);
     expect(fs.existsSync(getStoreMetadataPath(pointerRoot))).toBe(false);
   });
 
   it('refuses malformed config-only store pointer repos before registering', async () => {
     const pointerRoot = mkdir('bad-app-repo');
-    fs.mkdirSync(path.join(pointerRoot, 'openspec'), { recursive: true });
-    fs.writeFileSync(path.join(pointerRoot, 'openspec', 'config.yaml'), 'store: [team-context]\n');
+    fs.mkdirSync(path.join(pointerRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(pointerRoot, 'rasen', 'config.yaml'), 'store: [team-context]\n');
 
     const result = await runCLI(
       ['store', 'register', pointerRoot, '--yes', '--json'],
@@ -431,7 +431,7 @@ describe('store command', () => {
       })
     );
     expect(fs.existsSync(getStoreMetadataPath(storeRoot))).toBe(false);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen'))).toBe(false);
   });
 
   it('rejects setup paths inside git-like parents when git cannot resolve the repo', async () => {
@@ -476,7 +476,7 @@ describe('store command', () => {
 
     expect(confirm).not.toHaveBeenCalled();
     expect(fs.existsSync(getStoreMetadataPath(storeRoot))).toBe(false);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen'))).toBe(false);
     expect(process.exitCode).toBe(1);
   });
 
@@ -543,7 +543,7 @@ describe('store command', () => {
   it('registers a cloned healthy store without rewriting planning files', async () => {
     const storeRoot = mkdir('team-context');
     createHealthyOpenSpecRoot(storeRoot);
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'specs', 'note.md'), 'keep\n');
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'specs', 'note.md'), 'keep\n');
     await writeStoreMetadataState(storeRoot, { version: 1, id: 'team-context' });
 
     const result = await runCLI(
@@ -556,14 +556,14 @@ describe('store command', () => {
     expect(payload.store.id).toBe('team-context');
     expect(payload.registry.registered).toBe(true);
     expect(payload.created_files).toEqual([]);
-    expect(fs.readFileSync(path.join(storeRoot, 'openspec', 'specs', 'note.md'), 'utf-8')).toBe('keep\n');
+    expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'specs', 'note.md'), 'utf-8')).toBe('keep\n');
   });
 
   it('registers a team store before any changes exist', async () => {
     const storeRoot = mkdir('team-context');
-    fs.mkdirSync(path.join(storeRoot, 'openspec'), { recursive: true });
+    fs.mkdirSync(path.join(storeRoot, 'rasen'), { recursive: true });
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`
     );
     await writeStoreMetadataState(storeRoot, { version: 1, id: 'team-context' });
@@ -577,20 +577,20 @@ describe('store command', () => {
     const payload = parseJson(result);
     expect(payload.store.id).toBe('team-context');
     expect(payload.created_files).toEqual([]);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec', 'changes'))).toBe(false);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec', 'specs'))).toBe(false);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec', 'changes', 'archive'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'changes'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'specs'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toBe(false);
   });
 
   it('registers a store with active changes before specs or archive exist', async () => {
     const storeRoot = mkdir('team-context');
-    fs.mkdirSync(path.join(storeRoot, 'openspec', 'changes', 'add-widget'), { recursive: true });
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes', 'add-widget'), { recursive: true });
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'changes', 'add-widget', 'proposal.md'),
+      path.join(storeRoot, 'rasen', 'changes', 'add-widget', 'proposal.md'),
       '# Proposal\n'
     );
     fs.writeFileSync(
-      path.join(storeRoot, 'openspec', 'config.yaml'),
+      path.join(storeRoot, 'rasen', 'config.yaml'),
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`
     );
     await writeStoreMetadataState(storeRoot, { version: 1, id: 'team-context' });
@@ -604,8 +604,8 @@ describe('store command', () => {
     const payload = parseJson(result);
     expect(payload.store.id).toBe('team-context');
     expect(payload.created_files).toEqual([]);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec', 'specs'))).toBe(false);
-    expect(fs.existsSync(path.join(storeRoot, 'openspec', 'changes', 'archive'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'specs'))).toBe(false);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toBe(false);
   });
 
   it('requires confirmation before registering a healthy root without identity', async () => {
@@ -631,7 +631,7 @@ describe('store command', () => {
     );
 
     expect(confirmed.exitCode).toBe(0);
-    expect(parseJson(confirmed).created_files).toEqual(['.openspec-store/store.yaml']);
+    expect(parseJson(confirmed).created_files).toEqual(['.rasen-store/store.yaml']);
     await expect(readStoreMetadataState(storeRoot)).resolves.toEqual({
       version: 1,
       id: 'team-context',
@@ -670,7 +670,7 @@ describe('store command', () => {
   it('reports repeated setup and register as no-op success', async () => {
     const storeRoot = mkdir('team-context');
     createHealthyOpenSpecRoot(storeRoot);
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'config.yaml'), 'schema: spec-driven\n# user edit\n');
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n# user edit\n');
 
     const firstSetup = await runCLI(
       ['store', 'setup', 'team-context', '--path', storeRoot, '--no-init-git', '--json'],
@@ -719,7 +719,7 @@ describe('store command', () => {
         code: 'store_already_registered',
       })
     );
-    expect(fs.readFileSync(path.join(storeRoot, 'openspec', 'config.yaml'), 'utf-8')).toBe(
+    expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8')).toBe(
       'schema: spec-driven\n# user edit\n'
     );
     await expect(readStoreRegistryState({ globalDataDir })).resolves.toEqual({
@@ -769,7 +769,7 @@ describe('store command', () => {
       })
     );
 
-    fs.rmSync(path.join(firstRoot, '.openspec-store'), { recursive: true, force: true });
+    fs.rmSync(path.join(firstRoot, '.rasen-store'), { recursive: true, force: true });
     await writeStoreMetadataState(firstRoot, { version: 1, id: 'other-context' });
     fs.symlinkSync(firstRoot, aliasRoot, process.platform === 'win32' ? 'junction' : 'dir');
     const samePath = await runCLI(
@@ -1070,10 +1070,10 @@ describe('store command', () => {
 
   it('reports Rasen root health separately without repairing it', async () => {
     const storeRoot = mkdir('team-context');
-    fs.mkdirSync(path.join(storeRoot, 'openspec', 'specs'), { recursive: true });
-    fs.mkdirSync(path.join(storeRoot, 'openspec', 'changes'), { recursive: true });
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'changes', 'archive'), 'not a dir\n');
-    fs.writeFileSync(path.join(storeRoot, 'openspec', 'config.yaml'), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes'), { recursive: true });
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'changes', 'archive'), 'not a dir\n');
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), `schema: ${DEFAULT_OPENSPEC_SCHEMA}\n`);
     await writeStoreMetadataState(storeRoot, { version: 1, id: 'team-context' });
     await writeStoreRegistryState(
       {
@@ -1103,7 +1103,7 @@ describe('store command', () => {
         code: 'openspec_archive_not_directory',
       })
     );
-    expect(fs.readFileSync(path.join(storeRoot, 'openspec', 'changes', 'archive'), 'utf-8')).toBe('not a dir\n');
+    expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'changes', 'archive'), 'utf-8')).toBe('not a dir\n');
   });
 
   it('register errors are terminal: one-checkout rule, no circular fix texts', async () => {
@@ -1177,7 +1177,7 @@ describe('store command', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      expect(fs.existsSync(path.join(storeRoot, '.openspec-store', 'store.yaml'))).toBe(true);
+      expect(fs.existsSync(path.join(storeRoot, '.rasen-store', 'store.yaml'))).toBe(true);
       expect(fs.existsSync(path.join(getStoresDir({ globalDataDir }), 'registry.yaml'))).toBe(
         true
       );
@@ -1190,7 +1190,7 @@ describe('store command', () => {
       // this fails if the on-disk contract ever drifts.
       const storeRoot = mkdir('pre-rename-context');
       createHealthyOpenSpecRoot(storeRoot);
-      const metadataDir = path.join(storeRoot, '.openspec-store');
+      const metadataDir = path.join(storeRoot, '.rasen-store');
       fs.mkdirSync(metadataDir, { recursive: true });
       fs.writeFileSync(
         path.join(metadataDir, 'store.yaml'),

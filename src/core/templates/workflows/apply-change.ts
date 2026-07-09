@@ -9,7 +9,7 @@ import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getApplyChangeSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-apply-change',
+    name: 'rasen-apply-change',
     description: 'Implement tasks from a Rasen change. Use when the user wants to start implementing, continue implementation, or work through tasks.',
     instructions: `Implement tasks from a Rasen change.
 
@@ -28,7 +28,7 @@ ${STORE_SELECTION_GUIDANCE}
    - Auto-select if only one active change exists
    - If ambiguous, run \`rasen list --json\` to get available changes and use the **AskUserQuestion tool** to let the user select
 
-   Always announce: "Using change: <name>" and how to override (e.g., \`/opsx:apply <other>\`).
+   Always announce: "Using change: <name>" and how to override (e.g., \`/rasen:apply <other>\`).
 
 2. **Check status to understand the schema**
    \`\`\`bash
@@ -52,7 +52,7 @@ ${STORE_SELECTION_GUIDANCE}
    - Dynamic instruction based on current state
 
    **Handle states:**
-   - If \`state: "blocked"\` (missing artifacts): show message, suggest using openspec-continue-change
+   - If \`state: "blocked"\` (missing artifacts): show message, suggest using rasen-continue-change
    - If \`state: "all_done"\`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
@@ -163,13 +163,13 @@ This skill supports the "actions on a change" model:
 - **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxApplyCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Apply',
+    name: 'Rasen: Apply',
     description: 'Implement tasks from a Rasen change (Experimental)',
     category: 'Workflow',
     tags: ['workflow', 'artifacts', 'experimental'],
@@ -179,7 +179,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 **Implementation disciplines (optional):** For test-first work, consult \`/tdd\` — agree the seams up front, drive red→green, and keep only the tests worth keeping. For changes touching destructive operations (\`rm -rf\`, \`DROP TABLE\`, force-push), consult \`/careful\` before running them. These are conditional references, not required steps; don't inline the expert bodies.
 
-**Input**: Optionally specify a change name (e.g., \`/opsx:apply add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name (e.g., \`/rasen:apply add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -190,7 +190,7 @@ ${STORE_SELECTION_GUIDANCE}
    - Auto-select if only one active change exists
    - If ambiguous, run \`rasen list --json\` to get available changes and use the **AskUserQuestion tool** to let the user select
 
-   Always announce: "Using change: <name>" and how to override (e.g., \`/opsx:apply <other>\`).
+   Always announce: "Using change: <name>" and how to override (e.g., \`/rasen:apply <other>\`).
 
 2. **Check status to understand the schema**
    \`\`\`bash
@@ -214,7 +214,7 @@ ${STORE_SELECTION_GUIDANCE}
    - Dynamic instruction based on current state
 
    **Handle states:**
-   - If \`state: "blocked"\` (missing artifacts): show message, suggest using \`/opsx:continue\`
+   - If \`state: "blocked"\` (missing artifacts): show message, suggest using \`/rasen:continue\`
    - If \`state: "all_done"\`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
@@ -284,7 +284,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with \`/opsx:archive\`.
+All tasks complete! You can archive this change with \`/rasen:archive\`.
 \`\`\`
 
 **Output On Pause (Issue Encountered)**

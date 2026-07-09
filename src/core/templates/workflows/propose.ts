@@ -9,7 +9,7 @@ import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getOpsxProposeSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-propose',
+    name: 'rasen-propose',
     description: 'Propose a new change with all artifacts generated in one step. Use when the user wants to quickly describe what they want to build and get a complete proposal with design, specs, and tasks ready for implementation.',
     instructions: `Propose a new change - create the change and generate all artifacts in one step.
 
@@ -18,7 +18,7 @@ I'll create a change with artifacts:
 - design.md (how)
 - tasks.md (implementation steps)
 
-When ready to implement, run /opsx:apply
+When ready to implement, run /rasen:apply
 
 ---
 
@@ -97,7 +97,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run \`/opsx:apply\` or ask me to implement to start working on the tasks."
+- Prompt: "Run \`/rasen:apply\` or ask me to implement to start working on the tasks."
 
 **Artifact Creation Guidelines**
 
@@ -117,13 +117,13 @@ After completing all artifacts, summarize:
 - Verify each artifact file exists after writing before proceeding to next`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxProposeCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Propose',
+    name: 'Rasen: Propose',
     description: 'Propose a new change - create it and generate all artifacts in one step',
     category: 'Workflow',
     tags: ['workflow', 'artifacts', 'experimental'],
@@ -134,7 +134,7 @@ I'll create a change with artifacts:
 - design.md (how)
 - tasks.md (implementation steps)
 
-When ready to implement, run /opsx:apply
+When ready to implement, run /rasen:apply
 
 ---
 
@@ -142,7 +142,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 **Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult \`/codebase-design\` (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`rasen status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
 
-**Input**: The argument after \`/opsx:propose\` is the change name (kebab-case), OR a description of what the user wants to build.
+**Input**: The argument after \`/rasen:propose\` is the change name (kebab-case), OR a description of what the user wants to build.
 
 **Steps**
 
@@ -213,7 +213,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run \`/opsx:apply\` to start implementing."
+- Prompt: "Run \`/rasen:apply\` to start implementing."
 
 **Artifact Creation Guidelines**
 

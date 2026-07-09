@@ -123,9 +123,9 @@ output file so the user can actually see it — otherwise the screenshot is invi
 
 export function getChromeUseSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:chrome-use',
+    name: 'rasen:chrome-use',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

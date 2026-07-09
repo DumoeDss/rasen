@@ -12,7 +12,7 @@ OpenSpec 提供三个层级的自定义方式：
 
 ## 项目配置
 
-`openspec/config.yaml` 文件是为你的团队自定义 OpenSpec 最简单的方式。它可以：
+`rasen/config.yaml` 文件是为你的团队自定义 OpenSpec 最简单的方式。它可以：
 
 - **设置默认 schema** - 无需每条命令都加 `--schema`
 - **注入项目上下文** - AI 可以了解你的技术栈、规范等
@@ -21,13 +21,13 @@ OpenSpec 提供三个层级的自定义方式：
 ### 快速设置
 
 ```bash
-openspec init
+rasen init
 ```
 
 这将引导你通过交互方式创建配置。也可以手动创建：
 
 ```yaml
-# openspec/config.yaml
+# rasen/config.yaml
 schema: spec-driven
 
 context: |
@@ -51,10 +51,10 @@ rules:
 
 ```bash
 # 没有配置时
-openspec new change my-feature --schema spec-driven
+rasen new change my-feature --schema spec-driven
 
 # 有配置时 - schema 自动应用
-openspec new change my-feature
+rasen new change my-feature
 ```
 
 **上下文和规则注入：**
@@ -86,7 +86,7 @@ Tech stack: TypeScript, React, Node.js, PostgreSQL
 
 1. CLI 标志：`--schema <name>`
 2. 变更元数据（变更文件夹中的 `.openspec.yaml`）
-3. 项目配置（`openspec/config.yaml`）
+3. 项目配置（`rasen/config.yaml`）
 4. 默认值（`spec-driven`）
 
 ---
@@ -112,7 +112,7 @@ your-project/
 最快的自定义方式是从内置 schema 派生：
 
 ```bash
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 ```
 
 这会将整个 `spec-driven` schema 复制到 `openspec/schemas/my-workflow/`，你可以自由编辑。
@@ -137,10 +137,10 @@ openspec/schemas/my-workflow/
 
 ```bash
 # 交互式
-openspec schema init research-first
+rasen schema init research-first
 
 # 非交互式
-openspec schema init rapid \
+rasen schema init rapid \
   --description "Rapid iteration workflow" \
   --artifacts "proposal,tasks" \
   --default
@@ -226,7 +226,7 @@ apply:
 使用自定义 schema 之前，先进行验证：
 
 ```bash
-openspec schema validate my-workflow
+rasen schema validate my-workflow
 ```
 
 验证内容包括：
@@ -241,7 +241,7 @@ openspec schema validate my-workflow
 
 ```bash
 # 在命令中指定
-openspec new change feature --schema my-workflow
+rasen new change feature --schema my-workflow
 
 # 或在 config.yaml 中设为默认
 schema: my-workflow
@@ -253,10 +253,10 @@ schema: my-workflow
 
 ```bash
 # 查看特定 schema 的来源
-openspec schema which my-workflow
+rasen schema which my-workflow
 
 # 列出所有可用的 schema
-openspec schema which --all
+rasen schema which --all
 ```
 
 输出会显示它来自项目目录、用户目录还是安装包：
@@ -311,7 +311,7 @@ apply:
 从默认 schema 派生并添加审查步骤：
 
 ```bash
-openspec schema fork spec-driven with-review
+rasen schema fork spec-driven with-review
 ```
 
 然后编辑 `schema.yaml` 添加：

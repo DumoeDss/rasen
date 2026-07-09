@@ -1,0 +1,46 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "stages": {
+    "propose": { "status": "done", "note": "authored by LEAD session pre-auto (artifacts complete, validated)" },
+    "apply": {
+      "status": "done",
+      "note": "26/26 tasks; pnpm test 120 files / 2201 passed / 22 skipped / 0 failed (two full runs); 5.1 resolved by LEAD as per-entry tree merge (openspec/->rasen/) preserving concurrent session commit 8c47a06, zero clobber",
+      "worker": { "role": "implementer", "relay": ["implementer-1", "implementer-2", "implementer-3", "implementer-4", "implementer-5"] },
+      "handoffs": [
+        { "n": 1, "path": "handoff/implementer-1.md", "reason": "self-assessment", "completed": ["1.1","1.2","1.3","1.4","2.1","2.2","3.1","3.3","3.4","3.6"], "at": "2026-07-09" },
+        { "n": 2, "path": "handoff/implementer-2.md", "reason": "self-assessment (silent idle)", "completed": ["3.2","3.5","2.3","2.4","4.1","4.2","4.3"], "at": "2026-07-09" },
+        { "n": 3, "path": null, "reason": "infra-death API 529 x2 (implementer-3/4, no docs; ~90% of 5.3 sweep landed on disk); implementer-5 cold-reconstructed and finished 5.2/5.3/5.4-local/6.1/6.2/6.3, wrote handoff/implementer-5.md, correctly blocked 5.1", "at": "2026-07-09" }
+      ],
+      "strategyAttempts": []
+    },
+    "verify": { "status": "done", "worker": { "role": "reviewer", "name": "reviewer-1" }, "note": "3 Major / 5 Minor / 2 Trivial, no Blocker; review-report.md written" },
+    "review-loop": {
+      "status": "done",
+      "rounds": 2,
+      "note": "Round 1: 10 findings fixed by implementer-5 (author-routed). Round 2: reviewer-1 non-author confirmed 10/10 resolved; suite 2177 passed / 0 failed. New R2-1 (Major, commit-hygiene): concurrent change prompt-audit-fixes-expert-dispatch content co-mingled in _shared.ts/_orchestration.ts/skill-templates-parity.test.ts — routed to ship as handling constraint (4b37644 precedent: keep, attribute, pathspec)."
+    },
+    "ship": { "status": "in_progress", "worker": { "role": "shipper", "name": "shipper-1" }, "note": "HARD CONSTRAINT: explicit-pathspec commit only; exclude rasen/changes/prompt-audit-fixes*; include 3 co-mingled files WITH attribution note in commit message; delivery mode local (no push — user owns outward delivery)" },
+    "archive": { "status": "pending" }
+  },
+  "rounds": 0,
+  "openFindings": [],
+  "gatesWaived": { "by": "user", "at": "2026-07-09", "scope": "all stages — user granted full autonomous progression to archive" },
+  "escalations": [
+    {
+      "id": "telemetry-endpoint-brand-leak",
+      "detail": "src/telemetry/index.ts still POSTs to openspec-telemetry.ws11579.workers.dev; repointing is out of this change's design scope and the telemetry backend is owned by another session (intended endpoint telemetry.rasen.io, TLS provisioning in progress). Left as-is; test matches shipped src. Needs user/telemetry-session decision.",
+      "status": "parked-for-user"
+    },
+    {
+      "id": "ci-matrix-backfill",
+      "detail": "5.4 CI three-platform matrix requires push; local Windows full-suite green recorded. Backfill after user pushes.",
+      "status": "parked-known-open"
+    }
+  ],
+  "notes": [
+    "CLI binary is `node bin/rasen.js`; build with `node build.js` (pnpm build broken in this env)",
+    "Workspace merged: repo root is now rasen/ (openspec/ removed); this file lives at rasen/changes/rasen-full-rebrand/auto-run.json"
+  ]
+}

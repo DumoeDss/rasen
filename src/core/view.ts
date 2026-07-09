@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from './config.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
@@ -6,7 +7,7 @@ import { MarkdownParser } from './parsers/markdown-parser.js';
 
 export class ViewCommand {
   async execute(targetPath: string = '.'): Promise<void> {
-    const openspecDir = path.join(targetPath, 'openspec');
+    const openspecDir = path.join(targetPath, WORKSPACE_DIR_NAME);
     
     if (!fs.existsSync(openspecDir)) {
       console.error(chalk.red('No Rasen directory found'));

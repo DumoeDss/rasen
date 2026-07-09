@@ -49,9 +49,9 @@ See \`/freeze\` for how edit boundary enforcement works.
 
 export function getGuardSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:guard',
+    name: 'rasen:guard',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

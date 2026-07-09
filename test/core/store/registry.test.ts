@@ -25,7 +25,7 @@ describe('store registry facade', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-store-registry-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-registry-'));
   });
 
   afterEach(() => {

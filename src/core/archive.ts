@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from './config.js';
 import { promises as fs } from 'fs';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import path from 'path';
@@ -621,9 +622,9 @@ export class ArchiveCommand {
 
           if (newRules.length > 0) {
             // Read raw config yaml to preserve other fields
-            let configPath = path.join(projectRoot, 'openspec', 'config.yaml');
+            let configPath = path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yaml');
             if (!existsSync(configPath)) {
-              configPath = path.join(projectRoot, 'openspec', 'config.yml');
+              configPath = path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yml');
             }
             if (existsSync(configPath)) {
               const rawContent = readFileSync(configPath, 'utf-8');

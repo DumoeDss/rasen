@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import path from 'path';
 import { FileSystemUtils } from './file-system.js';
 import { writeChangeMetadata, validateSchemaName } from './change-metadata.js';
@@ -150,7 +151,7 @@ export async function createChange(
   validateSchemaName(schemaName, projectRoot);
 
   // Build the change directory path
-  const changeDir = path.join(options.changesDir ?? path.join(projectRoot, 'openspec', 'changes'), name);
+  const changeDir = path.join(options.changesDir ?? path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes'), name);
 
   // Check if change already exists
   if (await FileSystemUtils.directoryExists(changeDir)) {
@@ -163,7 +164,7 @@ export async function createChange(
   // specs/ and changes/archive/ exist, and write a config only when
   // none exists. The config records the PROJECT default schema, never
   // a one-change --schema override.
-  const openspecDir = path.join(projectRoot, 'openspec');
+  const openspecDir = path.join(projectRoot, WORKSPACE_DIR_NAME);
 
   // Create the directory (including parent directories if needed)
   await FileSystemUtils.createDirectory(changeDir);

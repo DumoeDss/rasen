@@ -31,15 +31,15 @@ describe('skill sidecar install (init + update real run)', () => {
 
   const skillsRoot = () => path.join(testDir, '.claude', 'skills');
   const investigateSidecar = () =>
-    path.join(skillsRoot(), 'openspec-investigate', 'scripts', 'hitl-loop.template.sh');
+    path.join(skillsRoot(), 'rasen-investigate', 'scripts', 'hitl-loop.template.sh');
   const reviewSidecar = () =>
-    path.join(skillsRoot(), 'openspec-review', 'checklist.md');
+    path.join(skillsRoot(), 'rasen-review', 'checklist.md');
 
   beforeEach(async () => {
-    testDir = path.join(os.tmpdir(), `openspec-sidecar-run-${randomUUID()}`);
+    testDir = path.join(os.tmpdir(), `rasen-sidecar-run-${randomUUID()}`);
     await fs.mkdir(testDir, { recursive: true });
     originalEnv = { ...process.env };
-    configTempDir = path.join(os.tmpdir(), `openspec-sidecar-cfg-${randomUUID()}`);
+    configTempDir = path.join(os.tmpdir(), `rasen-sidecar-cfg-${randomUUID()}`);
     await fs.mkdir(configTempDir, { recursive: true });
     process.env.XDG_CONFIG_HOME = configTempDir;
 

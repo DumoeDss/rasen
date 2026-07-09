@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { getWorksetsDir } from '../../src/core/worksets.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
-import { createOpenSpecRoot } from '../helpers/openspec-fixtures.js';
+import { createOpenSpecRoot } from '../helpers/rasen-fixtures.js';
 import {
   createFakeTool,
   envWithFakeTools,
@@ -32,7 +32,7 @@ describe('workset journey (7.1 e2e)', () => {
   beforeEach(async () => {
     process.env.RASEN_ENABLE_CLI_AGENT_OPENERS = '1';
     tempDir = fs.realpathSync.native(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-workset-e2e-'))
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workset-e2e-'))
     );
     env = {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
@@ -55,7 +55,7 @@ describe('workset journey (7.1 e2e)', () => {
     appRepo = path.join(tempDir, 'web-app');
     createOpenSpecRoot(appRepo);
     fs.writeFileSync(
-      path.join(appRepo, 'openspec', 'config.yaml'),
+      path.join(appRepo, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - team-context\n'
     );
 

@@ -71,12 +71,12 @@ Pick exactly ONE gate type by task nature — never both:
 
 export function getGoalPlanSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-goal-plan',
+    name: 'rasen-goal-plan',
     description:
       'Goal-loop define-goal stage (planner role) — produces goal-plan.md with the goal, a measure XOR evaluate gate, work product, and maxRounds. Does NOT produce proposal/design/specs.',
     instructions: GOAL_PLAN_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

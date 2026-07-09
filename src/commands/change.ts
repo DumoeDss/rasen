@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { JsonConverter } from '../core/converters/json-converter.js';
@@ -24,7 +25,7 @@ export class ChangeCommand {
   }
 
   private getChangesPath(): string {
-    return path.join(this.rootPath ?? process.cwd(), 'openspec', 'changes');
+    return path.join(this.rootPath ?? process.cwd(), WORKSPACE_DIR_NAME, 'changes');
   }
 
   /**
@@ -99,7 +100,7 @@ export class ChangeCommand {
    * - JSON: array of { id, title, deltaCount, taskStatus }, sorted by id
    */
   async list(options?: { json?: boolean; long?: boolean }): Promise<void> {
-    const changesPath = path.join(process.cwd(), 'openspec', 'changes');
+    const changesPath = path.join(process.cwd(), WORKSPACE_DIR_NAME, 'changes');
     
     const changes = await this.getActiveChanges(changesPath);
     
@@ -170,7 +171,7 @@ export class ChangeCommand {
   }
 
   async validate(changeName?: string, options?: { strict?: boolean; json?: boolean; noInteractive?: boolean }): Promise<void> {
-    const changesPath = path.join(process.cwd(), 'openspec', 'changes');
+    const changesPath = path.join(process.cwd(), WORKSPACE_DIR_NAME, 'changes');
     
     if (!changeName) {
       const canPrompt = isInteractive(options);

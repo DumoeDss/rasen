@@ -20,12 +20,12 @@ name: test-pipeline
 description: A test pipeline
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
     requires: []
     gate: true
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: implementer
     requires:
       - propose
@@ -46,7 +46,7 @@ stages:
 name: defaults
 stages:
   - id: only
-    skill: openspec-propose
+    skill: rasen-propose
 `;
       const pipeline = parsePipeline(yaml);
       const stage = pipeline.stages[0];
@@ -66,7 +66,7 @@ stages:
 name: loop-default
 stages:
   - id: loop
-    skill: openspec-review-cycle
+    skill: rasen-review-cycle
     loop:
       kind: review-cycle
 `;
@@ -79,7 +79,7 @@ stages:
 name: goal-measure
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: goal
       gate: { kind: measure }
@@ -102,7 +102,7 @@ stages:
 name: goal-evaluate
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: goal
       gate: { kind: evaluate }
@@ -120,7 +120,7 @@ stages:
 name: goal-defaults
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: goal
       gate: { kind: evaluate }
@@ -139,7 +139,7 @@ stages:
 name: goal-threshold
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: goal
       gate:
@@ -163,7 +163,7 @@ stages:
 name: goal-no-stop
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: goal
       gate:
@@ -182,7 +182,7 @@ stages:
 name: goal-combo
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: goal
       gate:
@@ -199,7 +199,7 @@ stages:
 name: bad-loop-kind
 stages:
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     loop:
       kind: unknown
 `;
@@ -211,9 +211,9 @@ stages:
 name: opts
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
   - id: verify
-    skill: openspec:review
+    skill: rasen:review
     requires: [a]
     condition: always
     verifyPolicy: adaptive
@@ -238,10 +238,10 @@ agents:
   reviewer: claude
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
   - id: verify
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -274,7 +274,7 @@ agents:
   planner: llama
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
@@ -284,7 +284,7 @@ stages:
       const yaml = `
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
       expect(() => parsePipeline(yaml)).toThrow(/name/);
@@ -314,7 +314,7 @@ stages: []
 name: bad-role
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
     role: wizard
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
@@ -325,7 +325,7 @@ stages:
 name: bad-policy
 stages:
   - id: a
-    skill: openspec:review
+    skill: rasen:review
     verifyPolicy: extreme
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
@@ -338,9 +338,9 @@ stages:
 name: dup
 stages:
   - id: apply
-    skill: openspec-propose
+    skill: rasen-propose
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
       expect(() => parsePipeline(yaml)).toThrow(/Duplicate stage ID: apply/);
@@ -351,7 +351,7 @@ stages:
 name: dangling
 stages:
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     requires:
       - nonexistent
 `;
@@ -364,7 +364,7 @@ stages:
 name: self
 stages:
   - id: A
-    skill: openspec-propose
+    skill: rasen-propose
     requires:
       - A
 `;
@@ -377,11 +377,11 @@ stages:
 name: cycle2
 stages:
   - id: A
-    skill: openspec-propose
+    skill: rasen-propose
     requires:
       - B
   - id: B
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     requires:
       - A
 `;
@@ -395,15 +395,15 @@ stages:
 name: cycle3
 stages:
   - id: A
-    skill: openspec-propose
+    skill: rasen-propose
     requires:
       - C
   - id: B
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     requires:
       - A
   - id: C
-    skill: openspec:review
+    skill: rasen:review
     requires:
       - B
 `;
@@ -423,13 +423,13 @@ stages:
 name: bad-parallel
 stages:
   - id: root
-    skill: openspec-apply-change
+    skill: rasen-apply-change
   - id: review
-    skill: openspec:review
+    skill: rasen:review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: openspec:cso
+    skill: rasen:cso
     requires: [root, review]
     parallelGroup: experts
 `;
@@ -442,13 +442,13 @@ stages:
 name: good-parallel
 stages:
   - id: root
-    skill: openspec-apply-change
+    skill: rasen-apply-change
   - id: review
-    skill: openspec:review
+    skill: rasen:review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: openspec:cso
+    skill: rasen:cso
     requires: [root]
     parallelGroup: experts
 `;
@@ -461,24 +461,24 @@ stages:
 name: skills
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
   - id: b
-    skill: openspec:review
+    skill: rasen:review
     requires: [a]
 `;
 
     it('should pass when all skills are known', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['openspec-propose', 'openspec:review', 'extra']);
+      const known = new Set(['rasen-propose', 'rasen:review', 'extra']);
       expect(() => validatePipelineSkills(pipeline, known)).not.toThrow();
     });
 
     it('should throw when a stage references an unknown skill', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['openspec-propose']); // missing openspec:review
+      const known = new Set(['rasen-propose']); // missing rasen:review
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(PipelineValidationError);
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(
-        /Stage 'b' references unknown skill: 'openspec:review'/
+        /Stage 'b' references unknown skill: 'rasen:review'/
       );
     });
 
@@ -495,11 +495,11 @@ stages:
     kind: decompose
     childPipeline: small-feature
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     requires: [decompose]
 `);
       // decompose stage has no skill but must NOT trip the unknown-skill check
-      expect(() => validatePipelineSkills(pipeline, new Set(['openspec-propose']))).not.toThrow();
+      expect(() => validatePipelineSkills(pipeline, new Set(['rasen-propose']))).not.toThrow();
     });
   });
 
@@ -512,7 +512,7 @@ stages:
     kind: decompose
     childPipeline: small-feature
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     requires: [decompose]
 `);
       const stage = pipeline.stages[0];
@@ -526,7 +526,7 @@ stages:
 name: std
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       expect(pipeline.stages[0].kind).toBe('standard');
 
@@ -560,7 +560,7 @@ stages:
 name: not-first
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
   - id: decompose
     kind: decompose
     requires: [propose]
@@ -577,9 +577,9 @@ stages:
   - id: decompose
     kind: decompose
   - id: other
-    skill: openspec-propose
+    skill: rasen-propose
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     requires: [decompose, other]
 `;
       expect(() => parsePipeline(yaml)).toThrow(/must be the first stage/);
@@ -594,10 +594,10 @@ stages:
     kind: decompose
     childPipeline: small-feature
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     requires: [decompose]
   - id: apply
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     requires: [propose]
 `)
       ).not.toThrow();
@@ -612,7 +612,7 @@ handoff:
   threshold: 1
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       expect(pipeline.handoff?.threshold).toBe(1);
     });
@@ -623,7 +623,7 @@ stages:
 name: bad-stage-roles
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
     role: reviewer
     handoff:
       roles:
@@ -643,10 +643,10 @@ handoff:
   stallLimit: 2
 stages:
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
   - id: review
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     requires: [propose]
     handoff:
@@ -666,7 +666,7 @@ handoff:
   threshold: 1.5
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(PipelineValidationError);
       expect(() =>
@@ -676,7 +676,7 @@ handoff:
   threshold: 0
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(/threshold must be in/);
     });
@@ -689,7 +689,7 @@ handoff:
   maxRelays: 0
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(/maxRelays must be a positive integer/);
       expect(() =>
@@ -699,7 +699,7 @@ handoff:
   stallLimit: -1
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(/stallLimit must be a positive integer/);
     });
@@ -712,7 +712,7 @@ handoff:
   bogus: 1
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(PipelineValidationError);
     });
@@ -728,14 +728,14 @@ handoff:
   stallLimit: 3
 stages:
   - id: implement
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: implementer
   - id: review
-    skill: openspec:review
+    skill: rasen:review
     role: reviewer
     requires: [implement]
   - id: fix
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     role: fixer
     requires: [review]
     handoff:
@@ -774,7 +774,7 @@ stages:
 name: nodefaults
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
     role: planner
 `);
       expect(resolveStageHandoffConfig(pipeline.stages[0], pipeline)).toEqual({
@@ -798,7 +798,7 @@ reuse:
     planner: 0.5
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       expect(pipeline.reuse?.planner).toBe('auto');
       expect(pipeline.reuse?.implementer).toBe('never');
@@ -813,7 +813,7 @@ reuse:
   threshold: 1
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       expect(pipeline.reuse?.threshold).toBe(1);
     });
@@ -826,7 +826,7 @@ reuse:
   planner: sometimes
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(PipelineValidationError);
     });
@@ -839,7 +839,7 @@ reuse:
   threshold: 1.5
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(/reuse threshold must be in/);
       expect(() =>
@@ -849,7 +849,7 @@ reuse:
   threshold: 0
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(/reuse threshold must be in/);
       expect(() =>
@@ -860,7 +860,7 @@ reuse:
     implementer: 2
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(/reuse threshold must be in/);
     });
@@ -873,7 +873,7 @@ reuse:
   bogus: 1
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(PipelineValidationError);
     });
@@ -887,7 +887,7 @@ reuse:
     reviewer: 0.5
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `)
       ).toThrow(PipelineValidationError);
     });
@@ -901,7 +901,7 @@ reuse:
     planner: 0.5
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       expect(resolvePipelineReuseConfig(pipeline)).toEqual({
         planner: 'auto',
@@ -918,7 +918,7 @@ reuse:
   planner: never
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       const resolved = resolvePipelineReuseConfig(pipeline);
       expect(resolved.planner).toBe('never');
@@ -930,7 +930,7 @@ stages:
 name: reuse-defaults
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `);
       expect(resolvePipelineReuseConfig(pipeline)).toEqual({
         planner: DEFAULT_REUSE_CONFIG.planner,

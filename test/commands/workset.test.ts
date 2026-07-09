@@ -32,7 +32,7 @@ describe('rasen workset (7.1)', () => {
     // disabled-by-default path is covered in its own describe below.
     process.env.RASEN_ENABLE_CLI_AGENT_OPENERS = '1';
     tempDir = fs.realpathSync.native(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-workset-'))
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workset-'))
     );
     env = {
       XDG_DATA_HOME: path.join(tempDir, 'data'),
@@ -832,7 +832,7 @@ describe('interactive compose cancellation (in-process)', () => {
 
   beforeEach(() => {
     tempDir = fs.realpathSync.native(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-workset-tty-'))
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workset-tty-'))
     );
     originalEnv = { ...process.env };
     process.env.XDG_DATA_HOME = path.join(tempDir, 'data');

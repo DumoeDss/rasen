@@ -14,7 +14,7 @@ describe('file-state', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-file-state-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-file-state-'));
   });
 
   afterEach(() => {

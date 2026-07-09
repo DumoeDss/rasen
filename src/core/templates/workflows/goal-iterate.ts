@@ -50,7 +50,7 @@ Branch on \`workProduct\`:
 
 You cannot feel your own context usage. If you notice your earlier conversation has been replaced by a compaction summary, OR you have completed substantial work but more remains and you are losing recall of details you read earlier:
 - Finish or cleanly abort the current atomic edit (do not leave the work product half-written).
-- Write \`openspec/changes/<name>/handoff/implementer-<n>.md\` per the openspec-handoff template.
+- Write \`rasen/changes/<name>/handoff/implementer-<n>.md\` per the rasen-handoff template.
 - Return \`HANDOFF { path, reason: compaction|budget|self-assessment, completed: [...], remaining: [...] }\` instead of \`DONE\`.
 
 The LEAD warm-seeds a successor from your handoff document and the loop continues; \`goal-run.json\` is the spine that survives the relay.
@@ -67,12 +67,12 @@ The normal \`DONE\` return additionally carries 1–3 lines of durable findings:
 
 export function getGoalIterateSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-goal-iterate',
+    name: 'rasen-goal-iterate',
     description:
       'Goal-loop iterate stage (implementer role, the student) — work-product-aware: code edits toward the goal (may self-run measure informally) or prose research inline. Never spawns child subagents; self-hands off via Step H.3 when context fills.',
     instructions: GOAL_ITERATE_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

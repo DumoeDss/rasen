@@ -20,7 +20,7 @@ import { parsePipeline, PipelineValidationError } from '../../../src/core/pipeli
 const VALID_PIPELINE = `name: NAME
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
 `;
 
 function writePipeline(dir: string, name: string, content: string): void {
@@ -34,7 +34,7 @@ describe('pipeline-registry/resolver', () => {
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
-    tempDir = path.join(os.tmpdir(), `openspec-pipeline-resolver-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDir = path.join(os.tmpdir(), `rasen-pipeline-resolver-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     fs.mkdirSync(tempDir, { recursive: true });
     originalEnv = { ...process.env };
   });
@@ -62,7 +62,7 @@ describe('pipeline-registry/resolver', () => {
   describe('getProjectPipelinesDir', () => {
     it('should return correct path', () => {
       expect(getProjectPipelinesDir('/path/to/project')).toBe(
-        path.join('/path/to/project', 'openspec', 'pipelines')
+        path.join('/path/to/project', 'rasen', 'pipelines')
       );
     });
   });
@@ -142,10 +142,10 @@ describe('pipeline-registry/resolver', () => {
         `name: cyclic
 stages:
   - id: a
-    skill: openspec-propose
+    skill: rasen-propose
     requires: [b]
   - id: b
-    skill: openspec-apply-change
+    skill: rasen-apply-change
     requires: [a]
 `
       );
@@ -176,13 +176,13 @@ stages:
 
       const projectRoot = path.join(tempDir, 'project');
       writePipeline(
-        path.join(projectRoot, 'openspec', 'pipelines'),
+        path.join(projectRoot, 'rasen', 'pipelines'),
         'shared',
         VALID_PIPELINE.replace('NAME', 'project-version')
       );
 
       const dir = getPipelineDir('shared', projectRoot);
-      expect(dir).toBe(path.join(projectRoot, 'openspec', 'pipelines', 'shared'));
+      expect(dir).toBe(path.join(projectRoot, 'rasen', 'pipelines', 'shared'));
 
       const pipeline = loadPipelineByName('shared', projectRoot);
       expect(pipeline.name).toBe('project-version');
@@ -191,7 +191,7 @@ stages:
     it('should prefer project-local over package built-in', () => {
       const projectRoot = path.join(tempDir, 'project');
       writePipeline(
-        path.join(projectRoot, 'openspec', 'pipelines'),
+        path.join(projectRoot, 'rasen', 'pipelines'),
         'full-feature',
         VALID_PIPELINE.replace('NAME', 'project-full-feature')
       );
@@ -216,7 +216,7 @@ stages:
       );
       const projectRoot = path.join(tempDir, 'project');
       writePipeline(
-        path.join(projectRoot, 'openspec', 'pipelines'),
+        path.join(projectRoot, 'rasen', 'pipelines'),
         'shared',
         VALID_PIPELINE.replace('NAME', 'project-version')
       );
@@ -294,7 +294,7 @@ stages:
       );
       const projectRoot = path.join(tempDir, 'project');
       writePipeline(
-        path.join(projectRoot, 'openspec', 'pipelines'),
+        path.join(projectRoot, 'rasen', 'pipelines'),
         'shared',
         VALID_PIPELINE.replace('NAME', 'project-shared')
       );
@@ -313,7 +313,7 @@ stages:
   - id: decompose
     kind: decompose
 ${child ? `    childPipeline: ${child}\n` : ''}  - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     requires: [decompose]
 `;
 
@@ -348,7 +348,7 @@ stages:
   - id: decompose
     kind: decompose
   - id: propose
-    skill: openspec-propose
+    skill: rasen-propose
     requires: [decompose]
 `
       );

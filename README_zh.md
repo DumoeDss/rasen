@@ -1,82 +1,112 @@
-<p align="center">
-  <a href="https://github.com/Fission-AI/OpenSpec">
-    <picture>
-      <source srcset="assets/openspec_bg.png">
-      <img src="assets/openspec_bg.png" alt="OpenSpec 标志">
-    </picture>
-  </a>
-</p>
+<h1 align="center">Rasen — loops that ascend</h1>
+
+<p align="center"><strong>「不是循环，是螺旋」</strong></p>
 
 <p align="center">
-  <a href="https://github.com/Fission-AI/OpenSpec/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fission-AI/OpenSpec/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://www.npmjs.com/package/@fission-ai/openspec"><img alt="npm 版本" src="https://img.shields.io/npm/v/@fission-ai/openspec?style=flat-square" /></a>
+  <a href="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="许可证: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
-  <a href="https://discord.gg/YctCnvvshC"><img alt="Discord" src="https://img.shields.io/discord/1411657095639601154?style=flat-square&logo=discord&logoColor=white&label=Discord&suffix=%20online" /></a>
 </p>
 
-<details>
-<summary><strong>最受欢迎的规范框架。</strong></summary>
+**Rasen** 是一套规范驱动（spec-driven）的开发工作流，并在其之上叠加了一层自动驾驶编排 harness——你写下规范，harness 便驱动 change 走完 propose → apply → archive，自主迭代直到工作完成。
 
-[![Stars](https://img.shields.io/github/stars/Fission-AI/OpenSpec?style=flat-square&label=Stars)](https://github.com/Fission-AI/OpenSpec/stargazers)
-[![Downloads](https://img.shields.io/npm/dm/@fission-ai/openspec?style=flat-square&label=Downloads/mo)](https://www.npmjs.com/package/@fission-ai/openspec)
-[![Contributors](https://img.shields.io/github/contributors/Fission-AI/OpenSpec?style=flat-square&label=Contributors)](https://github.com/Fission-AI/OpenSpec/graphs/contributors)
+## 不是圆，是螺旋
 
-</details>
-<p></p>
-我们的理念：
+回到起点的循环只是一个圆。Rasen（螺旋）是一个不断上升的循环的形状。这就是全部理念，而它恰好映射到工具的实际运作方式：
 
-```text
-→ 灵活而非僵化
-→ 迭代而非瀑布式
-→ 简单而非复杂
-→ 为既有项目而生，而非仅适用于全新项目
-→ 从个人项目到企业级均可扩展
+- **规范是原点。** 每个 change 都始于一份写下来的意图——提案、需求、设计、任务清单——在写任何代码之前先落在你的 `rasen/` 工作区里。`/rasen:propose → apply → archive`。
+- **循环是形态。** 工作以周期推进，而非一次瀑布式通过。`rasen` 流水线家族——`small-feature`、`bug-fix`、`full-feature`、`auto-decompose`——把一个任务塑造成 propose、implement、review、ship 的循环。
+- **每一圈都在上升。** harness 不只是重复，而是持续进步。`/rasen:auto` 拉起一个 LEAD，编排角色隔离的子 agent、一个能纠正自身错误的评审环，以及跨会话携带上下文的 handoff/接力——让每一圈都比上一圈更高。
+- **直到突破。** `/rasen:goal` 以条件而非文档来收束螺旋：把某个指标推到目标、把某个模块做到 rubric 洁净、把某个课题研究到 brief 被回答——重复 modify → judge 直到 gate 达成。
+
+规范是你的起点，螺旋是你抵达的方式。
+
+## 血统（Lineage）
+
+Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [DumoeDss](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen:*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
+
+## 安装
+
+需要 **Node.js `>=20.19.0`**。
+
+```bash
+npm i -g rasen
 ```
 
-> [!TIP]
-> **全新工作流现已推出！** 我们使用全新的工件引导工作流重构了 OpenSpec。
->
-> 运行 `/opsx:propose "你的想法"` 即可开始。→ [了解更多](docs/zh/opsx.md)
+然后在你的项目中初始化：
 
-<p align="center">
-  关注 <a href="https://x.com/0xTab">@0xTab（X 平台）</a> 获取更新 · 加入 <a href="https://discord.gg/YctCnvvshC">OpenSpec Discord</a> 获取帮助和提问。
-</p>
+```bash
+cd your-project
+rasen init
+```
 
-### 团队
+`rasen init` 会创建一个 `rasen/` 工作区（specs 与 changes），并为你的 AI 编程工具安装 `/rasen:*` 斜杠命令。
 
-在团队中使用 OpenSpec？[发送邮件](mailto:teams@openspec.dev) 以获取我们 Slack 频道的访问权限。
+升级后刷新 AI 指导并获取最新斜杠命令：
 
-<!-- TODO: 添加 /opsx:propose → /opsx:archive 工作流的 GIF 演示 -->
+```bash
+rasen update
+```
 
-## 关于本 Fork
+## 与 OpenSpec 共存
 
-这是 [OpenSpec](https://github.com/Fission-AI/OpenSpec) 的**编排增强 fork**。它保持与上游完全兼容——`/opsx:propose → /opsx:apply → /opsx:archive` 工作流、`openspec/` 的 spec/change 目录结构、以及 stores 都和上游一致——并在其之上叠加了一套**自动驾驶编排**系统，让 AI 能端到端地驱动一个完整 change，而你始终保持掌控。
+Rasen 被设计为可以与上游 OpenSpec **并存**而互不冲突。每一个界面都是独立的命名空间，因此二者可以同时安装在同一个项目里：
 
-本 Fork 新增的能力：
+| 界面 | OpenSpec | Rasen |
+| --- | --- | --- |
+| 二进制 | `openspec` | `rasen` |
+| 斜杠命令 | `/opsx:*` | `/rasen:*` |
+| 技能 | `openspec-*` | `rasen-*` |
+| 工作区 | `openspec/` | `rasen/` |
 
-- **`/opsx:auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
-- **数据驱动的流水线注册表** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以 YAML 形式提供；用 `openspec pipeline show|list|classify|resume` 查看。新增一种任务类型 = 加一个文件，零代码改动。
-- **Auto-decompose（组合扇出）** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
-- **上下文感知与交接** — `openspec agent context` 测量真实占用；`/opsx:handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，受接力上限、停滞检测和 LEAD 优先的升级阶梯约束。
-- **会话接力** — 当 LEAD 自身上下文不足时，经你授权可拉起一个继任 Claude Code 会话；一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到交接蒸馏物。
-- **Worker 复用策略** — 可配置的 planner/implementer 在有依赖的子 change 之间复用（`reuse` 配置块），并记录 `reusedFrom` 血统。
-- **迭代评审环** + 配套命令：`/opsx:review-cycle`、`/opsx:ship`、`/opsx:verify-enhanced`、`/opsx:office-hours`、`/opsx:retro`。
-- **安全与恢复 hooks** — `safety-check.sh`（拦截危险命令）与 `compact-recovery.sh`（compact 后重新锚定）。
+由于命名空间从不重叠，安装 rasen 绝不会干扰已有的 OpenSpec 配置——不需要先卸载任何东西。
 
-> `handoff` / `reuse` / 能力分层的可调参数与默认值见 [docs/zh/opsx-workflow-guide.md §3.7](docs/zh/opsx-workflow-guide.md#37-上下文感知与交接openspec-agent-context--opsxhandoff)。内置流水线位于 [`pipelines/`](pipelines/)。
+如果你已有一个 `openspec/` 工作区并想把它迁入 rasen：
+
+```bash
+rasen migrate
+```
+
+`rasen migrate` 是**仅复制（copy-only）**的：它把 `openspec/{specs,changes,config.yaml}` 复制进 `rasen/`，跳过任何已存在的目标。你原有的 `openspec/` 目录**永远不会被修改或删除**——你可以继续用 OpenSpec 对它照常工作。
+
+### chrome-use 前置条件
+
+`chrome-use` 专家通过 Chrome DevTools Protocol 驱动你日常使用的 Chrome。使用它你需要：
+
+- 已安装 **Google Chrome**。
+- **Node.js 22 或更新版本**（CDP 代理工具链要求）。
+- 以远程调试模式启动 Chrome——打开 `chrome://inspect/#remote-debugging`（或用 `--remote-debugging-port` 启动 Chrome）。
+- **首次 CDP 连接**时，Chrome 会弹出 **"Allow"** 授权提示——批准它以允许工具挂载。
+
+## 你会得到什么
+
+- **规范驱动的工作流** — 每个 change 是一个文件夹，含提案、specs、设计和任务清单。在写代码之前先就要构建的内容达成共识：`/rasen:propose → /rasen:apply → /rasen:archive`。
+- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看。新增一种任务类型 = 加一个文件，零代码。
+- **`/rasen:auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
+- **`/rasen:goal` 目标驱动迭代** — `/rasen:auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
+- **Auto-decompose** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
+- **chrome-use** — 一个通过 CDP 驱动你真实 Chrome 的专家：导航、点击、抓包、注入 JS、读 cookie 和 `localStorage`、等待请求——面向需登录的页面、SPA，以及普通 fetch 触及不到的一切。
+- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen:handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
 
 ## 实际演示
 
 ```text
-你: /opsx:propose add-dark-mode
-AI: 已创建 openspec/changes/add-dark-mode/
+你: /rasen:explore
+AI: 你想探索什么？
+你: 我想做暗色模式，但不确定怎么干净地实现。
+AI: 让我看看你的样式设置……
+    最干净的路径：CSS 变量 + 一个小的主题 context，
+    加上系统偏好检测。不引入新依赖。要不要定下范围？
+你: 好，就这么做。
+
+你: /rasen:propose add-dark-mode
+AI: 已创建 rasen/changes/add-dark-mode/
     ✓ proposal.md — 为什么要做、有哪些变更
     ✓ specs/       — 需求和场景
     ✓ design.md    — 技术方案
     ✓ tasks.md     — 实施清单
     准备开始实施！
 
-你: /opsx:apply
+你: /rasen:apply
 AI: 正在执行任务...
     ✓ 1.1 添加主题上下文提供者
     ✓ 1.2 创建切换组件
@@ -84,139 +114,27 @@ AI: 正在执行任务...
     ✓ 2.2 接入 localStorage
     所有任务已完成！
 
-你: /opsx:archive
-AI: 已归档至 openspec/changes/archive/2025-01-23-add-dark-mode/
+你: /rasen:archive
+AI: 已归档至 rasen/changes/archive/2026-01-23-add-dark-mode/
     规范已更新。准备好迎接下一个功能。
 ```
 
-<details>
-<summary><strong>OpenSpec 仪表盘</strong></summary>
+## 遥测与隐私
 
-<p align="center">
-  <img src="assets/openspec_dashboard.png" alt="OpenSpec 仪表盘预览" width="90%">
-</p>
+Rasen 收集匿名使用遥测以了解哪些命令被使用。它**只**发送命令名、rasen 版本、一个匿名 UUID，以及你的操作系统和 Node 版本——**绝不**包含路径、参数或项目数据。
 
-</details>
-
-## 快速开始
-
-**需要 Node.js 20.19.0 或更高版本。**
-
-全局安装 OpenSpec：
+退出方式，设置任一：
 
 ```bash
-npm install -g @fission-ai/openspec@latest
+export RASEN_TELEMETRY=0
+# 或跨工具标准：
+export DO_NOT_TRACK=1
 ```
 
-然后进入你的项目目录并初始化：
-
-```bash
-cd your-project
-openspec init
-```
-
-现在告诉你的 AI：`/opsx:propose <你想构建的内容>`
-
-如果你需要扩展工作流（`/opsx:new`、`/opsx:continue`、`/opsx:ff`、`/opsx:verify`、`/opsx:sync`、`/opsx:bulk-archive`、`/opsx:onboard`），可以使用 `openspec config profile` 进行选择，然后使用 `openspec update` 应用。
-
-> [!NOTE]
-> 不确定你的工具是否受支持？[查看完整列表](docs/zh/supported-tools.md) — 我们支持 20 多种工具，并且还在持续增加。
->
-> 同样支持 pnpm、yarn、bun 和 nix。[查看安装选项](docs/zh/installation.md)。
-
-## 文档
-
-→ **[入门指南](docs/zh/getting-started.md)**：第一步<br>
-→ **[工作流](docs/zh/workflows.md)**：组合与模式<br>
-→ **[命令](docs/zh/commands.md)**：斜杠命令与技能<br>
-→ **[CLI](docs/zh/cli.md)**：终端参考<br>
-→ **[支持的工具](docs/zh/supported-tools.md)**：工具集成与安装路径<br>
-→ **[核心概念](docs/zh/concepts.md)**：整体架构<br>
-→ **[多语言支持](docs/zh/multi-language.md)**：多语言支持<br>
-→ **[自定义](docs/zh/customization.md)**：定制你的体验<br>
-→ **[OPSX 工作流](docs/zh/opsx.md)**：OPSX 工作流详解<br>
-→ **[迁移指南](docs/zh/migration-guide.md)**：迁移到 OPSX<br>
-→ **[安装](docs/zh/installation.md)**：安装选项
-
-## 为什么选择 OpenSpec？
-
-AI 编程助手功能强大，但当需求仅存在于聊天记录中时，结果往往不可预测。OpenSpec 添加了一个轻量级的规范层，让你在编写代码之前就对构建内容达成共识。
-
-- **先达成共识再构建** — 人类和 AI 在编写代码之前先对规范达成一致
-- **保持有序** — 每个变更都有独立的文件夹，包含提案、规范、设计和任务
-- **灵活工作** — 随时更新任何工件，没有僵化的阶段门禁
-- **使用你的工具** — 通过斜杠命令与 20 多种 AI 助手协同工作
-
-### 对比分析
-
-**与 [Spec Kit](https://github.com/github/spec-kit)**（GitHub）— 全面但笨重。有僵化的阶段门禁、大量 Markdown、Python 环境配置。OpenSpec 更轻量，让你可以自由迭代。
-
-**与 [Kiro](https://kiro.dev)**（AWS）— 功能强大但被锁定在其 IDE 中，且仅限于 Claude 模型。OpenSpec 可与你已有的工具配合使用。
-
-**与什么都不用相比** — 没有规范的 AI 编程意味着模糊的提示和不可预测的结果。OpenSpec 在不增加繁琐流程的前提下带来可预测性。
-
-## 更新 OpenSpec
-
-**升级包**
-
-```bash
-npm install -g @fission-ai/openspec@latest
-```
-
-**刷新 AI 指令**
-
-在每个项目中运行此命令以重新生成 AI 指导并确保最新的斜杠命令生效：
-
-```bash
-openspec update
-```
-
-## 使用说明
-
-**模型选择**：OpenSpec 在高推理能力的模型上表现最佳。我们推荐使用 Opus 4.5 和 GPT 5.2 进行规划和实施。
-
-**上下文卫生**：OpenSpec 受益于干净的上下文窗口。在开始实施之前清除上下文，并在整个会话过程中保持良好的上下文卫生。
-
-## 贡献
-
-**小修复** — Bug 修复、拼写纠正和小幅改进可以直接提交 PR。
-
-**大型变更** — 对于新功能、重大重构或架构变更，请先提交 OpenSpec 变更提案，以便我们在实施之前就意图和目标达成一致。
-
-在编写提案时，请牢记 OpenSpec 的理念：我们服务于使用不同编程代理、模型和用例的广泛用户群体。变更应该对所有人都适用。
-
-**欢迎 AI 生成的代码** — 只要经过测试和验证即可。包含 AI 生成代码的 PR 应注明所使用的编程代理和模型（例如，"使用 Claude Code 和 claude-opus-4-5-20251101 生成"）。
-
-### 开发
-
-- 安装依赖：`pnpm install`
-- 构建：`pnpm run build`
-- 测试：`pnpm test`
-- 本地开发 CLI：`pnpm run dev` 或 `pnpm run dev:cli`
-- 约定式提交（单行）：`type(scope): subject`
-
-## 其他
-
-<details>
-<summary><strong>遥测</strong></summary>
-
-OpenSpec 收集匿名使用统计数据。
-
-我们仅收集命令名称和版本以了解使用模式。不收集参数、路径、内容或个人身份信息。在 CI 环境中自动禁用。
-
-**退出方式：** `export OPENSPEC_TELEMETRY=0` 或 `export DO_NOT_TRACK=1`
-
-</details>
-
-<details>
-<summary><strong>维护者与顾问</strong></summary>
-
-查看 [MAINTAINERS.md](MAINTAINERS.md) 获取核心维护者和帮助指导项目的顾问列表。
-
-</details>
-
-
+在 CI 环境中遥测也会**自动禁用**。
 
 ## 许可证
 
-MIT
+MIT — Copyright (c) 2024 OpenSpec Contributors 及 Copyright (c) 2026 DumoeDss。见 [LICENSE](./LICENSE)。
+
+问题与反馈：[github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen)。

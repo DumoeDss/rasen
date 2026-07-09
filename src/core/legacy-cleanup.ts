@@ -381,244 +381,94 @@ export function removeMarkerBlock(content: string): string {
 }
 
 /**
- * Result of cleanup operation
- */
-export interface CleanupResult {
-  /** Files that were deleted entirely */
-  deletedFiles: string[];
-  /** Files that had marker blocks removed */
-  modifiedFiles: string[];
-  /** Directories that were deleted */
-  deletedDirs: string[];
-  /** Whether project.md exists and needs manual migration */
-  projectMdNeedsMigration: boolean;
-  /** Error messages if any operations failed */
-  errors: string[];
-}
-
-/**
- * Cleans up legacy Rasen artifacts from a project.
- * Preserves openspec/project.md (shows migration hint instead of deleting).
+ * Removes ONLY the marker blocks from shared config files — never deletes or
+ * touches command directories, command files, skill directories, or
+ * openspec/AGENTS.md. This is the narrow, consent-gated cleanup invoked inside
+ * the `rasen migrate` flow (default: keep). In coexistence, a marker block in a
+ * shared config file (e.g. root AGENTS.md) may be upstream OpenSpec's ACTIVE
+ * configuration, so removal only happens when the user explicitly confirms it.
  *
  * @param projectPath - The root path of the project
  * @param detection - Detection result from detectLegacyArtifacts
- * @returns Cleanup result with summary of actions taken
+ * @returns The relative paths of config files whose marker block was removed
  */
-export async function cleanupLegacyArtifacts(
+export async function cleanupMarkerBlocks(
   projectPath: string,
   detection: LegacyDetectionResult
-): Promise<CleanupResult> {
-  const result: CleanupResult = {
-    deletedFiles: [],
-    modifiedFiles: [],
-    deletedDirs: [],
-    projectMdNeedsMigration: detection.hasProjectMd,
-    errors: [],
-  };
+): Promise<{ modifiedFiles: string[]; errors: string[] }> {
+  const modifiedFiles: string[] = [];
+  const errors: string[] = [];
 
-  // Remove marker blocks from config files (NEVER delete config files)
-  // Config files like CLAUDE.md, AGENTS.md belong to the user's project root
   for (const fileName of detection.configFilesToUpdate) {
     const filePath = FileSystemUtils.joinPath(projectPath, fileName);
     try {
       const content = await FileSystemUtils.readFile(filePath);
       const newContent = removeMarkerBlock(content);
-      // Always write the file, even if empty - never delete user config files
+      // Never delete user config files — always write back, even if now empty.
       await FileSystemUtils.writeFile(filePath, newContent);
-      result.modifiedFiles.push(fileName);
+      modifiedFiles.push(fileName);
     } catch (error: any) {
-      result.errors.push(`Failed to modify ${fileName}: ${error.message}`);
+      errors.push(`Failed to modify ${fileName}: ${error.message}`);
     }
   }
 
-  // Delete legacy slash command directories (these are 100% Rasen-managed)
-  for (const dirPath of detection.slashCommandDirs) {
-    const fullPath = FileSystemUtils.joinPath(projectPath, dirPath);
-    try {
-      await fs.rm(fullPath, { recursive: true, force: true });
-      result.deletedDirs.push(dirPath);
-    } catch (error: any) {
-      result.errors.push(`Failed to delete directory ${dirPath}: ${error.message}`);
-    }
-  }
-
-  // Delete legacy slash command files (these are 100% Rasen-managed)
-  for (const filePath of detection.slashCommandFiles) {
-    const fullPath = FileSystemUtils.joinPath(projectPath, filePath);
-    try {
-      await fs.unlink(fullPath);
-      result.deletedFiles.push(filePath);
-    } catch (error: any) {
-      result.errors.push(`Failed to delete ${filePath}: ${error.message}`);
-    }
-  }
-
-  // Delete openspec/AGENTS.md (this is inside openspec/, it's Rasen-managed)
-  if (detection.hasOpenspecAgents) {
-    const agentsPath = FileSystemUtils.joinPath(projectPath, 'openspec', 'AGENTS.md');
-    if (await FileSystemUtils.fileExists(agentsPath)) {
-      try {
-        await fs.unlink(agentsPath);
-        result.deletedFiles.push('openspec/AGENTS.md');
-      } catch (error: any) {
-        result.errors.push(`Failed to delete openspec/AGENTS.md: ${error.message}`);
-      }
-    }
-  }
-
-  // Handle root AGENTS.md with Rasen markers - remove markers only, NEVER delete
-  // Note: Root AGENTS.md is handled via configFilesToUpdate above (it's in LEGACY_CONFIG_FILES)
-  // This hasRootAgentsWithMarkers flag is just for detection, cleanup happens via configFilesToUpdate
-
-  return result;
+  return { modifiedFiles, errors };
 }
 
 /**
- * Generates a cleanup summary message for display.
+ * Formats the one-time coexistence notice printed by `rasen init`/`rasen update`
+ * when legacy-namespace artifacts are detected. Unlike the upgrade flow, this
+ * notice NEVER removes anything: the artifacts may belong to upstream OpenSpec
+ * or an older rasen install, so removal is left to the user (or the explicit
+ * `rasen migrate` flow for marker blocks).
  *
- * @param result - Cleanup result from cleanupLegacyArtifacts
- * @returns Formatted summary string for console output
+ * Returns an empty string when there is nothing worth reporting.
  */
-export function formatCleanupSummary(result: CleanupResult): string {
-  const lines: string[] = [];
+export function formatLegacyCoexistenceNotice(detection: LegacyDetectionResult): string {
+  const hasCommandArtifacts =
+    detection.slashCommandDirs.length > 0 ||
+    detection.slashCommandFiles.length > 0 ||
+    detection.hasOpenspecAgents;
+  const hasMarkerConfigs = detection.configFilesToUpdate.length > 0;
 
-  if (result.deletedFiles.length > 0 || result.deletedDirs.length > 0 || result.modifiedFiles.length > 0) {
-    lines.push('Cleaned up legacy files:');
-
-    for (const file of result.deletedFiles) {
-      lines.push(`  ✓ Removed ${file}`);
-    }
-
-    for (const dir of result.deletedDirs) {
-      lines.push(`  ✓ Removed ${dir}/ (replaced by /opsx:*)`);
-    }
-
-    for (const file of result.modifiedFiles) {
-      lines.push(`  ✓ Removed Rasen markers from ${file}`);
-    }
-  }
-
-  if (result.projectMdNeedsMigration) {
-    if (lines.length > 0) {
-      lines.push('');
-    }
-    lines.push(formatProjectMdMigrationHint());
-  }
-
-  if (result.errors.length > 0) {
-    if (lines.length > 0) {
-      lines.push('');
-    }
-    lines.push('Errors during cleanup:');
-    for (const error of result.errors) {
-      lines.push(`  ⚠ ${error}`);
-    }
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * Build list of files to be removed with explanations.
- * Only includes Rasen-managed files (slash commands, openspec/AGENTS.md).
- * Config files like CLAUDE.md, AGENTS.md are NEVER deleted.
- *
- * @param detection - Detection result from detectLegacyArtifacts
- * @returns Array of objects with path and explanation
- */
-function buildRemovalsList(detection: LegacyDetectionResult): Array<{ path: string; explanation: string }> {
-  const removals: Array<{ path: string; explanation: string }> = [];
-
-  // Slash command directories (these are 100% Rasen-managed)
-  for (const dir of detection.slashCommandDirs) {
-    // Split on both forward and backward slashes for Windows compatibility
-    const toolDir = dir.split(/[\/\\]/)[0];
-    removals.push({ path: dir + '/', explanation: `replaced by ${toolDir}/skills/` });
-  }
-
-  // Slash command files (these are 100% Rasen-managed)
-  for (const file of detection.slashCommandFiles) {
-    removals.push({ path: file, explanation: 'replaced by skills/' });
-  }
-
-  // openspec/AGENTS.md (inside openspec/, it's Rasen-managed)
-  if (detection.hasOpenspecAgents) {
-    removals.push({ path: 'openspec/AGENTS.md', explanation: 'obsolete workflow file' });
-  }
-
-  // Note: Config files (CLAUDE.md, AGENTS.md, etc.) are NEVER in the removals list
-  // They always go to the updates list where only markers are removed
-
-  return removals;
-}
-
-/**
- * Build list of files to be updated with explanations.
- * Includes ALL config files with markers - markers are removed, file is never deleted.
- *
- * @param detection - Detection result from detectLegacyArtifacts
- * @returns Array of objects with path and explanation
- */
-function buildUpdatesList(detection: LegacyDetectionResult): Array<{ path: string; explanation: string }> {
-  const updates: Array<{ path: string; explanation: string }> = [];
-
-  // All config files with markers get updated (markers removed, file preserved)
-  for (const file of detection.configFilesToUpdate) {
-    updates.push({ path: file, explanation: 'removing Rasen markers' });
-  }
-
-  return updates;
-}
-
-/**
- * Generates a detection summary message for display before cleanup.
- * Groups files by action type: removals, updates, and manual migration.
- *
- * @param detection - Detection result from detectLegacyArtifacts
- * @returns Formatted summary string showing what was found
- */
-export function formatDetectionSummary(detection: LegacyDetectionResult): string {
-  const lines: string[] = [];
-
-  const removals = buildRemovalsList(detection);
-  const updates = buildUpdatesList(detection);
-
-  // If nothing to show, return empty
-  if (removals.length === 0 && updates.length === 0 && !detection.hasProjectMd) {
+  if (!hasCommandArtifacts && !hasMarkerConfigs) {
     return '';
   }
 
-  // Header - welcoming upgrade message
-  lines.push(chalk.bold('Upgrading to the new Rasen'));
-  lines.push('');
-  lines.push('Rasen now uses agent skills, the emerging standard across coding');
-  lines.push('agents. This simplifies your setup while keeping everything working');
-  lines.push('as before.');
-  lines.push('');
+  const lines: string[] = [];
+  lines.push(chalk.bold('Legacy OpenSpec-namespace artifacts detected'));
+  lines.push(
+    chalk.dim(
+      'These may belong to upstream OpenSpec or an older rasen install. rasen'
+    )
+  );
+  lines.push(chalk.dim('leaves them untouched — remove them manually only if they came from'));
+  lines.push(chalk.dim('an older rasen install and you no longer need them.'));
 
-  // Section 1: Files to remove (no user content to preserve)
-  if (removals.length > 0) {
-    lines.push(chalk.bold('Files to remove'));
-    lines.push(chalk.dim('No user content to preserve:'));
-    for (const { path } of removals) {
-      lines.push(`  • ${path}`);
+  if (hasCommandArtifacts) {
+    lines.push('');
+    for (const dir of detection.slashCommandDirs) {
+      lines.push(`  • ${dir}/`);
+    }
+    for (const file of detection.slashCommandFiles) {
+      lines.push(`  • ${file}`);
+    }
+    if (detection.hasOpenspecAgents) {
+      lines.push('  • openspec/AGENTS.md');
     }
   }
 
-  // Section 2: Files to update (markers removed, content preserved)
-  if (updates.length > 0) {
-    if (removals.length > 0) lines.push('');
-    lines.push(chalk.bold('Files to update'));
-    lines.push(chalk.dim('Rasen markers will be removed, your content preserved:'));
-    for (const { path } of updates) {
-      lines.push(`  • ${path}`);
+  if (hasMarkerConfigs) {
+    lines.push('');
+    lines.push(
+      chalk.dim('Shared config files carry OpenSpec marker blocks (kept as-is):')
+    );
+    for (const file of detection.configFilesToUpdate) {
+      lines.push(`  • ${file}`);
     }
-  }
-
-  // Section 3: Manual migration (project.md)
-  if (detection.hasProjectMd) {
-    if (removals.length > 0 || updates.length > 0) lines.push('');
-    lines.push(formatProjectMdMigrationHint());
+    lines.push(
+      chalk.dim('Run "rasen migrate" to copy the workspace and optionally remove them.')
+    );
   }
 
   return lines.join('\n');

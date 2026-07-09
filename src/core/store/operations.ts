@@ -10,15 +10,15 @@ import {
   storePointerProblem,
 } from '../project-config.js';
 import {
-  ANCHORED_OPENSPEC_DIRS,
+  ANCHORED_WORKSPACE_DIRS,
   DIRECTORY_ANCHOR_FILE_NAME,
-  OPENSPEC_ROOT_DIR,
+  WORKSPACE_ROOT_DIR,
   ensureOpenSpecRoot,
   inspectOpenSpecRoot,
   rollbackCreatedPaths,
   type CreatedPathLedgerEntry,
   type OpenSpecRootInspection,
-} from '../openspec-root.js';
+} from '../workspace-root.js';
 import {
   STORE_METADATA_DIR_NAME,
   getStoreMetadataDir,
@@ -649,14 +649,14 @@ export async function setupPreparedStore(
         ...(prepared.remote !== undefined ? { remote: prepared.remote } : {}),
       });
       if (metadataDirMissing) {
-        createdPaths.push(createdPath('.openspec-store/', metadataDir, 'directory'));
+        createdPaths.push(createdPath('.rasen-store/', metadataDir, 'directory'));
       }
       createdPaths.push(createdPath(
-        '.openspec-store/store.yaml',
+        '.rasen-store/store.yaml',
         getStoreMetadataPath(storeRoot),
         'file'
       ));
-      createdFiles.push('.openspec-store/store.yaml');
+      createdFiles.push('.rasen-store/store.yaml');
     }
 
     gitInitialized = gitEnabled ? await initGitRepository(storeRoot) : false;
@@ -667,7 +667,7 @@ export async function setupPreparedStore(
     // be unhealthy. In a pre-existing repo the user owns the history, so
     // setup commits only what it created.
     const commitPathspecs = gitInitialized
-      ? [OPENSPEC_ROOT_DIR, STORE_METADATA_DIR_NAME]
+      ? [WORKSPACE_ROOT_DIR, STORE_METADATA_DIR_NAME]
       : createdPaths
           .filter((entry) => entry.kind === 'file')
           .map((entry) => entry.relativePath);
@@ -799,7 +799,7 @@ export async function registerExistingStore(
       !isRegisteredAtPath(currentRegistry, metadata.id, storeRoot);
 
     throw new StoreError(
-      `Store metadata id '${metadata.id}' does not match --id '${explicitId}'. The id comes from the store's committed .openspec-store/store.yaml.`,
+      `Store metadata id '${metadata.id}' does not match --id '${explicitId}'. The id comes from the store's committed .rasen-store/store.yaml.`,
       'store_metadata_id_mismatch',
       {
         target: 'store.id',
@@ -834,7 +834,7 @@ export async function registerExistingStore(
     writeMetadataIfMissing: true,
   });
   if (registered.metadataCreated) {
-    createdFiles.push('.openspec-store/store.yaml');
+    createdFiles.push('.rasen-store/store.yaml');
   }
   const diagnostics = registered.alreadyRegistered && createdFiles.length === 0
     ? [alreadyRegisteredDiagnostic(id)]
@@ -1157,7 +1157,7 @@ async function inspectStore(entry: {
         ));
       } else if (git.hasCommits === true) {
         const fragileDirs: string[] = [];
-        for (const relativeDir of ANCHORED_OPENSPEC_DIRS) {
+        for (const relativeDir of ANCHORED_WORKSPACE_DIRS) {
           const dirKind = await pathKind(path.join(root, relativeDir));
           if (dirKind !== 'directory') continue;
           if ((await gitDirectoryHasTrackedFiles(root, relativeDir)) === false) {

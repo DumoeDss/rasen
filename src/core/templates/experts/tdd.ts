@@ -42,9 +42,9 @@ Ask: "What's the public interface, and which seams should we test?"
 
 export function getTddSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:tdd',
+    name: 'rasen:tdd',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

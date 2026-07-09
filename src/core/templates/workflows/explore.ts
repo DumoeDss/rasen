@@ -9,7 +9,7 @@ import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getExploreSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-explore',
+    name: 'rasen-explore',
     description: 'Enter explore mode - a thinking partner for exploring ideas, investigating problems, and clarifying requirements. Use when the user wants to think through something before or during a change.',
     instructions: `Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
@@ -204,7 +204,7 @@ You: [reads codebase]
 
 **User is stuck mid-implementation:**
 \`\`\`
-User: /opsx:explore add-auth-system
+User: /rasen:explore add-auth-system
       The OAuth integration is more complex than expected
 
 You: [reads change artifacts]
@@ -297,13 +297,13 @@ When a design question is stuck and only building will settle it, you may reach 
 - **Do question assumptions** - Including the user's and your own`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxExploreCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Explore',
+    name: 'Rasen: Explore',
     description: 'Enter explore mode - think through ideas, investigate problems, clarify requirements',
     category: 'Workflow',
     tags: ['workflow', 'explore', 'experimental', 'thinking'],
@@ -315,7 +315,7 @@ export function getOpsxExploreCommandTemplate(): CommandTemplate {
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Input**: The argument after \`/opsx:explore\` is whatever the user wants to think about. Could be:
+**Input**: The argument after \`/rasen:explore\` is whatever the user wants to think about. Could be:
 - A vague idea: "real-time collaboration"
 - A specific problem: "the auth system is getting unwieldy"
 - A change name: "add-dark-mode" (to explore in context of that change)

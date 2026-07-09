@@ -6,8 +6,8 @@ import { runCLI } from '../helpers/run-cli.js';
 describe('top-level validate command', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-validate-command-tmp');
-  const changesDir = path.join(testDir, 'openspec', 'changes');
-  const specsDir = path.join(testDir, 'openspec', 'specs');
+  const changesDir = path.join(testDir, 'rasen', 'changes');
+  const specsDir = path.join(testDir, 'rasen', 'specs');
 
   beforeEach(async () => {
     await fs.mkdir(changesDir, { recursive: true });
@@ -169,7 +169,7 @@ describe('top-level validate command', () => {
 
   it('includes a sole proposal-less change in --all (not "No items found") (#1182)', async () => {
     const isoRoot = path.join(projectRoot, 'test-validate-iso-tmp');
-    const isoChanges = path.join(isoRoot, 'openspec', 'changes');
+    const isoChanges = path.join(isoRoot, 'rasen', 'changes');
     const deltaDir = path.join(isoChanges, 'only', 'specs', 'alpha');
     await fs.mkdir(deltaDir, { recursive: true });
     try {
@@ -202,7 +202,7 @@ describe('top-level validate command', () => {
 describe('top-level validate command (pipelines)', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-validate-pipeline-tmp');
-  const pipelinesDir = path.join(testDir, 'openspec', 'pipelines');
+  const pipelinesDir = path.join(testDir, 'rasen', 'pipelines');
   const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'];
 
   function writeProjectPipeline(name: string, content: string): Promise<void> {
@@ -217,8 +217,8 @@ describe('top-level validate command (pipelines)', () => {
     // A bare openspec/pipelines/ dir is not a qualifying Rasen root under
     // canonical root selection; give testDir a planning shape so commands
     // resolve it (instead of walking up to the repo root).
-    await fs.mkdir(path.join(testDir, 'openspec', 'specs'), { recursive: true });
-    await fs.mkdir(path.join(testDir, 'openspec', 'changes'), { recursive: true });
+    await fs.mkdir(path.join(testDir, 'rasen', 'specs'), { recursive: true });
+    await fs.mkdir(path.join(testDir, 'rasen', 'changes'), { recursive: true });
   });
 
   afterEach(async () => {
@@ -267,7 +267,7 @@ describe('top-level validate command (pipelines)', () => {
         'name: broken-deps',
         'stages:',
         '  - id: a',
-        '    skill: openspec-propose',
+        '    skill: rasen-propose',
         '    requires: [missing-stage]',
       ].join('\n')
     );

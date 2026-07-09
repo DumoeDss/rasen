@@ -34,7 +34,7 @@ describe('store foundation', () => {
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-store-foundation-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-foundation-'));
     originalEnv = { ...process.env };
   });
 
@@ -53,7 +53,7 @@ describe('store foundation', () => {
 
   describe('path helpers', () => {
     it('exposes store constants', () => {
-      expect(STORE_METADATA_DIR_NAME).toBe('.openspec-store');
+      expect(STORE_METADATA_DIR_NAME).toBe('.rasen-store');
       expect(STORE_METADATA_FILE_NAME).toBe('store.yaml');
       expect(STORES_DIR_NAME).toBe('stores');
       expect(STORE_REGISTRY_FILE_NAME).toBe('registry.yaml');
@@ -68,10 +68,10 @@ describe('store foundation', () => {
         path.join(tempDir, 'rasen', 'stores', 'registry.yaml')
       );
       expect(getStoreMetadataDir(storeRoot)).toBe(
-        path.join(storeRoot, '.openspec-store')
+        path.join(storeRoot, '.rasen-store')
       );
       expect(getStoreMetadataPath(storeRoot)).toBe(
-        path.join(storeRoot, '.openspec-store', 'store.yaml')
+        path.join(storeRoot, '.rasen-store', 'store.yaml')
       );
     });
 
@@ -92,7 +92,7 @@ describe('store foundation', () => {
 
     it('preserves Windows-style store root strings when building metadata paths', () => {
       expect(getStoreMetadataPath('D:\\repos\\acme-context')).toBe(
-        'D:\\repos\\acme-context\\.openspec-store\\store.yaml'
+        'D:\\repos\\acme-context\\.rasen-store\\store.yaml'
       );
     });
   });

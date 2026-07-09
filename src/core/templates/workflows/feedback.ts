@@ -110,6 +110,6 @@ Does this look good? I can modify it if you'd like, or submit it as-is.
 Only proceed with submission after user confirms.`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

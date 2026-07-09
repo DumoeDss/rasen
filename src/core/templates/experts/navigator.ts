@@ -9,26 +9,26 @@ ${PREAMBLE}
 
 # Navigator
 
-You don't remember every skill, so ask. This is the map: the OPSX **main flow** that most work travels, two **on-ramps** that merge onto it, a **vocabulary layer** that runs underneath, and **standalone** specialists off to the side. Each entry says *when to reach for it*.
+You don't remember every skill, so ask. This is the map: the Rasen **main flow** that most work travels, two **on-ramps** that merge onto it, a **vocabulary layer** that runs underneath, and **standalone** specialists off to the side. Each entry says *when to reach for it*.
 
 ## The main flow: idea → ship
 
-The route most work travels. **\`/opsx:auto\`** drives this whole flow autonomously — classify the task, pick the pipeline, run the stages with gates. Reach for the individual commands below when you want to run one stage by hand.
+The route most work travels. **\`/rasen:auto\`** drives this whole flow autonomously — classify the task, pick the pipeline, run the stages with gates. Reach for the individual commands below when you want to run one stage by hand.
 
-1. **\`/opsx:explore\`** — think a rough idea through before committing to it. (Not sure it's worth building at all? Start at \`/opsx:office-hours\` — see On-ramps.)
-2. **\`/opsx:propose\`** — turn the sharpened idea into a change: proposal, design, specs, and tasks.
-3. **\`/opsx:apply\`** — implement the tasks against the change.
-4. **\`/opsx:review-cycle\`** — iterate review → triage → fix → re-review the delta until it's clean or escalates. Lighter gate: **\`/opsx:verify\`** checks the implementation matches the artifacts. Heavier: **\`/opsx:verify-enhanced\`** adds code-review, security, and browser passes, auto-scaled to the change size.
-5. **\`/opsx:ship\`** — resolve the delivery mode (pr / push / local), test only when evidence demands it, then deliver.
-6. **\`/opsx:archive\`** — fold the delta specs into the main specs once the change has merged.
-7. **\`/opsx:retro\`** — look back at what shipped and what to learn from it.
+1. **\`/rasen:explore\`** — think a rough idea through before committing to it. (Not sure it's worth building at all? Start at \`/rasen:office-hours\` — see On-ramps.)
+2. **\`/rasen:propose\`** — turn the sharpened idea into a change: proposal, design, specs, and tasks.
+3. **\`/rasen:apply\`** — implement the tasks against the change.
+4. **\`/rasen:review-cycle\`** — iterate review → triage → fix → re-review the delta until it's clean or escalates. Lighter gate: **\`/rasen:verify\`** checks the implementation matches the artifacts. Heavier: **\`/rasen:verify-enhanced\`** adds code-review, security, and browser passes, auto-scaled to the change size.
+5. **\`/rasen:ship\`** — resolve the delivery mode (pr / push / local), test only when evidence demands it, then deliver.
+6. **\`/rasen:archive\`** — fold the delta specs into the main specs once the change has merged.
+7. **\`/rasen:retro\`** — look back at what shipped and what to learn from it.
 
 ## On-ramps
 
 A starting situation that generates work, then merges onto the main flow.
 
 - **Something's broken** → **\`/investigate\`**. Systematic root-cause debugging. It **refuses to hypothesise until it has a red-capable feedback loop** — one command that already goes red on *this* bug — then fixes with a regression test. Reach for it on the hard ones: the bug that resists a first glance, the intermittent flake, the regression that crept in between two known-good states.
-- **Is this worth building** → **\`/opsx:office-hours\`**. YC-style demand validation before you write code. Reach for it when the idea's *value*, not its design, is the open question.
+- **Is this worth building** → **\`/rasen:office-hours\`**. YC-style demand validation before you write code. Reach for it when the idea's *value*, not its design, is the open question.
 
 ## Vocabulary underneath
 
@@ -62,10 +62,10 @@ Off the main flow — reach for each by name when its situation comes up.
 
 export function getNavigatorSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:navigator',
-    description: 'A map of this repo\'s skills and OPSX workflows and when to reach for each.',
+    name: 'rasen:navigator',
+    description: 'A map of this repo\'s skills and Rasen workflows and when to reach for each.',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     disableModelInvocation: true,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

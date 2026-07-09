@@ -26,7 +26,7 @@ describe('agent-context', () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openspec-agentctx-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-'));
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });

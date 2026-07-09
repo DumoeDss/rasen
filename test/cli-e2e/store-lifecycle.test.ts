@@ -174,7 +174,7 @@ async function writeCompletedChangeArtifacts(
 }
 
 beforeAll(async () => {
-  base = await fs.mkdtemp(path.join(tmpdir(), 'openspec-store-lifecycle-'));
+  base = await fs.mkdtemp(path.join(tmpdir(), 'rasen-store-lifecycle-'));
   storeRoot = path.join(base, 'machine-a', 'team-context');
   cloneRoot = path.join(base, 'machine-b', 'team-context');
   projectDir = path.join(base, 'machine-a', 'app-repo');
@@ -210,10 +210,10 @@ describe('standalone store lifecycle journey', () => {
     });
     expect(payload.created_files).toEqual(
       expect.arrayContaining([
-        'openspec/config.yaml',
-        'openspec/specs/.gitkeep',
-        'openspec/changes/archive/.gitkeep',
-        '.openspec-store/store.yaml',
+        'rasen/config.yaml',
+        'rasen/specs/.gitkeep',
+        'rasen/changes/archive/.gitkeep',
+        '.rasen-store/store.yaml',
       ])
     );
 
@@ -227,9 +227,9 @@ describe('standalone store lifecycle journey', () => {
       '--format=',
       'HEAD',
     ]);
-    expect(committedFiles).toContain('.openspec-store/store.yaml');
-    expect(committedFiles).toContain('openspec/specs/.gitkeep');
-    expect(committedFiles).toContain('openspec/changes/archive/.gitkeep');
+    expect(committedFiles).toContain('.rasen-store/store.yaml');
+    expect(committedFiles).toContain('rasen/specs/.gitkeep');
+    expect(committedFiles).toContain('rasen/changes/archive/.gitkeep');
 
     const status = await git(storeRoot, machineA, ['status', '--porcelain']);
     expect(status.trim()).toBe('');
@@ -293,11 +293,11 @@ describe('standalone store lifecycle journey', () => {
     );
     expect(instructions.exitCode).toBe(0);
     expect(instructions.stdout).toContain(
-      path.join(canonical(storeRoot), 'openspec', 'changes', changeId, 'proposal.md')
+      path.join(canonical(storeRoot), 'rasen', 'changes', changeId, 'proposal.md')
     );
 
     // The test acts as the agent and writes the artifacts.
-    const changeDir = path.join(storeRoot, 'openspec', 'changes', changeId);
+    const changeDir = path.join(storeRoot, 'rasen', 'changes', changeId);
     await writeCompletedChangeArtifacts(changeDir, 'billing');
 
     const validated = await runCLI(
@@ -332,11 +332,11 @@ describe('standalone store lifecycle journey', () => {
     expect(archivePayload.archive.change).toBe(changeId);
     expect(archivePayload.root.store_id).toBe(STORE_ID);
 
-    const specPath = path.join(storeRoot, 'openspec', 'specs', 'billing', 'spec.md');
+    const specPath = path.join(storeRoot, 'rasen', 'specs', 'billing', 'spec.md');
     await expect(fs.readFile(specPath, 'utf-8')).resolves.toContain('billing SHALL work');
 
     const archiveEntries = await fs.readdir(
-      path.join(storeRoot, 'openspec', 'changes', 'archive')
+      path.join(storeRoot, 'rasen', 'changes', 'archive')
     );
     expect(archiveEntries.some((entry) => entry.endsWith(`-${changeId}`))).toBe(true);
   }, JOURNEY_TIMEOUT_MS);
@@ -412,10 +412,10 @@ describe('standalone store lifecycle journey', () => {
     );
     expect(instructions.exitCode).toBe(0);
     expect(instructions.stdout).toContain(
-      path.join(canonical(cloneRoot), 'openspec', 'changes', changeId, 'proposal.md')
+      path.join(canonical(cloneRoot), 'rasen', 'changes', changeId, 'proposal.md')
     );
 
-    const changeDir = path.join(cloneRoot, 'openspec', 'changes', changeId);
+    const changeDir = path.join(cloneRoot, 'rasen', 'changes', changeId);
     await writeCompletedChangeArtifacts(changeDir, 'invoicing');
 
     const status = await runCLI(
@@ -439,7 +439,7 @@ describe('standalone store lifecycle journey', () => {
     expect(archived.exitCode).toBe(0);
     expect(JSON.parse(archived.stdout).archive.change).toBe(changeId);
 
-    const specPath = path.join(cloneRoot, 'openspec', 'specs', 'invoicing', 'spec.md');
+    const specPath = path.join(cloneRoot, 'rasen', 'specs', 'invoicing', 'spec.md');
     await expect(fs.readFile(specPath, 'utf-8')).resolves.toContain('invoicing SHALL work');
 
     // Post-resolution failures keep the banner, and the hint keeps the store:
@@ -459,12 +459,12 @@ describe('standalone store lifecycle journey', () => {
       const entries = await listRelativeEntries(root, new Set(['.git']));
 
       for (const entry of entries) {
-        expect(entry).toMatch(/^(\.openspec-store(\/|\/store\.yaml)?|openspec(\/.*)?)$/);
+        expect(entry).toMatch(/^(\.rasen-store(\/|\/store\.yaml)?|rasen(\/.*)?)$/);
         expect(entry).not.toMatch(/initiative|workspace/i);
       }
 
-      expect(entries).toContain('.openspec-store/store.yaml');
-      expect(entries).toContain('openspec/config.yaml');
+      expect(entries).toContain('.rasen-store/store.yaml');
+      expect(entries).toContain('rasen/config.yaml');
     }
 
     // Global state holds only registry/config metadata, no planning files.

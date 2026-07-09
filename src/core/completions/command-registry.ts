@@ -39,6 +39,19 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'migrate',
+    description: 'Copy a legacy openspec/ workspace into rasen/ (copy-only; originals untouched)',
+    acceptsPositional: true,
+    positionalType: 'path',
+    positionals: [{ name: 'path', type: 'path', optional: true }],
+    flags: [
+      {
+        name: 'no-interactive',
+        description: 'Do not prompt (skips optional marker-block cleanup)',
+      },
+    ],
+  },
+  {
     name: 'list',
     description: 'List items (changes by default, or specs with --specs)',
     flags: [

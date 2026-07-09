@@ -1,3 +1,4 @@
+import { WORKSPACE_DIR_NAME } from './config.js';
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
 import { parse as parseYaml } from 'yaml';
@@ -287,7 +288,7 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
 }
 
 function configPathForWarnings(projectRoot: string): string {
-  return resolveConfigFilePath(projectRoot) ?? path.join(projectRoot, 'openspec', 'config.yaml');
+  return resolveConfigFilePath(projectRoot) ?? path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yaml');
 }
 
 /**
@@ -444,11 +445,11 @@ export function readStorePointer(projectRoot: string): StorePointerRead {
 
 /** Shared .yaml/.yml probe used by readProjectConfig and readStorePointer. */
 export function resolveConfigFilePath(projectRoot: string): string | null {
-  const yamlPath = path.join(projectRoot, 'openspec', 'config.yaml');
+  const yamlPath = path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yaml');
   if (existsSync(yamlPath)) {
     return yamlPath;
   }
-  const ymlPath = path.join(projectRoot, 'openspec', 'config.yml');
+  const ymlPath = path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yml');
   return existsSync(ymlPath) ? ymlPath : null;
 }
 
@@ -471,7 +472,7 @@ export interface OpenSpecDirClassification {
  * disagree (slice 3.2).
  */
 export function classifyOpenSpecDir(projectRoot: string): OpenSpecDirClassification {
-  const openspecDir = path.join(projectRoot, 'openspec');
+  const openspecDir = path.join(projectRoot, WORKSPACE_DIR_NAME);
   const hasPlanningShape =
     isDirectorySync(path.join(openspecDir, 'specs')) ||
     isDirectorySync(path.join(openspecDir, 'changes'));

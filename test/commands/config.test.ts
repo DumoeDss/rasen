@@ -20,7 +20,7 @@ describe('config command integration', () => {
 
   beforeEach(() => {
     // Create unique temp directory for each test
-    tempDir = path.join(os.tmpdir(), `openspec-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDir = path.join(os.tmpdir(), `rasen-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     fs.mkdirSync(tempDir, { recursive: true });
 
     // Save original env and set XDG_CONFIG_HOME
@@ -221,7 +221,7 @@ describe('config profile command', () => {
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
-    tempDir = path.join(os.tmpdir(), `openspec-profile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDir = path.join(os.tmpdir(), `rasen-profile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     fs.mkdirSync(tempDir, { recursive: true });
     originalEnv = { ...process.env };
     process.env.XDG_CONFIG_HOME = tempDir;

@@ -59,15 +59,15 @@ Legacy workflow:                      OPSX:
 ## 设置
 
 ```bash
-# Make sure you have openspec installed — skills are automatically generated
-openspec init
+# Make sure you have rasen installed — skills are automatically generated
+rasen init
 ```
 
 这将在 `.claude/skills/`（或等效目录）中创建技能文件，AI 编码助手会自动检测到它们。
 
-默认情况下，OpenSpec 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`sync`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），请使用 `openspec config profile` 进行配置，并通过 `openspec update` 应用。
+默认情况下，OpenSpec 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`sync`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），请使用 `rasen config profile` 进行配置，并通过 `rasen update` 应用。
 
-在设置过程中，系统会提示你创建**项目配置**（`openspec/config.yaml`）。这是可选的，但建议创建。
+在设置过程中，系统会提示你创建**项目配置**（`rasen/config.yaml`）。这是可选的，但建议创建。
 
 ## 项目配置
 
@@ -75,10 +75,10 @@ openspec init
 
 ### 创建配置
 
-配置在 `openspec init` 时创建，也可以手动创建：
+配置在 `rasen init` 时创建，也可以手动创建：
 
 ```yaml
-# openspec/config.yaml
+# rasen/config.yaml
 schema: spec-driven
 
 context: |
@@ -110,7 +110,7 @@ rules:
 **Schema 优先级**（从高到低）：
 1. CLI 标志（`--schema <name>`）
 2. 变更元数据（变更目录中的 `.openspec.yaml`）
-3. 项目配置（`openspec/config.yaml`）
+3. 项目配置（`rasen/config.yaml`）
 4. 默认值（`spec-driven`）
 
 **上下文注入：**
@@ -142,10 +142,10 @@ rules:
 
 **"Unknown artifact ID in rules: X"**
 - 检查产物 ID 是否与你的 schema 匹配（参见上方列表）
-- 运行 `openspec schemas --json` 查看每个 schema 的产物 ID
+- 运行 `rasen schemas --json` 查看每个 schema 的产物 ID
 
 **配置未生效：**
-- 确保文件位于 `openspec/config.yaml`（不是 `.yml`）
+- 确保文件位于 `rasen/config.yaml`（不是 `.yml`）
 - 使用验证器检查 YAML 语法
 - 配置更改立即生效（无需重启）
 
@@ -157,65 +157,65 @@ rules:
 
 | 命令 | 功能 |
 |---------|--------------|
-| `/opsx:propose` | 一步创建变更并生成规划产物（默认快捷路径） |
-| `/opsx:explore` | 思考想法、调查问题、澄清需求 |
-| `/opsx:new` | 创建新的变更脚手架（扩展工作流） |
-| `/opsx:continue` | 创建下一个产物（扩展工作流） |
-| `/opsx:ff` | 快速生成规划产物（扩展工作流） |
-| `/opsx:apply` | 实现任务，按需更新产物 |
-| `/opsx:verify` | 根据产物验证实现（扩展工作流） |
-| `/opsx:sync` | 将增量规格同步到主分支（默认工作流，可选） |
-| `/opsx:archive` | 完成后归档 |
-| `/opsx:bulk-archive` | 批量归档已完成的变更（扩展工作流） |
-| `/opsx:onboard` | 端到端变更的引导式演练（扩展工作流） |
+| `/rasen:propose` | 一步创建变更并生成规划产物（默认快捷路径） |
+| `/rasen:explore` | 思考想法、调查问题、澄清需求 |
+| `/rasen:new` | 创建新的变更脚手架（扩展工作流） |
+| `/rasen:continue` | 创建下一个产物（扩展工作流） |
+| `/rasen:ff` | 快速生成规划产物（扩展工作流） |
+| `/rasen:apply` | 实现任务，按需更新产物 |
+| `/rasen:verify` | 根据产物验证实现（扩展工作流） |
+| `/rasen:sync` | 将增量规格同步到主分支（默认工作流，可选） |
+| `/rasen:archive` | 完成后归档 |
+| `/rasen:bulk-archive` | 批量归档已完成的变更（扩展工作流） |
+| `/rasen:onboard` | 端到端变更的引导式演练（扩展工作流） |
 
 ## 使用方法
 
 ### 探索想法
 ```
-/opsx:explore
+/rasen:explore
 ```
-思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/opsx:propose`（默认）或 `/opsx:new`/`/opsx:ff`（扩展）。
+思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/rasen:propose`（默认）或 `/rasen:new`/`/rasen:ff`（扩展）。
 
 ### 开始新的变更
 ```
-/opsx:propose
+/rasen:propose
 ```
 创建变更并生成实现前所需的规划产物。
 
 如果你启用了扩展工作流，也可以使用：
 
 ```text
-/opsx:new        # scaffold only
-/opsx:continue   # create one artifact at a time
-/opsx:ff         # create all planning artifacts at once
+/rasen:new        # scaffold only
+/rasen:continue   # create one artifact at a time
+/rasen:ff         # create all planning artifacts at once
 ```
 
 ### 创建产物
 ```
-/opsx:continue
+/rasen:continue
 ```
 根据依赖关系显示哪些产物可以创建，然后创建一个。反复使用以逐步构建你的变更。
 
 ```
-/opsx:ff add-dark-mode
+/rasen:ff add-dark-mode
 ```
 一次性创建所有规划产物。当你对要构建的内容有清晰的认识时使用。
 
 ### 实现（灵活的部分）
 ```
-/opsx:apply
+/rasen:apply
 ```
-逐步完成任务，逐一勾选。如果你同时处理多个变更，可以运行 `/opsx:apply <name>`；否则系统会从对话中推断，如果无法判断则会提示你选择。
+逐步完成任务，逐一勾选。如果你同时处理多个变更，可以运行 `/rasen:apply <name>`；否则系统会从对话中推断，如果无法判断则会提示你选择。
 
 ### 收尾
 ```
-/opsx:archive   # Move to archive when done (prompts to sync specs if needed)
+/rasen:archive   # Move to archive when done (prompts to sync specs if needed)
 ```
 
-### 目标驱动迭代（`/opsx:goal`）
+### 目标驱动迭代（`/rasen:goal`）
 
-`/opsx:auto` 假设产物是一份代码变更文档（propose → apply → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**：把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。`/opsx:goal` 就是给这类任务用的入口。它重复 **修改 → 判定**，直到闸门达标或轮次上限。
+`/rasen:auto` 假设产物是一份代码变更文档（propose → apply → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**：把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。`/rasen:goal` 就是给这类任务用的入口。它重复 **修改 → 判定**，直到闸门达标或轮次上限。
 
 你只看到一个命令。LEAD 据任务分类，选**恰好一条**后端 pipeline（显式覆盖总赢）：
 
@@ -225,7 +225,7 @@ rules:
 | `evaluate` —— `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | 一个 fresh reviewer worker 判 `{satisfied, gaps}` | ship → archive |
 | `research` —— `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | 一个 fresh reviewer worker | report（无 ship）|
 
-流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/opsx:goal` 与 `/opsx:auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
+流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/rasen:goal` 与 `/rasen:auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
 
 ## 何时更新 vs. 重新开始
 
@@ -315,7 +315,7 @@ rules:
 
 ## 有什么不同？
 
-| | 传统工作流 (`/openspec:proposal`) | OPSX (`/opsx:*`) |
+| | 传统工作流 (`/openspec:proposal`) | OPSX (`/rasen:*`) |
 |---|---|---|
 | **结构** | 一个大的提案文档 | 具有依赖关系的离散产物 |
 | **工作流** | 线性阶段：规划 → 实现 → 归档 | 灵活操作——随时执行任何操作 |
@@ -498,13 +498,13 @@ rules:
 **OPSX** —— 代理查询丰富的上下文：
 
 ```
-  User: "/opsx:continue"
+  User: "/rasen:continue"
            │
            ▼
   ┌──────────────────────────────────────────────────────────────────────────┐
   │  Step 1: Query current state                                             │
   │  ┌────────────────────────────────────────────────────────────────────┐  │
-  │  │  $ openspec status --change "add-auth" --json                      │  │
+  │  │  $ rasen status --change "add-auth" --json                      │  │
   │  │                                                                    │  │
   │  │  {                                                                 │  │
   │  │    "artifacts": [                                                  │  │
@@ -518,7 +518,7 @@ rules:
   │                                                                          │
   │  Step 2: Get rich instructions for ready artifact                        │
   │  ┌────────────────────────────────────────────────────────────────────┐  │
-  │  │  $ openspec instructions specs --change "add-auth" --json          │  │
+  │  │  $ rasen instructions specs --change "add-auth" --json          │  │
   │  │                                                                    │  │
   │  │  {                                                                 │  │
   │  │    "template": "# Specification\n\n## ADDED Requirements...",      │  │
@@ -555,7 +555,7 @@ rules:
 **OPSX** —— 自然迭代：
 
 ```
-  /opsx:new ───► /opsx:continue ───► /opsx:apply ───► /opsx:archive
+  /rasen:new ───► /rasen:continue ───► /rasen:apply ───► /rasen:archive
       │                │                  │
       │                │                  ├── "The design is wrong"
       │                │                  │
@@ -564,7 +564,7 @@ rules:
       │                │            and continue!
       │                │                  │
       │                │                  ▼
-      │                │         /opsx:apply picks up
+      │                │         /rasen:apply picks up
       │                │         where you left off
       │                │
       │                └── Creates ONE artifact, shows what's unlocked
@@ -578,16 +578,16 @@ rules:
 
 ```bash
 # Create a new schema from scratch (interactive)
-openspec schema init my-workflow
+rasen schema init my-workflow
 
 # Or fork an existing schema as a starting point
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 
 # Validate your schema structure
-openspec schema validate my-workflow
+rasen schema validate my-workflow
 
 # See where a schema resolves from (useful for debugging)
-openspec schema which my-workflow
+rasen schema which my-workflow
 ```
 
 Schema 存储在 `openspec/schemas/`（项目本地，版本控制）或 `~/.local/share/openspec/schemas/`（用户全局）。
@@ -643,28 +643,28 @@ Schema 定义了存在哪些产物及其依赖关系。当前可用：
 
 ```bash
 # List available schemas
-openspec schemas
+rasen schemas
 
 # See all schemas with their resolution sources
-openspec schema which --all
+rasen schema which --all
 
 # Create a new schema interactively
-openspec schema init my-workflow
+rasen schema init my-workflow
 
 # Fork an existing schema for customization
-openspec schema fork spec-driven my-workflow
+rasen schema fork spec-driven my-workflow
 
 # Validate schema structure before use
-openspec schema validate my-workflow
+rasen schema validate my-workflow
 ```
 
 ## 提示
 
-- 使用 `/opsx:explore` 在正式提交变更前思考想法
-- 当你清楚想要什么时使用 `/opsx:ff`，探索时使用 `/opsx:continue`
-- 在 `/opsx:apply` 期间，如果发现问题——修改产物，然后继续
+- 使用 `/rasen:explore` 在正式提交变更前思考想法
+- 当你清楚想要什么时使用 `/rasen:ff`，探索时使用 `/rasen:continue`
+- 在 `/rasen:apply` 期间，如果发现问题——修改产物，然后继续
 - 任务通过 `tasks.md` 中的复选框跟踪进度
-- 随时检查状态：`openspec status --change "name"`
+- 随时检查状态：`rasen status --change "name"`
 
 ## 反馈
 

@@ -55,14 +55,14 @@ describe('handoff workflow', () => {
     it('is registered as a skill template with the expected dirName and name', () => {
       const skill = getSkillTemplates().find(s => s.workflowId === 'handoff');
       expect(skill).toBeDefined();
-      expect(skill?.dirName).toBe('openspec-handoff');
-      expect(skill?.template.name).toBe('openspec-handoff');
+      expect(skill?.dirName).toBe('rasen-handoff');
+      expect(skill?.template.name).toBe('rasen-handoff');
     });
 
-    it('is registered as a command template under the plain id (/opsx:handoff)', () => {
+    it('is registered as a command template under the plain id (/rasen:handoff)', () => {
       const command = getCommandTemplates().find(c => c.id === 'handoff');
       expect(command).toBeDefined();
-      expect(command?.template.name).toBe('OPSX: Handoff');
+      expect(command?.template.name).toBe('Rasen: Handoff');
     });
   });
 
@@ -190,7 +190,7 @@ describe('handoff workflow', () => {
       const autoText = getAutoCommandSkillTemplate().instructions;
       expect(autoText).toContain('## 0. Pre-flight context probe (once, non-blocking)');
       expect(autoText).toContain('rasen agent context --latest --json');
-      expect(autoText).toContain('/opsx:handoff');
+      expect(autoText).toContain('/rasen:handoff');
     });
 
     it('auto pre-flight offers the three-way relay choice', () => {
@@ -213,10 +213,10 @@ describe('handoff workflow', () => {
     let originalEnv: NodeJS.ProcessEnv;
 
     beforeEach(async () => {
-      testDir = path.join(os.tmpdir(), `openspec-handoff-test-${Date.now()}`);
+      testDir = path.join(os.tmpdir(), `rasen-handoff-test-${Date.now()}`);
       await fs.mkdir(testDir, { recursive: true });
       originalEnv = { ...process.env };
-      configTempDir = path.join(os.tmpdir(), `openspec-handoff-config-${Date.now()}`);
+      configTempDir = path.join(os.tmpdir(), `rasen-handoff-config-${Date.now()}`);
       await fs.mkdir(configTempDir, { recursive: true });
       process.env.XDG_CONFIG_HOME = configTempDir;
 
@@ -244,14 +244,14 @@ describe('handoff workflow', () => {
 
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
-      const skillFile = path.join(testDir, '.claude', 'skills', 'openspec-handoff', 'SKILL.md');
-      const commandFile = path.join(testDir, '.claude', 'commands', 'opsx', 'handoff.md');
+      const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-handoff', 'SKILL.md');
+      const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'handoff.md');
 
       expect(await fileExists(skillFile)).toBe(true);
       expect(await fileExists(commandFile)).toBe(true);
 
       const skillContent = await fs.readFile(skillFile, 'utf-8');
-      expect(skillContent).toContain('name: openspec-handoff');
+      expect(skillContent).toContain('name: rasen-handoff');
       expect(skillContent).toContain('rasen agent context');
     });
 
@@ -265,11 +265,11 @@ describe('handoff workflow', () => {
 
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
-      const coreSkill = path.join(testDir, '.claude', 'skills', 'openspec-propose', 'SKILL.md');
+      const coreSkill = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
       expect(await fileExists(coreSkill)).toBe(true);
 
-      expect(await fileExists(path.join(testDir, '.claude', 'skills', 'openspec-handoff', 'SKILL.md'))).toBe(false);
-      expect(await fileExists(path.join(testDir, '.claude', 'commands', 'opsx', 'handoff.md'))).toBe(false);
+      expect(await fileExists(path.join(testDir, '.claude', 'skills', 'rasen-handoff', 'SKILL.md'))).toBe(false);
+      expect(await fileExists(path.join(testDir, '.claude', 'commands', 'rasen', 'handoff.md'))).toBe(false);
     });
   });
 });

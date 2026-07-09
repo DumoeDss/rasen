@@ -12,6 +12,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { WORKSPACE_DIR_NAME } from './config.js';
 import { makeStoreDiagnostic, type StoreDiagnostic } from './store/errors.js';
 import {
   isValidStoreId,
@@ -66,7 +67,7 @@ function registerFix(id: string, remote?: string): string {
     // expands outside a shell and agent JSON consumers execute argv.
     // The checkout is quoted (homedirs may contain spaces); the remote
     // is unquoted but gated by isShellSafeRemote above.
-    const checkout = path.join(os.homedir(), 'openspec', id);
+    const checkout = path.join(os.homedir(), WORKSPACE_DIR_NAME, id);
     // The fix renders on the machine that will paste it: POSIX shells
     // get single quotes; cmd/PowerShell treat single quotes as literal
     // characters, so win32 gets double quotes (valid everywhere).
@@ -128,7 +129,7 @@ async function collectSpecEntries(referencedRoot: string): Promise<ReferenceSpec
       let summary = '';
       try {
         const content = await fs.readFile(
-          path.join(referencedRoot, 'openspec', 'specs', specId, 'spec.md'),
+          path.join(referencedRoot, WORKSPACE_DIR_NAME, 'specs', specId, 'spec.md'),
           'utf-8'
         );
         summary = sanitizeInline(extractFirstPurposeLine(content));

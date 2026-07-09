@@ -1,3 +1,4 @@
+import { COMMAND_PREFIX } from '../../config.js';
 /**
  * CoStrict Command Adapter
  *
@@ -9,14 +10,14 @@ import type { CommandContent, ToolCommandAdapter } from '../types.js';
 
 /**
  * CoStrict adapter for command generation.
- * File path: .cospec/openspec/commands/opsx-<id>.md
+ * File path: .cospec/rasen/commands/rasen-<id>.md
  * Frontmatter: description, argument-hint
  */
 export const costrictAdapter: ToolCommandAdapter = {
   toolId: 'costrict',
 
   getFilePath(commandId: string): string {
-    return path.join('.cospec', 'openspec', 'commands', `opsx-${commandId}.md`);
+    return path.join('.cospec', COMMAND_PREFIX, 'commands', `${COMMAND_PREFIX}-${commandId}.md`);
   },
 
   formatFile(content: CommandContent): string {

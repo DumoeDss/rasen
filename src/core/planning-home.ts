@@ -1,3 +1,4 @@
+import { LEGACY_WORKSPACE_DIR_NAME, WORKSPACE_DIR_NAME } from './config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -58,7 +59,30 @@ function findNearestAncestor(startPath: string, predicate: (dirPath: string) => 
 
 export function findRepoPlanningRootSync(startPath = process.cwd()): string | null {
   return findNearestAncestor(startPath, (dirPath) =>
-    pathExistsAsDirectory(path.join(dirPath, 'openspec'))
+    pathExistsAsDirectory(path.join(dirPath, WORKSPACE_DIR_NAME))
+  );
+}
+
+/**
+ * Finds the nearest ancestor that holds a legacy `openspec/` workspace but no
+ * `rasen/` workspace. Used to guide the user to `rasen migrate` instead of a
+ * generic "not initialized" error. Never treated as an active workspace.
+ */
+export function findLegacyWorkspaceRootSync(startPath = process.cwd()): string | null {
+  return findNearestAncestor(startPath, (dirPath) =>
+    pathExistsAsDirectory(path.join(dirPath, LEGACY_WORKSPACE_DIR_NAME)) &&
+    !pathExistsAsDirectory(path.join(dirPath, WORKSPACE_DIR_NAME))
+  );
+}
+
+/**
+ * Guidance shown when a workspace-requiring command finds a legacy `openspec/`
+ * workspace but no `rasen/` one. Copy-only migration; originals untouched.
+ */
+export function legacyWorkspaceGuidance(legacyRoot: string): string {
+  return (
+    `Detected a legacy OpenSpec workspace at ${path.join(legacyRoot, LEGACY_WORKSPACE_DIR_NAME)} but no ${WORKSPACE_DIR_NAME}/ workspace. ` +
+    `Run 'rasen migrate' to copy it into ${WORKSPACE_DIR_NAME}/ (copy-only — the original ${LEGACY_WORKSPACE_DIR_NAME}/ is left untouched), or 'rasen init' to start fresh.`
   );
 }
 
@@ -66,7 +90,7 @@ function repoPlanningHome(repoRoot: string): PlanningHome {
   return {
     kind: 'repo',
     root: repoRoot,
-    changesDir: path.join(repoRoot, 'openspec', 'changes'),
+    changesDir: path.join(repoRoot, WORKSPACE_DIR_NAME, 'changes'),
     defaultSchema: REPO_DEFAULT_SCHEMA,
   };
 }

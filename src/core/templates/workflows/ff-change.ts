@@ -9,7 +9,7 @@ import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getFfChangeSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec-ff-change',
+    name: 'rasen-ff-change',
     description: 'Fast-forward through Rasen artifact creation. Use when the user wants to quickly create all artifacts needed for implementation without stepping through each one individually.',
     instructions: `Fast-forward through artifact creation - generate everything needed to start implementation in one go.
 
@@ -86,7 +86,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run \`/opsx:apply\` or ask me to implement to start working on the tasks."
+- Prompt: "Run \`/rasen:apply\` or ask me to implement to start working on the tasks."
 
 **Artifact Creation Guidelines**
 
@@ -106,13 +106,13 @@ After completing all artifacts, summarize:
 - Verify each artifact file exists after writing before proceeding to next`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
 
 export function getOpsxFfCommandTemplate(): CommandTemplate {
   return {
-    name: 'OPSX: Fast Forward',
+    name: 'Rasen: Fast Forward',
     description: 'Create a change and generate all artifacts needed for implementation in one go',
     category: 'Workflow',
     tags: ['workflow', 'artifacts', 'experimental'],
@@ -120,7 +120,7 @@ export function getOpsxFfCommandTemplate(): CommandTemplate {
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Input**: The argument after \`/opsx:ff\` is the change name (kebab-case), OR a description of what the user wants to build.
+**Input**: The argument after \`/rasen:ff\` is the change name (kebab-case), OR a description of what the user wants to build.
 
 **Steps**
 
@@ -191,7 +191,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run \`/opsx:apply\` to start implementing."
+- Prompt: "Run \`/rasen:apply\` to start implementing."
 
 **Artifact Creation Guidelines**
 

@@ -1,4 +1,21 @@
-# @fission-ai/openspec
+# rasen
+
+## 0.2.0
+
+### BREAKING: full namespace rebrand (openspec → rasen)
+
+Every user-facing surface moves from the upstream `openspec`/`opsx` namespaces to independent `rasen` namespaces so rasen can coexist with an upstream OpenSpec install in the same project. Workflow semantics stay aligned with upstream **OpenSpec v1.5.0**; only the namespaces change.
+
+- **Binary:** `openspec` → `rasen`.
+- **Slash commands:** `/opsx:*` → `/rasen:*`.
+- **Skills:** `openspec-*` → `rasen-*`.
+- **Workspace directory:** `openspec/` → `rasen/`. Root resolution now recognizes only `rasen/`; running a workspace command in a project that has only a legacy `openspec/` prints migration guidance and exits non-zero instead of operating on it.
+- **Store metadata directory:** `.openspec-store` → `.rasen-store` (legacy `.openspec-store` is still read and copied forward on write; never deleted).
+- **Global config directory:** a pre-rename `openspec` config/data directory is adopted once (copy-only) into the `rasen` directory on first run.
+
+**Migration.** Run `rasen migrate` in a project with an existing `openspec/` workspace. It is **copy-only**: it copies `openspec/{specs,changes,config.yaml}` into `rasen/`, skips anything that already exists, and **never modifies or deletes** the original `openspec/`. You can keep using upstream OpenSpec against `openspec/` unchanged. `rasen init` offers the same migration interactively when it detects a legacy workspace. Neither `init` nor `update` auto-cleans or rewrites legacy artifacts anymore — they only print a one-time coexistence notice. Marker-block removal from shared config files happens only inside `rasen migrate`, gated on explicit consent (default no).
+
+**Not rebranded (intentional).** The `.openspec.yaml` change-metadata filename, the `format: 'openspec'` / `format: 'openspec-change'` file-format identifiers, and legacy-detection literals are left as-is so pre-rebrand and upstream layouts stay detectable.
 
 ## 0.1.0
 

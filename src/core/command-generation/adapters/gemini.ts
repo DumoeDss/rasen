@@ -1,3 +1,4 @@
+import { COMMAND_PREFIX } from '../../config.js';
 /**
  * Gemini CLI Command Adapter
  *
@@ -9,14 +10,14 @@ import type { CommandContent, ToolCommandAdapter } from '../types.js';
 
 /**
  * Gemini adapter for command generation.
- * File path: .gemini/commands/opsx/<id>.toml
+ * File path: .gemini/commands/rasen/<id>.toml
  * Format: TOML with description and prompt fields
  */
 export const geminiAdapter: ToolCommandAdapter = {
   toolId: 'gemini',
 
   getFilePath(commandId: string): string {
-    return path.join('.gemini', 'commands', 'opsx', `${commandId}.toml`);
+    return path.join('.gemini', 'commands', COMMAND_PREFIX, `${commandId}.toml`);
   },
 
   formatFile(content: CommandContent): string {

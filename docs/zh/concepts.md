@@ -56,7 +56,7 @@ OpenSpec 将你的工作组织为两个主要区域：
 ### 目录结构
 
 ```
-openspec/specs/
+rasen/specs/
 ├── auth/
 │   └── spec.md           # Authentication behavior
 ├── payments/
@@ -186,7 +186,7 @@ OpenSpec 旨在避免官僚主义。使用能让变更可验证的最轻量级�
 ### 变更结构
 
 ```
-openspec/changes/add-dark-mode/
+rasen/changes/add-dark-mode/
 ├── proposal.md           # Why and what
 ├── design.md             # How (technical approach)
 ├── tasks.md              # Implementation checklist
@@ -472,10 +472,10 @@ proposal → specs → design → tasks → implement
 
 ```bash
 # Create from scratch
-openspec schema init research-first
+rasen schema init research-first
 
 # Or fork an existing one
-openspec schema fork spec-driven research-first
+rasen schema fork spec-driven research-first
 ```
 
 **自定义模式示例：**
@@ -562,27 +562,27 @@ openspec/
 │                              OPENSPEC FLOW                                   │
 │                                                                              │
 │   ┌────────────────┐                                                         │
-│   │  1. START      │  /opsx:propose (core) or /opsx:new (expanded)           │
+│   │  1. START      │  /rasen:propose (core) or /rasen:new (expanded)           │
 │   │     CHANGE     │                                                         │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  2. CREATE     │  /opsx:ff or /opsx:continue (expanded workflow)         │
+│   │  2. CREATE     │  /rasen:ff or /rasen:continue (expanded workflow)         │
 │   │     ARTIFACTS  │  Creates proposal → specs → design → tasks              │
 │   │                │  (based on schema dependencies)                         │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  3. IMPLEMENT  │  /opsx:apply                                            │
+│   │  3. IMPLEMENT  │  /rasen:apply                                            │
 │   │     TASKS      │  Work through tasks, checking them off                  │
 │   │                │◄──── Update artifacts as you learn                      │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  4. VERIFY     │  /opsx:verify (optional)                                │
+│   │  4. VERIFY     │  /rasen:verify (optional)                                │
 │   │     WORK       │  Check implementation matches specs                     │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
@@ -618,7 +618,7 @@ openspec/
 | **场景（Scenario）** | 需求的一个具体示例，通常采用 Given/When/Then 格式 |
 | **模式（Schema）** | 产物类型及其依赖关系的定义 |
 | **规格（Spec）** | 描述系统行为的规格文档，包含需求和场景 |
-| **唯一事实来源（Source of truth）** | `openspec/specs/` 目录，存放当前已达成一致的行为 |
+| **唯一事实来源（Source of truth）** | `rasen/specs/` 目录，存放当前已达成一致的行为 |
 
 ## 后续步骤
 

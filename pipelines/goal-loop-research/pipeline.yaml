@@ -10,13 +10,13 @@ handoff:
     implementer: 0.35
 stages:
   - id: define-goal
-    skill: openspec-goal-plan
+    skill: rasen-goal-plan
     role: planner
     requires: []
     gate: true
 
   - id: iterate
-    skill: openspec-goal-iterate
+    skill: rasen-goal-iterate
     role: implementer
     requires: [define-goal]
     loop:
@@ -25,6 +25,6 @@ stages:
       runArtifact: goal-run.json
 
   - id: report
-    skill: openspec-goal-report
+    skill: rasen-goal-report
     role: shipper
     requires: [iterate]
