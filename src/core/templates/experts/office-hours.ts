@@ -64,10 +64,13 @@ Output: "Here's what I understand about this project and the area you want to ch
 
 **When the user arrives with a concrete design already in hand and asks for feedback** — "what do you think," "is there a better way," "poke holes in this" — adopt a Consultation posture instead of the generative interview:
 
+**This posture is authoritative for the session — it replaces Phases 2, 3, and 4.** The \`Phase 4: Alternatives Generation (MANDATORY)\` header and the three "a fully formed plan still runs Phase 3 (Premise Challenge) and Phase 4 (Alternatives)" rules (in Phase 2A, Phase 2B, and Important Rules) apply ONLY to the **interview paths (Startup mode / Builder mode)**, NOT here. Precedence is one-directional: a concrete-design-plus-feedback opening routes deterministically into Consultation, which REPLACES Phases 2–4, so it does NOT trigger Phase 3 Premise Challenge or the Phase 4 alternatives-and-approval machinery. (Firing those here would re-introduce the alternatives-menu + approval-gate anti-pattern this posture exists to eliminate.)
+
 - **Skip generative questioning.** They came to discuss a specific thing, not to be interviewed from a blank slate. Do not open the AskUserQuestion option menu.
 - **Deliver analysis prose directly.** React to their design like a peer: what's strong, what's risky, what you'd change and why. Take positions.
 - **Discuss peer-to-peer** until the thinking converges. Answer their questions (per the Dialogue Override) as the primary mode of the session.
 - **Offer the doc only after convergence.** Once the discussion has settled, ask whether to distill it into a design doc. The doc is a byproduct of the conversation, not the terminus of a flow — never rush to it, and never treat it as the goal the session is driving toward.
+- **Terminal (Consultation).** On the user's explicit "yes" to distilling the converged discussion, write the design doc (Phase 5's hard gate already admits this Consultation "yes" path), then close with a **plain summary plus a \`/rasen:propose\` pointer**. SKIP Phase 4.5 (founder-signal synthesis) and Phase 6 (the founder plea / three closing beats) — those are the interview-path close for Startup/Builder sessions; a peer design review tracks no founder signals and the golden-age plea is a tone mismatch here.
 
 If the user has only a vague idea (not a concrete design), stay in the normal interview posture (Phase 2A/2B).
 
@@ -77,12 +80,12 @@ If the user has only a vague idea (not a concrete design), stay in the normal in
 
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
 
-These rules bind every question in the interview phases below (2A and 2B):
+These rules bind every question in the interview phases below (2A and 2B); **Answer before you ask** additionally binds every question in the WHOLE skill, including the Phase 3 and Phase 4 approval prompts:
 
 - **One question at a time.** Ask, then STOP and wait for the response before the next. Batching questions into one turn is bewildering.
 - **Carry your recommended answer.** For each question, state the answer you would give — the user reacts to a concrete position far faster than they generate one from a blank prompt.
 - **Explore before asking.** If a question can be answered by exploring the codebase, read the code instead of asking. Spend the user's attention only on what the code cannot tell you.
-- **Answer before you ask.** The user's own question is the highest-priority input. When the user asks something or wants the plan explained, answer it in prose first (per the PREAMBLE's Dialogue Override) — answering always precedes advancing the question list. This binds both Startup mode (2A) and Builder mode (2B).
+- **Answer before you ask.** The user's own question is the highest-priority input. When the user asks something or wants the plan explained, answer it in prose first (per the PREAMBLE's Dialogue Override) — answering always precedes advancing at EVERY question in the skill. This binds Startup mode (2A), Builder mode (2B), AND the Phase 3 Premise Challenge confirmation and the Phase 4 approach-approval prompt: when the user asks a question at a Phase 3 or Phase 4 AskUserQuestion gate, answer it in prose before re-issuing the gate. It is not scoped to only the 2A/2B interview questions.
 
 ---
 
@@ -233,12 +236,12 @@ If the framing is imprecise, **reframe constructively** — don't dissolve the q
 
 **STOP** after each question. Wait for the response before asking the next.
 
-**Escape hatch:** Trigger this ONLY on an explicit skip signal — the user tells you to stop asking and move on ("just do it," "skip the questions," "stop asking, just write it"). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch. A request for more discussion is the opposite of impatience — do not fast-forward on it. When an explicit skip signal fires:
+**Escape hatch:** Trigger this ONLY on an explicit skip signal — the user tells you to stop asking and move on ("just do it," "skip the questions," "stop asking, just write it"). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch. A request for more discussion is the opposite of impatience — do not fast-forward on it. **Proceed vs. stop (after a Dialogue Override pause):** a reply that merely signals to keep going ("proceed," "continue," "let's keep going") RESUMES the next interview question where the flow paused — it does NOT fire this escape hatch; only an explicit stop-asking signal (the phrases above) fires it. When an explicit skip signal fires:
 - Say: "I hear you. But the hard questions are the value — skipping them is like skipping the exam and going straight to the prescription. Let me ask two more, then we'll move."
 - Consult the smart routing table for the founder's product stage. Ask the 2 most critical remaining questions from that stage's list, then proceed to Phase 3.
 - If the user gives an explicit skip signal a second time, respect it — proceed to Phase 3 immediately. Don't ask a third time.
 - If only 1 question remains, ask it. If 0 remain, proceed directly.
-- Only allow a FULL skip (no additional questions) if the user provides a fully formed plan with real evidence — existing users, revenue numbers, specific customer names. Even then, still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives).
+- Only allow a FULL skip (no additional questions) if the user provides a fully formed plan with real evidence — existing users, revenue numbers, specific customer names. Even then, still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives). (Interview paths only — this is the Startup real-evidence bar the Builder path and Important Rules defer to; a concrete-design-plus-feedback opening routes to the Consultation posture, which replaces Phases 2–4.)
 
 ---
 
@@ -274,7 +277,7 @@ Ask these **ONE AT A TIME** via AskUserQuestion. The goal is to brainstorm and s
 
 **STOP** after each question. Wait for the response before asking the next.
 
-**Escape hatch:** Trigger this ONLY on an explicit skip signal ("just do it," "skip," "stop asking, just write it") or a fully formed plan → fast-track to Phase 4 (Alternatives Generation). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch — a request for more discussion is the opposite of impatience. If the user provides a fully formed plan, skip Phase 2 entirely but still run Phase 3 and Phase 4.
+**Escape hatch:** Trigger this ONLY on an explicit skip signal ("just do it," "skip," "stop asking, just write it") or a fully formed plan → fast-track to Phase 4 (Alternatives Generation). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch — a request for more discussion is the opposite of impatience. **Proceed vs. stop (after a Dialogue Override pause):** a reply that merely signals to keep going ("proceed," "continue," "let's keep going") RESUMES the next question where the flow paused — it does NOT fire this escape hatch; only an explicit stop-asking signal (the phrases above) fires it. If the user provides a fully formed plan, skip Phase 2 entirely but still run Phase 3 and Phase 4 (interview paths only; in Startup mode a full skip still requires the Phase 2A real-evidence bar — existing users, revenue, named customers — not merely a "fully formed plan"; a concrete-design-plus-feedback opening routes to the Consultation posture, which replaces Phases 2–4).
 
 **If the vibe shifts mid-session** — the user starts in builder mode but says "actually I think this could be a real company" or mentions customers, revenue, fundraising — upgrade to Startup mode naturally. Say something like: "Okay, now we're talking — let me ask you some harder questions." Then switch to the Phase 2A questions.
 
@@ -355,9 +358,9 @@ Use AskUserQuestion to confirm. If the user disagrees with a premise, revise und
 
 ---
 
-## Phase 4: Alternatives Generation (MANDATORY)
+## Phase 4: Alternatives Generation (MANDATORY on the interview paths)
 
-Produce 2-3 distinct implementation approaches. This is NOT optional.
+Produce 2-3 distinct implementation approaches. This is NOT optional **on the interview paths (Startup/Builder)**. Not run in the Consultation posture — see the Consultation posture, which is authoritative for its session and replaces Phases 2–4.
 
 For each approach:
 \`\`\`
@@ -392,7 +395,9 @@ ${DESIGN_SKETCH}
 
 ---
 
-## Phase 4.5: Founder Signal Synthesis
+## Phase 4.5: Founder Signal Synthesis (interview paths only — Startup/Builder)
+
+**Interview paths only.** The Consultation posture skips this phase and Phase 6 (see the Consultation posture terminal) — a peer design review tracks no founder signals.
 
 Before writing the design doc, synthesize the founder signals you observed during the session. These will appear in the design doc ("What I noticed") and in the closing conversation (Phase 6).
 
@@ -545,7 +550,7 @@ Present the reviewed design doc to the user via AskUserQuestion:
 
 ## Phase 6: Handoff — Founder Discovery
 
-Once the design doc is APPROVED, deliver the closing sequence. This is three beats with a deliberate pause between them. Every user gets all three beats regardless of mode (startup or builder). The intensity varies by founder signal strength, not by mode.
+Once the design doc is APPROVED, deliver the closing sequence. This is three beats with a deliberate pause between them. On the **interview paths (Startup/Builder), every user gets all three beats regardless of which of those two modes they are in**; the intensity varies by founder signal strength, not by mode. The **Consultation posture does NOT run this phase** — it ends at its own terminal (plain summary + \`/rasen:propose\` pointer), because the founder plea is a tone mismatch for a peer design review.
 
 ### Beat 1: Signal Reflection + Golden Age
 
@@ -617,7 +622,7 @@ The design doc at \`~/.rasen/projects/\` is automatically discoverable by downst
 - **Never start implementation.** This skill produces design docs, not code. Not even scaffolding.
 - **Questions ONE AT A TIME.** Never batch multiple questions into one AskUserQuestion.
 - **The assignment is mandatory.** Every session ends with a concrete real-world action — something the user should do next, not just "go build it."
-- **If user provides a fully formed plan:** skip Phase 2 (questioning) but still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives). Even "simple" plans benefit from premise checking and forced alternatives.
+- **If user provides a fully formed plan (interview paths only):** skip Phase 2 (questioning) but still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives). Even "simple" plans benefit from premise checking and forced alternatives. This defers to the Startup Phase 2A real-evidence bar — a full skip in Startup mode still requires existing users / revenue / named customers, not merely a "fully formed plan." A concrete-design-plus-feedback opening does NOT run this rule: it routes to the Consultation posture, which is authoritative for its session and replaces Phases 2–4.
 - **Completion status:**
   - DONE — design doc APPROVED
   - DONE_WITH_CONCERNS — design doc approved but with open questions listed

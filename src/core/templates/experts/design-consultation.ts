@@ -82,9 +82,9 @@ Use WebSearch to find 5-10 products in their space. Search for:
 If chrome-use is available (\`check-deps.mjs\` reported \`proxy: ready\` and you have a \`$TAB\`), visit the top 3-5 sites in the space and capture visual evidence:
 
 \`\`\`bash
-TAB=$(curl -s "localhost:3456/new?url=https://example-site.com" | jq -r .targetId)
-curl "localhost:3456/screenshot?target=$TAB&file=/tmp/design-research-site-name.png&full=true"
-curl "localhost:3456/snapshot?target=$TAB"
+TAB=$(curl --noproxy '*' -s "localhost:3456/new?url=https://example-site.com" | jq -r .targetId)
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=/tmp/design-research-site-name.png&full=true"
+curl --noproxy '*' "localhost:3456/snapshot?target=$TAB"
 \`\`\`
 
 For each site, analyze: fonts actually used, color palette, layout approach, spacing density, aesthetic direction. The screenshot gives you the feel; the snapshot gives you structural data.
@@ -148,6 +148,8 @@ different ones? Or adjust anything else?
 The SAFE/RISK breakdown is critical. Design coherence is table stakes — every product in a category can be coherent and still look identical. The real question is: where do you take creative risks? The agent should always propose at least 2 risks, each with a clear rationale for why the risk is worth taking and what the user gives up. Risks might include: an unexpected typeface for the category, a bold accent color nobody else uses, tighter or looser spacing than the norm, a layout approach that breaks from convention, motion choices that add personality.
 
 **Options:** A) Looks great — generate the preview page. B) I want to adjust [section]. C) I want different risks — show me wilder options. D) Start over with a different direction. E) Skip the preview, just write DESIGN.md.
+
+_(Option E is an exploratory design fork, not a shortcut-vs-complete decision — per the PREAMBLE's Completeness rule, exploratory forks carry NO Completeness score, so the absence of Completeness framing on this option list is intentional, not a format break.)_
 
 ### Your Design Knowledge (use to inform proposals — do NOT display as tables)
 

@@ -1,0 +1,16 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "prompt-audit-fixes",
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner3", "seededFrom": ["handoff/planner-retired-1.md (planner2, retired @27.3%)", "planning-context.md"] }, "note": "3 ADDED-only deltas; IN-1 Consultation-replaces-Phases-2-4; SH-3 gating declined (top-level skill); IN-3/IN-7 as compliance fixes" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer3", "reuse": "warm 17.5%", "reusedFrom": "prompt-audit-fixes-orchestration" }, "note": "19/19; 5 files; 6/6 tests; 33 hashes exactly as predicted; grep evidence incl. PREAMBLE propagation" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer5" }, "note": "0/0/0/0 — first zero-finding review of the portfolio; three-opening behavioral walk-through clean" },
+    "review-loop": { "status": "done", "rounds": 0, "verdict": "CLEAN (no findings to fix)" },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper", "reuse": "warm" } },
+    "archive":     { "status": "pending" }
+  },
+  "rounds": 0,
+  "openFindings": []
+}
