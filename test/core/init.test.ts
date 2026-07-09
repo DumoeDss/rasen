@@ -703,7 +703,7 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(proposeSkill)).toBe(false);
   });
 
-  it('should migrate commands-only extend mode to custom profile without injecting propose', async () => {
+  it('should migrate commands-only extend mode to custom profile, healing delivery to both (skills restored)', async () => {
     await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
     await fs.mkdir(path.join(testDir, '.claude', 'commands', 'rasen'), { recursive: true });
     await fs.writeFile(path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md'), '# explore\n');
@@ -713,7 +713,9 @@ describe('InitCommand - profile and detection features', () => {
 
     const config = getGlobalConfig();
     expect(config.profile).toBe('custom');
-    expect(config.delivery).toBe('commands');
+    // inferDelivery now heals a commands-only install to 'both' instead of
+    // 'commands' — skills are restored rather than treated as data loss (design D6).
+    expect(config.delivery).toBe('both');
     expect(config.workflows).toEqual(['explore']);
 
     const exploreCommand = path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md');
@@ -721,9 +723,11 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(exploreCommand)).toBe(true);
     expect(await fileExists(proposeCommand)).toBe(false);
 
+    // Skills are always installed now — the explore skill is restored even
+    // though the project was previously commands-only.
     const exploreSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
     const proposeSkill = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
-    expect(await fileExists(exploreSkill)).toBe(false);
+    expect(await fileExists(exploreSkill)).toBe(true);
     expect(await fileExists(proposeSkill)).toBe(false);
   });
 
@@ -772,48 +776,48 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(cmdFile)).toBe(false);
   });
 
-  it('should respect delivery=commands setting (no skills)', async () => {
-    saveGlobalConfig({
-      featureFlags: {},
-      profile: 'core',
-      delivery: 'commands',
-    });
+  it('should always generate skills under a legacy commands-only config value, and heal delivery to both', async () => {
+    // Simulate a pre-existing config file holding the removed 'commands' value —
+    // written directly (not via saveGlobalConfig, whose Delivery type no longer
+    // accepts it) to reproduce what an old config.json on disk looks like.
+    const legacyConfigPath = path.join(process.env.XDG_CONFIG_HOME!, 'rasen', 'config.json');
+    await fs.mkdir(path.dirname(legacyConfigPath), { recursive: true });
+    await fs.writeFile(legacyConfigPath, JSON.stringify({ featureFlags: {}, profile: 'core', delivery: 'commands' }));
 
     const initCommand = new InitCommand({ tools: 'claude', force: true });
     await initCommand.execute(testDir);
 
-    // Skills should NOT exist
-    const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
-    expect(await fileExists(skillFile)).toBe(false);
+    // The legacy value is mapped to 'both' on the read inside execute().
+    const config = getGlobalConfig();
+    expect(config.delivery).toBe('both');
 
-    // Commands should exist
+    // Skills are always installed, regardless of the legacy value.
+    const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
+    expect(await fileExists(skillFile)).toBe(true);
+
+    // Commands are also installed, since the mapped delivery is 'both'.
     const cmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md');
     expect(await fileExists(cmdFile)).toBe(true);
   });
 
-  it('should keep skill-only goal-loop stage skill dirs under commands-first delivery while removing command-counterpart skill dirs', async () => {
-    saveGlobalConfig({
-      featureFlags: {},
-      profile: 'full',
-      delivery: 'commands-first',
-    });
+  it('should never remove skill dirs by delivery, including under a legacy commands-first config value', async () => {
+    const legacyConfigPath = path.join(process.env.XDG_CONFIG_HOME!, 'rasen', 'config.json');
+    await fs.mkdir(path.dirname(legacyConfigPath), { recursive: true });
+    await fs.writeFile(legacyConfigPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: 'commands-first' }));
 
     const initCommand = new InitCommand({ tools: 'claude', force: true });
     await initCommand.execute(testDir);
 
     const skillsDir = path.join(testDir, '.claude', 'skills');
 
-    // Skill-only goal-loop stage workflows have no command counterpart —
-    // commands-first must NOT remove their skill dirs (their only delivery vehicle).
-    for (const skillDir of ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report']) {
+    // No mode deletes skill directories anymore — the goal-loop's skill-only
+    // stage workflows AND workflows with a command counterpart (e.g. apply)
+    // all keep their skill dirs.
+    for (const skillDir of ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report', 'rasen-apply-change']) {
       expect(await fileExists(path.join(skillsDir, skillDir, 'SKILL.md'))).toBe(true);
     }
 
-    // A workflow with a command counterpart (e.g. apply) should have its
-    // skill dir removed under commands-first, replaced by the command file.
-    expect(await fileExists(path.join(skillsDir, 'rasen-apply-change', 'SKILL.md'))).toBe(false);
-
-    // The goal command payload (rasen-goal's counterpart) should be present.
+    // The goal command payload is present too, since the legacy value maps to 'both'.
     const goalCmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'goal.md');
     expect(await fileExists(goalCmdFile)).toBe(true);
   });

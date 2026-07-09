@@ -282,9 +282,9 @@ Slash commands are the "conductors"; the `openspec` CLI is what actually reads /
   rasen config profile      # interactively select profile + workflows
   rasen update              # regenerate the corresponding skills/commands in the project
   ```
-- **Delivery = generate a skill, a command, or both**: `both` (default) / `skills` / `commands` / `skills-first` / `commands-first`. Set in the global config (`rasen config`).
-  - ⚠️ **Orchestration relies on skills**: `/rasen:auto` and `/rasen:review-cycle` have the model **invoke other skills** at runtime (workers invoke stage skills; review-loop invokes `openspec-review`). The model can invoke skills, **not** commands — so `commands` / `commands-first` (which drop skills that have a command counterpart) will **break orchestration**. To keep orchestration working, keep the skills: use `both` (default) or `skills` / `skills-first`.
-  - ⚠️ Note: if the global config sets `delivery: commands-first`, `rasen init` generates commands and removes the corresponding workflow skill directories — this will also make "asserts a skill file was generated" tests fail on that machine (a known spot; the test side needs to isolate the global config).
+- **Delivery = whether commands are installed alongside skills**: `both` (default, skills + commands) / `skills` (skills only). Set in the global config (`rasen config`).
+  - **Skills are always installed**, for every delivery mode. `/rasen:auto` and `/rasen:review-cycle` have the model **invoke other skills** at runtime (workers invoke stage skills; review-loop invokes `openspec-review`) — the model can invoke skills, **not** commands, so orchestration needs the skills present. Because delivery can no longer drop them, orchestration can't be silently broken by a delivery choice.
+  - A config still holding an older value (`commands`, `skills-first`, `commands-first`) is mapped automatically on the next read — `skills-first` → `skills`, `commands`/`commands-first` → `both` — with a one-time console notice, and the config file is rewritten. Nothing to do manually; skills are restored on the next `rasen update` if they were previously dropped.
 
 ### Upgrading an already-installed project (to get this release's orchestration + pipeline)
 

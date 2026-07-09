@@ -250,8 +250,9 @@ describe('review-cycle workflow', () => {
       expect(await fileExists(commandFile)).toBe(false);
     });
 
-    it('cleans up the review-cycle skill dir on a commands-only re-init (regression: init.ts WORKFLOW_TO_SKILL_DIR must map review-cycle)', async () => {
-      // 1) Generate skills (delivery: both), creating the review-cycle skill dir.
+    it('keeps the review-cycle skill dir present across a both->skills re-init (no delivery mode removes skill dirs)', async () => {
+      // 1) Generate skills + commands (delivery: both), creating the
+      //    review-cycle skill dir and command file.
       saveGlobalConfig({
         featureFlags: {},
         profile: 'custom',
@@ -260,25 +261,24 @@ describe('review-cycle workflow', () => {
       });
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
       const skillDir = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle');
+      const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
       expect(await fileExists(path.join(skillDir, 'SKILL.md'))).toBe(true);
+      expect(await fileExists(commandFile)).toBe(true);
 
-      // 2) Re-init with commands-only delivery: skills are removed via
-      //    removeSkillDirs(), which looks up WORKFLOW_TO_SKILL_DIR in init.ts.
-      //    If 'review-cycle' is missing from that (untyped) local map, the dir
-      //    leaks. This asserts it is cleaned up.
+      // 2) Re-init with skills-only delivery: the command file is removed
+      //    (delivery === 'skills' gates command generation), but the skill
+      //    dir survives — skills are always installed regardless of delivery
+      //    (design D5), so no `removeSkillDirs` machinery exists anymore.
       saveGlobalConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'commands',
+        delivery: 'skills',
         workflows: ['propose', 'review-cycle'],
       });
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
-      expect(await fileExists(skillDir)).toBe(false);
-      // The command file replaces it.
-      expect(
-        await fileExists(path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md')),
-      ).toBe(true);
+      expect(await fileExists(path.join(skillDir, 'SKILL.md'))).toBe(true);
+      expect(await fileExists(commandFile)).toBe(false);
     });
   });
 });

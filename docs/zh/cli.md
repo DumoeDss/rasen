@@ -140,7 +140,7 @@ openspec/
 
 .claude/skills/         # Claude Code skills（选中 claude 时）
 .cursor/skills/         # Cursor skills（选中 cursor 时）
-.cursor/commands/       # Cursor OPSX 命令（delivery 包含命令时）
+.cursor/commands/       # Cursor OPSX 命令（delivery 为 both 时）
 ... (其他工具配置)
 ```
 
