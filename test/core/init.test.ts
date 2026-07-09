@@ -791,6 +791,33 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(cmdFile)).toBe(true);
   });
 
+  it('should keep skill-only goal-loop stage skill dirs under commands-first delivery while removing command-counterpart skill dirs', async () => {
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'full',
+      delivery: 'commands-first',
+    });
+
+    const initCommand = new InitCommand({ tools: 'claude', force: true });
+    await initCommand.execute(testDir);
+
+    const skillsDir = path.join(testDir, '.claude', 'skills');
+
+    // Skill-only goal-loop stage workflows have no command counterpart —
+    // commands-first must NOT remove their skill dirs (their only delivery vehicle).
+    for (const skillDir of ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report']) {
+      expect(await fileExists(path.join(skillsDir, skillDir, 'SKILL.md'))).toBe(true);
+    }
+
+    // A workflow with a command counterpart (e.g. apply) should have its
+    // skill dir removed under commands-first, replaced by the command file.
+    expect(await fileExists(path.join(skillsDir, 'rasen-apply-change', 'SKILL.md'))).toBe(false);
+
+    // The goal command payload (rasen-goal's counterpart) should be present.
+    const goalCmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'goal.md');
+    expect(await fileExists(goalCmdFile)).toBe(true);
+  });
+
   it('should remove commands on re-init when delivery changes to skills', async () => {
     saveGlobalConfig({
       featureFlags: {},

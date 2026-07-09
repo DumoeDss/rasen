@@ -1106,6 +1106,88 @@ content
 
       consoleSpy.mockRestore();
     });
+
+    it('should install the goal-loop workflow family under the full profile', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'full',
+        delivery: 'both',
+      });
+
+      // Set up a configured tool
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      await updateCommand.execute(testDir);
+
+      const goalSkillDirs = [
+        'rasen-goal-plan',
+        'rasen-goal-iterate',
+        'rasen-goal-report',
+        'rasen-goal',
+      ];
+      for (const skillDir of goalSkillDirs) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsDir, skillDir, 'SKILL.md')
+        )).toBe(true);
+      }
+
+      // No goal directories should be removed by drift/cleanup logic under full profile
+      const remainingSkillDirs = await fs.readdir(skillsDir);
+      for (const skillDir of goalSkillDirs) {
+        expect(remainingSkillDirs).toContain(skillDir);
+      }
+
+      const { CommandAdapterRegistry, getCommandFileId } = await import('../../src/core/command-generation/index.js');
+      const adapter = CommandAdapterRegistry.get('claude');
+      if (!adapter) throw new Error('Claude adapter unavailable in test environment');
+      const goalCommandPath = adapter.getFilePath(getCommandFileId('goal-command'));
+      const fullGoalCommandPath = path.isAbsolute(goalCommandPath)
+        ? goalCommandPath
+        : path.join(testDir, goalCommandPath);
+      expect(await FileSystemUtils.fileExists(fullGoalCommandPath)).toBe(true);
+    });
+
+    it('should keep skill-only goal-loop stage skill dirs under commands-first delivery while removing command-counterpart skill dirs', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'full',
+        delivery: 'commands-first',
+      });
+
+      // Set up a configured tool
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      await updateCommand.execute(testDir);
+
+      // Skill-only goal-loop stage workflows have no command counterpart —
+      // commands-first must NOT remove their skill dirs (their only delivery vehicle).
+      const goalStageSkillDirs = ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report'];
+      for (const skillDir of goalStageSkillDirs) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsDir, skillDir, 'SKILL.md')
+        )).toBe(true);
+      }
+
+      // A workflow with a command counterpart (e.g. apply) should have its
+      // skill dir removed under commands-first, replaced by the command file.
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-apply-change', 'SKILL.md')
+      )).toBe(false);
+
+      // The goal command payload (rasen-goal's counterpart) should be present.
+      const { CommandAdapterRegistry, getCommandFileId } = await import('../../src/core/command-generation/index.js');
+      const adapter = CommandAdapterRegistry.get('claude');
+      if (!adapter) throw new Error('Claude adapter unavailable in test environment');
+      const goalCommandPath = adapter.getFilePath(getCommandFileId('goal-command'));
+      const fullGoalCommandPath = path.isAbsolute(goalCommandPath)
+        ? goalCommandPath
+        : path.join(testDir, goalCommandPath);
+      expect(await FileSystemUtils.fileExists(fullGoalCommandPath)).toBe(true);
+    });
   });
 
   describe('new tool detection', () => {

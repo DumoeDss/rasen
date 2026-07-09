@@ -38,6 +38,11 @@ export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
   'review-cycle': 'rasen-review-cycle',
   // Context handoff (opt-in)
   'handoff': 'rasen-handoff',
+  // Goal-loop workflow family (opt-in)
+  'goal-plan': 'rasen-goal-plan',
+  'goal-iterate': 'rasen-goal-iterate',
+  'goal-report': 'rasen-goal-report',
+  'goal-command': 'rasen-goal',
 };
 
 function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {
@@ -137,9 +142,30 @@ export function hasToolProfileOrDeliveryDrift(
       }
     }
   } else {
+    // Plain 'commands' means no skill dir should exist at all. 'commands-first'
+    // is different: skill-only workflows (no command counterpart, e.g. the
+    // goal-loop's stage skills) have no command to replace them, so their
+    // skill dir is deliberately spared and remains their only delivery
+    // vehicle — forward-require it when desired, flag it when deselected.
+    // Workflows with a command counterpart still must have no skill dir under
+    // either mode (the command replaces them).
+    const isCommandsFirst = delivery === 'commands-first';
     for (const workflow of ALL_WORKFLOWS) {
       const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
       const skillDir = path.join(skillsDir, dirName);
+      const isSkillOnly = isCommandsFirst && !(COMMAND_IDS as readonly string[]).includes(workflow);
+
+      if (isSkillOnly) {
+        if (desiredWorkflowSet.has(workflow)) {
+          if (!fs.existsSync(path.join(skillDir, 'SKILL.md'))) {
+            return true;
+          }
+        } else if (fs.existsSync(skillDir)) {
+          return true;
+        }
+        continue;
+      }
+
       if (fs.existsSync(skillDir)) {
         return true;
       }
@@ -147,7 +173,12 @@ export function hasToolProfileOrDeliveryDrift(
   }
 
   if (shouldGenerateCommands && adapter) {
+    // Only workflows with a command template (e.g. goal-command) generate a
+    // command file. Skill-only workflows (e.g. goal-plan/iterate/report, the
+    // goal-loop's internal stage skills) have no command counterpart, so
+    // requiring one here would report drift forever.
     for (const workflow of knownDesiredWorkflows) {
+      if (!(COMMAND_IDS as readonly string[]).includes(workflow)) continue;
       const cmdPath = adapter.getFilePath(getCommandFileId(workflow));
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
       if (!fs.existsSync(fullPath)) {

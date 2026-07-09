@@ -20,8 +20,8 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 18 workflows (11 base + 5 Rasen fusion + review-cycle + handoff)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(18);
+    it('should contain all 22 workflows (11 base + 5 Rasen fusion + review-cycle + handoff + 4 goal-loop)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(22);
     });
 
     it('should contain expected workflow IDs', () => {
@@ -35,6 +35,8 @@ describe('profiles', () => {
         'review-cycle',
         // Context handoff (opt-in)
         'handoff',
+        // Goal-loop workflow family (opt-in)
+        'goal-plan', 'goal-iterate', 'goal-report', 'goal-command',
       ];
       expect([...ALL_WORKFLOWS]).toEqual(expected);
     });
@@ -42,6 +44,17 @@ describe('profiles', () => {
     it('should NOT include review-cycle in CORE_WORKFLOWS (opt-in only)', () => {
       expect(ALL_WORKFLOWS).toContain('review-cycle');
       expect([...CORE_WORKFLOWS]).not.toContain('review-cycle');
+    });
+
+    it('should include the goal-loop workflow family but NOT in CORE_WORKFLOWS (opt-in only)', () => {
+      expect(ALL_WORKFLOWS).toContain('goal-plan');
+      expect(ALL_WORKFLOWS).toContain('goal-iterate');
+      expect(ALL_WORKFLOWS).toContain('goal-report');
+      expect(ALL_WORKFLOWS).toContain('goal-command');
+      expect([...CORE_WORKFLOWS]).not.toContain('goal-plan');
+      expect([...CORE_WORKFLOWS]).not.toContain('goal-iterate');
+      expect([...CORE_WORKFLOWS]).not.toContain('goal-report');
+      expect([...CORE_WORKFLOWS]).not.toContain('goal-command');
     });
   });
 

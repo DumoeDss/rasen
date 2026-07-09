@@ -52,6 +52,8 @@ export const COMMAND_IDS = [
   'review-cycle',
   // Context handoff (opt-in)
   'handoff',
+  // Goal-loop workflow family (opt-in)
+  'goal-command',
 ] as const;
 
 export type CommandId = (typeof COMMAND_IDS)[number];
