@@ -29,6 +29,7 @@ import {
   copySkillSidecars,
   deduplicateForDelivery,
   getToolsWithSkillsDir,
+  COMMAND_IDS,
   type ToolVersionStatus,
 } from './shared/index.js';
 import {
@@ -234,9 +235,10 @@ export class UpdateCommand {
         if (!shouldGenerateSkills) {
           removedSkillCount += await this.removeSkillDirs(skillsDir);
         }
-        // commands-first: remove workflow skill dirs replaced by commands
+        // commands-first: remove workflow skill dirs replaced by commands,
+        // but spare skill-only workflows (no command counterpart to replace them)
         if (delivery === 'commands-first') {
-          removedSkillCount += await this.removeSkillDirs(skillsDir);
+          removedSkillCount += await this.removeSkillDirs(skillsDir, true);
         }
 
         // Generate commands if delivery includes commands
@@ -421,12 +423,21 @@ export class UpdateCommand {
 
   /**
    * Removes skill directories for workflows when delivery changed to commands-only.
+   * When `restrictToCommandCounterparts` is true (commands-first), only removes
+   * skill dirs for workflows that have a command counterpart (COMMAND_IDS) — a
+   * skill-only workflow (e.g. the goal-loop's internal stage skills) has no
+   * command replacing it, so its skill dir is its only delivery vehicle and
+   * must survive.
    * Returns the number of directories removed.
    */
-  private async removeSkillDirs(skillsDir: string): Promise<number> {
+  private async removeSkillDirs(skillsDir: string, restrictToCommandCounterparts = false): Promise<number> {
     let removed = 0;
 
     for (const workflow of ALL_WORKFLOWS) {
+      if (restrictToCommandCounterparts && !(COMMAND_IDS as readonly string[]).includes(workflow)) {
+        continue;
+      }
+
       const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
       if (!dirName) continue;
 

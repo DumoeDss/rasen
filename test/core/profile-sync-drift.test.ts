@@ -6,8 +6,9 @@ import {
   hasProjectConfigDrift,
   WORKFLOW_TO_SKILL_DIR,
 } from '../../src/core/profile-sync-drift.js';
-import { CORE_WORKFLOWS } from '../../src/core/profiles.js';
+import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../src/core/profiles.js';
 import { CommandAdapterRegistry, getCommandFileId } from '../../src/core/command-generation/index.js';
+import { COMMAND_IDS } from '../../src/core/shared/index.js';
 
 function writeSkill(projectDir: string, workflowId: string): void {
   const skillDirName = WORKFLOW_TO_SKILL_DIR[workflowId as keyof typeof WORKFLOW_TO_SKILL_DIR];
@@ -36,6 +37,40 @@ function setupCoreCommands(projectDir: string): void {
     writeCommand(projectDir, workflow);
   }
 }
+
+function setupFullSkills(projectDir: string): void {
+  for (const workflow of ALL_WORKFLOWS) {
+    writeSkill(projectDir, workflow);
+  }
+}
+
+function setupFullCommands(projectDir: string): void {
+  // Only workflows with a command template (e.g. goal-command) get a command
+  // file. Skill-only workflows (e.g. goal-plan/iterate/report) have none.
+  for (const workflow of ALL_WORKFLOWS) {
+    if (!(COMMAND_IDS as readonly string[]).includes(workflow)) continue;
+    writeCommand(projectDir, workflow);
+  }
+}
+
+function setupCommandsFirstSkills(projectDir: string): void {
+  // Under commands-first, only skill-only workflows (no command counterpart,
+  // e.g. goal-plan/iterate/report) keep a skill dir — command-counterpart
+  // workflows are replaced by their command and have no skill dir.
+  for (const workflow of ALL_WORKFLOWS) {
+    if ((COMMAND_IDS as readonly string[]).includes(workflow)) continue;
+    writeSkill(projectDir, workflow);
+  }
+}
+
+describe('WORKFLOW_TO_SKILL_DIR', () => {
+  it('maps the goal-loop workflow family to their rasen-goal* skill directories', () => {
+    expect(WORKFLOW_TO_SKILL_DIR['goal-plan']).toBe('rasen-goal-plan');
+    expect(WORKFLOW_TO_SKILL_DIR['goal-iterate']).toBe('rasen-goal-iterate');
+    expect(WORKFLOW_TO_SKILL_DIR['goal-report']).toBe('rasen-goal-report');
+    expect(WORKFLOW_TO_SKILL_DIR['goal-command']).toBe('rasen-goal');
+  });
+});
 
 describe('profile sync drift detection', () => {
   let tempDir: string;
@@ -88,5 +123,21 @@ describe('profile sync drift detection', () => {
 
     const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, 'both');
     expect(hasDrift).toBe(true);
+  });
+
+  it('returns false for the full profile after a clean install, including the skill-only goal-loop stage workflows', () => {
+    setupFullSkills(tempDir);
+    setupFullCommands(tempDir);
+
+    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS, 'both');
+    expect(hasDrift).toBe(false);
+  });
+
+  it('returns false for the full profile under commands-first after a clean install, sparing skill-only goal-loop stage workflows', () => {
+    setupCommandsFirstSkills(tempDir);
+    setupFullCommands(tempDir);
+
+    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS, 'commands-first');
+    expect(hasDrift).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import os from 'os';
 import { randomUUID } from 'crypto';
 import {
   SKILL_NAMES,
+  COMMAND_IDS,
   getToolsWithSkillsDir,
   getToolSkillStatus,
   getToolStates,
@@ -40,6 +41,12 @@ describe('tool-detection', () => {
       expect(SKILL_NAMES).toContain('rasen-verify-change');
       expect(SKILL_NAMES).toContain('rasen-onboard');
       expect(SKILL_NAMES).toContain('rasen-propose');
+    });
+  });
+
+  describe('COMMAND_IDS', () => {
+    it('should include goal-command (goal-loop workflow family)', () => {
+      expect(COMMAND_IDS).toContain('goal-command');
     });
   });
 
