@@ -144,10 +144,11 @@ bundle audit check 2>/dev/null || true
 grep -rn "audit\\|security.*log\\|auth.*log\\|access.*log" --include="*.rb" --include="*.js" --include="*.ts" -l
 \`\`\`
 - Are authentication events logged (login, logout, failed attempts)?
-- Are authorization failures logged?
-- Are admin actions audit-trailed?
 - Do logs contain enough context for incident investigation?
 - Are logs protected from tampering?
+
+<!-- "Are authorization failures logged?" and "Are admin actions audit-trailed?" probes intentionally dropped: absence of audit logging is not a reported finding per Phase 5 hard-exclusion #16. -->
+- Note: do NOT report mere absence of audit logging (authorization-failure logs, admin audit trails) — Phase 5 hard-exclusion #16 discards it. Assess logging only to enrich context for other findings.
 
 #### A10: Server-Side Request Forgery (SSRF)
 \`\`\`bash
@@ -165,7 +166,7 @@ COMPONENT: [Name]
   Tampering:            Can data be modified in transit/at rest?
   Repudiation:          Can actions be denied? Is there an audit trail?
   Information Disclosure: Can sensitive data leak?
-  Denial of Service:    Can the component be overwhelmed?
+  Denial of Service:    Can the component be overwhelmed? (context only — generic DoS is NOT reported per Phase 5 exclusion #1; a brute-force / rate-limit gap on an auth or security-sensitive endpoint IS reportable)
   Elevation of Privilege: Can a user gain unauthorized access?
 \`\`\`
 
@@ -202,7 +203,7 @@ false positives that erode trust.
 
 **Hard exclusions — automatically discard findings matching these:**
 
-1. Denial of Service (DOS), resource exhaustion, or rate limiting issues
+1. **Generic** Denial of Service (DoS), resource exhaustion, or rate limiting issues. **EXCEPTION:** missing brute-force protection or rate limiting on authentication or other security-sensitive endpoints IS reportable (brute-force on \`/login\` is a real, CVE-class vulnerability).
 2. Secrets or credentials stored on disk if otherwise secured (encrypted, permissioned)
 3. Memory consumption, CPU exhaustion, or file descriptor leaks
 4. Input validation concerns on non-security-critical fields without proven impact
@@ -308,7 +309,9 @@ For each finding, include:
 
 ### Phase 7: Remediation Roadmap
 
-For the top 5 findings, present via AskUserQuestion:
+**Dispatched mode:** skip this phase — no \`AskUserQuestion\` at a leaf worker. The findings and their recommendations already sit in the report for the LEAD to triage.
+
+**Standalone mode.** For the top 5 findings, present via AskUserQuestion:
 
 1. **Context:** The vulnerability, its severity, exploitation scenario
 2. **Question:** Remediation approach
@@ -321,11 +324,15 @@ For the top 5 findings, present via AskUserQuestion:
 
 ### Phase 8: Save Report
 
+**Dispatched mode:** write ONLY \`cso-report.md\` in the change directory (markdown, not JSON), with each finding tagged with a canonical severity (\`CRITICAL\`→Blocker, \`HIGH\`→Major, \`MEDIUM\`→Minor; finding content overrides the label). Do NOT write the \`.rasen/security-reports/\` JSON or any \`~/.rasen/\` path. Then return.
+
+**Standalone mode.**
+
 \`\`\`bash
-mkdir -p .openspec/security-reports
+mkdir -p .rasen/security-reports
 \`\`\`
 
-Write findings to \`.openspec/security-reports/{date}.json\`. Include:
+Write findings to \`.rasen/security-reports/{date}.json\`. Include:
 - Each finding with severity, confidence, category, file, line, description
 - Verification status (independently verified or self-verified)
 - Total findings by severity tier
@@ -366,9 +373,9 @@ audits — not as your only line of defense.
 
 export function getCsoSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:cso',
+    name: 'rasen:cso',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

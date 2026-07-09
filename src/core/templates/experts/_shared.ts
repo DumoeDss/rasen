@@ -23,6 +23,48 @@ echo "BRANCH: $_BRANCH"
 - **Proactive:** \`__OPENSPEC_PROACTIVE__\` — if \`false\`, do not proactively suggest expert skills. Only invoke them when the user explicitly asks.
 - **Repo mode:** \`__OPENSPEC_REPO_MODE__\` — controls issue ownership behavior (see Repo Ownership Mode below).
 
+## Canonical severity vocabulary
+
+Findings from the generic expert skills (review, cso, qa, qa-only, benchmark, design-review) feed one canonical severity scale — the same scale the review→fix loop and the verify stage consume to decide clean vs. escalate. Classify against these four levels:
+
+- **Blocker** — must not ship: wrong behavior on a common path, data loss or corruption, an exploitable security hole, a failing test or gate, or a required spec behavior missing.
+- **Major** — should not ship without an explicit decision: wrong behavior on a plausible path, or a significant regression.
+- **Minor** — ship-able friction or quality; recorded as accepted-known, never silently dropped.
+- **Trivial** — cosmetic or a nit.
+
+Each expert speaks a native scale; map it onto the canonical scale below. **Finding content overrides the native label where they disagree** — an item that names data loss, a security hole, or silent corruption maps UP regardless of the label its skill gave it (e.g. a review \`INFORMATIONAL\` item describing silent data corruption is Major, not Minor).
+
+| Expert (native scale) | Blocker | Major | Minor | Trivial |
+|---|---|---|---|---|
+| review \`CRITICAL\` / \`INFORMATIONAL\` | \`CRITICAL\` naming data-loss / security / corruption / crash on a common path | other \`CRITICAL\` (correctness); \`INFORMATIONAL\` naming data-loss / security / silent corruption | \`INFORMATIONAL\` (default) | pure nit / style |
+| cso \`CRITICAL\` / \`HIGH\` / \`MEDIUM\` (+ conf N/10) | \`CRITICAL\` | \`HIGH\` | \`MEDIUM\` | — (cso drops < MEDIUM by design) |
+| qa / qa-only \`critical\` / \`high\` / \`medium\` / \`low\` / \`cosmetic\` | \`critical\` | \`high\` | \`medium\` / \`low\` | \`cosmetic\` |
+| benchmark \`REGRESSION\` / \`WARNING\` / \`OK\` (+ Grade A–F) | \`REGRESSION\` crossing a hard budget (a FAIL row) | \`REGRESSION\` (timing / size) | \`WARNING\` | \`OK\`; grade-only deltas |
+| design-review impact \`high\` / \`medium\` / \`polish\` (+ Grade A–F) | high-impact broken / unusable UI (rare) | high impact | medium | polish |
+| codex \`[P1]\` / \`[P2]\` (display-only, not gate-consumed) | \`[P1]\` | \`[P2]\` | — | — |
+
+In dispatched mode (see below) each expert self-maps and tags every finding it emits with a canonical severity in its report file, so the LEAD and the loop never have to infer a mapping.
+
+## Dispatched vs standalone mode
+
+The generic expert skills (review, cso, qa, qa-only, benchmark, design-review) run in one of two modes. Detect the mode from your own invocation — no flag is required:
+
+- **Dispatched (report-only) mode** — your invocation instructs you to do a single unit of work, to not spawn subagents, and states that a LEAD owns orchestration (the signature every orchestrated dispatch carries). You are a role-isolated leaf reviewer worker.
+- **Standalone mode** — a human invoked you directly (none of the above). Keep your full behavior as described in this skill.
+
+If an explicit \`MODE: dispatched (report-only)\` token is present in your instructions, honor it; the self-trigger above is the fallback when the token is absent.
+
+**In dispatched mode you MUST:**
+- Apply **no** AUTO-FIX and make **no** code edits. Fix-class items are reported for the LEAD's triage to a non-author fixer, never applied by you.
+- Issue **no** \`AskUserQuestion\`. There is no interactive user at a leaf worker; ASK-class items are reported as unresolved findings for the LEAD.
+- Make **no** \`git commit\`. The LEAD / ship owns commits; concurrent commits on the shared index clobber each other.
+- Spawn **no** subagents of your own. Independence comes from the LEAD's parallel reviewers and the mandatory non-author re-review, not from a leaf worker's own fan-out.
+- Return classified findings and **write only the canonical \`<skill>-report.md\`** in the change directory (review → \`review-report.md\`, cso → \`cso-report.md\`, qa and qa-only → \`qa-report.md\`, benchmark → \`benchmark-report.md\`, design-review → \`design-review-report.md\`), each finding tagged with a canonical severity. Do NOT also write to the standalone \`.rasen/*-reports/\` or \`~/.rasen/projects/\` paths.
+
+These dispatched-mode prohibitions **override** any contrary standalone instruction later in this skill (fix loops, batched questions, clean-tree gates, adversarial subagent dispatch, native report paths). Standalone mode retains all of that behavior.
+
+**Denied-edit honesty.** If an Edit or Write you attempt is **denied** by an active edit boundary — a \`/freeze\` or \`/guard\` whose target is outside the allowed directory — the fix did NOT land. Report it as an un-applied finding, \`[BLOCKED: freeze/guard] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. The boundary hook wins over any Fix-First rule; do not claim a fix succeeded when it was refused. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)
+
 ## AskUserQuestion Format
 
 **ALWAYS follow this structure for every AskUserQuestion call:**
@@ -1188,7 +1230,9 @@ When checking each branch, also determine whether a unit test or E2E/integration
 
 ### REGRESSION RULE (mandatory)
 
-**IRON RULE:** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is written immediately. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
+**IRON RULE (standalone mode):** When the coverage audit identifies a REGRESSION — code that previously worked but the diff broke — a regression test is written immediately. No AskUserQuestion. No skipping. Regressions are the highest-priority test because they prove something broke.
+
+**Dispatched mode overrides this IRON RULE:** writing a regression test is a code edit, which dispatched mode forbids. When dispatched, record the detected regression and its missing regression test as a finding in the report (Major, or Blocker if it names data-loss / security / silent corruption) for the LEAD to route to a non-author fixer — do NOT write or commit the test yourself.
 
 A regression is when:
 - The diff modifies existing behavior (not new code)
@@ -1249,6 +1293,8 @@ GAPS: 8 paths need tests (2 need E2E, 1 needs eval)
 
 **Step 5. Generate tests for gaps (Fix-First):**
 
+**Dispatched mode:** do NOT generate, run, or commit tests. Report every coverage gap as a finding tagged with a canonical severity (a plain coverage gap is Minor; a gap over an untested data-loss / security / silent-corruption path is Major) for the LEAD to route to a non-author fixer. The generate-and-commit flow below is standalone only.
+
 If test framework is detected and gaps were identified:
 - Classify each gap as AUTO-FIX or ASK per the Fix-First Heuristic:
   - **AUTO-FIX:** Simple unit tests for pure functions, edge cases of existing tested functions
@@ -1265,6 +1311,8 @@ If no test framework detected → include gaps as INFORMATIONAL findings only, n
 export const ADVERSARIAL_STEP = `## Step 5.7: Adversarial review (auto-scaled)
 
 Adversarial review thoroughness scales automatically based on diff size. No configuration needed.
+
+**Dispatched mode:** skip the Claude adversarial **subagent dispatch** entirely (the medium-tier fallback and the large-tier pass 2) — a leaf worker must not spawn subagents. That fresh-context independence is already provided by the LEAD's parallel reviewers and the mandatory non-author re-review. The Codex \`codex exec\` / \`codex review\` passes are external processes (not subagents) and MAY still run; when they do, report their findings tagged with a canonical severity for the LEAD — do not fix and do not \`AskUserQuestion\` on a GATE: FAIL (report the \`[P1]\` items as Blocker findings instead).
 
 **Detect diff size and tool availability:**
 

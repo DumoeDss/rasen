@@ -27,7 +27,7 @@ Before reviewing code quality, check: **did they build what was requested — no
 
 1. Read \`TODOS.md\` (if it exists). Read PR description (\`gh pr view --json body --jq .body 2>/dev/null || true\`).
    Read commit messages (\`git log origin/<base>..HEAD --oneline\`).
-   **If no PR exists:** rely on commit messages and TODOS.md for stated intent — this is the common case since /review runs before /opsx:ship creates the PR.
+   **If no PR exists:** rely on commit messages and TODOS.md for stated intent — this is the common case since /review runs before /rasen:ship creates the PR.
 2. Identify the **stated intent** — what was this branch supposed to accomplish?
 3. Run \`git diff origin/<base> --stat\` and compare the files changed against the stated intent.
 4. Evaluate with skepticism:
@@ -109,10 +109,12 @@ Follow the output format specified in the checklist. Respect the suppressions �
 
 The two-pass review above is the **Standards axis** — does the diff follow this repo's documented standards plus the smell baseline in \`checklist.md\`? Run alongside it a **Spec axis** — does the diff faithfully implement what the originating Rasen change asked for?
 
-- **Spec source.** If this branch has an associated Rasen change, its \`proposal.md\` and \`tasks.md\` (under \`openspec/changes/<change-id>/\`) **are** the spec — there is no external issue tracker to consult. Find the change dir from the branch name, the commit messages, or ask the user which change this implements. If the branch has no Rasen change, skip the Spec axis and note "no spec available".
+- **Spec source.** If this branch has an associated Rasen change, its \`proposal.md\` and \`tasks.md\` (under \`rasen/changes/<change-id>/\`) **are** the spec — there is no external issue tracker to consult. Find the change dir from the branch name, the commit messages, or ask the user which change this implements. If the branch has no Rasen change, skip the Spec axis and note "no spec available".
 - **Spec axis brief.** Against \`proposal.md\` / \`tasks.md\`, report: (a) requirements the change asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the proposal/task line for each finding. (This overlaps Step 1.5 Scope Drift, which is the fast inline version; the Spec axis is the thorough pass when a change dir exists.)
 
-**Optionally run the two axes as parallel \`Agent\` workers** so they don't pollute each other's context — send one message with two \`Agent\` tool calls (\`general-purpose\` subagent for both):
+**In dispatched mode, run both axes inline in your own context — do NOT spawn \`Agent\` workers.** A leaf worker must not fan out; the parallelism below is a standalone-only optimization.
+
+**Standalone: optionally run the two axes as parallel \`Agent\` workers** so they don't pollute each other's context — send one message with two \`Agent\` tool calls (\`general-purpose\` subagent for both):
 
 - **Standards worker** — give it the diff command + commit list, the standards-source files, and the **full smell baseline pasted from \`checklist.md\`** (the worker has no other access to it). Brief: report each documented-standard violation (cite the standard) and each baseline smell (name it, quote the hunk); distinguish hard violations from judgement calls (baseline smells are always judgement calls, a documented repo standard overrides the baseline); skip what tooling enforces.
 - **Spec worker** — give it the diff command + commit list and the change's \`proposal.md\` / \`tasks.md\`; use the Spec axis brief above.
@@ -138,6 +140,8 @@ This step subsumes the "Test Gaps" category from Pass 2 — do not duplicate fin
 ---
 
 ## Step 5: Fix-First Review
+
+**Dispatched mode (report-only):** skip Steps 5b / 5c / 5d and the Greptile-triage \`AskUserQuestion\` below — apply no fixes and ask nothing. Still run 5a (classify) so the LEAD can route fixes, then emit every finding (Standards, Spec, design, coverage, adversarial) tagged with a canonical Blocker/Major/Minor/Trivial severity (see the PREAMBLE mapping: \`CRITICAL\` naming data-loss/security/corruption → Blocker, other \`CRITICAL\` → Major, \`INFORMATIONAL\` → Minor unless it names data-loss/security → Major) and write them to \`review-report.md\` in the change directory. The rest of this section (auto-fix, batched questions, Greptile replies) is standalone only.
 
 **Every finding gets action — not just critical ones.**
 
@@ -254,7 +258,7 @@ ${ADVERSARIAL_STEP}
 ## Important Rules
 
 - **Read the FULL diff before commenting.** Do not flag issues already addressed in the diff.
-- **Fix-first, not read-only.** AUTO-FIX items are applied directly. ASK items are only applied after user approval. Never commit, push, or create PRs — that's /opsx:ship's job.
+- **Fix-first, not read-only (standalone mode).** AUTO-FIX items are applied directly; ASK items are only applied after user approval. In dispatched mode this is suppressed — report findings only (see Step 5). Never commit, push, or create PRs — that's /rasen:ship's job.
 - **Be terse.** One line problem, one line fix. No preamble.
 - **Only flag real problems.** Skip anything that's fine.
 - **Use Greptile reply templates from greptile-triage.md.** Every reply includes evidence. Never post vague replies.
@@ -262,9 +266,9 @@ ${ADVERSARIAL_STEP}
 
 export function getReviewSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:review',
+    name: 'rasen:review',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

@@ -30,6 +30,8 @@ Look for \`DESIGN.md\`, \`design-system.md\`, or similar in the repo root. If fo
 
 **Check for clean working tree:**
 
+**Dispatched mode:** skip this clean-tree check entirely. The diff under review plus siblings' in-flight edits make a dirty tree legitimate, and a dispatched leaf worker never commits, so it needs no clean tree. (Standalone only, below.)
+
 \`\`\`bash
 git status --porcelain
 \`\`\`
@@ -57,7 +59,7 @@ ${TEST_BOOTSTRAP}
 **Create output directories:**
 
 \`\`\`bash
-REPORT_DIR=".openspec/design-reports"
+REPORT_DIR=".rasen/design-reports"
 mkdir -p "$REPORT_DIR/screenshots"
 \`\`\`
 
@@ -74,7 +76,7 @@ Record baseline design score and AI slop score at end of Phase 6.
 ## Output Structure
 
 \`\`\`
-.openspec/design-reports/
+.rasen/design-reports/
 ├── design-audit-{domain}-{YYYY-MM-DD}.md    # Structured report
 ├── screenshots/
 │   ├── first-impression.png                  # Phase 1
@@ -104,7 +106,9 @@ Mark findings that cannot be fixed from source code (e.g., third-party widget is
 
 ## Phase 8: Fix Loop
 
-For each fixable finding, in impact order:
+**Dispatched mode:** do NOT run the fix loop and do NOT commit. Report every finding tagged with a canonical severity (impact \`high\`→Major — or Blocker if the UI is broken/unusable, \`medium\`→Minor, \`polish\`→Trivial; finding content overrides the label) for the LEAD to route to a non-author fixer. Phases 8 and 9 (fix loop, per-fix commit, regression tests, final re-audit) are standalone only.
+
+**Standalone mode.** For each fixable finding, in impact order:
 
 ### 8a. Locate source
 
@@ -197,15 +201,17 @@ After all fixes are applied:
 
 ## Phase 10: Report
 
-Write the report to both local and project-scoped locations:
+**Dispatched mode:** write ONLY \`design-review-report.md\` in the change directory, each finding tagged with a canonical severity (impact \`high\`→Major — Blocker if broken/unusable, \`medium\`→Minor, \`polish\`→Trivial); skip the \`.rasen/design-reports/\` and \`~/.rasen/projects/\` writes. Then return.
 
-**Local:** \`.openspec/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
+**Standalone mode.** Write the report to both local and project-scoped locations:
+
+**Local:** \`.rasen/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:**
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
+SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
 \`\`\`
-Write to \`~/.openspec/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+Write to \`~/.rasen/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
 
 **Per-finding additions** (beyond standard design audit report):
 - Fix Status: verified / best-effort / reverted / deferred
@@ -247,9 +253,9 @@ If the repo has a \`TODOS.md\`:
 
 export function getDesignReviewSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:design-review',
+    name: 'rasen:design-review',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

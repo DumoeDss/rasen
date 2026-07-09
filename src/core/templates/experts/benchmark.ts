@@ -30,8 +30,8 @@ When the user types \`/benchmark\`, run this skill.
 
 \`\`\`bash
 SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-mkdir -p .openspec/benchmark-reports
-mkdir -p .openspec/benchmark-reports/baselines
+mkdir -p .rasen/benchmark-reports
+mkdir -p .rasen/benchmark-reports/baselines
 \`\`\`
 
 ### Phase 2: Page Discovery
@@ -112,7 +112,7 @@ Save metrics to baseline file:
 }
 \`\`\`
 
-Write to \`.openspec/benchmark-reports/baselines/baseline.json\`.
+Write to \`.rasen/benchmark-reports/baselines/baseline.json\`.
 
 ### Phase 5: Comparison
 
@@ -209,7 +209,9 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 ### Phase 9: Save Report
 
-Write to \`.openspec/benchmark-reports/{date}-benchmark.md\` and \`.openspec/benchmark-reports/{date}-benchmark.json\`.
+**Dispatched mode:** write ONLY \`benchmark-report.md\` in the change directory, each result tagged with a canonical severity (a \`REGRESSION\` crossing a hard budget / FAIL row → Blocker, a timing or size \`REGRESSION\` → Major, a \`WARNING\` → Minor, \`OK\` and grade-only deltas → Trivial); skip the \`.rasen/benchmark-reports/\` writes. Then return.
+
+**Standalone mode.** Write to \`.rasen/benchmark-reports/{date}-benchmark.md\` and \`.rasen/benchmark-reports/{date}-benchmark.json\`.
 
 ## Important Rules
 
@@ -223,9 +225,9 @@ Write to \`.openspec/benchmark-reports/{date}-benchmark.md\` and \`.openspec/ben
 
 export function getBenchmarkSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:benchmark',
+    name: 'rasen:benchmark',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }
