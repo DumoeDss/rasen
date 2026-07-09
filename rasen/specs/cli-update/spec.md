@@ -9,34 +9,32 @@ The update command SHALL update Rasen instruction files to the latest templates 
 
 #### Scenario: Running update command
 - **WHEN** a user runs `rasen update`
-- **THEN** replace `rasen/AGENTS.md` with the latest template
-- **AND** if a root-level stub (`AGENTS.md`/`CLAUDE.md`) exists, refresh it so it points to `@/rasen/AGENTS.md`
+- **THEN** regenerate skill files for each tool being updated, using the latest templates
+- **AND** regenerate command files too when the delivery setting includes commands
 
 ### Requirement: File Handling
 The update command SHALL handle file updates in a predictable and safe manner.
 
 #### Scenario: Updating files
 - **WHEN** updating files
-- **THEN** completely replace `rasen/AGENTS.md` with the latest template
-- **AND** if a root-level stub exists, update the managed block content so it keeps directing teammates to `@/rasen/AGENTS.md`
+- **THEN** completely replace each skill file's content with the latest template
+- **AND** completely replace each command file's content with the latest template too, when delivery includes commands
 
 ### Requirement: Tool-Agnostic Updates
 The update command SHALL refresh Rasen-managed files in a predictable manner while respecting each team's chosen tooling.
 
 #### Scenario: Updating files
 - **WHEN** updating files
-- **THEN** completely replace `rasen/AGENTS.md` with the latest template
-- **AND** create or refresh the root-level `AGENTS.md` stub using the managed marker block, even if the file was previously absent
+- **THEN** only operate on tools that already have at least one Rasen-generated file; update never onboards a new tool
 - **AND** regenerate each existing AI tool's command and skill files in full from the current template on every update, rather than preserving any prior file content
-- **AND** avoid creating new native-tool configuration files (slash commands, CLAUDE.md, etc.) unless they already exist
+- **AND** generate command files only when delivery includes commands; skill files are generated regardless of delivery
 
 ### Requirement: Core Files Always Updated
 The update command SHALL always update the core Rasen files and display an ASCII-safe success message.
 
 #### Scenario: Successful update
 - **WHEN** the update completes successfully
-- **THEN** replace `rasen/AGENTS.md` with the latest template
-- **AND** if a root-level stub exists, refresh it so it still directs contributors to `@/rasen/AGENTS.md`
+- **THEN** regenerate skill files for each tool that was updated, regardless of delivery setting
 
 ### Requirement: Slash Command Updates
 
