@@ -313,7 +313,7 @@ The completion implementation SHALL follow clean architecture principles with Ty
 - **AND** implement methods:
   - `getChangeIds(): Promise<string[]>` - Discovers active change IDs
   - `getSpecIds(): Promise<string[]>` - Discovers spec IDs
-  - `isOpenSpecProject(): boolean` - Checks if current directory is Rasen-enabled
+  - `isRasenProject(): boolean` - Checks if current directory is Rasen-enabled
 - **AND** implement caching with 2-second TTL using class properties
 
 #### Scenario: Command registry
