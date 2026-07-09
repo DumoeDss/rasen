@@ -15,9 +15,43 @@ export class PowerShellInstaller {
    * Markers for PowerShell profile configuration management
    */
   private readonly PROFILE_MARKERS = {
+    start: '# RASEN:START',
+    end: '# RASEN:END',
+  };
+
+  /**
+   * Legacy markers from older installs — recognized for upgrade/uninstall only,
+   * never written into new content.
+   */
+  private readonly LEGACY_PROFILE_MARKERS = {
     start: '# OPENSPEC:START',
     end: '# OPENSPEC:END',
   };
+
+  /**
+   * Finds the character range of an existing managed block in profile content,
+   * searching the current marker family first, then the legacy family.
+   *
+   * @param content - Profile file content
+   * @returns The matched range (end exclusive, past the end marker) and which marker
+   * pair matched, or undefined if no managed block is present under either family
+   */
+  private findManagedBlockRange(
+    content: string
+  ): { startIndex: number; endIndex: number; markers: { start: string; end: string } } | undefined {
+    for (const markers of [this.PROFILE_MARKERS, this.LEGACY_PROFILE_MARKERS]) {
+      const startIndex = content.indexOf(markers.start);
+      if (startIndex === -1) {
+        continue;
+      }
+      const endIndex = content.indexOf(markers.end, startIndex);
+      if (endIndex === -1) {
+        continue;
+      }
+      return { startIndex, endIndex: endIndex + markers.end.length, markers };
+    }
+    return undefined;
+  }
 
   constructor(homeDir: string = os.homedir()) {
     this.homeDir = homeDir;
@@ -207,22 +241,34 @@ export class PowerShellInstaller {
           }
         }
 
-        // Check if already configured
+        // Check if already configured under the current markers
         const scriptLine = `. "${scriptPath}"`;
-        if (profileContent.includes(scriptLine)) {
-          continue; // Already configured, skip
+        const existingBlock = this.findManagedBlockRange(profileContent);
+
+        if (existingBlock?.markers === this.PROFILE_MARKERS && profileContent.includes(scriptLine)) {
+          continue; // Already configured with current markers, skip
+        }
+        if (!existingBlock && profileContent.includes(scriptLine)) {
+          continue; // Script already referenced outside a managed block, skip
         }
 
-        // Add Rasen completion configuration with markers
-        const rasenBlock = [
-          '',
-          '# OPENSPEC:START - Rasen completion (managed block, do not edit manually)',
+        const managedBlockLines = [
+          `${this.PROFILE_MARKERS.start} - Rasen completion (managed block, do not edit manually)`,
           scriptLine,
-          '# OPENSPEC:END',
-          '',
+          this.PROFILE_MARKERS.end,
         ].join('\n');
 
-        const newContent = profileContent + rasenBlock;
+        let newContent: string;
+        if (existingBlock) {
+          // Replace the existing block (current or legacy) in place — no duplicate block
+          const before = profileContent.substring(0, existingBlock.startIndex);
+          const after = profileContent.substring(existingBlock.endIndex);
+          newContent = before + managedBlockLines + after;
+        } else {
+          // Append a new managed block
+          newContent = profileContent + ['', managedBlockLines, ''].join('\n');
+        }
+
         if (!(await FileSystemUtils.canWriteFile(profilePath))) {
           throw new Error(`Path is not writable: ${profilePath}`);
         }
@@ -266,24 +312,16 @@ export class PowerShellInstaller {
           continue;
         }
 
-        // Remove OPENSPEC:START -> OPENSPEC:END block
-        const startMarker = '# OPENSPEC:START';
-        const endMarker = '# OPENSPEC:END';
-        const startIndex = profileContent.indexOf(startMarker);
+        // Remove the managed block under either the current or legacy marker family
+        const existingBlock = this.findManagedBlockRange(profileContent);
 
-        if (startIndex === -1) {
-          continue; // No Rasen block found
-        }
-
-        const endIndex = profileContent.indexOf(endMarker, startIndex);
-        if (endIndex === -1) {
-          console.warn(`Warning: Found start marker but no end marker in ${profilePath}`);
-          continue;
+        if (!existingBlock) {
+          continue; // No managed block found under either marker family
         }
 
         // Remove the block (including markers and surrounding newlines)
-        const beforeBlock = profileContent.substring(0, startIndex);
-        const afterBlock = profileContent.substring(endIndex + endMarker.length);
+        const beforeBlock = profileContent.substring(0, existingBlock.startIndex);
+        const afterBlock = profileContent.substring(existingBlock.endIndex);
 
         // Clean up extra newlines
         const newContent = (beforeBlock.trimEnd() + '\n' + afterBlock.trimStart()).trim() + '\n';

@@ -402,8 +402,10 @@ describe('ZshInstaller', () => {
       const zshrcPath = path.join(testHomeDir, '.zshrc');
       const content = await fs.readFile(zshrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain('# Rasen shell completions configuration');
       expect(content).toContain(`fpath=("${completionsDir}" $fpath)`);
       expect(content).toContain('autoload -Uz compinit');
@@ -420,18 +422,20 @@ describe('ZshInstaller', () => {
 
       const content = await fs.readFile(zshrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain('# My custom zsh config');
       expect(content).toContain('alias ll="ls -la"');
 
       // Config should be before existing content
-      const configIndex = content.indexOf('# OPENSPEC:START');
+      const configIndex = content.indexOf('# RASEN:START');
       const aliasIndex = content.indexOf('alias ll');
       expect(configIndex).toBeLessThan(aliasIndex);
     });
 
-    it('should update config between markers when .zshrc has existing markers', async () => {
+    it('should replace an existing legacy OPENSPEC block with RASEN markers on reconfigure (upgrade path)', async () => {
       const zshrcPath = path.join(testHomeDir, '.zshrc');
       const initialContent = [
         '# OPENSPEC:START',
@@ -450,12 +454,18 @@ describe('ZshInstaller', () => {
 
       const content = await fs.readFile(zshrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain(`fpath=("${completionsDir}" $fpath)`);
       expect(content).not.toContain('# Old config');
       expect(content).not.toContain('/old/path');
       expect(content).toContain('# My custom config');
+
+      // Exactly one managed block — no duplicate
+      expect(content.match(/# RASEN:START/g)?.length).toBe(1);
+      expect(content.match(/# RASEN:END/g)?.length).toBe(1);
     });
 
     it('should preserve user content outside markers', async () => {
@@ -484,6 +494,8 @@ describe('ZshInstaller', () => {
       expect(content).toContain('alias ls="ls -G"');
       expect(content).toContain(`fpath=("${completionsDir}" $fpath)`);
       expect(content).not.toContain('# Old Rasen config');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
     });
 
     it('should return false when RASEN_NO_AUTO_CONFIG is set', async () => {
@@ -564,6 +576,8 @@ describe('ZshInstaller', () => {
 
       expect(newContent).not.toContain('# OPENSPEC:START');
       expect(newContent).not.toContain('# OPENSPEC:END');
+      expect(newContent).not.toContain('# RASEN:START');
+      expect(newContent).not.toContain('# RASEN:END');
       expect(newContent).not.toContain('Rasen shell completions');
       expect(newContent).toContain('# My config');
       expect(newContent).toContain('alias ll="ls -la"');
@@ -626,7 +640,8 @@ describe('ZshInstaller', () => {
       const zshrcPath = path.join(testHomeDir, '.zshrc');
       const content = await fs.readFile(zshrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
       expect(content).toContain('fpath=');
       expect(content).toContain('compinit');
     });
@@ -651,6 +666,7 @@ describe('ZshInstaller', () => {
       const content = await fs.readFile(zshrcPath, 'utf-8');
       expect(content).toBe(originalZshrc);
       expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# RASEN:START');
       expect(content).not.toContain('autoload -Uz compinit');
       expect(content).not.toContain('compinit');
       expect(result.instructions!.join('\n')).toContain('Oh My Zsh');
@@ -701,7 +717,8 @@ describe('ZshInstaller', () => {
       // Verify .zshrc was configured
       const zshrcPath = path.join(testHomeDir, '.zshrc');
       let content = await fs.readFile(zshrcPath, 'utf-8');
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
 
       // Uninstall
       const result = await installer.uninstall();
@@ -711,6 +728,7 @@ describe('ZshInstaller', () => {
 
       // Verify .zshrc config was removed
       content = await fs.readFile(zshrcPath, 'utf-8');
+      expect(content).not.toContain('# RASEN:START');
       expect(content).not.toContain('# OPENSPEC:START');
     });
 
@@ -735,6 +753,22 @@ describe('ZshInstaller', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toContain('Removed Rasen configuration from ~/.zshrc');
+    });
+
+    it('should fully remove a legacy OPENSPEC-only block via uninstall() that was never upgraded', async () => {
+      // Simulates a user who installed under the old marker and never re-ran configure
+      const zshrcPath = path.join(testHomeDir, '.zshrc');
+      await fs.writeFile(zshrcPath, '# OPENSPEC:START\nconfig\n# OPENSPEC:END\n');
+
+      const result = await installer.uninstall();
+
+      expect(result.success).toBe(true);
+
+      const content = await fs.readFile(zshrcPath, 'utf-8');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
+      expect(content).not.toContain('# RASEN:START');
+      expect(content).not.toContain('# RASEN:END');
     });
 
     it('should include both messages when removing script and .zshrc', async () => {
