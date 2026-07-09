@@ -1,0 +1,21 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "prompt-audit-fixes",
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner4", "seededFrom": ["handoff/planner-retired-1.md", "planning-context.md", "handoff/lead-1.md"] }, "note": "8 findings incl. LEAD-added F.1 generation-match (amended in after supplement race); 2 NEW capabilities (lifecycle-stage-sequencing, workflow-template-parity); goal-registration debt found already closed (60f8d10)" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer3", "resume": "post-restart SendMessage-by-name wake SUCCEEDED (live validation of the new F.1 clause)" }, "note": "20/20; 7 files; 6/6 tests; moved-hash accounting matched §8.4 predictions exactly; parity registry +19 function +11 content entries; KNOWN-OPEN discovered: goal templates registered but update does not emit rasen-goal* skill dirs (deploy-path filter?) — portfolio-end report item" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer6" }, "note": "0B/0Ma/2Mi/2T; all producer/consumer seams byte-verified against shipped producers" },
+    "review-loop": { "status": "done", "rounds": 1, "verdict": "CLEAN (non-author confirmed)", "resolved": ["minor1-slug-derivation-divergence"], "acceptedKnown": ["minor2-F.1-newly-locked-no-baseline (D8)", "trivial1-downstream-wording (child 6 owns write-path hardening)", "trivial2-F.1-density (skip: would re-churn locked hashes)"], "infraRevival": { "worker": "implementer3", "event": "connection-closed mid fix round", "outcome": "H.4(b) SendMessage revival, zero rework — edits had landed pre-interruption; not charged to relay caps" } },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper", "reuse": "warm" } },
+    "archive":     { "status": "pending" }
+  },
+  "notes": [
+    "session restart between child 4 and child 5 — all prior worker handles dead; document-first resume",
+    "scope includes inherited debts: parity registry expansion + rasen-goal generation registration (runtime code)",
+    "concurrent externalize session active in src/core root-selection/store area — no overlap with child 5 surfaces (verified at dispatch)"
+  ],
+  "rounds": 0,
+  "openFindings": []
+}

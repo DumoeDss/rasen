@@ -42,18 +42,32 @@ ${STORE_SELECTION_GUIDANCE}
    - Use **AskUserQuestion tool** to confirm user wants to proceed
    - Proceed if user confirms
 
-3. **Check task completion status**
+3. **Check task completion status (HARD GATE)**
 
    Read the tasks file (typically \`tasks.md\`) to check for incomplete tasks.
 
    Count tasks marked with \`- [ ]\` (incomplete) vs \`- [x]\` (complete).
 
-   **If incomplete tasks found:**
-   - Display warning showing count of incomplete tasks
-   - Use **AskUserQuestion tool** to confirm user wants to proceed
-   - Proceed if user confirms
+   **If incomplete tasks found — this is a HARD GATE (aligned with verify's "must fix before archive"):**
+   - Display the count of incomplete tasks and REFUSE to archive by default.
+   - Proceed ONLY on an explicit override that NAMES the incomplete-task condition (e.g. the user selects "Archive anyway despite N incomplete tasks") — not the routine confirm.
+   - In a non-interactive / dispatched context, REFUSE outright — do not auto-confirm.
 
    **If no tasks file exists:** Proceed without task-related warning.
+
+3.5. **Check verification verdict (HARD GATE)**
+
+   Read \`verification-report.md\` from the change directory (\`changeRoot\` from status JSON) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
+   - \`VERIFY VERDICT: BLOCKED\` → HARD GATE: REFUSE to archive by default; proceed only on an explicit, blocker-naming user override (e.g. "Archive anyway despite BLOCKED verification"); REFUSE outright non-interactively.
+   - \`VERIFY VERDICT: CLEAN\` → no verification-related gate; proceed.
+   - No \`verification-report.md\` → do NOT hard-gate on verification absence (a change may legitimately archive without a formal verify pass); a soft note at most.
+
+3.6. **Check delivery precondition (soft)**
+
+   Read \`ship-log.md\` from the change directory (\`changeRoot\` from status JSON):
+   - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
+   - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
+   - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.
 
 4. **Assess delta spec sync state**
 
@@ -112,7 +126,7 @@ All artifacts complete. All tasks complete.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (rasen status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the two HARD GATES — a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5) and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the two hard gates.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use rasen-sync-specs approach (agent-driven)
@@ -160,18 +174,32 @@ ${STORE_SELECTION_GUIDANCE}
    - Prompt user for confirmation to continue
    - Proceed if user confirms
 
-3. **Check task completion status**
+3. **Check task completion status (HARD GATE)**
 
    Read the tasks file (typically \`tasks.md\`) to check for incomplete tasks.
 
    Count tasks marked with \`- [ ]\` (incomplete) vs \`- [x]\` (complete).
 
-   **If incomplete tasks found:**
-   - Display warning showing count of incomplete tasks
-   - Prompt user for confirmation to continue
-   - Proceed if user confirms
+   **If incomplete tasks found — this is a HARD GATE (aligned with verify's "must fix before archive"):**
+   - Display the count of incomplete tasks and REFUSE to archive by default.
+   - Proceed ONLY on an explicit override that NAMES the incomplete-task condition (e.g. the user replies "Archive anyway despite N incomplete tasks") — not the routine confirm.
+   - In a non-interactive / dispatched context, REFUSE outright — do not auto-confirm.
 
    **If no tasks file exists:** Proceed without task-related warning.
+
+3.5. **Check verification verdict (HARD GATE)**
+
+   Read \`verification-report.md\` from the change directory (\`changeRoot\` from status JSON) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
+   - \`VERIFY VERDICT: BLOCKED\` → HARD GATE: REFUSE to archive by default; proceed only on an explicit, blocker-naming user override (e.g. "Archive anyway despite BLOCKED verification"); REFUSE outright non-interactively.
+   - \`VERIFY VERDICT: CLEAN\` → no verification-related gate; proceed.
+   - No \`verification-report.md\` → do NOT hard-gate on verification absence (a change may legitimately archive without a formal verify pass); a soft note at most.
+
+3.6. **Check delivery precondition (soft)**
+
+   Read \`ship-log.md\` from the change directory (\`changeRoot\` from status JSON):
+   - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
+   - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
+   - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.
 
 4. **Assess delta spec sync state**
 
@@ -251,8 +279,10 @@ All artifacts complete. All tasks complete.
 **Specs:** Sync skipped (user chose to skip)
 
 **Warnings:**
-- Archived with 2 incomplete artifacts
-- Archived with 3 incomplete tasks
+- Archived with 2 incomplete artifacts (soft warning)
+- Archived despite 3 incomplete tasks — explicit override (hard gate)
+- Archived despite BLOCKED verification — explicit override (hard gate) [only if a BLOCKED verification-report.md was overridden]
+- No ship log — archived without delivering (soft warning) [only if applicable]
 - Delta spec sync was skipped (user chose to skip)
 
 Review the archive if this was not intentional.
@@ -277,7 +307,7 @@ Target archive directory already exists.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (rasen status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the two HARD GATES — a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5) and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the two hard gates.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use the Skill tool to invoke \`rasen-sync-specs\` (agent-driven)

@@ -50,7 +50,7 @@ ${STORE_SELECTION_GUIDANCE}
    **If all artifacts are complete (\`isComplete: true\`)**:
    - Congratulate the user
    - Show final status including the schema used
-   - Suggest: "All artifacts created! You can now implement this change or archive it."
+   - Suggest: "All artifacts created! Next: implement with \`/rasen:apply\`." Archive is a later, post-implementation step — do NOT offer it as an immediate co-equal option before implementation.
    - STOP
 
    ---
@@ -172,7 +172,7 @@ ${STORE_SELECTION_GUIDANCE}
    **If all artifacts are complete (\`isComplete: true\`)**:
    - Congratulate the user
    - Show final status including the schema used
-   - Suggest: "All artifacts created! You can now implement this change with \`/rasen:apply\` or archive it with \`/rasen:archive\`."
+   - Suggest: "All artifacts created! Next: implement with \`/rasen:apply\`." Mention archive (\`/rasen:archive\`) only as the later, post-implementation step — NOT as an immediate co-equal option before implementation.
    - STOP
 
    ---

@@ -35,7 +35,7 @@ ${STORE_SELECTION_GUIDANCE}
    Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
    > "What change do you want to work on? Describe what you want to build or fix."
 
-   From their description, derive a kebab-case name (e.g., "add user authentication" → \`add-user-auth\`).
+   From their description, derive a kebab-case name — the **verbatim** kebab-case of the description, with NO abbreviation (e.g., "real-time collaboration" → \`real-time-collaboration\`). \`/office-hours\` derives its topic slug the same verbatim way, so a matching description yields the same name and the office-hours sibling-dir doc (Step 3.5) is auto-detected.
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
@@ -53,6 +53,14 @@ ${STORE_SELECTION_GUIDANCE}
    - \`applyRequires\`: array of artifact IDs needed before implementation (e.g., \`["tasks"]\`)
    - \`artifacts\`: list of all artifacts with their status and dependencies
    - \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`: path and scope context. Use these instead of assuming repo-local paths.
+
+3.5. **Check for office-hours validation and read it as input context (if present)**
+
+   Office-hours may already have produced a design/validation doc for this topic. Before drafting, look for it in TWO locations, both resolved from the status JSON (do NOT hardcode \`rasen/...\` paths):
+   - **(a) Active-change case:** \`office-hours-design.md\` inside \`changeRoot\`.
+   - **(b) No-active-change case:** \`<change-name>.md\` in the \`office-hours\` directory alongside the changes directory (derive it from \`planningHome.changesDir\` — the \`office-hours\` sibling of that changes dir). This is discoverable because \`/office-hours\` derives its filename slug the SAME way \`/rasen:propose\` derives a change name, so when the change name matches the topic slug the file lines up.
+
+   If either file is found, READ it and incorporate its findings/decisions (problem framing, demand evidence, chosen approach, premises) into the proposal, naming office-hours as the source context. If neither exists, proceed normally — office-hours is optional input, not a precondition. (Best-effort: if the change name differs from the office-hours slug the sibling-dir file won't be found; the user may point you at it.)
 
 4. **Create artifacts in sequence until apply-ready**
 
@@ -151,7 +159,7 @@ ${STORE_SELECTION_GUIDANCE}
    Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
    > "What change do you want to work on? Describe what you want to build or fix."
 
-   From their description, derive a kebab-case name (e.g., "add user authentication" → \`add-user-auth\`).
+   From their description, derive a kebab-case name — the **verbatim** kebab-case of the description, with NO abbreviation (e.g., "real-time collaboration" → \`real-time-collaboration\`). \`/office-hours\` derives its topic slug the same verbatim way, so a matching description yields the same name and the office-hours sibling-dir doc (Step 3.5) is auto-detected.
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
@@ -169,6 +177,14 @@ ${STORE_SELECTION_GUIDANCE}
    - \`applyRequires\`: array of artifact IDs needed before implementation (e.g., \`["tasks"]\`)
    - \`artifacts\`: list of all artifacts with their status and dependencies
    - \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`: path and scope context. Use these instead of assuming repo-local paths.
+
+3.5. **Check for office-hours validation and read it as input context (if present)**
+
+   Office-hours may already have produced a design/validation doc for this topic. Before drafting, look for it in TWO locations, both resolved from the status JSON (do NOT hardcode \`rasen/...\` paths):
+   - **(a) Active-change case:** \`office-hours-design.md\` inside \`changeRoot\`.
+   - **(b) No-active-change case:** \`<change-name>.md\` in the \`office-hours\` directory alongside the changes directory (derive it from \`planningHome.changesDir\` — the \`office-hours\` sibling of that changes dir). This is discoverable because \`/office-hours\` derives its filename slug the SAME way \`/rasen:propose\` derives a change name, so when the change name matches the topic slug the file lines up.
+
+   If either file is found, READ it and incorporate its findings/decisions (problem framing, demand evidence, chosen approach, premises) into the proposal, naming office-hours as the source context. If neither exists, proceed normally — office-hours is optional input, not a precondition. (Best-effort: if the change name differs from the office-hours slug the sibling-dir file won't be found; the user may point you at it.)
 
 4. **Create artifacts in sequence until apply-ready**
 

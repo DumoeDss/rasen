@@ -53,7 +53,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    **Handle states:**
    - If \`state: "blocked"\` (missing artifacts): show message, suggest using rasen-continue-change
-   - If \`state: "all_done"\`: congratulate, suggest archive
+   - If \`state: "all_done"\`: congratulate, then steer to verify + ship (\`/rasen:verify\` → \`/rasen:ship\`); name archive only as the post-delivery step, NOT the immediate next step
    - Otherwise: proceed to implementation
 
 4. **Read context files**
@@ -91,7 +91,7 @@ ${STORE_SELECTION_GUIDANCE}
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: steer to \`/rasen:verify\` then \`/rasen:ship\`; mention archive only as the post-delivery step
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -122,7 +122,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Ready to archive this change.
+All tasks complete! Next: verify (\`/rasen:verify\`) then ship (\`/rasen:ship\`). Archive comes after delivery.
 \`\`\`
 
 **Output On Pause (Issue Encountered)**
@@ -215,7 +215,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    **Handle states:**
    - If \`state: "blocked"\` (missing artifacts): show message, suggest using \`/rasen:continue\`
-   - If \`state: "all_done"\`: congratulate, suggest archive
+   - If \`state: "all_done"\`: congratulate, then steer to verify + ship (\`/rasen:verify\` → \`/rasen:ship\`); name archive only as the post-delivery step, NOT the immediate next step
    - Otherwise: proceed to implementation
 
 4. **Read context files**
@@ -253,7 +253,7 @@ ${STORE_SELECTION_GUIDANCE}
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: steer to \`/rasen:verify\` then \`/rasen:ship\`; mention archive only as the post-delivery step
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -284,7 +284,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with \`/rasen:archive\`.
+All tasks complete! Next: verify with \`/rasen:verify\`, then ship with \`/rasen:ship\`. Archive (\`/rasen:archive\`) comes only after delivery.
 \`\`\`
 
 **Output On Pause (Issue Encountered)**

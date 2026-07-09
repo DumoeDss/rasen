@@ -26,6 +26,8 @@ Positioned between /rasen:explore (technical exploration) and /rasen:propose (cr
 
 ### 1. Mode Selection
 
+Route the session by mode (this routing is the command's value-add). The six-questions / builder descriptions below ALSO serve as the **fallback pre-brief** used only if the \`/office-hours\` expert is unavailable (Step 2) — they are NOT a facilitation script run alongside the expert.
+
 If no mode is specified, prompt the user:
 
 - **Startup mode**: For validating whether something is worth building. Asks six forcing questions covering:
@@ -42,35 +44,22 @@ If no mode is specified, prompt the user:
   - Technology choices
   - Scope definition (MVP vs full vision)
 
-### 2. Execute the Session
+### 2. Delegate the session to the /office-hours expert (single facilitation authority)
 
-**Startup mode**:
-- Walk through each of the six forcing questions in order
-- Require a substantive answer before proceeding to the next question
-- Challenge weak answers — push for specificity
-- After all six questions, synthesize findings into a design document
+**The \`/office-hours\` expert skill (\`rasen-office-hours\`) is the single authority for session facilitation.** Invoke it to run the session — it holds the full, hardened facilitation logic (the forcing questions, premise challenge, alternatives generation, the Consultation posture, and the dialogue discipline). Do NOT re-run the question set inline as a separate second pass; this command's value-add is **lifecycle integration** (mode routing in Step 1, the dual-write location in Step 4, and the \`/rasen:propose\` handoff), NOT facilitation.
 
-**Builder mode**:
-- Start with understanding the user's idea
-- Explore multiple architecture options
-- Discuss trade-offs for each approach
-- Converge on a recommended direction
-- Produce a design document summarizing the brainstorm
+**Fallback (only when the expert is unavailable):** if the \`/office-hours\` expert skill cannot be invoked, run the inline six-questions (Startup) / brainstorm (Builder) description from Step 1 as a pre-brief and carry the session yourself. This is a documented fallback, never a second facilitation pass alongside the expert. **Precedence: when both the inline description and the expert exist, the expert wins.**
 
-### 3. Invoke Expert Skill
+### 3. Produce the design document (once)
 
-Invoke the \`/office-hours\` expert skill for the detailed session execution. The expert skill contains the full facilitation logic.
-
-### 4. Produce Output
-
-Generate a design document with sections:
+The session produces the design document **exactly once** (whether facilitated by the expert or, in the fallback, inline) — never a second doc-production pass. Sections:
 - Executive Summary
 - Problem Statement (Startup) / Idea Overview (Builder)
 - Key Findings / Design Decisions
 - Recommended Next Steps
 - Open Questions
 
-### 5. Dual-Write Output
+### 4. Dual-Write Output
 
 **If an active Rasen change context exists:**
 - Write output to \`rasen/changes/<name>/office-hours-design.md\`
@@ -78,12 +67,12 @@ Generate a design document with sections:
 - This document will be automatically consumed by \`/rasen:propose\` as input context
 
 **If no active change exists:**
-- Derive a descriptive kebab-case slug from the topic (e.g. "real-time collaboration" → \`real-time-collaboration\`), exactly the way \`/rasen:propose\` derives a change name from a description
+- Derive a kebab-case slug from the topic — the **verbatim** kebab-case of the description, with NO abbreviation (e.g. "real-time collaboration" → \`real-time-collaboration\`), exactly the way \`/rasen:propose\` derives a change name from a description (so the two slugs converge and propose can auto-detect this file)
 - Write output to \`rasen/office-hours/<topic-slug>.md\` — **one file per topic**, so separate validation sessions never overwrite each other (do NOT use a single fixed filename)
 - If that exact filename already exists for an UNRELATED topic, disambiguate with a short suffix (\`-2\`, \`-alt\`, …) rather than overwriting
-- Inform the user of the path and that they can reference it when creating a new change
+- Inform the user of the path. When they later run \`/rasen:propose\` with the same topic, propose AUTO-DETECTS this file — its no-active-change scan looks for \`<change-name>.md\` in this \`office-hours\` directory, and because both derive the same kebab slug, a matching change name lines up with this filename.
 
-### 6. Next Steps
+### 5. Next Steps
 
 After the session, suggest:
 - Run \`/rasen:propose\` to create a formal change proposal based on the design doc
@@ -112,7 +101,7 @@ After the session, suggest:
 
 ## Downstream Integration
 
-The \`/rasen:propose\` command auto-detects \`office-hours-design.md\` in the change directory and incorporates its insights into the proposal.`;
+The \`/rasen:propose\` command auto-detects this session's design doc and incorporates its insights into the proposal. It scans **both** locations this command writes to: (1) \`office-hours-design.md\` in the change directory (the active-change dual-write), and (2) \`<change-name>.md\` in the \`office-hours\` directory alongside the changes directory (the no-active-change write, discoverable because office-hours and propose derive the same kebab slug). Paths are resolved from \`rasen status --json\`, not hardcoded.`;
 
 export function getOfficeHoursCommandSkillTemplate(): SkillTemplate {
   return {
