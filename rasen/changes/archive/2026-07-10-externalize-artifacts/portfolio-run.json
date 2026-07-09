@@ -1,0 +1,98 @@
+{
+  "pipeline": "auto-decompose",
+  "tier": "A",
+  "decompose": "taken",
+  "designDoc": "rasen/office-hours/externalize-openspec-artifacts.md",
+  "modelOverrides": {
+    "planner": "fable",
+    "reviewer": "fable",
+    "implementer": "sonnet",
+    "fixer": "sonnet",
+    "shipper": "sonnet"
+  },
+  "gates": "disabled-by-user",
+  "planner": {
+    "role": "planner",
+    "agentId": "planner2",
+    "model": "fable",
+    "proposed": [
+      "externalize-artifacts-t3-workdir",
+      "externalize-artifacts-archive-timing",
+      "externalize-artifacts-archive-dest",
+      "externalize-artifacts-sha-stamping"
+    ],
+    "note": "All 5 children proposed; portfolio planning complete.",
+    "predecessorTranscript": "C:\\Users\\Sayo\\.claude\\projects\\E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code\\0b33a64b-6b64-45b8-af25-b48f97376168\\subagents\\agent-aplanner-ff954a2ee31ec9f5.jsonl"
+  },
+  "children": [
+    {
+      "id": "externalize-artifacts-machine-home",
+      "pipeline": "small-feature",
+      "requires": [],
+      "mode": "serial",
+      "status": "done",
+      "stage": "apply",
+      "commit": "ed1adbd",
+      "archiveCommit": "bc7069b"
+    },
+    {
+      "id": "externalize-artifacts-t3-workdir",
+      "pipeline": "small-feature",
+      "requires": [
+        "externalize-artifacts-machine-home"
+      ],
+      "mode": "serial",
+      "status": "done",
+      "stage": "apply",
+      "commit": "ab3fe7e",
+      "archiveCommit": "160294d"
+    },
+    {
+      "id": "externalize-artifacts-archive-timing",
+      "pipeline": "small-feature",
+      "requires": [
+        "externalize-artifacts-t3-workdir"
+      ],
+      "mode": "serial",
+      "status": "done",
+      "stage": "apply",
+      "commit": "a93ccf9",
+      "archiveCommit": "40eaa7d"
+    },
+    {
+      "id": "externalize-artifacts-archive-dest",
+      "pipeline": "small-feature",
+      "requires": [
+        "externalize-artifacts-machine-home",
+        "externalize-artifacts-archive-timing"
+      ],
+      "mode": "serial",
+      "status": "done",
+      "stage": "apply",
+      "commit": "28769b6",
+      "archiveCommit": "6754b3d"
+    },
+    {
+      "id": "externalize-artifacts-sha-stamping",
+      "pipeline": "small-feature",
+      "requires": [
+        "externalize-artifacts-archive-timing",
+        "externalize-artifacts-archive-dest"
+      ],
+      "mode": "serial",
+      "status": "done",
+      "stage": "apply",
+      "commit": "ba96166",
+      "archiveCommit": "85f5500"
+    }
+  ],
+  "frontier": [],
+  "delivery": {
+    "childMode": "local",
+    "portfolioMode": "awaiting-user-decision",
+    "localCommits": "ed1adbd..85f5500 (5 feat + 5 archive + ship-log/run-state chores)"
+  },
+  "concurrentSessionNote": "Live sibling session owns dirty files: src/core/templates/workflows/{ship,verify-change,verify-enhanced}.ts, experts/_shared.ts, src/telemetry, tests. Pathspec-scoped commits mandatory.",
+  "stagesDelegated": true,
+  "portfolioStatus": "all-children-complete"
+}

@@ -36,6 +36,11 @@ export const ALL_WORKFLOWS = [
   'auto-command',
   'review-cycle',
   'handoff',
+  // Goal-loop workflow family (opt-in)
+  'goal-plan',
+  'goal-iterate',
+  'goal-report',
+  'goal-command',
 ] as const;
 
 export type WorkflowId = (typeof ALL_WORKFLOWS)[number];
