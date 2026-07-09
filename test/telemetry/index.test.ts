@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import https from 'node:https';
 
 // The maintainer-owned Cloudflare Worker endpoint (fork-phase1-telemetry-backend).
-const TELEMETRY_ENDPOINT = 'https://openspec-telemetry.ws11579.workers.dev';
+const TELEMETRY_ENDPOINT = 'https://telemetry.rasen.io';
 const TELEMETRY_REQUEST_TIMEOUT_MS = 1000;
 
 type TelemetryModule = typeof import('../../src/telemetry/index.js');
