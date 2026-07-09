@@ -82,6 +82,25 @@ Write reports to the change directory:
 - \`rasen/changes/<name>/qa-report.md\` — QA findings (if /qa ran)
 - \`rasen/changes/<name>/design-review-report.md\` — design review (if /design-review ran)
 
+**Canonical verdict + status line.** Map every finding across the stages onto the canonical Blocker/Major/Minor/Trivial scale defined by the \`canonical-severity-vocabulary\` in the expert PREAMBLE (reference it; do NOT re-define the scale): a Critical Issue / a stage FAIL on a blocking check → **Blocker**; a Warning → **Major**; a nice-to-fix → **Minor** or **Trivial**. Per-stage PASS/FAIL stays as a display aid in the summary below. Emit ONE machine-checkable status line into the reports you write and the conversation:
+
+\`\`\`
+VERIFY VERDICT: <CLEAN|BLOCKED> — Blocker:<n> Major:<n> Minor:<n> Trivial:<n>
+\`\`\`
+
+The verdict is **CLEAN if and only if no Blocker and no Major is open** (the review-cycle termination invariant); otherwise **BLOCKED**. This standardizes the vocabulary and the pass rule only; it does not by itself enforce an archive refusal.
+
+**Test-evidence block (only when tests ran).** If verification executed the project's test or gate suite, record a fingerprinted test-evidence block into the report(s) so \`/rasen:ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
+
+\`\`\`
+TEST EVIDENCE
+- command: <exact command(s) run>
+- result: pass | fail
+- tree: <git rev-parse HEAD^{tree}>
+\`\`\`
+
+If no test/gate suite was run, write no test-evidence block — ship then correctly re-runs (it skips on proof, never on hope).
+
 ### 6. Consolidated Summary
 
 Display a summary with pass/fail status for each stage:

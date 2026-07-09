@@ -33,7 +33,7 @@ If a change name is provided, use it. Otherwise:
 Run all checks before shipping:
 
 **a. Verification Status**
-- Check if \`rasen/changes/<name>/review-report.md\` exists (or \`review-cycle-report.md\` from the review loop, or any other expert \`*-report.md\` — any of these counts as verification evidence)
+- Check if \`rasen/changes/<name>/verification-report.md\` (from \`/rasen:verify\`), \`review-report.md\`, \`review-cycle-report.md\` (from the review loop), or any other expert \`*-report.md\` exists — any of these counts as verification evidence
 - If no verification report found, warn: "No verification report found. Run /rasen:verify first."
 - Prompt user to confirm proceeding without verification
 
@@ -84,7 +84,7 @@ NEVER resolve an integration base by falling back to the repository's default br
 
 Run the project's detected test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` / \`pytest\` / etc. — infer from the repo, do not hardcode a runner) ONLY if at least one holds:
 1. Step (c) merged in new commits — the merged state has never been tested.
-2. No green test evidence exists for the current code state. Evidence = a recorded passing test run (in \`review-report.md\`, \`review-cycle-report.md\`, another verification report, or run-state) whose recorded content tree fingerprint (\`git rev-parse HEAD^{tree}\`) matches the current one. The tree hash is content-addressed — it changes if and only if the tracked tree content changes — so the commit in (b), which moves HEAD but changes no content, does not invalidate evidence; lint or review fixes change the tree and DO.
+2. No green test evidence exists for the current code state. Evidence = a recorded passing test run (in \`verification-report.md\`, \`review-report.md\`, \`review-cycle-report.md\`, another verification report, or run-state) whose recorded content tree fingerprint (\`git rev-parse HEAD^{tree}\`) matches the current one. The tree hash is content-addressed — it changes if and only if the tracked tree content changes — so the commit in (b), which moves HEAD but changes no content, does not invalidate evidence; lint or review fixes change the tree and DO.
 3. The user explicitly asks for a test run.
 
 Otherwise SKIP the run and record \`tests: skipped — green at <evidence source>, tree <fingerprint>\` for the ship log. Missing evidence means RUN — the gate skips on proof, never on hope.

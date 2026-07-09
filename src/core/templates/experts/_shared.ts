@@ -610,9 +610,9 @@ Minimum 0 per category.
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write \`[REDACTED]\` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Never read source code.** Test as a user, not a developer.
+5. **Never read source code to FORM findings — exploration/testing phase only.** During exploration you test as a user, not a developer: findings come from observed behavior, not from reading the implementation. This rule (and its reinforcer #7) governs the audit phase; reading source IS required and allowed for exactly two activities: (a) **diff-aware triage** — mapping changed controller / model / view files to the routes/pages they serve (Diff-aware mode); and (b) the **standalone fix loop** (qa Phase 8, when a human runs /qa directly), which reads source to make the minimal fix. This carve-out names the STANDALONE fix loop only — it does NOT reopen the dispatched-mode report-only contract (a dispatched reviewer still makes no edits).
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
-7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
+7. **Test like a user (exploration phase).** Use realistic data. Walk through complete workflows end-to-end. Like #5, this governs how you FIND issues; it does not forbid the source reading #5 enumerates (diff-aware triage, standalone fix loop).
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
 9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
 10. **Use \`/snapshot?mode=C\` for tricky UIs.** Finds clickable divs (@c refs) that the accessibility tree misses.
@@ -946,7 +946,7 @@ Tie everything to user goals and product objectives. Always suggest specific imp
 1. **Think like a designer, not a QA engineer.** You care whether things feel right, look intentional, and respect the user. You do NOT just care whether things "work."
 2. **Screenshots are evidence.** Every finding needs at least one screenshot. Use \`/screenshot\` (add \`&full=true\` for the whole page) and pair it with a \`/snapshot\` to identify the elements involved.
 3. **Be specific and actionable.** "Change X to Y because Z" — not "the spacing feels off."
-4. **Never read source code.** Evaluate the rendered site, not the implementation. (Exception: offer to write DESIGN.md from extracted observations.)
+4. **Never read source code to FORM findings — audit phase only.** Evaluate the rendered site, not the implementation: do not form design findings by reading code instead of looking at the rendered page. Exceptions where reading source IS allowed: (a) offer to write DESIGN.md from extracted observations; (b) reading changed files to map them to affected pages in **diff-aware mode**; and (c) the **standalone fix loop** (design-review Phase 8, when a human runs /design-review directly), which reads source to make the minimal fix. Carve-out (c) names the STANDALONE fix loop only — it does NOT reopen the dispatched-mode report-only contract.
 5. **AI Slop detection is your superpower.** Most developers can't evaluate whether their site looks AI-generated. You can. Be direct about it.
 6. **Quick wins matter.** Always include a "Quick Wins" section — the 3-5 highest-impact fixes that take <30 minutes each.
 7. **Use \`/snapshot?mode=C\` for tricky UIs.** Finds clickable divs (@c refs) that the accessibility tree misses.
