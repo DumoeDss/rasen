@@ -11,6 +11,11 @@ export function serializeConfig(config: Partial<ProjectConfig>): string {
 
   // Schema (required)
   lines.push(`schema: ${config.schema}`);
+
+  // Project identity (optional; present when the caller already minted one)
+  if (config.projectId) {
+    lines.push(`projectId: ${config.projectId}`);
+  }
   lines.push('');
 
   // Context section with comments

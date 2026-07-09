@@ -27,7 +27,19 @@ export interface RelationshipHealth {
     status: StoreDiagnostic[];
   } | null;
   references: ReferenceIndexEntry[];
+  machineHome: MachineHomeHealth;
   status: StoreDiagnostic[];
+}
+
+export interface MachineHomeHealth {
+  registered: boolean;
+  entry?: { path: string; project_id: string; home: string; last_seen: string };
+  /** Registered paths that no longer exist on disk (machine-wide, not just this project). */
+  dangling: Array<{ path: string; home: string }>;
+  /** Set when the registry could not be read at all (e.g. corrupt registry.json,
+   * MAJOR-2) - `registered`/`dangling` above then reflect no data, not a
+   * verified "not registered" fact. */
+  error?: { message: string; fix?: string };
 }
 
 export interface InspectRelationshipsInput {
@@ -50,6 +62,12 @@ export interface InspectRelationshipsInput {
   malformedPointer?: { filePath: string; reason: 'unparseable' | 'non_string' };
   /** Reference declarations in a pointer directory's own config are inert. */
   inertPointerDeclarations?: { filePath: string; fields: string[] };
+  /** This project's machine-registry entry (probe-only; never mutated here). */
+  machineHomeEntry?: { path: string; projectId: string; home: string; lastSeen: string };
+  /** Dangling machine-registry entries, machine-wide. */
+  danglingProjectEntries?: Array<{ path: string; home: string }>;
+  /** Set when the machine registry could not be read (MAJOR-2). */
+  machineHomeError?: { message: string; fix?: string };
 }
 
 function warning(code: string, message: string, fix: string): StoreDiagnostic {
@@ -131,6 +149,22 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     };
   }
 
+  const machineHome: MachineHomeHealth = {
+    registered: input.machineHomeEntry !== undefined,
+    ...(input.machineHomeEntry
+      ? {
+          entry: {
+            path: input.machineHomeEntry.path,
+            project_id: input.machineHomeEntry.projectId,
+            home: input.machineHomeEntry.home,
+            last_seen: input.machineHomeEntry.lastSeen,
+          },
+        }
+      : {}),
+    dangling: input.danglingProjectEntries ?? [],
+    ...(input.machineHomeError ? { error: input.machineHomeError } : {}),
+  };
+
   return {
     root: {
       ...toRootOutput(input.root),
@@ -139,6 +173,7 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     },
     store,
     references: input.referenceEntries,
+    machineHome,
     status,
   };
 }

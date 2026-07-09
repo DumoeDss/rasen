@@ -40,6 +40,7 @@ import {
   type PlanningHome,
 } from './planning-home.js';
 import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
+import { touchProjectRegistry } from './project-home.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 
 export type OpenSpecRootSource = 'store' | 'declared' | 'nearest' | 'implicit';
@@ -497,6 +498,12 @@ export async function resolveRootForCommand(
     failurePayload?: Record<string, unknown>;
     /** Diagnostic commands inspect what exists; they never scaffold. */
     allowImplicitRoot?: boolean;
+    /** Test/DI override for both root resolution and the self-heal touch
+     * below; defaults to getGlobalDataDir() (MINOR-5). Without this, an
+     * in-process test exercising this function against a projectId-bearing
+     * project would silently register temp paths in the real machine
+     * registry unless the process env happens to pin XDG_DATA_HOME. */
+    globalDataDir?: string;
   } = {}
 ): Promise<ResolvedOpenSpecRoot | null> {
   try {
@@ -506,6 +513,7 @@ export async function resolveRootForCommand(
       ...(output.allowImplicitRoot !== undefined
         ? { allowImplicitRoot: output.allowImplicitRoot }
         : {}),
+      ...(output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}),
     });
 
     // Emitted at resolution time so the banner survives command failures
@@ -513,6 +521,14 @@ export async function resolveRootForCommand(
     if (!output.json) {
       emitStoreRootBanner(root);
     }
+
+    // Registry self-healing (design D6): best-effort, throttled, and every
+    // failure is swallowed inside touchProjectRegistry itself - it must
+    // never fail or visibly slow this command.
+    await touchProjectRegistry(
+      root.path,
+      output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}
+    );
 
     return root;
   } catch (error) {

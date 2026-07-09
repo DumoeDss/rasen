@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
+import { getProjectHomeDir, registerProject } from '../../src/core/project-registry.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
@@ -278,5 +280,94 @@ describe('rasen doctor (3.6)', () => {
     expect(snapshot(storeRoot)).toEqual(rootBefore);
     expect(snapshot(path.join(tempDir, 'data'))).toEqual(dataBefore);
     expect(listAfter.stdout).toBe(listBefore.stdout);
+  });
+
+  describe('machine home (6.x)', () => {
+    it('reports this project\'s registered entry', async () => {
+      const projectId = randomUUID();
+      const { entry } = await registerProject(
+        { projectRoot: storeRoot, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json', '--store', 'team-context'], {
+        cwd: tempDir,
+        env,
+      });
+      const health = parseJson(result);
+      expect(health.machineHome.registered).toBe(true);
+      expect(health.machineHome.entry).toEqual(
+        expect.objectContaining({ project_id: projectId, home: entry.home })
+      );
+      expect(health.machineHome.dangling).toEqual([]);
+    });
+
+    it('reports an unregistered project and no dangling entries by default', async () => {
+      const result = await runCLI(['doctor', '--json', '--store', 'team-context'], {
+        cwd: tempDir,
+        env,
+      });
+      const health = parseJson(result);
+      expect(health.machineHome.registered).toBe(false);
+      expect(health.machineHome.entry).toBeUndefined();
+      expect(health.machineHome.dangling).toEqual([]);
+    });
+
+    it('reports a dangling entry with a --gc suggestion in human output, and --gc removes it plus its orphaned home', async () => {
+      const doomedRoot = path.join(tempDir, 'doomed-project');
+      fs.mkdirSync(doomedRoot, { recursive: true });
+      const { entry, canonicalPath } = await registerProject(
+        { projectRoot: doomedRoot, projectId: randomUUID(), mode: 'in-repo' },
+        { globalDataDir }
+      );
+      fs.rmSync(doomedRoot, { recursive: true, force: true });
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.stdout).toContain('Dangling entries: 1');
+      expect(human.stdout).toContain(canonicalPath);
+      expect(human.stdout).toContain('rasen doctor --gc');
+
+      const jsonBefore = parseJson(
+        await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env })
+      );
+      expect(jsonBefore.machineHome.dangling).toEqual([
+        { path: canonicalPath, home: entry.home },
+      ]);
+
+      const gcResult = await runCLI(['doctor', '--json', '--gc', '--store', 'team-context'], {
+        cwd: tempDir,
+        env,
+      });
+      const afterGc = parseJson(gcResult);
+      expect(afterGc.machineHome.dangling).toEqual([]);
+      expect(afterGc.gc.removed_entries).toEqual([{ path: canonicalPath, home: entry.home }]);
+      expect(afterGc.gc.removed_homes).toEqual([entry.home]);
+      expect(fs.existsSync(getProjectHomeDir(entry.home, { globalDataDir }))).toBe(false);
+    });
+
+    it('surfaces a corrupt registry as a diagnostic instead of masking it as "Not registered" (MAJOR-2)', async () => {
+      const registryPath = path.join(globalDataDir, 'projects', 'registry.json');
+      fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+      fs.writeFileSync(registryPath, '{not valid json');
+
+      const json = await runCLI(['doctor', '--json', '--store', 'team-context'], {
+        cwd: tempDir,
+        env,
+      });
+      const health = parseJson(json);
+      expect(json.exitCode).toBe(0);
+      expect(health.machineHome.error).toBeDefined();
+      expect(health.machineHome.error.message).toContain('Invalid project registry state');
+      // The healthy-path shape stays backward compatible: registered/dangling
+      // are still present (just uninformative), not replaced by the error.
+      expect(health.machineHome.registered).toBe(false);
+      expect(health.machineHome.dangling).toEqual([]);
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.exitCode).toBe(0);
+      expect(human.stdout).toContain('Machine home');
+      expect(human.stdout).toContain('Error: Invalid project registry state');
+      expect(human.stdout).not.toContain('Not registered');
+    });
   });
 });

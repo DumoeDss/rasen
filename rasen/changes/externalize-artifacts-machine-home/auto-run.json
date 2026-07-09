@@ -1,0 +1,94 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "externalize-artifacts",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "worker": {
+        "role": "planner",
+        "agentId": "planner",
+        "model": "fable"
+      }
+    },
+    "apply": {
+      "status": "done",
+      "worker": {
+        "role": "implementer",
+        "agentId": "impl-machine-home",
+        "model": "sonnet",
+        "transcript": "C:\\Users\\Sayo\\.claude\\projects\\E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code\\0b33a64b-6b64-45b8-af25-b48f97376168\\subagents\\agent-aimpl-machine-home-61d600092f17624e.jsonl"
+      },
+      "notes": "Implementer completed 20/21 tasks then its agent handle died mid final-verification. LEAD closed task 7.1 with an independent gate-run: targeted 183/183 green, full suite 122 files / 2222 passed / 0 failed (exit 0). First-run failures were traced to a concurrent-session dist rebuild race, not regressions.",
+      "testGate": {
+        "command": "npx vitest run",
+        "result": "2222 passed, 22 skipped, 0 failed",
+        "tree": "a15a915f4c5d2ffb8d558030820209653bc72664"
+      },
+      "files": [
+        "src/commands/doctor.ts",
+        "src/core/config-prompts.ts",
+        "src/core/id.ts",
+        "src/core/init.ts",
+        "src/core/project-config.ts",
+        "src/core/relationship-health.ts",
+        "src/core/root-selection.ts",
+        "src/core/store/git.ts",
+        "src/core/workspace-root.ts",
+        "src/core/project-home.ts",
+        "src/core/project-registry.ts",
+        "test/commands/doctor.test.ts",
+        "test/core/init.test.ts",
+        "test/core/project-config.test.ts",
+        "test/core/project-home.test.ts",
+        "test/core/project-registry.test.ts",
+        "test/core/relationship-health.test.ts",
+        "test/core/completions/command-registry.test.ts",
+        "test/cli-e2e/store-lifecycle.test.ts"
+      ]
+    },
+    "verify": {
+      "status": "done",
+      "worker": {
+        "role": "reviewer",
+        "agentId": "reviewer-machine-home",
+        "model": "fable"
+      },
+      "verdict": "FINDINGS 0B/2M/5m/4t",
+      "report": "review-report.md"
+    },
+    "review-loop": {
+      "status": "done",
+      "worker": {
+        "role": "fixer",
+        "agentId": "fixer-machine-home",
+        "model": "sonnet"
+      },
+      "reReviewer": "reviewer-machine-home",
+      "verdict": "CLEAN round 2",
+      "resolved": "7/7",
+      "acceptedKnown": [
+        "T1 init warning wording",
+        "T3 doc-only proposal drift",
+        "T4 windows case-fold on git-common-dir compare",
+        "residual: GC lock hold vs 30s stale-steal on huge trees",
+        "residual: copy inside different worktree shares",
+        "residual: lock mkdir empty projects/"
+      ]
+    },
+    "ship": {
+      "status": "in_progress",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      }
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "rounds": 1,
+  "openFindings": []
+}

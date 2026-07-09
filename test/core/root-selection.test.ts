@@ -4,14 +4,20 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { randomUUID } from 'node:crypto';
+
 import {
   resolveOpenSpecRoot,
+  resolveRootForCommand,
   RootSelectionError,
 } from '../../src/core/root-selection.js';
 import {
   writeStoreMetadataState,
   writeStoreRegistryState,
 } from '../../src/core/store/foundation.js';
+import { getGlobalDataDir } from '../../src/core/global-config.js';
+import { readProjectRegistryState } from '../../src/core/project-registry.js';
+import { FileSystemUtils } from '../../src/utils/file-system.js';
 
 describe('resolveOpenSpecRoot', () => {
   let tempDir: string;
@@ -505,4 +511,32 @@ describe('resolveOpenSpecRoot', () => {
     });
   });
 
+  describe('resolveRootForCommand self-heal DI (MINOR-5)', () => {
+    it('threads globalDataDir to the self-heal touch, not the XDG-default registry', async () => {
+      const storeRoot = await registerStore('team-context');
+      const projectId = randomUUID();
+      fs.writeFileSync(
+        path.join(storeRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\n`
+      );
+
+      const root = await resolveRootForCommand(
+        { store: 'team-context' },
+        { json: true, globalDataDir }
+      );
+
+      expect(root?.path).toBe(storeRoot);
+
+      const canonicalPath = FileSystemUtils.canonicalizeExistingPath(storeRoot);
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[canonicalPath]?.projectId).toBe(projectId);
+
+      // Must not have leaked into the XDG-default registry either - the
+      // whole point of DI is that a missed thread can never reach it.
+      const xdgGlobalDataDir = getGlobalDataDir({ env: process.env });
+      expect(xdgGlobalDataDir).not.toBe(globalDataDir);
+      const xdgState = await readProjectRegistryState({ globalDataDir: xdgGlobalDataDir });
+      expect(xdgState?.projects[canonicalPath]).toBeUndefined();
+    });
+  });
 });

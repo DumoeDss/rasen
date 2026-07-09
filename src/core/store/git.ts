@@ -176,3 +176,34 @@ export async function gitDirectoryHasTrackedFiles(
   const stdout = await gitProbe(storeRoot, ['ls-files', '--', relativeDir]);
   return stdout === null ? null : stdout.trim().length > 0;
 }
+
+/**
+ * Resolves the shared `.git` directory for `repoPath` via `git rev-parse
+ * --git-common-dir` — identical for every worktree of one repository, and
+ * distinct across independent clones/repositories. Returns null when the
+ * path is not a Git working tree or Git is unavailable (project-registry
+ * treats that as "cannot determine" and forks rather than shares).
+ */
+export async function gitCommonDir(repoPath: string): Promise<string | null> {
+  const stdout = await gitProbe(repoPath, ['rev-parse', '--git-common-dir']);
+  const raw = stdout?.trim();
+  if (!raw) return null;
+  return path.isAbsolute(raw) ? raw : path.resolve(repoPath, raw);
+}
+
+/**
+ * Resolves the working-tree-specific `.git` directory for `repoPath` via
+ * `git rev-parse --git-dir` — distinct per linked worktree, but IDENTICAL
+ * for any two paths inside one single working tree (e.g. two subdirectories,
+ * or a `cp -r` copy that carries no separate `.git`). Paired with
+ * `gitCommonDir`, this lets project-registry tell true worktree siblings
+ * (same common dir, different git dir) apart from same-tree paths (same
+ * common dir, same git dir too). Returns null when the path is not a Git
+ * working tree or Git is unavailable.
+ */
+export async function gitDir(repoPath: string): Promise<string | null> {
+  const stdout = await gitProbe(repoPath, ['rev-parse', '--git-dir']);
+  const raw = stdout?.trim();
+  if (!raw) return null;
+  return path.isAbsolute(raw) ? raw : path.resolve(repoPath, raw);
+}

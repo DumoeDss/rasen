@@ -467,13 +467,23 @@ describe('standalone store lifecycle journey', () => {
       expect(entries).toContain('rasen/config.yaml');
     }
 
-    // Global state holds only registry/config metadata, no planning files.
+    // Global state holds only registry/config metadata (the store registry,
+    // and the project registry's machine-home directory for the resolved
+    // store root), no planning files. The machine-home dir name embeds a
+    // hash of a freshly minted projectId, so it can't be asserted verbatim.
     for (const env of [machineA, machineB]) {
       const dataEntries = await listRelativeEntries(
         path.join(env.XDG_DATA_HOME as string, 'rasen'),
         new Set()
       );
-      expect(dataEntries).toEqual(['stores/', 'stores/registry.yaml']);
+      for (const entry of dataEntries) {
+        expect(entry).toMatch(/^(stores\/(registry\.yaml)?|projects\/(registry\.json)?|projects\/[a-z0-9-]+\/)$/);
+      }
+      expect(dataEntries).toContain('stores/');
+      expect(dataEntries).toContain('stores/registry.yaml');
+      expect(dataEntries).toContain('projects/');
+      expect(dataEntries).toContain('projects/registry.json');
+      expect(dataEntries.filter((entry) => /^projects\/[a-z0-9-]+\/$/.test(entry))).toHaveLength(1);
     }
   });
 

@@ -36,6 +36,7 @@ describe('relationship health composition (3.6)', () => {
       },
       store: null,
       references: [],
+      machineHome: { registered: false, dangling: [] },
       status: [],
     });
   });

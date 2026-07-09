@@ -1,8 +1,12 @@
 import { WORKSPACE_DIR_NAME } from './config.js';
 import { existsSync, readFileSync, statSync } from 'fs';
+import { promises as fsPromises } from 'fs';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
+
+import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
 
 /**
  * Zod schema for project configuration.
@@ -58,6 +62,13 @@ export const ProjectConfigSchema = z.object({
     .string()
     .optional()
     .describe('Store id used as the Rasen root when no local planning shape exists'),
+
+  // Optional: stable machine-local project identity (opaque string; any
+  // non-empty JS string is accepted, minted as a UUID by init/first use).
+  projectId: z
+    .string()
+    .optional()
+    .describe('Stable project identity used by the machine-wide project registry'),
 });
 
 /** Normalized in-memory shape of a referenced store declaration. */
@@ -277,6 +288,16 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
       }
     }
 
+    // Parse projectId field: an opaque string identifier, or dropped with a
+    // warning (any non-empty JS string is accepted; only non-strings drop).
+    if (raw.projectId !== undefined) {
+      if (typeof raw.projectId === 'string') {
+        config.projectId = raw.projectId;
+      } else {
+        console.warn(`Invalid 'projectId' field in config (must be string)`);
+      }
+    }
+
     // Return partial config even if some fields failed
     return Object.keys(config).length > 0 ? (config as ProjectConfig) : null;
   } catch (error) {
@@ -485,4 +506,94 @@ function isDirectorySync(candidatePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+// -----------------------------------------------------------------------------
+// Project identity (lazy projectId minting)
+// -----------------------------------------------------------------------------
+
+/**
+ * Reads (or mints) the project's stable `projectId`.
+ *
+ * If the config already carries a `projectId` (any string), it is returned
+ * unchanged (a lock-free read - the common case after the first run).
+ * Otherwise a new `crypto.randomUUID()` is minted and APPENDED to the config
+ * file as a single `projectId: <uuid>` line, preserving the file's existing
+ * content and comments verbatim. Minting is serialized under the project
+ * registry lock (MINOR-3): two concurrent first-ever runs would otherwise
+ * both mint distinct ids and race their appends, leaving the config and the
+ * registry permanently divergent. The append always lands on its own line (a
+ * guaranteed leading newline, regardless of the file's trailing whitespace),
+ * and the write is re-read and validated; a failed validation reverts the
+ * file to its original content.
+ *
+ * Throws when no config file exists (`rasen init` has not run) or when the
+ * config file cannot be written.
+ */
+export async function ensureProjectIdInConfig(
+  projectRoot: string,
+  options: ProjectPathOptions = {}
+): Promise<string> {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No Rasen config found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}; run 'rasen init' first.`
+    );
+  }
+
+  const existingContent = await fsPromises.readFile(configPath, 'utf-8');
+  const existingId = extractProjectIdField(existingContent);
+  if (existingId !== undefined) {
+    return existingId;
+  }
+
+  return withProjectRegistryLock(async () => {
+    // Re-read under the lock: another process may have minted and written
+    // between the fast-path read above and this process acquiring the lock.
+    const contentUnderLock = await fsPromises.readFile(configPath, 'utf-8');
+    const idUnderLock = extractProjectIdField(contentUnderLock);
+    if (idUnderLock !== undefined) {
+      return idUnderLock;
+    }
+
+    const projectId = randomUUID();
+    const trimmed = contentUnderLock.replace(/\n+$/u, '');
+    const appended =
+      trimmed.length > 0 ? `${trimmed}\nprojectId: ${projectId}\n` : `projectId: ${projectId}\n`;
+
+    try {
+      await fsPromises.writeFile(configPath, appended, 'utf-8');
+    } catch (error) {
+      throw new Error(
+        `Could not write projectId to ${configPath} (${error instanceof Error ? error.message : String(error)}).`
+      );
+    }
+
+    const verifyContent = await fsPromises.readFile(configPath, 'utf-8');
+    if (extractProjectIdField(verifyContent) !== projectId) {
+      // The append did not validate (e.g. an unexpected YAML edge case) -
+      // revert rather than leave a config the parser cannot trust.
+      await fsPromises.writeFile(configPath, contentUnderLock, 'utf-8');
+      throw new Error(
+        `Adding projectId to ${configPath} did not validate after write; reverted the file. Add 'projectId: <id>' manually or fix the file's YAML.`
+      );
+    }
+
+    return projectId;
+  }, options);
+}
+
+/** Extracts a valid string `projectId` field from raw config content, or undefined. */
+function extractProjectIdField(content: string): string | undefined {
+  let raw: unknown;
+  try {
+    raw = parseYaml(content);
+  } catch {
+    return undefined;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const value = (raw as Record<string, unknown>).projectId;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
