@@ -1,7 +1,7 @@
 # context-injection Specification
 
 ## Purpose
-Define how project context from `openspec/config.yaml` is injected into workflow instructions while preserving source text and formatting.
+Define how project context from `rasen/config.yaml` is injected into workflow instructions while preserving source text and formatting.
 ## Requirements
 ### Requirement: Inject context into all artifact instructions
 

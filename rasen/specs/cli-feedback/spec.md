@@ -1,7 +1,7 @@
 # cli-feedback Specification
 
 ## Purpose
-Define `openspec feedback` behavior for creating GitHub issues safely via `gh`, with a manual fallback when automation is unavailable.
+Define `rasen feedback` behavior for creating GitHub issues safely via `gh`, with a manual fallback when automation is unavailable.
 
 ## Requirements
 ### Requirement: Feedback command
@@ -41,7 +41,7 @@ The system SHALL use `gh` CLI for automatic feedback submission when available, 
 
 #### Scenario: Missing gh CLI with fallback
 
-- **WHEN** user runs `openspec feedback "message"`
+- **WHEN** user runs `rasen feedback "message"`
 - **AND** `gh` CLI is not installed (not found in PATH)
 - **THEN** the system displays warning: "GitHub CLI not found. Manual submission required."
 - **AND** outputs structured feedback content with delimiters:
@@ -67,7 +67,7 @@ The system SHALL use `gh` CLI for automatic feedback submission when available, 
 
 #### Scenario: Unauthenticated gh CLI with fallback
 
-- **WHEN** user runs `openspec feedback "message"`
+- **WHEN** user runs `rasen feedback "message"`
 - **AND** `gh` CLI is installed but not authenticated
 - **THEN** the system displays warning: "GitHub authentication required. Manual submission required."
 - **AND** outputs structured feedback content (same format as missing gh CLI scenario)
@@ -77,7 +77,7 @@ The system SHALL use `gh` CLI for automatic feedback submission when available, 
 
 #### Scenario: Authenticated gh CLI
 
-- **WHEN** user runs `openspec feedback "message"`
+- **WHEN** user runs `rasen feedback "message"`
 - **AND** `gh auth status` returns success (authenticated)
 - **THEN** the system proceeds with feedback submission
 
@@ -89,10 +89,10 @@ The system SHALL include relevant metadata in the GitHub Issue body.
 
 - **WHEN** creating a GitHub Issue for feedback
 - **THEN** the issue body includes:
-  - OpenSpec CLI version
+  - Rasen CLI version
   - Platform (darwin, linux, win32)
   - Submission timestamp
-  - Separator line: "---\nSubmitted via OpenSpec CLI"
+  - Separator line: "---\nSubmitted via Rasen CLI"
 
 #### Scenario: Windows platform metadata
 
@@ -115,15 +115,15 @@ The system SHALL allow feedback submission regardless of telemetry settings.
 
 #### Scenario: Feedback with telemetry disabled
 
-- **WHEN** user has disabled telemetry via `OPENSPEC_TELEMETRY=0`
-- **AND** user runs `openspec feedback "message"`
+- **WHEN** user has disabled telemetry via `RASEN_TELEMETRY=0`
+- **AND** user runs `rasen feedback "message"`
 - **THEN** the feedback is still submitted via `gh` CLI
 - **AND** telemetry events are not sent
 
 #### Scenario: Feedback in CI environment
 
 - **WHEN** `CI=true` is set in the environment
-- **AND** user runs `openspec feedback "message"`
+- **AND** user runs `rasen feedback "message"`
 - **THEN** the feedback submission proceeds normally (if `gh` is available and authenticated)
 
 ### Requirement: Error handling
@@ -154,7 +154,7 @@ The system SHALL provide a `/feedback` skill that guides agents through collecti
 - **AND** drafts a feedback issue with enriched content
 - **AND** anonymizes sensitive information
 - **AND** presents the draft to the user for approval
-- **AND** submits via `openspec feedback` command on user confirmation
+- **AND** submits via `rasen feedback` command on user confirmation
 
 #### Scenario: Context enrichment
 
@@ -188,11 +188,11 @@ The system SHALL provide shell completions for the feedback command.
 
 #### Scenario: Command completion
 
-- **WHEN** user types `openspec fee<TAB>`
-- **THEN** the shell completes to `openspec feedback`
+- **WHEN** user types `rasen fee<TAB>`
+- **THEN** the shell completes to `rasen feedback`
 
 #### Scenario: Flag completion
 
-- **WHEN** user types `openspec feedback "msg" --<TAB>`
+- **WHEN** user types `rasen feedback "msg" --<TAB>`
 - **THEN** the shell suggests available flags (`--body`)
 

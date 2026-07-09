@@ -1,7 +1,7 @@
 # remove-parallel-lifecycle-skills Specification
 
 ## Purpose
-Removes the ten gstack parallel-lifecycle expert skills (`autoplan`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `land-and-deploy`, `setup-deploy`, `canary`, `ship`, `retro`, `document-release`) whose responsibilities were absorbed into the `/opsx:auto`, `/opsx:ship`, and `/opsx:retro` workflow templates, and ensures no wiring, generated docs, curated skill-check lists, catalogs, navigator sections, or installed directories retain residue of the removed skills.
+Removes the ten gstack parallel-lifecycle expert skills (`autoplan`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `land-and-deploy`, `setup-deploy`, `canary`, `ship`, `retro`, `document-release`) whose responsibilities were absorbed into the `/rasen:auto`, `/rasen:ship`, and `/rasen:retro` workflow templates, and ensures no wiring, generated docs, curated skill-check lists, catalogs, navigator sections, or installed directories retain residue of the removed skills.
 
 ## Requirements
 ### Requirement: Parallel-lifecycle experts are removed
@@ -57,10 +57,10 @@ The four expert-count assertions in `test/core/shared/skill-generation.test.ts` 
 - **AND** all count assertions SHALL pass
 
 ### Requirement: Install side carries no removed-skill residue
-After regeneration, the installed skill directories for the ten removed experts SHALL NOT remain on the install side. Because `openspec update --force` regenerates only the current roster and does not prune orphaned expert directories, the orphaned directories SHALL be removed explicitly.
+After regeneration, the installed skill directories for the ten removed experts SHALL NOT remain on the install side. Because `rasen update --force` regenerates only the current roster and does not prune orphaned expert directories, the orphaned directories SHALL be removed explicitly.
 
 #### Scenario: No orphaned installed directories
-- **WHEN** `openspec update --force` is run and the install target's skills directory is inspected
+- **WHEN** `rasen update --force` is run and the install target's skills directory is inspected
 - **THEN** there SHALL be no `openspec-gstack-autoplan`, `openspec-gstack-plan-ceo-review`, `openspec-gstack-plan-eng-review`, `openspec-gstack-plan-design-review`, `openspec-gstack-land-and-deploy`, `openspec-gstack-setup-deploy`, `openspec-gstack-canary`, `openspec-gstack-ship`, `openspec-gstack-retro`, or `openspec-gstack-document-release` directory remaining
 
 ### Requirement: No dangling references to removed skills

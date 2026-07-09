@@ -5,7 +5,7 @@ Defines the orchestration playbook's context-handoff protocol: every worker spaw
 
 ## Requirements
 ### Requirement: Worker handoff contract
-The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `openspec/changes/<id>/handoff/`). The `DONE` return SHALL additionally carry a durable-findings clause — 1–3 lines of discoveries that remain true for future planning (not per-task chatter) — which the LEAD relays verbatim into the next planner's dispatch so implementation discoveries feed subsequent proposals.
+The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `rasen/changes/<id>/handoff/`). The `DONE` return SHALL additionally carry a durable-findings clause — 1–3 lines of discoveries that remain true for future planning (not per-task chatter) — which the LEAD relays verbatim into the next planner's dispatch so implementation discoveries feed subsequent proposals.
 
 #### Scenario: Worker self-handoff mid-stage
 - **WHEN** a worker returns a `HANDOFF` result
@@ -33,7 +33,7 @@ The playbook SHALL bound handoff relays per stage by the resolved `maxRelays` an
 - **THEN** the LEAD review SHALL trigger immediately without waiting for the relay cap
 
 ### Requirement: Warm-continue guard
-Before re-engaging an existing worker via `SendMessage`, the LEAD SHALL probe that worker's recorded transcript with `openspec agent context` and, at or above the resolved threshold, retire it via a handoff document instead of continuing it.
+Before re-engaging an existing worker via `SendMessage`, the LEAD SHALL probe that worker's recorded transcript with `rasen agent context` and, at or above the resolved threshold, retire it via a handoff document instead of continuing it.
 
 #### Scenario: Bloated worker retired via handoff
 - **WHEN** a worker's transcript probe reports `pct` at or above its resolved threshold
@@ -48,7 +48,7 @@ When a stage exhausts its strategy budget (relay reviews or review-loop rounds),
 - **AND** after the strategy budget is exhausted the stage SHALL be marked `escalated` and parked while independent work continues
 
 ### Requirement: LEAD session pre-flight probe
-The `/opsx:auto` entry SHALL probe the LEAD's own transcript (`openspec agent context --latest`) once before starting the pipeline and, when usage meets the session threshold, offer the user a choice — without blocking: (a) automatic session relay now (write the session handoff document, then launch a successor session per the session-relay protocol), (b) continue in the current session with auto-compact as the backstop, or (c) handle it manually. Below the threshold it proceeds silently.
+The `/rasen:auto` entry SHALL probe the LEAD's own transcript (`rasen agent context --latest`) once before starting the pipeline and, when usage meets the session threshold, offer the user a choice — without blocking: (a) automatic session relay now (write the session handoff document, then launch a successor session per the session-relay protocol), (b) continue in the current session with auto-compact as the backstop, or (c) handle it manually. Below the threshold it proceeds silently.
 
 #### Scenario: Entry probe above threshold
 - **WHEN** an auto run starts and the probe reports usage at or above the session threshold

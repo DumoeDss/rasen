@@ -49,13 +49,13 @@ When `context-from` is present and the referenced artifact is done, instruction-
 - **THEN** the output does not contain a `<structured-context>` section
 
 ### Requirement: JSON Output Includes Context-From Field
-The context-from field SHALL be included in `openspec instructions --json` output.
+The context-from field SHALL be included in `rasen instructions --json` output.
 
 #### Scenario: Context-from field present in JSON output
-- **WHEN** `openspec instructions --json` is run for an artifact with `context-from: "specs"`
+- **WHEN** `rasen instructions --json` is run for an artifact with `context-from: "specs"`
 - **THEN** the JSON output includes `"context-from": "specs"` in the artifact object
 
 #### Scenario: Context-from field absent in JSON output when not defined
-- **WHEN** `openspec instructions --json` is run for an artifact without a `context-from` field
+- **WHEN** `rasen instructions --json` is run for an artifact without a `context-from` field
 - **THEN** the JSON output does not include a `context-from` key for that artifact
 

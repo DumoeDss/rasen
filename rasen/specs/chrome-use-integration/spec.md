@@ -1,12 +1,12 @@
 # chrome-use-integration Specification
 
 ## Purpose
-Vendor the chrome-use CDP proxy into the package and register it as the `chrome-use` expert skill (replacing browse as the browser-driving expert), including the executable-sidecar install path that makes bundled `.mjs`/`.js` scripts functional after `openspec init`/`update`, and the proxy endpoints (`/snapshot`, `/perf`, `/viewport`, `/responsive`) that give parity with browse.
+Vendor the chrome-use CDP proxy into the package and register it as the `chrome-use` expert skill (replacing browse as the browser-driving expert), including the executable-sidecar install path that makes bundled `.mjs`/`.js` scripts functional after `rasen init`/`update`, and the proxy endpoints (`/snapshot`, `/perf`, `/viewport`, `/responsive`) that give parity with browse.
 
 ## Requirements
 ### Requirement: Executable Skill Sidecars Install With Their Skill
 
-The system SHALL install a skill's executable helper scripts (`.mjs` and `.js` files) alongside the skill, in addition to the `.md` and `.sh` sidecars already supported, so that a skill whose behavior depends on bundled scripts is functional after `openspec init`/`update`.
+The system SHALL install a skill's executable helper scripts (`.mjs` and `.js` files) alongside the skill, in addition to the `.md` and `.sh` sidecars already supported, so that a skill whose behavior depends on bundled scripts is functional after `rasen init`/`update`.
 
 #### Scenario: Executable script installs as a sidecar
 
@@ -29,22 +29,22 @@ The system SHALL include the chrome-use CDP proxy as vendored skill sidecars at 
 
 #### Scenario: Vendored proxy scripts exist in the package
 
-- **WHEN** the OpenSpec package is inspected
+- **WHEN** the Rasen package is inspected
 - **THEN** `skills/experts/chrome-use/scripts/` contains `cdp-proxy.mjs`, `check-deps.mjs`, and `match-site.mjs`
 
 #### Scenario: Vendored proxy installs with the chrome-use skill
 
-- **WHEN** a user runs `openspec init` or `openspec update`
-- **THEN** the chrome-use proxy scripts and `references/cdp-api.md` are copied into the installed `openspec-chrome-use` skill directory so `check-deps.mjs` can launch the proxy
+- **WHEN** a user runs `rasen init` or `rasen update`
+- **THEN** the chrome-use proxy scripts and `references/cdp-api.md` are copied into the installed `rasen-chrome-use` skill directory so `check-deps.mjs` can launch the proxy
 
 ### Requirement: chrome-use Is Registered as an Expert Skill
 
-The system SHALL register a `chrome-use` expert skill (installed as the `openspec-chrome-use` skill directory) that is always installed with the expert skill set, replacing browse as the browser-driving expert.
+The system SHALL register a `chrome-use` expert skill (installed as the `rasen-chrome-use` skill directory) that is always installed with the expert skill set, replacing browse as the browser-driving expert.
 
 #### Scenario: chrome-use skill is generated
 
 - **WHEN** the skill templates are generated
-- **THEN** a skill named for chrome-use is produced with directory `openspec-chrome-use` and workflow id `chrome-use`, and is included regardless of workflow filter (like other expert skills)
+- **THEN** a skill named for chrome-use is produced with directory `rasen-chrome-use` and workflow id `chrome-use`, and is included regardless of workflow filter (like other expert skills)
 
 #### Scenario: SETUP guides browser prerequisites
 

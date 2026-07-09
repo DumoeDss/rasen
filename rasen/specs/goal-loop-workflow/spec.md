@@ -129,7 +129,7 @@ The package SHALL ship three goal-loop pipelines, each homogeneous (one gate kin
 
 #### Scenario: Goal-loop pipelines are listed and valid
 
-- **WHEN** `openspec pipeline list --json` runs
+- **WHEN** `rasen pipeline list --json` runs
 - **THEN** it SHALL include `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`
 - **AND** each SHALL parse and pass all pipeline validators with a valid DAG
 

@@ -2,19 +2,19 @@
 
 ## Purpose
 
-This spec defines how OpenSpec collects anonymous usage telemetry to help improve the tool. It governs the `src/telemetry/` module, which sends minimal usage events to the maintainer's own Cloudflare Worker via a fire-and-forget HTTP `POST` (no PostHog, no third-party client), and handles privacy-preserving event design, user opt-out mechanisms, and first-run notice display. The spec ensures telemetry is minimal, transparent, and respects user privacy.
+This spec defines how Rasen collects anonymous usage telemetry to help improve the tool. It governs the `src/telemetry/` module, which sends minimal usage events to the maintainer's own Cloudflare Worker via a fire-and-forget HTTP `POST` (no PostHog, no third-party client), and handles privacy-preserving event design, user opt-out mechanisms, and first-run notice display. The spec ensures telemetry is minimal, transparent, and respects user privacy.
 
 ## Requirements
 
 ### Requirement: Command execution tracking
-The system SHALL send a usage event to the maintainer's telemetry backend when any CLI command executes, including the command name and OpenSpec version, plus optionally the operating system and Node.js version. No other fields are sent.
+The system SHALL send a usage event to the maintainer's telemetry backend when any CLI command executes, including the command name and Rasen version, plus optionally the operating system and Node.js version. No other fields are sent.
 
 #### Scenario: Standard command execution
-- **WHEN** a user runs any openspec command
+- **WHEN** a user runs any rasen command
 - **THEN** the system sends an event whose payload contains `command`, `version`, and the anonymous `distinctId`, and may include `os` and `node_version`
 
 #### Scenario: Subcommand execution
-- **WHEN** a user runs a nested command like `openspec change apply`
+- **WHEN** a user runs a nested command like `rasen change apply`
 - **THEN** the system sends an event with the full command path as `command` (e.g., `change:apply`)
 
 #### Scenario: Optional environment dimensions
@@ -25,7 +25,7 @@ The system SHALL send a usage event to the maintainer's telemetry backend when a
 The system SHALL NOT include command arguments, file paths, project names, spec content, error messages, or IP addresses in telemetry events. The only user identifier is a random anonymous UUID.
 
 #### Scenario: Command with arguments
-- **WHEN** a user runs `openspec init my-project --force`
+- **WHEN** a user runs `rasen init my-project --force`
 - **THEN** the telemetry event contains only `command: "init"`, `version: "<version>"`, the anonymous id, and optional os/node_version — without arguments, path, or project name
 
 #### Scenario: No IP address is sent or stored

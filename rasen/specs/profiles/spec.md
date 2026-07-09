@@ -49,7 +49,7 @@ The delivery setting SHALL control HOW workflows are installed (skills, commands
 The system SHALL provide an interactive picker for configuring profiles.
 
 #### Scenario: Interactive profile configuration
-- **WHEN** user runs `openspec config profile`
+- **WHEN** user runs `rasen config profile`
 - **THEN** the system SHALL display an interactive picker with:
   - Delivery selection: `skills`, `commands`, `both`
   - Workflow toggles for all available workflows
@@ -58,37 +58,37 @@ The system SHALL provide an interactive picker for configuring profiles.
 - **THEN** the system SHALL set profile to `custom` if selected workflows differ from core defaults
 - **THEN** the system SHALL set profile to `core` if selected workflows match core defaults exactly (propose, explore, apply, archive), regardless of delivery setting
 - **THEN** the system SHALL NOT modify any project files
-- **THEN** the system SHALL display: "Config updated. Run `openspec update` in your projects to apply."
+- **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
 
 #### Scenario: Core preset shortcut
-- **WHEN** user runs `openspec config profile core`
+- **WHEN** user runs `rasen config profile core`
 - **THEN** the system SHALL set profile to `core`
 - **THEN** the system SHALL set workflows to `['propose', 'explore', 'apply', 'archive']`
 - **THEN** the system SHALL NOT change the delivery setting (preserves user preference)
 - **THEN** the system SHALL NOT modify any project files
-- **THEN** the system SHALL display: "Config updated. Run `openspec update` in your projects to apply."
-- **THEN** the new profile takes effect on the next `openspec init` or `openspec update` run
+- **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
+- **THEN** the new profile takes effect on the next `rasen init` or `rasen update` run
 
 #### Scenario: Config profile run inside a project
-- **WHEN** user runs `openspec config profile` inside an OpenSpec project directory
+- **WHEN** user runs `rasen config profile` inside a Rasen project directory
 - **THEN** after updating global config, the system SHALL prompt: "Apply to this project now? (y/n)"
 - **WHEN** user confirms
-- **THEN** the system SHALL run `openspec update` automatically
-- **THEN** the system SHALL still display: "Run `openspec update` in your other projects to apply."
+- **THEN** the system SHALL run `rasen update` automatically
+- **THEN** the system SHALL still display: "Run `rasen update` in your other projects to apply."
 
 #### Scenario: Config profile - user declines apply
-- **WHEN** user runs `openspec config profile` inside an OpenSpec project directory
+- **WHEN** user runs `rasen config profile` inside a Rasen project directory
 - **AND** user declines the "Apply to this project now?" prompt
-- **THEN** the system SHALL display: "Config updated. Run `openspec update` in your projects to apply."
+- **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
 - **THEN** the system SHALL exit successfully without modifying project files
 
 #### Scenario: Config profile non-interactive
-- **WHEN** user runs `openspec config profile` non-interactively (e.g., in CI, no TTY)
-- **THEN** the system SHALL display an error: "Interactive mode required. Use `openspec config profile core` or set config via environment/flags."
+- **WHEN** user runs `rasen config profile` non-interactively (e.g., in CI, no TTY)
+- **THEN** the system SHALL display an error: "Interactive mode required. Use `rasen config profile core` or set config via environment/flags."
 - **THEN** the system SHALL exit with code 1
 
 ### Requirement: Profile settings stored in global config
-Profile and delivery settings SHALL be stored in the existing global config file (`~/.config/openspec/config.json`) alongside telemetry and feature flags.
+Profile and delivery settings SHALL be stored in the existing global config file (`~/.config/rasen/config.json`) alongside telemetry and feature flags.
 
 #### Scenario: Config schema
 - **WHEN** reading profile configuration
@@ -100,7 +100,7 @@ Profile and delivery settings SHALL be stored in the existing global config file
 - **AND** existing config fields (telemetry, featureFlags) SHALL be preserved
 
 #### Scenario: Config list displays profile settings
-- **WHEN** user runs `openspec config list`
+- **WHEN** user runs `rasen config list`
 - **THEN** the system SHALL display profile, delivery, and workflows settings
 - **AND** SHALL indicate which values are defaults vs explicitly set
 
@@ -108,18 +108,18 @@ Profile and delivery settings SHALL be stored in the existing global config file
 Config changes SHALL NOT automatically propagate to projects.
 
 #### Scenario: Config update does not modify projects
-- **WHEN** user updates config via `openspec config profile`
-- **THEN** the system SHALL only update global config (`~/.config/openspec/config.json`)
+- **WHEN** user updates config via `rasen config profile`
+- **THEN** the system SHALL only update global config (`~/.config/rasen/config.json`)
 - **THEN** the system SHALL NOT modify any project skill/command files
-- **THEN** existing projects retain their current workflow files until user runs `openspec update`
+- **THEN** existing projects retain their current workflow files until user runs `rasen update`
 
 ### Requirement: Config changes applied via update command
-The existing `openspec update` command SHALL apply the current global config to a project. See `specs/cli-update/spec.md` for detailed update behavior.
+The existing `rasen update` command SHALL apply the current global config to a project. See `specs/cli-update/spec.md` for detailed update behavior.
 
 #### Scenario: Config changes require explicit project sync
-- **WHEN** user updates profile or delivery via `openspec config profile`
+- **WHEN** user updates profile or delivery via `rasen config profile`
 - **THEN** the global config SHALL be updated immediately
-- **AND** project files SHALL remain unchanged until `openspec update` is run for that project
+- **AND** project files SHALL remain unchanged until `rasen update` is run for that project
 
 ### Requirement: Profile defaults
 The system SHALL use `core` as the default profile for new users, while preserving existing users' workflows via migration.

@@ -10,7 +10,7 @@ The system SHALL provide `hooks/safety-check.sh` that detects destructive comman
 
 #### Scenario: Script file location
 
-- **WHEN** the safety hook is distributed with OpenSpec
+- **WHEN** the safety hook is distributed with Rasen
 - **THEN** the script SHALL be located at `hooks/safety-check.sh`
 - **AND** the script SHALL be executable (chmod +x)
 
@@ -92,17 +92,17 @@ Exit code 0 SHALL indicate safe, exit code 2 SHALL indicate destructive pattern 
 
 ### Requirement: Init Instructions for Hook Configuration
 
-`openspec init` SHALL print instructions for configuring the safety hook.
+`rasen init` SHALL print instructions for configuring the safety hook.
 
 #### Scenario: Init displays hook configuration guidance
 
-- **WHEN** `openspec init` completes
+- **WHEN** `rasen init` completes
 - **THEN** the output SHALL include instructions for configuring the safety hook in Claude Code's `.claude/settings.json`
 - **AND** the instructions SHALL provide a copy-paste ready configuration snippet for the `PreToolUse` hook
 
 #### Scenario: Init does not auto-modify settings
 
-- **WHEN** `openspec init` runs
+- **WHEN** `rasen init` runs
 - **THEN** the system SHALL NOT automatically modify `.claude/settings.json`
 - **AND** SHALL only display instructions for the user to configure manually
 

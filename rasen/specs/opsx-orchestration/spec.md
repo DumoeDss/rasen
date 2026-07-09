@@ -17,7 +17,7 @@ The orchestration SHALL run as a single LEAD agent that spawns leaf worker subag
 #### Scenario: Workers invoke existing skills
 
 - **WHEN** the LEAD dispatches a stage
-- **THEN** the worker SHALL invoke the stage's existing OPSX skill rather than reimplementing the stage logic
+- **THEN** the worker SHALL invoke the stage's existing Rasen skill rather than reimplementing the stage logic
 
 ### Requirement: Capability Tiers Are Auto-Detected
 
@@ -59,7 +59,7 @@ The LEAD SHALL assign distinct workers by role so that a fix is always confirmed
 
 ### Requirement: Change Directory Blackboard and Run-State
 
-Stages SHALL hand off through the change directory (review material: proposal, design, tasks, delta specs) and the change's work directory (process ephemera: reports, run-state, handoff documents — the `change-work-dir` capability), and the LEAD SHALL maintain a run-state record; `SendMessage` SHALL be used only for warm continuation, never as the inter-stage state channel. The LEAD SHALL resolve BOTH locations as absolute paths from `openspec status --change <n> --json` — the `changeRoot` field for review material and the `workDir` field for ephemera — before writing any blackboard artifact or run-state, so that all paths taught by the workflow are interpreted relative to the selected OpenSpec root (including a `--store`-selected store root) and never relative to the current working directory. When the payload carries no `workDir`, or when a given ephemeron already exists in the change directory, the LEAD SHALL use the change directory for that file (the sticky-legacy fallback of the `change-work-dir` capability).
+Stages SHALL hand off through the change directory (review material: proposal, design, tasks, delta specs) and the change's work directory (process ephemera: reports, run-state, handoff documents — the `change-work-dir` capability), and the LEAD SHALL maintain a run-state record; `SendMessage` SHALL be used only for warm continuation, never as the inter-stage state channel. The LEAD SHALL resolve BOTH locations as absolute paths from `rasen status --change <n> --json` — the `changeRoot` field for review material and the `workDir` field for ephemera — before writing any blackboard artifact or run-state, so that all paths taught by the workflow are interpreted relative to the selected Rasen root (including a `--store`-selected store root) and never relative to the current working directory. When the payload carries no `workDir`, or when a given ephemeron already exists in the change directory, the LEAD SHALL use the change directory for that file (the sticky-legacy fallback of the `change-work-dir` capability).
 
 #### Scenario: Durable handoff
 
@@ -77,13 +77,13 @@ Stages SHALL hand off through the change directory (review material: proposal, d
 
 - **WHEN** the LEAD starts recording run-state for a change with no pre-existing `auto-run.json` and the status payload reports a `workDir`
 - **THEN** the LEAD SHALL write `auto-run.json` into that work directory
-- **AND** `openspec pipeline resume <change>` resolved to the same root SHALL read the run-state (`hasRunState: true`)
+- **AND** `rasen pipeline resume <change>` resolved to the same root SHALL read the run-state (`hasRunState: true`)
 
 #### Scenario: Run-state written to the selected root
 
-- **WHEN** the change lives in a store-selected or non-cwd OpenSpec root
-- **THEN** the LEAD SHALL write `auto-run.json` into the absolute location resolved from `openspec status --change <n> --json` (the work directory, or the change directory under the sticky-legacy fallback)
-- **AND** `openspec pipeline resume <change>` resolved to that same root SHALL read the run-state (`hasRunState: true`)
+- **WHEN** the change lives in a store-selected or non-cwd Rasen root
+- **THEN** the LEAD SHALL write `auto-run.json` into the absolute location resolved from `rasen status --change <n> --json` (the work directory, or the change directory under the sticky-legacy fallback)
+- **AND** `rasen pipeline resume <change>` resolved to that same root SHALL read the run-state (`hasRunState: true`)
 
 ### Requirement: Gate, Loop, Parallel, and Condition Interpretation
 
@@ -123,7 +123,7 @@ Loop stages SHALL be bounded by a max-rounds cap and SHALL escalate to the human
 
 ### Requirement: 拆分产出一份由 LEAD 自审的方案
 
-当 LEAD 执行一个 `decompose` 阶段时，它 SHALL 产出一份**拆分方案**，由一组子 change（每个都是可独立交付、可 review 的切片）和一个**依赖 DAG**（声明哪些子 change 必须先落地）组成。LEAD SHALL 在扇出之前自审这份方案（切片内聚性、任何并行同批的独立性依据，以及 DAG 的正确性），并且 MAY 在无人类确认下继续。仅当它无法产出一份安全方案时，它 SHALL 升级给人类。每个子 change SHALL 用 `openspec new change <child-id>` 创建。
+当 LEAD 执行一个 `decompose` 阶段时，它 SHALL 产出一份**拆分方案**，由一组子 change（每个都是可独立交付、可 review 的切片）和一个**依赖 DAG**（声明哪些子 change 必须先落地）组成。LEAD SHALL 在扇出之前自审这份方案（切片内聚性、任何并行同批的独立性依据，以及 DAG 的正确性），并且 MAY 在无人类确认下继续。仅当它无法产出一份安全方案时，它 SHALL 升级给人类。每个子 change SHALL 用 `rasen new change <child-id>` 创建。
 
 #### Scenario: 在扇出前自审方案
 
@@ -206,7 +206,7 @@ LEAD SHALL 在父 change 目录维护一份**组合运行状态**记录（其路
 
 #### Scenario: 恢复计算下一个可运行子 change
 
-- **WHEN** `openspec pipeline resume <parent>` 针对一个已拆分的父 change 运行
+- **WHEN** `rasen pipeline resume <parent>` 针对一个已拆分的父 change 运行
 - **THEN** 它 SHALL 读取组合运行状态加各子状态，并报告其前置已完成的下一个（些）子 change
 
 #### Scenario: 部分失败时停止受影响的链并升级

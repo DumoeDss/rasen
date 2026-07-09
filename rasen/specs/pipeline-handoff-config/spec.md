@@ -9,8 +9,8 @@ Pipeline definitions SHALL accept an optional `handoff` block at pipeline level 
 
 #### Scenario: Valid handoff config parses
 - **WHEN** a pipeline.yaml declares `handoff: { threshold: 0.5, roles: { reviewer: 0.65 }, maxRelays: 3, stallLimit: 2 }` and a stage declares `handoff: { threshold: 0.7, maxRelays: 5 }`
-- **THEN** `openspec validate <name> --type pipeline` SHALL pass
-- **AND** `openspec pipeline show <name> --json` SHALL expose the resolved handoff config
+- **THEN** `rasen validate <name> --type pipeline` SHALL pass
+- **AND** `rasen pipeline show <name> --json` SHALL expose the resolved handoff config
 
 #### Scenario: Invalid handoff config rejected
 - **WHEN** a pipeline.yaml declares a `threshold` outside (0, 1] or a non-positive `maxRelays`/`stallLimit`
@@ -29,15 +29,15 @@ The effective handoff config for a stage SHALL resolve as: stage-level `handoff`
 - **THEN** the resolved config SHALL be the built-in defaults
 
 ### Requirement: Run-state handoff records
-The run-state reader SHALL accept optional `sessionHandoff` (top level, including an optional generation number `n`) and per-stage `handoffs[]` records, and `openspec pipeline resume` SHALL report them.
+The run-state reader SHALL accept optional `sessionHandoff` (top level, including an optional generation number `n`) and per-stage `handoffs[]` records, and `rasen pipeline resume` SHALL report them.
 
 #### Scenario: Resume surfaces handoff pointers
 - **WHEN** `auto-run.json` contains a `sessionHandoff` and a stage with `handoffs[]`
-- **THEN** `openspec pipeline resume <change> --json` SHALL include the session handoff record and, per stage, the latest handoff document path
+- **THEN** `rasen pipeline resume <change> --json` SHALL include the session handoff record and, per stage, the latest handoff document path
 - **AND** run-states without these fields SHALL parse exactly as before
 
 #### Scenario: Session handoff generation surfaces on resume
 - **WHEN** `auto-run.json` contains a `sessionHandoff` with `n`
-- **THEN** `openspec pipeline resume <change> --json` SHALL include `n` in the session handoff record
+- **THEN** `rasen pipeline resume <change> --json` SHALL include `n` in the session handoff record
 - **AND** a `sessionHandoff` without `n` SHALL parse as before and be treated as generation 1
 

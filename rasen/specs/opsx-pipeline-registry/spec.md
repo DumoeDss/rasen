@@ -1,7 +1,7 @@
 # opsx-pipeline-registry Specification
 
 ## Purpose
-Define the data-driven pipeline registry — pipeline definitions, dual-root extensible resolution (project / user / package), the `openspec pipeline` CLI surface, pipeline validation, and the built-in pipelines.
+Define the data-driven pipeline registry — pipeline definitions, dual-root extensible resolution (project / user / package), the `rasen pipeline` CLI surface, pipeline validation, and the built-in pipelines.
 ## Requirements
 ### Requirement: Data-Driven Pipeline Definitions
 
@@ -22,12 +22,12 @@ The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.ya
 
 ### Requirement: Dual-Root Extensible Resolution
 
-Pipelines SHALL resolve from package built-ins, a user directory, and a project directory using the same precedence OpenSpec uses for schemas (project ⊃ user ⊃ package).
+Pipelines SHALL resolve from package built-ins, a user directory, and a project directory using the same precedence Rasen uses for schemas (project ⊃ user ⊃ package).
 
 #### Scenario: Project overrides user overrides package
 
 - **WHEN** a pipeline `<name>` exists in more than one root
-- **THEN** the project copy (`<projectRoot>/openspec/pipelines/<name>/pipeline.yaml`) SHALL win over the user copy (`${XDG_DATA_HOME}/openspec/pipelines/...`), which SHALL win over the package built-in
+- **THEN** the project copy (`<projectRoot>/rasen/pipelines/<name>/pipeline.yaml`) SHALL win over the user copy (`${XDG_DATA_HOME}/rasen/pipelines/...`), which SHALL win over the package built-in
 - **AND** listing SHALL report each resolved pipeline's `source` (`project` | `user` | `package`)
 
 #### Scenario: Adding a task type requires only data
@@ -37,37 +37,37 @@ Pipelines SHALL resolve from package built-ins, a user directory, and a project 
 
 ### Requirement: Pipeline CLI Surface
 
-The system SHALL provide an `openspec pipeline` command group with `list`, `show <name>`, `agents <name>`, `classify "<task>"`, and `resume <change>` subcommands, each supporting `--json`. Every subcommand SHALL resolve its OpenSpec root through the shared root-selection layer used by `openspec validate` — the same nearest-root walk, implicit-root fallback, and `--store <id>` selector — so a given directory or store resolves to the identical root across `pipeline` and `validate`. No pipeline subcommand SHALL resolve its root from the current working directory alone. `resume` SHALL locate run-state per the `change-work-dir` capability: the change's external work directory is checked first, falling back to the change directory, and the JSON output SHALL report the directory the run-state (or portfolio state) was actually read from (`runStateDir`) so a resuming orchestrator writes updates where it read them. Locating run-state SHALL NOT write to the repository or the registry.
+The system SHALL provide a `rasen pipeline` command group with `list`, `show <name>`, `agents <name>`, `classify "<task>"`, and `resume <change>` subcommands, each supporting `--json`. Every subcommand SHALL resolve its Rasen root through the shared root-selection layer used by `rasen validate` — the same nearest-root walk, implicit-root fallback, and `--store <id>` selector — so a given directory or store resolves to the identical root across `pipeline` and `validate`. No pipeline subcommand SHALL resolve its root from the current working directory alone. `resume` SHALL locate run-state per the `change-work-dir` capability: the change's external work directory is checked first, falling back to the change directory, and the JSON output SHALL report the directory the run-state (or portfolio state) was actually read from (`runStateDir`) so a resuming orchestrator writes updates where it read them. Locating run-state SHALL NOT write to the repository or the registry.
 
 #### Scenario: List and show
 
-- **WHEN** `openspec pipeline list --json` runs
+- **WHEN** `rasen pipeline list --json` runs
 - **THEN** it SHALL print the resolved pipelines with name, description, and source
-- **WHEN** `openspec pipeline show <name> --json` runs
+- **WHEN** `rasen pipeline show <name> --json` runs
 - **THEN** it SHALL print the pipeline's full stage DAG including all stage metadata
 
 #### Scenario: Classify
 
-- **WHEN** `openspec pipeline classify "<task description>" --json` runs
+- **WHEN** `rasen pipeline classify "<task description>" --json` runs
 - **THEN** it SHALL return a suggested pipeline name plus the indicators that drove the suggestion
 - **AND** the suggestion SHALL be overridable by the caller
 
 #### Scenario: Resume
 
-- **WHEN** `openspec pipeline resume <change> --json` runs
+- **WHEN** `rasen pipeline resume <change> --json` runs
 - **THEN** it SHALL return the next incomplete stage and the remaining stages, derived from the change's artifacts and run-state
 - **AND** the run-state SHALL be read from the change's work directory when present there, falling back to the change directory in the resolved root — never from the current working directory
 - **AND** when run-state is found, the JSON SHALL include `runStateDir` naming the directory it was read from
 
 #### Scenario: Resume reads legacy run-state
 
-- **WHEN** `openspec pipeline resume <change> --json` runs for a change whose `auto-run.json` predates the work directory and lives in the change directory
+- **WHEN** `rasen pipeline resume <change> --json` runs for a change whose `auto-run.json` predates the work directory and lives in the change directory
 - **THEN** it SHALL read that run-state (`hasRunState: true`) and report the change directory as `runStateDir`
 
 #### Scenario: Root resolution matches validate
 
-- **WHEN** `openspec pipeline list --json` and `openspec validate --pipelines --json` are run from the same subdirectory of a project, or with the same `--store <id>`
-- **THEN** both SHALL resolve to the same OpenSpec root and report the same set of pipelines
+- **WHEN** `rasen pipeline list --json` and `rasen validate --pipelines --json` are run from the same subdirectory of a project, or with the same `--store <id>`
+- **THEN** both SHALL resolve to the same Rasen root and report the same set of pipelines
 
 #### Scenario: Store selection
 
@@ -77,7 +77,7 @@ The system SHALL provide an `openspec pipeline` command group with `list`, `show
 
 ### Requirement: Pipeline Validation
 
-`openspec validate` SHALL validate pipeline definitions for structural integrity.
+`rasen validate` SHALL validate pipeline definitions for structural integrity.
 
 #### Scenario: Structural rules enforced
 
@@ -119,7 +119,7 @@ The package SHALL ship built-in pipelines for the initial task types and the goa
 
 ### Requirement: Decompose 阶段校验
 
-流水线校验 SHALL 强制每条流水线**至多包含一个** `decompose` 阶段，且当存在时，它 SHALL 是 build order 中的**第一个**阶段。违反者 SHALL 使 `openspec validate --type pipeline` 以确定性错误失败。
+流水线校验 SHALL 强制每条流水线**至多包含一个** `decompose` 阶段，且当存在时，它 SHALL 是 build order 中的**第一个**阶段。违反者 SHALL 使 `rasen validate --type pipeline` 以确定性错误失败。
 
 #### Scenario: 多于一个 decompose 阶段
 
@@ -153,7 +153,7 @@ decompose 阶段的 `childPipeline` SHALL 通过显式的注册表查找（proje
 
 #### Scenario: show 呈现 decompose 阶段
 
-- **WHEN** 对一条首阶段为 `kind: decompose` 的流水线运行 `openspec pipeline show <name> --json`
+- **WHEN** 对一条首阶段为 `kind: decompose` 的流水线运行 `rasen pipeline show <name> --json`
 - **THEN** 输出 SHALL 包含该阶段，并带上其 `kind` 与解析后的 `childPipeline`
 
 ### Requirement: Stage Loop Is a Discriminated Union
@@ -188,20 +188,20 @@ The `loop` field of a stage SHALL be a Zod discriminated union on a `kind` discr
 
 ### Requirement: Goal-Loop Gate Metadata Rendered in Pipeline Show
 
-The human-readable `openspec pipeline show <name>` output SHALL render a stage's loop metadata for both loop kinds. For a `review-cycle` loop the meta line SHALL remain `loop=review-cycle(max <N>)`. For a `goal` loop the meta line SHALL name the gate kind and both bounds: `loop=goal[<gate-kind>](max <N>, stall <L>)`, where `<gate-kind>` is `measure` or `evaluate`, `<N>` is the goal variant's `maxRounds`, and `<L>` is its `loopStallLimit`. This generalizes the review-cycle-only label that preceded the goal-loop addition.
+The human-readable `rasen pipeline show <name>` output SHALL render a stage's loop metadata for both loop kinds. For a `review-cycle` loop the meta line SHALL remain `loop=review-cycle(max <N>)`. For a `goal` loop the meta line SHALL name the gate kind and both bounds: `loop=goal[<gate-kind>](max <N>, stall <L>)`, where `<gate-kind>` is `measure` or `evaluate`, `<N>` is the goal variant's `maxRounds`, and `<L>` is its `loopStallLimit`. This generalizes the review-cycle-only label that preceded the goal-loop addition.
 
 #### Scenario: Measure gate rendered in show
 
-- **WHEN** `openspec pipeline show goal-loop-measure` renders the `iterate` stage
+- **WHEN** `rasen pipeline show goal-loop-measure` renders the `iterate` stage
 - **THEN** the stage meta SHALL include `loop=goal[measure](max <maxRounds>, stall <loopStallLimit>)`
 
 #### Scenario: Evaluate gate rendered in show
 
-- **WHEN** `openspec pipeline show goal-loop-evaluate` (or `goal-loop-research`) renders the `iterate` stage
+- **WHEN** `rasen pipeline show goal-loop-evaluate` (or `goal-loop-research`) renders the `iterate` stage
 - **THEN** the stage meta SHALL include `loop=goal[evaluate](max <maxRounds>, stall <loopStallLimit>)`
 
 #### Scenario: Review-cycle label unchanged
 
-- **WHEN** `openspec pipeline show <pipeline>` renders a stage with a `review-cycle` loop
+- **WHEN** `rasen pipeline show <pipeline>` renders a stage with a `review-cycle` loop
 - **THEN** the stage meta SHALL include `loop=review-cycle(max <N>)` and SHALL NOT include the goal-loop bracket format
 

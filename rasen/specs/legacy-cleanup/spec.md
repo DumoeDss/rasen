@@ -9,7 +9,7 @@ The system SHALL detect legacy OpenSpec artifacts from previous init versions.
 
 #### Scenario: Detecting legacy config files
 
-- **WHEN** running `openspec init` on an existing project
+- **WHEN** running `rasen init` on an existing project
 - **THEN** the system SHALL check for config files with OpenSpec markers:
   - `CLAUDE.md`
   - `.cursorrules`
@@ -24,7 +24,7 @@ The system SHALL detect legacy OpenSpec artifacts from previous init versions.
 
 #### Scenario: Detecting legacy slash command directories
 
-- **WHEN** running `openspec init` on an existing project
+- **WHEN** running `rasen init` on an existing project
 - **THEN** the system SHALL check for old slash command directories:
   - `.claude/commands/openspec/`
   - `.cursor/commands/openspec/` (note: old format used `openspec-*.md` in commands root)
@@ -33,7 +33,7 @@ The system SHALL detect legacy OpenSpec artifacts from previous init versions.
 
 #### Scenario: Detecting legacy OpenSpec structure files
 
-- **WHEN** running `openspec init` on an existing project
+- **WHEN** running `rasen init` on an existing project
 - **THEN** the system SHALL check for:
   - `openspec/AGENTS.md`
   - `openspec/project.md` (for migration messaging only, not deleted)
@@ -130,7 +130,7 @@ The system SHALL preserve project.md and display a migration hint instead of del
 - **GIVEN** project.md may contain user-written project documentation
 - **AND** config.yaml's context field serves the same purpose (auto-injected into artifacts)
 - **WHEN** displaying the migration hint
-- **THEN** users can migrate manually or use `/opsx:explore` to get AI assistance
+- **THEN** users can migrate manually or use `/rasen:explore` to get AI assistance
 
 ### Requirement: Cleanup reporting
 
@@ -143,7 +143,7 @@ The system SHALL report what was cleaned up.
   ```
   Cleaned up legacy files:
     ✓ Removed OpenSpec markers from CLAUDE.md
-    ✓ Removed .claude/commands/openspec/ (replaced by /opsx:*)
+    ✓ Removed .claude/commands/openspec/ (replaced by /rasen:*)
     ✓ Removed openspec/AGENTS.md (no longer needed)
   ```
 - **AND IF** `openspec/project.md` exists
@@ -162,11 +162,11 @@ The system SHALL report what was cleaned up.
 
 ### Requirement: Retired expert skill directories are pruned on init and update
 
-`openspec init` and `openspec update` SHALL remove installed skill directories left orphaned by the expert-skill rebrand — those whose directory name begins with the retired `openspec-gstack-` prefix — from each configured AI tool's skills directory (e.g. `.claude/skills/`). The prune SHALL be scoped to exactly the `openspec-gstack-` prefix so it cannot remove current `openspec-*` skills or any unrelated directory, and SHALL be idempotent (a no-op when no such directory exists).
+`rasen init` and `rasen update` SHALL remove installed skill directories left orphaned by the expert-skill rebrand — those whose directory name begins with the retired `openspec-gstack-` prefix — from each configured AI tool's skills directory (e.g. `.claude/skills/`). The prune SHALL be scoped to exactly the `openspec-gstack-` prefix so it cannot remove current `openspec-*` skills or any unrelated directory, and SHALL be idempotent (a no-op when no such directory exists).
 
 #### Scenario: Renamed-skill orphan removed on update
 
-- **WHEN** `openspec update` runs in a project whose skills directory still contains an `openspec-gstack-review/` directory from a prior install
+- **WHEN** `rasen update` runs in a project whose skills directory still contains an `openspec-gstack-review/` directory from a prior install
 - **THEN** the `openspec-gstack-review/` directory SHALL be removed
 - **AND** the current `openspec-review/` skill directory SHALL be written and left intact
 
@@ -178,6 +178,6 @@ The system SHALL report what was cleaned up.
 
 #### Scenario: No orphans is a no-op
 
-- **WHEN** `openspec init` or `openspec update` runs and no `openspec-gstack-*` directory exists
+- **WHEN** `rasen init` or `rasen update` runs and no `openspec-gstack-*` directory exists
 - **THEN** the prune SHALL complete without error and remove nothing
 

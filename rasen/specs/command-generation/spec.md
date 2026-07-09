@@ -1,7 +1,7 @@
 # command-generation Specification
 
 ## Purpose
-Define tool-agnostic command content and adapter contracts for generating tool-specific OpenSpec command files.
+Define tool-agnostic command content and adapter contracts for generating tool-specific Rasen command files.
 ## Requirements
 ### Requirement: CommandContent interface
 
@@ -12,9 +12,9 @@ The system SHALL define a tool-agnostic `CommandContent` interface for command d
 - **WHEN** defining a command to generate
 - **THEN** `CommandContent` SHALL include:
   - `id`: string identifier (e.g., 'explore', 'apply')
-  - `name`: human-readable name (e.g., 'OpenSpec Explore')
+  - `name`: human-readable name (e.g., 'Rasen Explore')
   - `description`: brief description of command purpose
-  - `category`: grouping category (e.g., 'OpenSpec')
+  - `category`: grouping category (e.g., 'Rasen')
   - `tags`: array of tag strings
   - `body`: the command instruction content
 
@@ -84,7 +84,7 @@ The system SHALL provide a `generateCommand` function that combines content with
 
 #### Scenario: Generate multiple commands
 
-- **WHEN** generating all opsx commands for a tool
+- **WHEN** generating all rasen commands for a tool
 - **THEN** the system SHALL iterate over command contents and generate each using the tool's adapter
 
 ### Requirement: CommandAdapterRegistry
@@ -129,13 +129,13 @@ The legacy cleanup module SHALL detect and remove old OpenCode command files fro
 
 #### Scenario: Clean up old OpenCode command files on init
 
-- **WHEN** a user runs `openspec init` in a project with old `.opencode/command/` artifacts
+- **WHEN** a user runs `rasen init` in a project with old `.opencode/command/` artifacts
 - **THEN** the system SHALL remove the old files
 - **AND** generate new command files at `.opencode/commands/`
 
 #### Scenario: Auto-cleanup legacy artifacts in non-interactive mode
 
-- **WHEN** a user runs `openspec init` in non-interactive mode (e.g., CI) and legacy artifacts are detected
+- **WHEN** a user runs `rasen init` in non-interactive mode (e.g., CI) and legacy artifacts are detected
 - **THEN** the system SHALL auto-cleanup legacy artifacts without requiring `--force`
 - **AND** legacy slash command files (100% OpenSpec-managed) SHALL be removed
 - **AND** config file cleanup SHALL only remove OpenSpec markers (never delete user files)

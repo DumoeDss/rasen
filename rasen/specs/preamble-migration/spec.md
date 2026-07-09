@@ -1,9 +1,9 @@
 # preamble-migration Specification
 
 ## Purpose
-Replace the gstack preamble with a minimal OpenSpec preamble and update preamble composition accordingly.
+Replace the gstack preamble with a minimal Rasen preamble and update preamble composition accordingly.
 ## Requirements
-### Requirement: Minimal OpenSpec preamble replaces gstack preamble
+### Requirement: Minimal Rasen preamble replaces gstack preamble
 The `generatePreambleBash` function in `gen-skill-docs.ts` SHALL generate a minimal preamble that only detects the current git branch. It SHALL NOT call any gstack binaries, create session files, or read external config.
 
 #### Scenario: Preamble output contains only branch detection

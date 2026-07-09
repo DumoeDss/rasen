@@ -1,15 +1,15 @@
 # workflow-handoff-command Specification
 
 ## Purpose
-Defines the opt-in `handoff` workflow — skill `openspec-handoff` and slash command `/opsx:handoff`, generated per delivery mode and covered by drift detection like `review-cycle` — for session-level context handoff. Specifies the handoff document instructions the workflow produces (decisions, eliminated hypotheses, and the next action).
+Defines the opt-in `handoff` workflow — skill `rasen-handoff` and slash command `/rasen:handoff`, generated per delivery mode and covered by drift detection like `review-cycle` — for session-level context handoff. Specifies the handoff document instructions the workflow produces (decisions, eliminated hypotheses, and the next action).
 
 ## Requirements
 ### Requirement: Handoff workflow generation
-The system SHALL provide a `handoff` workflow (skill `openspec-handoff`, slash command `/opsx:handoff`) available via ALL_WORKFLOWS (opt-in, like `review-cycle`), generated per the configured delivery mode.
+The system SHALL provide a `handoff` workflow (skill `rasen-handoff`, slash command `/rasen:handoff`) available via ALL_WORKFLOWS (opt-in, like `review-cycle`), generated per the configured delivery mode.
 
 #### Scenario: Opt-in generation
-- **WHEN** a custom profile includes `handoff` and `openspec init`/`update` runs with delivery `both`
-- **THEN** `.claude/skills/openspec-handoff/SKILL.md` and `.claude/commands/opsx/handoff.md` SHALL be generated
+- **WHEN** a custom profile includes `handoff` and `rasen init`/`update` runs with delivery `both`
+- **THEN** `.claude/skills/rasen-handoff/SKILL.md` and `.claude/commands/rasen/handoff.md` SHALL be generated
 - **AND** deselecting `handoff` SHALL remove them on the next sync (drift detection covers both artifacts)
 
 #### Scenario: Not in core profile
@@ -20,9 +20,9 @@ The system SHALL provide a `handoff` workflow (skill `openspec-handoff`, slash c
 The handoff skill SHALL instruct the agent to write a handoff document to `handoff/<role>-<n>.md` inside the change's work directory (the `workDir` reported by the CLI per the `change-work-dir` capability, with the change directory as the sticky-legacy fallback) covering: original intent, pipeline position, done/remaining (referencing tasks.md), key decisions with rationale, dead ends/gotchas, eliminated hypotheses with evidence (mandatory for fixer/debugger roles), working set, and the next concrete action — and, for session-level use, to record the `sessionHandoff` pointer (including its generation number) in run-state. After the session-level document is written, the skill SHALL offer to launch a successor session per the session-relay protocol, falling back to manual resume instructions when the user declines or the relay cap is reached.
 
 #### Scenario: Session-level handoff
-- **WHEN** a user invokes `/opsx:handoff` in a session driving a change
+- **WHEN** a user invokes `/rasen:handoff` in a session driving a change
 - **THEN** the skill SHALL produce `handoff/lead-<n>.md` in the work directory (or the legacy location per the fallback) with the template sections and update `auto-run.json`'s `sessionHandoff` including the generation number
-- **AND** SHALL tell the user how to resume in a fresh session (`openspec pipeline resume` / `/opsx:auto`)
+- **AND** SHALL tell the user how to resume in a fresh session (`rasen pipeline resume` / `/rasen:auto`)
 
 #### Scenario: Handoff numbering scans the resolved location
 - **WHEN** the skill computes `<n>` for a new handoff document

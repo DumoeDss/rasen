@@ -48,13 +48,13 @@ Schema validation SHALL accept schemas with and without `enhance` fields.
 - **THEN** validation succeeds without errors
 
 ### Requirement: JSON Output Includes Enhance Field
-The enhance field SHALL be included in `openspec instructions --json` output.
+The enhance field SHALL be included in `rasen instructions --json` output.
 
 #### Scenario: Enhance field present in JSON output
-- **WHEN** `openspec instructions --json` is run for an artifact with `enhance: "review"`
+- **WHEN** `rasen instructions --json` is run for an artifact with `enhance: "review"`
 - **THEN** the JSON output includes `"enhance": "review"` in the artifact object
 
 #### Scenario: Enhance field absent in JSON output when not defined
-- **WHEN** `openspec instructions --json` is run for an artifact without an `enhance` field
+- **WHEN** `rasen instructions --json` is run for an artifact without an `enhance` field
 - **THEN** the JSON output does not include an `enhance` key for that artifact
 

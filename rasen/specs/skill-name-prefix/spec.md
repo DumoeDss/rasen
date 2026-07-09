@@ -1,7 +1,7 @@
 # skill-name-prefix Specification
 
 ## Purpose
-Standardize expert skill naming: `openspec:` skill names and `openspec-` dirNames, with the metadata author field updated.
+Standardize expert skill naming: `rasen:` skill names and `rasen-` dirNames, with the metadata author field updated.
 ## Requirements
 ### Requirement: Metadata author field updated
 
@@ -12,7 +12,7 @@ All expert skill templates SHALL use `metadata.author: 'rasen'`.
 - **WHEN** `rasen init` generates an expert skill SKILL.md
 - **THEN** the YAML frontmatter SHALL contain `author: rasen`
 
-### Requirement: Expert skill names use openspec: prefix
+### Requirement: Expert skill names use rasen: prefix
 
 All expert skill templates SHALL have their `name` field prefixed with `rasen:`. The `name` field in the returned `SkillTemplate` object determines the skill's slash command name in Claude Code and the identifier that `pipelines/*.yaml` stages reference.
 
@@ -40,7 +40,7 @@ Representative mappings (the rule applies to every registered expert skill):
 - **THEN** it SHALL use the `rasen:<base-name>` form (e.g., `skill: rasen:review`)
 - **AND** no stage SHALL reference an `openspec:<base-name>` or `gstack:<base-name>` name
 
-### Requirement: Expert skill dirNames use openspec- prefix
+### Requirement: Expert skill dirNames use rasen- prefix
 
 All expert skill registrations in `getSkillTemplates()` SHALL use `rasen-<base-name>` as the `dirName` value. Workflow skill directories SHALL likewise use the `rasen-` prefix, and names that previously carried a double brand segment SHALL collapse to a single one (e.g., `openspec-opsx-ship` → `rasen-ship`, not `rasen-opsx-ship`).
 

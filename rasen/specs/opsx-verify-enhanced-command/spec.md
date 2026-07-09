@@ -1,7 +1,7 @@
 # opsx-verify-enhanced-command Specification
 
 ## Purpose
-Provide the enhanced `/opsx:verify` command with auto-scaling verification depth (full / standard / light pipelines) and a verification report.
+Provide the enhanced `/rasen:verify` command with auto-scaling verification depth (full / standard / light pipelines) and a verification report.
 
 ## Requirements
 ### Requirement: Verify-Enhanced Skill and Command Templates
@@ -17,9 +17,9 @@ The system SHALL provide a SkillTemplate and CommandTemplate for verify-enhanced
 
 #### Scenario: Coexistence with existing verify
 
-- **WHEN** `openspec init` generates skills
-- **THEN** the existing `openspec-verify-change` skill SHALL remain unchanged
-- **AND** the new `openspec-verify-enhanced` skill SHALL be generated alongside it
+- **WHEN** `rasen init` generates skills
+- **THEN** the existing `rasen-verify-change` skill SHALL remain unchanged
+- **AND** the new `rasen-verify-enhanced` skill SHALL be generated alongside it
 - **AND** users SHALL choose which verify command to use in their workflow
 
 ### Requirement: Auto-Scaling Verification Depth

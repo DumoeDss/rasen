@@ -13,8 +13,8 @@ The `setup-browser-cookies` expert skill SHALL be fully removed. Specifically, b
 - the import and the `getSkillTemplates()` registry entry (`dirName: 'openspec-gstack-setup-browser-cookies'`) in `src/core/shared/skill-generation.ts` SHALL be removed
 - the `setup-browser-cookies/SKILL.md` entry in `scripts/skill-check.ts` SHALL be removed
 
-#### Scenario: openspec init does not generate setup-browser-cookies
-- **WHEN** `openspec init` is run
+#### Scenario: rasen init does not generate setup-browser-cookies
+- **WHEN** `rasen init` is run
 - **THEN** no `openspec-gstack-setup-browser-cookies/` directory SHALL be created under the skills directory
 
 #### Scenario: Build succeeds without setup-browser-cookies
