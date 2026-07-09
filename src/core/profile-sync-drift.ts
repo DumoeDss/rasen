@@ -119,56 +119,25 @@ export function hasToolProfileOrDeliveryDrift(
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
   const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
   const adapter = CommandAdapterRegistry.get(toolId);
-  // For *-first modes, only the preferred mechanism is expected for workflows
-  const shouldGenerateSkills = delivery !== 'commands' && delivery !== 'commands-first';
-  const shouldGenerateCommands = delivery !== 'skills' && delivery !== 'skills-first';
+  // Skills are always installed; only commands are gated on delivery.
+  const shouldGenerateCommands = delivery === 'both';
 
-  if (shouldGenerateSkills) {
-    for (const workflow of knownDesiredWorkflows) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
-      if (!fs.existsSync(skillFile)) {
-        return true;
-      }
+  // Skills are forward-required for every selected workflow regardless of delivery.
+  for (const workflow of knownDesiredWorkflows) {
+    const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
+    if (!fs.existsSync(skillFile)) {
+      return true;
     }
+  }
 
-    // Deselecting workflows in a profile should trigger sync.
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredWorkflowSet.has(workflow)) continue;
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      const skillDir = path.join(skillsDir, dirName);
-      if (fs.existsSync(skillDir)) {
-        return true;
-      }
-    }
-  } else {
-    // Plain 'commands' means no skill dir should exist at all. 'commands-first'
-    // is different: skill-only workflows (no command counterpart, e.g. the
-    // goal-loop's stage skills) have no command to replace them, so their
-    // skill dir is deliberately spared and remains their only delivery
-    // vehicle — forward-require it when desired, flag it when deselected.
-    // Workflows with a command counterpart still must have no skill dir under
-    // either mode (the command replaces them).
-    const isCommandsFirst = delivery === 'commands-first';
-    for (const workflow of ALL_WORKFLOWS) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      const skillDir = path.join(skillsDir, dirName);
-      const isSkillOnly = isCommandsFirst && !(COMMAND_IDS as readonly string[]).includes(workflow);
-
-      if (isSkillOnly) {
-        if (desiredWorkflowSet.has(workflow)) {
-          if (!fs.existsSync(path.join(skillDir, 'SKILL.md'))) {
-            return true;
-          }
-        } else if (fs.existsSync(skillDir)) {
-          return true;
-        }
-        continue;
-      }
-
-      if (fs.existsSync(skillDir)) {
-        return true;
-      }
+  // Deselecting workflows in a profile should trigger sync.
+  for (const workflow of ALL_WORKFLOWS) {
+    if (desiredWorkflowSet.has(workflow)) continue;
+    const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    const skillDir = path.join(skillsDir, dirName);
+    if (fs.existsSync(skillDir)) {
+      return true;
     }
   }
 
@@ -286,8 +255,8 @@ export function hasProjectConfigDrift(
   }
 
   const desiredSet = new Set(toKnownWorkflows(desiredWorkflows));
-  const includeSkills = delivery !== 'commands' && delivery !== 'commands-first';
-  const includeCommands = delivery !== 'skills' && delivery !== 'skills-first';
+  const includeSkills = true;
+  const includeCommands = delivery === 'both';
 
   for (const toolId of configuredTools) {
     const installed = getInstalledWorkflowsForTool(projectPath, toolId, { includeSkills, includeCommands });

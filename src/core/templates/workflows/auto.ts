@@ -25,9 +25,15 @@ Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
 Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now — write the session handoff document and launch a successor session per the playbook's Step H.7; (b) continue this session (auto-compact remains the backstop); (c) handle it manually via /rasen:handoff. Proceed on the user's say-so; below the threshold, proceed silently. Declining leaves behavior exactly as before. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
 
+## 0.5. Resolve and record the gate policy (once, before dispatching any stage)
+
+Resolve the effective **gate policy** with precedence **run flag > project config > built-in default**: (1) \`--no-gate\` present on the invocation -> \`off\`, source \`flag\`; else (2) \`autopilot.gates: on|off\` in \`rasen/config.yaml\` (read via the project config the same way other config keys resolve) -> that value, source \`config\`; else (3) \`on\`, source \`default\`. Display the resolved policy at run start (e.g. \`Gate policy: off (flag)\`) so it is visible, never silent. Record it ONCE as \`gatePolicy: { effective, source }\` in run-state (Step F) at run start — Step D then reads this recorded value for every gate rather than re-deriving it, and **resume reads it back from run-state so the user does NOT re-pass \`--no-gate\`** on a resumed run. This governs ONLY ordinary gates (\`gate: true\`); a \`gate: 'vet'\` stage ALWAYS pauses regardless of policy — see the guardrail below and the playbook's Step D.
+
 ## 1. Select the pipeline (explicit wins; default = small-feature)
 
-**Input**: \`/rasen:auto [--pipeline <name>] [--review-plan] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
+**Input**: \`/rasen:auto [--pipeline <name>] [--review-plan] [--no-gate] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
+
+\`--no-gate\` makes ordinary gate stages (\`gate: true\`) auto-approve instead of pausing, for unattended runs — see **step 0.5** below for resolution, recording, and the \`vet\` exemption.
 
 Choose the pipeline in this order:
 1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`rasen pipeline list --json\` (e.g. \`/rasen:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description.
@@ -127,7 +133,7 @@ Frontier: <parent>-ui, <parent>-docs
 
 ## Guardrails
 
-- Always pause at gate stages — never skip human confirmation (for a decomposed portfolio's child-pipeline gates, this resolves per the playbook's Step G child-gate semantics: parent directive > child gate).
+- Gate stages pause for human confirmation UNLESS the resolved gate policy (step 0.5) is \`off\`, in which case an ordinary \`gate: true\` stage is auto-approved and the approval is recorded in run-state (\`gateDecision: auto-approved (<source>)\`) — never silently skipped, never deleted from the record. A \`gate: 'vet'\` stage is the hard exception: it ALWAYS pauses for human confirmation, even under \`--no-gate\` or \`autopilot.gates: off\` — never rationalize skipping it. (For a decomposed portfolio's child-pipeline gates, this resolves per the playbook's Step G child-gate semantics: parent directive > child gate, with the same \`vet\` exception carrying through to child gates.)
 - If a stage is stuck (relay caps, stalled handoffs, exhausted review rounds), run the playbook's Step H escalation ladder — LEAD strategy review first, then park the stage as \`escalated\` and continue unblocked work; surface parked items at the next gate or the run-end report. Hard-stop only on failures the ladder cannot express (e.g. corrupted state).
 - The user can interrupt at any time and switch to manual.
 - Save run-state so the pipeline can be resumed from where it left off.

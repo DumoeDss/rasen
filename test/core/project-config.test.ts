@@ -11,6 +11,7 @@ import {
   ensureProjectIdInConfig,
   resolveArchiveTiming,
   resolveArchiveDestinationValue,
+  resolveAutopilotGatePolicy,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -981,6 +982,126 @@ rules:
       expect(
         resolveArchiveTiming({ schema: 'spec-driven', archive: { timing: 'in-ship' } })
       ).toBe('in-ship');
+    });
+  });
+
+  describe('autopilot.gates parsing', () => {
+    it('exposes a valid off policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: off\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { gates: 'off' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes a valid on policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: on\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { gates: 'on' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops an invalid gates value with a warning, keeping the rest of the config', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: sometimes\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: {},
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'autopilot.gates' field")
+      );
+    });
+
+    it('drops a non-map autopilot value with a warning, keeping the rest of the config', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\nautopilot: banana\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'autopilot' field")
+      );
+    });
+
+    it('does not warn when the autopilot block is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveAutopilotGatePolicy', () => {
+    it('defaults to gates on when no config and no flag', () => {
+      expect(resolveAutopilotGatePolicy(null, false)).toEqual({
+        effective: 'on',
+        source: 'default',
+      });
+    });
+
+    it('defaults to gates on when the autopilot block is absent', () => {
+      expect(resolveAutopilotGatePolicy({ schema: 'spec-driven' }, false)).toEqual({
+        effective: 'on',
+        source: 'default',
+      });
+    });
+
+    it('honors an explicit config default of off', () => {
+      expect(
+        resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'off' } }, false)
+      ).toEqual({ effective: 'off', source: 'config' });
+    });
+
+    it('honors an explicit config default of on', () => {
+      expect(
+        resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'on' } }, false)
+      ).toEqual({ effective: 'on', source: 'config' });
+    });
+
+    it('the run flag overrides an on config default', () => {
+      expect(
+        resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'on' } }, true)
+      ).toEqual({ effective: 'off', source: 'flag' });
+    });
+
+    it('the run flag overrides an absent config (same effective value, flag source)', () => {
+      expect(resolveAutopilotGatePolicy(null, true)).toEqual({
+        effective: 'off',
+        source: 'flag',
+      });
     });
   });
 

@@ -56,6 +56,22 @@ describe('project-home', () => {
     expect(fs.existsSync(home!.archiveDir)).toBe(false);
   });
 
+  it('archivedWorkDir is distinct from workDir for a same-base-name pair', async () => {
+    const home = await resolveProjectHome(projectRoot, { globalDataDir });
+
+    const liveWorkDir = home!.workDir('foo');
+    const archivedWorkDir = home!.archivedWorkDir('2026-07-06-foo');
+
+    expect(archivedWorkDir).not.toBe(liveWorkDir);
+    expect(archivedWorkDir.startsWith(home!.homeDir)).toBe(true);
+    expect(archivedWorkDir).toBe(
+      path.join(home!.homeDir, 'changes', 'archive', '2026-07-06-foo', 'work')
+    );
+    // Both live inside homeDir -> both survive registry GC (verified separately
+    // in project-registry.test.ts: GC only removes unreferenced top-level dirs).
+    expect(liveWorkDir.startsWith(home!.homeDir)).toBe(true);
+  });
+
   it('ensure mode is idempotent (re-init preserves projectId, entry, home)', async () => {
     const first = await resolveProjectHome(projectRoot, { globalDataDir });
     const second = await resolveProjectHome(projectRoot, { globalDataDir });

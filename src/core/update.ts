@@ -27,9 +27,7 @@ import {
   getCommandContents,
   generateSkillContent,
   copySkillSidecars,
-  deduplicateForDelivery,
   getToolsWithSkillsDir,
-  COMMAND_IDS,
   type ToolVersionStatus,
 } from './shared/index.js';
 import {
@@ -114,8 +112,7 @@ export class UpdateCommand {
     const desiredWorkflows = profileWorkflows.filter((workflow): workflow is (typeof ALL_WORKFLOWS)[number] =>
       (ALL_WORKFLOWS as readonly string[]).includes(workflow)
     );
-    const shouldGenerateSkills = delivery !== 'commands';
-    const shouldGenerateCommands = delivery !== 'skills';
+    const shouldGenerateCommands = delivery === 'both';
 
     // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
     // refreshes only rasen-namespace artifacts; upstream/older-rasen `opsx`
@@ -188,18 +185,15 @@ export class UpdateCommand {
     }
     console.log();
 
-    // 9. Determine what to generate based on delivery (with deduplication for *-first modes)
-    const allSkillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
-    const allCommandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
-    const { skills: skillTemplates, commands: commandContents } =
-      deduplicateForDelivery(delivery, allSkillTemplates, allCommandContents);
+    // 9. Determine what to generate based on delivery — skills are always installed
+    const skillTemplates = getSkillTemplates(desiredWorkflows);
+    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
 
     // 10. Update tools (all if force, otherwise only those needing update)
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
     const updatedTools: string[] = [];
     const failedTools: Array<{ name: string; error: string }> = [];
     let removedCommandCount = 0;
-    let removedSkillCount = 0;
     let removedDeselectedCommandCount = 0;
     let removedDeselectedSkillCount = 0;
 
@@ -212,34 +206,22 @@ export class UpdateCommand {
       try {
         const skillsDir = path.join(resolvedProjectPath, tool.skillsDir, 'skills');
 
-        // Generate skill files if delivery includes skills
-        if (shouldGenerateSkills) {
-          for (const { template, dirName, workflowId } of skillTemplates) {
-            const skillDir = path.join(skillsDir, dirName);
-            const skillFile = path.join(skillDir, 'SKILL.md');
+        // Generate skill files (always installed regardless of delivery)
+        for (const { template, dirName, workflowId } of skillTemplates) {
+          const skillDir = path.join(skillsDir, dirName);
+          const skillFile = path.join(skillDir, 'SKILL.md');
 
-            // Use hyphen-based command references for OpenCode
-            const transformer = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-            const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
-            await FileSystemUtils.writeFile(skillFile, skillContent);
+          // Use hyphen-based command references for OpenCode
+          const transformer = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+          const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
+          await FileSystemUtils.writeFile(skillFile, skillContent);
 
-            // Copy the skill's sidecar reference files so its relative-path
-            // references resolve at the install target (idempotent overwrite).
-            copySkillSidecars(workflowId, skillDir);
-          }
-
-          removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
+          // Copy the skill's sidecar reference files so its relative-path
+          // references resolve at the install target (idempotent overwrite).
+          copySkillSidecars(workflowId, skillDir);
         }
 
-        // Delete skill directories if delivery is commands-only
-        if (!shouldGenerateSkills) {
-          removedSkillCount += await this.removeSkillDirs(skillsDir);
-        }
-        // commands-first: remove workflow skill dirs replaced by commands,
-        // but spare skill-only workflows (no command counterpart to replace them)
-        if (delivery === 'commands-first') {
-          removedSkillCount += await this.removeSkillDirs(skillsDir, true);
-        }
+        removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
 
         // Generate commands if delivery includes commands
         if (shouldGenerateCommands) {
@@ -262,10 +244,6 @@ export class UpdateCommand {
 
         // Delete command files if delivery is skills-only
         if (!shouldGenerateCommands) {
-          removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
-        }
-        // skills-first: remove command files replaced by skills
-        if (delivery === 'skills-first') {
           removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
         }
 
@@ -295,9 +273,6 @@ export class UpdateCommand {
     }
     if (removedCommandCount > 0) {
       console.log(chalk.dim(`Removed: ${removedCommandCount} command files (delivery: skills)`));
-    }
-    if (removedSkillCount > 0) {
-      console.log(chalk.dim(`Removed: ${removedSkillCount} skill directories (delivery: commands)`));
     }
     if (removedDeselectedCommandCount > 0) {
       console.log(chalk.dim(`Removed: ${removedDeselectedCommandCount} command files (deselected workflows)`));
@@ -419,40 +394,6 @@ export class UpdateCommand {
 
     console.log(chalk.dim('Note: The core profile now includes sync. Your custom profile is preserving the old core workflow set.'));
     console.log(chalk.dim('Run `rasen config profile core` and then `rasen update` to add sync.'));
-  }
-
-  /**
-   * Removes skill directories for workflows when delivery changed to commands-only.
-   * When `restrictToCommandCounterparts` is true (commands-first), only removes
-   * skill dirs for workflows that have a command counterpart (COMMAND_IDS) — a
-   * skill-only workflow (e.g. the goal-loop's internal stage skills) has no
-   * command replacing it, so its skill dir is its only delivery vehicle and
-   * must survive.
-   * Returns the number of directories removed.
-   */
-  private async removeSkillDirs(skillsDir: string, restrictToCommandCounterparts = false): Promise<number> {
-    let removed = 0;
-
-    for (const workflow of ALL_WORKFLOWS) {
-      if (restrictToCommandCounterparts && !(COMMAND_IDS as readonly string[]).includes(workflow)) {
-        continue;
-      }
-
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      if (!dirName) continue;
-
-      const skillDir = path.join(skillsDir, dirName);
-      try {
-        if (fs.existsSync(skillDir)) {
-          await fs.promises.rm(skillDir, { recursive: true, force: true });
-          removed++;
-        }
-      } catch {
-        // Ignore errors
-      }
-    }
-
-    return removed;
   }
 
   /**

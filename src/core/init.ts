@@ -51,8 +51,6 @@ import {
   getCommandContents,
   generateSkillContent,
   copySkillSidecars,
-  deduplicateForDelivery,
-  COMMAND_IDS,
   type ToolSkillStatus,
 } from './shared/index.js';
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
@@ -73,33 +71,6 @@ const DEFAULT_SCHEMA = 'spec-driven';
 const PROGRESS_SPINNER = {
   interval: 80,
   frames: ['░░░', '▒░░', '▒▒░', '▒▒▒', '▓▒▒', '▓▓▒', '▓▓▓', '▒▓▓', '░▒▓'],
-};
-
-const WORKFLOW_TO_SKILL_DIR: Record<string, string> = {
-  'explore': 'rasen-explore',
-  'new': 'rasen-new-change',
-  'continue': 'rasen-continue-change',
-  'apply': 'rasen-apply-change',
-  'ff': 'rasen-ff-change',
-  'sync': 'rasen-sync-specs',
-  'archive': 'rasen-archive-change',
-  'bulk-archive': 'rasen-bulk-archive-change',
-  'verify': 'rasen-verify-change',
-  'onboard': 'rasen-onboard',
-  'propose': 'rasen-propose',
-  // Rasen fusion workflow commands
-  'office-hours-command': 'rasen-office-hours-command',
-  'verify-enhanced-command': 'rasen-verify-enhanced',
-  'ship-command': 'rasen-ship',
-  'retro-command': 'rasen-retro',
-  'auto-command': 'rasen-auto',
-  'review-cycle': 'rasen-review-cycle',
-  'handoff': 'rasen-handoff',
-  // Goal-loop workflow family (opt-in)
-  'goal-plan': 'rasen-goal-plan',
-  'goal-iterate': 'rasen-goal-iterate',
-  'goal-report': 'rasen-goal-report',
-  'goal-command': 'rasen-goal',
 };
 
 // -----------------------------------------------------------------------------
@@ -616,14 +587,12 @@ export class InitCommand {
     failedTools: Array<{ name: string; error: Error }>;
     commandsSkipped: string[];
     removedCommandCount: number;
-    removedSkillCount: number;
   }> {
     const createdTools: typeof tools = [];
     const refreshedTools: typeof tools = [];
     const failedTools: Array<{ name: string; error: Error }> = [];
     const commandsSkipped: string[] = [];
     let removedCommandCount = 0;
-    let removedSkillCount = 0;
 
     // Read global config for profile and delivery settings (use --profile override if set)
     const globalConfig = getGlobalConfig();
@@ -633,63 +602,46 @@ export class InitCommand {
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
-    // Get skill and command templates filtered by profile workflows
-    const shouldGenerateSkills = delivery !== 'commands';
-    const shouldGenerateCommands = delivery !== 'skills';
-    const allSkillTemplates = shouldGenerateSkills ? getSkillTemplates(workflows) : [];
-    const allCommandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
-    // Deduplicate for *-first modes (prefer one mechanism when both exist)
-    const { skills: skillTemplates, commands: commandContents } =
-      deduplicateForDelivery(delivery, allSkillTemplates, allCommandContents);
+    // Skills are always installed; only command generation is gated on delivery.
+    const shouldGenerateCommands = delivery === 'both';
+    const skillTemplates = getSkillTemplates(workflows);
+    const commandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
 
     // Process each tool
     for (const tool of tools) {
       const spinner = ora(`Setting up ${tool.name}...`).start();
 
       try {
-        // Generate skill files if delivery includes skills
-        if (shouldGenerateSkills) {
-          // Use tool-specific skillsDir
-          const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+        // Use tool-specific skillsDir
+        const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
 
-          // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
-          // openspec-*); installed dirs are not renamed in place.
-          await pruneRetiredExpertSkillDirs(skillsDir);
+        // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
+        // openspec-*); installed dirs are not renamed in place.
+        await pruneRetiredExpertSkillDirs(skillsDir);
 
-          // Create skill directories and SKILL.md files
-          for (const { template, dirName, workflowId } of skillTemplates) {
-            const skillDir = path.join(skillsDir, dirName);
-            const skillFile = path.join(skillDir, 'SKILL.md');
+        // Create skill directories and SKILL.md files
+        for (const { template, dirName, workflowId } of skillTemplates) {
+          const skillDir = path.join(skillsDir, dirName);
+          const skillFile = path.join(skillDir, 'SKILL.md');
 
-            // Generate SKILL.md content with YAML frontmatter including generatedBy
-            // Chain transformers: embed config values, then tool-specific transforms
-            // (hyphen-based command references for tools where filename = command name)
-            const configTransform = (text: string) => text
-              .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
-              .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
-            const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-            const transformer = toolTransform
-              ? (text: string) => toolTransform(configTransform(text))
-              : configTransform;
-            const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
+          // Generate SKILL.md content with YAML frontmatter including generatedBy
+          // Chain transformers: embed config values, then tool-specific transforms
+          // (hyphen-based command references for tools where filename = command name)
+          const configTransform = (text: string) => text
+            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+          const transformer = toolTransform
+            ? (text: string) => toolTransform(configTransform(text))
+            : configTransform;
+          const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
 
-            // Write the skill file
-            await FileSystemUtils.writeFile(skillFile, skillContent);
+          // Write the skill file
+          await FileSystemUtils.writeFile(skillFile, skillContent);
 
-            // Copy the skill's sidecar reference files (checklists, references,
-            // scripts) so its relative-path references resolve at the install target.
-            copySkillSidecars(workflowId, skillDir);
-          }
-        }
-        if (!shouldGenerateSkills) {
-          const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
-          removedSkillCount += await this.removeSkillDirs(skillsDir);
-        }
-        // commands-first: remove workflow skill dirs replaced by commands,
-        // but spare skill-only workflows (no command counterpart to replace them)
-        if (delivery === 'commands-first') {
-          const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
-          removedSkillCount += await this.removeSkillDirs(skillsDir, true);
+          // Copy the skill's sidecar reference files (checklists, references,
+          // scripts) so its relative-path references resolve at the install target.
+          copySkillSidecars(workflowId, skillDir);
         }
 
         // Generate commands if delivery includes commands
@@ -723,10 +675,6 @@ export class InitCommand {
         if (!shouldGenerateCommands) {
           removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
         }
-        // skills-first: remove command files replaced by skills
-        if (delivery === 'skills-first') {
-          removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
-        }
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -752,7 +700,6 @@ export class InitCommand {
       failedTools,
       commandsSkipped,
       removedCommandCount,
-      removedSkillCount,
     };
   }
 
@@ -793,7 +740,6 @@ export class InitCommand {
       failedTools: Array<{ name: string; error: Error }>;
       commandsSkipped: string[];
       removedCommandCount: number;
-      removedSkillCount: number;
     },
     configStatus: 'created' | 'exists' | 'skipped',
     machineHome: { homeDir: string } | { warning: string }
@@ -818,13 +764,8 @@ export class InitCommand {
       const delivery: Delivery = globalConfig.delivery ?? 'both';
       const workflows = getProfileWorkflows(profile, globalConfig.workflows);
       const toolDirs = [...new Set(successfulTools.map((t) => t.skillsDir))].join(', ');
-      const { skills: effectiveSkills, commands: effectiveCommands } = deduplicateForDelivery(
-        delivery,
-        delivery !== 'commands' ? getSkillTemplates(workflows) : [],
-        delivery !== 'skills' ? getCommandContents(workflows) : []
-      );
-      const skillCount = effectiveSkills.length;
-      const commandCount = effectiveCommands.length;
+      const skillCount = getSkillTemplates(workflows).length;
+      const commandCount = delivery === 'both' ? getCommandContents(workflows).length : 0;
       if (skillCount > 0 && commandCount > 0) {
         console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}/`);
       } else if (skillCount > 0) {
@@ -845,9 +786,6 @@ export class InitCommand {
     }
     if (results.removedCommandCount > 0) {
       console.log(chalk.dim(`Removed: ${results.removedCommandCount} command files (delivery: skills)`));
-    }
-    if (results.removedSkillCount > 0) {
-      console.log(chalk.dim(`Removed: ${results.removedSkillCount} skill directories (delivery: commands)`));
     }
 
     // Config status
@@ -918,39 +856,6 @@ export class InitCommand {
       color: 'gray',
       spinner: PROGRESS_SPINNER,
     }).start();
-  }
-
-  /**
-   * Removes skill directories for workflows when delivery changed to commands-only.
-   * When `restrictToCommandCounterparts` is true (commands-first), only removes
-   * skill dirs for workflows that have a command counterpart (COMMAND_IDS) — a
-   * skill-only workflow (e.g. the goal-loop's internal stage skills) has no
-   * command replacing it, so its skill dir is its only delivery vehicle and
-   * must survive.
-   */
-  private async removeSkillDirs(skillsDir: string, restrictToCommandCounterparts = false): Promise<number> {
-    let removed = 0;
-
-    for (const workflow of ALL_WORKFLOWS) {
-      if (restrictToCommandCounterparts && !(COMMAND_IDS as readonly string[]).includes(workflow)) {
-        continue;
-      }
-
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      if (!dirName) continue;
-
-      const skillDir = path.join(skillsDir, dirName);
-      try {
-        if (fs.existsSync(skillDir)) {
-          await fs.promises.rm(skillDir, { recursive: true, force: true });
-          removed++;
-        }
-      } catch {
-        // Ignore errors
-      }
-    }
-
-    return removed;
   }
 
   private async removeCommandFiles(projectPath: string, toolId: string): Promise<number> {

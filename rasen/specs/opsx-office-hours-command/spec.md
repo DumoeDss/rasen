@@ -2,7 +2,6 @@
 
 ## Purpose
 Provide the `/rasen:office-hours` command for YC-style product validation in Startup and Builder modes, dual-writing output that propose consumes downstream.
-
 ## Requirements
 ### Requirement: Office-Hours Skill and Command Templates
 
@@ -20,28 +19,6 @@ The system SHALL provide a SkillTemplate and CommandTemplate for office-hours in
 - **WHEN** user runs `rasen init`
 - **THEN** the office-hours skill SHALL be generated into `.claude/skills/`
 - **AND** the office-hours command SHALL be generated into `.claude/commands/`
-
-### Requirement: Startup and Builder Modes
-
-The skill SHALL support two distinct modes: Startup mode (six forcing questions) and Builder mode (design brainstorm).
-
-#### Scenario: Startup mode invocation
-
-- **WHEN** agent executes `/rasen:office-hours` with Startup mode selected
-- **THEN** the agent SHALL walk the user through six forcing questions covering problem, audience, existing alternatives, unique value, risks, and success metrics
-- **AND** each question SHALL require a substantive answer before proceeding
-
-#### Scenario: Builder mode invocation
-
-- **WHEN** agent executes `/rasen:office-hours` with Builder mode selected
-- **THEN** the agent SHALL conduct a design brainstorm session
-- **AND** the session SHALL explore architecture options, trade-offs, and implementation approaches
-
-#### Scenario: Mode selection prompt
-
-- **WHEN** agent executes `/rasen:office-hours` without specifying a mode
-- **THEN** the agent SHALL prompt the user to select between Startup mode and Builder mode
-- **AND** provide a brief description of each mode's purpose
 
 ### Requirement: Dual-Write Output
 
@@ -81,19 +58,19 @@ The `/rasen:propose` command SHALL auto-detect and consume `office-hours-design.
 
 ### Requirement: Facilitation Delegates to the Office-Hours Expert
 
-The office-hours workflow command SHALL treat the `/office-hours` expert skill as the single authority for session facilitation. The inline six-questions / builder description in the command template SHALL serve only as a fallback pre-brief, used when the expert skill is unavailable, and SHALL NOT be run as a second facilitation pass. The design document SHALL be produced exactly once. Precedence: when both the inline description and the expert exist, the expert wins.
+The office-hours workflow command SHALL treat the `/office-hours` expert skill as the single authority for session facilitation. The inline product-routed description in the command template (six forcing questions for the Diagnosis product; fork-first discipline for the Design product) SHALL serve only as a fallback pre-brief, used when the expert skill is unavailable, and SHALL NOT be run as a second facilitation pass. The design document SHALL be produced exactly once. Precedence: when both the inline description and the expert exist, the expert wins.
 
 #### Scenario: Expert skill drives the session
 
 - **WHEN** the office-hours workflow command runs and the `/office-hours` expert skill is available
 - **THEN** the command SHALL delegate session facilitation to the `/office-hours` expert
-- **AND** SHALL NOT run the inline question set as a separate second pass
+- **AND** SHALL NOT run the inline description as a separate second pass
 - **AND** SHALL produce the design document in a single step
 
 #### Scenario: Fallback when the expert is unavailable
 
 - **WHEN** the `/office-hours` expert skill is not available
-- **THEN** the command MAY run the inline six-questions / builder description as a fallback
+- **THEN** the command MAY run the inline product-routed description (Diagnosis product's six questions, or the Design product's fork-first description) as a fallback
 - **AND** SHALL still produce the design document exactly once
 
 ### Requirement: Office-Hours Resolves Its Output Paths From Status JSON
@@ -112,4 +89,25 @@ The office-hours workflow command SHALL resolve its design-document write paths 
 - **THEN** it SHALL write to `<topic-slug>.md` under the `office-hours/` directory resolved from the planning home (sibling of `planningHome.changesDir`)
 - **AND** SHALL NOT assume a literal repo-relative `rasen/office-hours/` path
 - **AND** this SHALL be the same location that `propose` scans for office-hours input context, so producer and consumer agree in store mode
+
+### Requirement: Diagnosis and Design Products
+
+The skill SHALL route sessions to one of two products: the Diagnosis product (six forcing questions covering demand reality, status quo, target user, wedge, observation, and future-fit) and the Design product (fork-first discipline that asks weight-bearing forks before delivering a stance, then converges to a design doc). Routing is decided by the object of the user's request, not by a mode the user selects.
+
+#### Scenario: Diagnosis product invocation
+
+- **WHEN** agent executes `/rasen:office-hours` and the request routes to the Diagnosis product
+- **THEN** the agent SHALL walk the user through six forcing questions covering demand reality, status quo, target user, wedge, observation, and future-fit
+- **AND** each question SHALL require a substantive answer before proceeding
+
+#### Scenario: Design product invocation
+
+- **WHEN** agent executes `/rasen:office-hours` and the request routes to the Design product
+- **THEN** the agent SHALL run the fork-scan procedure for the session's topics, asking weight-bearing forks before delivering any stance
+- **AND** SHALL converge to a single design document once the discussion settles
+
+#### Scenario: Product routing prompt
+
+- **WHEN** agent executes `/rasen:office-hours` and the opening message does not unambiguously indicate which product the user wants
+- **THEN** the agent SHALL prompt the user with a goal question and map the answer to a product (Diagnosis or Design), not to a named mode
 

@@ -73,7 +73,7 @@ describe('migration', () => {
     expect(config.workflows).toEqual(['explore', 'apply']);
   });
 
-  it('migrates to custom commands delivery when only managed commands are detected', async () => {
+  it('migrates commands-only installs to both delivery (skills are healed back on the next update)', async () => {
     await writeManagedCommand(projectDir, 'explore');
     await writeManagedCommand(projectDir, 'archive');
 
@@ -81,7 +81,9 @@ describe('migration', () => {
 
     const config = readRawConfig();
     expect(config.profile).toBe('custom');
-    expect(config.delivery).toBe('commands');
+    // design D6: commands-only artifacts infer 'both', not 'commands' —
+    // skills are restored on the next update rather than treated as data loss.
+    expect(config.delivery).toBe('both');
     expect(config.workflows).toEqual(['explore', 'archive']);
   });
 

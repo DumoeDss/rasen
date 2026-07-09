@@ -12,8 +12,36 @@ const LEGACY_BRAND_DIR_NAME = 'openspec';
 
 // TypeScript types
 export type Profile = 'full' | 'core' | 'custom';
-export type Delivery = 'both' | 'skills' | 'commands' | 'skills-first' | 'commands-first';
+export type Delivery = 'both' | 'skills';
+type LegacyDelivery = 'commands' | 'skills-first' | 'commands-first';
 export type RepoMode = 'solo' | 'collaborative';
+
+const LEGACY_DELIVERY_MAP: Record<LegacyDelivery, Delivery> = {
+  'skills-first': 'skills',
+  'commands': 'both',
+  'commands-first': 'both',
+};
+
+function isLegacyDelivery(value: unknown): value is LegacyDelivery {
+  return value === 'commands' || value === 'skills-first' || value === 'commands-first';
+}
+
+/**
+ * Normalizes a raw `delivery` value read from disk into the current 2-value
+ * `Delivery` union. Recognized legacy values (`commands`, `skills-first`,
+ * `commands-first`) map onto their consolidated equivalent; anything else
+ * (unrecognized strings, undefined, garbage) falls back to the default
+ * `'both'` without being treated as a legacy migration.
+ */
+export function normalizeDelivery(raw: unknown): { delivery: Delivery; legacy?: LegacyDelivery } {
+  if (raw === 'both' || raw === 'skills') {
+    return { delivery: raw };
+  }
+  if (isLegacyDelivery(raw)) {
+    return { delivery: LEGACY_DELIVERY_MAP[raw], legacy: raw };
+  }
+  return { delivery: DEFAULT_CONFIG.delivery! };
+}
 
 // TypeScript interfaces
 export interface GlobalConfig {
@@ -157,6 +185,24 @@ export function getGlobalConfig(): GlobalConfig {
     }
     if (parsed.repoMode === undefined) {
       merged.repoMode = DEFAULT_CONFIG.repoMode;
+    }
+
+    // Legacy delivery values (commands / skills-first / commands-first) are
+    // consolidated into the 2-value system: map, notify once, and persist so
+    // subsequent reads see the new value directly (no notice repeats).
+    if (parsed.delivery !== undefined) {
+      const { delivery, legacy } = normalizeDelivery(parsed.delivery);
+      merged.delivery = delivery;
+      if (legacy) {
+        console.error(
+          `Note: delivery mode '${legacy}' has been consolidated into '${delivery}' (skills are always installed). Your config has been updated.`
+        );
+        try {
+          saveGlobalConfig({ ...merged, delivery });
+        } catch {
+          // Best-effort: persistence failure must not fail the read.
+        }
+      }
     }
 
     return merged;

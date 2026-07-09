@@ -49,6 +49,6 @@ The copy SHALL no-op without error when the source skill directory is absent, an
 - **AND** the installed sidecars SHALL be identical to the first run
 
 #### Scenario: Uninstall removes sidecars
-- **WHEN** a skill directory is removed (commands-only delivery or deselection)
+- **WHEN** a skill directory is removed (workflow deselection — the only removal path, since no delivery setting removes skills)
 - **THEN** its sidecar files SHALL be removed with the directory
 

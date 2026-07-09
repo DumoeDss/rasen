@@ -28,5 +28,4 @@ export {
   getCommandContents,
   generateSkillContent,
   copySkillSidecars,
-  deduplicateForDelivery,
 } from './skill-generation.js';

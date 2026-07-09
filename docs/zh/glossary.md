@@ -52,11 +52,11 @@
 
 **技能（Skill）。** 一个指令文件夹（`.../skills/openspec-*/SKILL.md`），你的 AI 助手会自动探测并遵循它。技能是把 OpenSpec 工作流交付给助手的、正在兴起的跨工具标准。
 
-**命令文件（Command file）。** 针对某个工具的斜杠命令文件（`.../commands/opsx-*`）。这是较早的交付机制，目前仍与技能并存、受到支持。你很少需要直接改动这些文件。
+**命令文件（Command file）。** 针对某个工具的斜杠命令文件（`.../commands/opsx-*`）。当 delivery 为 `both` 时，与技能一并安装的可选补充。你很少需要直接改动这些文件。
 
 **配置方案（Profile）。** 安装到你项目里的那套斜杠命令集合。**Full**（默认）会安装全部工作流。**Core** 会精简为 `propose`、`explore`、`apply`、`sync`、`archive`；**custom** 则是你任意挑选的子集。可以通过 `rasen config profile` 来更改。
 
-**交付方式（Delivery）。** 针对你所使用的工具，OpenSpec 安装的是技能、命令文件，还是两者兼有。它按全局配置，并通过 `rasen update` 应用。
+**交付方式（Delivery）。** 决定 OpenSpec 是否在技能之外再装命令文件——`both`（默认，技能 + 命令）或 `skills`（仅技能）。技能始终安装。它按全局配置，并通过 `rasen update` 应用。
 
 ## 自定义
 

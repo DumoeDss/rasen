@@ -1,0 +1,121 @@
+## ADDED Requirements
+
+### Requirement: Legacy delivery values migrate gracefully
+Configurations written before the delivery consolidation may contain the retired values `commands`, `commands-first`, or `skills-first`. The system SHALL keep working with such a config: the value is silently mapped to its consolidated equivalent, a one-time notice explains the consolidation, and the config file is updated to the new value. An old delivery value SHALL never cause a command to fail.
+
+#### Scenario: skills-first maps to skills
+- **WHEN** the global config contains `delivery: "skills-first"` and any command reads the config
+- **THEN** the effective delivery SHALL be `skills`
+- **AND** a notice SHALL state that `skills-first` has been consolidated into `skills`
+
+#### Scenario: commands maps to both
+- **WHEN** the global config contains `delivery: "commands"` and any command reads the config
+- **THEN** the effective delivery SHALL be `both`
+- **AND** a notice SHALL state that `commands` has been consolidated into `both` (skills are always installed)
+
+#### Scenario: commands-first maps to both
+- **WHEN** the global config contains `delivery: "commands-first"` and any command reads the config
+- **THEN** the effective delivery SHALL be `both`
+- **AND** a notice SHALL state that `commands-first` has been consolidated into `both` (skills are always installed)
+
+#### Scenario: Notice appears only once
+- **WHEN** a legacy delivery value is mapped
+- **THEN** the config file SHALL be rewritten with the consolidated value
+- **AND** subsequent runs SHALL read the consolidated value and print no further notice
+
+#### Scenario: Unrecognized delivery value falls back to default
+- **WHEN** the global config contains a delivery value that is neither a current value (`both`, `skills`) nor a retired value (`commands`, `commands-first`, `skills-first`)
+- **THEN** the system SHALL behave as if delivery were the default (`both`)
+- **AND** SHALL NOT rewrite the config file for the unrecognized value
+- **AND** SHALL NOT fail
+
+## MODIFIED Requirements
+
+### Requirement: Delivery is independent of profile
+The delivery setting SHALL control HOW workflows are installed, separate from WHICH workflows are installed. Skills are the always-installed foundation (orchestration workflows invoke worker skills at runtime); commands are an optional addition.
+
+#### Scenario: Delivery options
+- **WHEN** configuring delivery
+- **THEN** the system SHALL support two options: `both` (skills and commands), `skills` (skill files only)
+
+#### Scenario: Both delivery
+- **WHEN** delivery is set to `both`
+- **THEN** the system SHALL install both skill files and command files for each workflow
+
+#### Scenario: Skills-only delivery
+- **WHEN** delivery is set to `skills`
+- **THEN** the system SHALL install only skill files for each workflow
+- **THEN** the system SHALL NOT install command files
+
+#### Scenario: Skills are always installed
+- **WHEN** workflows are installed under any delivery setting
+- **THEN** skill files for the selected workflows SHALL be installed
+- **AND** no delivery setting SHALL cause an installed skill directory to be removed
+
+#### Scenario: Core profile with custom delivery
+- **WHEN** profile is set to `core`
+- **AND** delivery is set to `skills`
+- **THEN** the system SHALL install core workflows as skills only (no commands)
+
+#### Scenario: Delivery defaults
+- **WHEN** delivery is not set in global config
+- **THEN** the system SHALL default to `both`
+
+### Requirement: Profile configuration via interactive picker
+The system SHALL provide an interactive picker for configuring profiles.
+
+#### Scenario: Interactive profile configuration
+- **WHEN** user runs `rasen config profile`
+- **THEN** the system SHALL display an interactive picker with:
+  - Delivery selection: `both`, `skills`
+  - Workflow toggles for all available workflows
+- **THEN** the system SHALL pre-select current config values
+- **THEN** on confirmation, the system SHALL update global config
+- **THEN** the system SHALL set profile to `custom` if selected workflows differ from core defaults
+- **THEN** the system SHALL set profile to `core` if selected workflows match core defaults exactly (propose, explore, apply, archive), regardless of delivery setting
+- **THEN** the system SHALL NOT modify any project files
+- **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
+
+#### Scenario: Core preset shortcut
+- **WHEN** user runs `rasen config profile core`
+- **THEN** the system SHALL set profile to `core`
+- **THEN** the system SHALL set workflows to `['propose', 'explore', 'apply', 'archive']`
+- **THEN** the system SHALL NOT change the delivery setting (preserves user preference)
+- **THEN** the system SHALL NOT modify any project files
+- **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
+- **THEN** the new profile takes effect on the next `rasen init` or `rasen update` run
+
+#### Scenario: Config profile run inside a project
+- **WHEN** user runs `rasen config profile` inside a Rasen project directory
+- **THEN** after updating global config, the system SHALL prompt: "Apply to this project now? (y/n)"
+- **WHEN** user confirms
+- **THEN** the system SHALL run `rasen update` automatically
+- **THEN** the system SHALL still display: "Run `rasen update` in your other projects to apply."
+
+#### Scenario: Config profile - user declines apply
+- **WHEN** user runs `rasen config profile` inside a Rasen project directory
+- **AND** user declines the "Apply to this project now?" prompt
+- **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
+- **THEN** the system SHALL exit successfully without modifying project files
+
+#### Scenario: Config profile non-interactive
+- **WHEN** user runs `rasen config profile` non-interactively (e.g., in CI, no TTY)
+- **THEN** the system SHALL display an error: "Interactive mode required. Use `rasen config profile core` or set config via environment/flags."
+- **THEN** the system SHALL exit with code 1
+
+### Requirement: Profile settings stored in global config
+Profile and delivery settings SHALL be stored in the existing global config file (`~/.config/rasen/config.json`) alongside telemetry and feature flags.
+
+#### Scenario: Config schema
+- **WHEN** reading profile configuration
+- **THEN** the config SHALL contain `profile` (core|custom), `delivery` (both|skills), and optionally `workflows` (array of workflow names)
+
+#### Scenario: Schema evolution
+- **WHEN** loading config without profile/delivery fields
+- **THEN** the system SHALL use defaults (profile=core, delivery=both)
+- **AND** existing config fields (telemetry, featureFlags) SHALL be preserved
+
+#### Scenario: Config list displays profile settings
+- **WHEN** user runs `rasen config list`
+- **THEN** the system SHALL display profile, delivery, and workflows settings
+- **AND** SHALL indicate which values are defaults vs explicitly set

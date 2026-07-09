@@ -74,7 +74,6 @@ import {
   type SkillTemplate,
 } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
-import type { Delivery } from '../global-config.js';
 
 /**
  * Skill template with directory name and workflow ID mapping.
@@ -264,29 +263,6 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
     tags: template.tags,
     body: template.content,
   }));
-}
-
-/**
- * Applies deduplication for *-first delivery modes.
- *
- * - skills-first: keep all skills, remove commands that have a skill counterpart
- * - commands-first: keep all commands, remove skills that have a command counterpart
- * - other modes: no change
- */
-export function deduplicateForDelivery(
-  delivery: Delivery,
-  skills: SkillTemplateEntry[],
-  commands: CommandContent[]
-): { skills: SkillTemplateEntry[]; commands: CommandContent[] } {
-  if (delivery === 'commands-first') {
-    const commandIds = new Set(commands.map(c => c.id));
-    return { skills: skills.filter(s => !commandIds.has(s.workflowId)), commands };
-  }
-  if (delivery === 'skills-first') {
-    const skillIds = new Set(skills.map(s => s.workflowId));
-    return { skills, commands: commands.filter(c => !skillIds.has(c.id)) };
-  }
-  return { skills, commands };
 }
 
 /**
