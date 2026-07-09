@@ -559,6 +559,7 @@ Exit gracefully.
 - **Keep narration light** during implementation—teach without lecturing
 - **Don't skip phases** even if the change is small—the goal is teaching the workflow
 - **Pause for acknowledgment** at marked points, but don't over-pause
+- **A question at a PAUSE is answered, then resumed** — if the user asks a question at a PAUSE point instead of acknowledging, answer it first and then resume the phase where you paused; do NOT treat the question as a non-acknowledgment and re-prompt for a "continue." (onboard does not embed the shared PREAMBLE, so the Dialogue Override does not otherwise cover this.)
 - **Handle exits gracefully**—never pressure the user to continue
 - **Use real codebase tasks**—don't simulate or use fake examples
 - **Adjust scope gently**—guide toward smaller tasks but respect user choice`;
