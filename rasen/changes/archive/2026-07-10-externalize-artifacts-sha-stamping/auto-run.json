@@ -50,15 +50,25 @@
       ]
     },
     "ship": {
+      "status": "done",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      },
+      "commit": "ba96166",
+      "tree": "bcb75a513d283faba3f93c4de9cae8a4ddf80fb5",
+      "testGate": "spot parity 6/6 (full green minus foreign version-bump failure)",
+      "delivery": "local",
+      "note": "task 5.3 live-smoke satisfied by this ship+archive pair (repo-mode); store-mode live smoke remains a follow-up"
+    },
+    "archive": {
       "status": "in_progress",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
       }
-    },
-    "archive": {
-      "status": "pending"
     }
   },
   "rounds": 2,
