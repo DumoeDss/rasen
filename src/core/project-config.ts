@@ -98,10 +98,10 @@ export const ProjectConfigSchema = z.object({
           'Default autopilot gate policy: on (gates pause, default) or off (ordinary gates auto-approved)'
         ),
       selection: z
-        .enum(['classify', 'manual'])
+        .enum(['classify', 'manual', 'compose'])
         .optional()
         .describe(
-          'Default autopilot pipeline-selection policy: classify (adopt the classify suggestion) or manual (default; explicit-or-small-feature, classify advisory-only)'
+          'Default autopilot pipeline-selection policy: classify (adopt the classify suggestion), compose (classify-first, composition permitted on no-fit), or manual (default; explicit-or-small-feature, classify advisory-only)'
         ),
     })
     .optional()
@@ -121,7 +121,7 @@ export type AutopilotGatePolicy = 'on' | 'off';
 export const PROJECT_REFERENCE_PREFIX = 'project:';
 
 /** Valid `autopilot.selection` values. */
-export type AutopilotSelectionPolicy = 'classify' | 'manual';
+export type AutopilotSelectionPolicy = 'classify' | 'manual' | 'compose';
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -417,10 +417,16 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
           }
         }
         if (autopilotRaw.selection !== undefined) {
-          if (autopilotRaw.selection === 'classify' || autopilotRaw.selection === 'manual') {
+          if (
+            autopilotRaw.selection === 'classify' ||
+            autopilotRaw.selection === 'manual' ||
+            autopilotRaw.selection === 'compose'
+          ) {
             autopilot.selection = autopilotRaw.selection;
           } else {
-            console.warn(`Invalid 'autopilot.selection' field in config (must be 'classify' or 'manual')`);
+            console.warn(
+              `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`
+            );
           }
         }
         config.autopilot = autopilot;
@@ -790,24 +796,33 @@ export interface ResolvedSelectionPolicy {
 
 /**
  * Resolves the effective autopilot pipeline-selection policy with precedence:
- * the run argument (`--auto-select`) first, then the project config default
- * (`autopilot.selection`), then the built-in default (`manual`). Every
- * consumer (the `/rasen:auto` selection-policy resolution) MUST resolve
- * through this function so precedence is applied identically everywhere. An
- * absent or previously-dropped `autopilot.selection` value falls back to the
- * built-in default without failing config parsing. Mirrors
- * `resolveAutopilotGatePolicy`'s shape (same source vocabulary) by design —
- * this is that axis's sibling.
+ * the run arguments first — `--auto-compose` ahead of `--auto-select` when
+ * both are present (compose is the superset policy: classify-first, with
+ * composition permitted on no-fit — see `autopilot-composed-pipelines`) —
+ * then the project config default (`autopilot.selection`), then the built-in
+ * default (`manual`). Every consumer (the `/rasen:auto` selection-policy
+ * resolution) MUST resolve through this function so precedence is applied
+ * identically everywhere. An absent or previously-dropped
+ * `autopilot.selection` value falls back to the built-in default without
+ * failing config parsing. Mirrors `resolveAutopilotGatePolicy`'s shape (same
+ * source vocabulary) by design — this is that axis's sibling. Kept as a
+ * single resolver (not split by flag) so precedence lives in exactly one
+ * place; `autoComposeFlag` defaults to `false` so existing two-argument call
+ * sites (pre-dating the `compose` policy) are unaffected.
  */
 export function resolveAutopilotSelectionPolicy(
   config: ProjectConfig | null | undefined,
-  autoSelectFlag: boolean
+  autoSelectFlag: boolean,
+  autoComposeFlag: boolean = false
 ): ResolvedSelectionPolicy {
+  if (autoComposeFlag) {
+    return { effective: 'compose', source: 'flag' };
+  }
   if (autoSelectFlag) {
     return { effective: 'classify', source: 'flag' };
   }
   const configValue = config?.autopilot?.selection;
-  if (configValue === 'classify' || configValue === 'manual') {
+  if (configValue === 'classify' || configValue === 'manual' || configValue === 'compose') {
     return { effective: configValue, source: 'config' };
   }
   return { effective: 'manual', source: 'default' };

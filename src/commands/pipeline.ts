@@ -201,6 +201,10 @@ export class PipelineCommand {
       reuse,
       buildOrder,
       stages,
+      // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
+      // included only when declared so a human-authored pipeline's JSON shape
+      // is unchanged.
+      ...(pipeline.origin ? { origin: pipeline.origin } : {}),
     };
 
     if (options.json) {
@@ -681,12 +685,16 @@ export class PipelineCommand {
       agents?: PipelineYaml['agents'];
       buildOrder: string[];
       stages: StageView[];
+      origin?: PipelineYaml['origin'];
     },
     graph: PipelineGraph
   ): void {
     console.log(`Pipeline: ${result.name}`);
     if (result.description) {
       console.log(result.description.replace(/\s+/g, ' ').trim());
+    }
+    if (result.origin) {
+      console.log(`Origin: ${result.origin}`);
     }
     console.log();
     console.log('Build order:');

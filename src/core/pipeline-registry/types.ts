@@ -340,6 +340,14 @@ export const PipelineYamlSchema = z.object({
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
   handoff: HandoffConfigSchema.optional(),
   reuse: ReuseConfigSchema.optional(),
+  // Marks a pipeline assembled by the autopilot LEAD (autonomy-ladder rung 2:
+  // composed pipelines). Absent means human-authored. The ONLY value is
+  // 'composed' — the marker scopes the quality-floor guard (see
+  // validateComposedPolicyFloor in pipeline.ts) to exactly the LEAD-composed
+  // population, leaving human-authored pipelines (built-in or project) unaffected.
+  origin: z.literal('composed').optional().describe(
+    "Marks a pipeline assembled by the autopilot LEAD; absent means human-authored. When 'composed', the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
+  ),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 });
 
