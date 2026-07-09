@@ -52,6 +52,7 @@ That second one matters more than it looks. OpenSpec has two halves: a command l
 | Doc | What it gives you |
 |-----|-------------------|
 | [Workflows](workflows.md) | Common patterns and when to reach for each command |
+| [Autopilot Policies](autopilot.md) | Opt-in autonomy for `/rasen:auto`: `--no-gate`, `--auto-select`, composed pipelines |
 | [Examples & Recipes](examples.md) | Full walkthroughs of real changes, copy-pasteable |
 | [Writing Good Specs](writing-specs.md) | What a strong requirement and scenario look like, and how to right-size a change |
 | [Reviewing a Change](reviewing-changes.md) | The two-minute pass on a drafted plan before any code is written |

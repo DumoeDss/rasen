@@ -74,6 +74,8 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 
 可选：`rasen pipeline classify "<任务>"` 给个建议，或 `rasen pipeline list` 选别的——但显式选择始终覆盖，没有显式选择就走 `small-feature` 默认。
 
+> **Opt-in 自主权**：`--auto-select` 让 LEAD 直接采纳 classify 建议而非走默认；`--auto-compose` 进一步允许在无匹配时从 stage 库组装新流水线（机器强制评审底线）。两者默认关闭；显式选择永远最高。见 [autopilot.md](autopilot.md)。
+
 每个阶段带元数据，LEAD 据此执行：**kind**（`standard` 默认 / `decompose` 扇出点，§2.7）、**skill**（worker 调用的 OPSX skill；decompose 阶段无此字段）、**childPipeline**（仅 decompose——每个子 change 跑的流水线，默认 `small-feature`）、**role**（隔离）、**gate**（人类暂停）、**loop**（评审环）、**parallelGroup**（并发扇出，如 verify 的专家组）、**condition**（满足才跑；ui / non-ui 等互斥条件择一）、**leadReview**（LEAD 查方向漂移，§2.3）、**verifyPolicy**（adaptive / standard / light，§2.3）、**model**（该阶段 worker 的模型覆盖；省略则继承主 agent 模型——内置流水线给 ship/archive 写了 `model: sonnet`）。
 
 ### 2.3 两个任务相关增强
@@ -87,7 +89,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 
 ### 2.5 暂停点与续跑
 
-- 标了 `gate` 的阶段之后 LEAD 暂停：显示已完成 + 下一步，等你 **Continue / Stop（存盘可续）/ 切手动**。
+- 标了 `gate` 的阶段之后 LEAD 暂停：显示已完成 + 下一步，等你 **Continue / Stop（存盘可续）/ 切手动**。无人值守场景用 `--no-gate`（或 `autopilot.gates: off`）自动通过普通 gate 并留审计记录——`gate: 'vet'` 阶段永远照停；见 [autopilot.md](autopilot.md)。
 - 续跑：`rasen pipeline resume <change> --json` 从 run-state + 产物推断下一个未完成阶段（run-state 的逐阶段状态为准，产物存在性是启发式 / 交叉校验）。run-state 写在 `auto-run.json`，每个 stage 记 worker 的 `role` / `agentId` / `transcript` 指针。
 - **跨会话（重启后）暖播种**：新会话里上一会话的 worker 已不存在，`SendMessage` 够不到它（`agentId` 是死句柄）。要复用某个角色（如让"原评审员"只复审增量），LEAD 把它的持久 transcript（`agent-<agentId>.jsonl`）读回，**暖播种**一个同角色的新 worker——新 `agentId`、带着前任完整上下文。`resume --json` 的 `workers` 字段把可暖播种的指针列出来；transcript 已失效则降级为从 change 目录冷重建。这是平台允许范围内最接近"真正恢复旧 subagent session"的形态（Claude Code 不支持跨进程复活同一个 subagent）。
 
