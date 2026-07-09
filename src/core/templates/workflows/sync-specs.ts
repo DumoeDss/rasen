@@ -54,7 +54,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    a. **Read the delta spec** to understand the intended changes
 
-   b. **Read the main spec** at \`rasen/specs/<capability>/spec.md\` (may not exist yet)
+   b. **Read the main spec**, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT the literal repo-relative \`rasen/specs/<capability>/spec.md\` (it may not exist yet) — in a registered store this resolves to the store's specs
 
    c. **Apply changes intelligently**:
 
@@ -77,7 +77,7 @@ ${STORE_SELECTION_GUIDANCE}
       - Find the FROM requirement, rename to TO
 
    d. **Create new main spec** if capability doesn't exist yet:
-      - Create \`rasen/specs/<capability>/spec.md\`
+      - Create the main spec under the resolved \`specs/\` directory (the sibling of \`planningHome.changesDir\` from step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\`
       - Add Purpose section (can be brief, mark as TBD)
       - Add Requirements section with the ADDED requirements
 
@@ -202,7 +202,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    a. **Read the delta spec** to understand the intended changes
 
-   b. **Read the main spec** at \`rasen/specs/<capability>/spec.md\` (may not exist yet)
+   b. **Read the main spec**, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT the literal repo-relative \`rasen/specs/<capability>/spec.md\` (it may not exist yet) — in a registered store this resolves to the store's specs
 
    c. **Apply changes intelligently**:
 
@@ -225,7 +225,7 @@ ${STORE_SELECTION_GUIDANCE}
       - Find the FROM requirement, rename to TO
 
    d. **Create new main spec** if capability doesn't exist yet:
-      - Create \`rasen/specs/<capability>/spec.md\`
+      - Create the main spec under the resolved \`specs/\` directory (the sibling of \`planningHome.changesDir\` from step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\`
       - Add Purpose section (can be brief, mark as TBD)
       - Add Requirements section with the ADDED requirements
 

@@ -1,0 +1,20 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "prompt-audit-fixes",
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner4", "reuse": "warm 22.4%" }, "note": "alignment decision (b): externalization-proof subset (T1/T4 + WF-9); T3 ephemera deferred to live externalize-artifacts-t3-workdir child — WF-3 closes across two portfolios" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer4", "seededFrom": ["handoff/implementer-retired-1.md", "handoff/implementer-retired-2.md", "LEAD child-6 brief"] }, "note": "all tasks; 4 files; 6/6; predicted 9-hash set exact; archive 3.5/3.6 found+left in child-5 original state (t3-workdir not yet applied); foreign untracked src/core/change-work.ts flagged for ship exclusion" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer7" }, "note": "CLEAN 0/0/0/1(informational); resolution semantics verified against PlanningHomeSummary shape; WF-2 seam byte-symmetric" },
+    "review-loop": { "status": "done", "rounds": 0, "verdict": "CLEAN (no findings to fix)", "acceptedKnown": ["T-1 informational: foreign working-set.ts/change-work.ts in shared tree, attributed to t3-workdir"] },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper", "reuse": "warm" }, "note": "ship NOW to win archive-change.ts serialization vs t3-workdir (their read-side edits not yet applied)" },
+    "archive":     { "status": "pending" }
+  },
+  "notes": [
+    "hard boundary: ship/verify-enhanced/verify-change/retro are the externalize t3-workdir child's live surface — untouchable",
+    "portfolio close-out must surface: WF-3's T3 half rides the externalize portfolio; 'prompt-audit-fixes complete' ≠ 'all of WF-3 landed here'"
+  ],
+  "rounds": 0,
+  "openFindings": []
+}
