@@ -835,6 +835,10 @@ describe('interactive compose cancellation (in-process)', () => {
       fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workset-tty-'))
     );
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_DATA_HOME/XDG_CONFIG_HOME — clear it so this suite's XDG
+    // isolation actually applies.
+    delete process.env.RASEN_HOME;
     process.env.XDG_DATA_HOME = path.join(tempDir, 'data');
     process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
     delete process.env.CI;

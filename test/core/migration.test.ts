@@ -52,6 +52,10 @@ describe('migration', () => {
     await fsp.mkdir(projectDir, { recursive: true });
     await fsp.mkdir(configHome, { recursive: true });
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME — clear it so this suite's XDG isolation
+    // actually resolves into configHome.
+    delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = configHome;
   });
 

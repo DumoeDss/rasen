@@ -229,6 +229,24 @@ async function isGitWorktreeSibling(pathA: string, pathB: string): Promise<boole
   return path.resolve(dirA) !== path.resolve(dirB);
 }
 
+/**
+ * Resolves the MAIN repository's working-tree directory from any path inside
+ * it (main repo or a linked worktree), so a freshly created shared home can
+ * be named after the main repo rather than whichever worktree happens to
+ * register first (D3). `git rev-parse --git-common-dir` is identical for
+ * every worktree of one repository; when it resolves to a `.git` directory,
+ * its parent is the main working tree. Returns `null` for a non-git path, an
+ * unavailable Git, or a common-dir that does not look like a `.git` inside a
+ * working tree (e.g. a bare repository) — callers fall back to the
+ * registering path's basename in every one of those cases.
+ */
+async function resolveMainRepoDir(canonicalPath: string): Promise<string | null> {
+  const commonDir = await gitCommonDir(canonicalPath);
+  if (!commonDir) return null;
+  if (path.basename(commonDir) !== '.git') return null;
+  return path.dirname(commonDir);
+}
+
 // -----------------------------------------------------------------------------
 // Registration (design D4 algorithm)
 // -----------------------------------------------------------------------------
@@ -308,8 +326,12 @@ export async function registerProject(
     }
 
     // 2c. Clone fork (also the fresh-projectId path): distinct home, first
-    // free integer suffix when the base name collides.
-    const baseHome = deriveHomeBaseName(canonicalPath, input.projectId);
+    // free integer suffix when the base name collides. The base name derives
+    // from the MAIN repo when this path is a worktree (D3) — otherwise a
+    // `.claude/worktrees/<branch>` registering before the main repo would
+    // permanently name the shared home after the branch instead of the repo.
+    const mainRepoDir = await resolveMainRepoDir(canonicalPath);
+    const baseHome = deriveHomeBaseName(mainRepoDir ?? canonicalPath, input.projectId);
     const usedHomes = new Set(Object.values(projects).map((entry) => entry.home));
     let home = baseHome;
     if (usedHomes.has(home)) {

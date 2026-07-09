@@ -21,6 +21,10 @@ describe('artifact-graph/resolver', () => {
     tempDir = path.join(os.tmpdir(), `rasen-resolver-test-${Date.now()}`);
     fs.mkdirSync(tempDir, { recursive: true });
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_DATA_HOME — clear it so this suite's per-test XDG_DATA_HOME
+    // isolation actually applies.
+    delete process.env.RASEN_HOME;
   });
 
   afterEach(() => {

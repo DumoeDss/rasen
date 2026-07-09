@@ -28,6 +28,11 @@ describe('schema command', () => {
     // Change to temp directory
     process.chdir(tempDir);
 
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_DATA_HOME/XDG_CONFIG_HOME — clear it so the XDG isolation
+    // below actually applies.
+    delete process.env.RASEN_HOME;
+
     // Set XDG paths to temp to avoid polluting user directories
     process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
     process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg-config');

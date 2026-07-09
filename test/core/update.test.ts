@@ -1201,8 +1201,14 @@ content
 
     it('should map a legacy delivery value to both, print a one-time notice, and restore missing skills on update', async () => {
       const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+      const originalRasenHome = process.env.RASEN_HOME;
       const configTempDir = path.join(os.tmpdir(), `openspec-update-config-${randomUUID()}`);
       await fs.mkdir(configTempDir, { recursive: true });
+      // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+      // outranks XDG_CONFIG_HOME — clear it so this test's XDG isolation
+      // actually resolves into configTempDir (mockState.useReal below routes
+      // getGlobalConfig() to the real implementation for this one test).
+      delete process.env.RASEN_HOME;
       process.env.XDG_CONFIG_HOME = configTempDir;
       mockState.useReal = true;
 
@@ -1236,6 +1242,11 @@ content
       } finally {
         mockState.useReal = false;
         process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+        if (originalRasenHome === undefined) {
+          delete process.env.RASEN_HOME;
+        } else {
+          process.env.RASEN_HOME = originalRasenHome;
+        }
         await fs.rm(configTempDir, { recursive: true, force: true });
       }
     });

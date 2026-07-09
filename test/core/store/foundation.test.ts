@@ -38,6 +38,10 @@ describe('store foundation', () => {
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-foundation-'));
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_DATA_HOME — clear it so tests below that set XDG_DATA_HOME
+    // per-test actually resolve into tempDir.
+    delete process.env.RASEN_HOME;
   });
 
   afterEach(() => {

@@ -25,6 +25,10 @@ describe('config command integration', () => {
 
     // Save original env and set XDG_CONFIG_HOME
     originalEnv = { ...process.env };
+    // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
+    // outranks XDG_CONFIG_HOME — clear it so this suite's XDG isolation
+    // actually resolves into tempDir instead of the shared net root.
+    delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
 
     // Spy on console.error
@@ -254,6 +258,9 @@ describe('config profile command', () => {
     tempDir = path.join(os.tmpdir(), `rasen-profile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     fs.mkdirSync(tempDir, { recursive: true });
     originalEnv = { ...process.env };
+    // See the note in the earlier beforeEach: clear the net's RASEN_HOME so
+    // XDG_CONFIG_HOME isolation actually applies.
+    delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
   });
 
