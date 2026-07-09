@@ -116,6 +116,36 @@ describe('config command integration', () => {
       'Set workflows = new,ff,apply,archive'
     );
   });
+
+  it('config set delivery <legacy value> heals to the consolidated value on the next read (cli-config spec)', async () => {
+    await runConfigCommand(['set', 'delivery', 'commands-first']);
+
+    // `config set` persists the raw coerced value at write time — it validates
+    // via the zod schema (which internally transforms) but only consumes
+    // {success, error}, not the transformed output. This matches the spec:
+    // "the effective delivery on the next read SHALL be the consolidated
+    // value" (not immediately on write), so the file legitimately holds the
+    // literal legacy string right after `set`.
+    const { getGlobalConfigPath, getGlobalConfig } = await import('../../src/core/global-config.js');
+    const onDiskAfterSet = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
+    expect(onDiskAfterSet.delivery).toBe('commands-first');
+
+    // The very next read heals it: the one-time notice fires, and both the
+    // effective value and the file on disk become the consolidated 'both'.
+    const config = getGlobalConfig();
+    expect(config.delivery).toBe('both');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('commands-first'));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('both'));
+
+    const onDiskAfterRead = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
+    expect(onDiskAfterRead.delivery).toBe('both');
+
+    // A second read is idempotent — no repeated notice.
+    consoleErrorSpy.mockClear();
+    const config2 = getGlobalConfig();
+    expect(config2.delivery).toBe('both');
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('config command shell completion registry', () => {
@@ -294,7 +324,20 @@ describe('config profile command', () => {
     expect(validateConfig({ featureFlags: {}, profile: 'full', delivery: 'both' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'core', delivery: 'both' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills' }).success).toBe(true);
+  });
+
+  it('config schema should accept legacy delivery values and transform them to the mapped value', async () => {
+    const { GlobalConfigSchema, validateConfig } = await import('../../src/core/config-schema.js');
+
+    // Whole-file validation (config set/edit) never rejects an old value.
     expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'commands', workflows: ['explore'] }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'commands-first', workflows: ['explore'] }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills-first', workflows: ['explore'] }).success).toBe(true);
+
+    // And the legacy value is actually transformed to its mapped equivalent.
+    expect(GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'commands' }).delivery).toBe('both');
+    expect(GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'commands-first' }).delivery).toBe('both');
+    expect(GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'skills-first' }).delivery).toBe('skills');
   });
 
   it('config schema should reject invalid profile values', async () => {

@@ -276,7 +276,7 @@ describe('global-config', () => {
         const originalConfig = {
           featureFlags: { flag1: true },
           profile: 'custom' as Profile,
-          delivery: 'commands' as Delivery,
+          delivery: 'skills' as Delivery,
           workflows: ['propose']
         };
 
@@ -284,7 +284,7 @@ describe('global-config', () => {
         const loadedConfig = getGlobalConfig();
 
         expect(loadedConfig.profile).toBe('custom');
-        expect(loadedConfig.delivery).toBe('commands');
+        expect(loadedConfig.delivery).toBe('skills');
         expect(loadedConfig.workflows).toEqual(['propose']);
       });
 
@@ -303,6 +303,55 @@ describe('global-config', () => {
         const config = getGlobalConfig();
 
         expect(config.workflows).toBeUndefined();
+      });
+    });
+
+    describe('legacy delivery migration', () => {
+      const legacyMappings: Array<[string, Delivery]> = [
+        ['skills-first', 'skills'],
+        ['commands', 'both'],
+        ['commands-first', 'both'],
+      ];
+
+      for (const [legacy, mapped] of legacyMappings) {
+        it(`maps legacy delivery '${legacy}' to '${mapped}' with a one-time notice`, () => {
+          process.env.XDG_CONFIG_HOME = tempDir;
+          const configDir = path.join(tempDir, 'rasen');
+          const configPath = path.join(configDir, 'config.json');
+          fs.mkdirSync(configDir, { recursive: true });
+          fs.writeFileSync(configPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: legacy }));
+
+          const config = getGlobalConfig();
+          expect(config.delivery).toBe(mapped);
+          expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(legacy));
+          expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(mapped));
+
+          // Config file rewritten to the mapped value so the notice is genuinely one-time.
+          const rewritten = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          expect(rewritten.delivery).toBe(mapped);
+
+          // Second read finds the already-mapped value and prints no notice.
+          consoleErrorSpy.mockClear();
+          const config2 = getGlobalConfig();
+          expect(config2.delivery).toBe(mapped);
+          expect(consoleErrorSpy).not.toHaveBeenCalled();
+        });
+      }
+
+      it("falls back an unrecognized delivery value to 'both' without persisting", () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        const configDir = path.join(tempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(configPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: 'bogus-value' }));
+
+        const config = getGlobalConfig();
+        expect(config.delivery).toBe('both');
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+        // Garbage values are not treated as a legacy migration, so the file is untouched.
+        const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        expect(onDisk.delivery).toBe('bogus-value');
       });
     });
   });

@@ -16,6 +16,11 @@ const mockState = {
     profile: 'core' as const,
     delivery: 'both' as const,
   } as GlobalConfig,
+  // When true, delegate to the real (unmocked) getGlobalConfig/saveGlobalConfig —
+  // used by the legacy-delivery healing test, which must exercise the real
+  // normalizeDelivery/notice/persist path in global-config.ts rather than the
+  // in-memory mock state below.
+  useReal: false,
 };
 
 // Mock global config module to isolate tests from the machine's actual config
@@ -24,8 +29,12 @@ vi.mock('../../src/core/global-config.js', async (importOriginal) => {
 
   return {
     ...actual,
-    getGlobalConfig: () => ({ ...mockState.config }),
-    saveGlobalConfig: vi.fn(),
+    getGlobalConfig: () => (mockState.useReal ? actual.getGlobalConfig() : { ...mockState.config }),
+    saveGlobalConfig: vi.fn((config: GlobalConfig) => {
+      if (mockState.useReal) {
+        actual.saveGlobalConfig(config);
+      }
+    }),
   };
 });
 
@@ -948,11 +957,11 @@ metadata:
       )).toBe(false);
     });
 
-    it('should respect commands-only delivery setting', async () => {
+    it('should keep skills present under both delivery (no delivery mode deletes skills)', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'commands',
+        delivery: 'both',
       });
 
       const skillsDir = path.join(testDir, '.claude', 'skills');
@@ -967,17 +976,17 @@ metadata:
         path.join(commandsDir, 'explore.md')
       )).toBe(true);
 
-      // Skills should be removed for commands-only delivery
+      // Skills are always installed — they remain (refreshed) alongside commands.
       expect(await FileSystemUtils.fileExists(
         path.join(skillsDir, 'rasen-explore', 'SKILL.md')
-      )).toBe(false);
+      )).toBe(true);
     });
 
-    it('should remove skills for configured tools without command adapters in commands-only delivery', async () => {
+    it('should keep skills for configured tools without command adapters (no delivery mode deletes skills)', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'commands',
+        delivery: 'both',
       });
 
       const { AI_TOOLS } = await import('../../src/core/config.js');
@@ -994,9 +1003,11 @@ metadata:
 
       await expect(updateCommand.execute(testDir)).resolves.toBeUndefined();
 
+      // A tool without a command adapter can never receive commands, but it
+      // still keeps its skills — skills are never removed by delivery.
       expect(await FileSystemUtils.fileExists(
         path.join(skillsDir, 'rasen-explore', 'SKILL.md')
-      )).toBe(false);
+      )).toBe(true);
     });
 
     it('should apply config sync when templates are up to date', async () => {
@@ -1037,7 +1048,7 @@ content
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'commands',
+        delivery: 'both',
       });
 
       const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
@@ -1149,11 +1160,11 @@ content
       expect(await FileSystemUtils.fileExists(fullGoalCommandPath)).toBe(true);
     });
 
-    it('should keep skill-only goal-loop stage skill dirs under commands-first delivery while removing command-counterpart skill dirs', async () => {
+    it('should never remove a skill dir for a workflow that also has a command counterpart, under both delivery', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'full',
-        delivery: 'commands-first',
+        delivery: 'both',
       });
 
       // Set up a configured tool
@@ -1163,8 +1174,7 @@ content
 
       await updateCommand.execute(testDir);
 
-      // Skill-only goal-loop stage workflows have no command counterpart —
-      // commands-first must NOT remove their skill dirs (their only delivery vehicle).
+      // Skill-only goal-loop stage workflows survive, as before.
       const goalStageSkillDirs = ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report'];
       for (const skillDir of goalStageSkillDirs) {
         expect(await FileSystemUtils.fileExists(
@@ -1172,13 +1182,13 @@ content
         )).toBe(true);
       }
 
-      // A workflow with a command counterpart (e.g. apply) should have its
-      // skill dir removed under commands-first, replaced by the command file.
+      // A workflow with a command counterpart (e.g. apply) ALSO keeps its
+      // skill dir — no delivery mode removes skill directories anymore (design D5).
       expect(await FileSystemUtils.fileExists(
         path.join(skillsDir, 'rasen-apply-change', 'SKILL.md')
-      )).toBe(false);
+      )).toBe(true);
 
-      // The goal command payload (rasen-goal's counterpart) should be present.
+      // The goal command payload (rasen-goal's counterpart) is also present.
       const { CommandAdapterRegistry, getCommandFileId } = await import('../../src/core/command-generation/index.js');
       const adapter = CommandAdapterRegistry.get('claude');
       if (!adapter) throw new Error('Claude adapter unavailable in test environment');
@@ -1187,6 +1197,47 @@ content
         ? goalCommandPath
         : path.join(testDir, goalCommandPath);
       expect(await FileSystemUtils.fileExists(fullGoalCommandPath)).toBe(true);
+    });
+
+    it('should map a legacy delivery value to both, print a one-time notice, and restore missing skills on update', async () => {
+      const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+      const configTempDir = path.join(os.tmpdir(), `openspec-update-config-${randomUUID()}`);
+      await fs.mkdir(configTempDir, { recursive: true });
+      process.env.XDG_CONFIG_HOME = configTempDir;
+      mockState.useReal = true;
+
+      try {
+        const configDir = path.join(configTempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        await fs.mkdir(configDir, { recursive: true });
+        await fs.writeFile(
+          configPath,
+          JSON.stringify({ featureFlags: {}, profile: 'core', delivery: 'commands-first' })
+        );
+
+        // Project has only command files installed (skill dirs missing), as a
+        // commands-first project would.
+        const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
+        await fs.mkdir(commandsDir, { recursive: true });
+        await fs.writeFile(path.join(commandsDir, 'explore.md'), 'old command');
+
+        const consoleErrorSpy = vi.spyOn(console, 'error');
+
+        await updateCommand.execute(testDir);
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('commands-first'));
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('both'));
+
+        const rewritten = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+        expect(rewritten.delivery).toBe('both');
+
+        const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
+        expect(await FileSystemUtils.fileExists(skillFile)).toBe(true);
+      } finally {
+        mockState.useReal = false;
+        process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+        await fs.rm(configTempDir, { recursive: true, force: true });
+      }
     });
   });
 

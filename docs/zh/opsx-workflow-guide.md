@@ -280,9 +280,9 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
   rasen config profile      # 交互选择 profile + workflows
   rasen update              # 在项目里重新生成对应的 skills/commands
   ```
-- **Delivery = 生成 skill 还是 command 还是都生成**：`both`（默认）/ `skills` / `commands` / `skills-first` / `commands-first`。在全局配置（`rasen config`）里设。
-  - ⚠️ **编排靠 skill**：`/rasen:auto` 与 `/rasen:review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-review`）。模型能调 skill、**不能**调 command——所以 `commands` / `commands-first`（会删掉有 command 对应物的 skill）会**打断编排**。要编排正常就保 skill：用 `both`（默认）或 `skills` / `skills-first`。
-  - ⚠️ 注意：若全局设了 `delivery: commands-first`，`rasen init` 会生成 commands 并清掉对应的 workflow skill 目录——这也会让"断言生成了 skill 文件"的测试在该机器上失败（已知点，测试侧需隔离全局配置）。
+- **Delivery = command 是否与 skill 一起装**：`both`（默认，skill + command）/ `skills`（只装 skill）。在全局配置（`rasen config`）里设。
+  - **skill 始终安装**，任何 delivery 模式都一样。`/rasen:auto` 与 `/rasen:review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-review`）——模型能调 skill、**不能**调 command，所以编排需要 skill 在场。既然 delivery 再也不能把它删掉，编排就不会再被某个 delivery 选择悄悄打断。
+  - 配置里若还留着旧值（`commands`、`skills-first`、`commands-first`），下次读取时会自动映射——`skills-first` → `skills`，`commands`/`commands-first` → `both`——并打印一次性提示，配置文件也会被改写。不用手动处理；之前被删掉的 skill 会在下次 `rasen update` 时恢复。
 
 ### 升级已安装过的项目（拿到本次的编排 + pipeline）
 

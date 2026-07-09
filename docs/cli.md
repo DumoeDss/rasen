@@ -140,7 +140,7 @@ openspec/
 
 .claude/skills/         # Claude Code skills (if claude selected)
 .cursor/skills/         # Cursor skills (if cursor selected)
-.cursor/commands/       # Cursor OPSX commands (if delivery includes commands)
+.cursor/commands/       # Cursor OPSX commands (if delivery is both)
 ... (other tool configs)
 ```
 

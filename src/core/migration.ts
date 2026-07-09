@@ -73,11 +73,10 @@ export function scanInstalledWorkflows(projectPath: string, tools: AIToolOption[
 }
 
 function inferDelivery(artifacts: InstalledWorkflowArtifacts): Delivery {
-  if (artifacts.hasSkills && artifacts.hasCommands) {
-    return 'both';
-  }
   if (artifacts.hasCommands) {
-    return 'commands';
+    // Commands-only installs (pre-profile era) heal to 'both': skills are
+    // restored on the next update rather than treated as data loss.
+    return 'both';
   }
   return 'skills';
 }

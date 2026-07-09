@@ -6,8 +6,8 @@ OpenSpec works with many AI coding assistants. When you run `rasen init`, OpenSp
 
 For each selected tool, OpenSpec can install:
 
-1. **Skills** (if delivery includes skills): `.../skills/openspec-*/SKILL.md`
-2. **Commands** (if delivery includes commands): tool-specific `opsx-*` command files
+1. **Skills** (always): `.../skills/openspec-*/SKILL.md`
+2. **Commands** (if delivery is `both`): tool-specific `opsx-*` command files
 
 By default, OpenSpec uses the `core` profile, which includes:
 - `propose`
@@ -85,7 +85,7 @@ OpenSpec installs workflow artifacts based on selected workflows:
 - **Custom selection:** any subset of all workflow IDs:
   `propose`, `explore`, `new`, `continue`, `apply`, `ff`, `sync`, `archive`, `bulk-archive`, `verify`, `onboard`
 
-In other words, skill/command counts are profile-dependent and delivery-dependent, not fixed.
+In other words, skill count is profile-dependent (not fixed); command count additionally depends on delivery — commands are only generated when delivery is `both`.
 
 ## Generated Skill Names
 

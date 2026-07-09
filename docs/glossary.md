@@ -52,11 +52,11 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Skill.** A folder of instructions (`.../skills/openspec-*/SKILL.md`) that your AI assistant auto-detects and follows. Skills are the emerging cross-tool standard for delivering the OpenSpec workflow to your assistant.
 
-**Command file.** A per-tool slash command file (`.../commands/opsx-*`). The older delivery mechanism, still supported alongside skills. You rarely touch these directly.
+**Command file.** A per-tool slash command file (`.../commands/opsx-*`). An optional addition installed alongside skills when delivery is `both`. You rarely touch these directly.
 
 **Profile.** The set of slash commands installed in your project. **Full** (the default) installs every workflow. **Core** slims down to `propose`, `explore`, `apply`, `sync`, `archive`; **custom** is any subset you pick. Change it with `rasen config profile`.
 
-**Delivery.** Whether OpenSpec installs skills, command files, or both for your tools. Configured globally and applied with `rasen update`.
+**Delivery.** Whether OpenSpec also installs command files alongside skills (`both`, the default) or skills only (`skills`). Skills are always installed. Configured globally and applied with `rasen update`.
 
 ## Customization
 
