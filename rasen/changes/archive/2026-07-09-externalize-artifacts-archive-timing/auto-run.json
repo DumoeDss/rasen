@@ -48,10 +48,25 @@
       ]
     },
     "ship": {
-      "status": "in_progress"
+      "status": "done",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      },
+      "commit": "a93ccf9",
+      "tree": "45eed7722070e3d1cef269fc86298a95d349e2fb",
+      "testGate": "spot 133/0 (full 2264/0 at apply)",
+      "delivery": "local",
+      "shipLogLocation": "workDir (first live use of change-work-dir)"
     },
     "archive": {
-      "status": "pending"
+      "status": "in_progress",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      }
     }
   },
   "rounds": 3,
