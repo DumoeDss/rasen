@@ -91,12 +91,18 @@
       "delivery": "local"
     },
     "archive": {
-      "status": "in_progress",
+      "status": "done",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
-      }
+      },
+      "commit": "bc7069b90c2b20251af79a1fe85d4ddd9f2ff2f6",
+      "specsSynced": [
+        "cli-init",
+        "config-loading",
+        "project-registry (new)"
+      ]
     }
   },
   "rounds": 1,
