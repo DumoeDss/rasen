@@ -1,0 +1,66 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "externalize-artifacts",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "worker": {
+        "role": "planner",
+        "agentId": "planner2",
+        "model": "fable"
+      }
+    },
+    "apply": {
+      "status": "done",
+      "worker": {
+        "role": "implementer",
+        "agentId": "impl-sha-stamping",
+        "model": "sonnet",
+        "reusedFrom": "externalize-artifacts-archive-dest"
+      },
+      "testGate": {
+        "command": "npx vitest run",
+        "result": "124 files / 2310 passed / 22 skipped / 0 failed"
+      },
+      "notes": "task 5.3 live-smoke deliberately skipped (requires real commits in shared tree); design premise corrected: store detection via root.store_id not planningHome.kind; pre-existing bulk-archive getter drift fixed"
+    },
+    "verify": {
+      "status": "done",
+      "worker": {
+        "role": "reviewer",
+        "agentId": "reviewer-sha-stamping",
+        "model": "fable"
+      },
+      "verdict": "DONE_WITH_CONCERNS 0B/2M/4m/4t",
+      "report": "review-report.md"
+    },
+    "review-loop": {
+      "status": "done",
+      "fixer": "impl-sha-stamping (author)",
+      "reReviewer": "reviewer-sha-stamping",
+      "verdict": "CLEAN round 2",
+      "resolved": "2M+4m",
+      "acceptedKnown": [
+        "t: bash fence shows form 1 only",
+        "t: 5.5 silent on mint-failure",
+        "t: store on-merge git commands repo-ambiguity (goes with store-orchestration follow-up)",
+        "t: tasks.md full-suite claim predates foreign version bump"
+      ]
+    },
+    "ship": {
+      "status": "in_progress",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      }
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "rounds": 2,
+  "openFindings": []
+}
