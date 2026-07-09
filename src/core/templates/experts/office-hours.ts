@@ -28,11 +28,13 @@ SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || b
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    \`\`\`bash
-   ls -t ~/.openspec/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t ~/.rasen/projects/$SLUG/*-design-*.md 2>/dev/null
    \`\`\`
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
-5. **Ask: what's your goal with this?** This is a real question, not a formality. The answer determines everything about how the session runs.
+5. **Consultation short-circuit — check the opening message first.** If the user's opening message already contains a **concrete design or plan** PLUS a **feedback request** ("what do you think," "is there a better way," "poke holes in this," "你觉得如何"), skip the goal question entirely and go straight to the **Consultation posture** (below). They already told you the goal by bringing a design to discuss — do not interrupt with a mode menu.
+
+6. **Otherwise, ask: what's your goal with this?** This is a real question, not a formality. The answer determines everything about how the session runs.
 
    Via AskUserQuestion, ask:
 
@@ -49,12 +51,25 @@ SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || b
    - Startup, intrapreneurship → **Startup mode** (Phase 2A)
    - Hackathon, open source, research, learning, having fun → **Builder mode** (Phase 2B)
 
-6. **Assess product stage** (only for startup/intrapreneurship modes):
+7. **Assess product stage** (only for startup/intrapreneurship modes):
    - Pre-product (idea stage, no users yet)
    - Has users (people using it, not yet paying)
    - Has paying customers
 
 Output: "Here's what I understand about this project and the area you want to change: ..."
+
+---
+
+## Consultation posture
+
+**When the user arrives with a concrete design already in hand and asks for feedback** — "what do you think," "is there a better way," "poke holes in this" — adopt a Consultation posture instead of the generative interview:
+
+- **Skip generative questioning.** They came to discuss a specific thing, not to be interviewed from a blank slate. Do not open the AskUserQuestion option menu.
+- **Deliver analysis prose directly.** React to their design like a peer: what's strong, what's risky, what you'd change and why. Take positions.
+- **Discuss peer-to-peer** until the thinking converges. Answer their questions (per the Dialogue Override) as the primary mode of the session.
+- **Offer the doc only after convergence.** Once the discussion has settled, ask whether to distill it into a design doc. The doc is a byproduct of the conversation, not the terminus of a flow — never rush to it, and never treat it as the goal the session is driving toward.
+
+If the user has only a vague idea (not a concrete design), stay in the normal interview posture (Phase 2A/2B).
 
 ---
 
@@ -67,6 +82,7 @@ These rules bind every question in the interview phases below (2A and 2B):
 - **One question at a time.** Ask, then STOP and wait for the response before the next. Batching questions into one turn is bewildering.
 - **Carry your recommended answer.** For each question, state the answer you would give — the user reacts to a concrete position far faster than they generate one from a blank prompt.
 - **Explore before asking.** If a question can be answered by exploring the codebase, read the code instead of asking. Spend the user's attention only on what the code cannot tell you.
+- **Answer before you ask.** The user's own question is the highest-priority input. When the user asks something or wants the plan explained, answer it in prose first (per the PREAMBLE's Dialogue Override) — answering always precedes advancing the question list. This binds both Startup mode (2A) and Builder mode (2B).
 
 ---
 
@@ -217,10 +233,10 @@ If the framing is imprecise, **reframe constructively** — don't dissolve the q
 
 **STOP** after each question. Wait for the response before asking the next.
 
-**Escape hatch:** If the user expresses impatience ("just do it," "skip the questions"):
+**Escape hatch:** Trigger this ONLY on an explicit skip signal — the user tells you to stop asking and move on ("just do it," "skip the questions," "stop asking, just write it"). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch. A request for more discussion is the opposite of impatience — do not fast-forward on it. When an explicit skip signal fires:
 - Say: "I hear you. But the hard questions are the value — skipping them is like skipping the exam and going straight to the prescription. Let me ask two more, then we'll move."
 - Consult the smart routing table for the founder's product stage. Ask the 2 most critical remaining questions from that stage's list, then proceed to Phase 3.
-- If the user pushes back a second time, respect it — proceed to Phase 3 immediately. Don't ask a third time.
+- If the user gives an explicit skip signal a second time, respect it — proceed to Phase 3 immediately. Don't ask a third time.
 - If only 1 question remains, ask it. If 0 remain, proceed directly.
 - Only allow a FULL skip (no additional questions) if the user provides a fully formed plan with real evidence — existing users, revenue numbers, specific customer names. Even then, still run Phase 3 (Premise Challenge) and Phase 4 (Alternatives).
 
@@ -258,7 +274,7 @@ Ask these **ONE AT A TIME** via AskUserQuestion. The goal is to brainstorm and s
 
 **STOP** after each question. Wait for the response before asking the next.
 
-**Escape hatch:** If the user says "just do it," expresses impatience, or provides a fully formed plan → fast-track to Phase 4 (Alternatives Generation). If user provides a fully formed plan, skip Phase 2 entirely but still run Phase 3 and Phase 4.
+**Escape hatch:** Trigger this ONLY on an explicit skip signal ("just do it," "skip," "stop asking, just write it") or a fully formed plan → fast-track to Phase 4 (Alternatives Generation). A user question or a request to explain or discuss is NOT a skip signal: route it to the PREAMBLE's Dialogue Override (answer in prose, keep discussing), never to this escape hatch — a request for more discussion is the opposite of impatience. If the user provides a fully formed plan, skip Phase 2 entirely but still run Phase 3 and Phase 4.
 
 **If the vibe shifts mid-session** — the user starts in builder mode but says "actually I think this could be a real company" or mentions customers, revenue, fundraising — upgrade to Startup mode naturally. Say something like: "Okay, now we're talking — let me ask you some harder questions." Then switch to the Phase 2A questions.
 
@@ -270,14 +286,14 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 \`\`\`bash
-grep -li "<keyword1>\\|<keyword2>\\|<keyword3>" ~/.openspec/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\\|<keyword2>\\|<keyword3>" ~/.rasen/projects/$SLUG/*-design-*.md 2>/dev/null
 \`\`\`
 
 If matches found, read the matching design docs and surface them:
 - "FYI: Related design found — '{title}' by {user} on {date} (branch: {branch}). Key overlap: {1-line summary of relevant section}."
 - Ask via AskUserQuestion: "Should we build on this prior design or start fresh?"
 
-This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in \`~/.openspec/projects/\`.
+This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in \`~/.rasen/projects/\`.
 
 If no matches found, proceed silently.
 
@@ -395,21 +411,23 @@ Count the signals. You'll use this count in Phase 6 to determine which tier of c
 
 ## Phase 5: Design Doc
 
+**HARD GATE:** The precondition for writing the design doc is an **explicit user approval of an approach in Phase 4** — OR, in the Consultation posture, the user's **explicit "yes" to distilling the converged discussion into a doc**. Those are the only two ways in. A complaint, silence, or a question is NOT approval — a user asking to be answered first or to discuss more is asking for more conversation, not a doc. Do not write or begin the design doc without that explicit approval. If it is missing, return to the discussion (Dialogue Override) or re-run the Phase 4 approval question.
+
 Write the design document to the project directory.
 
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
+SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 \`\`\`
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 \`\`\`bash
-PRIOR=$(ls -t ~/.openspec/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t ~/.rasen/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 \`\`\`
 If \`$PRIOR\` exists, the new doc gets a \`Supersedes:\` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to \`~/.openspec/projects/{slug}/{user}-{branch}-design-{datetime}.md\`:
+Write to \`~/.rasen/projects/{slug}/{user}-{branch}-design-{datetime}.md\`:
 
 ### Startup mode design doc template:
 
@@ -588,9 +606,9 @@ Say:
 
 After the plea, suggest the next step:
 
-- **\`/opsx:propose\`** — turn the validated idea into a change: proposal, design, specs, and tasks
+- **\`/rasen:propose\`** — turn the validated idea into a change: proposal, design, specs, and tasks
 
-The design doc at \`~/.openspec/projects/\` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
+The design doc at \`~/.rasen/projects/\` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
 ---
 
@@ -608,9 +626,9 @@ The design doc at \`~/.openspec/projects/\` is automatically discoverable by dow
 
 export function getOfficeHoursSkillTemplate(): SkillTemplate {
   return {
-    name: 'openspec:office-hours',
+    name: 'rasen:office-hours',
     description: '|',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
-    metadata: { author: 'openspec', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.0' },
   };
 }

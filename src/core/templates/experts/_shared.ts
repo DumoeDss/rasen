@@ -28,12 +28,20 @@ echo "BRANCH: $_BRANCH"
 **ALWAYS follow this structure for every AskUserQuestion call:**
 1. **Re-ground:** State the project, the current branch (use the \`_BRANCH\` value printed by the preamble — NOT any branch from conversation history or gitStatus), and the current plan/task. (1-2 sentences)
 2. **Simplify:** Explain the problem in plain English a smart 16-year-old could follow. No raw function names, no internal jargon, no implementation details. Use concrete examples and analogies. Say what it DOES, not what it's called.
-3. **Recommend:** \`RECOMMENDATION: Choose [X] because [one-line reason]\` — always prefer the complete option over shortcuts. Include \`Completeness: X/10\` for each option. Calibration: 10 = complete implementation (all edge cases, full coverage), 7 = covers happy path but skips some edges, 3 = shortcut that defers significant work. If both options are 8+, pick the higher; if one is ≤5, flag it.
+3. **Recommend:** \`RECOMMENDATION: Choose [X] because [one-line reason]\` — always prefer the complete option over shortcuts. Include \`Completeness: X/10\` for each option **only when the decision weighs a shortcut against a complete implementation**; discussion-type or exploratory forks do NOT carry a Completeness score. Calibration (when it applies): 10 = complete implementation (all edge cases, full coverage), 7 = covers happy path but skips some edges, 3 = shortcut that defers significant work. If both options are 8+, pick the higher; if one is ≤5, flag it.
 4. **Options:** Lettered options: \`A) ... B) ... C) ...\` — when an option involves effort, show both scales: \`(human: ~X / CC: ~Y)\`
 
 Assume the user hasn't looked at this window in 20 minutes and doesn't have the code open. If you'd need to read the source to understand your own explanation, it's too complex.
 
 Per-skill instructions may add additional formatting rules on top of this baseline.
+
+## Dialogue Override
+
+AskUserQuestion is a **decision tool, not a conversation tool.** Before every AskUserQuestion call, read the user's previous message. If it contains a question, a request to explain or discuss, or free-text that is not a clean selection of one of your options → **pause the question flow.** Answer in body prose — no lettered options, no \`RECOMMENDATION\`, no \`Completeness\` score — and keep discussing until the user explicitly signals to proceed. Then resume the phase exactly where you paused; never skip ahead.
+
+- **Never answer and advance in the same turn.** Answer the question this turn; ask your next question only once the user signals they are ready.
+- **A request for more dialogue is the opposite of a skip signal.** "Answer me first," "let's discuss," and repeated follow-up questions mean the user wants *more* conversation — they NEVER trigger a fast-forward, an escape hatch, or a jump to the next phase.
+- **Re-ground only after a genuine long gap.** In continuous back-and-forth, do not repeat the template opener (project / branch / plan restatement) on every turn — it belongs at the start of a session or after the user has been away, not between consecutive replies.
 
 ## Repo Ownership Mode — See Something, Say Something
 
@@ -85,12 +93,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| Verify | \\\`/opsx:verify\\\` | Implementation matches the change artifacts | 0 | — | — |
-| Verify (enhanced) | \\\`/opsx:verify-enhanced\\\` | Adds code-review, security, and browser passes | 0 | — | — |
-| Review cycle | \\\`/opsx:review-cycle\\\` | Iterate review → triage → fix until clean | 0 | — | — |
+| Verify | \\\`/rasen:verify\\\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \\\`/rasen:verify-enhanced\\\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \\\`/rasen:review-cycle\\\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \\\`/codex review\\\` | Independent 2nd opinion | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \\\`/opsx:review-cycle\\\` for the full review loop, or the individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \\\`/rasen:review-cycle\\\` for the full review loop, or the individual reviews above.
 \\\`\\\`\\\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
@@ -257,9 +265,9 @@ Produce this markdown table:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| Verify | \\\`/opsx:verify\\\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
-| Verify (enhanced) | \\\`/opsx:verify-enhanced\\\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
-| Review cycle | \\\`/opsx:review-cycle\\\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
+| Verify | \\\`/rasen:verify\\\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
+| Verify (enhanced) | \\\`/rasen:verify-enhanced\\\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
+| Review cycle | \\\`/rasen:review-cycle\\\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
 | Codex Review | \\\`/codex review\\\` | Independent 2nd opinion | {runs} | {status} | {findings} |
 \\\`\\\`\\\`
 
@@ -819,13 +827,13 @@ Compare screenshots and observations across pages for:
 
 ### Output Locations
 
-**Local:** \`.openspec/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
+**Local:** \`.rasen/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:**
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.openspec/projects/$SLUG
+SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
 \`\`\`
-Write to: \`~/.openspec/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+Write to: \`~/.rasen/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
 
 **Baseline:** Write \`design-baseline.json\` for regression mode:
 \`\`\`json
@@ -950,7 +958,7 @@ export const TEST_BOOTSTRAP = `## Test Framework Bootstrap
 ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini pyproject.toml phpunit.xml 2>/dev/null
 ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
 # Check opt-out marker
-[ -f .openspec/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
+[ -f .rasen/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
 \`\`\`
 
 **If test framework detected** (config files or test directories found):
@@ -963,7 +971,7 @@ Store conventions as prose context for use in Phase 8e.5 or Step 3.4. **Skip the
 **If NO runtime detected** (no config files found): Use AskUserQuestion:
 "I couldn't detect your project's language. What runtime are you using?"
 Options: A) Node.js/TypeScript B) Ruby/Rails C) Python D) Go E) Rust F) PHP G) Elixir H) This project doesn't need tests.
-If user picks H → write \`.openspec/no-test-bootstrap\` and continue without tests.
+If user picks H → write \`.rasen/no-test-bootstrap\` and continue without tests.
 
 **If runtime detected but no test framework — bootstrap:**
 
@@ -995,7 +1003,7 @@ B) [Alternative] — [rationale]. Includes: [packages]
 C) Skip — don't set up testing right now
 RECOMMENDATION: Choose A because [reason based on project context]"
 
-If user picks C → write \`.openspec/no-test-bootstrap\`. Tell user: "If you change your mind later, delete \`.openspec/no-test-bootstrap\` and re-run." Continue without tests.
+If user picks C → write \`.rasen/no-test-bootstrap\`. Tell user: "If you change your mind later, delete \`.rasen/no-test-bootstrap\` and re-run." Continue without tests.
 
 If multiple runtimes detected (monorepo) → ask which runtime to set up first, with option to do both sequentially.
 
@@ -1435,8 +1443,8 @@ The screenshot file at \`/tmp/gstack-sketch.png\` can be referenced by downstrea
 export const SPEC_REVIEW_LOOP = `## Spec Review Loop
 
 Before presenting the document to the user for approval, run adversarial review. This is
-a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/opsx:propose\` →
-implement → \`/opsx:review-cycle\` will scrutinize it again (review-cycle is the real
+a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/rasen:propose\` →
+implement → \`/rasen:review-cycle\` will scrutinize it again (review-cycle is the real
 adversarial code review). Do not over-polish a draft, and never iterate to convergence.
 
 **Step 1: One fresh adversarial review**
@@ -1500,7 +1508,7 @@ fresh pass after a major redesign**. Do NOT iterate toward a perfect score.
 
 - If the reviewer returns the SAME unresolved issue on two consecutive passes (the fix didn't
   land, or it's a genuine disagreement), STOP. Persist it as an "## Open Questions" or
-  "## Reviewer Concerns" section in the document for \`/opsx:propose\` to resolve. A draft is
+  "## Reviewer Concerns" section in the document for \`/rasen:propose\` to resolve. A draft is
   allowed to carry open questions — that is not a failure.
 - If the subagent fails, times out, or is unavailable — skip the loop: tell the user "Spec
   review unavailable — presenting unreviewed doc." The document is already on disk; the
@@ -1515,8 +1523,8 @@ fresh pass after a major redesign**. Do NOT iterate toward a perfect score.
    skills read it).
 3. Append metrics:
 \`\`\`bash
-mkdir -p ~/.openspec/analytics
-echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.openspec/analytics/spec-review.jsonl 2>/dev/null || true
+mkdir -p ~/.rasen/analytics
+echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.rasen/analytics/spec-review.jsonl 2>/dev/null || true
 \`\`\`
 ITERATIONS = total review passes (fresh + warm). Replace ITERATIONS, FOUND, FIXED,
 REMAINING, SCORE with actual values from the review.`;
