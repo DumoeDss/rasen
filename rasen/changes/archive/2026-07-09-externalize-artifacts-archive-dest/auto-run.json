@@ -56,15 +56,24 @@
       "r1SpecTightening": "done, validate passes"
     },
     "ship": {
+      "status": "done",
+      "worker": {
+        "role": "shipper",
+        "agentId": "shipper-machine-home",
+        "model": "sonnet"
+      },
+      "commit": "28769b6",
+      "tree": "f636b3e4e5696947a1a45c9ac54d7cf5e0e16dd9",
+      "testGate": "spot 54/0 (full green minus known init flake)",
+      "delivery": "local"
+    },
+    "archive": {
       "status": "in_progress",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
       }
-    },
-    "archive": {
-      "status": "pending"
     }
   },
   "rounds": 2,
