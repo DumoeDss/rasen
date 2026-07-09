@@ -44,7 +44,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 3. **Check task completion status (HARD GATE)**
 
-   Read the tasks file (typically \`tasks.md\`) to check for incomplete tasks.
+   Read the tasks file from \`artifactPaths.tasks.existingOutputPaths\` (in the status JSON fetched in step 2) to check for incomplete tasks — resolve it from the CLI rather than assuming a repo-local \`tasks.md\` (the tasks artifact is not always literally \`tasks.md\`), matching \`rasen-bulk-archive-change\`.
 
    Count tasks marked with \`- [ ]\` (incomplete) vs \`- [x]\` (complete).
 
@@ -74,7 +74,7 @@ ${STORE_SELECTION_GUIDANCE}
    Use \`artifactPaths.specs.existingOutputPaths\` from status JSON to check for delta specs. If none exist, proceed without sync prompt.
 
    **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec at \`rasen/specs/<capability>/spec.md\`
+   - Compare each delta spec with its corresponding main spec, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\` — in a registered store this resolves to the store's specs
    - Determine what changes would be applied (adds, modifications, removals, renames)
    - Show a combined summary before prompting
 
@@ -176,7 +176,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 3. **Check task completion status (HARD GATE)**
 
-   Read the tasks file (typically \`tasks.md\`) to check for incomplete tasks.
+   Read the tasks file from \`artifactPaths.tasks.existingOutputPaths\` (in the status JSON fetched in step 2) to check for incomplete tasks — resolve it from the CLI rather than assuming a repo-local \`tasks.md\` (the tasks artifact is not always literally \`tasks.md\`), matching \`rasen-bulk-archive-change\`.
 
    Count tasks marked with \`- [ ]\` (incomplete) vs \`- [x]\` (complete).
 
@@ -206,7 +206,7 @@ ${STORE_SELECTION_GUIDANCE}
    Use \`artifactPaths.specs.existingOutputPaths\` from status JSON to check for delta specs. If none exist, proceed without sync prompt.
 
    **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec at \`rasen/specs/<capability>/spec.md\`
+   - Compare each delta spec with its corresponding main spec, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\` — in a registered store this resolves to the store's specs
    - Determine what changes would be applied (adds, modifications, removals, renames)
    - Show a combined summary before prompting
 

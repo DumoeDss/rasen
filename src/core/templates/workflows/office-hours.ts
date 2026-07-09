@@ -62,13 +62,13 @@ The session produces the design document **exactly once** (whether facilitated b
 ### 4. Dual-Write Output
 
 **If an active Rasen change context exists:**
-- Write output to \`rasen/changes/<name>/office-hours-design.md\`
+- Write output to \`office-hours-design.md\` under \`changeRoot\` (from \`rasen status --json\`), NOT a literal repo-relative \`rasen/changes/<name>/\` path
 - This is the change's single validation doc — a stable name within the task directory, just like \`proposal.md\`. Re-running office-hours on the same change refines this file in place.
 - This document will be automatically consumed by \`/rasen:propose\` as input context
 
 **If no active change exists:**
 - Derive a kebab-case slug from the topic — the **verbatim** kebab-case of the description, with NO abbreviation (e.g. "real-time collaboration" → \`real-time-collaboration\`), exactly the way \`/rasen:propose\` derives a change name from a description (so the two slugs converge and propose can auto-detect this file)
-- Write output to \`rasen/office-hours/<topic-slug>.md\` — **one file per topic**, so separate validation sessions never overwrite each other (do NOT use a single fixed filename)
+- Write output to \`<topic-slug>.md\` under the \`office-hours/\` directory that is the sibling of \`planningHome.changesDir\` (from \`rasen status --json\`), NOT a literal repo-relative \`rasen/office-hours/\` path — **one file per topic**, so separate validation sessions never overwrite each other (do NOT use a single fixed filename)
 - If that exact filename already exists for an UNRELATED topic, disambiguate with a short suffix (\`-2\`, \`-alt\`, …) rather than overwriting
 - Inform the user of the path. When they later run \`/rasen:propose\` with the same topic, propose AUTO-DETECTS this file — its no-active-change scan looks for \`<change-name>.md\` in this \`office-hours\` directory, and because both derive the same kebab slug, a matching change name lines up with this filename.
 
