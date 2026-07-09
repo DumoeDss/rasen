@@ -330,9 +330,9 @@ tells you which case you're in.
 | The store registry | `<data dir>/openspec/stores/registry.yaml` | No — this machine only |
 | Worksets | `<data dir>/openspec/worksets/` | No — this machine only |
 
-`<data dir>` is `~/.local/share/openspec` on macOS and Linux (or
-`$XDG_DATA_HOME/openspec` when set), and `%LOCALAPPDATA%\openspec` on
-Windows.
+`<data dir>` is `~/.rasen` on every platform. Set `RASEN_HOME` to relocate it;
+`$XDG_DATA_HOME/rasen` is still honored below `RASEN_HOME` as a compatibility
+alias.
 
 ## Reference
 

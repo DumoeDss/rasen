@@ -24,9 +24,9 @@ describe('telemetry/config', () => {
   }
 
   function defaultConfigDir(): string {
-    return os.platform() === 'win32'
-      ? path.join(tempDir, 'appdata', 'rasen')
-      : path.join(tempDir, '.config', 'rasen');
+    // relocate-machine-home: the default is the literal ~/.rasen on every
+    // platform now (APPDATA/.config platform branches were removed).
+    return path.join(tempDir, '.rasen');
   }
 
   function defaultConfigPath(): string {
@@ -42,7 +42,7 @@ describe('telemetry/config', () => {
     // On POSIX, os.homedir() uses HOME; on Windows it uses USERPROFILE
     originalEnv = { ...process.env };
     delete process.env.XDG_CONFIG_HOME;
-    process.env.APPDATA = path.join(tempDir, 'appdata');
+    delete process.env.RASEN_HOME;
     process.env.HOME = tempDir;
     process.env.USERPROFILE = tempDir;
   });
@@ -120,6 +120,28 @@ describe('telemetry/config', () => {
         anonymousId: 'legacy-id',
         noticeSeen: true,
       });
+    });
+
+    it('does not merge from the stray legacy path when RASEN_HOME is set (relocate-machine-home M1 regression)', async () => {
+      // A stray legacy config left over from before RASEN_HOME was ever set
+      // (or from an unrelated old install) at the hardcoded legacy location.
+      const legacyConfigDir = path.join(tempDir, '.config', 'rasen');
+      const legacyConfigPath = path.join(legacyConfigDir, 'config.json');
+      fs.mkdirSync(legacyConfigDir, { recursive: true });
+      fs.writeFileSync(legacyConfigPath, JSON.stringify({
+        telemetry: { anonymousId: 'stray-legacy-id', noticeSeen: true },
+      }));
+
+      const rasenHomeDir = path.join(tempDir, 'rasen-home');
+      process.env.RASEN_HOME = rasenHomeDir;
+
+      const config = await readConfig();
+
+      // RASEN_HOME is an explicit, isolating choice: nothing relocates,
+      // including telemetry fields — the stray legacy config is never read.
+      expect(config.telemetry).toBeUndefined();
+      expect(getConfigPath()).toBe(path.join(rasenHomeDir, 'config.json'));
+      expect(fs.existsSync(path.join(rasenHomeDir, 'config.json'))).toBe(false);
     });
 
     it('should not overwrite invalid new config during legacy migration', async () => {

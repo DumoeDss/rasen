@@ -16,11 +16,13 @@ import {
   isStoreRoot,
   isValidStoreId,
   listStoreRegistryEntries,
+  parseRegistryKey,
   parseStoreMetadataState,
   parseStoreRegistryState,
   readStoreMetadataState,
   readStoreRegistryState,
   readOptionalStoreMetadataState,
+  registryKeyFor,
   resolveGitStoreBackendConfig,
   serializeStoreMetadataState,
   serializeStoreRegistryState,
@@ -83,10 +85,10 @@ describe('store foundation', () => {
       });
 
       expect(getStoresDir({ globalDataDir: dataDir })).toBe(
-        '/home/tabish/.local/share/rasen/stores'
+        '/home/tabish/.rasen/stores'
       );
       expect(getStoreRegistryPath({ globalDataDir: dataDir })).toBe(
-        '/home/tabish/.local/share/rasen/stores/registry.yaml'
+        '/home/tabish/.rasen/stores/registry.yaml'
       );
     });
 
@@ -211,6 +213,98 @@ stores:
       depth: 1
 `)
       ).toThrow(/Invalid store registry state/u);
+    });
+
+    describe('project namespace (type field)', () => {
+      it('parses key form and reserved prefix', () => {
+        expect(parseRegistryKey('elftia')).toEqual({ type: 'store', id: 'elftia' });
+        expect(parseRegistryKey('project:elftia')).toEqual({ type: 'project', id: 'elftia' });
+        expect(registryKeyFor('store', 'elftia')).toBe('elftia');
+        expect(registryKeyFor('project', 'elftia')).toBe('project:elftia');
+      });
+
+      it('parses a legacy no-type entry as store-typed and re-serializes byte-identically', () => {
+        const legacyContent = `version: 1
+stores:
+  elftia:
+    backend:
+      type: git
+      local_path: /repos/elftia
+`;
+        const registry = parseStoreRegistryState(legacyContent);
+        expect(registry.stores.elftia.type).toBeUndefined();
+        expect(listStoreRegistryEntries(registry)).toEqual([
+          { id: 'elftia', type: 'store', backend: registry.stores.elftia.backend },
+        ]);
+
+        const reserialized = serializeStoreRegistryState(registry);
+        // Byte-identical: no injected `type` key on a store entry that lacked one.
+        expect(reserialized).toBe(legacyContent);
+      });
+
+      it('lets a store and a project of the same id coexist', () => {
+        const registry = parseStoreRegistryState(`version: 1
+stores:
+  elftia:
+    backend:
+      type: git
+      local_path: /repos/elftia-store
+  project:elftia:
+    type: project
+    backend:
+      type: git
+      local_path: /repos/elftia-project
+`);
+        const entries = listStoreRegistryEntries(registry);
+        expect(entries).toEqual([
+          { id: 'elftia', type: 'project', backend: registry.stores['project:elftia'].backend },
+          { id: 'elftia', type: 'store', backend: registry.stores.elftia.backend },
+        ]);
+
+        // Project entries always write `type: project`.
+        const reserialized = serializeStoreRegistryState(registry);
+        expect(reserialized).toContain('type: project');
+        expect(parseStoreRegistryState(reserialized)).toEqual(registry);
+      });
+
+      it('rejects a type value outside store|project', () => {
+        expect(() =>
+          parseStoreRegistryState(`version: 1
+stores:
+  elftia:
+    type: repo
+    backend:
+      type: git
+      local_path: /repos/elftia
+`)
+        ).toThrow(/Invalid store registry state/u);
+      });
+
+      it('rejects a key-form/type disagreement instead of coercing it', () => {
+        // A project: key claiming type: store.
+        expect(() =>
+          parseStoreRegistryState(`version: 1
+stores:
+  project:elftia:
+    type: store
+    backend:
+      type: git
+      local_path: /repos/elftia
+`)
+        ).toThrow(/disagrees with its key form/u);
+
+        // A bare key claiming type: project.
+        expect(() =>
+          parseStoreRegistryState(`version: 1
+stores:
+  elftia:
+    type: project
+    backend:
+      type: git
+      local_path: /repos/elftia
+`)
+        ).toThrow(/disagrees with its key form/u);
+      });
     });
   });
 

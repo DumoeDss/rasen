@@ -9,6 +9,7 @@ import {
   GLOBAL_CONFIG_DIR_NAME,
   GLOBAL_CONFIG_FILE_NAME,
   getGlobalConfigDir,
+  resolveRasenHome,
 } from '../core/global-config.js';
 
 // Constants
@@ -94,6 +95,19 @@ async function migrateLegacyTelemetryConfig(
   config: GlobalConfig,
   persist: boolean,
 ): Promise<GlobalConfig> {
+  // relocate-machine-home M1 fix: RASEN_HOME is the highest-precedence,
+  // single-knob override — "an explicit location is the user's choice;
+  // nothing relocates" applies to this legacy-telemetry merge too, not just
+  // to `adoptLegacyMachineData`. Without this guard, a stray legacy
+  // ~/.config/rasen/config.json could silently leak its anonymousId/
+  // noticeSeen into a RASEN_HOME-scoped config the user explicitly chose to
+  // isolate. (XDG_CONFIG_HOME is deliberately NOT gated here: migrating from
+  // the legacy `~/.config/rasen` into a newly-set XDG_CONFIG_HOME location is
+  // this mechanism's original, still-intended use case.)
+  if (resolveRasenHome(process.env) !== undefined) {
+    return config;
+  }
+
   const legacyConfigPath = getLegacyConfigPath();
   if (path.resolve(configPath) === path.resolve(legacyConfigPath) || !hasMissingTelemetryFields(config)) {
     return config;
@@ -122,11 +136,10 @@ async function migrateLegacyTelemetryConfig(
 
 /**
  * Get the path to the global config file.
- * Follows XDG Base Directory Specification and platform conventions.
  *
- * - All platforms: $XDG_CONFIG_HOME/openspec/ if XDG_CONFIG_HOME is set
- * - Unix/macOS fallback: ~/.config/openspec/
- * - Windows fallback: %APPDATA%/openspec/
+ * Delegates to `getGlobalConfigDir()` (see `core/global-config.ts`):
+ * `RASEN_HOME` (highest) > `$XDG_CONFIG_HOME/rasen` (compatibility alias) >
+ * `~/.rasen` (the default on every platform).
  */
 export function getConfigPath(): string {
   const configDir = getConfigDir();

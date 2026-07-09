@@ -5,11 +5,14 @@ export {
   GLOBAL_DATA_DIR_NAME,
   type GlobalDataDirOptions,
   type GlobalConfig,
+  type MachineRootRelocationCheck,
   getGlobalConfigDir,
   getGlobalConfigPath,
   getGlobalConfig,
   saveGlobalConfig,
-  getGlobalDataDir
+  getGlobalDataDir,
+  adoptLegacyMachineData,
+  checkMachineRootRelocation
 } from './global-config.js';
 
 export * from './references.js';

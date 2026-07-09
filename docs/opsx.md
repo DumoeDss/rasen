@@ -590,7 +590,7 @@ rasen schema validate my-workflow
 rasen schema which my-workflow
 ```
 
-Schemas are stored in `openspec/schemas/` (project-local, version controlled) or `~/.local/share/openspec/schemas/` (user global).
+Schemas are stored in `openspec/schemas/` (project-local, version controlled) or `~/.rasen/schemas/` (user global; override the location with `RASEN_HOME`).
 
 **Schema structure:**
 ```

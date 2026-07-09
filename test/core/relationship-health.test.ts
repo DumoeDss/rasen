@@ -36,7 +36,7 @@ describe('relationship health composition (3.6)', () => {
       },
       store: null,
       references: [],
-      machineHome: { registered: false, dangling: [] },
+      machineHome: { registered: false, dangling: [], relocation: { lingering: [], pendingOrFailed: [] } },
       status: [],
     });
   });
@@ -138,6 +138,30 @@ describe('relationship health composition (3.6)', () => {
     });
     expect(absent.store?.status).toEqual([]);
     expect(absent.store?.metadata.remote).toBeUndefined();
+  });
+
+  it('splits machine-root relocation checks into lingering vs. pending/failed (D4)', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      machineRootRelocation: [
+        { path: '/old/data', target: '/home/.rasen', targetHasContent: true },
+        { path: '/old/config', target: '/home/.rasen', targetHasContent: false },
+      ],
+    });
+
+    expect(health.machineHome.relocation).toEqual({
+      lingering: [{ path: '/old/data', target: '/home/.rasen' }],
+      pendingOrFailed: [{ path: '/old/config', target: '/home/.rasen' }],
+    });
+  });
+
+  it('reports empty relocation arrays in the clean state', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      machineRootRelocation: [],
+    });
+
+    expect(health.machineHome.relocation).toEqual({ lingering: [], pendingOrFailed: [] });
   });
 
   it('passes reference entries through untouched', () => {
