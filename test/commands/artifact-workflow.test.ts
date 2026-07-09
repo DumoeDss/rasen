@@ -852,6 +852,49 @@ artifacts:
     });
   });
 
+  describe('archive.timing exposure (design externalize-artifacts-archive-timing)', () => {
+    it('status --json exposes the configured archive.timing', async () => {
+      await fs.writeFile(
+        path.join(tempDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\narchive:\n  timing: in-ship\n'
+      );
+      await createTestChange('archive-timing-configured');
+
+      const result = await runCLI(
+        ['status', '--change', 'archive-timing-configured', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.archive).toEqual({ timing: 'in-ship' });
+    });
+
+    it('status --json exposes on-merge as the default when unconfigured', async () => {
+      await fs.writeFile(path.join(tempDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await createTestChange('archive-timing-default');
+
+      const result = await runCLI(
+        ['status', '--change', 'archive-timing-default', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.archive).toEqual({ timing: 'on-merge' });
+      // Existing payload fields remain present alongside the new one.
+      expect(json.changeName).toBe('archive-timing-default');
+      expect(json.schemaName).toBe('spec-driven');
+    });
+
+    it('status human output includes an Archive timing line', async () => {
+      await fs.writeFile(path.join(tempDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await createTestChange('archive-timing-text');
+
+      const result = await runCLI(['status', '--change', 'archive-timing-text'], { cwd: tempDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Archive timing: on-merge');
+    });
+  });
+
   describe('help text', () => {
     it('status command help shows description', async () => {
       const result = await runCLI(['status', '--help']);

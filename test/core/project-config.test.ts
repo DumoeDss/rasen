@@ -7,6 +7,7 @@ import {
   validateConfigRules,
   suggestSchemas,
   ensureProjectIdInConfig,
+  resolveArchiveTiming,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -738,6 +739,107 @@ rules:
 
       expect(config).toEqual({ schema: 'spec-driven' });
       expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('archive.timing parsing', () => {
+    it('exposes a valid on-merge timing unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\narchive:\n  timing: on-merge\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        archive: { timing: 'on-merge' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes a valid in-ship timing unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\narchive:\n  timing: in-ship\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        archive: { timing: 'in-ship' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops an invalid timing value with a warning, keeping the rest of the config', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\narchive:\n  timing: sometimes\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        archive: {},
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'archive.timing' field")
+      );
+    });
+
+    it('drops a non-map archive value with a warning, keeping the rest of the config', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\narchive: banana\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'archive' field"));
+    });
+
+    it('does not warn when the archive block is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveArchiveTiming', () => {
+    it('defaults to on-merge for null config', () => {
+      expect(resolveArchiveTiming(null)).toBe('on-merge');
+    });
+
+    it('defaults to on-merge for undefined config', () => {
+      expect(resolveArchiveTiming(undefined)).toBe('on-merge');
+    });
+
+    it('defaults to on-merge when the archive block is absent', () => {
+      expect(resolveArchiveTiming({ schema: 'spec-driven' })).toBe('on-merge');
+    });
+
+    it('defaults to on-merge when timing is absent from the archive block', () => {
+      expect(resolveArchiveTiming({ schema: 'spec-driven', archive: {} })).toBe('on-merge');
+    });
+
+    it('honors an explicit in-ship timing', () => {
+      expect(
+        resolveArchiveTiming({ schema: 'spec-driven', archive: { timing: 'in-ship' } })
+      ).toBe('in-ship');
     });
   });
 

@@ -6,7 +6,10 @@
  * The ship execution contract is inlined here (no expert delegation).
  * PR body sourced from proposal summary. Ship log written to the change's
  * external work directory (resolved via `rasen status --json`; fallback:
- * the change directory).
+ * the change directory). Archive timing (`archive.timing` from the same
+ * status payload) decides whether spec sync + bookkeeping run inside this
+ * ship stage (`in-ship`) or are deferred to a later archive gated on merge
+ * confirmation (`on-merge`, the default).
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -16,6 +19,8 @@ const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mod
 ${STORE_SELECTION_GUIDANCE}
 
 PR body comes from proposal summary. Ship log recorded to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or \`ship-log.md\` already lives there).
+
+Resolve \`archive.timing\` from the same status payload (\`archive.timing\`, default \`on-merge\` when absent). Recorded ship-log facts (delivery mode, PR URL, archived-in-ship marker) for a delivery that already happened always outrank a later re-resolved config value — the timing axis is consulted only for decisions not yet taken.
 
 ## When to Use
 
@@ -72,9 +77,14 @@ Resolution precedence (first match wins):
 NEVER resolve an integration base by falling back to the repository's default branch — a branch whose target you had to guess is a branch you must ask about.
 
 **b. Commit the change (all modes)**
-- Stage the change's files and commit with a conventional message derived from the change name / proposal summary
+- **In-ship timing only, before staging/committing:** run the change's archive now, inside the ship stage, so its results ride this same delivery. Order matters — the change directory is about to move:
+  1. Capture what later ship steps need from the change directory FIRST: PR-body sections from \`proposal.md\`, task-completion facts.
+  2. Sync delta specs into main specs (the \`rasen-sync-specs\` step — same sync the archive skill runs).
+  3. Move the change directory to \`<changesDir>/archive/YYYY-MM-DD-<name>\` (the same collision rule as \`/rasen:archive\`'s bookkeeping step).
+  4. Record \`Archived in ship: <path>\` for the ship log (step 4).
+- Stage the change's files — under in-ship timing, this also includes the synced main specs and the moved change directory from the steps above — and commit with a conventional message derived from the change name / proposal summary
 - Pre-commit hooks (lint, format) may reject the commit: fix the reported issues and retry — NEVER bypass with \`--no-verify\`
-- If the working tree is already clean, skip this step
+- If the working tree is already clean, skip this step (on-merge timing only — in-ship timing always has the sync + move above to commit)
 
 **c. Merge the integration base (pr mode ONLY)**
 - \`git fetch origin <base> && git merge origin/<base> --no-edit\` so the test gate runs against the merged state — \`<base>\` is the base resolved in (a), never a guessed default
@@ -98,12 +108,14 @@ If tests run and any in-branch test fails, **STOP** and do NOT deliver (a genuin
 
 **PR Body Generation (pr mode):**
 
-If \`rasen/changes/<name>/proposal.md\` exists:
+Under **in-ship** timing, the change directory already moved in step (b) — use the PR-body sections CAPTURED in step (b).1 (read from \`proposal.md\` before the move), never a fresh read of \`rasen/changes/<name>/proposal.md\` — it no longer exists there, and treating its absence as "no proposal was available" would be false.
+
+Under **on-merge** timing (or when nothing was captured because timing was on-merge), if \`rasen/changes/<name>/proposal.md\` exists:
 - Extract "Why" and "What Changes" sections
 - Use as PR body with proper markdown formatting
 - Derive PR title from change name or proposal summary
 
-If no proposal.md:
+If no proposal.md (and nothing was captured in step (b).1):
 - Generate PR body from commit messages
 - Use change name as PR title
 - Note that no proposal was available
@@ -119,7 +131,7 @@ If no proposal.md:
 
 ### 4. Write Ship Log
 
-After successful delivery in ANY mode, write \`ship-log.md\` to the work directory (fallback: \`rasen/changes/<name>/ship-log.md\`):
+After successful delivery in ANY mode, write \`ship-log.md\` to the work directory (fallback: \`rasen/changes/<name>/ship-log.md\` — EXCEPT under **in-ship** timing, where the change directory already moved in step (b): fall back to the archived path recorded in step (b).3 instead, never to the original \`rasen/changes/<name>/\`, which would resurrect an empty directory there and strand the log outside the archive):
 
 \`\`\`markdown
 # Ship Log: <change-name>
@@ -132,6 +144,7 @@ After successful delivery in ANY mode, write \`ship-log.md\` to the work directo
 **Base:** <base-branch>            (pr mode only)
 **PR:** <PR-URL>                   (pr mode only)
 **Status:** PR Created | Pushed | Committed (delivery deferred to portfolio level)
+**Archived in ship:** <path>       (in-ship timing only — omit this line under on-merge)
 
 ## Pre-Flight Results
 - Verification: <pass/skip>
@@ -169,9 +182,13 @@ If CI fails:
 
 ### 6. Post-Ship
 
-After shipping, suggest:
+After shipping, guidance on archiving is timing- and mode-aware (facts recorded in the ship log, not a re-resolved config value):
+- **in-ship timing:** the change is already archived — see the ship log's \`Archived in ship:\` path. Do NOT suggest \`/rasen:archive\`; because the change directory has already moved, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early directory scan (step 1.5, before it ever calls status) and reports already-archived from the matched archive location, not from a successful status call.
+- **on-merge timing, \`pr\` mode:** the change stays ACTIVE during PR review — status, resume, loop, and fix-forward keep working. Do NOT suggest archiving immediately; state that archive follows merge confirmation (\`/rasen:archive\` checks the PR's merge state on each invocation, no polling).
+- **on-merge timing, \`push\`/\`local\` mode:** delivery is complete at ship with no merge event to await — suggest running \`/rasen:archive\` now.
+
+Always suggest:
 - Run \`/rasen:retro\` for a retrospective on the change
-- Run \`/rasen:archive\` to archive the completed change
 - Update project documentation (README, architecture notes, changelog) to match what shipped, so the docs do not drift from the release
 
 ## Output
