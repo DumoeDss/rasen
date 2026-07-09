@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { parse as parseYaml } from 'yaml';
 import {
+  appendStoreReference,
   readProjectConfig,
   validateConfigRules,
   suggestSchemas,
@@ -1081,6 +1083,66 @@ rules:
       // Exactly one projectId line landed - no divergence, no duplication.
       const written = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
       expect(written.match(/^projectId:/gmu)?.length).toBe(1);
+    });
+  });
+
+  describe('appendStoreReference', () => {
+    it('appends a new id and preserves every other field', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(
+        configPath,
+        'schema: spec-driven\nquality-rules:\n  - Include rollback plan\nreferences:\n  - upstream-context\n'
+      );
+
+      const result = appendStoreReference(tempDir, 'team-context');
+
+      expect(result).toEqual({ configPath, changed: true });
+      const written = parseYaml(fs.readFileSync(configPath, 'utf-8'));
+      expect(written.schema).toBe('spec-driven');
+      expect(written['quality-rules']).toEqual(['Include rollback plan']);
+      expect(written.references).toEqual(['upstream-context', 'team-context']);
+    });
+
+    it('is a no-op when the id is already present', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      const original = 'schema: spec-driven\nreferences:\n  - team-context\n';
+      fs.writeFileSync(configPath, original);
+
+      const result = appendStoreReference(tempDir, 'team-context');
+
+      expect(result).toEqual({ configPath, changed: false });
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(original);
+    });
+
+    it('creates a minimal config when none exists', () => {
+      const result = appendStoreReference(tempDir, 'team-context');
+
+      const configPath = path.join(tempDir, 'rasen', 'config.yaml');
+      expect(result).toEqual({ configPath, changed: true });
+      const written = parseYaml(fs.readFileSync(configPath, 'utf-8'));
+      expect(written).toEqual({ references: ['team-context'] });
+    });
+
+    it('preserves a declared remote on an existing reference entry', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(
+        configPath,
+        'schema: spec-driven\nreferences:\n  - id: upstream-context\n    remote: git@example.com:team/upstream.git\n'
+      );
+
+      appendStoreReference(tempDir, 'team-context');
+
+      const written = parseYaml(fs.readFileSync(configPath, 'utf-8'));
+      expect(written.references).toEqual([
+        { id: 'upstream-context', remote: 'git@example.com:team/upstream.git' },
+        'team-context',
+      ]);
     });
   });
 });

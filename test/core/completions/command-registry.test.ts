@@ -253,6 +253,7 @@ describe('command completion registry', () => {
     expect(store?.subcommands?.map((entry) => entry.name)).toEqual([
       'setup',
       'register',
+      'add-project',
       'unregister',
       'remove',
       'list',

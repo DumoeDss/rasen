@@ -1,9 +1,9 @@
 import { WORKSPACE_DIR_NAME } from './config.js';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { promises as fsPromises } from 'fs';
 import { randomUUID } from 'crypto';
 import path from 'path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
@@ -668,6 +668,52 @@ export function resolveArchiveDestinationValue(
   config: ProjectConfig | null | undefined
 ): ArchiveDestination {
   return config?.archive?.destination ?? 'in-repo';
+}
+
+// -----------------------------------------------------------------------------
+// References append (store add-project)
+// -----------------------------------------------------------------------------
+
+export interface AppendStoreReferenceResult {
+  configPath: string;
+  /** False when the id was already present; nothing was written. */
+  changed: boolean;
+}
+
+/**
+ * Appends `storeId` to `targetRoot`'s `references:` list, preserving every
+ * other config field. Follows the raw-YAML round-trip pattern used for the
+ * quality-rules append (archive.ts:905-915): parse the full document, mutate
+ * the one field, `stringifyYaml` back — never a schema-typed rewrite that
+ * could silently drop unknown keys. De-dupes on store id (a no-op when
+ * already present); a config-less root gets a minimal file containing only
+ * `references:`.
+ */
+export function appendStoreReference(
+  targetRoot: string,
+  storeId: string
+): AppendStoreReferenceResult {
+  const existingPath = resolveConfigFilePath(targetRoot);
+  const configPath = existingPath ?? path.join(targetRoot, WORKSPACE_DIR_NAME, 'config.yaml');
+
+  const existingReferences = readProjectConfig(targetRoot)?.references ?? [];
+  if (existingReferences.some((entry) => entry.id === storeId)) {
+    return { configPath, changed: false };
+  }
+
+  const rawConfig: Record<string, unknown> = existingPath
+    ? ((parseYaml(readFileSync(existingPath, 'utf-8')) as Record<string, unknown>) || {})
+    : {};
+
+  rawConfig.references = [
+    ...existingReferences.map((entry) => (entry.remote ? entry : entry.id)),
+    storeId,
+  ];
+
+  mkdirSync(path.dirname(configPath), { recursive: true });
+  writeFileSync(configPath, stringifyYaml(rawConfig), 'utf-8');
+
+  return { configPath, changed: true };
 }
 
 /** Extracts a valid string `projectId` field from raw config content, or undefined. */

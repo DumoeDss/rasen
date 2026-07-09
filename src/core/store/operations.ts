@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
+  appendStoreReference,
   classifyOpenSpecDir,
   storePointerProblem,
 } from '../project-config.js';
@@ -52,6 +53,7 @@ import {
   commitStoreRegistration,
   getRegisteredStore,
   listRegisteredStores,
+  resolveRegisteredStore,
   unregisterStoreRegistration,
 } from './registry.js';
 
@@ -143,6 +145,32 @@ export interface RegisterExistingStoreInput {
   path?: string;
   id?: string;
   allowCreateIdentity?: boolean;
+}
+
+export interface StoreAddProjectInput {
+  projectPath: string;
+  targetStoreId: string;
+  /** Explicit project store id override (design D2); ignored when the
+   *  project already carries `.rasen-store/store.yaml`. */
+  id?: string;
+}
+
+export interface StoreAddProjectResult {
+  project: {
+    id: string;
+    root: string;
+    /** True when `.rasen-store/store.yaml` was created by this run. */
+    metadataCreated: boolean;
+    alreadyRegistered: boolean;
+  };
+  target: {
+    id: string;
+    root: string;
+    configPath: string;
+    referenceAdded: boolean;
+    referenceAlreadyPresent: boolean;
+  };
+  diagnostics: StoreDiagnostic[];
 }
 
 export interface CleanupStoreInput extends StorePathOptions {
@@ -852,6 +880,88 @@ export async function registerExistingStore(
     ...(metadata?.remote ? { canonical: metadata.remote } : {}),
     ...(backend.remote ? { observed: backend.remote } : {}),
   });
+}
+
+/**
+ * Composes `registerExistingStore` with the references-append helper
+ * (design D1): registers the project at `input.projectPath` as a store on
+ * this machine if it is not already one, then appends its store id to
+ * `input.targetStoreId`'s `references:` list. The only write inside the
+ * project repo is `.rasen-store/store.yaml` (registerExistingStore's own
+ * guarantee); the reference edit lands in the target store's config, never
+ * the project's.
+ */
+export async function storeAddProject(
+  input: StoreAddProjectInput
+): Promise<StoreAddProjectResult> {
+  const projectRoot = resolveRegisterRoot(input.projectPath);
+
+  // Peek existing identity to resolve the id per D2 (existing metadata ->
+  // explicit id -> folder basename) without writing anything yet; a
+  // not-yet-existing or not-yet-a-store project path resolves via the
+  // same inference registerExistingStore uses internally.
+  const existingMetadata = await readStoreMetadataForOperation(projectRoot);
+  const explicitId = input.id !== undefined ? validateStoreId(input.id) : undefined;
+  const resolvedProjectId =
+    existingMetadata?.id ?? explicitId ?? inferStoreIdFromPath(projectRoot);
+
+  let targetStore;
+  try {
+    targetStore = await resolveRegisteredStore({ id: input.targetStoreId });
+  } catch (error) {
+    if (
+      error instanceof StoreError &&
+      (error.diagnostic.code === 'store_not_found' || error.diagnostic.code === 'no_store_registry')
+    ) {
+      throw new StoreError(
+        `Target store '${input.targetStoreId}' is not registered on this machine.`,
+        'store_add_project_target_not_found',
+        {
+          target: 'store.id',
+          fix: `Create it first: rasen store setup ${input.targetStoreId}, then rerun.`,
+        }
+      );
+    }
+    throw error;
+  }
+
+  // Belt-and-suspenders (D7): assembleReferenceIndex already omits
+  // self-references, but the write itself must never happen.
+  if (resolvedProjectId === targetStore.id) {
+    throw new StoreError(
+      `Store '${resolvedProjectId}' cannot be added to itself.`,
+      'store_add_project_self_reference',
+      {
+        target: 'store.references',
+        fix: `Choose a different --to target for '${resolvedProjectId}', or add a different project to '${targetStore.id}'.`,
+      }
+    );
+  }
+
+  const registration = await registerExistingStore({
+    path: projectRoot,
+    ...(input.id !== undefined ? { id: input.id } : {}),
+    allowCreateIdentity: true,
+  });
+
+  const { configPath, changed } = appendStoreReference(targetStore.storeRoot, registration.store.id);
+
+  return {
+    project: {
+      id: registration.store.id,
+      root: registration.store.root,
+      metadataCreated: registration.createdArtifacts.includes('.rasen-store/store.yaml'),
+      alreadyRegistered: registration.registryCommit.alreadyRegistered,
+    },
+    target: {
+      id: targetStore.id,
+      root: targetStore.storeRoot,
+      configPath,
+      referenceAdded: changed,
+      referenceAlreadyPresent: !changed,
+    },
+    diagnostics: registration.diagnostics,
+  };
 }
 
 function cleanupStoreOutput(id: string, storeRoot: string): StoreInfo {
