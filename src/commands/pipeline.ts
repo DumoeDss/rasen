@@ -274,7 +274,13 @@ export class PipelineCommand {
       matched = [];
     }
 
-    const result = { suggested, matched, available };
+    // basis names WHY suggested was chosen: 'keyword' when an indicator
+    // matched, 'default' when nothing matched and small-feature is the
+    // unmatched fallback. Lets an adopting caller (autopilot-selection-policy)
+    // distinguish an affirmative suggestion from a shrug.
+    const basis: 'keyword' | 'default' = matched.length > 0 ? 'keyword' : 'default';
+
+    const result = { suggested, matched, available, basis };
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -287,6 +293,7 @@ export class PipelineCommand {
     } else {
       console.log('Matched indicators: (none — defaulted to small-feature)');
     }
+    console.log(`Basis: ${basis}`);
     console.log('This suggestion is advisory; you can override it with any available pipeline.');
     if (available.length > 0) {
       console.log(`Available: ${available.join(', ')}`);

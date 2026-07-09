@@ -367,6 +367,7 @@ stages:
       expect(json.matched).toContain('broken');
       expect(json.matched).toContain('crash');
       expect(json.available).toContain('bug-fix');
+      expect(json.basis).toBe('keyword');
     });
 
     it('maps full-feature indicators', async () => {
@@ -379,6 +380,7 @@ stages:
       expect(json.suggested).toBe('full-feature');
       expect(json.matched).toContain('implement');
       expect(json.matched).toContain('module');
+      expect(json.basis).toBe('keyword');
     });
 
     it('defaults to small-feature with no matched indicators', async () => {
@@ -390,6 +392,7 @@ stages:
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('small-feature');
       expect(json.matched).toEqual([]);
+      expect(json.basis).toBe('default');
     });
 
     it('prefers bug-fix over full-feature when both classes match', async () => {
@@ -401,6 +404,7 @@ stages:
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('bug-fix');
+      expect(json.basis).toBe('keyword');
     });
   });
 

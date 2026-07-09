@@ -29,17 +29,23 @@ Before anything else run \`rasen agent context --latest --json\` — it measures
 
 Resolve the effective **gate policy** with precedence **run flag > project config > built-in default**: (1) \`--no-gate\` present on the invocation -> \`off\`, source \`flag\`; else (2) \`autopilot.gates: on|off\` in \`rasen/config.yaml\` (read via the project config the same way other config keys resolve) -> that value, source \`config\`; else (3) \`on\`, source \`default\`. Display the resolved policy at run start (e.g. \`Gate policy: off (flag)\`) so it is visible, never silent. Record it ONCE as \`gatePolicy: { effective, source }\` in run-state (Step F) at run start — Step D then reads this recorded value for every gate rather than re-deriving it, and **resume reads it back from run-state so the user does NOT re-pass \`--no-gate\`** on a resumed run. This governs ONLY ordinary gates (\`gate: true\`); a \`gate: 'vet'\` stage ALWAYS pauses regardless of policy — see the guardrail below and the playbook's Step D.
 
-## 1. Select the pipeline (explicit wins; default = small-feature)
+## 0.6. Resolve the selection policy (once, before selecting a pipeline)
 
-**Input**: \`/rasen:auto [--pipeline <name>] [--review-plan] [--no-gate] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
+Resolve the effective **selection policy** with precedence **run flag > project config > built-in default**: (1) \`--auto-select\` present on the invocation -> \`classify\`, source \`flag\`; else (2) \`autopilot.selection: classify|manual\` in \`rasen/config.yaml\` -> that value, source \`config\`; else (3) \`manual\`, source \`default\`. Display the resolved policy at run start alongside the gate policy line (e.g. \`Selection policy: classify (flag)\`) so an opted-in run is never silent about how it will pick a pipeline. This governs ONLY the no-explicit-selector branch of pipeline selection (section 1 below) — an explicit selector always wins regardless of policy, and absent both the flag and the config key, selection behavior is exactly 0.1.x (\`manual\`, default \`small-feature\`, no auto-escalation).
 
-\`--no-gate\` makes ordinary gate stages (\`gate: true\`) auto-approve instead of pausing, for unattended runs — see **step 0.5** below for resolution, recording, and the \`vet\` exemption.
+## 1. Select the pipeline (explicit wins; policy governs the rest)
+
+**Input**: \`/rasen:auto [--pipeline <name>] [--auto-select] [--review-plan] [--no-gate] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
+
+\`--no-gate\` makes ordinary gate stages (\`gate: true\`) auto-approve instead of pausing, for unattended runs — see **step 0.5** below for resolution, recording, and the \`vet\` exemption. \`--auto-select\` opts this run into adopting the classification suggestion — see **step 0.6** above and the policy branch below.
 
 Choose the pipeline in this order:
-1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`rasen pipeline list --json\` (e.g. \`/rasen:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description.
-2. **Default** — otherwise use **\`small-feature\`** (the default pipeline). Do NOT auto-escalate to full-feature/bug-fix.
+1. **Explicit always wins** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`rasen pipeline list --json\` (e.g. \`/rasen:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description. Classification is NOT consulted and the selection policy (including \`--auto-select\`) has no effect — explicit selection sits ABOVE the policy, not inside it.
+2. **No explicit selector — follow the resolved selection policy (step 0.6):**
+   - **\`classify\` policy (opt-in)** — run \`rasen pipeline classify "<task>" --json\`. If it returns a \`suggested\` pipeline that IS in \`available\`, ADOPT it exactly as returned: display the adoption with its basis (e.g. \`Pipeline: bug-fix (auto-selected, matched: fix)\` for a \`keyword\` basis, \`Pipeline: small-feature (auto-selected, default basis)\` for a \`default\` basis) and let the user change it before proceeding — adoption only changes the starting value, never the user's authority to override. Never escalate or substitute a different pipeline by your own judgment; adopt exactly what classify returned. If the command fails, returns no suggestion, or suggests a pipeline NOT in \`available\`, fall back to \`small-feature\` and display the fallback and its cause — the same invariant fallback as the \`manual\` policy below.
+   - **\`manual\` policy (default = small-feature)** — otherwise use **\`small-feature\`** (the default pipeline). Do NOT auto-escalate to full-feature/bug-fix. You MAY run \`rasen pipeline classify "<task>" --json\` for a suggestion, or pick any pipeline from \`rasen pipeline list\` (including project/user-defined ones) — but the suggestion is advisory-only here, and absent an explicit selection the default is \`small-feature\`.
 
-You MAY run \`rasen pipeline classify "<task>" --json\` for a suggestion, or pick any pipeline from \`rasen pipeline list\` (including project/user-defined ones) — but an explicit selection always wins, and absent one the default is \`small-feature\`. DISPLAY the chosen pipeline and let the user change it before proceeding.
+DISPLAY the chosen pipeline and let the user change it before proceeding, whichever branch produced it.
 
 Built-in pipelines (see \`rasen pipeline list --json\`):
 - **full-feature** — office-hours -> propose -> apply -> parallel expert reviews -> review-loop -> ship -> archive -> retro
@@ -133,6 +139,10 @@ Frontier: <parent>-ui, <parent>-docs
 
 ## Guardrails
 
+- Selection policy default is **OFF** (\`manual\`): absent both \`--auto-select\` and \`autopilot.selection\`, pipeline selection behaves exactly as 0.1.x — explicit selection wins, otherwise the default is \`small-feature\`, classification is advisory-only, and there is no auto-escalation.
+- Explicit pipeline selection (\`--pipeline\` or a leading known-pipeline token) always wins over the selection policy — classification is never consulted, and \`--auto-select\` is inert when an explicit selector is present.
+- Under the \`classify\` policy, adopt the classification suggestion EXACTLY as returned — never escalate or substitute a different pipeline by your own judgment.
+- When classification is unavailable, errors, returns no suggestion, or suggests a pipeline not in \`available\`, fall back to \`small-feature\` and display the fallback and its cause.
 - Gate stages pause for human confirmation UNLESS the resolved gate policy (step 0.5) is \`off\`, in which case an ordinary \`gate: true\` stage is auto-approved and the approval is recorded in run-state (\`gateDecision: auto-approved (<source>)\`) — never silently skipped, never deleted from the record. A \`gate: 'vet'\` stage is the hard exception: it ALWAYS pauses for human confirmation, even under \`--no-gate\` or \`autopilot.gates: off\` — never rationalize skipping it. (For a decomposed portfolio's child-pipeline gates, this resolves per the playbook's Step G child-gate semantics: parent directive > child gate, with the same \`vet\` exception carrying through to child gates.)
 - If a stage is stuck (relay caps, stalled handoffs, exhausted review rounds), run the playbook's Step H escalation ladder — LEAD strategy review first, then park the stage as \`escalated\` and continue unblocked work; surface parked items at the next gate or the run-end report. Hard-stop only on failures the ladder cannot express (e.g. corrupted state).
 - The user can interrupt at any time and switch to manual.
