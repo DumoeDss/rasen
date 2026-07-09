@@ -7,6 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
+import { isKebabId } from './id.js';
 
 /**
  * Zod schema for project configuration.
@@ -110,11 +111,16 @@ export type ArchiveDestination = 'in-repo' | 'external' | 'prune';
 /** Valid `autopilot.gates` values. */
 export type AutopilotGatePolicy = 'on' | 'off';
 
+/** String prefix addressing the project namespace in a `references:` entry. */
+export const PROJECT_REFERENCE_PREFIX = 'project:';
+
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
   id: string;
   /** Clone source rendered into onboarding fixes. */
   remote?: string;
+  /** Absent means the store namespace; 'project' addresses store add-project entries. */
+  type?: 'store' | 'project';
 }
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
@@ -122,13 +128,16 @@ export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
 };
 
 /**
- * Parser for `references:` declarations: string entries or
- * {id, remote} maps, normalized to DeclarationEntry[]. Dedup keys on
- * id and keeps the first position; the first entry carrying a remote
- * supplies it (a later duplicate fills a missing remote, never
- * overrides). Invalid entries drop with a warning like other resilient
- * fields; returns undefined when the field is absent or normalizes to
- * empty.
+ * Parser for `references:` declarations: string entries (bare id, or a
+ * `project:<id>` prefixed id addressing the project namespace) or
+ * {id, remote, type} maps, normalized to DeclarationEntry[]. Dedup keys on
+ * the (type, id) pair — a store and a project sharing an id both survive —
+ * and keeps the first position; the first entry carrying a remote supplies
+ * it (a later duplicate fills a missing remote, never overrides). Invalid
+ * entries drop with a warning like other resilient fields; a `project:`
+ * prefix whose id portion fails the id grammar also drops with a warning
+ * (unlike a bare id, which is grammar-checked downstream at assembly time).
+ * Returns undefined when the field is absent or normalizes to empty.
  */
 function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
   const fieldName = 'references';
@@ -147,11 +156,22 @@ function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
   for (const entry of raw) {
     let declaration: DeclarationEntry | null = null;
     if (typeof entry === 'string') {
-      declaration = { id: entry };
+      if (entry.startsWith(PROJECT_REFERENCE_PREFIX)) {
+        const idPart = entry.slice(PROJECT_REFERENCE_PREFIX.length);
+        if (idPart.length > 0 && isKebabId(idPart)) {
+          declaration = { id: idPart, type: 'project' };
+        }
+        // else: invalid `project:` id — drop with a warning below.
+      } else {
+        declaration = { id: entry };
+      }
     } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
       const candidate = entry as Record<string, unknown>;
       if (typeof candidate.id === 'string') {
         declaration = { id: candidate.id };
+        if (candidate.type === 'project') {
+          declaration.type = 'project';
+        }
         if (typeof candidate.remote === 'string' && candidate.remote.length > 0) {
           declaration.remote = candidate.remote;
         } else if (candidate.remote !== undefined) {
@@ -165,9 +185,10 @@ function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
       continue;
     }
 
-    const existing = byId.get(declaration.id);
+    const dedupeKey = declaration.type === 'project' ? `project:${declaration.id}` : declaration.id;
+    const existing = byId.get(dedupeKey);
     if (!existing) {
-      byId.set(declaration.id, declaration);
+      byId.set(dedupeKey, declaration);
     } else if (existing.remote === undefined && declaration.remote !== undefined) {
       existing.remote = declaration.remote;
     }
@@ -750,24 +771,37 @@ export interface AppendStoreReferenceResult {
   changed: boolean;
 }
 
+/** Renders a parsed declaration back to its raw YAML form, namespace-preserving. */
+function declarationToRaw(entry: DeclarationEntry): string | Record<string, unknown> {
+  if (entry.remote) {
+    return entry.type === 'project'
+      ? { id: entry.id, remote: entry.remote, type: 'project' }
+      : { id: entry.id, remote: entry.remote };
+  }
+  return entry.type === 'project' ? `${PROJECT_REFERENCE_PREFIX}${entry.id}` : entry.id;
+}
+
 /**
  * Appends `storeId` to `targetRoot`'s `references:` list, preserving every
  * other config field. Follows the raw-YAML round-trip pattern used for the
  * quality-rules append (archive.ts:905-915): parse the full document, mutate
  * the one field, `stringifyYaml` back — never a schema-typed rewrite that
- * could silently drop unknown keys. De-dupes on store id (a no-op when
- * already present); a config-less root gets a minimal file containing only
- * `references:`.
+ * could silently drop unknown keys. De-dupes on the (type, id) pair (a no-op
+ * when already present); a config-less root gets a minimal file containing
+ * only `references:`. `options.type` selects the namespace of the appended
+ * entry (absent means store, matching the pre-split behavior).
  */
 export function appendStoreReference(
   targetRoot: string,
-  storeId: string
+  storeId: string,
+  options: { type?: 'store' | 'project' } = {}
 ): AppendStoreReferenceResult {
+  const type = options.type ?? 'store';
   const existingPath = resolveConfigFilePath(targetRoot);
   const configPath = existingPath ?? path.join(targetRoot, WORKSPACE_DIR_NAME, 'config.yaml');
 
   const existingReferences = readProjectConfig(targetRoot)?.references ?? [];
-  if (existingReferences.some((entry) => entry.id === storeId)) {
+  if (existingReferences.some((entry) => entry.id === storeId && (entry.type ?? 'store') === type)) {
     return { configPath, changed: false };
   }
 
@@ -776,8 +810,8 @@ export function appendStoreReference(
     : {};
 
   rawConfig.references = [
-    ...existingReferences.map((entry) => (entry.remote ? entry : entry.id)),
-    storeId,
+    ...existingReferences.map(declarationToRaw),
+    type === 'project' ? `${PROJECT_REFERENCE_PREFIX}${storeId}` : storeId,
   ];
 
   mkdirSync(path.dirname(configPath), { recursive: true });

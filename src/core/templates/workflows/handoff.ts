@@ -41,7 +41,7 @@ With the user's authorization you can launch the successor instead of asking the
 \`\`\`
 You are the successor session (generation <n+1>) for change <name>.
 1. Read your predecessor's distillate at the handoff path reported above (lead-<n>.md); do not re-litigate its decisions.
-2. Run: rasen pipeline resume <name> --json   (add --store <id> if the change lives in a store)
+2. Run: rasen pipeline resume <name> --json   (add --store <id> if the change lives in a store, or --project <id> if it lives in a project)
 3. Continue from the document's "Next action". Workers from the previous session are gone (dead agentIds) — re-create any you need via the resume ladder (handoff doc, then recorded transcript, then change directory).
 \`\`\`
 

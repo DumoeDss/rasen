@@ -7,10 +7,12 @@ import {
   listStoreRegistryEntries,
   readStoreRegistryState,
   readOptionalStoreMetadataState,
+  registryKeyFor,
   resolveGitStoreBackendConfig,
   updateStoreRegistryState,
   validateStoreId,
   writeStoreMetadataState,
+  type RegistryEntryType,
   type StoreBackendConfig,
   type StoreGitBackendConfig,
   type StorePathOptions,
@@ -31,6 +33,8 @@ export interface RegisterStoreInput extends StorePathOptions {
 
 export interface ResolveRegisteredStoreInput extends StorePathOptions {
   id: string;
+  /** Registry namespace to resolve from; absent means store (compat default). */
+  type?: RegistryEntryType;
 }
 
 export interface GetRegisteredStoreInput extends ResolveRegisteredStoreInput {
@@ -39,6 +43,8 @@ export interface GetRegisteredStoreInput extends ResolveRegisteredStoreInput {
 
 export interface UnregisterStoreInput extends StorePathOptions {
   id: string;
+  /** Registry namespace to unregister from; absent means store (compat default). */
+  type?: RegistryEntryType;
   expectedBackend?: StoreGitBackendConfig;
   beforeCommit?: (entry: RegisteredStoreEntry) => Promise<void>;
 }
@@ -65,6 +71,8 @@ export interface CommitStoreRegistrationInput extends StorePathOptions {
   id: string;
   backend: StoreGitBackendConfig;
   writeMetadataIfMissing: boolean;
+  /** Registry namespace to commit into; absent means store. */
+  type?: RegistryEntryType;
 }
 
 export function getStoreRootForBackend(backend: StoreBackendConfig): string {
@@ -84,14 +92,29 @@ function normalizePathForComparison(targetPath: string): string {
   }
 }
 
+/**
+ * Conflict checks key on the `(type, id)` / `(type, canonical path)` pair
+ * (design D2): a store and a project sharing an id or a path are never a
+ * conflict with each other — only entries of the SAME type collide. The
+ * `store_id_conflict` / `store_path_conflict` codes stay stable across both
+ * namespaces; only the message/fix text is namespace-aware, and the project
+ * namespace's id-conflict fix names the taken id with a concrete `--as`
+ * example (task 2.2).
+ */
 export function assertNoRegisteredStoreConflict(
   registry: StoreRegistryState | null,
+  type: RegistryEntryType,
   id: string,
   backend: StoreGitBackendConfig
 ): void {
   const nextPath = normalizePathForComparison(getStoreRootForBackend(backend));
+  const noun = type === 'project' ? 'Project' : 'Store';
 
   for (const entry of listStoreRegistryEntries(registry ?? { version: 1, stores: {} })) {
+    if (entry.type !== type) {
+      continue;
+    }
+
     const entryPath = normalizePathForComparison(getStoreRootForBackend(entry.backend));
 
     if (entry.id === id && entryPath === nextPath) {
@@ -100,18 +123,21 @@ export function assertNoRegisteredStoreConflict(
 
     if (entry.id === id) {
       throw new StoreError(
-        `Store '${id}' is already registered at ${getStoreRootForBackend(entry.backend)}. One checkout per store id is supported on this machine.`,
+        `${noun} '${id}' is already registered at ${getStoreRootForBackend(entry.backend)}. One checkout per ${type} id is supported on this machine.`,
         'store_id_conflict',
         {
           target: 'store.id',
-          fix: `Use the existing registration, or run rasen store unregister ${id} first to switch this id to a different checkout.`,
+          fix:
+            type === 'project'
+              ? `'${id}' is already taken in the project namespace. Rerun with --as <id>, for example --as ${id}-2.`
+              : `Use the existing registration, or run rasen store unregister ${id} first to switch this id to a different checkout.`,
         }
       );
     }
 
     if (entryPath === nextPath) {
       throw new StoreError(
-        `Store path is already registered as '${entry.id}'.`,
+        `${noun} path is already registered as '${entry.id}'.`,
         'store_path_conflict',
         {
           target: 'store.root',
@@ -124,40 +150,55 @@ export function assertNoRegisteredStoreConflict(
 
 function withRegisteredStore(
   registry: StoreRegistryState | null,
+  type: RegistryEntryType,
   id: string,
   backend: StoreGitBackendConfig
 ): StoreRegistryState {
-  assertNoRegisteredStoreConflict(registry, id, backend);
+  assertNoRegisteredStoreConflict(registry, type, id, backend);
 
+  const key = registryKeyFor(type, id);
   const stores = {
     ...(registry?.stores ?? {}),
-    [id]: {
-      backend,
-    },
+    // Never inject a `type` key onto a store entry (byte-stability, task 1.4).
+    [key]: type === 'project' ? { type, backend } : { backend },
   };
 
   return {
     version: 1,
     stores: Object.fromEntries(
-      Object.entries(stores).sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+      Object.entries(stores).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
     ),
   };
 }
 
+/**
+ * Type-aware registry lookup (mirrors the write path's `registryKeyFor`
+ * seam): resolves the `(type, id)` key, and when it misses but the OTHER
+ * namespace has an entry for the same id, the diagnostic hints the flag
+ * that would find it instead of reporting a flatly "unknown" id.
+ */
 function getRegisteredStoreOrThrow(
   registry: StoreRegistryState | null,
+  type: RegistryEntryType,
   id: string
 ): StoreRegistryEntry {
-  const entry = registry?.stores[id];
+  const entry = registry?.stores[registryKeyFor(type, id)];
   if (!entry) {
-    throw new StoreError(`Unknown store '${id}'`, 'store_not_found', {
+    const noun = type === 'project' ? 'project' : 'store';
+    const otherType: RegistryEntryType = type === 'project' ? 'store' : 'project';
+    const hasOtherType = registry?.stores[registryKeyFor(otherType, id)] !== undefined;
+
+    throw new StoreError(`Unknown ${noun} '${id}'`, 'store_not_found', {
       target: 'store.id',
-      fix: 'Run rasen store list to see registered stores.',
+      fix: hasOtherType
+        ? `'${id}' is registered as a ${otherType}, not a ${noun}. ${otherType === 'project' ? 'Rerun with --project-namespace.' : 'Rerun without --project-namespace.'}`
+        : 'Run rasen store list to see registered stores.',
     });
   }
 
   return {
     id,
+    type,
     backend: entry.backend,
   };
 }
@@ -201,13 +242,14 @@ function assertExpectedRegisteredBackend(
 
 function withoutRegisteredStore(
   registry: StoreRegistryState | null,
+  type: RegistryEntryType,
   id: string,
   expectedBackend?: StoreGitBackendConfig
 ): { next: StoreRegistryState; removed: StoreRegistryEntry } {
-  const removed = getRegisteredStoreOrThrow(registry, id);
+  const removed = getRegisteredStoreOrThrow(registry, type, id);
   assertExpectedRegisteredBackend(id, removed.backend, expectedBackend);
   const stores = { ...(registry?.stores ?? {}) };
-  delete stores[id];
+  delete stores[registryKeyFor(type, id)];
 
   return {
     removed,
@@ -268,8 +310,10 @@ export async function commitStoreRegistration(
   input: CommitStoreRegistrationInput
 ): Promise<StoreRegistrationCommit> {
   const id = validateStoreId(input.id);
+  const type = input.type ?? 'store';
   const backend = input.backend;
   const storeRoot = getStoreRootForBackend(backend);
+  const key = registryKeyFor(type, id);
 
   let metadataCreated = false;
   let isRerun = false;
@@ -282,7 +326,7 @@ export async function commitStoreRegistration(
     const registry = await readStoreRegistryState({
       globalDataDir: input.globalDataDir,
     });
-    const existing = registry?.stores[id];
+    const existing = registry?.stores[key];
     const existingBackend = existing?.backend as StoreGitBackendConfig | undefined;
     // Same checkout = a rerun for an already-registered store (the 1.3
     // reporting contract), whether or not the observed remote changed;
@@ -293,7 +337,7 @@ export async function commitStoreRegistration(
 
     if (!upToDate) {
       await updateStoreRegistryState(
-        (registry) => withRegisteredStore(registry, id, backend),
+        (registry) => withRegisteredStore(registry, type, id, backend),
         { globalDataDir: input.globalDataDir }
       );
       registryUpdated = true;
@@ -306,7 +350,7 @@ export async function commitStoreRegistration(
       const current = await readStoreRegistryState({
         globalDataDir: input.globalDataDir,
       }).catch(() => null);
-      if (!current?.stores[id]) {
+      if (!current?.stores[key]) {
         await fs.rm(getStoreMetadataPath(storeRoot), { force: true });
         await fs.rmdir(getStoreMetadataDir(storeRoot)).catch(() => undefined);
       }
@@ -394,10 +438,11 @@ export async function getRegisteredStore(
   input: GetRegisteredStoreInput
 ): Promise<RegisteredStoreEntry> {
   const id = validateStoreId(input.id);
+  const type = input.type ?? 'store';
   const registry = await readStoreRegistryState({
     globalDataDir: input.globalDataDir,
   });
-  const entry = getRegisteredStoreOrThrow(registry, id);
+  const entry = getRegisteredStoreOrThrow(registry, type, id);
   assertExpectedRegisteredBackend(id, entry.backend, input.expectedBackend);
 
   return {
@@ -410,11 +455,12 @@ export async function unregisterStoreRegistration(
   input: UnregisterStoreInput
 ): Promise<RegisteredStoreEntry> {
   const id = validateStoreId(input.id);
+  const type = input.type ?? 'store';
   let removed: StoreRegistryEntry | undefined;
 
   await updateStoreRegistryState(
     async (registry) => {
-      const result = withoutRegisteredStore(registry, id, input.expectedBackend);
+      const result = withoutRegisteredStore(registry, type, id, input.expectedBackend);
       const removedEntry = {
         ...result.removed,
         storeRoot: getStoreRootForBackend(result.removed.backend),
@@ -427,7 +473,8 @@ export async function unregisterStoreRegistration(
   );
 
   if (!removed) {
-    throw new StoreError(`Unknown store '${id}'`, 'store_not_found', {
+    const noun = type === 'project' ? 'project' : 'store';
+    throw new StoreError(`Unknown ${noun} '${id}'`, 'store_not_found', {
       target: 'store.id',
       fix: 'Run rasen store list to see registered stores.',
     });
@@ -443,6 +490,7 @@ export async function resolveRegisteredStore(
   input: ResolveRegisteredStoreInput
 ): Promise<ResolvedStore> {
   const id = validateStoreId(input.id);
+  const type = input.type ?? 'store';
   const registry = await readStoreRegistryState({
     globalDataDir: input.globalDataDir,
   });
@@ -454,7 +502,7 @@ export async function resolveRegisteredStore(
     });
   }
 
-  const entry = getRegisteredStoreOrThrow(registry, id);
+  const entry = getRegisteredStoreOrThrow(registry, type, id);
   const backend = entry.backend;
   const storeRoot = getStoreRootForBackend(backend);
   await ensureStoreMetadata(storeRoot, id, { writeIfMissing: false });

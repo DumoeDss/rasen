@@ -37,6 +37,7 @@ export interface StatusOptions {
   change?: string;
   schema?: string;
   store?: string;
+  project?: string;
   storePath?: string;
   json?: boolean;
 }
@@ -106,7 +107,7 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
     });
     const status = formatChangeStatus(
       context,
-      isStoreSelectedRoot(root) ? { storeId: root.storeId } : {}
+      isStoreSelectedRoot(root) ? { storeId: root.storeId, storeType: root.storeType } : {}
     );
 
     // Probe-only (ensure:false): status is a read-only surface and must

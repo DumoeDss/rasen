@@ -27,6 +27,7 @@ import {
   type StoreListResult,
   type StoreMutationResult,
   type SetupStoreInput,
+  type RegistryEntryType,
 } from '../core/store/index.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
@@ -47,6 +48,7 @@ interface StoreRegisterOptions {
 interface StoreRemoveOptions {
   yes?: boolean;
   json?: boolean;
+  projectNamespace?: boolean;
 }
 
 interface StoreAddProjectOptions {
@@ -57,6 +59,25 @@ interface StoreAddProjectOptions {
 
 interface StoreJsonOptions {
   json?: boolean;
+}
+
+interface StoreUnregisterOptions extends StoreJsonOptions {
+  projectNamespace?: boolean;
+}
+
+interface StoreDoctorOptions extends StoreJsonOptions {
+  projectNamespace?: boolean;
+}
+
+/**
+ * `--project-namespace` narrows a store-namespace lifecycle command to the
+ * project namespace; a bare id keeps meaning store (backward compat). Named
+ * distinctly from the root-selector `--project <id>` flag (which every
+ * `--store`-bearing command carries with a fixed, tested description) so the
+ * two never collide in meaning.
+ */
+function namespaceTypeFromFlag(projectNamespace: boolean | undefined): RegistryEntryType {
+  return projectNamespace ? 'project' : 'store';
 }
 
 interface ResolvedStoreSetupInput extends SetupStoreInput {
@@ -99,8 +120,12 @@ interface StoreCleanupOutput {
   status: StoreDiagnostic[];
 }
 
+interface StoreListOutputEntry extends StoreOutput {
+  type: string;
+}
+
 interface StoreListOutput {
-  stores: StoreOutput[];
+  stores: StoreListOutputEntry[];
   status: StoreDiagnostic[];
 }
 
@@ -126,6 +151,7 @@ type OpenSpecRootOutput = Omit<StoreInspection['openspecRoot'], 'diagnostics'> &
 };
 
 interface StoreDoctorStoreOutput extends StoreOutput {
+  type: RegistryEntryType;
   openspec_root: OpenSpecRootOutput;
   metadata: StoreInspection['metadata'];
   git: {
@@ -191,7 +217,7 @@ function toCleanupOutput(result: StoreCleanupResult): StoreCleanupOutput {
 
 function toListOutput(result: StoreListResult): StoreListOutput {
   return {
-    stores: result.stores.map(toStoreOutput),
+    stores: result.stores.map((store) => ({ ...toStoreOutput(store), type: store.type })),
     status: [],
   };
 }
@@ -230,6 +256,7 @@ function toOpenSpecRootOutput(root: StoreInspection['openspecRoot']): OpenSpecRo
 function toDoctorStoreOutput(store: StoreInspection): StoreDoctorStoreOutput {
   return {
     ...toStoreOutput(store),
+    type: store.type,
     openspec_root: toOpenSpecRootOutput(store.openspecRoot),
     metadata: store.metadata,
     git: {
@@ -494,9 +521,9 @@ function printListHuman(payload: StoreListOutput): void {
 
   console.log(`Rasen stores (${payload.stores.length})`);
   console.log('');
-  console.log(`${'ID'.padEnd(16)}Location`);
+  console.log(`${'ID'.padEnd(16)}${'Type'.padEnd(10)}Location`);
   for (const store of payload.stores) {
-    console.log(`${store.id.padEnd(16)}${store.root}`);
+    console.log(`${store.id.padEnd(16)}${store.type.padEnd(10)}${store.root}`);
   }
 }
 
@@ -505,7 +532,7 @@ function printAddProjectHuman(payload: StoreAddProjectOutput): void {
     return;
   }
 
-  console.log(`Project store: ${payload.project.id}`);
+  console.log(`Project: ${payload.project.id} (project namespace)`);
   console.log(`Location: ${formatPathForHuman(payload.project.root)}`);
   console.log(`Registry: ${payload.project.already_registered ? 'already registered' : 'registered'}`);
   console.log(`Added to store: ${payload.target.id}`);
@@ -563,7 +590,7 @@ function printDoctorHuman(payload: StoreDoctorOutput): void {
   console.log('Store doctor');
   for (const store of payload.stores) {
     console.log('');
-    console.log(store.id);
+    console.log(`${store.id} (${store.type})`);
     console.log(`  Location: ${store.root}`);
     console.log(`  Rasen root: ${formatOpenSpecRootHuman(store)}`);
     console.log(`  Metadata: ${formatMetadataHuman(store)}`);
@@ -654,16 +681,17 @@ class StoreCommand {
     }
   }
 
-  async unregister(id: string, options: StoreJsonOptions = {}): Promise<void> {
+  async unregister(id: string, options: StoreUnregisterOptions = {}): Promise<void> {
     try {
-      const payload = toCleanupOutput(await unregisterStore({ id }));
+      const type = namespaceTypeFromFlag(options.projectNamespace);
+      const payload = toCleanupOutput(await unregisterStore({ id, type }));
 
       if (options.json) {
         printJson(payload);
         return;
       }
 
-      printCleanupHuman('Unregistered store', payload);
+      printCleanupHuman(type === 'project' ? 'Unregistered project' : 'Unregistered store', payload);
     } catch (error) {
       this.handleFailure(
         options.json,
@@ -675,7 +703,8 @@ class StoreCommand {
 
   async remove(id: string, options: StoreRemoveOptions = {}): Promise<void> {
     try {
-      const target = await prepareStoreCleanup({ id });
+      const type = namespaceTypeFromFlag(options.projectNamespace);
+      const target = await prepareStoreCleanup({ id, type });
       await confirmRemove(target.id, target.root, options);
       const payload = toCleanupOutput(await removeStore(target));
 
@@ -684,7 +713,7 @@ class StoreCommand {
         return;
       }
 
-      printCleanupHuman('Removed store', payload);
+      printCleanupHuman(type === 'project' ? 'Removed project' : 'Removed store', payload);
     } catch (error) {
       this.handleFailure(
         options.json,
@@ -750,9 +779,11 @@ class StoreCommand {
     }
   }
 
-  async doctor(id: string | undefined, options: StoreJsonOptions = {}): Promise<void> {
+  async doctor(id: string | undefined, options: StoreDoctorOptions = {}): Promise<void> {
     try {
-      const payload = toDoctorOutput(await doctorStores(id));
+      const payload = toDoctorOutput(
+        await doctorStores(id, options.projectNamespace ? 'project' : undefined)
+      );
 
       if (options.json) {
         printJson(payload);
@@ -808,8 +839,9 @@ export function registerStoreCommand(program: Command): void {
   store
     .command('unregister <id>')
     .description('Forget a local store registration without deleting files')
+    .option('--project-namespace', 'Target the project namespace for <id> instead of the store namespace')
     .option('--json', 'Output as JSON')
-    .action(async (id: string, options: StoreJsonOptions) => {
+    .action(async (id: string, options: StoreUnregisterOptions) => {
       await storeCommand.unregister(id, options);
     });
 
@@ -817,6 +849,7 @@ export function registerStoreCommand(program: Command): void {
     .command('remove <id>')
     .description('Forget a local store registration and delete its local folder')
     .option('--yes', 'Confirm local store folder deletion')
+    .option('--project-namespace', 'Target the project namespace for <id> instead of the store namespace')
     .option('--json', 'Output as JSON')
     .action(async (id: string, options: StoreRemoveOptions) => {
       await storeCommand.remove(id, options);
@@ -824,7 +857,7 @@ export function registerStoreCommand(program: Command): void {
 
   store
     .command('add-project <path>')
-    .description('Register an in-repo project as a store and add it to a target store\'s references')
+    .description('Register an in-repo project into the project namespace and add it to a target store\'s references')
     .option('--to <store-id>', 'Target store to add the project to (must already be registered)')
     .option('--as <id>', 'Project store id override (ignored if the project is already a store)')
     .option('--json', 'Output as JSON')
@@ -844,8 +877,9 @@ export function registerStoreCommand(program: Command): void {
   store
     .command('doctor [id]')
     .description('Check local store registration and metadata')
+    .option('--project-namespace', 'Limit to the project namespace entry for [id]')
     .option('--json', 'Output as JSON')
-    .action(async (id: string | undefined, options: StoreJsonOptions) => {
+    .action(async (id: string | undefined, options: StoreDoctorOptions) => {
       await storeCommand.doctor(id, options);
     });
 

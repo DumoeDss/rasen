@@ -32,4 +32,10 @@ export const COMMON_FLAGS = {
       "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)",
     takesValue: true,
   } as FlagDefinition,
+  project: {
+    name: 'project',
+    description:
+      "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store.",
+    takesValue: true,
+  } as FlagDefinition,
 } as const;

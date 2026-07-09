@@ -63,6 +63,7 @@ import {
 interface PipelineCommandOptions {
   json?: boolean;
   store?: string;
+  project?: string;
   storePath?: string;
 }
 

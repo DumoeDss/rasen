@@ -206,6 +206,37 @@ describe('command completion registry', () => {
     }
   });
 
+  it('advertises --project in parity with --store on every --store-bearing command (store-project-namespace)', () => {
+    const expectedProject = COMMON_FLAGS.project.description;
+    const storeCommands: string[] = [];
+    const projectCommands: string[] = [];
+
+    function walk(command: Command, parentPath: string): void {
+      for (const child of command.commands) {
+        const commandPath = parentPath ? `${parentPath} ${child.name()}` : child.name();
+        if (child.options.some((option) => option.long === '--store')) {
+          storeCommands.push(commandPath);
+        }
+        const projectOption = child.options.find((option) => option.long === '--project');
+        if (projectOption) {
+          projectCommands.push(commandPath);
+          expect(projectOption.description, `${commandPath} --project description`).toBe(
+            expectedProject
+          );
+        }
+        walk(child, commandPath);
+      }
+    }
+
+    walk(program, '');
+
+    // Every --store-bearing command also carries --project, and vice versa —
+    // never a lopsided flag surface between the two namespaces.
+    expect(projectCommands.sort()).toEqual(storeCommands.sort());
+    expect(STORE_SELECTION_GUIDANCE).toContain('--project <id>');
+    expect(STORE_SELECTION_GUIDANCE).toContain('mutually exclusive');
+  });
+
   it('tracks store subcommands under the store: telemetry path', () => {
     const storeGroup = program.commands.find((child) => child.name() === 'store');
     expect(storeGroup).toBeDefined();
@@ -228,6 +259,7 @@ describe('command completion registry', () => {
       'schema',
       'json',
       'store',
+      'project',
     ]);
 
     const storeFlag = newChange?.flags.find((flag) => flag.name === 'store');
@@ -273,6 +305,7 @@ describe('command completion registry', () => {
     const remove = store?.subcommands?.find((entry) => entry.name === 'remove');
     expect(remove?.flags.map((flag) => flag.name)).toEqual([
       'yes',
+      'project-namespace',
       'json',
     ]);
   });

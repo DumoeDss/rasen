@@ -46,6 +46,7 @@ import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { isInteractive } from '../utils/interactive.js';
 
 const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
+const PROJECT_OPTION_DESCRIPTION = COMMON_FLAGS.project.description;
 
 // Deliberate rejection path: --store-path stays registered (hidden) so the
 // resolver can explain that registering the path is the supported route,
@@ -285,8 +286,9 @@ program
   .option('--sort <order>', 'Sort order: "recent" (default) or "name"', 'recent')
   .option('--json', 'Output as JSON (for programmatic use)')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; json?: boolean; store?: string; storePath?: string }) => {
+  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const root = await resolveRootForCommand(options ?? {}, {
         json: options?.json,
@@ -397,6 +399,7 @@ program
   .option('--no-validate', 'Skip validation (not recommended, requires confirmation)')
   .option('--json', 'Output as JSON (non-interactive)')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {
@@ -431,8 +434,9 @@ program
   .option('--concurrency <n>', 'Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)')
   .option('--no-interactive', 'Disable interactive prompts')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; storePath?: string }) => {
+  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; project?: string; storePath?: string }) => {
     try {
       const validateCommand = new ValidateCommand();
       await validateCommand.execute(itemName, options);
@@ -457,6 +461,7 @@ program
   .option('--no-scenarios', 'JSON only: Exclude scenario content')
   .option('-r, --requirement <id>', 'JSON only: Show specific requirement by ID (1-based)')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   // Explicit registration required: allowUnknownOption would otherwise
   // silently swallow --store-path instead of rejecting it deliberately.
   .addOption(hiddenStorePathOption())
@@ -559,6 +564,7 @@ program
   .option('--schema <name>', 'Schema override (auto-detected from config.yaml)')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
   .action(async (options: StatusOptions) => {
     try {
@@ -577,6 +583,7 @@ program
   .option('--schema <name>', 'Schema override (auto-detected from config.yaml)')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
   .action(async (artifactId: string | undefined, options: InstructionsOptions) => {
     try {
@@ -632,6 +639,7 @@ newCmd
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
   // Removed options kept registered (hidden) so users get a deliberate
   // explanation instead of a generic unknown-option error.
@@ -656,8 +664,9 @@ pipelineCmd
   .description('List available pipelines (project > user > package)')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { json?: boolean; store?: string; storePath?: string }) => {
+  .action(async (options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.list(options);
@@ -673,8 +682,9 @@ pipelineCmd
   .description('Show a pipeline stage DAG and build order')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
+  .action(async (name: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);
@@ -695,6 +705,7 @@ pipelineCmd
   .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
   .action(async (
     name: string,
@@ -706,6 +717,7 @@ pipelineCmd
       shipper?: string;
       json?: boolean;
       store?: string;
+      project?: string;
       storePath?: string;
     }
   ) => {
@@ -724,8 +736,9 @@ pipelineCmd
   .description('Suggest a pipeline for a task (advisory keyword heuristic)')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (task: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
+  .action(async (task: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.classify(task, options);
@@ -741,8 +754,9 @@ pipelineCmd
   .description("Show a change's pipeline run-state (next/remaining stages)")
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (change: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
+  .action(async (change: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);

@@ -49,7 +49,32 @@ export interface StoreGitBackendConfig {
 
 export type StoreBackendConfig = StoreGitBackendConfig;
 
+/**
+ * Registry namespace: absent/`'store'` is a store entry, `'project'` an
+ * in-repo project registered via `store add-project`. Uniqueness is the
+ * `(type, id)` pair (design D1/D2) — a store and a project may share an id.
+ */
+export type RegistryEntryType = 'store' | 'project';
+
+/** Reserved key-form prefix disambiguating the project namespace on disk. */
+const PROJECT_REGISTRY_KEY_PREFIX = 'project:';
+
+/** Splits a registry map key into its namespace and bare id (design D1). */
+export function parseRegistryKey(key: string): { type: RegistryEntryType; id: string } {
+  if (key.startsWith(PROJECT_REGISTRY_KEY_PREFIX)) {
+    return { type: 'project', id: key.slice(PROJECT_REGISTRY_KEY_PREFIX.length) };
+  }
+  return { type: 'store', id: key };
+}
+
+/** Builds the registry map key for a namespace + id (inverse of parseRegistryKey). */
+export function registryKeyFor(type: RegistryEntryType, id: string): string {
+  return type === 'project' ? `${PROJECT_REGISTRY_KEY_PREFIX}${id}` : id;
+}
+
 export interface StoreRegistryEntryState {
+  /** Absent means store (byte-stable with pre-split registry files). */
+  type?: RegistryEntryType;
   backend: StoreBackendConfig;
 }
 
@@ -60,6 +85,7 @@ export interface StoreRegistryState {
 
 export interface StoreRegistryEntry {
   id: string;
+  type: RegistryEntryType;
   backend: StoreBackendConfig;
 }
 
@@ -180,6 +206,7 @@ const GitBackendConfigSchema = z.object({
 
 const RegistryEntrySchema = z.object({
   backend: GitBackendConfigSchema,
+  type: z.enum(['store', 'project']).optional(),
 }).strict();
 
 const RegistryStateSchema = z.object({
@@ -233,12 +260,40 @@ function parseYamlObject(content: string, label: string): unknown {
   }
 }
 
-function assertValidStoreIds(ids: string[], label: string): void {
-  for (const id of ids) {
+/**
+ * Validates the id PORTION of each registry key (the optional `project:`
+ * prefix is stripped first) as a kebab id; the prefix itself is not part of
+ * the id grammar.
+ */
+function assertValidStoreIds(keys: string[], label: string): void {
+  for (const key of keys) {
+    const { id } = parseRegistryKey(key);
     if (!isKebabId(id)) {
       throw invalidStoreStateError(
         label,
-        `'${id}': ${KEBAB_ID_DESCRIPTION}`
+        `'${key}': ${KEBAB_ID_DESCRIPTION}`
+      );
+    }
+  }
+}
+
+/**
+ * Security-relevant strictness (design D1/risk): an entry's `type` field is
+ * authoritative and MUST agree with its key form. A `project:` key claiming
+ * `type: store` (or a bare key claiming `type: project`) is never silently
+ * coerced to either namespace — it is a diagnostic.
+ */
+function assertKeyTypeAgreement(
+  stores: Record<string, { type?: RegistryEntryType }>,
+  label: string
+): void {
+  for (const [key, entry] of Object.entries(stores)) {
+    const { type: keyType } = parseRegistryKey(key);
+    const entryType = entry.type ?? 'store';
+    if (keyType !== entryType) {
+      throw invalidStoreStateError(
+        label,
+        `'${key}': type '${entryType}' disagrees with its key form (expected '${keyType}').`
       );
     }
   }
@@ -256,6 +311,7 @@ export function parseStoreRegistryState(content: string): StoreRegistryState {
   }
 
   assertValidStoreIds(Object.keys(result.data.stores), 'store id');
+  assertKeyTypeAgreement(result.data.stores, 'store registry state');
 
   return {
     version: 1,
@@ -294,6 +350,7 @@ export function serializeStoreRegistryState(state: StoreRegistryState): string {
   }
 
   assertValidStoreIds(Object.keys(result.data.stores), 'store id');
+  assertKeyTypeAgreement(result.data.stores, 'store registry state');
 
   return stringifyYaml({
     version: 1,
@@ -324,8 +381,11 @@ export function listStoreRegistryEntries(
   registry: StoreRegistryState
 ): StoreRegistryEntry[] {
   return Object.entries(registry.stores)
-    .map(([id, store]) => ({ id, backend: store.backend }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .map(([key, store]) => {
+      const { id } = parseRegistryKey(key);
+      return { id, type: store.type ?? 'store', backend: store.backend };
+    })
+    .sort((a, b) => a.id.localeCompare(b.id) || a.type.localeCompare(b.type));
 }
 
 export async function isStoreRoot(candidateRoot: string): Promise<boolean> {

@@ -70,6 +70,7 @@ interface ExecuteOptions {
   interactive?: boolean; // Commander sets this to false when --no-interactive is used
   concurrency?: string;
   store?: string;
+  project?: string;
   storePath?: string;
 }
 
@@ -452,9 +453,8 @@ export class ValidateCommand {
       console.log(`Totals: ${summary.totals.passed} passed, ${summary.totals.failed} failed (${summary.totals.items} items)`);
       const firstFailure = results.find((res) => !res.valid);
       if (firstFailure) {
-        const storeFlag = isStoreSelectedRoot(root) ? ` --store ${root.storeId}` : '';
         console.log(
-          `Details: rasen validate ${firstFailure.id} --type ${firstFailure.type}${storeFlag}`
+          `Details: ${withStoreFlag(root, `rasen validate ${firstFailure.id} --type ${firstFailure.type}`)}`
         );
       }
     }

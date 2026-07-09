@@ -182,6 +182,7 @@ export function registerContextCommand(program: Command): void {
     .command('context')
     .description(description)
     .option('--store <id>', COMMON_FLAGS.store.description)
+    .option('--project <id>', COMMON_FLAGS.project.description)
     .addOption(
       new Option('--store-path <path>', 'Removed; register the store and use --store').hideHelp()
     )
@@ -191,6 +192,7 @@ export function registerContextCommand(program: Command): void {
     .action(
       async (options: {
         store?: string;
+        project?: string;
         storePath?: string;
         json?: boolean;
         codeWorkspace?: string;
@@ -198,7 +200,7 @@ export function registerContextCommand(program: Command): void {
       }) => {
         try {
           const root = await resolveRootForCommand(
-            { store: options.store, storePath: options.storePath },
+            { store: options.store, project: options.project, storePath: options.storePath },
             { json: options.json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
           );
           if (!root) {

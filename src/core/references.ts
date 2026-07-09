@@ -32,6 +32,8 @@ export interface ReferenceSpecEntry {
 
 export interface ReferenceIndexEntry {
   store_id: string;
+  /** Absent means the store namespace (byte/shape-compatible default). */
+  type?: 'store' | 'project';
   root?: string;
   specs?: ReferenceSpecEntry[];
   fetch?: string;
@@ -61,7 +63,22 @@ function isShellSafeRemote(remote: string): boolean {
   return /^[A-Za-z0-9@:/._~+-]+$/.test(remote) && !remote.startsWith('-');
 }
 
-function registerFix(id: string, remote?: string): string {
+/**
+ * Fetch-recipe registration verb per namespace (design D5): a store-typed
+ * reference renders the plain `store register` recipe unchanged; a
+ * project-typed reference renders the project-namespace `store add-project`
+ * form (`--to <target>` names the referencing root when it is itself a
+ * registered store — the root a teammate's clone will actually reference —
+ * falling back to a placeholder for a non-store referencing root).
+ * `isShellSafeRemote` gating is preserved unchanged for the clone command.
+ */
+function registerFix(
+  id: string,
+  remote: string | undefined,
+  type: 'store' | 'project',
+  targetStoreId: string | undefined
+): string {
+  const projectTarget = targetStoreId ?? '<store-id>';
   if (remote && isShellSafeRemote(remote)) {
     // Verbatim-pasteable: absolute home path because tilde never
     // expands outside a shell and agent JSON consumers execute argv.
@@ -72,9 +89,15 @@ function registerFix(id: string, remote?: string): string {
     // get single quotes; cmd/PowerShell treat single quotes as literal
     // characters, so win32 gets double quotes (valid everywhere).
     const quoted = process.platform === 'win32' ? `"${checkout}"` : `'${checkout}'`;
-    return `git clone -- ${remote} ${quoted} && rasen store register ${quoted} --id ${id}`;
+    const registerCmd =
+      type === 'project'
+        ? `rasen store add-project ${quoted} --to ${projectTarget} --as ${id}`
+        : `rasen store register ${quoted} --id ${id}`;
+    return `git clone -- ${remote} ${quoted} && ${registerCmd}`;
   }
-  return `Get a checkout from a teammate and run: rasen store register <path> --id ${id}`;
+  return type === 'project'
+    ? `Get a checkout from a teammate and run: rasen store add-project <path> --to ${projectTarget} --as ${id}`
+    : `Get a checkout from a teammate and run: rasen store register <path> --id ${id}`;
 }
 
 /**
@@ -141,8 +164,9 @@ async function collectSpecEntries(referencedRoot: string): Promise<ReferenceSpec
   );
 }
 
-export function fetchRecipe(storeId: string): string {
-  return `rasen show <spec-id> --type spec --store ${storeId}`;
+export function fetchRecipe(storeId: string, type: 'store' | 'project' = 'store'): string {
+  const flag = type === 'project' ? '--project' : '--store';
+  return `rasen show <spec-id> --type spec ${flag} ${storeId}`;
 }
 
 function specLine(spec: ReferenceSpecEntry): string {
@@ -200,9 +224,12 @@ export function sanitizeInline(value: string, maxLength = 300): string {
 
 function renderEntryLines(entry: ReferenceIndexEntry): string[] {
   const lines: string[] = [];
+  // Store wording is unchanged (default/absent type); a project-typed
+  // entry is rendered distinguished by its namespace (task 4.2).
+  const noun = entry.type === 'project' ? 'Project' : 'Store';
 
   if (entry.root !== undefined) {
-    lines.push(`Store ${entry.store_id} (${entry.root}):`);
+    lines.push(`${noun} ${entry.store_id} (${entry.root}):`);
     for (const spec of entry.specs ?? []) {
       lines.push(specLine(spec));
     }
@@ -219,7 +246,7 @@ function renderEntryLines(entry: ReferenceIndexEntry): string[] {
     }
   } else {
     for (const diagnostic of entry.status) {
-      lines.push(`Store ${entry.store_id}: ${diagnostic.message}`);
+      lines.push(`${noun} ${entry.store_id}: ${diagnostic.message}`);
       if (diagnostic.fix) {
         lines.push(`  Fix: ${diagnostic.fix}`);
       }
@@ -284,7 +311,10 @@ export async function assembleReferenceIndex(
   const resolvedRootPath = FileSystemUtils.canonicalizeExistingPath(input.resolvedRoot.path);
   const entries: ReferenceIndexEntry[] = [];
 
-  for (const { id, remote } of declarations) {
+  for (const { id, remote, type: declaredType } of declarations) {
+    const type = declaredType ?? 'store';
+    const noun = type === 'project' ? 'project' : 'store';
+
     // Registry-independent checks come first: an invalid id is an
     // invalid id (and a self-reference is omittable) even when the
     // registry is corrupt. The declared remote is only consulted after
@@ -292,28 +322,30 @@ export async function assembleReferenceIndex(
     if (!isValidStoreId(id)) {
       entries.push({
         store_id: id,
+        type,
         status: [
           warning(
             'reference_invalid_id',
-            `Reference '${id}' is not a valid store id.`,
-            'Use kebab-case store ids in the references list.'
+            `Reference '${id}' is not a valid ${noun} id.`,
+            `Use kebab-case ${noun} ids in the references list.`
           ),
         ],
       });
       continue;
     }
 
-    if (input.resolvedRoot.storeId === id) {
+    if (input.resolvedRoot.storeId === id && (input.resolvedRoot.storeType ?? 'store') === type) {
       continue; // Self-reference: meaningless, silently omitted.
     }
 
     if (registryEntries === null) {
       entries.push({
         store_id: id,
+        type,
         status: [
           warning(
             'reference_registry_unreadable',
-            `Referenced store '${id}' cannot be checked: the store registry is unreadable.`,
+            `Referenced ${noun} '${id}' cannot be checked: the store registry is unreadable.`,
             'Run: rasen store doctor'
           ),
         ],
@@ -321,15 +353,23 @@ export async function assembleReferenceIndex(
       continue;
     }
 
-    const registryEntry = registryEntries.find((candidate) => candidate.id === id);
+    const registryEntry = registryEntries.find(
+      (candidate) => candidate.id === id && candidate.type === type
+    );
     if (!registryEntry) {
       entries.push({
         store_id: id,
+        type,
         status: [
           warning(
             'reference_unresolved',
-            `Referenced store '${id}' is not registered on this machine.`,
-            registerFix(id, remote)
+            `Referenced ${noun} '${id}' is not registered on this machine.`,
+            registerFix(
+              id,
+              remote,
+              type,
+              input.resolvedRoot.storeType === 'store' ? input.resolvedRoot.storeId : undefined
+            )
           ),
         ],
       });
@@ -347,10 +387,11 @@ export async function assembleReferenceIndex(
     if (inspection.kind !== 'ok') {
       entries.push({
         store_id: id,
+        type,
         status: [
           warning(
             'reference_root_unhealthy',
-            `Referenced store '${id}' is registered but not usable (${inspection.kind.replace(/_/g, ' ')}).`,
+            `Referenced ${noun} '${id}' is registered but not usable (${inspection.kind.replace(/_/g, ' ')}).`,
             `Run: rasen store doctor ${id}`
           ),
         ],
@@ -364,16 +405,17 @@ export async function assembleReferenceIndex(
 
     if (!includeSpecs) {
       // Health mode: resolution facts only — no content, no budget.
-      entries.push({ store_id: id, root: inspection.canonicalRoot, status: [] });
+      entries.push({ store_id: id, type, root: inspection.canonicalRoot, status: [] });
       continue;
     }
 
     const specs = await collectSpecEntries(inspection.canonicalRoot);
     const entry: ReferenceIndexEntry = {
       store_id: id,
+      type,
       root: inspection.canonicalRoot,
       specs,
-      fetch: fetchRecipe(id),
+      fetch: fetchRecipe(id, type),
       status: [],
     };
 

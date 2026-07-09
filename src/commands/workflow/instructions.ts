@@ -51,6 +51,7 @@ export interface InstructionsOptions {
   change?: string;
   schema?: string;
   store?: string;
+  project?: string;
   storePath?: string;
   json?: boolean;
 }
@@ -59,6 +60,7 @@ export interface ApplyInstructionsOptions {
   change?: string;
   schema?: string;
   store?: string;
+  project?: string;
   storePath?: string;
   json?: boolean;
 }

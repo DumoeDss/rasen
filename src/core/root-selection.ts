@@ -45,8 +45,12 @@ import { FileSystemUtils } from '../utils/file-system.js';
 
 export type OpenSpecRootSource = 'store' | 'declared' | 'nearest' | 'implicit';
 
+/** Registry namespace a selected/resolved root belongs to. */
+export type StoreEntryType = 'store' | 'project';
+
 export interface StoreSelectorOptions {
   store?: string;
+  project?: string;
   storePath?: string;
 }
 
@@ -64,6 +68,8 @@ export interface ResolvedOpenSpecRoot {
   defaultSchema: 'spec-driven';
   source: OpenSpecRootSource;
   storeId?: string;
+  /** Set alongside storeId; the namespace the id was resolved from. */
+  storeType?: StoreEntryType;
 }
 
 export interface RootSelectionDiagnostic {
@@ -115,7 +121,8 @@ function doctorFix(id: string): string {
 function makeRoot(
   rootPath: string,
   source: OpenSpecRootSource,
-  storeId?: string
+  storeId?: string,
+  storeType?: StoreEntryType
 ): ResolvedOpenSpecRoot {
   return {
     path: rootPath,
@@ -124,7 +131,7 @@ function makeRoot(
     archiveDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'changes', 'archive'),
     defaultSchema: 'spec-driven',
     source,
-    ...(storeId ? { storeId } : {}),
+    ...(storeId ? { storeId, storeType: storeType ?? 'store' } : {}),
   };
 }
 
@@ -143,7 +150,8 @@ function canonicalDirectory(startPath: string): string {
 async function resolveStoreRoot(
   id: string,
   globalDataDir?: string,
-  source: OpenSpecRootSource = 'store'
+  source: OpenSpecRootSource = 'store',
+  type: StoreEntryType = 'store'
 ): Promise<ResolvedOpenSpecRoot> {
   try {
     validateStoreId(id);
@@ -151,35 +159,41 @@ async function resolveStoreRoot(
     fromStoreError(error);
   }
 
+  const noun = type === 'project' ? 'project' : 'store';
   let registry;
   try {
     registry = await readStoreRegistryState(globalDataDir ? { globalDataDir } : {});
   } catch (error) {
     fromStoreError(error);
   }
-  const entries = registry ? listStoreRegistryEntries(registry) : [];
+  const entries = (registry ? listStoreRegistryEntries(registry) : []).filter(
+    (candidate) => candidate.type === type
+  );
   const entry = entries.find((candidate) => candidate.id === id);
 
   if (!entry) {
     if (entries.length === 0) {
       throw new RootSelectionError(
-        `Unknown store '${id}'. No stores are registered.`,
+        `Unknown ${noun} '${id}'. No ${noun}s are registered.`,
         'no_registered_stores',
         {
           target: 'store.id',
-          fix: `Run rasen store setup ${id} or rasen store register <path> first.`,
+          fix:
+            type === 'project'
+              ? `Run rasen store add-project <path> --to <store-id> --as ${id} first.`
+              : `Run rasen store setup ${id} or rasen store register <path> first.`,
         }
       );
     }
 
     throw new RootSelectionError(
-      `Unknown store '${id}'. Registered stores: ${entries
+      `Unknown ${noun} '${id}'. Registered ${noun}s: ${entries
         .map((candidate) => candidate.id)
         .join(', ')}.`,
       'unknown_store',
       {
         target: 'store.id',
-        fix: 'Pass a registered store id, or run rasen store list.',
+        fix: `Pass a registered ${noun} id, or run rasen store list.`,
       }
     );
   }
@@ -194,24 +208,24 @@ async function resolveStoreRoot(
       // The doctor pointer lives in the message because human-mode command
       // wrappers print only the message, not the fix field.
       throw new RootSelectionError(
-        `Store '${id}' is missing identity metadata at ${inspection.metadataPath}. ${doctorFix(id)}`,
+        `${type === 'project' ? 'Project' : 'Store'} '${id}' is missing identity metadata at ${inspection.metadataPath}. ${doctorFix(id)}`,
         'store_identity_mismatch',
         { target: 'store.metadata', fix: doctorFix(id) }
       );
     case 'metadata_id_mismatch':
       throw new RootSelectionError(
-        `Store '${id}' metadata id '${inspection.actualId}' does not match its registered id. ${doctorFix(id)}`,
+        `${type === 'project' ? 'Project' : 'Store'} '${id}' metadata id '${inspection.actualId}' does not match its registered id. ${doctorFix(id)}`,
         'store_identity_mismatch',
         { target: 'store.metadata', fix: doctorFix(id) }
       );
     case 'unhealthy_root':
       throw new RootSelectionError(
-        `Store '${id}' does not have a healthy Rasen root at ${storeRoot}: ${inspection.problems} ${doctorFix(id)}`,
+        `${type === 'project' ? 'Project' : 'Store'} '${id}' does not have a healthy Rasen root at ${storeRoot}: ${inspection.problems} ${doctorFix(id)}`,
         'unhealthy_store_root',
         { target: 'openspec.root', fix: doctorFix(id) }
       );
     case 'ok':
-      return makeRoot(inspection.canonicalRoot, source, id);
+      return makeRoot(inspection.canonicalRoot, source, id, type);
     default: {
       // Exhaustiveness guard: a new inspection kind must be handled
       // here explicitly, not fall through to an undefined root.
@@ -367,8 +381,23 @@ export async function resolveOpenSpecRoot(
     );
   }
 
+  if (options.store !== undefined && options.project !== undefined) {
+    throw new RootSelectionError(
+      '--store and --project are mutually exclusive; pass only one.',
+      'store_project_mutually_exclusive',
+      {
+        target: 'store.id',
+        fix: 'Pass either --store <id> or --project <id>, not both.',
+      }
+    );
+  }
+
   if (options.store !== undefined) {
-    return resolveStoreRoot(options.store, options.globalDataDir);
+    return resolveStoreRoot(options.store, options.globalDataDir, 'store', 'store');
+  }
+
+  if (options.project !== undefined) {
+    return resolveStoreRoot(options.project, options.globalDataDir, 'store', 'project');
   }
 
   const startPath = options.startPath ?? process.cwd();
@@ -457,18 +486,24 @@ export function isStoreSelectedRoot(
  */
 export function emitStoreRootBanner(root: ResolvedOpenSpecRoot): void {
   if (isStoreSelectedRoot(root)) {
-    console.error(`Using Rasen root: ${root.storeId} (${root.path})`);
+    // Store wording stays exactly as before (empty label); a project-typed
+    // root gets an explicit label so the banner identifies it as a project.
+    const label = root.storeType === 'project' ? 'project ' : '';
+    console.error(`Using Rasen root: ${label}${root.storeId} (${root.path})`);
   }
 }
 
 /**
- * Keeps follow-up command hints inside the selected store: a hint a user can
- * paste verbatim must carry `--store <id>` when a store was selected.
+ * Keeps follow-up command hints inside the selected store or project: a
+ * hint a user can paste verbatim must carry `--project <id>` for a
+ * project-typed root and `--store <id>` otherwise.
  */
 export function withStoreFlag(root: ResolvedOpenSpecRoot, command: string): string {
-  return isStoreSelectedRoot(root)
-    ? `${command} --store ${root.storeId}`
-    : command;
+  if (!isStoreSelectedRoot(root)) {
+    return command;
+  }
+  const flag = root.storeType === 'project' ? '--project' : '--store';
+  return `${command} ${flag} ${root.storeId}`;
 }
 
 /**
@@ -509,6 +544,7 @@ export async function resolveRootForCommand(
   try {
     const root = await resolveOpenSpecRoot({
       ...(selector.store !== undefined ? { store: selector.store } : {}),
+      ...(selector.project !== undefined ? { project: selector.project } : {}),
       ...(selector.storePath !== undefined ? { storePath: selector.storePath } : {}),
       ...(output.allowImplicitRoot !== undefined
         ? { allowImplicitRoot: output.allowImplicitRoot }

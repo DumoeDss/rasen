@@ -64,6 +64,7 @@ export interface ArchiveOptions {
   validate?: boolean;
   json?: boolean;
   store?: string;
+  project?: string;
   storePath?: string;
 }
 
@@ -255,6 +256,7 @@ export class ArchiveCommand {
     try {
       root = await resolveOpenSpecRoot({
         ...(options.store !== undefined ? { store: options.store } : {}),
+        ...(options.project !== undefined ? { project: options.project } : {}),
         ...(options.storePath !== undefined ? { storePath: options.storePath } : {}),
       });
     } catch (error) {

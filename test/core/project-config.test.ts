@@ -376,6 +376,56 @@ rules:
           expect.stringContaining("Invalid 'references' field")
         );
       });
+
+      describe('project: prefix (store-project-namespace)', () => {
+        it('indexes a project: prefixed entry alongside a bare store entry', () => {
+          writeConfig('schema: spec-driven\nreferences:\n  - other-store\n  - project:elftia\n');
+
+          const config = readProjectConfig(tempDir);
+
+          expect(config?.references).toEqual([
+            { id: 'other-store' },
+            { id: 'elftia', type: 'project' },
+          ]);
+        });
+
+        it('lets a store and a project of the same id both survive dedup', () => {
+          writeConfig('schema: spec-driven\nreferences:\n  - elftia\n  - project:elftia\n');
+
+          const config = readProjectConfig(tempDir);
+
+          expect(config?.references).toEqual([
+            { id: 'elftia' },
+            { id: 'elftia', type: 'project' },
+          ]);
+        });
+
+        it('drops an invalid project: id with a warning, keeping other valid entries', () => {
+          writeConfig(
+            'schema: spec-driven\nreferences:\n  - project:\n  - "project:BAD ID"\n  - other-store\n'
+          );
+
+          const config = readProjectConfig(tempDir);
+
+          expect(config?.references).toEqual([{ id: 'other-store' }]);
+          expect(consoleWarnSpy).toHaveBeenCalledWith(
+            expect.stringContaining("Some 'references' entries are invalid")
+          );
+        });
+
+        it('accepts the object form type: project and preserves remote', () => {
+          writeConfig(
+            'schema: spec-driven\nreferences:\n' +
+              '  - { id: elftia, remote: https://192.0.2.1/elftia.git, type: project }\n'
+          );
+
+          const config = readProjectConfig(tempDir);
+
+          expect(config?.references).toEqual([
+            { id: 'elftia', remote: 'https://192.0.2.1/elftia.git', type: 'project' },
+          ]);
+        });
+      });
     });
 
     describe('context size limit enforcement', () => {
@@ -1264,6 +1314,52 @@ rules:
         { id: 'upstream-context', remote: 'git@example.com:team/upstream.git' },
         'team-context',
       ]);
+    });
+
+    describe('project namespace (store-project-namespace)', () => {
+      it('appends a project: prefixed entry when type is project', () => {
+        const result = appendStoreReference(tempDir, 'elftia', { type: 'project' });
+
+        const configPath = path.join(tempDir, 'rasen', 'config.yaml');
+        expect(result).toEqual({ configPath, changed: true });
+        const written = parseYaml(fs.readFileSync(configPath, 'utf-8'));
+        expect(written.references).toEqual(['project:elftia']);
+      });
+
+      it('lets a store id and a project id of the same name coexist as distinct entries', () => {
+        appendStoreReference(tempDir, 'elftia', { type: 'store' });
+        const result = appendStoreReference(tempDir, 'elftia', { type: 'project' });
+
+        expect(result.changed).toBe(true);
+        const configPath = path.join(tempDir, 'rasen', 'config.yaml');
+        const written = parseYaml(fs.readFileSync(configPath, 'utf-8'));
+        expect(written.references).toEqual(['elftia', 'project:elftia']);
+      });
+
+      it('is a no-op when the (type, id) pair is already present', () => {
+        appendStoreReference(tempDir, 'elftia', { type: 'project' });
+        const result = appendStoreReference(tempDir, 'elftia', { type: 'project' });
+
+        expect(result.changed).toBe(false);
+      });
+
+      it('round-trips a project-typed entry with a remote through the object form', () => {
+        const configDir = path.join(tempDir, 'rasen');
+        fs.mkdirSync(configDir, { recursive: true });
+        const configPath = path.join(configDir, 'config.yaml');
+        fs.writeFileSync(
+          configPath,
+          'schema: spec-driven\nreferences:\n  - { id: elftia, remote: https://192.0.2.1/elftia.git, type: project }\n'
+        );
+
+        appendStoreReference(tempDir, 'other-store');
+
+        const written = parseYaml(fs.readFileSync(configPath, 'utf-8'));
+        expect(written.references).toEqual([
+          { id: 'elftia', remote: 'https://192.0.2.1/elftia.git', type: 'project' },
+          'other-store',
+        ]);
+      });
     });
   });
 });

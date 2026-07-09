@@ -28,9 +28,11 @@ import {
   listStoreRegistryEntries,
   readStoreRegistryState,
   readOptionalStoreMetadataState,
+  registryKeyFor,
   resolveGitStoreBackendConfig,
   validateStoreId,
   writeStoreMetadataState,
+  type RegistryEntryType,
   type StoreGitBackendConfig,
   type StorePathOptions,
   type StoreRegistryState,
@@ -103,8 +105,12 @@ export interface StoreCleanupResult {
   diagnostics: StoreDiagnostic[];
 }
 
+export interface StoreListEntry extends StoreInfo {
+  type: RegistryEntryType;
+}
+
 export interface StoreListResult {
-  stores: StoreInfo[];
+  stores: StoreListEntry[];
 }
 
 export interface StoreDoctorResult {
@@ -113,6 +119,7 @@ export interface StoreDoctorResult {
 }
 
 export interface StoreInspection extends StoreInfo {
+  type: RegistryEntryType;
   openspecRoot: OpenSpecRootInspection;
   metadata: {
     present: boolean | null;
@@ -145,6 +152,8 @@ export interface RegisterExistingStoreInput {
   path?: string;
   id?: string;
   allowCreateIdentity?: boolean;
+  /** Registry namespace to register into; absent means store. */
+  type?: RegistryEntryType;
 }
 
 export interface StoreAddProjectInput {
@@ -175,10 +184,13 @@ export interface StoreAddProjectResult {
 
 export interface CleanupStoreInput extends StorePathOptions {
   id: string;
+  /** Registry namespace to clean up; absent means store (compat default). */
+  type?: RegistryEntryType;
 }
 
 export interface PreparedStoreCleanup extends StoreInfo, StorePathOptions {
   backend: StoreGitBackendConfig;
+  type: RegistryEntryType;
 }
 
 export interface PreparedStoreSetup {
@@ -241,11 +253,15 @@ async function isGitOnlyDirectory(storeRoot: string): Promise<boolean> {
   return entries.length === 1 && entries[0] === '.git' && await isGitRepositoryAtRoot(storeRoot);
 }
 
-function alreadyRegisteredDiagnostic(id: string): StoreDiagnostic {
+function alreadyRegisteredDiagnostic(
+  id: string,
+  type: RegistryEntryType = 'store'
+): StoreDiagnostic {
+  const noun = type === 'project' ? 'Project' : 'Store';
   return makeStoreDiagnostic(
     'info',
     'store_already_registered',
-    `Store '${id}' is already registered at this path.`,
+    `${noun} '${id}' is already registered at this path.`,
     {
       target: 'store.registry',
     }
@@ -411,9 +427,10 @@ function normalizeRegistryPathForComparison(targetPath: string): string {
 function isRegisteredAtPath(
   registry: StoreRegistryState | null,
   id: string,
-  storeRoot: string
+  storeRoot: string,
+  type: RegistryEntryType = 'store'
 ): boolean {
-  const entry = registry?.stores?.[id];
+  const entry = registry?.stores?.[registryKeyFor(type, id)];
   if (!entry) return false;
 
   return (
@@ -561,7 +578,7 @@ async function prepareSetupPlan(
     local_path: FileSystemUtils.canonicalizeExistingPath(storeRoot),
   };
 
-  assertNoRegisteredStoreConflict(registry, id, conflictBackend);
+  assertNoRegisteredStoreConflict(registry, 'store', id, conflictBackend);
 
   return {
     id,
@@ -658,7 +675,7 @@ export async function setupPreparedStore(
     createdFiles.push(...root.createdArtifacts);
     createdPaths = root.createdPaths;
     backend ??= await resolveBackendWithObservedOrigin(storeRoot);
-    assertNoRegisteredStoreConflict(registry, id, backend);
+    assertNoRegisteredStoreConflict(registry, 'store', id, backend);
 
     // The identity file is written before the initial commit so clones carry
     // it; without it, register falls back to the conversion prompt.
@@ -815,6 +832,7 @@ export async function registerExistingStore(
     );
   }
 
+  const type: RegistryEntryType = input.type ?? 'store';
   const metadata = await readStoreMetadataForOperation(storeRoot);
   const explicitId = input.id !== undefined ? validateStoreId(input.id) : undefined;
 
@@ -823,8 +841,8 @@ export async function registerExistingStore(
     // so following it never lands on the already-registered error.
     const currentRegistry = await readStoreRegistryState();
     const registeredElsewhere =
-      currentRegistry?.stores?.[metadata.id] !== undefined &&
-      !isRegisteredAtPath(currentRegistry, metadata.id, storeRoot);
+      currentRegistry?.stores?.[registryKeyFor(type, metadata.id)] !== undefined &&
+      !isRegisteredAtPath(currentRegistry, metadata.id, storeRoot, type);
 
     throw new StoreError(
       `Store metadata id '${metadata.id}' does not match --id '${explicitId}'. The id comes from the store's committed .rasen-store/store.yaml.`,
@@ -852,7 +870,7 @@ export async function registerExistingStore(
 
   const backend = await resolveBackendWithObservedOrigin(storeRoot);
   const registry = await readStoreRegistryState();
-  assertNoRegisteredStoreConflict(registry, id, backend);
+  assertNoRegisteredStoreConflict(registry, type, id, backend);
   const createdFiles: string[] = [];
   const isRepository = await isGitRepositoryAtRoot(storeRoot);
 
@@ -860,12 +878,13 @@ export async function registerExistingStore(
     id,
     backend,
     writeMetadataIfMissing: true,
+    type,
   });
   if (registered.metadataCreated) {
     createdFiles.push('.rasen-store/store.yaml');
   }
   const diagnostics = registered.alreadyRegistered && createdFiles.length === 0
-    ? [alreadyRegisteredDiagnostic(id)]
+    ? [alreadyRegisteredDiagnostic(id, type)]
     : [];
 
   // Register never commits; converted roots are the user's repo to commit.
@@ -884,21 +903,23 @@ export async function registerExistingStore(
 
 /**
  * Composes `registerExistingStore` with the references-append helper
- * (design D1): registers the project at `input.projectPath` as a store on
- * this machine if it is not already one, then appends its store id to
- * `input.targetStoreId`'s `references:` list. The only write inside the
- * project repo is `.rasen-store/store.yaml` (registerExistingStore's own
- * guarantee); the reference edit lands in the target store's config, never
- * the project's.
+ * (design D1): registers the project at `input.projectPath` into the
+ * PROJECT namespace on this machine if it is not already one, then appends
+ * a `project:<id>` entry to `input.targetStoreId`'s `references:` list. An
+ * inferred project id colliding with a store's id is not a conflict — the
+ * two namespaces are disjoint. The only write inside the project repo is
+ * `.rasen-store/store.yaml` (registerExistingStore's own guarantee); the
+ * reference edit lands in the target store's config, never the project's.
  */
 export async function storeAddProject(
   input: StoreAddProjectInput
 ): Promise<StoreAddProjectResult> {
   const projectRoot = resolveRegisterRoot(input.projectPath);
+  const canonicalProjectRoot = normalizeRegistryPathForComparison(projectRoot);
 
   // Peek existing identity to resolve the id per D2 (existing metadata ->
   // explicit id -> folder basename) without writing anything yet; a
-  // not-yet-existing or not-yet-a-store project path resolves via the
+  // not-yet-existing or not-yet-a-project project path resolves via the
   // same inference registerExistingStore uses internally.
   const existingMetadata = await readStoreMetadataForOperation(projectRoot);
   const explicitId = input.id !== undefined ? validateStoreId(input.id) : undefined;
@@ -925,15 +946,17 @@ export async function storeAddProject(
     throw error;
   }
 
-  // Belt-and-suspenders (D7): assembleReferenceIndex already omits
-  // self-references, but the write itself must never happen.
-  if (resolvedProjectId === targetStore.id) {
+  // Self-reference is a directory identity question, not an id question
+  // (design D6): a project sharing the target store's id at a DIFFERENT
+  // path is legitimate (that is the whole point of the type split).
+  const canonicalTargetRoot = normalizeRegistryPathForComparison(targetStore.storeRoot);
+  if (canonicalProjectRoot === canonicalTargetRoot) {
     throw new StoreError(
-      `Store '${resolvedProjectId}' cannot be added to itself.`,
+      `'${resolvedProjectId}' cannot be added to itself: the project and the target store '${targetStore.id}' are the same directory.`,
       'store_add_project_self_reference',
       {
         target: 'store.references',
-        fix: `Choose a different --to target for '${resolvedProjectId}', or add a different project to '${targetStore.id}'.`,
+        fix: `Choose a different --to target, or add a different project to '${targetStore.id}'.`,
       }
     );
   }
@@ -942,9 +965,12 @@ export async function storeAddProject(
     path: projectRoot,
     ...(input.id !== undefined ? { id: input.id } : {}),
     allowCreateIdentity: true,
+    type: 'project',
   });
 
-  const { configPath, changed } = appendStoreReference(targetStore.storeRoot, registration.store.id);
+  const { configPath, changed } = appendStoreReference(targetStore.storeRoot, registration.store.id, {
+    type: 'project',
+  });
 
   return {
     project: {
@@ -976,14 +1002,17 @@ export async function prepareStoreCleanup(
   input: CleanupStoreInput
 ): Promise<PreparedStoreCleanup> {
   const id = validateStoreId(input.id);
+  const type = input.type ?? 'store';
   const entry = await getRegisteredStore({
     id,
+    type,
     globalDataDir: input.globalDataDir,
   });
 
   return {
     ...cleanupStoreOutput(entry.id, entry.storeRoot),
     backend: entry.backend,
+    type,
     ...(input.globalDataDir ? { globalDataDir: input.globalDataDir } : {}),
   };
 }
@@ -994,6 +1023,7 @@ export async function unregisterStore(
   const target = await prepareStoreCleanup(input);
   const removed = await unregisterStoreRegistration({
     id: target.id,
+    type: target.type,
     expectedBackend: target.backend,
     globalDataDir: target.globalDataDir,
   });
@@ -1071,6 +1101,7 @@ export async function removeStore(
   let rootMissing = false;
   const removed = await unregisterStoreRegistration({
     id,
+    type: target.type,
     expectedBackend: target.backend,
     globalDataDir: target.globalDataDir,
     beforeCommit: async (entry) => {
@@ -1125,6 +1156,7 @@ export async function listStores(): Promise<StoreListResult> {
   return {
     stores: entries.map((entry) => ({
       id: entry.id,
+      type: entry.type,
       root: entry.storeRoot,
     })),
   };
@@ -1153,6 +1185,7 @@ function doctorStatusForError(
 
 async function inspectStore(entry: {
   id: string;
+  type: RegistryEntryType;
   backend: StoreGitBackendConfig;
 }): Promise<StoreInspection> {
   const root = getStoreRootForBackend(entry.backend);
@@ -1292,6 +1325,7 @@ async function inspectStore(entry: {
 
   return {
     id: entry.id,
+    type: entry.type,
     root,
     metadataPath,
     openspecRoot,
@@ -1301,7 +1335,17 @@ async function inspectStore(entry: {
   };
 }
 
-export async function doctorStores(id?: string): Promise<StoreDoctorResult> {
+/**
+ * `type` is an opt-in narrowing filter (the `--project` flag): absent, an
+ * id shared by a store and a project reports both rows (existing
+ * behavior, disambiguated by the `type` field each row now carries);
+ * passed, only that namespace's entry for the id is inspected, and a miss
+ * that would have matched the OTHER namespace hints the flag to flip.
+ */
+export async function doctorStores(
+  id?: string,
+  type?: RegistryEntryType
+): Promise<StoreDoctorResult> {
   const selectedId = id !== undefined ? validateStoreId(id) : undefined;
   const registry = await readStoreRegistryState();
 
@@ -1317,14 +1361,25 @@ export async function doctorStores(id?: string): Promise<StoreDoctorResult> {
   }
 
   const entries = listStoreRegistryEntries(registry);
-  const selected = selectedId
-    ? entries.filter((entry) => entry.id === selectedId)
-    : entries;
+  const selected = entries.filter((entry) => {
+    if (selectedId !== undefined && entry.id !== selectedId) return false;
+    if (type !== undefined && entry.type !== type) return false;
+    return true;
+  });
 
   if (selectedId && selected.length === 0) {
-    throw new StoreError(`Unknown store '${selectedId}'.`, 'store_not_found', {
+    const noun = type === 'project' ? 'project' : 'store';
+    const otherType: RegistryEntryType | undefined =
+      type === undefined ? undefined : type === 'project' ? 'store' : 'project';
+    const hasOtherType =
+      otherType !== undefined &&
+      entries.some((entry) => entry.id === selectedId && entry.type === otherType);
+
+    throw new StoreError(`Unknown ${noun} '${selectedId}'.`, 'store_not_found', {
       target: 'store.id',
-      fix: 'Run rasen store list to see registered stores.',
+      fix: hasOtherType
+        ? `'${selectedId}' is registered as a ${otherType}, not a ${noun}. ${otherType === 'project' ? 'Rerun with --project-namespace.' : 'Rerun without --project-namespace.'}`
+        : 'Run rasen store list to see registered stores.',
     });
   }
 
