@@ -27,7 +27,7 @@ import { getTelemetryConfig, updateTelemetryConfig } from './config.js';
 
 // Maintainer-owned Cloudflare Worker (fork-phase1-telemetry-backend). No API
 // key required — the Worker is unauthenticated by design.
-const TELEMETRY_ENDPOINT = 'https://openspec-telemetry.ws11579.workers.dev';
+const TELEMETRY_ENDPOINT = 'https://telemetry.rasen.io';
 const TELEMETRY_REQUEST_TIMEOUT_MS = 1000;
 
 let anonymousId: string | null = null;
