@@ -55,17 +55,20 @@ The system SHALL read brand-specific environment variables under the `RASEN_` pr
 - **WHEN** `DO_NOT_TRACK=1` or `CI=true` is set
 - **THEN** the system honors it exactly as before the rename
 
-### Requirement: Preserved workspace and ecosystem identifiers
-The rename SHALL NOT alter identifiers that existing on-disk user projects or the workflow ecosystem depend on. The user-project workspace directory SHALL remain `openspec/`, the slash-command prefix SHALL remain `opsx:`, the in-file marker pair SHALL remain `<!-- OPENSPEC:START -->` / `<!-- OPENSPEC:END -->`, and schema identifiers (e.g., `spec-driven`) SHALL be unchanged.
+### Requirement: Brand namespace identifiers
+The product SHALL own a complete rasen namespace across every user-visible identifier: the workspace directory SHALL be `rasen/`, the slash-command prefix SHALL be `rasen:` (hyphen form `rasen-` for tools without colon support), and skill directories SHALL use the `rasen-` prefix. Schema identifiers (e.g., `spec-driven`) SHALL be unchanged. The legacy marker pair `<!-- OPENSPEC:START -->` / `<!-- OPENSPEC:END -->` SHALL remain recognized solely for identifying legacy artifacts, and SHALL NOT be written into newly generated content.
 
-#### Scenario: Existing workspace still recognized
-- **WHEN** the CLI runs in a project initialized before the rename that has an `openspec/` directory
-- **THEN** the CLI locates and operates on that workspace without requiring migration
+#### Scenario: Workspace directory is rasen
+- **WHEN** a user initializes a new project with `rasen init`
+- **THEN** the workspace directory created is `rasen/`
+- **AND** no `openspec/` directory is created
 
-#### Scenario: Marker blocks still detected
-- **WHEN** the CLI updates or cleans a user file containing `<!-- OPENSPEC:START -->` / `<!-- OPENSPEC:END -->`
-- **THEN** the CLI recognizes and manages that marker block exactly as before
-
-#### Scenario: Slash-command prefix unchanged
+#### Scenario: Slash-command prefix is rasen
 - **WHEN** generated command files are produced
-- **THEN** their command identifiers keep the `opsx:` prefix
+- **THEN** their command identifiers use the `rasen:` prefix (or `rasen-` in hyphen-syntax tools)
+- **AND** no generated identifier uses the `opsx` prefix
+
+#### Scenario: No namespace collision with upstream OpenSpec
+- **WHEN** a project also has upstream OpenSpec installed (its `openspec/` workspace, `/opsx:*` commands, `openspec-*` skills)
+- **THEN** every path and identifier rasen generates is distinct from the upstream set
+- **AND** neither tool overwrites the other's files

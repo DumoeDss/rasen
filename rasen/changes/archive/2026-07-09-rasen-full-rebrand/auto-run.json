@@ -21,8 +21,12 @@
       "rounds": 2,
       "note": "Round 1: 10 findings fixed by implementer-5 (author-routed). Round 2: reviewer-1 non-author confirmed 10/10 resolved; suite 2177 passed / 0 failed. New R2-1 (Major, commit-hygiene): concurrent change prompt-audit-fixes-expert-dispatch content co-mingled in _shared.ts/_orchestration.ts/skill-templates-parity.test.ts — routed to ship as handling constraint (4b37644 precedent: keep, attribute, pathspec)."
     },
-    "ship": { "status": "in_progress", "worker": { "role": "shipper", "name": "shipper-1" }, "note": "HARD CONSTRAINT: explicit-pathspec commit only; exclude rasen/changes/prompt-audit-fixes*; include 3 co-mingled files WITH attribution note in commit message; delivery mode local (no push — user owns outward delivery)" },
-    "archive": { "status": "pending" }
+    "ship": {
+      "status": "done",
+      "worker": { "role": "shipper", "name": "shipper-1" },
+      "note": "local delivery: 2ebfae9 (1336 files: 1041 renames + 272 mods + 23 new) + ca54b3b (ship-log). Co-mingled 9 expert-template files delivered via concurrent session's d380725 (their LEAD ruling, whole-file granularity) — zero residual diff verified, nothing lost. LEAD post-verified: zero peer files in commit (grep hits were commit-message attribution text), brand-guard 3/3 green."
+    },
+    "archive": { "status": "in_progress", "worker": { "role": "shipper", "name": "archiver-1" } }
   },
   "rounds": 0,
   "openFindings": [],
