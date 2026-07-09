@@ -1,0 +1,16 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "prompt-audit-fixes",
+  "stages": {
+    "propose":     { "status": "done", "worker": { "role": "planner", "agentId": "planner2", "reuse": "warm 13.3%" }, "note": "D1-D5; 2 spec capabilities; consumes canonical-severity-vocabulary by reference; chrome-use parity debt closed here" },
+    "apply":       { "status": "done", "worker": { "role": "implementer", "agentId": "implementer2", "reuse": "warm 24.3%", "reusedFrom": "prompt-audit-fixes-expert-dispatch" }, "note": "19/19 tasks; 6 files; 6/6 tests; chrome-use parity debt closed; new debt flagged: ship.ts + verify-enhanced.ts absent from parity table (relay to child 3/5)" },
+    "verify":      { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer3" }, "note": "0B/0Ma/1Mi/2T; moved-hash set verified exact" },
+    "review-loop": { "status": "done", "rounds": 1, "verdict": "CLEAN (non-author confirmed)", "resolved": ["minor-unwired-retro-claim"], "acceptedKnown": ["qa-only carve-out wording (harmless, shared block)", "verify-enhanced covers content-overrides-label by reference (preferred pattern)", "ship.ts + verify-enhanced.ts absent from parity table (pre-existing; relay to child 3/5)"] },
+    "ship":        { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper", "reuse": "warm" } },
+    "archive":     { "status": "pending" }
+  },
+  "rounds": 0,
+  "openFindings": []
+}

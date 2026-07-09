@@ -148,6 +148,31 @@ ${STORE_SELECTION_GUIDANCE}
    - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
    - If all clear: "All checks passed. Ready for archive."
 
+   **Canonical verdict (machine contract)**: Map the issues above onto the canonical Blocker/Major/Minor/Trivial scale defined by the \`canonical-severity-vocabulary\` in the expert PREAMBLE (reference it; do NOT re-define the scale): CRITICAL (incomplete tasks, missing requirement implementation) → **Blocker**; WARNING (spec/design divergence, missing scenario coverage) → **Major**; SUGGESTION (pattern inconsistency, minor improvement) → **Minor**, or **Trivial** for pure cosmetics. Finding content overrides the label (a divergence that causes data loss maps to Blocker).
+
+   Emit ONE machine-checkable status line, into both the report and the conversation:
+
+   \`\`\`
+   VERIFY VERDICT: <CLEAN|BLOCKED> — Blocker:<n> Major:<n> Minor:<n> Trivial:<n>
+   \`\`\`
+
+   The verdict is **CLEAN if and only if no Blocker and no Major is open**, matching the review-cycle termination invariant; otherwise **BLOCKED**. The "Ready for archive" / "Fix before archiving" prose above is human narration — this status line is the machine contract. (This standardizes the vocabulary and the pass rule only; it does not by itself enforce an archive refusal.)
+
+9. **Save Report**
+
+   Write the full verification result to \`rasen/changes/<name>/verification-report.md\` — the summary scorecard, the \`VERIFY VERDICT:\` status line, and the grouped findings (Blocker/Major/Minor/Trivial, each with its recommendation). This is verify-change's canonical evidence artifact that \`/rasen:ship\`'s pre-flight looks for. Emitting the result only to the conversation is NOT sufficient.
+
+   **Test-evidence block (only when you ran tests/gates)**: if this verification executed the project's test or gate command(s), append a fingerprinted test-evidence block so \`/rasen:ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
+
+   \`\`\`
+   TEST EVIDENCE
+   - command: <exact command(s) run>
+   - result: pass | fail
+   - tree: <git rev-parse HEAD^{tree}>
+   \`\`\`
+
+   If this verification did NOT run tests, write no test-evidence block — ship then correctly re-runs (it skips on proof, never on hope).
+
 **Verification Heuristics**
 
 - **Completeness**: Focus on objective checklist items (checkboxes, requirements list)
@@ -319,6 +344,31 @@ ${STORE_SELECTION_GUIDANCE}
    - If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
    - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
    - If all clear: "All checks passed. Ready for archive."
+
+   **Canonical verdict (machine contract)**: Map the issues above onto the canonical Blocker/Major/Minor/Trivial scale defined by the \`canonical-severity-vocabulary\` in the expert PREAMBLE (reference it; do NOT re-define the scale): CRITICAL (incomplete tasks, missing requirement implementation) → **Blocker**; WARNING (spec/design divergence, missing scenario coverage) → **Major**; SUGGESTION (pattern inconsistency, minor improvement) → **Minor**, or **Trivial** for pure cosmetics. Finding content overrides the label (a divergence that causes data loss maps to Blocker).
+
+   Emit ONE machine-checkable status line, into both the report and the conversation:
+
+   \`\`\`
+   VERIFY VERDICT: <CLEAN|BLOCKED> — Blocker:<n> Major:<n> Minor:<n> Trivial:<n>
+   \`\`\`
+
+   The verdict is **CLEAN if and only if no Blocker and no Major is open**, matching the review-cycle termination invariant; otherwise **BLOCKED**. The "Ready for archive" / "Fix before archiving" prose above is human narration — this status line is the machine contract. (This standardizes the vocabulary and the pass rule only; it does not by itself enforce an archive refusal.)
+
+9. **Save Report**
+
+   Write the full verification result to \`rasen/changes/<name>/verification-report.md\` — the summary scorecard, the \`VERIFY VERDICT:\` status line, and the grouped findings (Blocker/Major/Minor/Trivial, each with its recommendation). This is verify-change's canonical evidence artifact that \`/rasen:ship\`'s pre-flight looks for. Emitting the result only to the conversation is NOT sufficient.
+
+   **Test-evidence block (only when you ran tests/gates)**: if this verification executed the project's test or gate command(s), append a fingerprinted test-evidence block so \`/rasen:ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
+
+   \`\`\`
+   TEST EVIDENCE
+   - command: <exact command(s) run>
+   - result: pass | fail
+   - tree: <git rev-parse HEAD^{tree}>
+   \`\`\`
+
+   If this verification did NOT run tests, write no test-evidence block — ship then correctly re-runs (it skips on proof, never on hope).
 
 **Verification Heuristics**
 
