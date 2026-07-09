@@ -40,6 +40,25 @@ export interface MachineHomeHealth {
    * MAJOR-2) - `registered`/`dangling` above then reflect no data, not a
    * verified "not registered" fact. */
   error?: { message: string; fix?: string };
+  /**
+   * Legacy in-repo T3 ephemera eligible for `rasen work migrate`
+   * (`migrate-legacy-ephemera` task 3.1, review m1). Present only when the
+   * total is greater than zero — a clean project omits this entirely
+   * rather than reporting a zero count. `untracked`/`tracked` split the
+   * total so the hint never implies the suggested command will move
+   * everything when most of it is tracked (needs `--include-tracked`).
+   * `splitUnavailable` is true when the split itself could not be
+   * determined (non-git root, or the git query failed) — `total` is still
+   * accurate; `untracked`/`tracked` are both 0 and must not be read as
+   * "nothing tracked."
+   */
+  migratableEphemera?: {
+    total: number;
+    untracked: number;
+    tracked: number;
+    splitUnavailable: boolean;
+    hint: string;
+  };
 }
 
 export interface InspectRelationshipsInput {
@@ -68,6 +87,8 @@ export interface InspectRelationshipsInput {
   danglingProjectEntries?: Array<{ path: string; home: string }>;
   /** Set when the machine registry could not be read (MAJOR-2). */
   machineHomeError?: { message: string; fix?: string };
+  /** Migratable-legacy-ephemera counts (read-only scan; never computed for an unregistered project). */
+  migratableEphemera?: { total: number; untracked: number; tracked: number; splitUnavailable: boolean };
 }
 
 function warning(code: string, message: string, fix: string): StoreDiagnostic {
@@ -163,6 +184,17 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
       : {}),
     dangling: input.danglingProjectEntries ?? [],
     ...(input.machineHomeError ? { error: input.machineHomeError } : {}),
+    ...(input.migratableEphemera && input.migratableEphemera.total > 0
+      ? {
+          migratableEphemera: {
+            total: input.migratableEphemera.total,
+            untracked: input.migratableEphemera.untracked,
+            tracked: input.migratableEphemera.tracked,
+            splitUnavailable: input.migratableEphemera.splitUnavailable,
+            hint: 'rasen work migrate',
+          },
+        }
+      : {}),
   };
 
   return {
