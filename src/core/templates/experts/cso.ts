@@ -324,7 +324,7 @@ For each finding, include:
 
 ### Phase 8: Save Report
 
-**Dispatched mode:** write ONLY \`cso-report.md\` in the change directory (markdown, not JSON), with each finding tagged with a canonical severity (\`CRITICAL\`→Blocker, \`HIGH\`→Major, \`MEDIUM\`→Minor; finding content overrides the label). Do NOT write the \`.rasen/security-reports/\` JSON or any \`~/.rasen/\` path. Then return.
+**Dispatched mode:** write ONLY \`cso-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory) (markdown, not JSON), with each finding tagged with a canonical severity (\`CRITICAL\`→Blocker, \`HIGH\`→Major, \`MEDIUM\`→Minor; finding content overrides the label). Do NOT write the \`.rasen/security-reports/\` JSON or any \`~/.rasen/\` path. Then return.
 
 **Standalone mode.**
 

@@ -30,20 +30,20 @@ Parse the input to determine retro scope:
 
 ### 2A. Change-Scoped Retro
 
-Read all available artifacts from the change directory:
+Read all available artifacts:
 
-**Planning Artifacts:**
+**Planning Artifacts** (the change directory — \`changeRoot\` from status JSON):
 - \`proposal.md\` — what was planned
 - \`design.md\` — how it was designed
 - \`tasks.md\` — task breakdown and completion status
 - \`specs/\` — delta specifications
+- \`office-hours-design.md\` — product validation session
 
-**Outcome Artifacts:**
+**Outcome Artifacts** (the work directory — \`workDir\` from status JSON; fall back to the change directory when \`workDir\` is absent or a file already lives there — legacy fallback):
 - \`review-report.md\` — code review findings
 - \`qa-report.md\` — QA findings
 - \`cso-report.md\` — security audit findings
 - \`ship-log.md\` — shipping details (PR URL, deploy status)
-- \`office-hours-design.md\` — product validation session
 
 **Analysis:**
 - Correlate planning vs outcome: did we build what we planned?

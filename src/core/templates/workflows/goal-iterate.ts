@@ -50,7 +50,7 @@ Branch on \`workProduct\`:
 
 You cannot feel your own context usage. If you notice your earlier conversation has been replaced by a compaction summary, OR you have completed substantial work but more remains and you are losing recall of details you read earlier:
 - Finish or cleanly abort the current atomic edit (do not leave the work product half-written).
-- Write \`rasen/changes/<name>/handoff/implementer-<n>.md\` per the rasen-handoff template.
+- Write \`<workDir>/handoff/implementer-<n>.md\` (the resolved work directory from the LEAD's dispatch, per playbook Step F; fallback: \`rasen/changes/<name>/handoff/implementer-<n>.md\`) per the rasen-handoff template.
 - Return \`HANDOFF { path, reason: compaction|budget|self-assessment, completed: [...], remaining: [...] }\` instead of \`DONE\`.
 
 The LEAD warm-seeds a successor from your handoff document and the loop continues; \`goal-run.json\` is the spine that survives the relay.

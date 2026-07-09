@@ -48,6 +48,8 @@ export interface ApplyInstructions {
   instruction: string;
   /** Referenced-store index (read-only upstream context; omitted when none declared) */
   references?: ReferenceIndexEntry[];
+  /** Resolved external work directory for process ephemera (design D3); absent when unresolvable. */
+  workDir?: string;
 }
 
 // -----------------------------------------------------------------------------

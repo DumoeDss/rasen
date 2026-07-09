@@ -1,0 +1,62 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "externalize-artifacts",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "worker": {
+        "role": "planner",
+        "agentId": "planner2",
+        "model": "fable"
+      }
+    },
+    "apply": {
+      "status": "done",
+      "worker": {
+        "role": "implementer",
+        "agentId": "impl-t3-workdir",
+        "model": "sonnet"
+      },
+      "notes": "29/29 tasks (tasks.md had 29, brief said 27). One API connection drop mid-run, resumed via wake. Live smoke test passed both fresh-workDir and sticky-legacy paths.",
+      "testGate": {
+        "command": "npx vitest run",
+        "result": "123 files / 2245 passed / 22 skipped / 0 failed"
+      }
+    },
+    "verify": {
+      "status": "done",
+      "worker": {
+        "role": "reviewer",
+        "agentId": "reviewer-t3-workdir",
+        "model": "fable"
+      },
+      "verdict": "FINDINGS 0B/1M/2m/1t",
+      "report": "review-report.md"
+    },
+    "review-loop": {
+      "status": "done",
+      "fixer": "impl-t3-workdir (author)",
+      "reReviewer": "reviewer-t3-workdir",
+      "verdict": "CLEAN round 2",
+      "resolved": "F1 Major, F2 Minor",
+      "acceptedKnown": [
+        "F3 workDir existsSync shadows legacy on corrupt copy",
+        "F4 trivial"
+      ]
+    },
+    "ship": {
+      "status": "in_progress"
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "rounds": 1,
+  "openFindings": [],
+  "acceptedKnown": [
+    "F3 workDir existsSync shadows legacy on corrupt copy (design D4 read-order determinism)",
+    "T1 trivial per report"
+  ]
+}

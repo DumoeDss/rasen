@@ -48,7 +48,7 @@ ${ORCHESTRATION_PLAYBOOK}
 
 ## Cycle report
 
-Track everything in \`rasen/changes/<name>/review-cycle-report.md\`: each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the exact test/gate command(s), their result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state they ran against — the ship stage's evidence-based test gate reads this to decide whether tests must be re-run.
+Track everything in \`review-cycle-report.md\` in the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or the file already lives there): each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the exact test/gate command(s), their result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state they ran against — the ship stage's evidence-based test gate reads this to decide whether tests must be re-run.
 
 ## Termination Invariants (non-negotiable)
 
@@ -80,7 +80,7 @@ Rounds: <r>/<max-rounds>   Tier: A | B | C   Status: CLEAN | ESCALATED
 - Delegates every review pass to \`rasen-review\` — one review engine, no fork.
 - Runs AFTER implementation, against the live diff; complements (does not replace) the one-shot \`/rasen:verify-enhanced\` gate and plan-time \`plan-*-review\`.
 - Shares the orchestration playbook with \`/rasen:auto\` — this loop is auto's \`review-loop\` stage.
-- The cycle report lives in the change directory alongside \`review-report.md\` / \`ship-log.md\` and is consumable by \`/rasen:retro\` and \`/rasen:archive\`.`;
+- The cycle report lives in the work directory alongside \`review-report.md\` / \`ship-log.md\` and is consumable by \`/rasen:retro\` and \`/rasen:archive\`.`;
 
 export function getReviewCycleSkillTemplate(): SkillTemplate {
   return {

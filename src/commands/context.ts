@@ -13,6 +13,7 @@ import {
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
+import { resolveProjectHome } from '../core/project-home.js';
 import { inspectRelationships } from '../core/relationship-health.js';
 import {
   assembleWorkingSet,
@@ -45,12 +46,24 @@ async function gatherWorkingSet(
     registryUnreadable: data.registrySnapshot.unreadable,
   });
 
+  const workingSet = assembleWorkingSet({
+    root,
+    referenceEntries: data.referenceEntries,
+    topLevelStatus: health.status,
+  });
+
+  // Root-scoped, probe-only (design D3 `context/machineHome`): context
+  // never mints identity or writes to the repo/registry — an unregistered
+  // project simply carries no `machineHome`. The probe itself must never
+  // fail the command: a corrupt machine-global registry.json would
+  // otherwise throw here and brick `rasen context` (review finding F1).
+  const home = await resolveProjectHome(root.path, { ensure: false }).catch(() => null);
+  const workingSetWithHome: WorkingSet = home
+    ? { ...workingSet, root: { ...workingSet.root, machineHome: home.homeDir } }
+    : workingSet;
+
   return {
-    workingSet: assembleWorkingSet({
-      root,
-      referenceEntries: data.referenceEntries,
-      topLevelStatus: health.status,
-    }),
+    workingSet: workingSetWithHome,
     declaredReferenceCount: data.projectConfig?.references?.length ?? 0,
   };
 }
@@ -65,6 +78,9 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
   console.log('');
   console.log('Rasen root');
   console.log(`  ${rootLabel}  ${workingSet.root.path}`);
+  if (workingSet.root.machineHome) {
+    console.log(`  Machine home: ${workingSet.root.machineHome}`);
+  }
 
   const availableStores = workingSet.members.filter(
     (member) => member.role === 'referenced_store' && isAvailableMember(member)

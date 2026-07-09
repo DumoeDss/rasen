@@ -7,6 +7,7 @@
 import ora from 'ora';
 import chalk from 'chalk';
 import { getChangeDir } from '../../core/planning-home.js';
+import { resolveChangeWorkDir } from '../../core/change-work.js';
 import {
   resolveRootForCommand,
   toPlanningHome,
@@ -107,21 +108,32 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
       isStoreSelectedRoot(root) ? { storeId: root.storeId } : {}
     );
 
+    // Probe-only (ensure:false): status is a read-only surface and must
+    // never mint identity or write to the repo/registry (design D2). A
+    // probe miss simply omits `workDir` from the payload.
+    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+
     spinner?.stop();
 
     if (options.json) {
-      console.log(JSON.stringify({ ...status, root: rootOutput }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ...status, ...(workDir ? { workDir } : {}), root: rootOutput },
+          null,
+          2
+        )
+      );
       return;
     }
 
-    printStatusText(status);
+    printStatusText(status, workDir ?? undefined);
   } catch (error) {
     spinner?.stop();
     throw error;
   }
 }
 
-export function printStatusText(status: ChangeStatus): void {
+export function printStatusText(status: ChangeStatus, workDir?: string): void {
   const doneCount = status.artifacts.filter((a) => a.status === 'done').length;
   const total = status.artifacts.length;
 
@@ -129,6 +141,9 @@ export function printStatusText(status: ChangeStatus): void {
   console.log(`Schema: ${status.schemaName}`);
   if (status.changeRoot) {
     console.log(`Change root: ${status.changeRoot}`);
+  }
+  if (workDir) {
+    console.log(`Work dir: ${workDir}`);
   }
   console.log(`Progress: ${doneCount}/${total} artifacts complete`);
   console.log();
