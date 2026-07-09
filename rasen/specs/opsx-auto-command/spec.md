@@ -213,3 +213,13 @@ Auto SHALL support an optional gate by which the LEAD reviews the propose output
 - **WHEN** `/opsx:auto` 在一个已有组合运行状态的父 change 上被重新调用
 - **THEN** LEAD SHALL 从下一个（些）可运行子 change 恢复，且 SHALL NOT 重新运行已完成的子 change
 
+### Requirement: verifyPolicy Values Are Defined
+
+The auto workflow (`src/core/templates/workflows/auto.ts`, §5) SHALL define the behavior of every `verifyPolicy` enum value carried by pipeline stages — `adaptive`, `standard`, and `light` — not only `adaptive`. `adaptive` SHALL scale the verification passes to the diff size (as today); `standard` SHALL run a single verify pass without the review-cycle loop; `light` SHALL skip verification when the diff is trivial (e.g. docs/tests-only). No `verifyPolicy` value carried by a shipped pipeline SHALL be undefined dead config.
+
+#### Scenario: standard and light have defined semantics
+
+- **WHEN** the generated auto workflow verification section is inspected
+- **THEN** it SHALL define `standard` (single verify pass, no loop) and `light` (skip verify on a trivial diff) in addition to `adaptive`
+- **AND** no pipeline-carried `verifyPolicy` value SHALL be left without stated behavior
+
