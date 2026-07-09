@@ -115,8 +115,10 @@ describe('BashInstaller', () => {
       const bashrcPath = path.join(testHomeDir, '.bashrc');
       const content = await fs.readFile(bashrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain('Rasen shell completions configuration');
     });
 
@@ -272,6 +274,8 @@ describe('BashInstaller', () => {
 
       if (exists) {
         const content = await fs.readFile(bashrcPath, 'utf-8');
+        expect(content).not.toContain('# RASEN:START');
+        expect(content).not.toContain('# RASEN:END');
         expect(content).not.toContain('# OPENSPEC:START');
         expect(content).not.toContain('# OPENSPEC:END');
       }
@@ -289,8 +293,10 @@ describe('BashInstaller', () => {
       const bashrcPath = path.join(testHomeDir, '.bashrc');
       const content = await fs.readFile(bashrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain('# Rasen shell completions configuration');
       expect(content).toContain(completionsDir);
     });
@@ -305,18 +311,20 @@ describe('BashInstaller', () => {
 
       const content = await fs.readFile(bashrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain('# My custom bash config');
       expect(content).toContain('alias ll="ls -la"');
 
       // Config should be before existing content
-      const configIndex = content.indexOf('# OPENSPEC:START');
+      const configIndex = content.indexOf('# RASEN:START');
       const aliasIndex = content.indexOf('alias ll');
       expect(configIndex).toBeLessThan(aliasIndex);
     });
 
-    it('should update config between markers when .bashrc has existing markers', async () => {
+    it('should replace an existing legacy OPENSPEC block with RASEN markers on reconfigure (upgrade path)', async () => {
       const bashrcPath = path.join(testHomeDir, '.bashrc');
       const initialContent = [
         '# OPENSPEC:START',
@@ -337,12 +345,18 @@ describe('BashInstaller', () => {
 
       const content = await fs.readFile(bashrcPath, 'utf-8');
 
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain(completionsDir);
       expect(content).not.toContain('# Old config');
       expect(content).not.toContain('/old/path');
       expect(content).toContain('# My custom config');
+
+      // Exactly one managed block — no duplicate
+      expect(content.match(/# RASEN:START/g)?.length).toBe(1);
+      expect(content.match(/# RASEN:END/g)?.length).toBe(1);
     });
 
     it('should preserve user content outside markers', async () => {
@@ -371,6 +385,8 @@ describe('BashInstaller', () => {
       expect(content).toContain('alias ls="ls -G"');
       expect(content).toContain(completionsDir);
       expect(content).not.toContain('# Old Rasen config');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
     });
 
     it('should return false when RASEN_NO_AUTO_CONFIG is set', async () => {
@@ -485,6 +501,37 @@ describe('BashInstaller', () => {
       const result = await invalidInstaller.removeBashrcConfig();
 
       expect(result).toBe(true);
+    });
+
+    it('should fully remove a legacy OPENSPEC-only block that was never upgraded', async () => {
+      const bashrcPath = path.join(testHomeDir, '.bashrc');
+      const content = [
+        '# My config',
+        '',
+        '# OPENSPEC:START',
+        '# Rasen shell completions configuration',
+        'if [ -d ~/.local/share/bash-completion/completions ]; then',
+        '  . ~/.local/share/bash-completion/completions/rasen',
+        'fi',
+        '# OPENSPEC:END',
+        '',
+        'alias ll="ls -la"',
+      ].join('\n');
+
+      await fs.writeFile(bashrcPath, content);
+
+      const result = await installer.removeBashrcConfig();
+
+      expect(result).toBe(true);
+
+      const newContent = await fs.readFile(bashrcPath, 'utf-8');
+
+      expect(newContent).not.toContain('# OPENSPEC:START');
+      expect(newContent).not.toContain('# OPENSPEC:END');
+      expect(newContent).not.toContain('# RASEN:START');
+      expect(newContent).not.toContain('# RASEN:END');
+      expect(newContent).toContain('# My config');
+      expect(newContent).toContain('alias ll="ls -la"');
     });
   });
 

@@ -15,6 +15,15 @@ export class ZshInstaller {
    * Markers for .zshrc configuration management
    */
   private readonly ZSHRC_MARKERS = {
+    start: '# RASEN:START',
+    end: '# RASEN:END',
+  };
+
+  /**
+   * Legacy markers from older installs — recognized for upgrade/uninstall only,
+   * never written into new content.
+   */
+  private readonly LEGACY_ZSHRC_MARKERS = {
     start: '# OPENSPEC:START',
     end: '# OPENSPEC:END',
   };
@@ -140,7 +149,8 @@ export class ZshInstaller {
         zshrcPath,
         config,
         this.ZSHRC_MARKERS.start,
-        this.ZSHRC_MARKERS.end
+        this.ZSHRC_MARKERS.end,
+        this.LEGACY_ZSHRC_MARKERS
       );
 
       return true;
@@ -160,10 +170,27 @@ export class ZshInstaller {
     try {
       const zshrcPath = this.getZshrcPath();
       const content = await fs.readFile(zshrcPath, 'utf-8');
-      return content.includes(this.ZSHRC_MARKERS.start) && content.includes(this.ZSHRC_MARKERS.end);
+      return this.resolvePresentMarkers(content) !== undefined;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Determines which marker family (current `RASEN` or legacy `OPENSPEC`) is present
+   * in the given .zshrc content, preferring the current family if both are present.
+   *
+   * @param content - .zshrc file content
+   * @returns The present marker pair, or undefined if neither family is found
+   */
+  private resolvePresentMarkers(content: string): { start: string; end: string } | undefined {
+    if (content.includes(this.ZSHRC_MARKERS.start) && content.includes(this.ZSHRC_MARKERS.end)) {
+      return this.ZSHRC_MARKERS;
+    }
+    if (content.includes(this.LEGACY_ZSHRC_MARKERS.start) && content.includes(this.LEGACY_ZSHRC_MARKERS.end)) {
+      return this.LEGACY_ZSHRC_MARKERS;
+    }
+    return undefined;
   }
 
   /**
@@ -187,16 +214,17 @@ export class ZshInstaller {
       // Read file content
       const content = await fs.readFile(zshrcPath, 'utf-8');
 
-      // Check if markers exist
-      if (!content.includes(this.ZSHRC_MARKERS.start) || !content.includes(this.ZSHRC_MARKERS.end)) {
-        // Markers don't exist, nothing to remove
+      // Check if either the current or a legacy marker family is present
+      const markers = this.resolvePresentMarkers(content);
+      if (!markers) {
+        // No recognized markers, nothing to remove
         return true;
       }
 
       // Remove content between markers (including markers)
       const lines = content.split('\n');
-      const startIndex = lines.findIndex((line) => line.trim() === this.ZSHRC_MARKERS.start);
-      const endIndex = lines.findIndex((line) => line.trim() === this.ZSHRC_MARKERS.end);
+      const startIndex = lines.findIndex((line) => line.trim() === markers.start);
+      const endIndex = lines.findIndex((line) => line.trim() === markers.end);
 
       if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
         // Invalid marker placement

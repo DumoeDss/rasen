@@ -237,21 +237,43 @@ export class FileSystemUtils {
     return await fs.readFile(filePath, 'utf-8');
   }
 
+  /**
+   * @param legacyMarkers - Optional legacy start/end marker pair to also recognize when
+   * locating an existing managed block (e.g. a pre-existing block written by an older
+   * version under a different marker literal). When found, that block is replaced in
+   * place, but the content is always (re)written using the current `startMarker`/`endMarker`
+   * passed above — the legacy pair is never written into new content.
+   */
   static async updateFileWithMarkers(
     filePath: string,
     content: string,
     startMarker: string,
-    endMarker: string
+    endMarker: string,
+    legacyMarkers?: { start: string; end: string }
   ): Promise<void> {
     let existingContent = '';
-    
+
     if (await this.fileExists(filePath)) {
       existingContent = await this.readFile(filePath);
-      
-      const startIndex = findMarkerIndex(existingContent, startMarker);
-      const endIndex = startIndex !== -1
+
+      let startIndex = findMarkerIndex(existingContent, startMarker);
+      let endIndex = startIndex !== -1
         ? findMarkerIndex(existingContent, endMarker, startIndex + startMarker.length)
         : findMarkerIndex(existingContent, endMarker);
+      let matchedEndMarker = endMarker;
+
+      if (startIndex === -1 && endIndex === -1 && legacyMarkers) {
+        const legacyStartIndex = findMarkerIndex(existingContent, legacyMarkers.start);
+        const legacyEndIndex = legacyStartIndex !== -1
+          ? findMarkerIndex(existingContent, legacyMarkers.end, legacyStartIndex + legacyMarkers.start.length)
+          : findMarkerIndex(existingContent, legacyMarkers.end);
+
+        if (legacyStartIndex !== -1 && legacyEndIndex !== -1) {
+          startIndex = legacyStartIndex;
+          endIndex = legacyEndIndex;
+          matchedEndMarker = legacyMarkers.end;
+        }
+      }
 
       if (startIndex !== -1 && endIndex !== -1) {
         if (endIndex < startIndex) {
@@ -261,7 +283,7 @@ export class FileSystemUtils {
         }
 
         const before = existingContent.substring(0, startIndex);
-        const after = existingContent.substring(endIndex + endMarker.length);
+        const after = existingContent.substring(endIndex + matchedEndMarker.length);
         existingContent = before + startMarker + '\n' + content + '\n' + endMarker + after;
       } else if (startIndex === -1 && endIndex === -1) {
         existingContent = startMarker + '\n' + content + '\n' + endMarker + '\n\n' + existingContent;
@@ -271,7 +293,7 @@ export class FileSystemUtils {
     } else {
       existingContent = startMarker + '\n' + content + '\n' + endMarker;
     }
-    
+
     await this.writeFile(filePath, existingContent);
   }
 

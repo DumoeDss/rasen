@@ -157,8 +157,10 @@ describe('PowerShellInstaller', () => {
 
       expect(result).toBe(true);
       const content = await fs.readFile(profilePath, 'utf-8');
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain(`. "${mockScriptPath}"`);
     });
 
@@ -172,8 +174,10 @@ describe('PowerShellInstaller', () => {
 
       expect(result).toBe(true);
       const content = await fs.readFile(profilePath, 'utf-8');
-      expect(content).toContain('# OPENSPEC:START');
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
       expect(content).toContain(mockScriptPath);
       expect(content).toContain('# My custom PowerShell config');
       expect(content).toContain('Write-Host "Hello"');
@@ -181,7 +185,32 @@ describe('PowerShellInstaller', () => {
 
     // Skip on Windows: Windows has dual profile paths (PowerShell Core + Windows PowerShell 5.1),
     // so even if one profile is already configured, the second one will be configured and return true
-    it.skipIf(process.platform === 'win32')('should skip configuration when script line already exists', async () => {
+    it.skipIf(process.platform === 'win32')('should skip configuration when already configured with current RASEN markers', async () => {
+      delete process.env.RASEN_NO_AUTO_CONFIG;
+      const profilePath = installer.getProfilePath();
+      await fs.mkdir(path.dirname(profilePath), { recursive: true });
+
+      const initialContent = [
+        '# RASEN:START - Rasen completion (managed block, do not edit manually)',
+        `. "${mockScriptPath}"`,
+        '# RASEN:END',
+        '',
+        '# My custom config',
+        'Write-Host "Custom"',
+      ].join('\n');
+
+      await fs.writeFile(profilePath, initialContent);
+
+      const result = await installer.configureProfile(mockScriptPath);
+
+      // Should return false because already configured (anyConfigured = false)
+      expect(result).toBe(false);
+      const content = await fs.readFile(profilePath, 'utf-8');
+      // Content should be unchanged
+      expect(content).toBe(initialContent);
+    });
+
+    it('should replace an existing legacy OPENSPEC block with RASEN markers on reconfigure, even when the script line already matches (upgrade path)', async () => {
       delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
@@ -199,14 +228,21 @@ describe('PowerShellInstaller', () => {
 
       const result = await installer.configureProfile(mockScriptPath);
 
-      // Should return false because already configured (anyConfigured = false)
-      expect(result).toBe(false);
+      expect(result).toBe(true);
       const content = await fs.readFile(profilePath, 'utf-8');
-      // Content should be unchanged
-      expect(content).toBe(initialContent);
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
+      expect(content).toContain(`. "${mockScriptPath}"`);
+      expect(content).toContain('# My custom config');
+
+      // Exactly one managed block — no duplicate
+      expect(content.match(/# RASEN:START/g)?.length).toBe(1);
+      expect(content.match(/# RASEN:END/g)?.length).toBe(1);
     });
 
-    it('should preserve user content outside markers', async () => {
+    it('should preserve user content outside markers and replace a legacy block in place', async () => {
       delete process.env.RASEN_NO_AUTO_CONFIG;
       const profilePath = installer.getProfilePath();
       await fs.mkdir(path.dirname(profilePath), { recursive: true });
@@ -233,6 +269,10 @@ describe('PowerShellInstaller', () => {
       expect(content).toContain('Set-Variable -Name "test" -Value "before"');
       expect(content).toContain('# User config after');
       expect(content).toContain('Set-Variable -Name "test" -Value "after"');
+      expect(content).toContain('# RASEN:START');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# Old config');
     });
 
     it('should generate correct PowerShell syntax in config', async () => {
@@ -242,9 +282,10 @@ describe('PowerShellInstaller', () => {
       await installer.configureProfile(mockScriptPath);
 
       const content = await fs.readFile(profilePath, 'utf-8');
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
       expect(content).toContain(`. "${mockScriptPath}"`);
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
     });
 
     // Skip on Windows: fs.chmod() doesn't reliably restrict write access on Windows
@@ -393,6 +434,58 @@ describe('PowerShellInstaller', () => {
       const result = await installer.removeProfileConfig();
 
       expect(result).toBe(false);
+    });
+
+    it('should remove content between markers when the current RASEN family is present', async () => {
+      const profilePath = installer.getProfilePath();
+      await fs.mkdir(path.dirname(profilePath), { recursive: true });
+
+      const initialContent = [
+        '# RASEN:START',
+        '# Rasen completions',
+        'if (Test-Path "/path") {',
+        '    . "/path"',
+        '}',
+        '# RASEN:END',
+        '',
+        '# My config',
+      ].join('\n');
+
+      await fs.writeFile(profilePath, initialContent);
+
+      const result = await installer.removeProfileConfig();
+
+      expect(result).toBe(true);
+      const content = await fs.readFile(profilePath, 'utf-8');
+      expect(content).not.toContain('# RASEN:START');
+      expect(content).not.toContain('# RASEN:END');
+      expect(content).not.toContain('# Rasen completions');
+      expect(content).toContain('# My config');
+    });
+
+    it('should fully remove a legacy OPENSPEC-only block that was never upgraded', async () => {
+      const profilePath = installer.getProfilePath();
+      await fs.mkdir(path.dirname(profilePath), { recursive: true });
+
+      const initialContent = [
+        '# User config',
+        '# OPENSPEC:START - Rasen completion (managed block, do not edit manually)',
+        `. "/path/to/OpenSpecCompletion.ps1"`,
+        '# OPENSPEC:END',
+        '',
+      ].join('\n');
+
+      await fs.writeFile(profilePath, initialContent);
+
+      const result = await installer.removeProfileConfig();
+
+      expect(result).toBe(true);
+      const content = await fs.readFile(profilePath, 'utf-8');
+      expect(content).not.toContain('# OPENSPEC:START');
+      expect(content).not.toContain('# OPENSPEC:END');
+      expect(content).not.toContain('# RASEN:START');
+      expect(content).not.toContain('# RASEN:END');
+      expect(content).toContain('# User config');
     });
   });
 
@@ -614,9 +707,10 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       // Decode and verify content is intact
       const content = raw.subarray(2).toString('utf16le');
       expect(content).toContain('. "C:\\Code\\SystemConfig\\Powershell\\profile.ps1"');
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
       expect(content).toContain(`. "${mockScriptPath}"`);
-      expect(content).toContain('# OPENSPEC:END');
+      expect(content).toContain('# RASEN:END');
+      expect(content).not.toContain('# OPENSPEC:START');
     });
 
     it('should preserve UTF-16 LE BOM when removing profile config', async () => {
@@ -665,7 +759,8 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
 
       const content = raw.subarray(3).toString('utf-8');
       expect(content).toContain('# My profile');
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
     });
 
     it('should skip UTF-16 BE profile and leave it unchanged', async () => {
@@ -706,7 +801,8 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
 
       const content = raw.toString('utf-8');
       expect(content).toContain('# Plain UTF-8');
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
     });
 
     it('should round-trip UTF-16 LE through install → uninstall without corruption', async () => {
@@ -726,7 +822,8 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       expect(raw[0]).toBe(0xff);
       expect(raw[1]).toBe(0xfe);
       let content = raw.subarray(2).toString('utf16le');
-      expect(content).toContain('# OPENSPEC:START');
+      expect(content).toContain('# RASEN:START');
+      expect(content).not.toContain('# OPENSPEC:START');
       expect(content).toContain(originalText.trimEnd());
 
       // Uninstall removes the Rasen block
@@ -736,6 +833,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       expect(raw[0]).toBe(0xff);
       expect(raw[1]).toBe(0xfe);
       content = raw.subarray(2).toString('utf16le');
+      expect(content).not.toContain('# RASEN:START');
       expect(content).not.toContain('# OPENSPEC:START');
       expect(content).toContain('. "C:\\Code\\SystemConfig\\Powershell\\profile.ps1"');
     });
@@ -776,6 +874,8 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       await installer.uninstall();
 
       const content = await fs.readFile(profilePath, 'utf-8');
+      expect(content).not.toContain('# RASEN:START');
+      expect(content).not.toContain('# RASEN:END');
       expect(content).not.toContain('# OPENSPEC:START');
       expect(content).not.toContain('# OPENSPEC:END');
     });
@@ -828,7 +928,8 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       const scriptExists = await fs.access(targetPath).then(() => true).catch(() => false);
       const profileContent = await fs.readFile(profilePath, 'utf-8');
       expect(scriptExists).toBe(true);
-      expect(profileContent).toContain('# OPENSPEC:START');
+      expect(profileContent).toContain('# RASEN:START');
+      expect(profileContent).not.toContain('# OPENSPEC:START');
 
       await installer.uninstall();
 
@@ -836,6 +937,7 @@ Register-ArgumentCompleter -CommandName openspec -ScriptBlock $openspecCompleter
       const scriptExistsAfter = await fs.access(targetPath).then(() => true).catch(() => false);
       const profileContentAfter = await fs.readFile(profilePath, 'utf-8');
       expect(scriptExistsAfter).toBe(false);
+      expect(profileContentAfter).not.toContain('# RASEN:START');
       expect(profileContentAfter).not.toContain('# OPENSPEC:START');
     });
 

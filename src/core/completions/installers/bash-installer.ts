@@ -15,6 +15,15 @@ export class BashInstaller {
    * Markers for .bashrc configuration management
    */
   private readonly BASHRC_MARKERS = {
+    start: '# RASEN:START',
+    end: '# RASEN:END',
+  };
+
+  /**
+   * Legacy markers from older installs — recognized for upgrade/uninstall only,
+   * never written into new content.
+   */
+  private readonly LEGACY_BASHRC_MARKERS = {
     start: '# OPENSPEC:START',
     end: '# OPENSPEC:END',
   };
@@ -137,7 +146,8 @@ export class BashInstaller {
         bashrcPath,
         config,
         this.BASHRC_MARKERS.start,
-        this.BASHRC_MARKERS.end
+        this.BASHRC_MARKERS.end,
+        this.LEGACY_BASHRC_MARKERS
       );
 
       return true;
@@ -169,16 +179,17 @@ export class BashInstaller {
       // Read file content
       const content = await fs.readFile(bashrcPath, 'utf-8');
 
-      // Check if markers exist
-      if (!content.includes(this.BASHRC_MARKERS.start) || !content.includes(this.BASHRC_MARKERS.end)) {
-        // Markers don't exist, nothing to remove
+      // Check if either the current or a legacy marker family is present
+      const markers = this.resolvePresentMarkers(content);
+      if (!markers) {
+        // No recognized markers, nothing to remove
         return true;
       }
 
       // Remove content between markers (including markers)
       const lines = content.split('\n');
-      const startIndex = lines.findIndex((line) => line.trim() === this.BASHRC_MARKERS.start);
-      const endIndex = lines.findIndex((line) => line.trim() === this.BASHRC_MARKERS.end);
+      const startIndex = lines.findIndex((line) => line.trim() === markers.start);
+      const endIndex = lines.findIndex((line) => line.trim() === markers.end);
 
       if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
         // Invalid marker placement
@@ -202,6 +213,23 @@ export class BashInstaller {
       console.debug(`Unable to remove .bashrc configuration: ${error.message}`);
       return false;
     }
+  }
+
+  /**
+   * Determines which marker family (current `RASEN` or legacy `OPENSPEC`) is present
+   * in the given .bashrc content, preferring the current family if both are present.
+   *
+   * @param content - .bashrc file content
+   * @returns The present marker pair, or undefined if neither family is found
+   */
+  private resolvePresentMarkers(content: string): { start: string; end: string } | undefined {
+    if (content.includes(this.BASHRC_MARKERS.start) && content.includes(this.BASHRC_MARKERS.end)) {
+      return this.BASHRC_MARKERS;
+    }
+    if (content.includes(this.LEGACY_BASHRC_MARKERS.start) && content.includes(this.LEGACY_BASHRC_MARKERS.end)) {
+      return this.LEGACY_BASHRC_MARKERS;
+    }
+    return undefined;
   }
 
   /**
