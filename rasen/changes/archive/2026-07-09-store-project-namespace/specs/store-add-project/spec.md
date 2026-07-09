@@ -27,7 +27,7 @@ Rasen SHALL provide a `store add-project <project-path> --to <store-id>` command
 
 When registering the project, its id SHALL be resolved in this order: the project's existing `.rasen-store/store.yaml` id if it is already registered; otherwise an explicit id provided on the command (`--as <id>`); otherwise the kebab-cased basename of the project directory. The resolved id SHALL satisfy the id grammar and SHALL be registered in the project namespace. An id that collides with a STORE of the same name SHALL NOT be a conflict; an id that collides with another PROJECT checkout of the same name SHALL be rejected with a message naming the taken id and a fix suggesting `--as <id>` with a concrete example.
 
-#### Scenario: Existing metadata id wins
+#### Scenario: Existing store metadata id wins
 
 - **WHEN** the project already carries `.rasen-store/store.yaml` with id `proj-specs`
 - **THEN** `proj-specs` is the id registered in the project namespace and referenced from the target store, regardless of the folder name
@@ -42,7 +42,17 @@ When registering the project, its id SHALL be resolved in this order: the projec
 - **WHEN** the resolved id already names a different project checkout in the project namespace
 - **THEN** the command fails naming the taken id and its fix suggests `--as <id>` with a concrete example (for example `--as elftia-client`)
 
+## REMOVED Requirements
+
 ### Requirement: The target store must already exist and cannot reference itself
+
+**Reason**: The id-based self-reference model is superseded by a canonical-path model. With the store/project type split, a project and a store may legitimately share an id at different directories, so `resolvedProjectId === targetStore.id` is no longer a valid self-reference test.
+
+**Migration**: Replaced by "The target store must exist and self-reference is detected by canonical path" (ADDED below), which keeps the unknown-target behavior and detects a true self-reference by same-directory comparison.
+
+## ADDED Requirements
+
+### Requirement: The target store must exist and self-reference is detected by canonical path
 
 The `--to <store-id>` target SHALL name a store already registered on this machine; when it is not registered, the command SHALL fail with a diagnostic whose fix names creating the store first (for example `rasen store setup <store-id>`). The command SHALL reject an attempt to add a project to itself, determined by CANONICAL PATH — when the project's canonical root directory is the same directory as the target store's canonical root — with a friendly diagnostic, before writing any reference. A project and a store that merely share an id but resolve to DIFFERENT directories SHALL NOT be treated as a self-reference.
 
