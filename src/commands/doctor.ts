@@ -24,6 +24,7 @@ import {
   type GcProjectRegistryResult,
 } from '../core/project-registry.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
+import { countMigratableEphemera } from '../core/work-migration.js';
 import { StoreError } from '../core/store/errors.js';
 import { gatherRelationshipData } from './shared-gather.js';
 import {
@@ -122,6 +123,16 @@ async function gatherHealth(
         home: machineHomeEntry.entry.home,
         lastSeen: machineHomeEntry.entry.lastSeen,
       };
+
+      // Migration-hint detection (task 3.1, review m1): count-only,
+      // read-only — never resolves or mints a home (the tracked/untracked
+      // split reuses read-only git queries only). Best-effort: a scan
+      // failure must never break doctor over an advisory hint.
+      try {
+        input.migratableEphemera = await countMigratableEphemera(root.path, root.changesDir);
+      } catch {
+        // Swallowed; the hint is simply omitted.
+      }
     }
     const danglingProjectEntries = await findDanglingProjectEntries();
     input.danglingProjectEntries = danglingProjectEntries.map((dangling) => ({
@@ -248,6 +259,15 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
       console.log(`    - ${dangling.path} (home: ${dangling.home})`);
     }
     console.log('    Fix: rasen doctor --gc');
+  }
+  if (health.machineHome.migratableEphemera) {
+    const m = health.machineHome.migratableEphemera;
+    const detail = m.splitUnavailable
+      ? `${m.total} (tracked/untracked split unavailable)`
+      : m.tracked > 0
+        ? `${m.untracked} untracked (+${m.tracked} tracked, needs --include-tracked)`
+        : `${m.untracked} untracked`;
+    console.log(`  Migratable legacy ephemera: ${detail} (run \`${m.hint}\`)`);
   }
 
   for (const entry of health.status) {
