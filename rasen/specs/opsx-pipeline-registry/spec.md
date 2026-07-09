@@ -50,6 +50,7 @@ The system SHALL provide a `rasen pipeline` command group with `list`, `show <na
 
 - **WHEN** `rasen pipeline classify "<task description>" --json` runs
 - **THEN** it SHALL return a suggested pipeline name plus the indicators that drove the suggestion
+- **AND** it SHALL report the suggestion's basis: `keyword` when indicators matched, `default` when the suggestion is the fallback default with no matched indicators
 - **AND** the suggestion SHALL be overridable by the caller
 
 #### Scenario: Resume
