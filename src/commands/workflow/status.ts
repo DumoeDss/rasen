@@ -8,6 +8,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { getChangeDir } from '../../core/planning-home.js';
 import { resolveChangeWorkDir } from '../../core/change-work.js';
+import { readProjectConfig, resolveArchiveTiming } from '../../core/project-config.js';
 import {
   resolveRootForCommand,
   toPlanningHome,
@@ -113,12 +114,22 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
     // probe miss simply omits `workDir` from the payload.
     const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
 
+    // Resolved archive timing (design D2/cli-artifact-workflow spec): a
+    // plain config read + resolver, synchronous, no git/gh calls, no
+    // writes. Always present — the default always resolves.
+    const archiveTiming = resolveArchiveTiming(readProjectConfig(projectRoot));
+
     spinner?.stop();
 
     if (options.json) {
       console.log(
         JSON.stringify(
-          { ...status, ...(workDir ? { workDir } : {}), root: rootOutput },
+          {
+            ...status,
+            ...(workDir ? { workDir } : {}),
+            archive: { timing: archiveTiming },
+            root: rootOutput,
+          },
           null,
           2
         )
@@ -126,14 +137,18 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
       return;
     }
 
-    printStatusText(status, workDir ?? undefined);
+    printStatusText(status, workDir ?? undefined, archiveTiming);
   } catch (error) {
     spinner?.stop();
     throw error;
   }
 }
 
-export function printStatusText(status: ChangeStatus, workDir?: string): void {
+export function printStatusText(
+  status: ChangeStatus,
+  workDir?: string,
+  archiveTiming?: string
+): void {
   const doneCount = status.artifacts.filter((a) => a.status === 'done').length;
   const total = status.artifacts.length;
 
@@ -144,6 +159,9 @@ export function printStatusText(status: ChangeStatus, workDir?: string): void {
   }
   if (workDir) {
     console.log(`Work dir: ${workDir}`);
+  }
+  if (archiveTiming) {
+    console.log(`Archive timing: ${archiveTiming}`);
   }
   console.log(`Progress: ${doneCount}/${total} artifacts complete`);
   console.log();

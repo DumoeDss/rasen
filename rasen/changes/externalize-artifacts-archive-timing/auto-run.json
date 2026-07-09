@@ -1,0 +1,59 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "parent": "externalize-artifacts",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "worker": {
+        "role": "planner",
+        "agentId": "planner2",
+        "model": "fable"
+      }
+    },
+    "apply": {
+      "status": "done",
+      "worker": {
+        "role": "implementer",
+        "agentId": "impl-archive-timing",
+        "model": "sonnet",
+        "reusedFrom": "externalize-artifacts-t3-workdir",
+        "seed": "handoff/implementer-0.md + LEAD brief"
+      },
+      "testGate": {
+        "command": "npx vitest run",
+        "result": "123 files / 2264 passed / 22 skipped / 0 failed (165s, post-parity-fix)"
+      }
+    },
+    "verify": {
+      "status": "done",
+      "worker": {
+        "role": "reviewer",
+        "agentId": "reviewer-archive-timing",
+        "model": "fable"
+      },
+      "verdict": "NOT CLEAN 0B/4M/3m/1t",
+      "report": "review-report.md"
+    },
+    "review-loop": {
+      "status": "done",
+      "fixer": "impl-archive-timing (author)",
+      "reReviewer": "reviewer-archive-timing",
+      "verdict": "CLEAN round 3",
+      "rounds": 3,
+      "resolved": "4M/3m round1 + 1M/1m round2",
+      "acceptedKnown": [
+        "t1 local-mode post-ship suggestion vs 3.6 portfolio soft warning (spec-mandated)"
+      ]
+    },
+    "ship": {
+      "status": "in_progress"
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "rounds": 3,
+  "openFindings": []
+}

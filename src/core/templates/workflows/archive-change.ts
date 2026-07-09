@@ -28,6 +28,18 @@ ${STORE_SELECTION_GUIDANCE}
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
 
+1.5. **Check for a prior archive by directory (NEW — before the status call, which requires the change directory to still exist)**
+
+   Run \`rasen list --json\` (reuse step 1's call if it already ran) and take \`root.path\` from its payload — this gives \`<root.path>/rasen/changes\` as \`changesDir\` without needing a successful status call.
+
+   **First, check whether \`<changesDir>/<name>\` still EXISTS as an active directory.** If it does, this step's archive scan does NOT apply — SKIP the rest of this step and proceed to step 2 normally. A currently-active directory means this name is not currently archived; it may also be a NEW change reusing a previously-archived name (see the recycled-name note below) — either way, an active directory always means "go to step 2", never "treat as already archived".
+
+   **Only when \`<changesDir>/<name>\` does NOT exist**, scan for a prior archive: an in-ship-archived change has already moved out of \`<changesDir>/<name>\`, so step 2's \`rasen status --change <name> --json\` would THROW "not found" for it — this scan catches that case BEFORE it happens, using directory presence (ground truth) rather than a status call or a ship-log marker. Check whether \`<changesDir>/archive/\` contains a directory matching \`YYYY-MM-DD-<name>\` — the date prefix is unknown so match the pattern, but the segment AFTER the date must equal \`<name>\` EXACTLY (not merely end with it), to avoid a suffix collision with a differently-named change.
+   - **A match exists** → report the change as already archived at the matched path and STOP cleanly — do NOT call \`rasen status\` for this name; skip every remaining step (gates, sync, move).
+   - **No match** → proceed to step 2 normally; nothing has archived this change under this name (yet).
+
+   **Recycled-name note:** a NEW change may reuse a name that a PRIOR (now-archived) change also used. The active-directory check above correctly routes such a name's new incarnation to step 2 (it is active, so the scan above is skipped) — but its \`workDir\` is keyed by change NAME, so it may still hold the PRIOR incarnation's ship log, carrying a stale \`Archived in ship:\` marker. That stale marker trips step 2.5's inconsistency HARD STOP later; this is loud and safe (it never silently mis-archives), but tell the human what it actually means — "a prior change with this same name was archived in ship; this ship log is stale and belongs to that earlier change" — not a generic directory-move inconsistency.
+
 2. **Check artifact completion status**
 
    Run \`rasen status --change "<name>" --json\` to check artifact completion.
@@ -41,6 +53,26 @@ ${STORE_SELECTION_GUIDANCE}
    - Display warning listing incomplete artifacts
    - Use **AskUserQuestion tool** to confirm user wants to proceed
    - Proceed if user confirms
+
+2.5. **Check the ship log's recorded delivery mode (gate on RECORDED facts, never on re-resolved config)**
+
+   Read \`ship-log.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there), if it exists. Reaching this step already means step 1.5 found no archived directory for this name, so branch on what the ship log itself recorded — NOT on the currently-resolved \`archive.timing\` (a config value edited after the fact must never reinterpret what already happened; \`archive.timing\` is consulted only for decisions not yet taken):
+   - **No ship log exists** → proceed straight to step 3; nothing was recorded to gate on.
+   - **Ship log exists and its \`Archived in ship:\` line IS present** → inconsistency: step 1.5's directory scan should already have caught this. Reaching here means the log claims an in-ship archive but the directory scan found nothing at the expected location (a partial/failed move, or a non-standard archive location) — do NOT proceed automatically. HARD STOP: surface the inconsistency for human triage (do not sync or move; do not silently treat it as either archived or not).
+   - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`pr\`** → run the merge-confirmation gate (step 2.6) before continuing to step 3. This applies regardless of the currently-resolved \`archive.timing\` — a recorded \`pr\` delivery always needs its merge verified before archiving, whether the axis is \`on-merge\` or was later flipped.
+   - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`push\` or \`local\`** → proceed straight to step 3; there is no PR to verify.
+   - **Ship log exists, no \`Archived in ship:\` line, \`Mode:\` line missing or unparseable, but a \`PR:\` URL IS present** → treat as a recorded \`pr\`-mode delivery (a PR URL only makes sense for a pr-mode ship) and run the merge-confirmation gate (step 2.6), same as the \`Mode: pr\` branch — closes the gap where a malformed log missing \`Mode:\` would otherwise skip the gate.
+   - **Ship log exists, no \`Archived in ship:\` line, and NEITHER a parseable \`Mode:\` line NOR a \`PR:\` URL is present** → treat as nothing recorded; proceed straight to step 3, same as the no-ship-log case — there is nothing to gate on.
+
+2.6. **Merge-confirmation gate (recorded \`pr\`-mode delivery only)**
+
+   Extract the PR URL from the ship log's \`PR:\` field and run \`gh pr view <url> --json state,mergedAt\`.
+   - **\`MERGED\`** → proceed to step 3.
+   - **\`OPEN\`** → HARD GATE: REFUSE to archive by default with a message naming the unmerged PR. Proceed ONLY on an explicit override that names the unmerged condition (not the routine confirm). REFUSE outright in a non-interactive / dispatched context.
+   - **\`CLOSED\` without a merge** → HARD GATE: REFUSE and surface the rejected-delivery state for human decision — a rejected PR must never silently become an archived change.
+   - **Cannot verify** (\`gh\` missing/unauthenticated, network failure, unparseable output, or no PR URL in the ship log) → state that the merge cannot be verified and ask the human to explicitly confirm the merge; proceed ONLY on that explicit confirmation in an interactive context. REFUSE outright with the reason in a non-interactive / dispatched context, leaving the archive re-attemptable later. An unverifiable state is NEVER treated as merged.
+
+   This is a check-on-invocation only — no polling, no background process. The CLI never shells to \`gh\`/git for this; the check runs agent-side.
 
 3. **Check task completion status (HARD GATE)**
 
@@ -126,7 +158,8 @@ All artifacts complete. All tasks complete.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (rasen status --json) for completion checking
-- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the two HARD GATES — a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5) and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the two hard gates.
+- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the three HARD GATES — merge confirmation for a recorded \`pr\`-mode delivery (Step 2.6: an open or closed-unmerged PR, or an unverifiable merge state), a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5), and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The merge gate has TWO distinct proceed paths that must not be confused: the blocker-naming **override** applies ONLY to an OPEN PR (proceed despite a known-unmerged state); a SEPARATE **confirmation** path applies ONLY to an unverifiable merge state (the human's explicit assertion REPLACES the check, it does not override a known-bad one) — a closed-unmerged PR has NEITHER path and is refused outright. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the three hard gates.
+- **Already-archived no-op (Step 1.5).** A change already found under \`<changesDir>/archive/\` by directory scan is reported from that location and never re-gated, re-synced, or re-moved — detected BEFORE the status call, so a moved directory never causes a hard failure. Step 2.5's \`Archived in ship:\`-but-directory-not-found branch is a defense-in-depth inconsistency check, not the primary detection path.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use rasen-sync-specs approach (agent-driven)
@@ -160,6 +193,18 @@ ${STORE_SELECTION_GUIDANCE}
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
 
+1.5. **Check for a prior archive by directory (NEW — before the status call, which requires the change directory to still exist)**
+
+   Run \`rasen list --json\` (reuse step 1's call if it already ran) and take \`root.path\` from its payload — this gives \`<root.path>/rasen/changes\` as \`changesDir\` without needing a successful status call.
+
+   **First, check whether \`<changesDir>/<name>\` still EXISTS as an active directory.** If it does, this step's archive scan does NOT apply — SKIP the rest of this step and proceed to step 2 normally. A currently-active directory means this name is not currently archived; it may also be a NEW change reusing a previously-archived name (see the recycled-name note below) — either way, an active directory always means "go to step 2", never "treat as already archived".
+
+   **Only when \`<changesDir>/<name>\` does NOT exist**, scan for a prior archive: an in-ship-archived change has already moved out of \`<changesDir>/<name>\`, so step 2's \`rasen status --change <name> --json\` would THROW "not found" for it — this scan catches that case BEFORE it happens, using directory presence (ground truth) rather than a status call or a ship-log marker. Check whether \`<changesDir>/archive/\` contains a directory matching \`YYYY-MM-DD-<name>\` — the date prefix is unknown so match the pattern, but the segment AFTER the date must equal \`<name>\` EXACTLY (not merely end with it), to avoid a suffix collision with a differently-named change.
+   - **A match exists** → report the change as already archived at the matched path and STOP cleanly — do NOT call \`rasen status\` for this name; skip every remaining step (gates, sync, move).
+   - **No match** → proceed to step 2 normally; nothing has archived this change under this name (yet).
+
+   **Recycled-name note:** a NEW change may reuse a name that a PRIOR (now-archived) change also used. The active-directory check above correctly routes such a name's new incarnation to step 2 (it is active, so the scan above is skipped) — but its \`workDir\` is keyed by change NAME, so it may still hold the PRIOR incarnation's ship log, carrying a stale \`Archived in ship:\` marker. That stale marker trips step 2.5's inconsistency HARD STOP later; this is loud and safe (it never silently mis-archives), but tell the human what it actually means — "a prior change with this same name was archived in ship; this ship log is stale and belongs to that earlier change" — not a generic directory-move inconsistency.
+
 2. **Check artifact completion status**
 
    Run \`rasen status --change "<name>" --json\` to check artifact completion.
@@ -173,6 +218,26 @@ ${STORE_SELECTION_GUIDANCE}
    - Display warning listing incomplete artifacts
    - Prompt user for confirmation to continue
    - Proceed if user confirms
+
+2.5. **Check the ship log's recorded delivery mode (gate on RECORDED facts, never on re-resolved config)**
+
+   Read \`ship-log.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there), if it exists. Reaching this step already means step 1.5 found no archived directory for this name, so branch on what the ship log itself recorded — NOT on the currently-resolved \`archive.timing\` (a config value edited after the fact must never reinterpret what already happened; \`archive.timing\` is consulted only for decisions not yet taken):
+   - **No ship log exists** → proceed straight to step 3; nothing was recorded to gate on.
+   - **Ship log exists and its \`Archived in ship:\` line IS present** → inconsistency: step 1.5's directory scan should already have caught this. Reaching here means the log claims an in-ship archive but the directory scan found nothing at the expected location (a partial/failed move, or a non-standard archive location) — do NOT proceed automatically. HARD STOP: surface the inconsistency for human triage (do not sync or move; do not silently treat it as either archived or not).
+   - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`pr\`** → run the merge-confirmation gate (step 2.6) before continuing to step 3. This applies regardless of the currently-resolved \`archive.timing\` — a recorded \`pr\` delivery always needs its merge verified before archiving, whether the axis is \`on-merge\` or was later flipped.
+   - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`push\` or \`local\`** → proceed straight to step 3; there is no PR to verify.
+   - **Ship log exists, no \`Archived in ship:\` line, \`Mode:\` line missing or unparseable, but a \`PR:\` URL IS present** → treat as a recorded \`pr\`-mode delivery (a PR URL only makes sense for a pr-mode ship) and run the merge-confirmation gate (step 2.6), same as the \`Mode: pr\` branch — closes the gap where a malformed log missing \`Mode:\` would otherwise skip the gate.
+   - **Ship log exists, no \`Archived in ship:\` line, and NEITHER a parseable \`Mode:\` line NOR a \`PR:\` URL is present** → treat as nothing recorded; proceed straight to step 3, same as the no-ship-log case — there is nothing to gate on.
+
+2.6. **Merge-confirmation gate (recorded \`pr\`-mode delivery only)**
+
+   Extract the PR URL from the ship log's \`PR:\` field and run \`gh pr view <url> --json state,mergedAt\`.
+   - **\`MERGED\`** → proceed to step 3.
+   - **\`OPEN\`** → HARD GATE: REFUSE to archive by default with a message naming the unmerged PR. Proceed ONLY on an explicit override that names the unmerged condition (not the routine confirm). REFUSE outright in a non-interactive / dispatched context.
+   - **\`CLOSED\` without a merge** → HARD GATE: REFUSE and surface the rejected-delivery state for human decision — a rejected PR must never silently become an archived change.
+   - **Cannot verify** (\`gh\` missing/unauthenticated, network failure, unparseable output, or no PR URL in the ship log) → state that the merge cannot be verified and ask the human to explicitly confirm the merge; proceed ONLY on that explicit confirmation in an interactive context. REFUSE outright with the reason in a non-interactive / dispatched context, leaving the archive re-attemptable later. An unverifiable state is NEVER treated as merged.
+
+   This is a check-on-invocation only — no polling, no background process. The CLI never shells to \`gh\`/git for this; the check runs agent-side.
 
 3. **Check task completion status (HARD GATE)**
 
@@ -307,7 +372,8 @@ Target archive directory already exists.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (rasen status --json) for completion checking
-- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the two HARD GATES — a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5) and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the two hard gates.
+- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the three HARD GATES — merge confirmation for a recorded \`pr\`-mode delivery (Step 2.6: an open or closed-unmerged PR, or an unverifiable merge state), a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5), and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The merge gate has TWO distinct proceed paths that must not be confused: the blocker-naming **override** applies ONLY to an OPEN PR (proceed despite a known-unmerged state); a SEPARATE **confirmation** path applies ONLY to an unverifiable merge state (the human's explicit assertion REPLACES the check, it does not override a known-bad one) — a closed-unmerged PR has NEITHER path and is refused outright. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the three hard gates.
+- **Already-archived no-op (Step 1.5).** A change already found under \`<changesDir>/archive/\` by directory scan is reported from that location and never re-gated, re-synced, or re-moved — detected BEFORE the status call, so a moved directory never causes a hard failure. Step 2.5's \`Archived in ship:\`-but-directory-not-found branch is a defense-in-depth inconsistency check, not the primary detection path.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use the Skill tool to invoke \`rasen-sync-specs\` (agent-driven)

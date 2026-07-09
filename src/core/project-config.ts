@@ -69,7 +69,22 @@ export const ProjectConfigSchema = z.object({
     .string()
     .optional()
     .describe('Stable project identity used by the machine-wide project registry'),
+
+  // Optional: archive behavior configuration. Extensible - future fields
+  // (e.g. a destination axis) join this same map.
+  archive: z
+    .object({
+      timing: z
+        .enum(['on-merge', 'in-ship'])
+        .optional()
+        .describe('When archive runs: on-merge (default) or in-ship'),
+    })
+    .optional()
+    .describe('Archive behavior configuration'),
 });
+
+/** Valid `archive.timing` values. */
+export type ArchiveTiming = 'on-merge' | 'in-ship';
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -295,6 +310,28 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
         config.projectId = raw.projectId;
       } else {
         console.warn(`Invalid 'projectId' field in config (must be string)`);
+      }
+    }
+
+    // Parse archive field: an optional map with an optional `timing` field
+    // ('on-merge' | 'in-ship'). Non-map -> whole block dropped with a
+    // warning. Invalid `timing` -> field dropped with a warning, rest of
+    // the block (future fields) still parses. Extensible for child 4's
+    // destination field under the same map.
+    if (raw.archive !== undefined) {
+      if (raw.archive && typeof raw.archive === 'object' && !Array.isArray(raw.archive)) {
+        const archiveRaw = raw.archive as Record<string, unknown>;
+        const archive: ProjectConfig['archive'] = {};
+        if (archiveRaw.timing !== undefined) {
+          if (archiveRaw.timing === 'on-merge' || archiveRaw.timing === 'in-ship') {
+            archive.timing = archiveRaw.timing;
+          } else {
+            console.warn(`Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')`);
+          }
+        }
+        config.archive = archive;
+      } else {
+        console.warn(`Invalid 'archive' field in config (must be an object)`);
       }
     }
 
@@ -581,6 +618,21 @@ export async function ensureProjectIdInConfig(
 
     return projectId;
   }, options);
+}
+
+// -----------------------------------------------------------------------------
+// Archive timing (config axis)
+// -----------------------------------------------------------------------------
+
+/**
+ * Resolves the effective archive timing, applying the `on-merge` default
+ * when the config, the `archive` block, or the `timing` field is absent or
+ * was dropped during parsing. Every consumer (status exposure, ship and
+ * archive templates) MUST resolve through this function so the default is
+ * applied identically everywhere.
+ */
+export function resolveArchiveTiming(config: ProjectConfig | null | undefined): ArchiveTiming {
+  return config?.archive?.timing ?? 'on-merge';
 }
 
 /** Extracts a valid string `projectId` field from raw config content, or undefined. */
