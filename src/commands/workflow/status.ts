@@ -7,7 +7,7 @@
 import ora from 'ora';
 import chalk from 'chalk';
 import { getChangeDir } from '../../core/planning-home.js';
-import { resolveChangeWorkDir } from '../../core/change-work.js';
+import { resolveChangeWorkDir, resolveArchiveDestination } from '../../core/change-work.js';
 import { readProjectConfig, resolveArchiveTiming } from '../../core/project-config.js';
 import {
   resolveRootForCommand,
@@ -119,6 +119,15 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
     // writes. Always present — the default always resolves.
     const archiveTiming = resolveArchiveTiming(readProjectConfig(projectRoot));
 
+    // Resolved archive destination (design D6/cli-artifact-workflow spec):
+    // probe-only (ensure:false) — status is a read-only surface and must
+    // never mint identity or write to the repo/registry. `destination` is
+    // always present (the default always resolves); `archiveDir` is
+    // omitted — not null — for `prune` and when `external` cannot be
+    // resolved by a read-only probe, so templates can key their fallback
+    // on the field's absence.
+    const archiveDestination = await resolveArchiveDestination(projectRoot, { ensure: false });
+
     spinner?.stop();
 
     if (options.json) {
@@ -127,7 +136,11 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
           {
             ...status,
             ...(workDir ? { workDir } : {}),
-            archive: { timing: archiveTiming },
+            archive: {
+              timing: archiveTiming,
+              destination: archiveDestination.destination,
+              ...(archiveDestination.archiveDir ? { archiveDir: archiveDestination.archiveDir } : {}),
+            },
             root: rootOutput,
           },
           null,
@@ -137,7 +150,7 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
       return;
     }
 
-    printStatusText(status, workDir ?? undefined, archiveTiming);
+    printStatusText(status, workDir ?? undefined, archiveTiming, archiveDestination);
   } catch (error) {
     spinner?.stop();
     throw error;
@@ -147,7 +160,8 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
 export function printStatusText(
   status: ChangeStatus,
   workDir?: string,
-  archiveTiming?: string
+  archiveTiming?: string,
+  archiveDestination?: { destination: string; archiveDir: string | null }
 ): void {
   const doneCount = status.artifacts.filter((a) => a.status === 'done').length;
   const total = status.artifacts.length;
@@ -162,6 +176,12 @@ export function printStatusText(
   }
   if (archiveTiming) {
     console.log(`Archive timing: ${archiveTiming}`);
+  }
+  if (archiveDestination) {
+    console.log(
+      `Archive destination: ${archiveDestination.destination}` +
+        (archiveDestination.archiveDir ? ` (${archiveDestination.archiveDir})` : '')
+    );
   }
   console.log(`Progress: ${doneCount}/${total} artifacts complete`);
   console.log();

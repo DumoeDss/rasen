@@ -2,10 +2,13 @@ import { WORKSPACE_DIR_NAME } from './config.js';
 import { promises as fs } from 'fs';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import path from 'path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { Validator } from './validation/validator.js';
-import { readProjectConfig } from './project-config.js';
+import { readProjectConfig, resolveArchiveTiming, type ArchiveDestination } from './project-config.js';
+import { resolveChangeWorkDir, resolveArchiveDestination } from './change-work.js';
 import chalk from 'chalk';
 import {
   emitStoreRootBanner,
@@ -22,6 +25,8 @@ import {
   writeUpdatedSpec,
   type SpecUpdate,
 } from './specs-apply.js';
+
+const execFileAsync = promisify(execFile);
 
 function isMissingPathError(error: unknown): boolean {
   return (
@@ -47,6 +52,13 @@ async function listActiveChangeNames(changesDir: string): Promise<string[]> {
 
 export interface ArchiveOptions {
   yes?: boolean;
+  /**
+   * Separate consent for a `prune` destination's permanent deletion
+   * (review M3) — `--yes` alone (which the timing guard treats as "the
+   * user confirmed the merge") must never authorize deleting the only
+   * copy of a change with no archive fallback.
+   */
+  confirmPrune?: boolean;
   skipSpecs?: boolean;
   noValidate?: boolean;
   validate?: boolean;
@@ -64,8 +76,15 @@ interface ArchiveDiagnostic {
 
 interface ArchiveResult {
   change: string;
-  archivedAs: string;
-  path: string;
+  destination: ArchiveDestination;
+  /** Absent when destination is `prune` (nothing is created). */
+  archivedAs?: string;
+  /** Absent when destination is `prune`. */
+  path?: string;
+  /** Present and true only for a `prune` outcome. */
+  pruned?: boolean;
+  /** Present and true when `external` could not resolve and fell back to in-repo. */
+  destinationFallback?: boolean;
   specsUpdated: boolean;
   totals?: { added: number; modified: number; removed: number; renamed: number };
 }
@@ -141,6 +160,93 @@ async function moveDirectory(src: string, dest: string): Promise<void> {
   }
 }
 
+/**
+ * Appends the prune tombstone to `ship-log.md` in `workDir` (review M2):
+ * the only recognizable record that a change was pruned, once its
+ * directory is gone — a later archive invocation's step-1.5 scan greps for
+ * this exact `Pruned:` token (unified across every prune writer: this CLI
+ * path, the archive/bulk-archive skill templates, and ship.ts's in-ship
+ * branch — a mismatched token silently defeats the tombstone). Creates the
+ * file with a minimal header if absent; appends (never overwrites) when it
+ * already holds a prior ship log for this change.
+ */
+async function appendPruneTombstone(workDir: string, changeName: string): Promise<void> {
+  const shipLogPath = path.join(workDir, 'ship-log.md');
+  await fs.mkdir(workDir, { recursive: true });
+
+  let existing = '';
+  try {
+    existing = await fs.readFile(shipLogPath, 'utf-8');
+  } catch {
+    existing = `# Ship Log: ${changeName}\n`;
+  }
+
+  const tombstone = `\n**Pruned:** true\n**Pruned at:** ${new Date().toISOString()}\n`;
+  await fs.writeFile(shipLogPath, existing.replace(/\n*$/, '\n') + tombstone, 'utf-8');
+}
+
+/**
+ * Extracts the ship log's recorded delivery mode from `ship-log.md`'s
+ * `**Mode:**` line (design D4 — the minimal timing guard). Sticky-legacy
+ * lookup (child 2's Q3 rule): the work directory first, the change
+ * directory as fallback — a file already living in the change directory
+ * keeps living there. Returns null when neither location has a parseable
+ * ship log: no delivery has happened yet, or the `Mode:` line is
+ * missing/unparseable (never guessed).
+ */
+async function readShipLogDeliveryMode(
+  workDir: string | null,
+  changeDir: string
+): Promise<'pr' | 'push' | 'local' | null> {
+  const candidates = workDir
+    ? [path.join(workDir, 'ship-log.md'), path.join(changeDir, 'ship-log.md')]
+    : [path.join(changeDir, 'ship-log.md')];
+
+  for (const candidate of candidates) {
+    let content: string;
+    try {
+      content = await fs.readFile(candidate, 'utf-8');
+    } catch {
+      continue;
+    }
+    const match = content.match(/\*\*Mode:\*\*\s*(pr|push|local)\b/);
+    return match ? (match[1] as 'pr' | 'push' | 'local') : null;
+  }
+  return null;
+}
+
+/** Outcome of the destructive-destination git-safety check (design D5, review M1). */
+type ChangeDirGitState = 'clean' | 'dirty' | 'untracked' | 'unknown';
+
+/**
+ * Clean/dirty check for the destructive-destination precondition (design
+ * D5). A plain `git status --porcelain` (no `--ignored`) is NOT sufficient
+ * on its own: ignored files are invisible to it, so a change directory
+ * covered by `.gitignore` reads as "clean" even though its content was
+ * never committed — `external`/`prune` would then destroy the only copy
+ * with git history holding nothing (review finding M1). This check
+ * requires BOTH: (1) `git status --porcelain --ignored` scoped to the
+ * change directory is empty — catches uncommitted, untracked, AND
+ * ignored-but-present content; (2) `git ls-files` scoped to the change
+ * directory is non-empty — the directory must actually have committed
+ * content, not just an absence of complaints. Returns `'unknown'` when git
+ * itself cannot answer (no repository, git unavailable) — callers must
+ * treat that as "cannot verify", never as clean.
+ */
+async function checkChangeDirGitState(repoRoot: string, changeDir: string): Promise<ChangeDirGitState> {
+  try {
+    const [statusResult, lsFilesResult] = await Promise.all([
+      execFileAsync('git', ['-C', repoRoot, 'status', '--porcelain', '--ignored', '--', changeDir]),
+      execFileAsync('git', ['-C', repoRoot, 'ls-files', '--', changeDir]),
+    ]);
+    if (statusResult.stdout.trim().length > 0) return 'dirty';
+    if (lsFilesResult.stdout.trim().length === 0) return 'untracked';
+    return 'clean';
+  } catch {
+    return 'unknown';
+  }
+}
+
 export class ArchiveCommand {
   async execute(changeName?: string, options: ArchiveOptions = {}): Promise<void> {
     const json = !!options.json;
@@ -203,7 +309,6 @@ export class ArchiveCommand {
     json: boolean
   ): Promise<ArchiveResult | null> {
     const changesDir = root.changesDir;
-    const archiveDir = root.archiveDir;
     const mainSpecsDir = root.specsDir;
 
     // Get change name interactively if not provided
@@ -239,6 +344,51 @@ export class ArchiveCommand {
           ? `Change '${changeName}' not found. Available changes: ${available.join(', ')}`
           : `Change '${changeName}' not found. No active changes exist in this root.`
       );
+    }
+
+    // Destination resolution (design D1/D4): at the top of run(), PROBE only
+    // (review M6 — deferring the mint honors "ensure only at write time"
+    // literally: an `external` archive later refused by a gate — timing
+    // guard, validation, dirty tree — must not have already minted machine
+    // identity and written the registry as a side effect of a failed run).
+    // `destination` itself (in-repo/external/prune) is needed immediately
+    // for every gate below, so only the identity-minting `ensure:true` is
+    // deferred — re-resolved with `ensure:true` right before the actual
+    // `external` move, once every gate has passed.
+    const destinationResolution = await resolveArchiveDestination(root.path, { ensure: false });
+    const destination = destinationResolution.destination;
+
+    // Timing guard (design D4, closes child 3's `ArchiveCommand` bypass gap):
+    // the CLI never shells to gh/git for workflow decisions, so it cannot
+    // verify a PR merge itself. When on-merge timing applies and the
+    // recorded ship log shows a pr-mode delivery, refuse without an
+    // explicit --yes override — the override IS the user's merge
+    // confirmation (cli-archive spec: "Explicit override archives anyway").
+    if (!options.yes) {
+      const archiveTiming = resolveArchiveTiming(readProjectConfig(root.path));
+      if (archiveTiming === 'on-merge') {
+        const workDirForShipLog = await resolveChangeWorkDir(root.path, changeName, { ensure: false });
+        const deliveryMode = await readShipLogDeliveryMode(workDirForShipLog, changeDir);
+        if (deliveryMode === 'pr') {
+          const message = `Change '${changeName}' shipped via a pull request under on-merge archive timing; the CLI cannot verify the merge itself.`;
+          // Review M3: this message must not read as "pass --yes and
+          // everything proceeds" when destination is `prune` — --yes here
+          // is ONLY the merge confirmation; the separate --confirm-prune
+          // flag (or the interactive prompt) still gates the deletion.
+          const pruneNote =
+            destination === 'prune'
+              ? ' Note: for destination \'prune\', --yes here only confirms the merge — the deletion itself still requires --confirm-prune (or the interactive prompt) separately.'
+              : '';
+          const fix = `Use the archive skill (/rasen:archive), which checks the PR's merge state, or rerun with --yes after confirming the merge yourself.${pruneNote}`;
+          if (json) {
+            throw new ArchiveBlockedError('archive_merge_confirmation_required', message, fix);
+          }
+          console.log(chalk.yellow(`\n⚠️  ${message}`));
+          console.log(chalk.yellow(fix));
+          process.exitCode = 1;
+          return null;
+        }
+      }
     }
 
     const skipValidation = options.validate === false || options.noValidate === true;
@@ -503,9 +653,130 @@ export class ArchiveCommand {
       }
     }
 
-    // Create archive directory with date prefix
+    // Destructive-destination safety preconditions (design D5): `external`
+    // and `prune` both remove the repo's only copy of the change's review
+    // material, so both require the change directory to already be
+    // committed (and, per review M1, actually TRACKED — see
+    // checkChangeDirGitState's doc comment). Spec sync above never touches
+    // `changeDir` itself, so this check is accurate whether it runs before
+    // or after it.
+    if (destination === 'external' || destination === 'prune') {
+      const gitState = await checkChangeDirGitState(root.path, changeDir);
+      if (gitState !== 'clean') {
+        const reason =
+          gitState === 'unknown'
+            ? `could not verify git status for '${changeDir}' (no git repository, or git unavailable)`
+            : gitState === 'untracked'
+              ? `'${changeDir}' has no content committed to git history (nothing tracked there — possibly excluded by .gitignore)`
+              : `'${changeDir}' has uncommitted or ignored-but-present content not yet in git history`;
+        // Review M5: spec sync (above) already wrote to the main specs
+        // tree by this point — a refusal here must say so, since the
+        // working tree is not what it was before this command ran.
+        const syncNote = specsUpdated
+          ? ' Note: main specs were already synced by this run before this check failed — the working tree now includes those spec changes even though the archive itself did not proceed.'
+          : '';
+        throw new ArchiveBlockedError(
+          'archive_dirty_change_dir',
+          `Cannot archive to destination '${destination}': ${reason}.${syncNote}`,
+          `Commit the change directory first, then rerun ${withStoreFlag(root, `rasen archive ${changeName}`)}.`
+        );
+      }
+    }
+
+    if (destination === 'prune') {
+      // Review M3: the prune deletion is a SEPARATE consent from --yes
+      // (which the timing guard above already treats as "the user
+      // confirmed the merge"). --confirm-prune is required independently —
+      // --yes alone must never authorize a permanent deletion.
+      if (!options.confirmPrune) {
+        // Review M5: same as the dirty-dir refusal above — spec sync may
+        // already have run by this point.
+        const syncNote = specsUpdated
+          ? ' Note: main specs were already synced by this run before this confirmation was required.'
+          : '';
+        if (json) {
+          throw new ArchiveBlockedError(
+            'archive_prune_confirmation_required',
+            `Destination 'prune' permanently deletes '${changeDir}' with no archive copy; archive --json requires --confirm-prune to confirm (--yes alone does not authorize deletion).${syncNote}`,
+            withStoreFlag(root, `rasen archive ${changeName} --json --confirm-prune`)
+          );
+        }
+        const { confirm } = await import('@inquirer/prompts');
+        const proceed = await confirm({
+          message: chalk.red(
+            `⚠️  This will PERMANENTLY DELETE '${changeDir}' (destination: prune — no archive copy is made; git history is the archive). Continue?`
+          ),
+          default: false,
+        });
+        if (!proceed) {
+          console.log(specsUpdated ? 'Archive cancelled (main specs were already synced by this run).' : 'Archive cancelled.');
+          return null;
+        }
+      }
+
+      // Review M2: write the prune tombstone BEFORE deleting — it is the
+      // ONLY way a later archive invocation can recognize this change once
+      // its directory is gone (git history holds nothing for a pruned
+      // change by design). `ensure: true` because this is the sole safety
+      // net for prune, worth minting machine identity for if not already
+      // registered; failures are swallowed (never block the deletion the
+      // user already confirmed on a bookkeeping write).
+      let tombstoneWritten = false;
+      try {
+        const workDirForTombstone = await resolveChangeWorkDir(root.path, changeName, { ensure: true });
+        if (workDirForTombstone) {
+          await appendPruneTombstone(workDirForTombstone, changeName);
+          tombstoneWritten = true;
+        }
+      } catch {
+        // Best-effort; see comment above.
+      }
+
+      await fs.rm(changeDir, { recursive: true, force: true });
+
+      if (!json) {
+        console.log(`Change '${changeName}' pruned (deleted; no archive copy — git history is the archive).`);
+        console.log(chalk.cyan('Quality capture skipped: prune leaves no archived directory to stamp.'));
+        if (!tombstoneWritten) {
+          console.log(
+            chalk.yellow(
+              'Note: no prune tombstone could be recorded (no machine home available) — a later archive invocation for this name will report "not found" rather than "pruned".'
+            )
+          );
+        }
+      }
+
+      return {
+        change: changeName,
+        destination,
+        pruned: true,
+        specsUpdated,
+        ...(totals ? { totals } : {}),
+      };
+    }
+
+    // in-repo or external: move the change directory. `destinationResolution`
+    // always resolves `in-repo`. For `external` it was only PROBED above
+    // (review M6) — every gate has now passed, so this IS the write this
+    // command commits to; re-resolve with `ensure:true` here (archiving IS
+    // the home-needing write, deferred to the point of actual need) rather
+    // than trusting a stale probe. Only when even that mint fails — an
+    // unregistered project the ensure path itself could not register, or a
+    // resolution error — fall back to the in-repo location with a visible
+    // note rather than ever escalating to deletion (design D6).
+    let targetArchiveDir = destinationResolution.archiveDir;
+    if (destination === 'external' && !targetArchiveDir) {
+      const ensured = await resolveArchiveDestination(root.path, { ensure: true });
+      targetArchiveDir = ensured.archiveDir;
+    }
+    let destinationFallback = false;
+    if (!targetArchiveDir) {
+      targetArchiveDir = root.archiveDir;
+      destinationFallback = destination === 'external';
+    }
+
     const archiveName = `${this.getArchiveDate()}-${changeName}`;
-    const archivePath = path.join(archiveDir, archiveName);
+    const archivePath = path.join(targetArchiveDir, archiveName);
 
     // Check if archive already exists
     let archiveExists = false;
@@ -522,23 +793,33 @@ export class ArchiveCommand {
     }
 
     // Create archive directory if needed
-    await fs.mkdir(archiveDir, { recursive: true });
+    await fs.mkdir(targetArchiveDir, { recursive: true });
 
-    // Move change to archive (uses copy+remove on EPERM/EXDEV, e.g. Windows)
+    // Move change to archive (uses copy+remove on EPERM/EXDEV, e.g. Windows
+    // — required for `external`, which may cross filesystems/drives)
     await moveDirectory(changeDir, archivePath);
 
     // Quality capture: scan archived directory for quality artifact files
+    // (path-agnostic — runs against wherever the directory landed)
     await this.captureQuality(archivePath, root.path, json);
 
     if (!json) {
-      console.log(`Change '${changeName}' archived as '${archiveName}'.`);
+      const destinationNote = destination === 'external' ? ' (external, machine home)' : '';
+      console.log(`Change '${changeName}' archived as '${archiveName}'${destinationNote}.`);
+      if (destinationFallback) {
+        console.log(
+          chalk.yellow(`Note: destination 'external' could not be resolved; fell back to an in-repo archive.`)
+        );
+      }
     }
 
     return {
       change: changeName,
+      destination,
       archivedAs: archiveName,
       path: archivePath,
       specsUpdated,
+      ...(destinationFallback ? { destinationFallback: true } : {}),
       ...(totals ? { totals } : {}),
     };
   }

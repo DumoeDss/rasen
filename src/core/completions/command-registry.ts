@@ -161,6 +161,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Skip confirmation prompts',
       },
       {
+        name: 'confirm-prune',
+        description: "Confirm a 'prune' destination's permanent deletion (separate from --yes)",
+      },
+      {
         name: 'skip-specs',
         description: 'Skip spec update operations',
       },

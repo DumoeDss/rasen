@@ -43,6 +43,7 @@ ${STORE_SELECTION_GUIDANCE}
    a. **Artifact status** - Run \`rasen status --change "<name>" --json\`
       - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
+      - Also record \`archive.destination\` (\`in-repo\` | \`external\` | \`prune\`) and \`archive.archiveDir\` (absent for \`prune\` or an unresolvable \`external\`) — one status call per change already happens, so no extra call is needed for this
 
    b. **Task completion** - Read \`artifactPaths.tasks.existingOutputPaths\` from status JSON
       - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
@@ -129,15 +130,35 @@ ${STORE_SELECTION_GUIDANCE}
       - For conflicts, apply in resolved order
       - Track if sync was done
 
-   b. **Perform the archive**:
+   b. **Perform the archive (destination-aware, same branch and preconditions as \`rasen-archive-change\`)**:
+
+      For \`external\` and \`prune\`, both of which remove the repository's only copy of this change's review material, verify BEFORE bookkeeping, per change: the change directory must be BOTH clean AND tracked — \`git status --porcelain --ignored -- <changeRoot>\` empty (plain \`--porcelain\` without \`--ignored\` is NOT enough; gitignored content is invisible to it and would otherwise read as "clean" while never having been committed) AND \`git ls-files -- <changeRoot>\` non-empty (the directory must actually have committed content) — else fail that change with "commit the change directory first" (or "no content in git history — commit it first" when nothing is tracked) and continue with others. \`prune\` additionally needs a confirmation naming the deletion, SEPARATE from step 7's routine batch confirmation (call it out per-change explicitly — one consent must never silently authorize the other) — REFUSE that change outright in a non-interactive / dispatched context without a prior explicit override naming the deletion.
+
+      \`in-repo\` (default, and the fallback for \`external\` when \`archiveDir\` is absent — state the fallback explicitly, never escalate it to deletion):
       \`\`\`bash
       mkdir -p "<planningHome.changesDir>/archive"
       mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
       \`\`\`
 
+      \`external\` (same date-prefix/collision rule, targeting the resolved \`archiveDir\` instead):
+      \`\`\`bash
+      mkdir -p "<archiveDir>"
+      mv "<changeRoot>" "<archiveDir>/YYYY-MM-DD-<name>"
+      \`\`\`
+
+      \`prune\` (after the preconditions above pass, per change):
+      1. Write the prune tombstone FIRST (same mechanism and literal \`Pruned:\` token as \`rasen-archive-change\` — resolve \`workDir\` from status, append \`**Pruned:** true\` / \`**Pruned at:** <timestamp>\` to its \`ship-log.md\`; proceed without one if it cannot be resolved, noting the gap in this change's outcome).
+      2. Delete:
+         \`\`\`bash
+         rm -rf "<changeRoot>"
+         \`\`\`
+      No archive directory is created for a pruned change — git history is the archive.
+
+      **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`): for \`external\`/\`prune\`, \`git add -- <changeRoot> <specsDir>\` then \`git commit -- <changeRoot> <specsDir>\` — the \`add\` step matters because a spec sync that created a new (untracked) capability directory would otherwise be silently left out of a bare \`git commit --\`. For \`in-repo\`, the archive-dir addition rides the commit as usual.
+
    c. **Track outcome** for each change:
-      - Success: archived successfully
-      - Failed: error during archive (record error)
+      - Success: archived successfully (record the destination and, unless pruned, the location)
+      - Failed: error during archive (record error) — includes a destructive-destination precondition failure
       - Skipped: user chose not to archive (if applicable)
 
 9. **Display summary**
@@ -205,8 +226,9 @@ then add-graphql specs (chronological order, newer takes precedence).
 ## Bulk Archive Complete
 
 Archived N changes:
-- <change-1> -> archive/YYYY-MM-DD-<change-1>/
-- <change-2> -> archive/YYYY-MM-DD-<change-2>/
+- <change-1> [in-repo] -> archive/YYYY-MM-DD-<change-1>/
+- <change-2> [external] -> <machine-home>/archive/YYYY-MM-DD-<change-2>/
+- <change-3> [prune] -> pruned (no archive copy; git history is the archive)
 
 Spec sync summary:
 - N delta specs synced to main specs
@@ -219,13 +241,14 @@ Spec sync summary:
 ## Bulk Archive Complete (partial)
 
 Archived N changes:
-- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+- <change-1> [in-repo] -> archive/YYYY-MM-DD-<change-1>/
 
 Skipped M changes:
 - <change-2> (user chose not to archive incomplete)
 
 Failed K changes:
 - <change-3>: Archive directory already exists
+- <change-4>: destination external/prune blocked — uncommitted content in the change directory
 \`\`\`
 
 **Output When No Changes**
@@ -245,9 +268,10 @@ No active changes found. Create a new change to get started.
 - Show clear per-change status before confirming
 - Use single confirmation for entire batch
 - Track and report all outcomes (success/skip/fail)
-- Preserve .openspec.yaml when moving to archive
+- Preserve .openspec.yaml when moving to archive (in-repo and external only — a pruned change has no archived directory)
 - Archive directory target uses current date: YYYY-MM-DD-<name>
-- If archive target exists, fail that change but continue with others`,
+- If archive target exists, fail that change but continue with others
+- **Destructive-destination preconditions, per change.** \`external\` and \`prune\` REFUSE that individual change unless it is BOTH clean (\`git status --porcelain --ignored -- <changeRoot>\` empty — \`--ignored\` matters, a gitignored change directory reads clean without it) AND tracked (\`git ls-files -- <changeRoot>\` non-empty), or (for \`prune\`) without its own confirmation naming the deletion — a SEPARATE consent from the batch confirmation in step 7 — fail that change and continue with the rest of the batch, exactly like an existing-target failure. A destination fallback (\`external\` → \`in-repo\`) MAY relocate a change; it must NEVER escalate to deletion.`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
@@ -292,6 +316,7 @@ ${STORE_SELECTION_GUIDANCE}
    a. **Artifact status** - Run \`rasen status --change "<name>" --json\`
       - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
+      - Also record \`archive.destination\` (\`in-repo\` | \`external\` | \`prune\`) and \`archive.archiveDir\` (absent for \`prune\` or an unresolvable \`external\`) — one status call per change already happens, so no extra call is needed for this
 
    b. **Task completion** - Read \`artifactPaths.tasks.existingOutputPaths\` from status JSON
       - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
@@ -378,15 +403,35 @@ ${STORE_SELECTION_GUIDANCE}
       - For conflicts, apply in resolved order
       - Track if sync was done
 
-   b. **Perform the archive**:
+   b. **Perform the archive (destination-aware, same branch and preconditions as \`rasen-archive-change\`)**:
+
+      For \`external\` and \`prune\`, both of which remove the repository's only copy of this change's review material, verify BEFORE bookkeeping, per change: the change directory must be BOTH clean AND tracked — \`git status --porcelain --ignored -- <changeRoot>\` empty (plain \`--porcelain\` without \`--ignored\` is NOT enough; gitignored content is invisible to it and would otherwise read as "clean" while never having been committed) AND \`git ls-files -- <changeRoot>\` non-empty (the directory must actually have committed content) — else fail that change with "commit the change directory first" (or "no content in git history — commit it first" when nothing is tracked) and continue with others. \`prune\` additionally needs a confirmation naming the deletion, SEPARATE from step 7's routine batch confirmation (call it out per-change explicitly — one consent must never silently authorize the other) — REFUSE that change outright in a non-interactive / dispatched context without a prior explicit override naming the deletion.
+
+      \`in-repo\` (default, and the fallback for \`external\` when \`archiveDir\` is absent — state the fallback explicitly, never escalate it to deletion):
       \`\`\`bash
       mkdir -p "<planningHome.changesDir>/archive"
       mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
       \`\`\`
 
+      \`external\` (same date-prefix/collision rule, targeting the resolved \`archiveDir\` instead):
+      \`\`\`bash
+      mkdir -p "<archiveDir>"
+      mv "<changeRoot>" "<archiveDir>/YYYY-MM-DD-<name>"
+      \`\`\`
+
+      \`prune\` (after the preconditions above pass, per change):
+      1. Write the prune tombstone FIRST (same mechanism and literal \`Pruned:\` token as \`rasen-archive-change\` — resolve \`workDir\` from status, append \`**Pruned:** true\` / \`**Pruned at:** <timestamp>\` to its \`ship-log.md\`; proceed without one if it cannot be resolved, noting the gap in this change's outcome).
+      2. Delete:
+         \`\`\`bash
+         rm -rf "<changeRoot>"
+         \`\`\`
+      No archive directory is created for a pruned change — git history is the archive.
+
+      **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`): for \`external\`/\`prune\`, \`git add -- <changeRoot> <specsDir>\` then \`git commit -- <changeRoot> <specsDir>\` — the \`add\` step matters because a spec sync that created a new (untracked) capability directory would otherwise be silently left out of a bare \`git commit --\`. For \`in-repo\`, the archive-dir addition rides the commit as usual.
+
    c. **Track outcome** for each change:
-      - Success: archived successfully
-      - Failed: error during archive (record error)
+      - Success: archived successfully (record the destination and, unless pruned, the location)
+      - Failed: error during archive (record error) — includes a destructive-destination precondition failure
       - Skipped: user chose not to archive (if applicable)
 
 9. **Display summary**
@@ -454,8 +499,9 @@ then add-graphql specs (chronological order, newer takes precedence).
 ## Bulk Archive Complete
 
 Archived N changes:
-- <change-1> -> archive/YYYY-MM-DD-<change-1>/
-- <change-2> -> archive/YYYY-MM-DD-<change-2>/
+- <change-1> [in-repo] -> archive/YYYY-MM-DD-<change-1>/
+- <change-2> [external] -> <machine-home>/archive/YYYY-MM-DD-<change-2>/
+- <change-3> [prune] -> pruned (no archive copy; git history is the archive)
 
 Spec sync summary:
 - N delta specs synced to main specs
@@ -468,13 +514,14 @@ Spec sync summary:
 ## Bulk Archive Complete (partial)
 
 Archived N changes:
-- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+- <change-1> [in-repo] -> archive/YYYY-MM-DD-<change-1>/
 
 Skipped M changes:
 - <change-2> (user chose not to archive incomplete)
 
 Failed K changes:
 - <change-3>: Archive directory already exists
+- <change-4>: destination external/prune blocked — uncommitted content in the change directory
 \`\`\`
 
 **Output When No Changes**
@@ -494,8 +541,9 @@ No active changes found. Create a new change to get started.
 - Show clear per-change status before confirming
 - Use single confirmation for entire batch
 - Track and report all outcomes (success/skip/fail)
-- Preserve .openspec.yaml when moving to archive
+- Preserve .openspec.yaml when moving to archive (in-repo and external only — a pruned change has no archived directory)
 - Archive directory target uses current date: YYYY-MM-DD-<name>
-- If archive target exists, fail that change but continue with others`
+- If archive target exists, fail that change but continue with others
+- **Destructive-destination preconditions, per change.** \`external\` and \`prune\` REFUSE that individual change when \`git status --porcelain -- <changeRoot>\` is not empty, or (for \`prune\`) without a confirmation naming the deletion — fail that change and continue with the rest of the batch, exactly like an existing-target failure. A destination fallback (\`external\` → \`in-repo\`) MAY relocate a change; it must NEVER escalate to deletion.`
   };
 }

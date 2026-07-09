@@ -162,7 +162,7 @@ function printGcSummary(result: GcProjectRegistryResult): void {
     console.log(`  - Removed entry: ${removed.path} (home: ${removed.entry.home})`);
   }
   for (const home of result.removedHomes) {
-    console.log(`  - Deleted orphaned home: ${home}`);
+    console.log(`  - Deleted orphaned home: ${home} (including any external archives it held — git history remains the durable record)`);
   }
 }
 
@@ -272,7 +272,10 @@ export function registerDoctorCommand(program: Command): void {
       new Option('--store-path <path>', 'Removed; register the store and use --store').hideHelp()
     )
     .option('--json', 'Output as JSON')
-    .option('--gc', 'Remove dangling machine-home registry entries and their orphaned home directories')
+    .option(
+      '--gc',
+      "Remove dangling machine-home registry entries and their orphaned home directories — this deletes ANY external archives inside those homes too (archive-destination's 'external' archives share the home's lifecycle; git history remains the durable record)"
+    )
     .action(async (options: { store?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
       try {
         const root = await resolveRootForCommand(
