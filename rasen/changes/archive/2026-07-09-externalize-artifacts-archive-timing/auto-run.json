@@ -61,12 +61,16 @@
       "shipLogLocation": "workDir (first live use of change-work-dir)"
     },
     "archive": {
-      "status": "in_progress",
+      "status": "done",
       "worker": {
         "role": "shipper",
         "agentId": "shipper-machine-home",
         "model": "sonnet"
-      }
+      },
+      "commit": "40eaa7d36109a49cf19d7c5ad5c8f8b2715107b2",
+      "specsSynced": "6 (1 new archive-timing + 5 added-req)",
+      "specsValidate": "112/112 strict",
+      "liveValidation": "new step 1.5/2.5 flow behaved as specced during this very archive"
     }
   },
   "rounds": 3,
