@@ -1,5 +1,39 @@
 # rasen
 
+## 0.1.2
+
+### BREAKING: retire `rasen change` / `rasen spec` noun command groups
+
+The noun-first command groups are removed. Use the verb-first surface instead:
+
+| Removed | Use instead |
+|---|---|
+| `rasen change list` | `rasen list --type change` |
+| `rasen change show` | `rasen show <id> --type change` |
+| `rasen change validate` | `rasen validate <id> --type change` |
+| `rasen spec list` | `rasen list --type spec` |
+| `rasen spec show` | `rasen show <id> --type spec` |
+| `rasen spec validate` | `rasen validate <id> --type spec` |
+
+`--long` (title + delta/requirement count per row), previously only available on the noun-form `list` subcommands, is now on `rasen list` itself.
+
+### Behavior change: telemetry first-run notice moves to stderr
+
+The first-run telemetry disclosure notice now prints to stderr instead of stdout, so it never mixes into a command's stdout (which must stay either valid `--json` or the command's own text output). Any external tooling that greps stdout for this notice must switch to reading stderr.
+
+### Fixed
+
+- **CI**: three root-caused test defects that failed only on Windows/macOS CI are fixed — a `doctor` fixture that hardcoded the Windows data-dir path instead of branching on platform, an `archive.timing` assertion that canonicalized a non-existent path (missing Windows 8.3 short-name expansion and macOS's `/var` → `/private/var` symlink) instead of canonicalizing the always-existing root first, and the telemetry-notice stdout pollution above.
+- **Packaging**: the npm package now ships the `skills/` sidecar files (expert-skill checklists and scripts); they were silently missing from 0.1.1 npm installs because `skills/` was absent from the package's `files` allowlist.
+
+### Added
+
+- **`/rasen:help`** — a layered guidance router command (with a `rasen-help` skill in the core profile) covering onboarding through pipeline extension.
+
+### Other
+
+- Maintainer attribution updated to Sayo (repo URLs unchanged).
+
 ## 0.1.1
 
 ### BREAKING: full namespace rebrand (openspec → rasen)
