@@ -2,6 +2,8 @@
 
 ## Purpose
 Ingest anonymous Rasen CLI usage events into a Cloudflare Analytics Engine dataset via a standalone Worker, so maintainers can measure adoption (daily active users, per-command and per-version breakdowns) while persisting only non-identifying data and never blocking the CLI.
+
+> **Implementation location**: the Worker implementation lives in the standalone `rasen-telemetry-backend` repository (extracted from this repo's former `telemetry-backend/` directory with full history). This spec remains here as the contract the CLI's telemetry client (`src/telemetry/`) codes against.
 ## Requirements
 ### Requirement: Anonymous Usage Event Ingestion
 
