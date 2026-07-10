@@ -15,7 +15,7 @@
     "url": "https://github.com/DumoeDss/rasen"
   },
   "license": "MIT",
-  "author": "DumoeDss",
+  "author": "Sayo",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "publishConfig": {
