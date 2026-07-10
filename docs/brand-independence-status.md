@@ -1,8 +1,8 @@
 # Rasen 品牌独立化进展报告
 
-> 快照：2026-07-10（第 3 次盘点），`main @ 955fdb8`，**本地与 origin/main 完全同步（零未推送提交）**。上次快照（`8130edc`）以来又落地 31 个提交，全部已推送。
+> 快照：2026-07-10（第 4 次盘点），`main @ 13dccf3`，与 origin/main 同步。
 > 范围：rasen 从上游 OpenSpec fork 独立出来的全部品牌化/独立化工作——命令命名空间、文件与存档位置、包身份、遥测、发布准备、文档。
-> 结论先行：**代码、CLI、包、遥测、store、迁移、machine-home、specs 全语料八个维度已彻底 rasen 化且全部推送到 origin/main**。发版基础设施（npm publish job、NPM_TOKEN、CI 矩阵、TLS 遥测端点）全部就位。**当前唯一发版卡点：打 `rasen-v0.1.1` tag**。品牌层面仅剩 docs/ 内容与文件名回写（#5）和根目录三个遗留文件（#9）。
+> 结论先行：**0.1.1 已正式发版**——tag `rasen-v0.1.1` + GitHub Release（tarball）+ **npm `@atelierai/rasen@0.1.1` 发布成功**（provenance 签名，装机实测 `rasen --version` 报 0.1.1）。npm 相似名保护拒绝裸名 `rasen`（与 raven/resend 太近，E403），经用户拍板改用 scoped 名 `@atelierai/rasen`（bin 仍为 `rasen`，仓库仍 DumoeDss/rasen）。署名已由 DumoeDss 改为 Sayo（仓库 URL 不变）。品牌层面仅剩 docs/ 内容与文件名回写（#5）和根目录遗留文件（#9）。
 
 ---
 
@@ -10,7 +10,7 @@
 
 | 维度 | 状态 | 一句话 |
 |---|---|---|
-| 包与 CLI 身份 | ✅ 已完成 | npm 名 `rasen`（0.1.1）、bin 仅 `rasen`、repo/homepage 指向 DumoeDss/rasen |
+| 包与 CLI 身份 | ✅ 已完成 | npm 名 `@atelierai/rasen`（0.1.1，裸名被注册表相似名政策拒绝）、bin 仅 `rasen`、repo/homepage 指向 DumoeDss/rasen |
 | 命令命名空间 | ✅ 已完成 | 仅生成 `/rasen:*`；`opsx` 只存在于 legacy 检测/清理层 |
 | 工作区/存档位置 | ✅ 已完成 | `rasen/` 工作区、copy-only 迁移、archive 三轴配置已落地 |
 | machine-home | ✅ 已完成 | 机器数据根迁至 `~/.rasen`（`RASEN_HOME` > XDG 别名 > 默认，`global-config.ts:18,145`）；legacy 收养 copy-only + 碰撞安全（`cba4073`/`1c1735d`） |
@@ -18,7 +18,7 @@
 | 测试断言 | ✅ 已完成 | parity/e2e 断言全部期待 `rasen-*`；EBUSY flake 病根已治（batch1，2186/0 零 flake 基线） |
 | 主 specs 混词 | ✅ 已完成 | 四连清扫全关（§2.7）；120 个 spec，残留 token 全部落入甄别过的 K1–K7 保留类；治理 spec `spec-brand-consistency` 钉门 |
 | 交付模式 | ✅ 已收敛 | 5→2（`both`\|`skills`，skills 必装，`config-schema.ts:18`）；legacy 三值 migrate-on-read；编排型命令永远可用 → 原 DOC1 文档缺口被架构性取代 |
-| 发布准备 | ⚠️ 就差 tag | publish-npm job + NPM_TOKEN + CI 矩阵全就位；main 已全推；**仅剩打 `rasen-v0.1.1` tag** |
+| 发布 | ✅ **已发版** | `rasen-v0.1.1` tag + GitHub Release + npm `@atelierai/rasen@0.1.1`（provenance，2026-07-10）；workflow 三跑闭环（pnpm pin 冲突修复 `2670bda`、包名 scoped 化 `13dccf3`） |
 | 文档 | ⚠️ 部分完成 | docs/（36 篇）+ docs/zh/（33 篇）；67 个文件仍含 openspec/opsx 字样，`opsx.md`/`opsx-workflow-guide.md`/`grill-gstack-absorption.md` 双语文件名未改 |
 | git 交付 | ✅ 已完成 | **origin/main = 本地 main = `955fdb8`，零未推送**；`autonomy-ladder` 分支已 push 未合并（`e0a4a19`） |
 
@@ -101,7 +101,7 @@
 
 | # | 事项 | 体量 | 依赖 |
 |---|---|---|---|
-| 1 | **打 `rasen-v0.1.1` tag → release workflow 首次实跑（tarball + npm publish + provenance）→ 验收 `npm install -g rasen`**（唯一发版卡点） | S | 用户拍板发版时机；CHANGELOG 条目是否补记先议 |
+| 1 | ~~发版~~ ✅ 完成（2026-07-10）：`rasen-v0.1.1` → Release + npm `@atelierai/rasen@0.1.1`，装机验收通过；CHANGELOG 0.1.1 未补记 tag 之后落地的功能（help、store gates、交付模式收敛等），归版本决策 | — | — |
 | 2 | docs 品牌回写（文件名 + 内容层，双语镜像同步；复用 K1–K7 甄别框架） | M | 无 |
 | 3 | 根目录清理：README_OLD.md、README_zh.md、根 config.yaml | XS | 无 |
 | 4 | nix hash 回填（首次 CI 实跑后照日志改） | XS | #1 |
@@ -115,9 +115,9 @@
 
 ## 5. Roadmap
 
-### Phase A — 交付闭环（只差最后一步）
-~~push 主线~~ ✅（origin/main@`955fdb8`，零未推送）→ **打 `rasen-v0.1.1` tag**（唯一卡点）→ release workflow 自动出 tarball + npm publish → 验收。
-**出口判据**：`npm install -g rasen` 可用，`rasen --version` 报 0.1.1。
+### Phase A — 交付闭环 ✅ 完成（2026-07-10）
+~~push 主线~~ ✅ → ~~tag~~ ✅ `rasen-v0.1.1` → ~~release workflow~~ ✅（三跑：pnpm pin 冲突→修复；裸名 E403→scoped）→ ~~npm publish~~ ✅ `@atelierai/rasen@0.1.1`（provenance 已签，sigstore logIndex 2137057074）。
+**出口判据已达成**：`npm i -g @atelierai/rasen` 可装，`rasen --version` 报 0.1.1（实测）。
 
 ### Phase B — 一致性收尾
 ~~goal deploy~~ ✅ → ~~主 specs 混词~~ ✅ → ~~DOC1~~ ✅（架构性取代）→ **docs 品牌回写（#2）** → 根目录清理（#3）。
