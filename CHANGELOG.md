@@ -1,6 +1,6 @@
 # rasen
 
-## 0.2.0
+## 0.1.1
 
 ### BREAKING: full namespace rebrand (openspec → rasen)
 
