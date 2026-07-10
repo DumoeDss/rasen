@@ -9,19 +9,19 @@
 ### npm
 
 ```bash
-npm install -g rasen@latest
+npm install -g @atelierai/rasen@latest
 ```
 
 ### pnpm
 
 ```bash
-pnpm add -g rasen@latest
+pnpm add -g @atelierai/rasen@latest
 ```
 
 ### yarn
 
 ```bash
-yarn global add rasen@latest
+yarn global add @atelierai/rasen@latest
 ```
 
 ### bun
@@ -30,7 +30,7 @@ Bun can install rasen globally, but rasen currently runs on Node.js.
 You still need Node.js 20.19.0 or higher available on `PATH`.
 
 ```bash
-bun add -g rasen@latest
+bun add -g @atelierai/rasen@latest
 ```
 
 ## Nix
@@ -75,7 +75,7 @@ rasen --version
 Upgrade the package, then refresh each project's generated files:
 
 ```bash
-npm install -g rasen@latest   # or pnpm/yarn/bun equivalent
+npm install -g @atelierai/rasen@latest   # or pnpm/yarn/bun equivalent
 rasen update                  # run inside each project
 ```
 
@@ -88,7 +88,7 @@ There's no `rasen uninstall` command, because rasen is just a global package plu
 **1. Remove the global package:**
 
 ```bash
-npm uninstall -g rasen   # or: pnpm rm -g / yarn global remove / bun rm -g
+npm uninstall -g @atelierai/rasen   # or: pnpm rm -g / yarn global remove / bun rm -g
 ```
 
 **2. Remove rasen from a project (optional).** Delete the `rasen/` directory if you no longer want its specs and changes:

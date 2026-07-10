@@ -1,5 +1,5 @@
 {
-  "name": "rasen",
+  "name": "@atelierai/rasen",
   "version": "0.1.1",
   "description": "AI-native system for spec-driven development",
   "keywords": [

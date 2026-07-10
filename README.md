@@ -29,7 +29,7 @@ Rasen is forked from [OpenSpec](https://github.com/Fission-AI/OpenSpec) (MIT) by
 Requires **Node.js `>=20.19.0`**.
 
 ```bash
-npm i -g rasen
+npm i -g @atelierai/rasen
 ```
 
 Then initialize in your project:

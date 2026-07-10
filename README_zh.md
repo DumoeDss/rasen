@@ -29,7 +29,7 @@ Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fissio
 需要 **Node.js `>=20.19.0`**。
 
 ```bash
-npm i -g rasen
+npm i -g @atelierai/rasen
 ```
 
 然后在你的项目中初始化：
