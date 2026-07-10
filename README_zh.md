@@ -22,7 +22,7 @@
 
 ## 血统（Lineage）
 
-Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [DumoeDss](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen:*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
+Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [Sayo](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen:*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
 
 ## 安装
 
@@ -135,6 +135,6 @@ export DO_NOT_TRACK=1
 
 ## 许可证
 
-MIT — Copyright (c) 2024 OpenSpec Contributors 及 Copyright (c) 2026 DumoeDss。见 [LICENSE](./LICENSE)。
+MIT — Copyright (c) 2024 OpenSpec Contributors 及 Copyright (c) 2026 Sayo。见 [LICENSE](./LICENSE)。
 
 问题与反馈：[github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen)。

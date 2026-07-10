@@ -20,7 +20,7 @@ The `LICENSE` SHALL retain MIT terms and carry both the upstream copyright line 
 #### Scenario: Both copyright holders are present
 
 - **WHEN** the `LICENSE` file is read
-- **THEN** it contains `Copyright (c) 2024 OpenSpec Contributors` and `Copyright (c) 2026 DumoeDss`, under unchanged MIT permission terms
+- **THEN** it contains `Copyright (c) 2024 OpenSpec Contributors` and `Copyright (c) 2026 Sayo`, under unchanged MIT permission terms
 
 ### Requirement: Fork Declaration and Install Guide in README
 
@@ -29,7 +29,7 @@ The `README.md` SHALL declare that the project is an independently maintained fo
 #### Scenario: Fork declaration is present
 
 - **WHEN** the top of `README.md` is read
-- **THEN** it states the project is forked from OpenSpec (MIT) and independently maintained by DumoeDss, not affiliated with Fission-AI
+- **THEN** it states the project is forked from OpenSpec (MIT) and independently maintained by Sayo, not affiliated with Fission-AI
 
 #### Scenario: Install section covers fork install and prerequisites
 

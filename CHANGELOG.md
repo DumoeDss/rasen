@@ -19,13 +19,13 @@ Every user-facing surface moves from the upstream `openspec`/`opsx` namespaces t
 
 ## 0.1.0
 
-Fork baseline — the first independent release of the DumoeDss fork, aligned with upstream v1.5.0. The version is reset to `0.1.0` to start an independent semver line; it does not continue upstream's 1.5.x series.
+Fork baseline — the first independent release of the Sayo fork, aligned with upstream v1.5.0. The version is reset to `0.1.0` to start an independent semver line; it does not continue upstream's 1.5.x series.
 
 ### Fork changes
 
 - **Browser tooling: `browse` → `chrome-use`** — the Playwright-based `browse` tool is removed and replaced by `chrome-use`, which drives the user's everyday Chrome over the Chrome DevTools Protocol. No Playwright dependency.
 - **Telemetry: maintainer-owned Cloudflare Worker** — anonymous usage telemetry now posts to the fork maintainer's own Cloudflare Worker (`https://openspec-telemetry.ws11579.workers.dev`) over `node:https` instead of PostHog; `posthog-node` is dropped. Opt-out (`OPENSPEC_TELEMETRY=0` / `DO_NOT_TRACK=1` / CI auto-disable) is preserved. Note: the `node:https` transport does not honor `HTTP(S)_PROXY`, so telemetry silently drops behind an egress proxy.
-- **Independent identity prep** — dual-copyright LICENSE (upstream OpenSpec Contributors + 2026 DumoeDss), fork-declaring README with a tgz install guide, and a tag-triggered GitHub Release workflow. The package `name`/`bin` and `repository`/`homepage` remain unchanged in this phase.
+- **Independent identity prep** — dual-copyright LICENSE (upstream OpenSpec Contributors + 2026 Sayo), fork-declaring README with a tgz install guide, and a tag-triggered GitHub Release workflow. The package `name`/`bin` and `repository`/`homepage` remain unchanged in this phase.
 
 ## 1.5.0
 

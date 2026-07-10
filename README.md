@@ -22,7 +22,7 @@ Spec is where you start. The spiral is how you get there.
 
 ## Lineage
 
-Rasen is forked from [OpenSpec](https://github.com/Fission-AI/OpenSpec) (MIT) by Fission-AI, and is independently maintained by [DumoeDss](https://github.com/DumoeDss). It is **not affiliated with Fission-AI**. Its workflow semantics are aligned with upstream **OpenSpec v1.5.0** — the `propose → apply → archive` spec/change model is the same — but rasen runs in **independent namespaces**: the `rasen` binary, `/rasen:*` slash commands, `rasen-*` skills, and a `rasen/` workspace. rasen layers autonomous orchestration on top and never touches an upstream `openspec/` install.
+Rasen is forked from [OpenSpec](https://github.com/Fission-AI/OpenSpec) (MIT) by Fission-AI, and is independently maintained by [Sayo](https://github.com/DumoeDss). It is **not affiliated with Fission-AI**. Its workflow semantics are aligned with upstream **OpenSpec v1.5.0** — the `propose → apply → archive` spec/change model is the same — but rasen runs in **independent namespaces**: the `rasen` binary, `/rasen:*` slash commands, `rasen-*` skills, and a `rasen/` workspace. rasen layers autonomous orchestration on top and never touches an upstream `openspec/` install.
 
 ## Install
 
@@ -135,6 +135,6 @@ Telemetry is also **automatically disabled in CI**.
 
 ## License
 
-MIT — Copyright (c) 2024 OpenSpec Contributors and Copyright (c) 2026 DumoeDss. See [LICENSE](./LICENSE).
+MIT — Copyright (c) 2024 OpenSpec Contributors and Copyright (c) 2026 Sayo. See [LICENSE](./LICENSE).
 
 Issues and feedback: [github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen).

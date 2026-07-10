@@ -18,11 +18,11 @@ The README SHALL open with rasen's brand identity: both taglines verbatim — `R
 - **THEN** it presents the spec → loops → ascend (harness) → breakthrough (goal) progression as rasen's mental model
 
 ### Requirement: Fork lineage and non-affiliation declaration
-The README SHALL state that rasen is forked from OpenSpec (MIT) by Fission-AI, is independently maintained by DumoeDss, and is not affiliated with Fission-AI.
+The README SHALL state that rasen is forked from OpenSpec (MIT) by Fission-AI, is independently maintained by Sayo, and is not affiliated with Fission-AI.
 
 #### Scenario: Lineage stated
 - **WHEN** a reader looks for the project's origin
-- **THEN** the README declares it is a fork of OpenSpec (MIT) by Fission-AI, independently maintained by DumoeDss, not affiliated with Fission-AI
+- **THEN** the README declares it is a fork of OpenSpec (MIT) by Fission-AI, independently maintained by Sayo, not affiliated with Fission-AI
 
 ### Requirement: Install instructions
 The README SHALL provide install guidance for the rasen package: the global install command `npm i -g rasen`, the Node.js `>=20.19.0` requirement, and the chrome-use prerequisites (Google Chrome, Node 22+, Chrome started with remote debugging, first-connection Allow prompt). Command examples SHALL use the `rasen` command, show the workspace it creates as `rasen/`, and show slash commands with the `rasen:` prefix. The README SHALL NOT instruct users to uninstall an existing OpenSpec installation.
@@ -61,7 +61,7 @@ The README SHALL disclose the anonymous usage telemetry: that it sends only comm
 - **THEN** the README documents `RASEN_TELEMETRY=0`, `DO_NOT_TRACK=1`, and automatic disable under CI
 
 ### Requirement: License, alignment, and CI status
-The README SHALL note the MIT license with dual copyright (`OpenSpec Contributors` and `DumoeDss`), state that rasen's workflow semantics are aligned with upstream OpenSpec v1.5.0 while its namespaces (CLI, commands, skills, workspace directory) are independent, and display a CI status badge pointing at the fork's `ci.yml` workflow.
+The README SHALL note the MIT license with dual copyright (`OpenSpec Contributors` and `Sayo`), state that rasen's workflow semantics are aligned with upstream OpenSpec v1.5.0 while its namespaces (CLI, commands, skills, workspace directory) are independent, and display a CI status badge pointing at the fork's `ci.yml` workflow.
 
 #### Scenario: License and alignment noted
 - **WHEN** a reader checks licensing and provenance
