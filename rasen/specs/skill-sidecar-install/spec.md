@@ -1,7 +1,7 @@
 # skill-sidecar-install Specification
 
 ## Purpose
-Ensures expert skills installed by `rasen init`/`update` carry their non-code sidecar reference files (checklists, templates, hook scripts) alongside `SKILL.md`, via a single shared copy helper that allowlists `.md`/`.sh`, excludes `.tmpl` and the `browse` skill's build assets, and is idempotent across repeated installs.
+Ensures expert skills installed by `rasen init`/`update` carry their non-code sidecar reference files (checklists, templates, hook scripts) alongside `SKILL.md`, via a single shared copy helper that allowlists `.md`/`.sh`/`.mjs`/`.js`, excludes `.tmpl` and the `browse` skill's build assets, and is idempotent across repeated installs.
 ## Requirements
 ### Requirement: Sidecar reference files installed alongside SKILL.md
 
@@ -21,7 +21,7 @@ Ensures expert skills installed by `rasen init`/`update` carry their non-code si
 
 ### Requirement: Copy allowlist excludes code and the browse package
 
-The sidecar copy SHALL include only files ending `.md` (excluding `SKILL.md`) and `.sh`, found recursively under the source skill directory, and SHALL exclude `*.tmpl`. It SHALL skip the `browse` skill directory entirely.
+The sidecar copy SHALL include only files ending `.md` (excluding `SKILL.md`), `.sh`, `.mjs`, or `.js`, found recursively under the source skill directory, and SHALL exclude `*.tmpl`. It SHALL skip the `browse` skill directory entirely.
 
 #### Scenario: Code assets and templates are not copied
 
