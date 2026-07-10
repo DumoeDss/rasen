@@ -7,7 +7,7 @@ This spec defines the fork's brand identity as a distinct CLI product: the publi
 ## Requirements
 
 ### Requirement: Published package and binary identity
-The system SHALL publish under the package name `rasen` and install a single command named `rasen`. The package version SHALL remain `0.1.0`, and `repository`, `homepage`, and `author` SHALL identify the fork (`github.com/DumoeDss/rasen`).
+The system SHALL publish under the package name `@atelierai/rasen` (the npm registry's similarity policy blocks the bare name `rasen`) and install a single command named `rasen`, and `repository`, `homepage`, and `author` SHALL identify the fork (`github.com/DumoeDss/rasen`).
 
 #### Scenario: Installed command name
 - **WHEN** a user installs the package globally
@@ -16,7 +16,7 @@ The system SHALL publish under the package name `rasen` and install a single com
 
 #### Scenario: Package identity fields
 - **WHEN** the published package manifest is inspected
-- **THEN** `name` is `rasen`, `bin` maps `rasen` to the CLI entry, and `repository`/`homepage` point at `github.com/DumoeDss/rasen`
+- **THEN** `name` is `@atelierai/rasen`, `bin` maps `rasen` to the CLI entry, and `repository`/`homepage` point at `github.com/DumoeDss/rasen`
 
 #### Scenario: Version reported by the CLI
 - **WHEN** a user runs `rasen --version`

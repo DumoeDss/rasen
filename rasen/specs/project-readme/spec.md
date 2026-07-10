@@ -25,11 +25,11 @@ The README SHALL state that rasen is forked from OpenSpec (MIT) by Fission-AI, i
 - **THEN** the README declares it is a fork of OpenSpec (MIT) by Fission-AI, independently maintained by Sayo, not affiliated with Fission-AI
 
 ### Requirement: Install instructions
-The README SHALL provide install guidance for the rasen package: the global install command `npm i -g rasen`, the Node.js `>=20.19.0` requirement, and the chrome-use prerequisites (Google Chrome, Node 22+, Chrome started with remote debugging, first-connection Allow prompt). Command examples SHALL use the `rasen` command, show the workspace it creates as `rasen/`, and show slash commands with the `rasen:` prefix. The README SHALL NOT instruct users to uninstall an existing OpenSpec installation.
+The README SHALL provide install guidance for the rasen package: the global install command `npm i -g @atelierai/rasen`, the Node.js `>=20.19.0` requirement, and the chrome-use prerequisites (Google Chrome, Node 22+, Chrome started with remote debugging, first-connection Allow prompt). Command examples SHALL use the `rasen` command, show the workspace it creates as `rasen/`, and show slash commands with the `rasen:` prefix. The README SHALL NOT instruct users to uninstall an existing OpenSpec installation.
 
 #### Scenario: Global install command
 - **WHEN** a visitor decides to install
-- **THEN** the README shows `npm i -g rasen` as the primary install command
+- **THEN** the README shows `npm i -g @atelierai/rasen` as the primary install command
 - **AND** states Node.js `>=20.19.0` is required
 - **AND** does not tell the reader to uninstall `@fission-ai/openspec` or any other OpenSpec install first
 
