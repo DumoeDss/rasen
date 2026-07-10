@@ -32,6 +32,7 @@ describe('telemetry/index', () => {
   let tempDir: string;
   let originalEnv: NodeJS.ProcessEnv;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let requestSpy: ReturnType<typeof vi.spyOn<typeof https, 'request'>>;
   let captured: CapturedRequest[];
 
@@ -86,6 +87,7 @@ describe('telemetry/index', () => {
 
     captured = [];
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     requestSpy = vi.spyOn(https, 'request');
     installHttpsMock('ok');
   });
@@ -244,7 +246,7 @@ describe('telemetry/index', () => {
 
       await maybeShowTelemetryNotice();
 
-      expect(consoleLogSpy).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
 
     it('shows a truthful notice once, then suppresses it', async () => {
@@ -253,8 +255,11 @@ describe('telemetry/index', () => {
       await maybeShowTelemetryNotice();
       await maybeShowTelemetryNotice();
 
-      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
-      const message = String(consoleLogSpy.mock.calls[0][0]);
+      // On stderr, not stdout: bare-spawn text-mode commands parse stdout
+      // as command output, so the first-run notice must never land there.
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const message = String(consoleErrorSpy.mock.calls[0][0]);
       expect(message).toContain('Cloudflare Worker');
       expect(message).toContain('RASEN_TELEMETRY=0');
       expect(message.toLowerCase()).not.toContain('posthog');

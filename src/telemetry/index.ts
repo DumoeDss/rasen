@@ -178,8 +178,9 @@ export async function maybeShowTelemetryNotice(): Promise<void> {
       return;
     }
 
-    // Display notice
-    console.log(
+    // Display notice on stderr so it never pollutes stdout (bare-spawn
+    // text-mode commands parse stdout as command output, not JSON).
+    console.error(
       'Note: Rasen sends anonymous usage stats (command, version, OS, Node version, and a random id) to its own Cloudflare Worker. Opt out: RASEN_TELEMETRY=0'
     );
 
