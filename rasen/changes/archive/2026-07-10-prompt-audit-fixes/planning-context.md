@@ -1,0 +1,168 @@
+# Planning Context — prompt-audit-fixes (portfolio parent)
+
+Seeded by the LEAD, 2026-07-09. Source of truth for all child proposes. The 5 detailed audit reports + consolidated summary are in `audit/` beside this file — every finding cited below has verbatim quotes, file:line for both sides, a concrete misbehavior scenario, and a fix direction there. Planners: read the relevant audit file FIRST, verify line numbers against current source, do NOT re-derive the diagnosis.
+
+## User intent (verbatim constraints)
+
+1. 另一个 session 正在处理 `openspec\office-hours\externalize-openspec-artifacts.md`（产物外置/store 化设计）。**与其相关的部分留到最后处理** → store 路径解析类发现（WF-3、WF-9）单独成子 change `prompt-audit-fixes-store-paths`，排 DAG 末位，开工前必须重新核对届时的工作树/规格状态（外置方案可能已改变路径解析的正确答案）。
+2. **grills 收编适配层是重中之重**："不是觉得哪个好用就融合进来，最后变成一个缝合怪，而是真的有益，取其精华去其糟粕，真正的对我们的项目有益才行。" → 子 change `expert-dispatch` 不是机械打补丁：对每个 grills 系技能（review/qa/qa-only/design-review/cso/benchmark 及其 fix-loop、AskUserQuestion、自存报告、adversarial 子代理等行为）逐项裁决 KEEP（何种模式下）/ ADAPT（编排下如何降级）/ CUT（对本项目无益就砍）。design.md 必须含这张裁决表及理由。
+
+## Background: the audit
+
+全量 prompt 冲突审计（44 模板文件 + pipeline yaml，5 并行审计域）产出 50 条发现：Critical 5（去重 4）/ Major 22 / Minor 23。结构性病理：
+- ~60% 是接缝断裂（生产者承诺 vs 消费者期待：严重度词表、报告路径、evidence 文件、空头交接）；
+- 绝对化规则缺作用域（"Never read source code"、"save NOTHING"、"MANDATORY"）；
+- 双阈值/双计数器不消歧；
+- 收编适配缺失（grills 系全能技能 vs auto 角色隔离流水线）。
+
+已修（勿重复）：office-hours Dialogue Override（commit 401bb5a，archive 8c47a06）。已设计未实施：_orchestration H.4 infra 死亡唤醒修复（归 orchestration 子 change）。
+
+## Decomposition & DAG（全串行）
+
+执行顺序（同时是依赖顺序；所有子 change 共享 _shared.ts/_orchestration.ts/parity 哈希表，无并行可能）：
+
+1. **prompt-audit-fixes-expert-dispatch**（重中之重）— RV-1 RV-2 RV-3 RV-4 RV-5 SH-3 RV-8 RV-9。核心决策：
+   - 唯一规范严重度词表（Blocker/Major/Minor/Trivial）+ 各专家词表的显式映射（critical/informational、CRITICAL|HIGH|MEDIUM、REGRESSION/WARNING、impact+letter grade、P1/P2）；
+   - "被编排调度"模式（dispatched/report-only）：review/qa/design-review 在被 auto/review-cycle 派遣时禁 AUTO-FIX、禁 AskUserQuestion、禁 commit、禁自派子代理，只返回分类发现 + 写规范报告文件；用户直接调用时保留（或裁剪）fix-loop 行为——KEEP/ADAPT/CUT 裁决表见用户约束 #2；
+   - 报告文件合同：Step B "save NOTHING" 声明与 5 个技能的自存路径（.rasen/security-reports 等）二选一收敛，消灭双写/找不到；
+   - cso Phase2 探查项 vs Phase5 硬排除对齐（RV-8）；freeze/guard 拒绝 Edit 时 Fix-First 不得谎报 AUTO-FIXED（RV-9）。
+2. **prompt-audit-fixes-verify-ship**（依赖 #1 的词表定案）— WF-1 WF-7 WF-8 SH-1 SH-2 RV-6 RV-7：ship pre-flight 指向真实存在的 evidence 生产者；两个 verify 入口统一 verdict 词表与 gate 语义；tree-fingerprint 证据链闭合；"Never read source code" 限域到测试/审计阶段（diff-triage 与 fix-loop 明确豁免）。
+3. **prompt-audit-fixes-orchestration** — OR-1..OR-15 + SH-4 SH-5 SH-7 + 已设计的 H.4 infra 死亡唤醒（死亡分类学：上下文死亡→文档接力；infra 死亡→SendMessage 唤醒优先，过载退避，不占 relay 预算；transcript 丢失→冷重建）。含：planner 阈值 0.25/0.5 消歧（OR-1/SH-4，Critical）、DONE-with-unticked 分流（OR-6）、loop 阶段多角色阈值解析（OR-7）、sessionHandoff.n 记账（OR-2）、portfolio 下 child gate 语义（OR-3）、计数器消歧（OR-9/13/15）、Tier-C 降级补全（OR-4/14）、solo 主动修复 vs 单元工作纪律（SH-5）、LEAD inline fix 例外（SH-7）、其余 OR minor。
+4. **prompt-audit-fixes-office-hours** — IN-1（Critical：Consultation 短路 vs "fully formed plan 必跑 Phase 3+4 MANDATORY" 三处，需明确优先级：Consultation 取代 Phase 2-4）、IN-2（Consultation 终局：跳过 founder plea/Phase 4.5/6）、IN-4 IN-5 IN-6 + SH-6（re-ground 频率与 Dialogue Override 对齐）+ IN-3（design-consultation 三条 curl 补 --noproxy '*'，机械修）+ IN-7 IN-8。
+5. **prompt-audit-fixes-lifecycle** — WF-2（office-hours→propose 交接：要么在 propose 里实现消费 + 路径迁移逻辑，要么删承诺——planner 裁决，倾向实现消费）、WF-4（verify CRITICAL vs archive 可跳过警告：gate 补牙）、WF-5（archive 无 ship 前置 + apply 直通 archive）、WF-6 WF-10 WF-11。
+6. **prompt-audit-fixes-store-paths**（末位，用户指令）— WF-3 WF-9。开工前 MUST：重读届时的 externalize 设计文档/已落地改动，与另一 session 的结论对齐后再定修法；若外置方案已重定义根解析，按新方案修。
+
+## Constraints (all children)
+
+- 只改 TS 模板源码（src/core/templates/**）；`.claude/skills/*` 是生成物（gitignored，不进 repo）。每个子 change 收尾：`pnpm build`（update 读 dist，必须先 build）→ `node dist/cli/index.js update` 重生成 → `npx vitest run test/core/templates/` 绿 → parity 哈希表手工贴新哈希（无 -u 机制，从断言 diff 拷贝；核对只有预期模板的哈希移动）。
+- CLI 不在 PATH：`node dist/cli/index.js <args>`。
+- 共享工作树有另一 session 的在途改动（rebrand + 外置设计）。绝不 stage/commit 非本 change 文件；ship 一律显式 pathspec + `git show --stat` 复核；本 portfolio 的源文件可能被动捆绑在途 rebrand 编辑（whole-file 粒度）——沿用 office-hours-dialogue-override 的 LEAD 裁决先例：接受并在 ship-log 记录。
+- 子 change ship 全部 local 模式（只 commit 不 push）；portfolio 级交付决策最后由用户定。
+- 修复措辞规范（写进每个 design）：任何 NEVER/ALWAYS/MANDATORY 必须带作用域从句；新增规则给出与相邻规则的优先级关系；禁止引入新的无映射词表。
+- Windows CLI-spawning 测试 EBUSY flake 为已知非回归。
+
+## Fix-writing philosophy (user mandate, applies to every child)
+
+收编来的行为不是默认保留对象。每条修复先问"这个行为对 rasen 的角色隔离流水线真的有益吗"：有益→适配保留；无益/冲突→砍掉并在 design 里记一行理由。宁可删功能也不留缝合怪。
+
+## Planner durable findings — child 1 (expert-dispatch)
+
+Child #1 (`prompt-audit-fixes-expert-dispatch`) proposed + validated. Decisions siblings must build on:
+
+1. **Canonical severity vocabulary = Blocker/Major/Minor/Trivial, DEFINED HERE in the PREAMBLE** (`_shared.ts`). It was already the loop/verify CONSUMER vocab (review-cycle-workflow + opsx-orchestration specs) — child #1 adds the PRODUCER-side definition + per-expert mapping table. **Child #2 (verify-ship) consumes this — do NOT re-declare the scale; reference the `canonical-severity-vocabulary` capability.** Mapping: review CRITICAL→Blocker(if data/sec/corruption)/else Major, INFORMATIONAL→Minor(up to Major if it names data-loss/sec); cso CRITICAL/HIGH/MEDIUM→Blocker/Major/Minor; qa critical/high/medium|low/cosmetic→B/Ma/Mi/T; benchmark REGRESSION(hard-budget FAIL)→Blocker, REGRESSION→Major, WARNING→Minor; design-review high/medium/polish→Ma/Mi/T; codex P1/P2→Blocker/Major (display-only). Content overrides label.
+
+2. **Dispatched vs standalone mode is SELF-TRIGGERED off the existing Step B dispatch string** (single-unit-of-work + no-subagents + LEAD-owns-orchestration), NOT a new plumbing flag. Design records the interface: child #3 MAY add an explicit `MODE: dispatched (report-only)` token to Step B for robustness, but the contract works without it. If child #3 adds the token, keep the self-trigger as fallback.
+
+3. **Report-file convention (RESOLVED, single source of truth):** dispatched mode → the EXPERT ITSELF writes ONLY the canonical `<skill>-report.md` in the change dir (the worker only verifies presence — it no longer ALSO writes, that was the divergence). Standalone keeps native `.rasen/*-reports/` + `~/.rasen/projects/`. Child #1 owns the Step B sentence fix (drops false "save NOTHING"). **Child #2's ship pre-flight (WF-1) and verify should read the canonical `<skill>-report.md` files — same convention.**
+
+4. **Scope boundary confirmed against source:** RV-6/RV-7/SH-1/SH-2 ("Never read source code" scoping, incl. QA_METHODOLOGY rule #5 @ `_shared.ts:571` and DESIGN_METHODOLOGY rule #4 @ `_shared.ts:907`) are CHILD #2, NOT child #1 — child #1 did NOT touch those rules. Child #1 only touches PREAMBLE (new sections), ADVERSARIAL_STEP, TEST_COVERAGE, the 5 experts' fix/commit/ask/save behavior, and ONE Step B sentence.
+
+5. **RV-8 split decision:** keep the auth brute-force probe + narrow cso hard-exclusion #1 (auth brute-force reportable, generic DoS still excluded); DROP the generic audit-logging (A09) + generic-DoS STRIDE probes (align Phase 2 DOWN to Phase 5's zero-noise exclusions #16/#1).
+
+6. **Source line drift:** all audit line numbers verified 2026-07-09, drifted ≤8 lines but content exact (e.g. review Fix-First now Step 5b@154, "Never commit"@257; cso exclusions@203-227, save@322-332; qa fix@135-146, save@256-264; design-review clean-tree@33-47, commit@127-135, save@200-208; _orchestration Step B@56, Step D@90, Step E@103-107). Siblings: re-verify before editing, the shared tree churns.
+
+7. **Files child #1 will edit (parity churn heads-up for serial siblings):** `_shared.ts` (PREAMBLE + ADVERSARIAL_STEP + TEST_COVERAGE), `review.ts`, `cso.ts`, `qa.ts`, `qa-only.ts`, `benchmark.ts`, `design-review.ts`, and one sentence in `_orchestration.ts`. Every PREAMBLE-embedding template's parity hash moves — child #1's tasks tail rebuilds + hand-pastes. Siblings editing `_shared.ts`/`_orchestration.ts` after child #1 lands will re-churn the same hash table.
+
+## Planner durable findings — child 2 (verify-ship)
+
+Child #2 (`prompt-audit-fixes-verify-ship`) proposed + validated. Post-rebrand (2ebfae9) + post-child-1 (d380725) tree re-verified.
+
+1. **Evidence-file convention CHOSEN (WF-1):** verify-change (both skill + command getters) now writes `verification-report.md` to the change dir; ship pre-flight accepts it alongside the expert `*-report.md`/`review-cycle-report.md`. Distinct filename (NOT reusing review-report.md) so the artifact-level verdict ≠ the code-review expert's findings. No orphan consumers.
+
+2. **Verdict vocabulary unified on child #1's canonical scale (WF-7):** both verify variants map CRITICAL/WARNING/SUGGESTION (verify-change) and Critical/Warning/PASS-FAIL (verify-enhanced) → Blocker/Major/Minor/Trivial, and emit a machine-checkable line: `VERIFY VERDICT: <CLEAN|BLOCKED> — Blocker:<n> Major:<n> Minor:<n> Trivial:<n>`. CLEAN iff no open Blocker/Major (= review-cycle termination invariant). Child #2 REFERENCES `canonical-severity-vocabulary`, did NOT re-declare it. **Whether BLOCKED enforces an archive refusal is WF-4 = CHILD #5** — child #2 deliberately did NOT touch that gate contract, only the words + pass rule.
+
+3. **Test-evidence chain closed (WF-8):** verify variants record `command + result + git rev-parse HEAD^{tree}` (same schema review-cycle.ts:51 already uses) WHEN they run tests; ship's existing skip gate (ship.ts:87, reads "another verification report") consumes it — only ship edit is naming `verification-report.md` in the list, NOT gate logic. Open Q flagged: verify-enhanced has no explicit "run the suite" step today; evidence block is conditional, ship correctly re-runs if absent. If a stronger guarantee wanted, add an explicit test-run step (flagged for child #3/#5).
+
+4. **"Never read source" scoped (SH-1/2, RV-6/7)** in QA_METHODOLOGY (#5 + reinforcer #7, `_shared.ts:613`) and DESIGN_METHODOLOGY (#4, `_shared.ts:949`) — enumerate-and-gate, swept the WHOLE Important-Rules block. Carve-outs name (a) diff-aware triage + (b) the **STANDALONE** fix loop specifically (NOT the dispatched-mode reviewer, which child #1 made report-only — contract preserved). These blocks are DISTINCT from child #1's PREAMBLE/ADVERSARIAL/TEST_COVERAGE edits (no overlap), but both live in `_shared.ts` → parity re-churn for qa/qa-only/design-review.
+
+5. **chrome-use parity debt CLOSED here:** `chrome-use.ts:11` embeds PREAMBLE, factory `getChromeUseSkillTemplate`, dirName `rasen-chrome-use`, already in prod registry (`skill-generation.ts:190`) but ABSENT from `functionFactories`/`GENERATED_SKILL_FACTORIES` in `skill-templates-parity.test.ts`. Child #2 adds it + 2 hash entries. Child #3 (PREAMBLE edits) will now correctly see chrome-use fail if unhandled.
+
+6. **Line drift after rebrand + child #1:** QA rule@613, DESIGN rule@949 (were 571/907 pre-child-1). ship pre-flight@36-37, skip gate@87. verify-change verdicts@148-149 (skill)/@320-321 (cmd), no file-write. verify-enhanced Save Reports@77-83. **Child #3+ MUST re-verify again** — child #2 touches `_shared.ts` (QA/DESIGN methodology), verify-change, verify-enhanced, ship, parity test.
+
+7. **Scope guard honored:** child #2 did NOT touch `_orchestration.ts` (child #3), WF-3/WF-9 store paths (child #6), WF-4/WF-5 archive/lifecycle (child #5), sync-specs (child #5). WF-3 verify/ship path-hardcoding explicitly left for child #6.
+
+## Planner durable findings — child 3 (orchestration)
+
+Child #3 (`prompt-audit-fixes-orchestration`) proposed + validated. Biggest child: OR-1..OR-15 + SH-4/5/7. All lines re-verified against current 241-line `_orchestration.ts` (post-rebrand + children 1-2).
+
+1. **Threshold rule (OR-1/SH-4, Critical) RESOLVED:** general rule stated once in Step H preamble — mid-task relay → handoff threshold (0.5); cross-change re-staffing (planner reuse B.1.5, cross-child implementer reuse G.1.3) → reuse threshold (0.25, stricter). H.2 inline-exempts reuse. Existing `worker-reuse-orchestration` + `orchestration-handoff` warm-continue-guard specs do NOT assert a number → I used ADDED requirements, no fragile MODIFY.
+
+2. **Death taxonomy (H.4/OR-6) — canonical wording in design D2:** 3 classes — (a) context death (HANDOFF/limit) → doc relay, charged; (b) infra/transient death (API err/timeout/empty-return, transcript intact, live session) → FIRST `SendMessage` wake SAME agent ("infra failure not context; re-read tasks.md/git status"), backoff on overload, consumes NEITHER maxRelays NOR stallLimit; (c) transcript lost → cold-reconstruct (ONLY here) + record degradation. DONE-with-unticked = NOT a death → SendMessage same worker, no relay. Keyed on SIGNAL (returned-HANDOFF/hit-limit=context; env-error/empty+intact-transcript=infra). F.1 dead-handles scoped to cross-session; ":176 SendMessage-IS-transcript-resume" promoted into rule body.
+
+3. **Counter table (OR-9/13/15) — canonical, design D3:** relay(maxRelays 3, soft-review-at-N+1) · review-rounds(maxRounds 3) · strategy-attempts(3) · goal-rounds(maxRounds 5) · goal-stall(loopStallLimit 2, over ROUNDS) · handoff-stall(stallLimit 2, over RELAYS) · session-relay(sessionHandoff.n, maxRelays 3, HARD-stop-at-N). maxRelays asymmetry deliberate (worker soft / session hard). Review round may span multiple relays; independent.
+
+4. **Spec strategy:** NEW `orchestration-worker-lifecycle` (death taxonomy + counters). Deltas all ADDED (existing reqs don't assert the wrong values → no fragile MODIFY): `worker-reuse-orchestration` (OR-1/8), `opsx-orchestration` (SH-7/OR-3/7/14/2), `goal-loop-workflow` (OR-4/5/10/12), `opsx-auto-command` (OR-11), `expert-dispatch-contract` (SH-5 — extends child #1's PREAMBLE dispatch contract).
+
+5. **PARITY COVERAGE GAP (relayed to child #5, IMPORTANT):** `rasen-auto`/`rasen-review-cycle`/`rasen-goal`/`rasen-ship`/`rasen-verify-enhanced` are NOT in either parity registry (`EXPECTED_FUNCTION_HASHES` / `EXPECTED_GENERATED_SKILL_CONTENT_HASHES` / `GENERATED_SKILL_FACTORIES`). → child #3's OWN `_orchestration.ts`/auto.ts/goal-command.ts edits are NOT hash-locked (verified only via build + store-selection containment test + apply review). This is the LARGER remaining parity debt after child #2 closed chrome-use. Child #5 should add these 5 templates + hashes. SH-5's PREAMBLE edit DOES move all ~19 PREAMBLE-embedding expert-skill hashes (those ARE covered) — child #3 hand-pastes those.
+
+6. **Decision surfaces:** OR-8 = types.ts doc-comment fix (behavior already correct = occupancy; only the "headroom" comment lies). OR-11 = DEFINE standard/light in auto §5 (NOT remove — 2 pipelines set `standard`; removal = breaking schema change). OR-10 = instruction-text fix (read loop.runArtifact), not schema. No new yaml FIELDS — child #3 only makes the playbook HONOR existing fields.
+
+7. **Line drift for child #4/#5/#6:** `_orchestration.ts` still 241 lines pre-apply; child #3 edits Steps E/F/G/H/L + auto.ts §5 + goal-command.ts:92 + goal-plan.ts + `_shared.ts` PREAMBLE (92/96/98) + types.ts ReuseThresholdSchema. Child #4 (office-hours) / #5 (archive/lifecycle/parity) / #6 (store paths) MUST re-verify after child #3 lands.
+
+## Planner durable findings — child 4 (office-hours)
+
+Child #4 (`prompt-audit-fixes-office-hours`) proposed + validated. Files edited by this change: `experts/office-hours.ts`, `experts/design-consultation.ts`, `experts/_shared.ts` (PREAMBLE only), `workflows/onboard.ts`, parity test.
+
+1. **Two dialogue capabilities already exist and cover most of this ground** — `office-hours-dialogue` (answer-first, escape-hatch-limited-to-skip, hard approval gate incl. the Consultation "yes" path, Consultation posture + deterministic routing) and `expert-dialogue-override` (PREAMBLE Dialogue Override, Completeness scoped to shortcut-vs-complete with **exploratory forks exempt**, PREAMBLE parity requirement). Child #4 ADDED into both, no MODIFY. **Child #5 must not re-declare these.**
+
+2. **IN-1 precedence wording (the decision the LEAD asked for):** Consultation posture is **authoritative for its session and replaces Phases 2, 3, 4**. One-directional precedence: the `Phase 4 (MANDATORY)` header + the three fully-formed-plan rules (`:241`/`:277`/`:620`) are scoped to the **interview paths (Startup/Builder)**; a concrete-design-plus-feedback opening routes to Consultation which replaces 2–4. Posture wins because the collision bites on the posture's headline use case. KEEP-for-interview / CUT-for-Consultation, not deletion.
+
+3. **IN-2 Consultation terminal:** after doc distillation on explicit "yes" → plain summary + `/rasen:propose` pointer; SKIP Phase 4.5 (founder-signal synthesis) + Phase 6 (founder plea). Phase 6 `:548` "every user … all three beats" and Phase 4.5 scoped to interview paths. Phase 5 hard-approval gate (`:414`) already admits the Consultation "yes" — untouched.
+
+4. **SH-6 reconciliation:** PREAMBLE AskUserQuestion Format step 1 Re-ground (`_shared.ts:71`) now DEFERS to the Dialogue Override (session start / after a genuine gap, not every consecutive call). The Dialogue Override already owned the restraint side; this closes the Format side. Existing `expert-dialogue-override` "Golden-master parity preserved" requirement governs the resulting hash churn.
+
+5. **IN-3 & IN-7 = compliance fixes, NO new spec deltas.** IN-3 (design-consultation Phase 2 curls missing `--noproxy '*'`) is code drifted out of compliance with the ALREADY-SHIPPED `chrome-use-expert-methodology` "curl Examples Bypass a Configured HTTP Proxy" requirement (whose scenario already names design-consultation). IN-7 (Q2 option E exploratory-fork Completeness note) conforms to the ALREADY-EXISTING `expert-dialogue-override` exploratory-fork exemption. Both are tasks-only + locked by the design-consultation parity hash. Pattern: when a fix brings code back into an existing spec, no delta — document the conformance.
+
+6. **Line drift for office-hours.ts is ~ZERO** — current tree matches the audit line numbers almost exactly (short-circuit `:35`, posture `:63–72`, Phase 4 header `:358`, fully-formed-plan `:241`/`:277`/`:620`, answer-first `:85`, Phase 4.5 `:395–408`, Phase 6 `:548`, escape hatch `:236`/`:277`). design-consultation curls `:85–88`, Q2 `:150`. PREAMBLE Format `:71`, Completeness `:73`. onboard Guardrails `:556–564`, PAUSE points `:172`/`:254`/`:392`.
+
+7. **Parity: onboard IS covered** (resolves the retirement brief's uncertainty) — `getOnboardSkillTemplate` + `getOpsxOnboardCommandTemplate` (both share `getOnboardInstructions`) + `rasen-onboard` are all in the parity registry. onboard does NOT embed the PREAMBLE, so SH-6 does not move onboard hashes; IN-8 does. office-hours + design-consultation are pinned embedders (function + content hash). SH-6 (PREAMBLE) moves every PREAMBLE-embedding template's hashes — office-hours/design-consultation move from both their body edits and SH-6, resolved in one rebuild.
+
+8. **SH-3 SPEC_REVIEW_LOOP gating: DECLINED by child #4** (documented in design Decision 6). office-hours runs top-level, not as a dispatched leaf worker, so the no-spawn constraint doesn't co-occur; gating would churn the shared `SPEC_REVIEW_LOOP` block (defined in `_shared.ts`, embedded only by office-hours) for a path that doesn't bite. Per fix-writing philosophy. Revisit only if office-hours ever runs as an orchestrated stage.
+
+9. **office-hours.ts shared-file collision with child #5 (WF-2/WF-6):** child #4 edited ONLY `experts/office-hours.ts` (the embedder). WF-2/WF-6 target `workflows/office-hours.ts` — a DIFFERENT file. No collision on `experts/office-hours.ts` from child #5's finding set. Confirm this file split holds when child #5 proposes; if #5 also touches `experts/office-hours.ts` the two must serialize.
+
+## Planner durable findings — child 5 (lifecycle)
+
+Child #5 (`prompt-audit-fixes-lifecycle`) proposed + validated (`validate` clean first try). Scope: WF-2/4/5/6/10/11 + parity expansion + goal-registration confirmation. Files the implementer will edit: `workflows/propose.ts`, `workflows/office-hours.ts` (the WORKFLOW file, not the expert), `workflows/archive-change.ts`, `workflows/apply-change.ts`, `workflows/continue-change.ts`, `test/core/templates/skill-templates-parity.test.ts`. NO `_shared.ts`/`_orchestration.ts`/`experts/*` edits → **no PREAMBLE churn this child** (only the 5 edited bodies' hashes move + the new parity entries).
+
+1. **GOAL REGISTRATION DEBT IS ALREADY CLOSED (do NOT re-do it).** The dispatch + LEAD handoff both said `getGoalCommandSkillTemplate`/goal-plan are "完全缺席" from `skill-generation.ts` — that is STALE. They are registered: skills at `skill-generation.ts:180-183` (goal-plan/iterate/report/goal-command), command at `:243` (`getOpsxGoalCommandTemplate`). Landed by commit `60f8d10` (goal-loop primitive), rebranded in `2ebfae9`; `opsx-goal-command` spec's "Templates export and register" scenario already asserts it. The audit/plan predated the goal-loop merge. Only the PARITY gap was real → folded into new capability `workflow-template-parity`. child #6 planner: do not resurrect this.
+
+2. **WF-2 consumption mechanics (the LEAD-asked decision):** IMPLEMENT the consumer in `propose.ts` (both getters), inserted after `rasen new change`+status, before drafting. Scan TWO locations: (a) `office-hours-design.md` in `changeRoot`; (b) `<office-hours-dir>/<change-name>.md` where the office-hours dir is the sibling of `planningHome.changesDir`. The sibling case works because office-hours derives its slug the SAME way propose derives a change name → names align → discoverable. Paths RESOLVED from status JSON (not hardcoded `rasen/...`) so the new code is store-correct from birth and does NOT enlarge child #6's WF-3 hardcode sweep. Consumer contract lands in `propose-workflow` spec (ADDED req); the office-hours.ts producer-promise text is just made accurate (both locations) = conformance, no office-hours spec delta for WF-2, locked by the parity hash this child adds for `rasen-office-hours-command`.
+
+3. **WF-4 gate precedence (the LEAD-asked decision):** two archive tiers. HARD gate (refuse-by-default; proceed only on explicit blocker-naming override; refuse outright non-interactive) = (a) `verification-report.md` `VERIFY VERDICT: BLOCKED`, (b) incomplete tasks. SOFT gate (inform+confirm, as today) = incomplete non-task artifacts, unsynced specs, missing ship-log, portfolio-deferred delivery. The existing "Don't block archive on warnings" guardrail is SCOPED to soft warnings only (enumerate-and-gate the whole Guardrails block). Consumes child #2's `VERIFY VERDICT` — no new vocab. This is the intended enforcer child #2 deferred (`verify-change.ts:159` literally says the verdict "does not by itself enforce an archive refusal"). Do NOT hard-gate on verification *absence* (LEAD steer = BLOCKED-or-unticked only). **One deliberate MODIFY:** `Task Completion Check` requirement in `opsx-archive-skill` (its "Incomplete tasks found" scenario asserted the now-wrong soft behavior → MODIFY with full requirement copy; everything else ADDED).
+
+4. **WF-5+WF-11 collapse into ONE archive requirement (`Delivery Precondition Check`):** both are archive reading `ship-log.md`. No ship-log → soft-warn "archive without delivering?" + explicit escape for spec-only/non-shipping. Ship-log `Status:` contains "delivery deferred to portfolio level" (the marker `ship.ts:116,132` writes in local mode) → soft note parent delivery pending. Minimal — no portfolio graph. The apply→archive-bypass half of WF-5 is the apply nudge (see #6), NOT this requirement.
+
+5. **WF-6 decision = DELEGATE (expert wins), inline = fallback.** `workflows/office-hours.ts` steps 2/3/4 conflict (inline session + "facilitation lives in expert" + double doc). Precedence: `/office-hours` expert (`rasen-office-hours`, registered) is the single facilitation authority; inline six-questions/builder text kept as documented fallback (expert-unavailable), not a 2nd pass; doc produced once. Respects child #4's expert hardening (duplicating inline IS the drift). ADDED req in `opsx-office-hours-command`. **Confirmed file split holds:** child #4 edited `experts/office-hours.ts`; child #5 edits `workflows/office-hours.ts` — DIFFERENT files, no collision (matches child #4 durable finding #9).
+
+6. **WF-5(apply)+WF-10(continue) nudges → NEW capability `lifecycle-stage-sequencing`.** apply/continue skills have NO behavioral capability spec today (parity-hash-governed only), so rather than fragment I made one small capability: apply completion → verify→ship, archive post-delivery; continue completion → apply, archive post-implementation. Both files' getters are already parity-pinned → edits move existing hashes.
+
+7. **Parity expansion (NEW capability `workflow-template-parity`).** Enumerated production registries vs parity registries. UNPINNED skill templates (11): office-hours-command, verify-enhanced, ship, retro, auto, review-cycle, handoff, goal-plan, goal-iterate, goal-report, goal. UNPINNED command payloads (8): the `getOpsx*CommandTemplate` for office-hours/verify-enhanced/ship/retro/auto/review-cycle/handoff/goal (goal-plan/iterate/report are skill-only). Each skill → functionFactories+EXPECTED_FUNCTION_HASHES AND GENERATED_SKILL_FACTORIES+EXPECTED_GENERATED_SKILL_CONTENT_HASHES; each command → functionFactories+EXPECTED_FUNCTION_HASHES only (commands are `CommandContent`, not run through `generateSkillContent`). Precedent: `expert-template-inlining` (collective 19-expert req) + `verify-ship-evidence` (chrome-use req naming the test file). New capability chosen over 8 near-identical per-command deltas. **This closes the LARGER parity debt child #3 §5 relayed** (auto/review-cycle/goal/ship/verify-enhanced un-hash-locked) plus retro/handoff/office-hours-command which were also unpinned.
+
+8. **Regen tail note:** NO shared-block edits → NO PREAMBLE-embedding expert hashes should move. If the vitest diff shows expert hashes moving, something is wrong — investigate before pasting. Expected movers: the 5 edited bodies (propose, apply-change, continue-change, archive-change, office-hours-command) + all the newly-added parity entries. Hash format: function-map keys UNQUOTED, content-map keys single-quoted, values single-quoted.
+
+9. **child #6 (store-paths) coordination:** child #5 shares `archive-change.ts` with child #6 (WF-9 path resolution of tasks.md/specs). Different concern (gate logic vs path resolution), no concurrent collision (child #6 deferred), but child #6 MUST re-verify `archive-change.ts` after child #5 lands. Child #5's new file reads (`verification-report.md`, `ship-log.md`, office-hours scan) are ALREADY resolved from status JSON, so they do not add to WF-3 debt — child #6 need only handle the pre-existing hardcoded `tasks.md`/`rasen/specs` paths.
+
+10. **F.1 generation-match clause added to child #5 scope (LEAD-added post-restart, user-confirmed).** `_orchestration.ts` Step F.1 step 2 doesn't say a resume document must be the LATEST holder's own distillation → live failure: re-engaging a role whose latest holder died un-exhausted WITHOUT a document, while an OLDER generation's retirement doc exists → LEAD matched the stale doc, skipped the transcript, discarded intact context. Fix = one tight clause: latest-holder's-own-document-only; un-exhausted latest holder w/ no doc resumes from TRANSCRIPT (F.1 step 3), which beats any earlier generation's doc; plus same-session-restart nuance (session dir survived → `SendMessage`-by-NAME may resolve → try wake first, fall back to ladder). **Scope exception:** child #5 may touch `_orchestration.ts` for EXACTLY this clause (children 1/3's edits survive). Spec: ADDED req in `orchestration-worker-lifecycle` (existing "SendMessage-resume scoping" req doesn't assert generation-matching → ADDED not MODIFY). **Parity:** `_orchestration.ts` is embedded by auto/goal-command/review-cycle — ALL in child #5's parity-expansion set, so the F.1 edit is hash-verified via the newly-pinned rasen-auto/rasen-goal/rasen-review-cycle (do the F.1 edit + registry expansion in the same regen run; the expansion is what makes this edit verifiable — it was previously parity-uncovered). Regen §8.4 therefore EXPECTS auto/goal/review-cycle hashes to move (plus the 5 body edits), while still expecting NO expert-hash movement.
+
+## Planner durable findings — child 6 (store-paths, FINAL)
+
+Child #6 (`prompt-audit-fixes-store-paths`) proposed + validated (clean first try). WF-3 + WF-9. The deferred child — sequenced last to reconcile with the concurrent `externalize-artifacts` portfolio.
+
+1. **ALIGNMENT DECISION = (b) NARROW.** The externalize work is no longer just a draft — it is ACTIVELY IMPLEMENTING. Machine-home foundation (slice ⓪) is landed+archived (`ed1adbd`/`bc7069b`; `resolveProjectHome()→{homeDir, workDir(changeName), archiveDir, mode}` frozen API). `externalize-artifacts-t3-workdir` (slice ①) is LIVE `in_progress, stage: propose` and OWNS Open Q5 = "audit + switch templates writing ephemera to CLI-resolved workDir." `archive-timing`/`archive-dest`/`sha-stamping` are pending (serial behind t3-workdir). Design of record: `rasen/office-hours/externalize-openspec-artifacts.md` (four-tier taxonomy).
+
+2. **TIER PARTITION (the load-bearing decision).** The externalize design splits artifacts by consumer: **T1** specs, **T2** proposal/design/tasks/delta (both in-repo/in-store, CLI-resolved), **T3** ephemera = ship-log/verification reports/run-state/handoff/review-cycle logs (moved EXTERNAL to `<home>/changes/<name>/work/`), **T4** office-hours/research (in-repo permanent). WF-3's offenders split across tiers: T1/T2/T4 keep the audit's "resolve from status JSON" answer → FIX now; T3's correct answer CHANGED to external workDir → DEFER to t3-workdir. Fixing T3 to changeRoot now = throwaway + LIVE same-file collision (t3-workdir is editing ship/verify/retro THIS session).
+
+3. **FIXED here (externalization-proof, unclaimed by any externalize slice):** WF-9 archive tasks → `artifactPaths.tasks.existingOutputPaths` (match bulk); WF-3 T1 archive main-spec compare + `sync-specs.ts` main-spec target → resolve from planning home (`specs/` sibling of `planningHome.changesDir`); WF-3 T4 office-hours (workflow) doc writes → resolve from `changeRoot`/planningHome (completes symmetry with child #5's WF-2 propose-reader). Files: `archive-change.ts`, `sync-specs.ts`, `office-hours.ts`. Spec homes: `opsx-archive-skill`, `specs-sync-skill`, `opsx-office-hours-command` (all ADDED reqs; no new capability).
+
+4. **DEFERRED (owned by live `externalize-artifacts-t3-workdir`):** `ship.ts` (ship-log + its incidental T2 reads — all of ship deferred to avoid same-file collision), `verify-enhanced.ts`, `verify-change.ts`, `retro.ts`, run-state. WF-3 is therefore CLOSED ACROSS TWO PORTFOLIOS — portfolio close-out must confirm t3-workdir landed the T3 half before declaring WF-3 done.
+
+5. **NOT (c) escalate — no design conflict.** Externalize design + the audit AGREE on "stop hardcoding, resolve via CLI." Clean tier partition, no silent proposing-around.
+
+6. **Parity:** all three edited templates are hash-pinned (`rasen-archive-change`, `rasen-sync-specs` always were; `rasen-office-hours-command` pinned by child #5's registry expansion) → edits move exactly those 3 hashes; NO shared-block edits so NO expert/orchestration-embedder hash movement.
+
+7. **SHARED-FILE COORDINATION (flag, not conflict):** `archive-change.ts` (pending `archive-dest`+`archive-timing`) and `sync-specs.ts` (pending `archive-timing`) are on later externalize children's surfaces. Concern is orthogonal (path resolution vs sync timing/destination). Child #6 lands first; those pending children rebase on it. No LIVE collision (they're pending, not in_progress). Child #6 fully avoids the one LIVE surface (t3-workdir's T3 ephemera templates + all `src/core` runtime). [SHARPENED after reading t3-workdir's landed proposal: it edits `archive-change.ts` **read side only** (repoints child #5's steps 3.5/3.6 verification-report + ship-log GATE READS changeRoot→workDir) + a MODIFIED `opsx-archive-skill` delta; child #6 edits DIFFERENT regions (step 3 tasks path, step 4 main-spec compare) + an ADDED `opsx-archive-skill` delta. Non-overlapping regions, SAME file + capability, both in PROPOSE. **LEAD must serialize child #6 vs t3-workdir APPLY on archive-change.ts** (trivial rebase). t3-workdir explicitly does NOT claim tasks/main-spec resolution → WF-9 + WF-3 T1 correctly land in child #6. `sync-specs.ts` + `office-hours.ts` VERIFIED clean of t3-workdir.]
+
+## Planner retired after child 3 — successor pointer
+
+Original persistent planner retired between children (context 27.3% > 0.25 reuse threshold, per B.1.5) after proposing children #1-3 (all shipped CLEAN in ≤2 rounds). Full retirement brief for proposing #4/#5/#6 is in **`rasen/changes/prompt-audit-fixes/handoff/planner-retired-1.md`** (reason: retired-between-children, remaining: EMPTY) — cross-child interface ledger, the ADDED-vs-MODIFY spec-delta strategy, where each remaining finding's audit text + line-drift lives, proposing gotchas (sweep ALL absolutes; never name an unwired consumer; standalone-vs-dispatched; parity coverage of edited templates), and open questions (parity-registry expansion for auto/review-cycle/goal/ship/verify-enhanced; verify-enhanced suite-run guarantee; WF-2 implement-not-delete lean; office-hours.ts shared-file collision between #4 and #5; store-paths blocked on externalize re-sync). Successor: read that doc + this file's durable-findings sections + the relevant audit/*.md, then re-verify lines before editing.
