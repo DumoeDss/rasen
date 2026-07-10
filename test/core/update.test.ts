@@ -670,9 +670,9 @@ Old version content
 
       await updateCommand.execute(testDir);
 
-      // Should show version transition
+      // Should show version transition (old pinned version → current, version-agnostic)
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('0.1.0')
+        expect.stringContaining('0.0.1 →')
       );
 
       consoleSpy.mockRestore();

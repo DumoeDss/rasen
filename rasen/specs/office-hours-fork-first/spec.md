@@ -1,7 +1,8 @@
 # office-hours-fork-first Specification
 
 ## Purpose
-TBD - created by archiving change office-hours-fork-first. Update Purpose after archive.
+Defines the fork-first behavior of the `office-hours` consultation skill: sessions route to a product (Diagnosis or Design) by the object of the user's request rather than the user's stated identity, with direct routing on unambiguous openings and mid-session product changes in either direction.
+
 ## Requirements
 ### Requirement: Product routing by request object
 

@@ -1,7 +1,8 @@
 # store-project-namespace Specification
 
 ## Purpose
-TBD - created by archiving change store-project-namespace. Update Purpose after archive.
+Splits the machine registry into two namespaces — stores and projects — sharing one id grammar: entries carry a `type` with `(type, id)` uniqueness, `--project` flags and `project:` references target the project namespace, and pre-type registry files keep parsing with absent type meaning store.
+
 ## Requirements
 ### Requirement: Registry entries carry a type and are unique per (type, id)
 
