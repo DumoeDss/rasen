@@ -171,5 +171,66 @@ Regular text that should be ignored
       expect(logOutput.some(line => line.includes('partial') && line.includes('1/3 tasks'))).toBe(true);
       expect(logOutput.some(line => line.includes('no-tasks') && line.includes('No tasks'))).toBe(true);
     });
+
+    it('should print id-only lines for changes without --long', async () => {
+      const changesDir = path.join(tempDir, 'rasen', 'changes');
+      await fs.mkdir(path.join(changesDir, 'demo'), { recursive: true });
+      await fs.writeFile(
+        path.join(changesDir, 'demo', 'proposal.md'),
+        '# Change: Demo Title\n\n## Why\nBecause.\n\n## What Changes\n- **auth:** Add requirement\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'changes');
+
+      expect(logOutput.some(line => line.includes('Demo Title'))).toBe(false);
+    });
+
+    it('should print title and delta counts for changes with --long', async () => {
+      const changesDir = path.join(tempDir, 'rasen', 'changes');
+      const changeDir = path.join(changesDir, 'demo');
+      await fs.mkdir(path.join(changeDir, 'specs', 'auth'), { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'proposal.md'),
+        '# Change: Demo Title\n\n## Why\nBecause.\n\n## What Changes\n- **auth:** Add requirement\n'
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'specs', 'auth', 'spec.md'),
+        '## ADDED Requirements\n\n### Requirement: Auth works\nText\n\n#### Scenario: Happy path\n- **WHEN** a\n- **THEN** b\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'changes', { long: true });
+
+      expect(logOutput.some(line => line.includes('Demo Title') && line.includes('[deltas 1]'))).toBe(true);
+    });
+
+    it('should print title and requirement counts for specs with --long', async () => {
+      const specsDir = path.join(tempDir, 'rasen', 'specs');
+      await fs.mkdir(path.join(specsDir, 'auth'), { recursive: true });
+      await fs.writeFile(
+        path.join(specsDir, 'auth', 'spec.md'),
+        '## Purpose\nAuth spec.\n\n## Requirements\n\n### Requirement: Users must authenticate\nText\n\n#### Scenario: Happy path\n- **WHEN** a\n- **THEN** b\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'specs', { long: true });
+
+      expect(logOutput.some(line => line.includes('auth') && line.includes('[requirements 1]'))).toBe(true);
+    });
+
+    it('should print id and requirement count only for specs without --long', async () => {
+      const specsDir = path.join(tempDir, 'rasen', 'specs');
+      await fs.mkdir(path.join(specsDir, 'auth'), { recursive: true });
+      await fs.writeFile(
+        path.join(specsDir, 'auth', 'spec.md'),
+        '## Purpose\nAuth spec.\n\n## Requirements\n\n### Requirement: Users must authenticate\nText\n\n#### Scenario: Happy path\n- **WHEN** a\n- **THEN** b\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'specs');
+
+      expect(logOutput.some(line => line.includes('auth') && line.includes('requirements 1') && !line.includes('['))).toBe(true);
+    });
   });
 });

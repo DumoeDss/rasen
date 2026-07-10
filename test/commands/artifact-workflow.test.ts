@@ -869,7 +869,13 @@ artifacts:
       expect(json.archive).toEqual({
         timing: 'in-ship',
         destination: 'in-repo',
-        archiveDir: path.join(tempDir, 'rasen', 'changes', 'archive'),
+        // canonical() (realpathSync under the hood) only resolves paths that
+        // exist on disk; the archive/ subdirectory is never created by
+        // `status`, so canonicalizing the full joined path silently falls
+        // back to path.resolve() and misses macOS's /var -> /private/var
+        // symlink. Production instead canonicalizes the always-existing
+        // root first, then joins the subpath onto that — mirror that order.
+        archiveDir: path.join(canonical(tempDir), 'rasen', 'changes', 'archive'),
       });
     });
 
@@ -886,7 +892,9 @@ artifacts:
       expect(json.archive).toEqual({
         timing: 'on-merge',
         destination: 'in-repo',
-        archiveDir: path.join(tempDir, 'rasen', 'changes', 'archive'),
+        // See the sibling test above for why the root is canonicalized
+        // before joining, not the full (non-existent) archive/ path.
+        archiveDir: path.join(canonical(tempDir), 'rasen', 'changes', 'archive'),
       });
       // Existing payload fields remain present alongside the new one.
       expect(json.changeName).toBe('archive-timing-default');

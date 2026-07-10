@@ -11,8 +11,6 @@ import { ListCommand } from '../core/list.js';
 import { ArchiveCommand, type ArchiveOptions } from '../core/archive.js';
 import { ViewCommand } from '../core/view.js';
 import { resolveRootForCommand, toRootOutput } from '../core/root-selection.js';
-import { registerSpecCommand } from '../commands/spec.js';
-import { ChangeCommand } from '../commands/change.js';
 import { ValidateCommand } from '../commands/validate.js';
 import { ShowCommand } from '../commands/show.js';
 import { CompletionCommand } from '../commands/completion.js';
@@ -284,11 +282,12 @@ program
   .option('--specs', 'List specs instead of changes')
   .option('--changes', 'List changes explicitly (default)')
   .option('--sort <order>', 'Sort order: "recent" (default) or "name"', 'recent')
+  .option('--long', 'Show id and title with counts')
   .option('--json', 'Output as JSON (for programmatic use)')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; long?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const root = await resolveRootForCommand(options ?? {}, {
         json: options?.json,
@@ -302,6 +301,7 @@ program
       const sort = options?.sort === 'name' ? 'name' : 'recent';
       await listCommand.execute(root.path, mode, {
         sort,
+        long: options?.long,
         json: options?.json,
         ...(options?.json ? { root: toRootOutput(root) } : {}),
       });
@@ -328,68 +328,6 @@ program
     }
   });
 
-// Change command with subcommands
-const changeCmd = program
-  .command('change')
-  .description('Manage Rasen change proposals');
-
-// Deprecation notice for noun-based commands
-changeCmd.hook('preAction', () => {
-  console.error('Warning: The "rasen change ..." commands are deprecated. Prefer verb-first commands (e.g., "rasen list", "rasen validate --changes").');
-});
-
-changeCmd
-  .command('show [change-name]')
-  .description('Show a change proposal in JSON or markdown format')
-  .option('--json', 'Output as JSON')
-  .option('--deltas-only', 'Show only deltas (JSON only)')
-  .option('--requirements-only', 'Alias for --deltas-only (deprecated)')
-  .option('--no-interactive', 'Disable interactive prompts')
-  .action(async (changeName?: string, options?: { json?: boolean; requirementsOnly?: boolean; deltasOnly?: boolean; noInteractive?: boolean }) => {
-    try {
-      const changeCommand = new ChangeCommand();
-      await changeCommand.show(changeName, options);
-    } catch (error) {
-      console.error(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-changeCmd
-  .command('list')
-  .description('List all active changes (DEPRECATED: use "rasen list" instead)')
-  .option('--json', 'Output as JSON')
-  .option('--long', 'Show id and title with counts')
-  .action(async (options?: { json?: boolean; long?: boolean }) => {
-    try {
-      console.error('Warning: "rasen change list" is deprecated. Use "rasen list".');
-      const changeCommand = new ChangeCommand();
-      await changeCommand.list(options);
-    } catch (error) {
-      console.error(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-changeCmd
-  .command('validate [change-name]')
-  .description('Validate a change proposal')
-  .option('--strict', 'Enable strict validation mode')
-  .option('--json', 'Output validation report as JSON')
-  .option('--no-interactive', 'Disable interactive prompts')
-  .action(async (changeName?: string, options?: { strict?: boolean; json?: boolean; noInteractive?: boolean }) => {
-    try {
-      const changeCommand = new ChangeCommand();
-      await changeCommand.validate(changeName, options);
-      if (typeof process.exitCode === 'number' && process.exitCode !== 0) {
-        process.exit(process.exitCode);
-      }
-    } catch (error) {
-      console.error(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
 program
   .command('archive [change-name]')
   .description('Archive a completed change and update main specs')
@@ -411,7 +349,6 @@ program
     }
   });
 
-registerSpecCommand(program);
 registerConfigCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);

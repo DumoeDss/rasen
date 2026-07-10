@@ -480,7 +480,11 @@ describe('rasen doctor (3.6)', () => {
     });
 
     function oldDataDir(): string {
-      return path.join(fixtureHome, 'AppData', 'Local', 'rasen');
+      // Mirrors oldSchemeDataDir (global-config.ts): win32 prefers
+      // LOCALAPPDATA/rasen; POSIX uses ~/.local/share/rasen.
+      return process.platform === 'win32'
+        ? path.join(fixtureHome, 'AppData', 'Local', 'rasen')
+        : path.join(fixtureHome, '.local', 'share', 'rasen');
     }
 
     function newRoot(): string {

@@ -31,7 +31,7 @@ describe('validate command enriched human output', () => {
       let code = 0;
       let stderr = '';
       try {
-        execSync(`node ${bin} change validate ${changeId}`, { encoding: 'utf-8', stdio: 'pipe' });
+        execSync(`node ${bin} validate ${changeId}`, { encoding: 'utf-8', stdio: 'pipe' });
       } catch (e: any) {
         code = e?.status ?? 1;
         stderr = e?.stderr?.toString?.() ?? '';
@@ -39,7 +39,7 @@ describe('validate command enriched human output', () => {
       expect(code).not.toBe(0);
       expect(stderr).toContain('has issues');
       expect(stderr).toContain('Next steps:');
-      expect(stderr).toContain('rasen change show');
+      expect(stderr).toContain(`rasen show ${changeId} --json --deltas-only`);
     } finally {
       process.chdir(originalCwd);
     }

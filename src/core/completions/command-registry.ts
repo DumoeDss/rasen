@@ -69,6 +69,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         takesValue: true,
         values: ['recent', 'name'],
       },
+      {
+        name: 'long',
+        description: 'Show id and title with counts',
+      },
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
@@ -509,110 +513,6 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         name: 'body',
         description: 'Detailed description for the feedback',
         takesValue: true,
-      },
-    ],
-  },
-  {
-    name: 'change',
-    description: 'Manage Rasen change proposals (deprecated)',
-    flags: [],
-    subcommands: [
-      {
-        name: 'show',
-        description: 'Show a change proposal',
-        acceptsPositional: true,
-        positionalType: 'change-id',
-        positionals: [{ name: 'change-name', type: 'change-id', optional: true }],
-        flags: [
-          COMMON_FLAGS.json,
-          {
-            name: 'deltas-only',
-            description: 'Show only deltas (JSON only)',
-          },
-          {
-            name: 'requirements-only',
-            description: 'Alias for --deltas-only (deprecated)',
-          },
-          COMMON_FLAGS.noInteractive,
-        ],
-      },
-      {
-        name: 'list',
-        description: 'List all active changes (deprecated)',
-        flags: [
-          COMMON_FLAGS.json,
-          {
-            name: 'long',
-            description: 'Show id and title with counts',
-          },
-        ],
-      },
-      {
-        name: 'validate',
-        description: 'Validate a change proposal',
-        acceptsPositional: true,
-        positionalType: 'change-id',
-        positionals: [{ name: 'change-name', type: 'change-id', optional: true }],
-        flags: [
-          COMMON_FLAGS.strict,
-          COMMON_FLAGS.jsonValidation,
-          COMMON_FLAGS.noInteractive,
-        ],
-      },
-    ],
-  },
-  {
-    name: 'spec',
-    description: 'Manage Rasen specifications',
-    flags: [],
-    subcommands: [
-      {
-        name: 'show',
-        description: 'Show a specification',
-        acceptsPositional: true,
-        positionalType: 'spec-id',
-        positionals: [{ name: 'spec-id', type: 'spec-id', optional: true }],
-        flags: [
-          COMMON_FLAGS.json,
-          {
-            name: 'requirements',
-            description: 'Show only requirements, exclude scenarios (JSON only)',
-          },
-          {
-            name: 'no-scenarios',
-            description: 'Exclude scenario content (JSON only)',
-          },
-          {
-            name: 'requirement',
-            short: 'r',
-            description: 'Show specific requirement by ID (JSON only)',
-            takesValue: true,
-          },
-          COMMON_FLAGS.noInteractive,
-        ],
-      },
-      {
-        name: 'list',
-        description: 'List all specifications',
-        flags: [
-          COMMON_FLAGS.json,
-          {
-            name: 'long',
-            description: 'Show id and title with counts',
-          },
-        ],
-      },
-      {
-        name: 'validate',
-        description: 'Validate a specification',
-        acceptsPositional: true,
-        positionalType: 'spec-id',
-        positionals: [{ name: 'spec-id', type: 'spec-id', optional: true }],
-        flags: [
-          COMMON_FLAGS.strict,
-          COMMON_FLAGS.jsonValidation,
-          COMMON_FLAGS.noInteractive,
-        ],
       },
     ],
   },

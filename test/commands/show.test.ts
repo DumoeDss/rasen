@@ -43,8 +43,8 @@ describe('top-level show command', () => {
       const stderr = err.stderr.toString();
       expect(stderr).toContain('Nothing to show.');
       expect(stderr).toContain('rasen show <item>');
-      expect(stderr).toContain('rasen change show');
-      expect(stderr).toContain('rasen spec show');
+      expect(stderr).toContain('rasen show <item> --type change');
+      expect(stderr).toContain('rasen show <item> --type spec');
     } finally {
       process.chdir(originalCwd);
       process.env = originalEnv;
@@ -117,6 +117,98 @@ describe('top-level show command', () => {
     } finally {
       process.chdir(originalCwd);
     }
+  });
+
+  // Migrated from the deleted test/commands/spec.test.ts (noun-form `rasen
+  // spec show`): SpecCommand.show is surviving logic, delegated to by this
+  // verb-first command, so its JSON-filter flags and error paths still need
+  // coverage — just invoked as `rasen show <id> --type spec ...`.
+  describe('spec-only filters (delegates to SpecCommand.show)', () => {
+    beforeEach(async () => {
+      const twoRequirementSpec = `## Purpose
+This is a test specification for the authentication system.
+
+## Requirements
+
+### Requirement: User Authentication
+The system SHALL provide secure user authentication
+
+#### Scenario: Successful login
+- **WHEN** a user with valid credentials submits the login form
+- **THEN** they are authenticated
+
+### Requirement: Password Reset
+The system SHALL allow users to reset their password
+
+#### Scenario: Reset via email
+- **WHEN** a user with a registered email requests a password reset
+- **THEN** they receive a reset link
+`;
+      await fs.writeFile(path.join(specsDir, 'auth', 'spec.md'), twoRequirementSpec, 'utf-8');
+    });
+
+    it('excludes scenarios with --no-scenarios (JSON only)', () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        const output = execSync(`node ${openspecBin} show auth --type spec --json --no-scenarios`, { encoding: 'utf-8' });
+        const json = JSON.parse(output);
+        expect(json.requirements).toHaveLength(2);
+        expect(json.requirements.every((r: any) => Array.isArray(r.scenarios) && r.scenarios.length === 0)).toBe(true);
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
+    it('shows a specific requirement with -r/--requirement (JSON only)', () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        const output = execSync(`node ${openspecBin} show auth --type spec --json -r 1`, { encoding: 'utf-8' });
+        const json = JSON.parse(output);
+        expect(json.requirements).toHaveLength(1);
+        expect(json.requirements[0].text).toContain('The system SHALL provide secure user authentication');
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
+    it('rejects --requirements and --requirement used together', () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        let err: any;
+        let stdout = '';
+        try {
+          stdout = execSync(`node ${openspecBin} show auth --type spec --json --requirements -r 1`, { encoding: 'utf-8' });
+        } catch (e: any) {
+          err = e;
+          stdout = e.stdout?.toString() ?? '';
+        }
+        expect(err).toBeDefined();
+        expect(err.status).not.toBe(0);
+        const json = JSON.parse(stdout);
+        expect(json.status[0].message).toContain('Options --requirements and --requirement cannot be used together');
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
+    it('reports a not-found error for a missing spec', () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        let err: any;
+        try {
+          execSync(`node ${openspecBin} show nonexistent-spec --type spec`, { encoding: 'utf-8' });
+        } catch (e) { err = e; }
+        expect(err).toBeDefined();
+        expect(err.status).not.toBe(0);
+        expect(err.stderr.toString()).toContain("Spec 'nonexistent-spec' not found");
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
   });
 });
 

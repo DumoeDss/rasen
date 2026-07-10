@@ -5,6 +5,7 @@ import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progre
 import { readFileSync, type Dirent } from 'fs';
 import { join } from 'path';
 import { MarkdownParser } from './parsers/markdown-parser.js';
+import { ChangeParser } from './parsers/change-parser.js';
 import type { RootOutput } from './root-selection.js';
 
 interface ChangeInfo {
@@ -17,7 +18,13 @@ interface ChangeInfo {
 interface ListOptions {
   sort?: 'recent' | 'name';
   json?: boolean;
+  long?: boolean;
   root?: RootOutput;
+}
+
+function extractChangeTitle(content: string, changeName: string): string {
+  const match = content.match(/^#\s+(?:Change:\s+)?(.+)$/im);
+  return match ? match[1].trim() : changeName;
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -97,7 +104,7 @@ function formatRelativeTime(date: Date): string {
 
 export class ListCommand {
   async execute(targetPath: string = '.', mode: 'changes' | 'specs' = 'changes', options: ListOptions = {}): Promise<void> {
-    const { sort = 'recent', json = false, root } = options;
+    const { sort = 'recent', json = false, long = false, root } = options;
 
     if (mode === 'changes') {
       const changesDir = path.join(targetPath, WORKSPACE_DIR_NAME, 'changes');
@@ -156,6 +163,25 @@ export class ListCommand {
       console.log('Changes:');
       const padding = '  ';
       const nameWidth = Math.max(...changes.map(c => c.name.length));
+
+      if (long) {
+        for (const change of changes) {
+          const paddedName = change.name.padEnd(nameWidth);
+          const changeDir = path.join(changesDir, change.name);
+          const proposalPath = path.join(changeDir, 'proposal.md');
+          try {
+            const content = await fs.readFile(proposalPath, 'utf-8');
+            const title = extractChangeTitle(content, change.name);
+            const parser = new ChangeParser(content, changeDir);
+            const parsed = await parser.parseChangeWithDeltas(change.name);
+            console.log(`${padding}${paddedName}     ${title} [deltas ${parsed.deltas.length}]`);
+          } catch {
+            console.log(`${padding}${paddedName}     (unable to read)`);
+          }
+        }
+        return;
+      }
+
       for (const change of changes) {
         const paddedName = change.name.padEnd(nameWidth);
         const status = formatTaskStatus({ total: change.totalTasks, completed: change.completedTasks });
@@ -189,7 +215,7 @@ export class ListCommand {
       return;
     }
 
-    type SpecInfo = { id: string; requirementCount: number };
+    type SpecInfo = { id: string; title: string; requirementCount: number };
     const specs: SpecInfo[] = [];
     for (const id of specDirs) {
       const specPath = join(specsDir, id, 'spec.md');
@@ -197,17 +223,18 @@ export class ListCommand {
         const content = readFileSync(specPath, 'utf-8');
         const parser = new MarkdownParser(content);
         const spec = parser.parseSpec(id);
-        specs.push({ id, requirementCount: spec.requirements.length });
+        specs.push({ id, title: spec.name, requirementCount: spec.requirements.length });
       } catch {
         // If spec cannot be read or parsed, include with 0 count
-        specs.push({ id, requirementCount: 0 });
+        specs.push({ id, title: id, requirementCount: 0 });
       }
     }
 
     specs.sort((a, b) => a.id.localeCompare(b.id));
 
     if (json) {
-      console.log(JSON.stringify({ specs, ...(root ? { root } : {}) }, null, 2));
+      const jsonOutput = specs.map(s => ({ id: s.id, requirementCount: s.requirementCount }));
+      console.log(JSON.stringify({ specs: jsonOutput, ...(root ? { root } : {}) }, null, 2));
       return;
     }
 
@@ -216,7 +243,11 @@ export class ListCommand {
     const nameWidth = Math.max(...specs.map(s => s.id.length));
     for (const spec of specs) {
       const padded = spec.id.padEnd(nameWidth);
-      console.log(`${padding}${padded}     requirements ${spec.requirementCount}`);
+      if (long) {
+        console.log(`${padding}${padded}     ${spec.title} [requirements ${spec.requirementCount}]`);
+      } else {
+        console.log(`${padding}${padded}     requirements ${spec.requirementCount}`);
+      }
     }
   }
 }
