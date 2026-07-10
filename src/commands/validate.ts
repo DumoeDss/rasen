@@ -6,7 +6,6 @@ import {
   toRootOutput,
   withStoreFlag,
   type ResolvedOpenSpecRoot,
-  isStoreSelectedRoot,
 } from '../core/root-selection.js';
 import { isInteractive, resolveNoInteractive } from '../utils/interactive.js';
 import { getSpecIds } from '../utils/item-discovery.js';
@@ -252,12 +251,7 @@ export class ValidateCommand {
         return;
       }
       console.error(`Ambiguous item '${itemName}' matches both a change and a spec.`);
-      // The noun-form commands are cwd-based and cannot reach a selected store.
-      if (isStoreSelectedRoot(root)) {
-        console.error('Pass --type change|spec.');
-      } else {
-        console.error('Pass --type change|spec, or use: rasen change validate / rasen spec validate');
-      }
+      console.error('Pass --type change|spec.');
       process.exitCode = 1;
       return;
     }

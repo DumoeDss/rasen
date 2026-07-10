@@ -2,13 +2,9 @@ import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { JsonConverter } from '../core/converters/json-converter.js';
-import { Validator } from '../core/validation/validator.js';
-import { ChangeParser } from '../core/parsers/change-parser.js';
 import { Change } from '../core/schemas/index.js';
 import type { RootOutput } from '../core/root-selection.js';
 import { isInteractive } from '../utils/interactive.js';
-import { getActiveChangeIds } from '../utils/item-discovery.js';
-import { getTaskProgressForChange } from '../utils/task-progress.js';
 
 // Constants for better maintainability
 const ARCHIVE_DIR = 'archive';
@@ -17,8 +13,7 @@ export class ChangeCommand {
   private converter: JsonConverter;
   private rootPath?: string;
 
-  // rootPath is set only by root-aware callers (top-level `show`); the
-  // deprecated noun-form commands stay cwd-based.
+  // rootPath is set only by root-aware callers (top-level `show`).
   constructor(rootPath?: string) {
     this.converter = new JsonConverter();
     this.rootPath = rootPath;
@@ -53,7 +48,7 @@ export class ChangeCommand {
         } else {
           console.error(`No change specified. Available IDs: ${changes.join(', ')}`);
         }
-        console.error('Hint: use "rasen change list" to view available changes.');
+        console.error('Hint: use "rasen list" to view available changes.');
         process.exitCode = 1;
         return;
       }
@@ -94,139 +89,6 @@ export class ChangeCommand {
     }
   }
 
-  /**
-   * List active changes.
-   * - Text default: IDs only; --long prints minimal details (title, counts)
-   * - JSON: array of { id, title, deltaCount, taskStatus }, sorted by id
-   */
-  async list(options?: { json?: boolean; long?: boolean }): Promise<void> {
-    const changesPath = path.join(process.cwd(), WORKSPACE_DIR_NAME, 'changes');
-    
-    const changes = await this.getActiveChanges(changesPath);
-    
-    if (options?.json) {
-      const changeDetails = await Promise.all(
-        changes.map(async (changeName) => {
-          const proposalPath = path.join(changesPath, changeName, 'proposal.md');
-
-          try {
-            const content = await fs.readFile(proposalPath, 'utf-8');
-            const changeDir = path.join(changesPath, changeName);
-            const parser = new ChangeParser(content, changeDir);
-            const change = await parser.parseChangeWithDeltas(changeName);
-
-            // Resolve task progress through the shared tracked-tasks helper so
-            // this deprecated noun-form list cannot re-fork the resolution (#1202).
-            const taskStatus = await getTaskProgressForChange(changesPath, changeName, process.cwd());
-
-            return {
-              id: changeName,
-              title: this.extractTitle(content, changeName),
-              deltaCount: change.deltas.length,
-              taskStatus,
-            };
-          } catch (error) {
-            return {
-              id: changeName,
-              title: 'Unknown',
-              deltaCount: 0,
-              taskStatus: { total: 0, completed: 0 },
-            };
-          }
-        })
-      );
-      
-      const sorted = changeDetails.sort((a, b) => a.id.localeCompare(b.id));
-      console.log(JSON.stringify(sorted, null, 2));
-    } else {
-      if (changes.length === 0) {
-        console.log('No items found');
-        return;
-      }
-      const sorted = [...changes].sort();
-      if (!options?.long) {
-        // IDs only
-        sorted.forEach(id => console.log(id));
-        return;
-      }
-
-      // Long format: id: title and minimal counts
-      for (const changeName of sorted) {
-        const proposalPath = path.join(changesPath, changeName, 'proposal.md');
-        try {
-          const content = await fs.readFile(proposalPath, 'utf-8');
-          const title = this.extractTitle(content, changeName);
-          const { total, completed } = await getTaskProgressForChange(changesPath, changeName, process.cwd());
-          const taskStatusText = total > 0 ? ` [tasks ${completed}/${total}]` : '';
-          const changeDir = path.join(changesPath, changeName);
-          const parser = new ChangeParser(await fs.readFile(proposalPath, 'utf-8'), changeDir);
-          const change = await parser.parseChangeWithDeltas(changeName);
-          const deltaCountText = ` [deltas ${change.deltas.length}]`;
-          console.log(`${changeName}: ${title}${deltaCountText}${taskStatusText}`);
-        } catch {
-          console.log(`${changeName}: (unable to read)`);
-        }
-      }
-    }
-  }
-
-  async validate(changeName?: string, options?: { strict?: boolean; json?: boolean; noInteractive?: boolean }): Promise<void> {
-    const changesPath = path.join(process.cwd(), WORKSPACE_DIR_NAME, 'changes');
-    
-    if (!changeName) {
-      const canPrompt = isInteractive(options);
-      const changes = await getActiveChangeIds();
-      if (canPrompt && changes.length > 0) {
-        const { select } = await import('@inquirer/prompts');
-        const selected = await select({
-          message: 'Select a change to validate',
-          choices: changes.map(id => ({ name: id, value: id })),
-        });
-        changeName = selected;
-      } else {
-        if (changes.length === 0) {
-          console.error('No change specified. No active changes found.');
-        } else {
-          console.error(`No change specified. Available IDs: ${changes.join(', ')}`);
-        }
-        console.error('Hint: use "rasen change list" to view available changes.');
-        process.exitCode = 1;
-        return;
-      }
-    }
-    
-    const changeDir = path.join(changesPath, changeName);
-    
-    try {
-      await fs.access(changeDir);
-    } catch {
-      throw new Error(`Change "${changeName}" not found at ${changeDir}`);
-    }
-    
-    const validator = new Validator(options?.strict || false);
-    const report = await validator.validateChangeDeltaSpecs(changeDir);
-    
-    if (options?.json) {
-      console.log(JSON.stringify(report, null, 2));
-    } else {
-      if (report.valid) {
-        console.log(`Change "${changeName}" is valid`);
-      } else {
-        console.error(`Change "${changeName}" has issues`);
-        report.issues.forEach(issue => {
-          const label = issue.level === 'ERROR' ? 'ERROR' : 'WARNING';
-          const prefix = issue.level === 'ERROR' ? '✗' : '⚠';
-          console.error(`${prefix} [${label}] ${issue.path}: ${issue.message}`);
-        });
-        // Next steps footer to guide fixing issues
-        this.printNextSteps();
-        if (!options?.json) {
-          process.exitCode = 1;
-        }
-      }
-    }
-  }
-
   private async getActiveChanges(changesPath: string): Promise<string[]> {
     try {
       const entries = await fs.readdir(changesPath, { withFileTypes: true });
@@ -250,14 +112,5 @@ export class ChangeCommand {
   private extractTitle(content: string, changeName: string): string {
     const match = content.match(/^#\s+(?:Change:\s+)?(.+)$/im);
     return match ? match[1].trim() : changeName;
-  }
-
-  private printNextSteps(): void {
-    const bullets: string[] = [];
-    bullets.push('- Ensure change has deltas in specs/: use headers ## ADDED/MODIFIED/REMOVED/RENAMED Requirements');
-    bullets.push('- Each requirement MUST include at least one #### Scenario: block');
-    bullets.push('- Debug parsed deltas: rasen change show <id> --json --deltas-only');
-    console.error('Next steps:');
-    bullets.forEach(b => console.error(`  ${b}`));
   }
 }

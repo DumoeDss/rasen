@@ -6,7 +6,6 @@ import {
   withStoreFlag,
   type ResolvedOpenSpecRoot,
   type RootOutput,
-  isStoreSelectedRoot,
 } from '../core/root-selection.js';
 import { ChangeCommand } from './change.js';
 import { SpecCommand } from './spec.js';
@@ -167,12 +166,7 @@ export class ShowCommand {
         return;
       }
       console.error(`Ambiguous item '${itemName}' matches both a change and a spec.`);
-      // The noun-form commands are cwd-based and cannot reach a selected store.
-      if (isStoreSelectedRoot(root)) {
-        console.error('Pass --type change|spec.');
-      } else {
-        console.error('Pass --type change|spec, or use: rasen change show / rasen spec show');
-      }
+      console.error('Pass --type change|spec.');
       process.exitCode = 1;
       return;
     }
@@ -190,14 +184,8 @@ export class ShowCommand {
   private printNonInteractiveHint(root: ResolvedOpenSpecRoot): void {
     console.error('Nothing to show. Try one of:');
     console.error(`  ${withStoreFlag(root, 'rasen show <item>')}`);
-    if (isStoreSelectedRoot(root)) {
-      // The noun-form commands are cwd-based and cannot reach a selected store.
-      console.error(`  ${withStoreFlag(root, 'rasen show <item> --type change')}`);
-      console.error(`  ${withStoreFlag(root, 'rasen show <item> --type spec')}`);
-    } else {
-      console.error('  rasen change show');
-      console.error('  rasen spec show');
-    }
+    console.error(`  ${withStoreFlag(root, 'rasen show <item> --type change')}`);
+    console.error(`  ${withStoreFlag(root, 'rasen show <item> --type spec')}`);
     console.error('Or run in an interactive terminal.');
   }
 
