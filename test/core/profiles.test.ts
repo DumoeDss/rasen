@@ -9,7 +9,7 @@ import {
 describe('profiles', () => {
   describe('CORE_WORKFLOWS', () => {
     it('should contain the default core workflows', () => {
-      expect(CORE_WORKFLOWS).toEqual(['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command']);
+      expect(CORE_WORKFLOWS).toEqual(['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help']);
     });
 
     it('should be a subset of ALL_WORKFLOWS', () => {
@@ -20,14 +20,14 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 22 workflows (11 base + 5 Rasen fusion + review-cycle + handoff + 4 goal-loop)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(22);
+    it('should contain all 23 workflows (12 base + 5 Rasen fusion + review-cycle + handoff + 4 goal-loop)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(23);
     });
 
     it('should contain expected workflow IDs', () => {
       const expected = [
         'propose', 'explore', 'new', 'continue', 'apply',
-        'ff', 'sync', 'archive', 'bulk-archive', 'verify', 'onboard',
+        'ff', 'sync', 'archive', 'bulk-archive', 'verify', 'onboard', 'help',
         // Rasen fusion workflow commands
         'office-hours-command', 'verify-enhanced-command', 'ship-command',
         'retro-command', 'auto-command',

@@ -12,9 +12,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (22 workflow + 19 expert)', () => {
+    it('should return all skill templates (23 workflow + 19 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(41);
+      expect(templates).toHaveLength(42);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -108,9 +108,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandTemplates', () => {
-    it('should return all 19 command templates', () => {
+    it('should return all 20 command templates', () => {
       const templates = getCommandTemplates();
-      expect(templates).toHaveLength(19);
+      expect(templates).toHaveLength(20);
     });
 
     it('should include the review-cycle command with a clean (no -command suffix) id', () => {
@@ -171,9 +171,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandContents', () => {
-    it('should return all 19 command contents', () => {
+    it('should return all 20 command contents', () => {
       const contents = getCommandContents();
-      expect(contents).toHaveLength(19);
+      expect(contents).toHaveLength(20);
     });
 
     it('should have valid content structure', () => {
