@@ -41,6 +41,7 @@ export const COMMAND_IDS = [
   'bulk-archive',
   'verify',
   'onboard',
+  'help',
   'propose',
   // Rasen fusion workflow commands
   'office-hours-command',

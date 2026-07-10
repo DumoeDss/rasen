@@ -152,7 +152,7 @@ The init command SHALL generate skills based on the active profile, not a fixed 
 
 #### Scenario: Core profile skill generation
 - **WHEN** user runs init with profile `core`
-- **THEN** the system SHALL generate skills for workflows in CORE_WORKFLOWS constant: propose, explore, apply, archive
+- **THEN** the system SHALL generate skills for workflows in CORE_WORKFLOWS constant: propose, explore, apply, sync, archive, auto-command, help
 - **THEN** the system SHALL NOT generate skills for workflows outside the profile
 
 #### Scenario: Custom profile skill generation

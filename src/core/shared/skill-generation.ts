@@ -18,6 +18,8 @@ import {
   getBulkArchiveChangeSkillTemplate,
   getVerifyChangeSkillTemplate,
   getOnboardSkillTemplate,
+  getHelpSkillTemplate,
+  getOpsxHelpCommandTemplate,
   getOpsxProposeSkillTemplate,
   getOpsxExploreCommandTemplate,
   getOpsxNewCommandTemplate,
@@ -166,6 +168,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     { template: getBulkArchiveChangeSkillTemplate(), dirName: 'rasen-bulk-archive-change', workflowId: 'bulk-archive' },
     { template: getVerifyChangeSkillTemplate(), dirName: 'rasen-verify-change', workflowId: 'verify' },
     { template: getOnboardSkillTemplate(), dirName: 'rasen-onboard', workflowId: 'onboard' },
+    { template: getHelpSkillTemplate(), dirName: 'rasen-help', workflowId: 'help' },
     { template: getOpsxProposeSkillTemplate(), dirName: 'rasen-propose', workflowId: 'propose' },
     // Rasen fusion workflow commands
     { template: getOfficeHoursCommandSkillTemplate(), dirName: 'rasen-office-hours-command', workflowId: 'office-hours-command' },
@@ -230,6 +233,7 @@ export function getCommandTemplates(workflowFilter?: readonly string[]): Command
     { template: getOpsxBulkArchiveCommandTemplate(), id: 'bulk-archive' },
     { template: getOpsxVerifyCommandTemplate(), id: 'verify' },
     { template: getOpsxOnboardCommandTemplate(), id: 'onboard' },
+    { template: getOpsxHelpCommandTemplate(), id: 'help' },
     { template: getOpsxProposeCommandTemplate(), id: 'propose' },
     // Rasen fusion workflow commands
     { template: getOpsxOfficeHoursCommandTemplate(), id: 'office-hours-command' },

@@ -27,6 +27,7 @@ export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
   'bulk-archive': 'rasen-bulk-archive-change',
   'verify': 'rasen-verify-change',
   'onboard': 'rasen-onboard',
+  'help': 'rasen-help',
   'propose': 'rasen-propose',
   // Rasen fusion workflow commands
   'office-hours-command': 'rasen-office-hours-command',
