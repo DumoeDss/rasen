@@ -16,6 +16,7 @@ export interface AgentContextOptions {
   latest?: boolean;
   dir?: string;
   limit?: number;
+  runtime?: string;
   json?: boolean;
 }
 
@@ -32,6 +33,7 @@ export class AgentCommand {
       latest: options.latest,
       dir: options.dir,
       limit: options.limit,
+      runtime: options.runtime,
     });
 
     if (options.json) {

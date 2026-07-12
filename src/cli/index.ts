@@ -712,16 +712,18 @@ const agentCmd = program
 agentCmd
   .command('context')
   .description('Report context-window occupancy of a transcript from its recorded usage')
-  .option('--transcript <path>', 'Path to a Claude Code transcript jsonl')
+  .option('--transcript <path>', 'Path to a Claude Code transcript or Codex rollout jsonl')
   .option('--latest', 'Use the newest main-session transcript for the current directory')
   .option('--dir <dir>', 'Override the Claude projects directory used by --latest')
   .option('--limit <n>', 'Override the resolved context-window limit', (v) => parseInt(v, 10))
+  .option('--runtime <runtime>', 'Force detection to "claude" or "codex" instead of sniffing the file')
   .option('--json', 'Output as JSON')
   .action(async (options?: {
     transcript?: string;
     latest?: boolean;
     dir?: string;
     limit?: number;
+    runtime?: string;
     json?: boolean;
   }) => {
     try {

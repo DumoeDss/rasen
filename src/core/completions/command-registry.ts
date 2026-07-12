@@ -839,7 +839,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'transcript',
-            description: 'Path to a Claude Code transcript jsonl',
+            description: 'Path to a Claude Code transcript or Codex rollout jsonl',
             takesValue: true,
           },
           {
@@ -854,6 +854,11 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           {
             name: 'limit',
             description: 'Override the resolved context-window limit',
+            takesValue: true,
+          },
+          {
+            name: 'runtime',
+            description: 'Force detection to "claude" or "codex" instead of sniffing the file',
             takesValue: true,
           },
           COMMON_FLAGS.json,
