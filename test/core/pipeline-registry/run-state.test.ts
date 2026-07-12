@@ -11,6 +11,8 @@ import {
   normalizeWorker,
   stageWorkers,
   stagesWithStatus,
+  stagesLackingDurableHandle,
+  detectDuplicateKeys,
   latestStageHandoffs,
   sessionHandoffGeneration,
   runStatePath,
@@ -618,6 +620,137 @@ describe('pipeline run-state', () => {
       expect(s.loopProgress).toBeUndefined();
       expect(s.loopConfig).toBeUndefined();
       expect(s.completed).toEqual(['propose']);
+    });
+  });
+
+  // detectDuplicateKeys scans the RAW run-state text (it does not parse) for
+  // keys repeated at the same object level — invisible to JSON.parse, which
+  // silently collapses them to the last value. Advisory only (never throws,
+  // never changes the parsed value). Design D3.
+  describe('detectDuplicateKeys (raw-text duplicate-key scanner)', () => {
+    it('reports a duplicate key at the top (root) level', () => {
+      // Hand-written JSON: two `rounds` keys at the root object.
+      const content = '{\n  "pipeline": "bug-fix",\n  "rounds": 1,\n  "rounds": 2\n}';
+      expect(detectDuplicateKeys(content)).toContainEqual({ path: '$', key: 'rounds' });
+    });
+
+    it('reports a duplicate key nested under stages', () => {
+      const content =
+        '{\n  "pipeline": "bug-fix",\n  "stages": {\n    "propose": { "status": "done" },\n    "propose": { "status": "done" }\n  }\n}';
+      expect(detectDuplicateKeys(content)).toContainEqual({ path: '$.stages', key: 'propose' });
+    });
+
+    it('does NOT report the same key at two different object levels', () => {
+      // `a` appears at the root AND inside the nested object — not a duplicate.
+      const content = '{\n  "a": {\n    "a": 1\n  }\n}';
+      expect(detectDuplicateKeys(content)).toEqual([]);
+    });
+
+    it('returns [] for clean input', () => {
+      const content = JSON.stringify({
+        pipeline: 'bug-fix',
+        rounds: 1,
+        stages: { propose: { status: 'done' }, apply: { status: 'in_progress' } },
+      });
+      expect(detectDuplicateKeys(content)).toEqual([]);
+    });
+
+    it('ignores structural characters inside string literals', () => {
+      // The value string carries a colon, braces, and a comma; none of them are
+      // structural. `rounds` appears only inside the string — no duplicate.
+      const content =
+        '{\n  "note": "a: { \\"rounds\\": 9 } and a , comma",\n  "rounds": 1\n}';
+      expect(detectDuplicateKeys(content)).toEqual([]);
+    });
+  });
+
+  // stagesLackingDurableHandle surfaces worker records that carry no durable
+  // handle (agentId/transcript/threadId) so they are not silently dropped from
+  // the warm-seed set by stageWorkers. Advisory only — never mutates state.
+  describe('stagesLackingDurableHandle (worker-handle validation)', () => {
+    it('reports a name-only worker and lists name in keys', () => {
+      // `name` is a passthrough key (not in the schema) — the exact drift this
+      // warning exists to surface.
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: { apply: { status: 'in_progress', worker: { name: 'implementer' } } },
+        })
+      );
+      expect(stagesLackingDurableHandle(s)).toContainEqual({ stage: 'apply', keys: ['name'] });
+    });
+
+    it('reports a role-only structured worker with keys: []', () => {
+      const s: RunState = {
+        pipeline: 'small-feature',
+        stages: { apply: { status: 'in_progress', worker: { role: 'implementer' } } },
+      };
+      expect(stagesLackingDurableHandle(s)).toContainEqual({ stage: 'apply', keys: [] });
+    });
+
+    it('reports a bare-string worker (role label) with keys: []', () => {
+      const s: RunState = {
+        pipeline: 'small-feature',
+        stages: { propose: { status: 'done', worker: 'planner-1' } },
+      };
+      expect(stagesLackingDurableHandle(s)).toContainEqual({ stage: 'propose', keys: [] });
+    });
+
+    it('does NOT report workers carrying a durable handle', () => {
+      const s: RunState = {
+        pipeline: 'small-feature',
+        stages: {
+          apply: { status: 'done', worker: { role: 'implementer', agentId: 'imp-7' } },
+          verify: { status: 'done', worker: { role: 'reviewer', transcript: 'agent-r.jsonl' } },
+          reviewLoop: {
+            status: 'done',
+            worker: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' },
+          },
+        },
+      };
+      expect(stagesLackingDurableHandle(s)).toEqual([]);
+    });
+
+    it('does NOT report a stage with no worker recorded', () => {
+      const s: RunState = {
+        pipeline: 'small-feature',
+        stages: { apply: { status: 'in_progress' } },
+      };
+      expect(stagesLackingDurableHandle(s)).toEqual([]);
+    });
+  });
+
+  // Regression guard: the new validation is layered ON TOP of stageWorkers —
+  // stageWorkers' inclusion/drop behavior must not change. A name-only record is
+  // still omitted from stageWorkers (so it carries no warm-seed); the fix is
+  // that resume now WARNS about that drop instead of leaving it silently useful.
+  describe('stageWorkers regression guard (durable-handle inclusion unchanged)', () => {
+    it('still surfaces durable-handle workers and still omits name-only records', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            // name-only → omitted from stageWorkers, now warned about instead.
+            propose: { status: 'done', worker: { name: 'planner' } },
+            apply: {
+              status: 'done',
+              worker: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+            },
+            verify: {
+              status: 'done',
+              worker: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' },
+            },
+            ship: { status: 'pending', worker: 'shipper-1' }, // bare string → omitted
+          },
+        })
+      );
+      // Unchanged: only durable-handle workers are surfaced.
+      expect(stageWorkers(s)).toEqual({
+        apply: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+        verify: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' },
+      });
+      // The omitted name-only propose worker is exactly what resume now warns on.
+      expect(stagesLackingDurableHandle(s)).toContainEqual({ stage: 'propose', keys: ['name'] });
     });
   });
 });

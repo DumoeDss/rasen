@@ -81,6 +81,8 @@ export {
   normalizeWorker,
   stageWorkers,
   stagesWithStatus,
+  stagesLackingDurableHandle,
+  detectDuplicateKeys,
   latestStageHandoffs,
   sessionHandoffGeneration,
   type RunState,
