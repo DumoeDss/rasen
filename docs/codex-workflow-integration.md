@@ -1,5 +1,7 @@
 # Feasibility Plan for Integrating Codex into the OPSX Workflow
 
+> **Superseded (2026-07-13).** This document is the pre-research app-server design (2026-06-08) and does not describe the shipped integration. rasen dispatches Codex workers as non-interactive `codex exec` processes (the exec bridge), not through an app-server thread, a Codex Claude Code plugin, or `/codex:rescue`. The body below is preserved as a historical record — it holds protocol notes that may be relevant to a future app-server-backed (tier-3) integration. For the actual, live-verified mechanism, see `docs/codex-parity/README.md` (research dossier), `docs/zh/codex-parity-solutions.md` (Chinese summary), and the shipped `src/core/codex/` module; the orchestration playbook's Codex sections (`src/core/templates/workflows/_orchestration.ts`) are the authoritative operational guidance.
+
 > Date: 2026-06-08  
 > Background: The current main path of the OPSX workflow is built on Claude Code subagents + `SendMessage`. This document analyzes how to introduce Codex into stages such as `propose` and `review` / `review-loop`, and how to support launch, parameter passing, result reception, same-stage session reuse, and cross-restart recovery.
 

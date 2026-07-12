@@ -1,5 +1,7 @@
 # Codex 接入 OPSX Workflow 的可行方案
 
+> **已被取代 (2026-07-13)。** 本文是研究前的 app-server 方案设计（2026-06-08），不反映已发布的实现。rasen 实际以非交互式 `codex exec` 进程（exec 桥）派发 Codex worker，而非 app-server 线程、Codex Claude Code 插件或 `/codex:rescue`。正文保留作为历史记录——其中的协议笔记未来可能对 app-server 方案（tier-3）有参考价值。真实、已实机验证的机制见 `docs/codex-parity/README.md`（英文调研档案）、`docs/zh/codex-parity-solutions.md`（中文综合稿）与已发布的 `src/core/codex/` 模块；编排 playbook 中的 Codex 段落（`src/core/templates/workflows/_orchestration.ts`）是权威的操作指引。
+
 > 日期：2026-06-08  
 > 背景：当前 OPSX workflow 的主路径基于 Claude Code subagent + `SendMessage`。本文分析如何在 `propose`、`review` / `review-loop` 等阶段引入 Codex，并支持启动、传参、结果接收、同阶段会话复用与跨重启恢复。
 
