@@ -1,7 +1,8 @@
 # autopilot-selection-policy Specification
 
 ## Purpose
-TBD - created by archiving change autonomy-ladder-classify. Update Purpose after archive.
+Governs how `/rasen:auto` selects a pipeline when the user names none: an opt-in `autopilot.selection` policy (`--auto-select` flag or config) that lets the LEAD adopt the `rasen pipeline classify` suggestion as its decision instead of always defaulting to `small-feature`, with explicit selection always taking precedence and the built-in default (`manual`) preserving pre-existing behavior.
+
 ## Requirements
 ### Requirement: Opt-in automatic pipeline selection with defined precedence
 

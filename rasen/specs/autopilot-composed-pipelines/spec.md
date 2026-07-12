@@ -1,7 +1,8 @@
 # autopilot-composed-pipelines Specification
 
 ## Purpose
-TBD - created by archiving change autonomy-ladder-compose. Update Purpose after archive.
+Governs the `compose` selection policy for `/rasen:auto` (`--auto-compose` flag or config): classify-first pipeline selection where, only when classification reports a `default` basis and no registered pipeline fits, the LEAD may assemble a pipeline from the known stage library — validated, `origin: composed`-marked, and registered as an ordinary project pipeline while guaranteeing the machine-enforced quality floor.
+
 ## Requirements
 ### Requirement: Compose policy is classify-first and fires only when no registered pipeline fits
 
