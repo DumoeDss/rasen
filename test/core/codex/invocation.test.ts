@@ -185,6 +185,143 @@ describe('buildCodexExecInvocation', () => {
   });
 });
 
+describe('buildCodexExecInvocation — resume (lifecycle D1)', () => {
+  it('emits "exec resume <threadId>" ahead of the existing flags', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'What was the secret codeword?',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'read-only',
+      model: 'gpt-5.6-sol',
+      effort: 'low',
+      resume: { threadId: '019f5508-692d-7033-93ee-7421963506af' },
+    });
+    expect(invocation.args[0]).toBe('exec');
+    expect(invocation.args[1]).toBe('resume');
+    expect(invocation.args[2]).toBe('019f5508-692d-7033-93ee-7421963506af');
+    expect(invocation.args[3]).toBe('--json');
+  });
+
+  it('composes resume with --output-schema, -o, -m, effort clamp, and provider override', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Continue.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'workspace-write',
+      model: 'gpt-5.6-sol',
+      effort: 'ultra',
+      outputSchemaPath: '/tmp/schema.json',
+      providerOverride: { name: 'proxy', baseUrl: 'https://example.com/v1' },
+      resume: { threadId: 'thread-1' },
+    });
+    expect(invocation.args.slice(0, 3)).toEqual(['exec', 'resume', 'thread-1']);
+    expect(invocation.args).toEqual(
+      expect.arrayContaining([
+        '--output-schema',
+        '/tmp/schema.json',
+        '-o',
+        '/tmp/last.txt',
+        '-m',
+        'gpt-5.6-sol',
+        '-c',
+        'model_reasoning_effort="xhigh"',
+        '-c',
+        'model_providers.proxy.name="proxy"',
+        '-c',
+        'model_provider="proxy"',
+      ])
+    );
+    expect(invocation.warnings).toHaveLength(2); // sandbox-dropped (M1) + effort-clamp warnings
+    expect(invocation.warnings.some((w) => /ultra/i.test(w))).toBe(true);
+    expect(invocation.warnings.some((w) => /sandbox/i.test(w))).toBe(true);
+  });
+
+  it('omits -s/--sandbox entirely on resume — live-verified: codex exec resume rejects it ("unexpected argument \'-s\' found")', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Continue.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'workspace-write',
+      model: 'm',
+      effort: 'low',
+      resume: { threadId: 'thread-1' },
+    });
+    expect(invocation.args).not.toContain('-s');
+  });
+
+  it('still includes -s/--sandbox on a fresh (non-resume) dispatch (no regression)', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Continue.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'workspace-write',
+      model: 'm',
+      effort: 'low',
+    });
+    expect(invocation.args).toEqual(expect.arrayContaining(['-s', 'workspace-write']));
+  });
+
+  it('records a warning when sandbox is dropped under resume (M1: silent discard is auditable)', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Continue.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'workspace-write',
+      model: 'm',
+      effort: 'low',
+      resume: { threadId: 'thread-1' },
+    });
+    expect(invocation.warnings).toHaveLength(1);
+    expect(invocation.warnings[0]).toMatch(/sandbox/i);
+    expect(invocation.warnings[0]).toContain('workspace-write');
+  });
+
+  it('does not warn about sandbox on a fresh (non-resume) dispatch', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Do the task.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'workspace-write',
+      model: 'm',
+      effort: 'low',
+    });
+    expect(invocation.warnings).toEqual([]);
+  });
+
+  it('records both the sandbox-drop warning and the effort-clamp warning together when both apply', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Continue.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'read-only',
+      model: 'm',
+      effort: 'ultra',
+      resume: { threadId: 'thread-1' },
+    });
+    expect(invocation.warnings).toHaveLength(2);
+    expect(invocation.warnings.some((w) => /sandbox/i.test(w))).toBe(true);
+    expect(invocation.warnings.some((w) => /ultra/i.test(w))).toBe(true);
+  });
+
+  it('still terminates the prompt with the flat-hierarchy guard on resume', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Continue the task.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'read-only',
+      model: 'm',
+      effort: 'low',
+      resume: { threadId: 'thread-1' },
+    });
+    expect(invocation.prompt.endsWith(CODEX_FLAT_HIERARCHY_GUARD)).toBe(true);
+  });
+
+  it('leaves fresh-dispatch argv unchanged when resume is absent (no regression)', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Do the task.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'workspace-write',
+      model: 'gpt-5.6-sol',
+      effort: 'high',
+    });
+    expect(invocation.args[0]).toBe('exec');
+    expect(invocation.args[1]).toBe('--json');
+    expect(invocation.args).not.toContain('resume');
+  });
+});
+
 describe('formatShellInvocation', () => {
   const base = () =>
     buildCodexExecInvocation({

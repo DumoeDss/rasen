@@ -14,6 +14,7 @@ export {
   type CodexReasoningEffort,
   type ModelProviderOverride,
   type CodexTemplateOptions,
+  type CodexResumeOptions,
   type BuildCodexExecInvocationOptions,
   type CodexExecInvocation,
   type FormatShellInvocationOptions,
@@ -46,5 +47,21 @@ export {
   type RolloutOccupancy,
   type RolloutConversation,
   type RolloutConversationTurn,
+  type RolloutFinalAnswerRecord,
 } from './rollout.js';
 export { buildCodexWorkerRecord, type BuildCodexWorkerRecordOptions } from './identity.js';
+export {
+  detectThreadDeath,
+  detectDeathInRows,
+  CODEX_REVIVAL_NOTICE,
+  classifyTurnFailure,
+  backoffDelayMs,
+  claimThreadWriter,
+  isThreadWriterClaimed,
+  distillWarmSeed,
+  type ThreadDeathResult,
+  type TurnFailureKind,
+  type TurnFailureClassification,
+  type BackoffOptions,
+  type DistilledWarmSeed,
+} from './lifecycle.js';

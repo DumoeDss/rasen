@@ -16,7 +16,16 @@
  *    guard (E11);
  *  - a `model_providers` override is a config-driven injection point, never a
  *    hardcoded default (E01 documents it as a machine-specific auth quirk,
- *    not a design surface).
+ *    not a design surface);
+ *  - `resume` (lifecycle design D1) is an additive option on this SAME
+ *    builder, not a second one — `codex exec resume <threadId>` re-enters an
+ *    existing thread from any process/cwd with full prior context (E02),
+ *    composing with every other flag EXCEPT `-s`/`--sandbox`, which `codex
+ *    exec resume` does not accept at all (live-verified dev-machine smoke
+ *    test, lifecycle task 6.2 — sandbox mode is fixed at thread creation, not
+ *    a per-resume override; the builder omits `-s` on resume dispatches).
+ *    There is no `--last` form: "the most recent thread" is a race under
+ *    parallel dispatch, so resume always requires an explicit thread id.
  */
 import { CODEX_CLI_VERSION_PREMISE } from './codex-home.js';
 import { inlineCommandTemplate, type TemplateInliner } from './template-inline.js';
@@ -54,6 +63,16 @@ export interface CodexTemplateOptions {
   inliner?: TemplateInliner;
 }
 
+/**
+ * Resume an existing thread instead of starting a fresh one (lifecycle design
+ * D1). Explicit thread id only — there is no `--last` form, because "the most
+ * recent thread" is ambiguous under parallel dispatch; the LEAD always holds
+ * explicit thread ids in run-state.
+ */
+export interface CodexResumeOptions {
+  threadId: string;
+}
+
 export interface BuildCodexExecInvocationOptions {
   /** Task prompt for the leaf worker (appended after any inlined template). */
   prompt: string;
@@ -68,6 +87,13 @@ export interface BuildCodexExecInvocationOptions {
   providerOverride?: ModelProviderOverride;
   /** Optional `--output-schema <file>` path for a structured-return contract. */
   outputSchemaPath?: string;
+  /**
+   * When present, builds `codex exec resume <threadId> …` instead of a fresh
+   * dispatch — every other invariant (stdin, guard, effort clamp, schema/
+   * provider composition) is unchanged (lifecycle design D1). No second
+   * builder: this is the same function, additively extended.
+   */
+  resume?: CodexResumeOptions;
 }
 
 export interface CodexExecInvocation {
@@ -147,14 +173,37 @@ export function buildCodexExecInvocation(
     .filter((part): part is string => Boolean(part && part.length > 0))
     .join('\n\n');
 
-  const args: string[] = ['exec', '--json'];
+  const args: string[] = ['exec'];
+  if (options.resume) {
+    args.push('resume', options.resume.threadId);
+  }
+  args.push('--json');
 
   if (options.outputSchemaPath) {
     args.push('--output-schema', options.outputSchemaPath);
   }
 
   args.push('-o', options.outputLastMessagePath);
-  args.push('-s', options.sandbox);
+  // `codex exec resume` does not accept `-s`/`--sandbox` at all — live-verified
+  // (dev-machine smoke test, task 6.2): `codex exec resume --help` omits it,
+  // and a real invocation carrying `-s` fails fast with "unexpected argument
+  // '-s' found" before any dispatch happens. Sandbox mode is fixed at thread
+  // creation and is not a per-resume-call override; a fresh dispatch still
+  // gets `-s` (the original design/spec claim that resume composes with the
+  // same `-o`/`-s`/`-m` set as fresh dispatch was wrong and is corrected here
+  // and in the spec). `sandbox` stays a required option even under resume (a
+  // resume call still needs SOME value to satisfy the type, since callers
+  // build both forms through the same options object) but its value is
+  // discarded here — silently would leave a caller with no way to tell its
+  // sandbox request was ignored, so a warning is recorded on the same
+  // `warnings` channel the effort clamp already uses.
+  if (options.resume) {
+    warnings.push(
+      `Sandbox mode "${options.sandbox}" was requested but ignored: codex exec resume does not accept -s/--sandbox; the thread runs under its creation-time sandbox.`
+    );
+  } else {
+    args.push('-s', options.sandbox);
+  }
   args.push('-m', options.model);
   args.push('-c', `model_reasoning_effort=${tomlQuote(effort)}`);
 

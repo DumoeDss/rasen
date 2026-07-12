@@ -55,11 +55,16 @@ function safeReadDir(dir: string): fs.Dirent[] {
   }
 }
 
+function newestMatch(matches: Array<{ path: string; mtimeMs: number }>): string | undefined {
+  if (matches.length === 0) return undefined;
+  matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return matches[0].path;
+}
+
 /**
  * Bounded newest-first scan of the fixed-depth `sessions/<Y>/<M>/<D>/` tree
  * for a file whose name contains `threadId`. Bounded by the tree's fixed
- * three-level structure — no unbounded recursion. Archived-sessions fallback
- * is out of scope for this module (lifecycle-sibling territory per design D8).
+ * three-level structure — no unbounded recursion.
  */
 function scanForRollout(sessionsDir: string, threadId: string): string | undefined {
   const matches: Array<{ path: string; mtimeMs: number }> = [];
@@ -86,16 +91,40 @@ function scanForRollout(sessionsDir: string, threadId: string): string | undefin
       }
     }
   }
-  if (matches.length === 0) return undefined;
-  matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return matches[0].path;
+  return newestMatch(matches);
+}
+
+/**
+ * Flat-directory newest-first scan of `<codexHome>/archived_sessions/` for a
+ * file whose name contains `threadId` — live-verified layout: unlike the
+ * dated `sessions/<Y>/<M>/<D>/` tree, archived rollouts sit directly in one
+ * flat directory (`docs/codex-parity/solutions/06`; confirmed on this
+ * machine: `~/.codex/archived_sessions/rollout-<ts>-<id>.jsonl`).
+ */
+function scanArchivedSessions(codexHome: string, threadId: string): string | undefined {
+  const archivedDir = path.join(codexHome, 'archived_sessions');
+  const matches: Array<{ path: string; mtimeMs: number }> = [];
+  for (const fileEntry of safeReadDir(archivedDir)) {
+    if (!fileEntry.isFile()) continue;
+    if (!fileEntry.name.endsWith('.jsonl')) continue;
+    if (!fileEntry.name.includes(threadId)) continue;
+    const full = path.join(archivedDir, fileEntry.name);
+    try {
+      matches.push({ path: full, mtimeMs: fs.statSync(full).mtimeMs });
+    } catch {
+      // File disappeared between readdir and stat; skip.
+    }
+  }
+  return newestMatch(matches);
 }
 
 /**
  * Locate a thread's rollout JSONL. Tries the deterministic dated path when a
- * creation timestamp is known, then falls back to a bounded newest-first scan
- * of the sessions tree, then reports absence explicitly (never invents a
- * path). All paths are built with {@link path.join}.
+ * creation timestamp is known, then a bounded newest-first scan of the active
+ * sessions tree, then a flat-directory scan of `archived_sessions/` (a
+ * rollout moved there by `codex archive`/`codex delete` per
+ * `docs/codex-parity/solutions/06`), then reports absence explicitly (never
+ * invents a path). All paths are built with {@link path.join}.
  */
 export function findRolloutPath(threadId: string, options: FindRolloutPathOptions = {}): string | undefined {
   const codexHome = options.codexHome ?? resolveCodexHome();
@@ -106,7 +135,10 @@ export function findRolloutPath(threadId: string, options: FindRolloutPathOption
     if (fs.existsSync(deterministic)) return deterministic;
   }
 
-  return scanForRollout(sessionsDir, threadId);
+  const active = scanForRollout(sessionsDir, threadId);
+  if (active) return active;
+
+  return scanArchivedSessions(codexHome, threadId);
 }
 
 function readJsonlLines(rolloutPath: string): Record<string, unknown>[] {
@@ -169,11 +201,28 @@ export interface RolloutConversationTurn {
   text: string;
 }
 
+/**
+ * A single final-answer record with source/phase metadata, alongside the
+ * plain-string `finalAnswers` array (design D6 — additive, existing field
+ * unchanged). `phase` is read from the live-verified `agent_message` payload
+ * field (`"commentary" | "final_answer"`, observed emitted once per
+ * intermediate update AND once for the terminal answer); `task_complete`
+ * records carry no phase — codex-runtime-lifecycle's `distillWarmSeed` uses
+ * that absence as its "keep, missing metadata degrades to keep" signal.
+ */
+export interface RolloutFinalAnswerRecord {
+  text: string;
+  source: 'agent_message' | 'task_complete';
+  phase?: string;
+}
+
 export interface RolloutConversation {
   /** Ordered user/assistant turns; developer-role scaffolding is omitted. */
   turns: RolloutConversationTurn[];
   /** `task_complete`/`agent_message` payload text, in file order. */
   finalAnswers: string[];
+  /** Same records as `finalAnswers`, with source/phase metadata (design D6). */
+  finalAnswerRecords: RolloutFinalAnswerRecord[];
   /** `turn_id`s from `task_started`/`task_complete` `event_msg` payloads, in file order. */
   turnIds: string[];
 }
@@ -216,6 +265,7 @@ export function readRolloutConversation(rolloutPath: string): RolloutConversatio
   const rows = readJsonlLines(rolloutPath);
   const turns: RolloutConversationTurn[] = [];
   const finalAnswers: string[] = [];
+  const finalAnswerRecords: RolloutFinalAnswerRecord[] = [];
   const turnIds: string[] = [];
 
   for (const row of rows) {
@@ -234,11 +284,23 @@ export function readRolloutConversation(rolloutPath: string): RolloutConversatio
         // task_complete carries the final answer as `last_agent_message`
         // (live-verified); it may be null when the turn ended without one.
         const text = payload.last_agent_message;
-        if (typeof text === 'string') finalAnswers.push(text);
+        if (typeof text === 'string') {
+          finalAnswers.push(text);
+          finalAnswerRecords.push({ text, source: 'task_complete' });
+        }
       } else if (payload.type === 'agent_message') {
-        // agent_message carries its text as `message` (live-verified).
+        // agent_message carries its text as `message` and a `phase` field
+        // (`"commentary" | "final_answer"`, live-verified).
         const text = payload.message;
-        if (typeof text === 'string') finalAnswers.push(text);
+        if (typeof text === 'string') {
+          finalAnswers.push(text);
+          const phase = payload.phase;
+          finalAnswerRecords.push({
+            text,
+            source: 'agent_message',
+            ...(typeof phase === 'string' ? { phase } : {}),
+          });
+        }
       }
       if (payload.type === 'task_started' || payload.type === 'task_complete') {
         const turnId = payload.turn_id;
@@ -247,5 +309,5 @@ export function readRolloutConversation(rolloutPath: string): RolloutConversatio
     }
   }
 
-  return { turns, finalAnswers, turnIds };
+  return { turns, finalAnswers, finalAnswerRecords, turnIds };
 }

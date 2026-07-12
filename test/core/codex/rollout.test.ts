@@ -84,6 +84,26 @@ describe('findRolloutPath', () => {
   it('reports absence when the sessions directory does not exist at all', () => {
     expect(findRolloutPath('no-such-thread', { codexHome })).toBeUndefined();
   });
+
+  it('falls back to the archived_sessions/ flat directory when the active sessions tree has no match', () => {
+    const threadId = '019c571a-5af1-7871-b861-434d6b995a5e';
+    fs.mkdirSync(path.join(codexHome, 'sessions'), { recursive: true }); // active tree exists but empty
+    const archivedFull = path.join(codexHome, 'archived_sessions', `rollout-2026-02-13T21-04-30-${threadId}.jsonl`);
+    fs.mkdirSync(path.dirname(archivedFull), { recursive: true });
+    fs.writeFileSync(archivedFull, '{"type":"session_meta"}\n', 'utf-8');
+    const found = findRolloutPath(threadId, { codexHome });
+    expect(found).toBe(archivedFull);
+  });
+
+  it('still reports absence when neither the active tree nor archived_sessions has a match', () => {
+    fs.mkdirSync(path.join(codexHome, 'sessions'), { recursive: true });
+    fs.mkdirSync(path.join(codexHome, 'archived_sessions'), { recursive: true });
+    expect(findRolloutPath('no-such-thread', { codexHome })).toBeUndefined();
+  });
+
+  it('reports absence when archived_sessions does not exist at all either', () => {
+    expect(findRolloutPath('no-such-thread', { codexHome })).toBeUndefined();
+  });
 });
 
 describe('readRolloutOccupancy', () => {
@@ -194,14 +214,38 @@ describe('readRolloutConversation', () => {
     ]);
     const conversation = readRolloutConversation(rolloutPath);
     expect(conversation.finalAnswers).toEqual(['PANTHER-7', 'PONG']);
+    expect(conversation.finalAnswerRecords).toEqual([
+      { text: 'PANTHER-7', source: 'task_complete' },
+      { text: 'PONG', source: 'agent_message', phase: 'final_answer' },
+    ]);
   });
 
-  it('omits a task_complete final answer when last_agent_message is null', () => {
+  it('omits a task_complete final answer when last_agent_message is null (finalAnswers and finalAnswerRecords both)', () => {
     const rolloutPath = writeRollout('2026/07/12/rollout-null-final.jsonl', [
       JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 't1', last_agent_message: null } }),
     ]);
     const conversation = readRolloutConversation(rolloutPath);
     expect(conversation.finalAnswers).toEqual([]);
+    expect(conversation.finalAnswerRecords).toEqual([]);
+  });
+
+  it('finalAnswerRecords carries a commentary-phase agent_message record too (filtering is distillWarmSeed policy, not extraction policy)', () => {
+    const rolloutPath = writeRollout('2026/07/12/rollout-commentary.jsonl', [
+      JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'working on it', phase: 'commentary' } }),
+    ]);
+    const conversation = readRolloutConversation(rolloutPath);
+    expect(conversation.finalAnswerRecords).toEqual([
+      { text: 'working on it', source: 'agent_message', phase: 'commentary' },
+    ]);
+  });
+
+  it('finalAnswerRecords omits phase when the agent_message payload does not carry one', () => {
+    const rolloutPath = writeRollout('2026/07/12/rollout-nophase.jsonl', [
+      JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'no phase field' } }),
+    ]);
+    const conversation = readRolloutConversation(rolloutPath);
+    expect(conversation.finalAnswerRecords).toEqual([{ text: 'no phase field', source: 'agent_message' }]);
+    expect('phase' in conversation.finalAnswerRecords[0]).toBe(false);
   });
 
   it('collects turn_ids from task_started/task_complete payloads', () => {
@@ -218,6 +262,6 @@ describe('readRolloutConversation', () => {
       JSON.stringify({ type: 'session_meta' }),
     ]);
     const conversation = readRolloutConversation(rolloutPath);
-    expect(conversation).toEqual({ turns: [], finalAnswers: [], turnIds: [] });
+    expect(conversation).toEqual({ turns: [], finalAnswers: [], finalAnswerRecords: [], turnIds: [] });
   });
 });
