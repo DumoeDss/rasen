@@ -19,3 +19,4 @@ export * from './references.js';
 export * from './store/index.js';
 export * from './planning-home.js';
 export * from './workspace-root.js';
+export * from './codex/index.js';
