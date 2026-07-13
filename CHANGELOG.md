@@ -1,5 +1,20 @@
 # rasen
 
+## 0.1.3
+
+### Added
+
+- **Codex runtime support** — rasen's multi-agent orchestration can now drive Codex CLI workers (validated against codex-cli 0.144.1), built from a live-tested research dossier (`docs/codex-parity/`, with a Chinese synthesis at `docs/zh/codex-parity-solutions.md`):
+  - **`src/core/codex/` exec bridge**: a `codex exec` invocation builder (stdin handling, `--json`/`-o`/`--output-schema`, sandbox/model flags, `ultra`→`xhigh` reasoning-effort clamp with warnings, an always-appended flat-hierarchy guard, config-driven `model_providers` override injection), pluggable client-side template inlining (Codex `prompts/*.md` is not expanded on either invocation surface — live-verified), structured DONE/HANDOFF and evaluate-gate contract schemas, and thread-id capture plus rollout JSONL locate/parse utilities.
+  - **Worker lifecycle**: `codex exec resume` support (sandbox is fixed at thread creation — `resume` rejects `-s`, so the builder warns instead), death detection over the real rollout turn vocabulary (`task_started`/`task_complete`/`turn_aborted`), 429-retryable-with-backoff vs 404-fatal failure classification with an explicit `unknown` class, in-process single-writer thread claims, and a cross-session warm-seed distiller.
+  - **`rasen agent context` reads Codex rollouts**: automatic transcript-kind detection (`--runtime` override > `rollout-*.jsonl` basename > first-line sniff > Claude default), occupancy from the last `token_count` event with the inline `model_context_window` (model id from `turn_context`, which is where it actually lives), zero-turn rollouts reporting 0% as success. All existing threshold consumers work unchanged.
+  - **Orchestration playbook rewritten to match**: the generated skills' Codex sections now teach the verified exec-bridge command shapes; the earlier unverified app-server/plugin wording is removed, and `docs/codex-workflow-integration.md` (EN/ZH) is marked superseded with pointers to the dossier.
+
+### Fixed
+
+- **Orchestration**: the LEAD now records durable worker handles (`agentId` + `transcript`) from the spawn result instead of a fabricated `name`, and the playbook's in-session revival paths are agentId-first with transcript warm-seed fallback — previously a name-only worker record forced a cold reconstruction on resume.
+- **Nix**: `flake.nix` `pnpmDeps.hash` backfilled from the first real CI run, so the Nix Flake Validation job validates against the true dependency hash.
+
 ## 0.1.2
 
 ### BREAKING: retire `rasen change` / `rasen spec` noun command groups
