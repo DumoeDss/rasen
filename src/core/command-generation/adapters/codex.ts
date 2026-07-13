@@ -8,18 +8,9 @@ import { COMMAND_PREFIX } from '../../config.js';
  * override the default ~/.codex location.
  */
 
-import os from 'os';
 import path from 'path';
+import { resolveCodexHome as getCodexHome } from '../../codex/codex-home.js';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
-
-/**
- * Returns the Codex home directory.
- * Respects the CODEX_HOME env var, defaulting to ~/.codex.
- */
-function getCodexHome(): string {
-  const envHome = process.env.CODEX_HOME?.trim();
-  return path.resolve(envHome ? envHome : path.join(os.homedir(), '.codex'));
-}
 
 /**
  * Codex adapter for command generation.

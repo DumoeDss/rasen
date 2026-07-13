@@ -16,8 +16,9 @@ export type StageRole = z.infer<typeof StageRoleSchema>;
  * The agent runtime used to execute a pipeline role or stage.
  *
  * `claude` is the existing Claude Code subagent path. `codex` means the LEAD
- * should dispatch the work through a Codex app-server thread and record the
- * resulting threadId in run-state for direct resume.
+ * should dispatch the work as a non-interactive `codex exec` process (the
+ * `src/core/codex` exec bridge) and record the resulting threadId in
+ * run-state for direct resume.
  */
 export const AgentRuntimeSchema = z.enum(['claude', 'codex']);
 export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
