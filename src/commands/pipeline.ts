@@ -27,6 +27,8 @@ import {
   completedStages,
   stageWorkers,
   stagesWithStatus,
+  stagesLackingDurableHandle,
+  detectDuplicateKeys,
   latestStageHandoffs,
   sessionHandoffGeneration,
   normalizeWorker,
@@ -422,7 +424,11 @@ export class PipelineCommand {
     const remaining = buildOrder.filter((id) => !completedSet.has(id));
     // Worker pointers recorded per stage. After a restart these agentIds are
     // dead SendMessage handles, but their `transcript` paths let a resume
-    // WARM-SEED a fresh same-role worker from its predecessor's context.
+    // WARM-SEED a fresh same-role worker from its predecessor's context. Even
+    // WITHIN a session a completed worker is not reliably name-addressable, so
+    // re-engagement is agentId-first (a live handle only in the spawning
+    // session) with a transcript warm-seed fallback — a spawn `name` is a
+    // non-durable dispatch label, never a resume handle.
     const workers = stageWorkers(runState);
     // Enrich each worker whose recorded transcript is readable with a
     // best-effort context estimate. A probe MUST NOT fail resume: any read
@@ -446,6 +452,15 @@ export class PipelineCommand {
     const inProgressStages = stagesWithStatus(runState, 'in_progress');
     const escalatedStages = stagesWithStatus(runState, 'escalated');
     const openFindings = runState.openFindings ?? [];
+
+    // Run-state integrity warnings (advisory, non-fatal — resume stays exit 0).
+    // Computed before the result object so the --json and human surfaces see the
+    // same set, and emitted ONLY when non-empty so clean runs gain no new keys.
+    const workerHandleWarnings = stagesLackingDurableHandle(runState);
+    let duplicateKeyWarnings: { path: string; key: string }[] = [];
+    if (runStateLocation && fs.existsSync(runStateLocation.path)) {
+      duplicateKeyWarnings = detectDuplicateKeys(fs.readFileSync(runStateLocation.path, 'utf-8'));
+    }
 
     const result = {
       change: changeName,
@@ -474,6 +489,10 @@ export class PipelineCommand {
       ...(Object.keys(handoffs).length > 0 ? { handoffs } : {}),
       // Legacy skill-ID hints only when a stale pipeline was resolved.
       ...(legacySkillHints.length > 0 ? { legacySkillHints } : {}),
+      // Worker-handle + duplicate-key warnings only when present so existing
+      // callers see no new keys on clean runs.
+      ...(workerHandleWarnings.length > 0 ? { workerHandleWarnings } : {}),
+      ...(duplicateKeyWarnings.length > 0 ? { duplicateKeyWarnings } : {}),
     };
 
     if (options.json) {
@@ -504,6 +523,17 @@ export class PipelineCommand {
       for (const hint of legacySkillHints) {
         console.log(`  stage ${hint.stage}: ${hint.from} -> ${hint.to}`);
       }
+    }
+    for (const w of workerHandleWarnings) {
+      const recorded = w.keys.length > 0 ? w.keys.join(', ') : 'role-only / bare label';
+      console.log(
+        `Worker handle warning: stage '${w.stage}' worker has no durable handle (recorded: ${recorded}); record agentId/transcript on dispatch.`
+      );
+    }
+    for (const d of duplicateKeyWarnings) {
+      console.log(
+        `Duplicate run-state key: '${d.key}' repeated at ${d.path} (JSON.parse keeps the last value).`
+      );
     }
     if (warmSeedable.length > 0) {
       console.log(`Resume handles available (worker sessions/transcripts): ${warmSeedable.join(', ')}`);

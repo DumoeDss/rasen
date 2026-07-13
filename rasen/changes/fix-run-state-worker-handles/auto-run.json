@@ -1,0 +1,52 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "gatePolicy": { "effective": "off", "source": "flag" },
+  "stages": {
+    "propose": {
+      "status": "done",
+      "gateDecision": "auto-approved (flag)",
+      "worker": {
+        "role": "planner",
+        "agentId": "a47acf80134851c8f",
+        "transcript": "C:\\Users\\Sayo\\.claude\\projects\\E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code--claude-worktrees-fix-worker-resume-handles\\a7c2e5e0-0b0a-4db4-8f4f-ef6a4d456b5b\\subagents\\agent-a47acf80134851c8f.jsonl"
+      }
+    },
+    "apply": {
+      "status": "done",
+      "gateDecision": "auto-approved (flag)",
+      "worker": {
+        "role": "implementer",
+        "agentId": "ade494995fbba0027",
+        "transcript": "C:\\Users\\Sayo\\.claude\\projects\\E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code--claude-worktrees-fix-worker-resume-handles\\a7c2e5e0-0b0a-4db4-8f4f-ef6a4d456b5b\\subagents\\agent-ade494995fbba0027.jsonl"
+      }
+    },
+    "verify": {
+      "status": "done",
+      "verdict": "clean",
+      "worker": {
+        "role": "reviewer",
+        "agentId": "a143905e07e6537c7",
+        "transcript": "C:\\Users\\Sayo\\.claude\\projects\\E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code--claude-worktrees-fix-worker-resume-handles\\a7c2e5e0-0b0a-4db4-8f4f-ef6a4d456b5b\\subagents\\agent-a143905e07e6537c7.jsonl"
+      },
+      "report": "review-report.md",
+      "findings": { "blocker": 0, "major": 0, "minor": 1, "trivial": 1 }
+    },
+    "review-loop": {
+      "status": "done",
+      "round": 1,
+      "maxRounds": 3,
+      "outcome": "clean",
+      "fixer": { "role": "fixer", "agentId": "a47b6c97593665433" },
+      "reReviewer": { "role": "reviewer", "note": "fresh non-author; m1 RESOLVED, 0 new findings" }
+    },
+    "ship": { "status": "in_progress" },
+    "archive": { "status": "pending" }
+  },
+  "rounds": 1,
+  "openFindings": [],
+  "acceptedKnown": [
+    { "severity": "Trivial", "title": "detectDuplicateKeys cannot catch unicode-canonical duplicate keys (raw-text scan; design D3 consequence)" }
+  ]
+}

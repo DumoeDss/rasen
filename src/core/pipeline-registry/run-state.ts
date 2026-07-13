@@ -38,6 +38,14 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
  * prior worker's full context). Recording `agentId` still helps across a
  * restart because it locates that transcript file. Resume itself only needs
  * `status`; `worker` exists for warm-seed + isolation auditing.
+ *
+ * A spawn `name` (the label passed to the Agent/Task tool when the worker was
+ * dispatched) is NOT a durable handle — it is not even a field on this schema —
+ * and MUST NOT be recorded in place of `agentId`/`transcript`. A completed
+ * worker is not reliably name-addressable even within the session that spawned
+ * it, so a name-only record carries nothing a resume can warm-seed from and is
+ * silently omitted by `stageWorkers`. Capture `agentId` + `transcript` from the
+ * spawn RESULT; `name` is a non-durable dispatch label, never a resume handle.
  */
 export const RunStateWorkerSchema = z.object({
   runtime: AgentRuntimeSchema.optional(),
@@ -352,4 +360,137 @@ export function stagesWithStatus(state: RunState, status: StageStatus): string[]
     .filter(([, s]) => s.status === status)
     .map(([id]) => id)
     .sort();
+}
+
+/**
+ * Non-fatal duplicate-key detector over RAW run-state JSON text. `JSON.parse`
+ * (and Zod on its output) silently collapses a repeated key to its last value,
+ * so a hand-edited `auto-run.json` that carries e.g. two `rounds` keys is
+ * otherwise invisible. This scans the raw text WITHOUT parsing: it tracks
+ * object scope while ignoring every token inside a string literal, and reports
+ * each key that repeats at the SAME object level as `{ path, key }`, where
+ * `path` is a dotted JSONPath-style pointer to the enclosing object (`$` is the
+ * root). A key that appears at two different nesting levels is NOT a duplicate.
+ *
+ * Advisory only — it never throws, never changes which value parses, and leaves
+ * archived run-state readable. Returns `[]` for clean input.
+ */
+export function detectDuplicateKeys(content: string): { path: string; key: string }[] {
+  const duplicates: { path: string; key: string }[] = [];
+  const len = content.length;
+  let i = 0;
+
+  type Frame = { kind: 'object' | 'array'; seen: Set<string>; path: string; index: number };
+  const stack: Frame[] = [];
+  let pendingKey = '';
+  const top = (): Frame | undefined => stack[stack.length - 1];
+
+  // Returns the index of the closing quote for the string starting at `start`
+  // (which points at the opening quote), skipping over `\<char>` escapes so an
+  // escaped quote does not end the literal early.
+  const readString = (start: number): number => {
+    let j = start + 1;
+    while (j < len) {
+      const ch = content[j];
+      if (ch === '\\') {
+        j += 2;
+        continue;
+      }
+      if (ch === '"') return j;
+      j++;
+    }
+    return j;
+  };
+
+  const skipWs = (from: number): number => {
+    let j = from;
+    while (j < len && /\s/.test(content[j])) j++;
+    return j;
+  };
+
+  while (i < len) {
+    const ch = content[i];
+
+    if (ch === '"') {
+      const close = readString(i);
+      const value = content.slice(i + 1, close);
+      i = close + 1;
+      // A string is a KEY only when the next non-whitespace char is ':'.
+      const colonAt = skipWs(i);
+      if (content[colonAt] === ':') {
+        const frame = top();
+        if (frame && frame.kind === 'object') {
+          if (frame.seen.has(value)) {
+            duplicates.push({ path: frame.path, key: value });
+          } else {
+            frame.seen.add(value);
+          }
+        }
+        pendingKey = value;
+        i = colonAt + 1; // consume the ':'
+      }
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') {
+      const parent = top();
+      const path = !parent
+        ? '$'
+        : parent.kind === 'object'
+          ? `${parent.path}.${pendingKey}`
+          : `${parent.path}[${parent.index}]`;
+      stack.push({ kind: ch === '{' ? 'object' : 'array', seen: new Set(), path, index: 0 });
+      pendingKey = '';
+      i++;
+      continue;
+    }
+
+    if (ch === '}' || ch === ']') {
+      stack.pop();
+      i++;
+      continue;
+    }
+
+    if (ch === ',') {
+      const frame = top();
+      if (frame && frame.kind === 'array') frame.index++;
+      i++;
+      continue;
+    }
+
+    i++;
+  }
+
+  return duplicates;
+}
+
+/**
+ * Per-stage worker-handle validation (advisory). For each stage whose recorded
+ * `worker` lacks EVERY durable handle (`agentId`, `transcript`, `threadId`),
+ * returns the stage id plus the non-durable keys the record carries — so a
+ * name-only or role-only worker is SURFACED rather than silently dropped from
+ * the warm-seed set by `stageWorkers`. A bare-string worker carries no object
+ * keys (it is just a role label → `keys: []`); a structured record lists its
+ * keys minus the always-expected `role` label, so the warning surfaces drift
+ * keys (e.g. a fabricated `name`) rather than noise. Reuses `normalizeWorker`
+ * and does NOT mutate `stageWorkers`/its behavior. Stages with no worker, or a
+ * worker carrying a durable handle, are omitted.
+ */
+export function stagesLackingDurableHandle(
+  state: RunState
+): { stage: string; keys: string[] }[] {
+  const out: { stage: string; keys: string[] }[] = [];
+  if (!state.stages) return out;
+  for (const [id, stage] of Object.entries(state.stages)) {
+    const { worker } = stage;
+    if (worker === undefined) continue; // no worker record → nothing to warn on
+    const normalized = normalizeWorker(worker);
+    if (normalized === undefined) continue;
+    // A durable handle present → warm-seedable; no warning.
+    if (normalized.agentId || normalized.transcript || normalized.threadId) continue;
+    const keys =
+      typeof worker === 'string' ? [] : Object.keys(worker).filter((k) => k !== 'role');
+    out.push({ stage: id, keys });
+  }
+  return out;
 }

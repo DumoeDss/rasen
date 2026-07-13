@@ -2,10 +2,16 @@
  * Claude Code project settings helpers.
  *
  * Rasen's orchestrated `/rasen:auto` and `/rasen:review-cycle` reach their full
- * (Tier A) behavior — the LEAD resuming a worker via `SendMessage` for warm
- * re-review — only when Claude Code's experimental agent-teams flag is on.
- * During Claude Code setup we merge that flag into the project's
- * `.claude/settings.json` so the orchestration runs at Tier A out of the box.
+ * (Tier A) behavior — the LEAD re-engaging a worker via `SendMessage` by its
+ * `agentId` — only when Claude Code's experimental agent-teams flag is on.
+ * agent-teams enables agentId-based re-engagement IN GENERAL; it does NOT
+ * guarantee a COMPLETED worker is reliably re-addressable for warm re-review (a
+ * completed subagent may be unreachable even within the same session), so the
+ * orchestration records `agentId` + `transcript` on every dispatch and treats
+ * agentId-first re-engagement as "try it, fall back to the transcript
+ * warm-seed", never a guarantee. During Claude Code setup we merge that flag
+ * into the project's `.claude/settings.json` so the orchestration runs at Tier
+ * A out of the box.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
