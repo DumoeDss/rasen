@@ -799,6 +799,93 @@ stages:
       expect(json.workers.verify.contextEstimate).toBeUndefined();
     });
 
+    // worker-handle validation surfaced on resume (design D1): a name-only
+    // worker would be silently dropped from the warm-seed set; resume now warns.
+    it('warns on a name-only worker in json + text (exit 0)', async () => {
+      const changeDir = path.join(changesDir, 'name-only-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            apply: { status: 'done', worker: { name: 'implementer' } },
+          },
+        }),
+        'utf-8'
+      );
+
+      const jsonResult = await runCLI(['pipeline', 'resume', 'name-only-change', '--json'], { cwd: testDir });
+      expect(jsonResult.exitCode).toBe(0);
+      const json = JSON.parse(jsonResult.stdout.trim());
+      expect(json.workerHandleWarnings).toContainEqual({ stage: 'apply', keys: ['name'] });
+
+      const textResult = await runCLI(['pipeline', 'resume', 'name-only-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Worker handle warning');
+      expect(textResult.stdout).toContain("stage 'apply'");
+      expect(textResult.stdout).toContain('recorded: name');
+    });
+
+    it('emits no workerHandleWarnings for a durable-handle worker', async () => {
+      const changeDir = path.join(changesDir, 'durable-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'durable-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(Object.prototype.hasOwnProperty.call(json, 'workerHandleWarnings')).toBe(false);
+      // A clean run (durable handles, no duplicate keys) gains neither warning key.
+      expect(Object.prototype.hasOwnProperty.call(json, 'duplicateKeyWarnings')).toBe(false);
+      // The existing workers assertion still holds.
+      expect(json.workers).toEqual({
+        apply: { role: 'implementer', agentId: 'imp-7', transcript: 'agent-imp-7.jsonl' },
+      });
+    });
+
+    // duplicate-key detection in run-state (design D3): JSON.parse silently
+    // collapses duplicate keys; resume now surfaces them as a non-fatal warning.
+    it('warns on duplicate JSON keys in auto-run.json (last value wins, exit 0)', async () => {
+      const changeDir = path.join(changesDir, 'dup-keys-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      // Hand-written JSON with a duplicate `rounds` key at the root level.
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        '{\n  "pipeline": "bug-fix",\n  "rounds": 1,\n  "completed": ["propose"],\n  "rounds": 2\n}',
+        'utf-8'
+      );
+
+      const jsonResult = await runCLI(['pipeline', 'resume', 'dup-keys-change', '--json'], { cwd: testDir });
+      expect(jsonResult.exitCode).toBe(0);
+      const json = JSON.parse(jsonResult.stdout.trim());
+      expect(json.duplicateKeyWarnings).toContainEqual({ path: '$', key: 'rounds' });
+      // The file still parses (last value wins) and resume proceeds normally.
+      expect(json.hasRunState).toBe(true);
+      expect(json.pipeline).toBe('bug-fix');
+      expect(json.completed).toEqual(['propose']);
+
+      // Spec SHALL: the duplicate-key warning must also appear in the
+      // human-readable output, not only under --json.
+      const textResult = await runCLI(['pipeline', 'resume', 'dup-keys-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Duplicate run-state key');
+      expect(textResult.stdout).toContain("'rounds'");
+      expect(textResult.stdout).toContain('repeated at $');
+    });
+
     it('resumes a decomposed parent from portfolio-run.json (frontier from the DAG)', async () => {
       const changeDir = path.join(changesDir, 'big-feature');
       await fs.mkdir(changeDir, { recursive: true });

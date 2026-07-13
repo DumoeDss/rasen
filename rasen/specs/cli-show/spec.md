@@ -20,7 +20,7 @@ The CLI SHALL provide a top-level `show` command for displaying changes and spec
 - **GIVEN** stdin is not a TTY or `--no-interactive` is provided or environment variable `OPEN_SPEC_INTERACTIVE=0`
 - **WHEN** executing `rasen show` without arguments
 - **THEN** do not prompt
-- **AND** print a helpful hint with examples for `rasen show <item>` or `rasen change/spec show`
+- **AND** print a helpful hint with examples for `rasen show <item>` and `rasen show --type change|spec`
 - **AND** exit with code 1
 
 #### Scenario: Direct item display
@@ -34,7 +34,7 @@ The CLI SHALL provide a top-level `show` command for displaying changes and spec
 
 - **WHEN** executing `rasen show <item-name>`
 - **THEN** if `<item-name>` uniquely matches a change or a spec, show that item
-- **AND** if it matches both, print an ambiguity error and suggest `--type change|spec` or using `rasen change show`/`rasen spec show`
+- **AND** if it matches both, print an ambiguity error and suggest `--type change|spec`
 - **AND** if it matches neither, print not-found with nearest-match suggestions
 
 #### Scenario: Explicit type override

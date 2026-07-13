@@ -16,6 +16,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readRolloutOccupancy, CODEX_CLI_VERSION_PREMISE } from './codex/index.js';
 
 export interface AgentContextResult {
   model: string;
@@ -147,6 +148,146 @@ export function computeContextFromTranscript(
   };
 }
 
+export type TranscriptKind = 'claude' | 'codex';
+
+/** codex-cli's own rollout filename convention — the same one `findRolloutPath` builds paths from. */
+const CODEX_ROLLOUT_BASENAME = /^rollout-.*\.jsonl$/;
+
+function validateRuntime(runtime: string | undefined): TranscriptKind | undefined {
+  if (runtime === undefined) return undefined;
+  if (runtime === 'claude' || runtime === 'codex') return runtime;
+  throw new Error(`--runtime must be "claude" or "codex" (got "${runtime}").`);
+}
+
+/**
+ * First-non-empty-line sniff for a renamed/copied file whose basename doesn't
+ * match the `rollout-*.jsonl` convention. A real rollout's first row is
+ * always `session_meta` (live-verified against ~40 rollouts on this
+ * machine); a `payload` envelope with no Claude-style `message` field is
+ * accepted defensively for any other Codex row shape. Anything else,
+ * including an unreadable file, defaults to claude — the safe default,
+ * since the claude branch's own read produces an actionable error rather
+ * than silently misrouting. Pinned to {@link CODEX_CLI_VERSION_PREMISE}.
+ */
+function sniffTranscriptKind(transcriptPath: string): TranscriptKind {
+  let content: string;
+  try {
+    content = fs.readFileSync(transcriptPath, 'utf-8');
+  } catch {
+    return 'claude';
+  }
+  let firstLine: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      firstLine = trimmed;
+      break;
+    }
+  }
+  if (!firstLine) return 'claude';
+  let row: Record<string, unknown>;
+  try {
+    row = JSON.parse(firstLine) as Record<string, unknown>;
+  } catch {
+    return 'claude';
+  }
+  if (row.type === 'session_meta') return 'codex';
+  if ('payload' in row && row.message === undefined) return 'codex';
+  return 'claude';
+}
+
+/**
+ * Detect whether a path is a Codex rollout or a Claude Code transcript
+ * (design D1). Order: explicit override wins outright; then the filename
+ * convention (zero extra I/O, covers every rollout in situ); then a
+ * first-line content sniff for a renamed/copied file; default claude.
+ */
+export function detectTranscriptKind(
+  transcriptPath: string,
+  runtimeOverride?: string
+): TranscriptKind {
+  const override = validateRuntime(runtimeOverride);
+  if (override) return override;
+  if (CODEX_ROLLOUT_BASENAME.test(path.basename(transcriptPath))) return 'codex';
+  return sniffTranscriptKind(transcriptPath);
+}
+
+/**
+ * Best-effort model id for a rollout. The model id does NOT live in
+ * `session_meta` (its payload never carries a `model` field, live-verified
+ * against every rollout on this machine as of {@link CODEX_CLI_VERSION_PREMISE})
+ * — it lives in each `turn_context` row's `payload.model`. Last `turn_context`
+ * wins, matching the "latest state" convention `readRolloutOccupancy` already
+ * uses for `token_count`. Falls back to `'unknown'` (same fallback the Claude
+ * branch uses for a usage entry without a model) since nothing downstream
+ * keys on this field.
+ */
+function readRolloutModel(rolloutPath: string): string {
+  let content: string;
+  try {
+    content = fs.readFileSync(rolloutPath, 'utf-8');
+  } catch {
+    return 'unknown';
+  }
+  let model: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let row: { type?: string; payload?: Record<string, unknown> };
+    try {
+      row = JSON.parse(trimmed) as { type?: string; payload?: Record<string, unknown> };
+    } catch {
+      continue;
+    }
+    if (row.type === 'turn_context' && typeof row.payload?.model === 'string') {
+      model = row.payload.model;
+    }
+  }
+  return model ?? 'unknown';
+}
+
+/**
+ * Compute context occupancy from a Codex rollout via exec-core's
+ * `readRolloutOccupancy` (last `token_count` event). A rollout with no
+ * `token_count` event yet (`null`) is a normal "zero completed turns" state
+ * — a young or just-killed worker, exactly the moment resume tooling probes
+ * it — and reports SUCCESS with zero occupancy (design D3), asymmetric with
+ * the Claude branch's usage-free-transcript error (that case is malformed
+ * input, not a young rollout). `limit` prefers an explicit override, else
+ * the rollout's own inline `model_context_window` (exact, provider-sent — no
+ * model-map lookup on this branch), else `0` when neither is known (honest:
+ * no window was ever reported). Throws only when the file itself cannot be
+ * read, matching the Claude branch's own unreadable-file behavior.
+ */
+export function computeContextFromRollout(
+  rolloutPath: string,
+  options: { limit?: number } = {}
+): AgentContextResult {
+  let occupancy: ReturnType<typeof readRolloutOccupancy>;
+  try {
+    occupancy = readRolloutOccupancy(rolloutPath);
+  } catch {
+    throw new Error(
+      `Cannot read Codex rollout: ${rolloutPath}. Pass a readable rollout jsonl with --transcript.`
+    );
+  }
+  const model = readRolloutModel(rolloutPath);
+
+  if (!occupancy) {
+    const limit = options.limit ?? 0;
+    return { model, contextTokens: 0, limit, pct: 0, transcript: rolloutPath };
+  }
+
+  const limit = options.limit ?? occupancy.modelContextWindow;
+  return {
+    model,
+    contextTokens: occupancy.totalTokens,
+    limit,
+    pct: limit > 0 ? roundPct(occupancy.totalTokens / limit) : 0,
+    transcript: rolloutPath,
+  };
+}
+
 /**
  * The Claude Code transcript directory for a working directory. The slug is the
  * absolute cwd with every ':', path separator, and '.' replaced by '-' (e.g.
@@ -208,6 +349,8 @@ export interface ProbeOptions {
   cwd?: string;
   /** Home directory used to derive the projects dir (defaults to os.homedir()). */
   homeDir?: string;
+  /** Force detection to `'claude'` or `'codex'` instead of sniffing the file. */
+  runtime?: string;
 }
 
 /**
@@ -226,10 +369,13 @@ export function resolveTranscriptPath(options: ProbeOptions): string {
 }
 
 /**
- * Full probe: resolve the transcript then compute its context occupancy.
- * Throws an actionable error on any unreadable/usage-free/unspecified input.
+ * Full probe: resolve the transcript, detect its kind (Codex rollout vs
+ * Claude transcript — explicit `--runtime` wins over detection), then
+ * compute its context occupancy. Throws an actionable error on any
+ * unreadable/usage-free/unspecified input, or an invalid `--runtime` value.
  */
 export function probeAgentContext(options: ProbeOptions): AgentContextResult {
+  const runtime = validateRuntime(options.runtime);
   if (
     options.limit !== undefined &&
     (!Number.isInteger(options.limit) || options.limit <= 0)
@@ -237,20 +383,30 @@ export function probeAgentContext(options: ProbeOptions): AgentContextResult {
     throw new Error('--limit must be a positive integer (token count of the context window).');
   }
   const transcriptPath = resolveTranscriptPath(options);
-  return computeContextFromTranscript(transcriptPath, { limit: options.limit });
+  const kind = detectTranscriptKind(transcriptPath, runtime);
+  return kind === 'codex'
+    ? computeContextFromRollout(transcriptPath, { limit: options.limit })
+    : computeContextFromTranscript(transcriptPath, { limit: options.limit });
 }
 
 /**
- * Best-effort context estimate for an already-known transcript path. Returns
- * the three-field estimate, or `undefined` on any read error — for callers like
- * `pipeline resume` that must never fail because a probe could not be taken.
+ * Best-effort context estimate for an already-known transcript path. Routes
+ * through the same kind detection as {@link probeAgentContext} (no explicit
+ * override — callers like `pipeline resume` pass a bare path). Returns the
+ * three-field estimate, or `undefined` on any read error — including an
+ * unreadable Codex rollout — for callers that must never fail because a
+ * probe could not be taken.
  */
 export function tryContextEstimate(
   transcriptPath: string,
   limit?: number
 ): ContextEstimate | undefined {
   try {
-    const r = computeContextFromTranscript(transcriptPath, { limit });
+    const kind = detectTranscriptKind(transcriptPath);
+    const r =
+      kind === 'codex'
+        ? computeContextFromRollout(transcriptPath, { limit })
+        : computeContextFromTranscript(transcriptPath, { limit });
     return { contextTokens: r.contextTokens, limit: r.limit, pct: r.pct };
   } catch {
     return undefined;

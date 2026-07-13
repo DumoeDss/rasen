@@ -1,5 +1,54 @@
 # rasen
 
+## 0.1.3
+
+### Added
+
+- **Codex runtime support** — rasen's multi-agent orchestration can now drive Codex CLI workers (validated against codex-cli 0.144.1), built from a live-tested research dossier (`docs/codex-parity/`, with a Chinese synthesis at `docs/zh/codex-parity-solutions.md`):
+  - **`src/core/codex/` exec bridge**: a `codex exec` invocation builder (stdin handling, `--json`/`-o`/`--output-schema`, sandbox/model flags, `ultra`→`xhigh` reasoning-effort clamp with warnings, an always-appended flat-hierarchy guard, config-driven `model_providers` override injection), pluggable client-side template inlining (Codex `prompts/*.md` is not expanded on either invocation surface — live-verified), structured DONE/HANDOFF and evaluate-gate contract schemas, and thread-id capture plus rollout JSONL locate/parse utilities.
+  - **Worker lifecycle**: `codex exec resume` support (sandbox is fixed at thread creation — `resume` rejects `-s`, so the builder warns instead), death detection over the real rollout turn vocabulary (`task_started`/`task_complete`/`turn_aborted`), 429-retryable-with-backoff vs 404-fatal failure classification with an explicit `unknown` class, in-process single-writer thread claims, and a cross-session warm-seed distiller.
+  - **`rasen agent context` reads Codex rollouts**: automatic transcript-kind detection (`--runtime` override > `rollout-*.jsonl` basename > first-line sniff > Claude default), occupancy from the last `token_count` event with the inline `model_context_window` (model id from `turn_context`, which is where it actually lives), zero-turn rollouts reporting 0% as success. All existing threshold consumers work unchanged.
+  - **Orchestration playbook rewritten to match**: the generated skills' Codex sections now teach the verified exec-bridge command shapes; the earlier unverified app-server/plugin wording is removed, and `docs/codex-workflow-integration.md` (EN/ZH) is marked superseded with pointers to the dossier.
+
+### Fixed
+
+- **Orchestration**: the LEAD now records durable worker handles (`agentId` + `transcript`) from the spawn result instead of a fabricated `name`, and the playbook's in-session revival paths are agentId-first with transcript warm-seed fallback — previously a name-only worker record forced a cold reconstruction on resume.
+- **Nix**: `flake.nix` `pnpmDeps.hash` backfilled from the first real CI run, so the Nix Flake Validation job validates against the true dependency hash.
+
+## 0.1.2
+
+### BREAKING: retire `rasen change` / `rasen spec` noun command groups
+
+The noun-first command groups are removed. Use the verb-first surface instead:
+
+| Removed | Use instead |
+|---|---|
+| `rasen change list` | `rasen list --type change` |
+| `rasen change show` | `rasen show <id> --type change` |
+| `rasen change validate` | `rasen validate <id> --type change` |
+| `rasen spec list` | `rasen list --type spec` |
+| `rasen spec show` | `rasen show <id> --type spec` |
+| `rasen spec validate` | `rasen validate <id> --type spec` |
+
+`--long` (title + delta/requirement count per row), previously only available on the noun-form `list` subcommands, is now on `rasen list` itself.
+
+### Behavior change: telemetry first-run notice moves to stderr
+
+The first-run telemetry disclosure notice now prints to stderr instead of stdout, so it never mixes into a command's stdout (which must stay either valid `--json` or the command's own text output). Any external tooling that greps stdout for this notice must switch to reading stderr.
+
+### Fixed
+
+- **CI**: three root-caused test defects that failed only on Windows/macOS CI are fixed — a `doctor` fixture that hardcoded the Windows data-dir path instead of branching on platform, an `archive.timing` assertion that canonicalized a non-existent path (missing Windows 8.3 short-name expansion and macOS's `/var` → `/private/var` symlink) instead of canonicalizing the always-existing root first, and the telemetry-notice stdout pollution above.
+- **Packaging**: the npm package now ships the `skills/` sidecar files (expert-skill checklists and scripts); they were silently missing from 0.1.1 npm installs because `skills/` was absent from the package's `files` allowlist.
+
+### Added
+
+- **`/rasen:help`** — a layered guidance router command (with a `rasen-help` skill in the core profile) covering onboarding through pipeline extension.
+
+### Other
+
+- Maintainer attribution updated to Sayo (repo URLs unchanged).
+
 ## 0.1.1
 
 ### BREAKING: full namespace rebrand (openspec → rasen)
