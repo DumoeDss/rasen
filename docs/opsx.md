@@ -225,7 +225,7 @@ You see one command. The LEAD classifies the task and selects ONE backend pipeli
 | `evaluate` — `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | a fresh reviewer worker judges `{satisfied, gaps}` | ship → archive |
 | `research` — `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | a fresh reviewer worker | report (no ship) |
 
-The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen:goal` shares the same orchestration playbook as `/rasen:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-rasengoal).
+The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen:goal` shares the same orchestration playbook as `/rasen:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
 
 ## When to Update vs. Start Fresh
 

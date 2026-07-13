@@ -437,7 +437,7 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 
 ### `/rasen:goal`
 
-Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/rasen:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/rasen:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-rasengoal).
+Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/rasen:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/rasen:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
 
 **Syntax:**
 ```text

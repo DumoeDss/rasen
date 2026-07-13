@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide explains how rasen works after you've installed and initialized it. For installation instructions, see the [main README](../README.md#install) or the [Installation guide](installation.md). New to the whole docs set? The [documentation home](README.md) maps everything.
+This guide explains how rasen works after you've installed and initialized it. For installation instructions, see the [Installation guide](installation.md). New to the whole docs set? The [documentation home](README.md) maps everything.
 
 > **Where do I type these commands?** Two places, and mixing them up is the most common early stumble.
 >
