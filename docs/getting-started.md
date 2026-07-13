@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide explains how OpenSpec works after you've installed and initialized it. For installation instructions, see the [main README](../README.md#quick-start) or the [Installation guide](installation.md). New to the whole docs set? The [documentation home](README.md) maps everything.
+This guide explains how rasen works after you've installed and initialized it. For installation instructions, see the [main README](../README.md#install) or the [Installation guide](installation.md). New to the whole docs set? The [documentation home](README.md) maps everything.
 
 > **Where do I type these commands?** Two places, and mixing them up is the most common early stumble.
 >
@@ -14,7 +14,7 @@ This guide explains how OpenSpec works after you've installed and initialized it
 The whole loop, with each step labeled by where it happens:
 
 ```text
-TERMINAL   $ npm install -g @fission-ai/openspec@latest
+TERMINAL   $ npm install -g @atelierai/rasen@latest
 TERMINAL   $ cd your-project && rasen init
 AI CHAT      /rasen:explore                    (optional: think it through first)
 AI CHAT      /rasen:propose add-dark-mode      (AI drafts the plan; you review it)
@@ -28,31 +28,31 @@ Two terminal steps to set up, then you live in chat. The rest of this guide unpa
 
 ## How It Works
 
-OpenSpec helps you and your AI coding assistant agree on what to build before any code is written.
+Rasen helps you and your AI coding assistant agree on what to build before any code is written.
 
-**Default quick path (core profile):**
+**Quick path (core command set):**
 
 ```text
 /rasen:explore ──► /rasen:propose ──► /rasen:apply ──► /rasen:sync ──► /rasen:archive
    (optional)
 ```
 
-Start with `/rasen:explore` when you're figuring out what to do, or jump straight to `/rasen:propose` when you already know. Explore is in the default profile, so it's always there when you want it.
+Start with `/rasen:explore` when you're figuring out what to do, or jump straight to `/rasen:propose` when you already know. Explore ships in both the default `full` profile and the slimmed-down `core` profile, so it's there unless you've picked a `custom` profile that leaves it out.
 
-**Expanded path (custom workflow selection):**
+**Expanded path (step-by-step artifact control):**
 
 ```text
 /rasen:new ──► /rasen:ff or /rasen:continue ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
 ```
 
-The default global profile is `core`, which includes `propose`, `explore`, `apply`, `sync`, and `archive`. You can enable the expanded workflow commands with `rasen config profile` and then `rasen update`.
+The default global profile is `full`, which installs every workflow command — you already have both paths above available. If you'd rather slim down to the essentials (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and then `rasen update`.
 
-## What OpenSpec Creates
+## What Rasen Creates
 
 After running `rasen init`, your project has this structure:
 
 ```
-openspec/
+rasen/
 ├── specs/              # Source of truth (your system's behavior)
 │   └── <domain>/
 │       └── spec.md
@@ -97,7 +97,7 @@ You can always go back and refine earlier artifacts as you learn more during imp
 
 ## How Delta Specs Work
 
-Delta specs are the key concept in OpenSpec. They show what's changing relative to your current specs.
+Delta specs are the key concept in rasen. They show what's changing relative to your current specs.
 
 ### The Format
 
@@ -277,13 +277,13 @@ rasen view
 - [Explore First](explore.md) - Use `/rasen:explore` to think through an idea before you commit
 - [Reviewing a Change](reviewing-changes.md) - What to check in the plan the AI drafts, before any code
 - [Writing Good Specs](writing-specs.md) - What a strong requirement and scenario look like
-- [Using OpenSpec in an Existing Project](existing-projects.md) - Start on a large brownfield codebase
+- [Using Rasen in an Existing Project](existing-projects.md) - Start on a large brownfield codebase
 - [Editing & Iterating on a Change](editing-changes.md) - Update artifacts, go back, reconcile manual edits
 - [Core Concepts at a Glance](overview.md) - The whole mental model on one page
 - [Examples & Recipes](examples.md) - Real changes, start to finish
 - [Workflows](workflows.md) - Common patterns and when to use each command
 - [Commands](commands.md) - Full reference for all slash commands
 - [Concepts](concepts.md) - Deeper understanding of specs, changes, and schemas
-- [Customization](customization.md) - Make OpenSpec work your way
+- [Customization](customization.md) - Make rasen work your way
 - [Stores](stores-beta/user-guide.md) - Planning that spans repos or teams? Keep it in its own repo (beta)
 - [FAQ](faq.md) and [Troubleshooting](troubleshooting.md) - When you get stuck

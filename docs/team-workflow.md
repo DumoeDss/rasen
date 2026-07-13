@@ -1,16 +1,16 @@
-# OpenSpec on a Team
+# Rasen on a Team
 
 Everything in the other guides works the same whether you're solo or on a team of twenty. What changes on a team is the questions around the edges: where do the specs live, how do teammates review a plan, and how does any of this fit the pull-request flow we already have?
 
-The short answer: a change is just files, and OpenSpec never touches git. So it fits your existing workflow instead of replacing it. This page spells out the conventions that work well.
+The short answer: a change is just files, and rasen never touches git. So it fits your existing workflow instead of replacing it. This page spells out the conventions that work well.
 
-## One rule: OpenSpec doesn't touch git
+## One rule: rasen doesn't touch git
 
-OpenSpec reads and writes plain Markdown under `openspec/`. It never commits, branches, pushes, or pulls in your project — and it never clones or syncs a [store](stores-beta/user-guide.md) on its own. That means:
+Rasen reads and writes plain Markdown under `rasen/`. It never commits, branches, pushes, or pulls in your project — and it never clones or syncs a [store](stores-beta/user-guide.md) on its own. That means:
 
-- **You commit `openspec/` like any source.** Specs, active changes, and the archive are part of your project's history. (Yes, commit the whole folder — see the [FAQ](faq.md#should-i-commit-the-openspec-folder-to-git).)
+- **You commit `rasen/` like any source.** Specs, active changes, and the archive are part of your project's history. (Yes, commit the whole folder — see the [FAQ](faq.md#should-i-commit-the-rasen-folder-to-git).)
 - **A change is a folder you version like code.** `rasen/changes/add-dark-mode/` is just files on a branch.
-- **Everything below is convention, not enforcement.** OpenSpec won't make you do it this way; it just fits cleanly.
+- **Everything below is convention, not enforcement.** Rasen won't make you do it this way; it just fits cleanly.
 
 ## The everyday loop
 
@@ -65,7 +65,7 @@ Because changes are separate folders, they don't collide:
 
 ## When planning outgrows one repo
 
-Everything above assumes the plan lives in the code repo's own `openspec/` folder, which is the right default. When your planning genuinely spans several repos or teams — one feature touching three services, or requirements one team owns and others consume — that's what the beta **stores** feature is for: planning gets its own repo that any code repo can point at. Start with the [Stores User Guide](stores-beta/user-guide.md).
+Everything above assumes the plan lives in the code repo's own `rasen/` folder, which is the right default. When your planning genuinely spans several repos or teams — one feature touching three services, or requirements one team owns and others consume — that's what the beta **stores** feature is for: planning gets its own repo that any code repo can point at. Start with the [Stores User Guide](stores-beta/user-guide.md).
 
 ## Where to go next
 

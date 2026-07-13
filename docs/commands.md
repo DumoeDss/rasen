@@ -1,12 +1,12 @@
 # Commands
 
-This is the reference for OpenSpec's slash commands. These commands are invoked in your AI coding assistant's chat interface (e.g., Claude Code, Cursor, Windsurf).
+This is the reference for rasen's slash commands. These commands are invoked in your AI coding assistant's chat interface (e.g., Claude Code, Cursor, Windsurf).
 
 For workflow patterns and when to use each command, see [Workflows](workflows.md). For CLI commands, see [CLI](cli.md).
 
 ## Quick Reference
 
-### Default Quick Path (`core` profile)
+### Quick Path (`core` profile)
 
 | Command | Purpose |
 |---------|---------|
@@ -132,7 +132,7 @@ AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
 
 Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `/rasen:continue` or `/rasen:ff`.
 
-This command is part of the expanded workflow set (not included in the default `core` profile).
+This command is part of the expanded workflow set (not included in the `core` profile).
 
 **Syntax:**
 ```
@@ -389,7 +389,7 @@ AI:  Verifying add-dark-mode...
 
 ### `/rasen:review-cycle`
 
-Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `openspec-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
+Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `rasen-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
 
 **Syntax:**
 ```
@@ -402,7 +402,7 @@ Drive a change to actually-clean with an iterative loop: `review → triage → 
 | `change-name` | No | Which change to run the loop on (inferred from context if not provided) |
 
 **What it does:**
-- Runs a review pass via `openspec-review`, then triages each finding by fix size
+- Runs a review pass via `rasen-review`, then triages each finding by fix size
 - Routes fixes: trivial → orchestrator inline; non-trivial → the implementing agent; design-level → a separate fix agent
 - Re-reviews only the fix delta and marks a finding resolved only when a non-author confirms it against the original finding (author ≠ verifier)
 - Caps the loop at max rounds (default 3); on the cap with unresolved Blocker/Major findings it escalates to a human — never silently passes
@@ -437,7 +437,7 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 
 ### `/rasen:goal`
 
-Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/rasen:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/rasen:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
+Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/rasen:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/rasen:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-rasengoal).
 
 **Syntax:**
 ```text
@@ -653,7 +653,7 @@ AI:  ✓ Archived add-dark-mode
 
 ### `/rasen:onboard`
 
-Guided onboarding through the complete OpenSpec workflow. An interactive tutorial using your actual codebase.
+Guided onboarding through the complete rasen workflow. An interactive tutorial using your actual codebase.
 
 **Syntax:**
 ```
@@ -685,7 +685,7 @@ Guided onboarding through the complete OpenSpec workflow. An interactive tutoria
 ```
 You: /rasen:onboard
 
-AI:  Welcome to OpenSpec!
+AI:  Welcome to rasen!
 
      I'll walk you through the complete workflow using your actual codebase.
      We'll find something small to improve, create a proper change for it,
@@ -718,35 +718,15 @@ Different AI tools use slightly different command syntax. Use the format that ma
 | Tool | Syntax Example |
 |------|----------------|
 | Claude Code | `/rasen:propose`, `/rasen:apply` |
-| Cursor | `/opsx-propose`, `/opsx-apply` |
-| Windsurf | `/opsx-propose`, `/opsx-apply` |
-| Copilot (IDE) | `/opsx-propose`, `/opsx-apply` |
-| Kimi CLI | Skill-based invocations such as `/skill:openspec-propose`, `/skill:openspec-apply-change` (no generated `opsx-*` command files) |
-| Trae | Skill-based invocations such as `/openspec-propose`, `/openspec-apply-change` (no generated `opsx-*` command files) |
+| Cursor | `/rasen-propose`, `/rasen-apply` |
+| Windsurf | `/rasen-propose`, `/rasen-apply` |
+| Copilot (IDE) | `/rasen-propose`, `/rasen-apply` |
+| Kimi CLI | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` (no generated command files) |
+| Trae | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` (no generated command files) |
 
 The intent is the same across tools, but how commands are surfaced can differ by integration.
 
 > **Note:** GitHub Copilot commands (`.github/prompts/*.prompt.md`) are only available in IDE extensions (VS Code, JetBrains, Visual Studio). GitHub Copilot CLI does not currently support custom prompt files — see [Supported Tools](supported-tools.md) for details and workarounds.
-
----
-
-## Legacy Commands
-
-These commands use the older "all-at-once" workflow. They still work but OPSX commands are recommended.
-
-| Command | What it does |
-|---------|--------------|
-| `/openspec:proposal` | Create all artifacts at once (proposal, specs, design, tasks) |
-| `/openspec:apply` | Implement the change |
-| `/openspec:archive` | Archive the change |
-
-**When to use legacy commands:**
-- Existing projects using the old workflow
-- Simple changes where you don't need incremental artifact creation
-- Preference for the all-or-nothing approach
-
-**Migrating to OPSX:**
-Legacy changes can be continued with OPSX commands. The artifact structure is compatible.
 
 ---
 
@@ -781,10 +761,10 @@ The specified schema doesn't exist.
 
 ### Commands not recognized
 
-The AI tool doesn't recognize OpenSpec commands.
+The AI tool doesn't recognize rasen commands.
 
 **Solutions:**
-- Ensure OpenSpec is initialized: `rasen init`
+- Ensure rasen is initialized: `rasen init`
 - Regenerate skills: `rasen update`
 - Check that `.claude/skills/` directory exists (for Claude Code)
 - Restart your AI tool to pick up new skills

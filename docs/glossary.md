@@ -1,6 +1,6 @@
 # Glossary
 
-Every OpenSpec term in one place, defined in plain language. Skim it once and the rest of the docs read faster.
+Every rasen term in one place, defined in plain language. Skim it once and the rest of the docs read faster.
 
 Terms are grouped by topic, then alphabetized within each group.
 
@@ -14,7 +14,7 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Artifact.** A document inside a change. The standard artifacts are the proposal, the delta specs, the design, and the tasks. They're created in dependency order and feed into each other.
 
-**Delta spec.** A spec inside a change that describes only what's changing, using `ADDED`, `MODIFIED`, and `REMOVED` sections, rather than restating the entire spec. This is what lets OpenSpec edit existing systems cleanly. See [Concepts](concepts.md#delta-specs).
+**Delta spec.** A spec inside a change that describes only what's changing, using `ADDED`, `MODIFIED`, and `REMOVED` sections, rather than restating the entire spec. This is what lets rasen edit existing systems cleanly. See [Concepts](concepts.md#delta-specs).
 
 **Domain.** A logical grouping for specs, like `auth/`, `payments/`, or `ui/`. You choose domains that match how you think about your system.
 
@@ -38,25 +38,25 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Archive.** The act of finishing a change. Its delta specs merge into the main specs, and the change folder moves to `rasen/changes/archive/YYYY-MM-DD-<name>/`. After archiving, your specs describe the new reality. See [Concepts](concepts.md#archive).
 
-**Sync.** Merging a change's delta specs into the main specs *without* archiving the change. Usually automatic (archive offers to do it), but available on its own as `/rasen:sync` for long-running changes. See [Commands](commands.md#opsxsync).
+**Sync.** Merging a change's delta specs into the main specs *without* archiving the change. Usually automatic (archive offers to do it), but available on its own as `/rasen:sync` for long-running changes. See [Commands](commands.md#rasensync).
 
 ## Workflow and commands
 
-**OPSX.** The current standard OpenSpec workflow, built around fluid actions instead of rigid phases. Its slash commands all start with `/rasen:`. See [OPSX Workflow](opsx.md).
+**OPSX.** The current standard rasen workflow, built around fluid actions instead of rigid phases. Its slash commands all start with `/rasen:`. See [OPSX Workflow](opsx.md).
 
 **Slash command.** A command you type into your AI assistant's chat, like `/rasen:propose`. Slash commands drive the workflow. They are not terminal commands. See [How Commands Work](how-commands-work.md).
 
 **Explore (`/rasen:explore`).** The thinking-partner command. It reads your codebase, compares options, and clarifies a fuzzy idea into a concrete plan, creating no artifacts and writing no code. The recommended starting point whenever you have a problem but not yet a plan. See [Explore First](explore.md).
 
-**CLI.** The `openspec` program you run in your terminal. It sets up projects, lists and validates changes, opens the dashboard, and archives. The terminal half of OpenSpec. See [CLI](cli.md).
+**CLI.** The `rasen` program you run in your terminal. It sets up projects, lists and validates changes, opens the dashboard, and archives. The terminal half of rasen. See [CLI](cli.md).
 
-**Skill.** A folder of instructions (`.../skills/openspec-*/SKILL.md`) that your AI assistant auto-detects and follows. Skills are the emerging cross-tool standard for delivering the OpenSpec workflow to your assistant.
+**Skill.** A folder of instructions (`.../skills/rasen-*/SKILL.md`) that your AI assistant auto-detects and follows. Skills are the emerging cross-tool standard for delivering the rasen workflow to your assistant.
 
-**Command file.** A per-tool slash command file (`.../commands/opsx-*`). An optional addition installed alongside skills when delivery is `both`. You rarely touch these directly.
+**Command file.** A per-tool slash command file (`.../commands/rasen-*`). An optional addition installed alongside skills when delivery is `both`. You rarely touch these directly.
 
 **Profile.** The set of slash commands installed in your project. **Full** (the default) installs every workflow. **Core** slims down to `propose`, `explore`, `apply`, `sync`, `archive`; **custom** is any subset you pick. Change it with `rasen config profile`.
 
-**Delivery.** Whether OpenSpec also installs command files alongside skills (`both`, the default) or skills only (`skills`). Skills are always installed. Configured globally and applied with `rasen update`.
+**Delivery.** Whether rasen also installs command files alongside skills (`both`, the default) or skills only (`skills`). Skills are always installed. Configured globally and applied with `rasen update`.
 
 ## Customization
 
@@ -64,11 +64,11 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Template.** A Markdown file inside a schema that shapes what the AI generates for a given artifact. Editing a template changes the AI's output immediately, with no rebuild.
 
-**Project config (`rasen/config.yaml`).** Per-project settings: the default schema, the `context:` injected into every planning request, and per-artifact `rules:`. The easiest way to teach OpenSpec about your stack and conventions. See [Customization](customization.md#project-configuration).
+**Project config (`rasen/config.yaml`).** Per-project settings: the default schema, the `context:` injected into every planning request, and per-artifact `rules:`. The easiest way to teach rasen about your stack and conventions. See [Customization](customization.md#project-configuration).
 
 **Context injection.** Putting project background in `config.yaml`'s `context:` field so it's automatically added to every artifact the AI generates. More reliable than hoping the AI reads a separate file.
 
-**Dependency graph.** The directed graph formed by artifact `requires:` relationships. It's a DAG (directed acyclic graph: arrows only point forward, never in a loop), and OpenSpec uses it to know what you can create next.
+**Dependency graph.** The directed graph formed by artifact `requires:` relationships. It's a DAG (directed acyclic graph: arrows only point forward, never in a loop), and rasen uses it to know what you can create next.
 
 **Enablers, not gates.** The principle that artifact dependencies show what becomes *possible* next, not what's *required* next. You can revisit and edit any artifact at any time. See [Core Concepts at a Glance](overview.md#enablers-not-gates).
 
@@ -76,11 +76,11 @@ Terms are grouped by topic, then alphabetized within each group.
 
 These terms apply only if your planning spans more than one repo. They're in beta. Most users can ignore them. See the [Stores User Guide](stores-beta/user-guide.md).
 
-**Store.** A standalone repo whose whole job is planning. It has the same `openspec/` shape you already know (specs and changes) plus a small identity file. You register it on your machine once, by name, and then any OpenSpec command can work in it from anywhere.
+**Store.** A standalone repo whose whole job is planning. It has the same `rasen/` shape you already know (specs and changes) plus a small identity file. You register it on your machine once, by name, and then any rasen command can work in it from anywhere.
 
 **Reference.** A declaration, in a code repo's `rasen/config.yaml`, of a store that repo draws on. References are read-only: the repo keeps its own root, and `rasen instructions` gains an index of the referenced store's specs, each with the exact command to fetch it.
 
-**Working context.** What `rasen context` assembles for the current repo: its OpenSpec root plus every store it references, each with how to fetch it. The answer to "what am I working with?"
+**Working context.** What `rasen context` assembles for the current repo: its Rasen root plus every store it references, each with how to fetch it. The answer to "what am I working with?"
 
 **Workset.** A personal, machine-local set of folders you open together (a store alongside the code repos you work on). Created explicitly with `rasen workset create`; nothing about those local paths is committed to the shared planning repo.
 

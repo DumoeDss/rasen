@@ -1,11 +1,11 @@
-# OpenSpec Agent Contract
+# Rasen Agent Contract
 
-Machine-readable surfaces of the `openspec` CLI, verified against `src/` (capstone audit, 2026-06-11). Every shape below is documented from the emitting code.
+Machine-readable surfaces of the `rasen` CLI, verified against `src/` (capstone audit, 2026-06-11). Every shape below is documented from the emitting code.
 
 ## 1. General conventions
 
 - **One JSON document per invocation.** In `--json` mode, stdout carries exactly one JSON document (2-space pretty-printed). Human prose, spinners, and the store banner go to stderr.
-- **Store banner.** In human mode, a store-selected root prints `Using OpenSpec root: <id> (<path>)` to stderr. Never printed in JSON mode.
+- **Store banner.** In human mode, a store-selected root prints `Using Rasen root: <id> (<path>)` to stderr. Never printed in JSON mode.
 - **Key casing is surface-dependent** (see Known inconsistencies): store/doctor/context payloads use `snake_case`; workflow payloads (`status`, `instructions`, `new change`, `validate`, `list`) use `camelCase`, except the embedded `root` object, which always uses `store_id`.
 - **Optional keys are omitted, not null**, in most payloads (e.g. `root.store_id`, `member.path`). Exceptions that use explicit `null` are called out per shape (store doctor `git.*`, failure payloads).
 
@@ -27,10 +27,10 @@ Diagnostics appear in two positions: **status arrays** (`status: StoreDiagnostic
 
 ## 3. Root selection and `RootOutput`
 
-All root-resolving commands (`list`, `show`, `validate`, `status`, `instructions`, `instructions apply`, `new change`, `archive`, `doctor`, `context`) resolve one OpenSpec root with one precedence:
+All root-resolving commands (`list`, `show`, `validate`, `status`, `instructions`, `instructions apply`, `new change`, `archive`, `doctor`, `context`) resolve one Rasen root with one precedence:
 
 1. `--store <id>` → the registered store's root (`source: "store"`).
-2. Otherwise, nearest ancestor with `openspec/`: planning shape → `source: "nearest"` (a `store:` pointer is ignored with a stderr warning); config-only dir with a valid `store:` pointer → that store, `source: "declared"`.
+2. Otherwise, nearest ancestor with `rasen/`: planning shape → `source: "nearest"` (a `store:` pointer is ignored with a stderr warning); config-only dir with a valid `store:` pointer → that store, `source: "declared"`.
 3. No nearest root + registered stores exist → error `no_root_with_registered_stores`.
 4. No root, no stores: scaffolding commands treat the cwd as `source: "implicit"`; diagnostic commands (`doctor`, `context`) fail with `no_openspec_root` instead — they inspect, never scaffold.
 
@@ -96,8 +96,8 @@ setup/register: `{ "store": {id, root, metadata_path?}, "registry": {path, regis
 ### Resolution
 `no_openspec_root`, `no_root_with_registered_stores`, `no_registered_stores`, `unknown_store`, `store_identity_mismatch`, `unhealthy_store_root`, `store_path_not_supported`, `invalid_store_pointer`, `initiative_option_removed`, `areas_option_removed`; pass-through: `invalid_store_id`, `invalid_store_registry`, `invalid_store_metadata`.
 
-### OpenSpec-root health (error, no fix)
-`openspec_store_root_missing`, `openspec_root_missing`, `openspec_config_missing`, `openspec_specs_missing`, `openspec_changes_missing`, `openspec_archive_missing`, plus `_not_directory` variants of each.
+### Rasen-root health (error, no fix)
+`openspec_store_root_missing`, `openspec_store_root_not_directory`, `openspec_root_missing`, `openspec_root_not_directory`, `openspec_config_missing`, `openspec_config_not_file`, `openspec_specs_not_directory`, `openspec_changes_not_directory`, `openspec_archive_not_directory`. (`specs`/`changes`/`archive` are optional directories — they only fail when something non-directory exists at that path, not when absent.)
 
 ### Store registry/identity/state
 `invalid_store_id`, `invalid_store_registry`, `invalid_store_metadata`, `store_registry_busy`, `store_not_found`, `no_store_registry`, `store_registry_changed`, `store_metadata_missing`, `store_metadata_id_mismatch`, `store_metadata_invalid`, `store_id_conflict`, `store_path_conflict`, `store_already_registered` (info).

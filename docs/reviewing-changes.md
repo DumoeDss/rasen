@@ -1,6 +1,6 @@
 # Reviewing a Change
 
-OpenSpec's whole promise is that you and your AI **agree on what to build before any code is written.** That agreement only means something if you actually read what the AI drafted. This page is about the two minutes where you do that — what to open, in what order, and what to look for.
+Rasen's whole promise is that you and your AI **agree on what to build before any code is written.** That agreement only means something if you actually read what the AI drafted. This page is about the two minutes where you do that — what to open, in what order, and what to look for.
 
 The bet is simple: catching a wrong turn in a one-paragraph plan is nearly free. Catching the same wrong turn in 300 lines of code is not. Review is where you collect on that bet.
 

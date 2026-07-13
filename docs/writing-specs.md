@@ -26,7 +26,7 @@ A good requirement is one behavior, stated so plainly you could hand it to someo
 
 - **One statement, one `SHALL`/`MUST`.** If a requirement has three "and also" clauses, it's really three requirements. Split them.
 - **Observable.** Someone outside the code should be able to tell whether it holds. "The system SHALL show an error banner when the upload exceeds 10 MB" is observable. "The system SHALL handle large uploads gracefully" is not.
-- **The right strength.** OpenSpec uses the RFC 2119 keywords, and they mean different things:
+- **The right strength.** Rasen uses the RFC 2119 keywords, and they mean different things:
 
   | Keyword | Meaning |
   |---------|---------|
