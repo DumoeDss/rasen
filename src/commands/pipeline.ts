@@ -203,6 +203,10 @@ export class PipelineCommand {
       reuse,
       buildOrder,
       stages,
+      // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
+      // included only when declared so a human-authored pipeline's JSON shape
+      // is unchanged.
+      ...(pipeline.origin ? { origin: pipeline.origin } : {}),
     };
 
     if (options.json) {
@@ -276,7 +280,13 @@ export class PipelineCommand {
       matched = [];
     }
 
-    const result = { suggested, matched, available };
+    // basis names WHY suggested was chosen: 'keyword' when an indicator
+    // matched, 'default' when nothing matched and small-feature is the
+    // unmatched fallback. Lets an adopting caller (autopilot-selection-policy)
+    // distinguish an affirmative suggestion from a shrug.
+    const basis: 'keyword' | 'default' = matched.length > 0 ? 'keyword' : 'default';
+
+    const result = { suggested, matched, available, basis };
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -289,6 +299,7 @@ export class PipelineCommand {
     } else {
       console.log('Matched indicators: (none — defaulted to small-feature)');
     }
+    console.log(`Basis: ${basis}`);
     console.log('This suggestion is advisory; you can override it with any available pipeline.');
     if (available.length > 0) {
       console.log(`Available: ${available.join(', ')}`);
@@ -704,12 +715,16 @@ export class PipelineCommand {
       agents?: PipelineYaml['agents'];
       buildOrder: string[];
       stages: StageView[];
+      origin?: PipelineYaml['origin'];
     },
     graph: PipelineGraph
   ): void {
     console.log(`Pipeline: ${result.name}`);
     if (result.description) {
       console.log(result.description.replace(/\s+/g, ' ').trim());
+    }
+    if (result.origin) {
+      console.log(`Origin: ${result.origin}`);
     }
     console.log();
     console.log('Build order:');

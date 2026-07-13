@@ -145,6 +145,48 @@ stages:
       expect(result.stderr).toContain('bug-fix');
     });
 
+    it('surfaces origin: composed for a LEAD-composed project pipeline (autonomy-ladder rung 2)', async () => {
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'composed-widget');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: composed-widget
+origin: composed
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen:review
+    role: reviewer
+    requires: [apply]
+  - id: review-loop
+    skill: rasen-review-cycle
+    requires: [verify]
+    loop:
+      kind: review-cycle
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'composed-widget', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.origin).toBe('composed');
+
+      const humanResult = await runCLI(['pipeline', 'show', 'composed-widget'], { cwd: testDir });
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('Origin: composed');
+    });
+
+    it('omits origin from a human-authored pipeline (bug-fix built-in)', async () => {
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(Object.prototype.hasOwnProperty.call(json, 'origin')).toBe(false);
+    });
+
     it('surfaces a decompose stage with its kind and resolved childPipeline', async () => {
       const result = await runCLI(['pipeline', 'show', 'auto-decompose', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
@@ -367,6 +409,7 @@ stages:
       expect(json.matched).toContain('broken');
       expect(json.matched).toContain('crash');
       expect(json.available).toContain('bug-fix');
+      expect(json.basis).toBe('keyword');
     });
 
     it('maps full-feature indicators', async () => {
@@ -379,6 +422,7 @@ stages:
       expect(json.suggested).toBe('full-feature');
       expect(json.matched).toContain('implement');
       expect(json.matched).toContain('module');
+      expect(json.basis).toBe('keyword');
     });
 
     it('defaults to small-feature with no matched indicators', async () => {
@@ -390,6 +434,7 @@ stages:
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('small-feature');
       expect(json.matched).toEqual([]);
+      expect(json.basis).toBe('default');
     });
 
     it('prefers bug-fix over full-feature when both classes match', async () => {
@@ -401,6 +446,7 @@ stages:
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('bug-fix');
+      expect(json.basis).toBe('keyword');
     });
   });
 

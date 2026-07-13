@@ -11,6 +11,7 @@ The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.ya
 
 - **WHEN** a `pipeline.yaml` is loaded
 - **THEN** it SHALL declare a `name`, optional `description`, and a non-empty `stages` array
+- **AND** it MAY declare an `origin` field whose only value is `composed`, marking a pipeline assembled by the autopilot LEAD (absent means human-authored); `rasen pipeline show` SHALL surface the field when present
 - **AND** each stage SHALL declare an `id` and a `skill`, and MAY declare `role`, `requires`, `gate`, `loop`, `parallelGroup`, `condition`, `leadReview`, and `verifyPolicy`
 - **AND** parse or validation failures SHALL raise a typed error identifying the offending file and field
 
@@ -50,6 +51,7 @@ The system SHALL provide a `rasen pipeline` command group with `list`, `show <na
 
 - **WHEN** `rasen pipeline classify "<task description>" --json` runs
 - **THEN** it SHALL return a suggested pipeline name plus the indicators that drove the suggestion
+- **AND** it SHALL report the suggestion's basis: `keyword` when indicators matched, `default` when the suggestion is the fallback default with no matched indicators
 - **AND** the suggestion SHALL be overridable by the caller
 
 #### Scenario: Resume
@@ -84,6 +86,12 @@ The system SHALL provide a `rasen pipeline` command group with `list`, `show <na
 - **WHEN** a pipeline is validated
 - **THEN** validation SHALL fail if stage ids are not unique, if any `requires` references a missing stage, if the dependency graph contains a cycle, if a `skill` is not a registered skill, or if a `role` is unknown
 - **AND** `parallelGroup` members SHALL be mutually independent in the DAG
+
+#### Scenario: Composed-pipeline quality floor enforced
+
+- **WHEN** a pipeline declaring `origin: composed` is parsed or validated
+- **THEN** it SHALL fail unless it contains at least one stage with role `reviewer` and at least one stage with `loop.kind: review-cycle`
+- **AND** pipelines without an `origin` field SHALL be entirely unaffected by this rule — existing built-in, user, and project pipelines parse and validate unchanged
 
 ### Requirement: Built-In Pipelines
 

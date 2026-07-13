@@ -47,7 +47,37 @@ export function parsePipeline(yamlContent: string): PipelineYaml {
   // Check decompose stage constraints (at most one, must be the entry point)
   validateDecomposeStages(pipeline.stages);
 
+  // Enforce the composed-pipeline quality floor (autonomy-ladder rung 2)
+  validateComposedPolicyFloor(pipeline);
+
   return pipeline;
+}
+
+/**
+ * Enforces the quality floor on a LEAD-composed pipeline (autonomy-ladder
+ * rung 2: composed pipelines): when `origin: composed`, the pipeline MUST
+ * contain at least one stage with `role: 'reviewer'` (verification) and at
+ * least one stage with `loop.kind: 'review-cycle'` (review loop) — the LEAD
+ * never composes itself an inspection-free pipeline. Scoped to the marker so
+ * human-authored pipelines (no `origin`, e.g. the built-in `bug-fix`, which
+ * has no review-loop stage) are entirely unaffected.
+ */
+function validateComposedPolicyFloor(pipeline: PipelineYaml): void {
+  if (pipeline.origin !== 'composed') return;
+
+  const hasReviewerStage = pipeline.stages.some(s => s.role === 'reviewer');
+  if (!hasReviewerStage) {
+    throw new PipelineValidationError(
+      `Composed pipeline '${pipeline.name}' is missing the quality-floor verification stage: at least one stage must declare role: 'reviewer'`
+    );
+  }
+
+  const hasReviewCycleLoop = pipeline.stages.some(s => s.loop?.kind === 'review-cycle');
+  if (!hasReviewCycleLoop) {
+    throw new PipelineValidationError(
+      `Composed pipeline '${pipeline.name}' is missing the quality-floor review loop: at least one stage must declare loop.kind: 'review-cycle'`
+    );
+  }
 }
 
 /**

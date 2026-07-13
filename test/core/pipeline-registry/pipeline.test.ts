@@ -647,6 +647,96 @@ stages:
     });
   });
 
+  describe('origin: composed quality floor (autonomy-ladder rung 2)', () => {
+    it('parses origin: composed when both floor stages are present', () => {
+      const pipeline = parsePipeline(`
+name: composed-ok
+origin: composed
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen:review
+    role: reviewer
+    requires: [apply]
+  - id: review-loop
+    skill: rasen-review-cycle
+    requires: [verify]
+    loop:
+      kind: review-cycle
+`);
+      expect(pipeline.origin).toBe('composed');
+    });
+
+    it('rejects origin: composed missing a reviewer-role stage', () => {
+      const yaml = `
+name: composed-no-reviewer
+origin: composed
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: review-loop
+    skill: rasen-review-cycle
+    requires: [apply]
+    loop:
+      kind: review-cycle
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/reviewer/);
+    });
+
+    it('rejects origin: composed missing a review-cycle loop stage', () => {
+      const yaml = `
+name: composed-no-loop
+origin: composed
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen:review
+    role: reviewer
+    requires: [apply]
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/review-cycle/);
+    });
+
+    it('leaves a pipeline WITHOUT origin unaffected even with no floor stages (bug-fix built-in shape)', () => {
+      // Floor-free fixture (neither floor stage). The real bug-fix built-in
+      // does carry a reviewer-role stage; what it lacks is the review-cycle
+      // loop — either absence must stay valid without an origin marker.
+      const pipeline = parsePipeline(`
+name: bug-fix-shape
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+    requires: [propose]
+  - id: verify
+    skill: rasen-verify-enhanced
+    requires: [apply]
+`);
+      expect(pipeline.origin).toBeUndefined();
+    });
+
+    it('rejects an invalid origin value', () => {
+      const yaml = `
+name: bad-origin
+origin: hand-authored
+stages:
+  - id: a
+    skill: rasen-propose
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+  });
+
   describe('handoff config', () => {
     it('accepts the (0,1] upper boundary threshold of exactly 1', () => {
       const pipeline = parsePipeline(`

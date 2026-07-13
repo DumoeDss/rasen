@@ -12,6 +12,7 @@ import {
   resolveArchiveTiming,
   resolveArchiveDestinationValue,
   resolveAutopilotGatePolicy,
+  resolveAutopilotSelectionPolicy,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -1150,6 +1151,185 @@ rules:
     it('the run flag overrides an absent config (same effective value, flag source)', () => {
       expect(resolveAutopilotGatePolicy(null, true)).toEqual({
         effective: 'off',
+        source: 'flag',
+      });
+    });
+  });
+
+  describe('autopilot.selection parsing', () => {
+    it('exposes a valid classify policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  selection: classify\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { selection: 'classify' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes a valid manual policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  selection: manual\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { selection: 'manual' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes a valid compose policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  selection: compose\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { selection: 'compose' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops an invalid selection value with a warning, keeping sibling gates', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: off\n  selection: clasify\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { gates: 'off' },
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'autopilot.selection' field")
+      );
+    });
+
+    it('does not warn when the selection field is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: on\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { gates: 'on' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveAutopilotSelectionPolicy', () => {
+    it('defaults to manual when no config and no flag', () => {
+      expect(resolveAutopilotSelectionPolicy(null, false)).toEqual({
+        effective: 'manual',
+        source: 'default',
+      });
+    });
+
+    it('defaults to manual when the autopilot block is absent', () => {
+      expect(resolveAutopilotSelectionPolicy({ schema: 'spec-driven' }, false)).toEqual({
+        effective: 'manual',
+        source: 'default',
+      });
+    });
+
+    it('honors an explicit config default of classify', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'classify' } },
+          false
+        )
+      ).toEqual({ effective: 'classify', source: 'config' });
+    });
+
+    it('honors an explicit config default of manual', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false
+        )
+      ).toEqual({ effective: 'manual', source: 'config' });
+    });
+
+    it('the run flag overrides a manual config default', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          true
+        )
+      ).toEqual({ effective: 'classify', source: 'flag' });
+    });
+
+    it('the run flag overrides an absent config (same effective value, flag source)', () => {
+      expect(resolveAutopilotSelectionPolicy(null, true)).toEqual({
+        effective: 'classify',
+        source: 'flag',
+      });
+    });
+
+    it('honors an explicit config default of compose', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'compose' } },
+          false
+        )
+      ).toEqual({ effective: 'compose', source: 'config' });
+    });
+
+    it('the --auto-compose flag resolves compose alone (no --auto-select)', () => {
+      expect(resolveAutopilotSelectionPolicy(null, false, true)).toEqual({
+        effective: 'compose',
+        source: 'flag',
+      });
+    });
+
+    it('--auto-compose wins when both flags are present (superset policy)', () => {
+      expect(resolveAutopilotSelectionPolicy(null, true, true)).toEqual({
+        effective: 'compose',
+        source: 'flag',
+      });
+    });
+
+    it('--auto-compose overrides a manual config default', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false,
+          true
+        )
+      ).toEqual({ effective: 'compose', source: 'flag' });
+    });
+
+    it('an absent --auto-compose flag (default false) does not affect classify-flag resolution', () => {
+      expect(resolveAutopilotSelectionPolicy(null, true)).toEqual({
+        effective: 'classify',
         source: 'flag',
       });
     });
