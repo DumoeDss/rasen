@@ -21,7 +21,7 @@ The website SHALL serve the landing page in English, Chinese, Japanese, and Kore
 - **THEN** docs output is unchanged from the pre-localization behavior (English content, working navigation), and following a docs link from any locale's landing page reaches the docs
 
 ### Requirement: Faithful externalized translations
-All user-visible landing strings SHALL live in per-locale string sources (not inline in templates), with English as the reference locale carrying the canonical copy. Translations are faithful renderings of the English copy — same claims, same features, nothing added or dropped — while brand and technical tokens (the RASEN wordmark, slash commands, CLI commands, code snippets, `@atelierai/rasen`, file paths) stay untranslated. Every locale provides a value for every string key, so no variant renders a missing-string artifact or silently falls back mid-page.
+All user-visible landing strings SHALL live in per-locale string sources (not inline in templates), with English as the reference locale carrying the canonical copy. This includes chrome affordance labels such as the GitHub link label and its icon's accessible name — every locale supplies its own. Translations are faithful renderings of the English copy — same claims, same features, nothing added or dropped — while brand and technical tokens (the RASEN wordmark, slash commands, CLI commands, code snippets, `@atelierai/rasen`, file paths, repository URL) stay untranslated. Every locale provides a value for every string key, so no variant renders a missing-string artifact or silently falls back mid-page.
 
 #### Scenario: Translation fidelity review
 - **WHEN** a bilingual reviewer compares any locale variant against the English page section by section
@@ -30,6 +30,10 @@ All user-visible landing strings SHALL live in per-locale string sources (not in
 #### Scenario: No missing strings
 - **WHEN** any locale variant is rendered at build time
 - **THEN** every string slot is filled from that locale's source — a locale missing a key fails the build with an error naming the key rather than emitting a blank or mixed-language page
+
+#### Scenario: New chrome affordances are localized
+- **WHEN** the GitHub icon's accessible name or the hero GitHub link label is inspected on any locale variant
+- **THEN** it is rendered from that locale's string source (not hardcoded English), while the repository URL itself is identical across locales
 
 ### Requirement: Language switcher in the landing header
 Every landing variant SHALL show a language switcher in the header: plain links to all four variants (no JavaScript required), labeled in each target language's own name (EN / 中文 / 日本語 / 한국어 or equivalent), with the current locale visibly marked, styled within the CRT contract (monospace, hairlines, zero radius, existing palette only).
