@@ -15,8 +15,10 @@ import {
   findLatestMainTranscript,
   resolveTranscriptPath,
   probeAgentContext,
+  probeAgentContextSafe,
   tryContextEstimate,
   DEFAULT_CONTEXT_LIMIT,
+  AgentContextUnavailableError,
 } from '../../src/core/agent-context.js';
 
 /** Serialize an assistant usage entry as one transcript jsonl line. */
@@ -210,6 +212,83 @@ describe('agent-context', () => {
         assistantLine('claude-opus-4-8', { input_tokens: 1 }),
       ]);
       expect(() => findLatestMainTranscript(dir)).toThrow(/No main-session transcript/);
+    });
+
+    // design D2: both environmental-absence cases are typed, not generic
+    // Errors, so the command layer can catch ONLY these and degrade gracefully.
+    it('throws AgentContextUnavailableError (typed) when the directory is absent', () => {
+      expect(() => findLatestMainTranscript(path.join(dir, 'missing'))).toThrow(
+        AgentContextUnavailableError
+      );
+    });
+
+    it('throws AgentContextUnavailableError (typed) when only subagent transcripts exist', () => {
+      writeTranscript('agent-only.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 1 }),
+      ]);
+      expect(() => findLatestMainTranscript(dir)).toThrow(AgentContextUnavailableError);
+    });
+  });
+
+  // design D2: graceful degradation for environmental absence under --latest.
+  describe('probeAgentContextSafe', () => {
+    it('returns {available:false, reason:"no-transcript"} when the projects dir is absent', () => {
+      const result = probeAgentContextSafe({ latest: true, dir: path.join(dir, 'missing') });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('no-transcript');
+        expect(result.detail).toMatch(/No Claude transcript directory/);
+      }
+    });
+
+    it('returns {available:false, reason:"no-transcript"} when the dir holds no main-session transcript', () => {
+      writeTranscript('agent-only.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 1 }),
+      ]);
+      const result = probeAgentContextSafe({ latest: true, dir });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('no-transcript');
+        expect(result.detail).toMatch(/No main-session transcript/);
+      }
+    });
+
+    it('returns {available:true, ...AgentContextResult} on a successful probe', () => {
+      const p = writeTranscript('ok-safe.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 10 }),
+      ]);
+      const result = probeAgentContextSafe({ transcript: p });
+      expect(result.available).toBe(true);
+      if (result.available) {
+        expect(result.contextTokens).toBe(10);
+        expect(result.model).toBe('claude-opus-4-8');
+      }
+    });
+
+    it('still throws for an explicit --transcript that is missing (input error, not environmental absence)', () => {
+      expect(() => probeAgentContextSafe({ transcript: path.join(dir, 'nope.jsonl') })).toThrow(
+        /Cannot read transcript/
+      );
+    });
+
+    it('still throws for an explicit --transcript with no usage entry (input error)', () => {
+      const p = writeTranscript('nousage-safe.jsonl', [
+        JSON.stringify({ type: 'user', message: { role: 'user' } }),
+      ]);
+      expect(() => probeAgentContextSafe({ transcript: p })).toThrow(/No assistant usage/);
+    });
+
+    it('still throws for an invalid --limit (input error)', () => {
+      const p = writeTranscript('bad-limit.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 10 }),
+      ]);
+      expect(() => probeAgentContextSafe({ transcript: p, limit: -1 })).toThrow(
+        /--limit must be a positive integer/
+      );
+    });
+
+    it('still throws when neither --transcript nor --latest is provided (input error)', () => {
+      expect(() => probeAgentContextSafe({})).toThrow(/--transcript|--latest/);
     });
   });
 

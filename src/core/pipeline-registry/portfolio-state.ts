@@ -15,7 +15,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { StageStatusSchema, RunStateWorkerSchema } from './run-state.js';
+import { StageStatusSchema, RunStateWorkerSchema, normalizeRunStateWorkerRecord } from './run-state.js';
 
 export const PORTFOLIO_STATE_FILENAME = 'portfolio-run.json';
 
@@ -77,10 +77,25 @@ export function portfolioStatePath(changeDir: string): string {
   return path.join(changeDir, PORTFOLIO_STATE_FILENAME);
 }
 
+/**
+ * Normalize the raw portfolio-state JSON's `planner` record before validation
+ * (design D1) — reuses the same worker-record normalization run-state.ts
+ * applies to per-stage workers, since `planner` shares the worker shape.
+ */
+function normalizePortfolioStateJson(json: unknown): unknown {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return json;
+  const obj: Record<string, unknown> = { ...(json as Record<string, unknown>) };
+  if (typeof obj.planner === 'object' && obj.planner !== null) {
+    obj.planner = normalizeRunStateWorkerRecord(obj.planner);
+  }
+  return obj;
+}
+
 /** Parse + validate portfolio-state JSON. Throws on malformed JSON / schema mismatch. */
 export function parsePortfolioState(content: string): PortfolioState {
   const json = JSON.parse(content) as unknown;
-  const result = PortfolioStateSchema.safeParse(json);
+  const normalized = normalizePortfolioStateJson(json);
+  const result = PortfolioStateSchema.safeParse(normalized);
   if (!result.success) {
     throw new PortfolioStateValidationError(
       `Invalid portfolio run-state: ${result.error.issues

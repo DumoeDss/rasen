@@ -300,16 +300,34 @@ export function claudeProjectsDir(cwd: string, homeDir: string = os.homedir()): 
 }
 
 /**
+ * Environmental absence of a Claude transcript under `--latest`: the derived
+ * projects directory does not exist, or exists but holds no main-session
+ * transcript (design D2). This is NOT an error on a non-Claude host (e.g. a
+ * Codex CLI session as the LEAD) — it is that host's normal state, and the
+ * probe is contractually a non-blocking pre-flight. Distinguished by type
+ * (not message matching) so the command layer can catch ONLY this case and
+ * degrade gracefully, while every other throw (including an explicit
+ * `--transcript` failure) stays a hard error.
+ */
+export class AgentContextUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentContextUnavailableError';
+  }
+}
+
+/**
  * Newest MAIN-session transcript (`*.jsonl`, excluding `agent-*.jsonl` subagent
- * files) directly under `baseDir`, by mtime. Throws an actionable error when the
- * directory is absent or holds no main-session transcript.
+ * files) directly under `baseDir`, by mtime. Throws {@link AgentContextUnavailableError}
+ * when the directory is absent or holds no main-session transcript — both are
+ * environmental-absence cases, reachable only via `--latest` (design D2).
  */
 export function findLatestMainTranscript(baseDir: string): string {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(baseDir, { withFileTypes: true });
   } catch {
-    throw new Error(
+    throw new AgentContextUnavailableError(
       `No Claude transcript directory at ${baseDir}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
     );
   }
@@ -329,7 +347,7 @@ export function findLatestMainTranscript(baseDir: string): string {
   }
 
   if (!newest) {
-    throw new Error(
+    throw new AgentContextUnavailableError(
       `No main-session transcript (*.jsonl) found in ${baseDir}. It holds only subagent files or is empty.`
     );
   }
@@ -387,6 +405,31 @@ export function probeAgentContext(options: ProbeOptions): AgentContextResult {
   return kind === 'codex'
     ? computeContextFromRollout(transcriptPath, { limit: options.limit })
     : computeContextFromTranscript(transcriptPath, { limit: options.limit });
+}
+
+/** Tagged result of {@link probeAgentContextSafe} — success or environmental unavailability. */
+export type ProbeAgentContextResult =
+  | ({ available: true } & AgentContextResult)
+  | { available: false; reason: 'no-transcript'; detail: string };
+
+/**
+ * Same resolution as {@link probeAgentContext}, but catches ONLY environmental
+ * absence under `--latest` ({@link AgentContextUnavailableError}) and returns it
+ * as a tagged `{available:false}` result instead of throwing (design D2). Every
+ * other failure (invalid `--runtime`/`--limit`, no source flag, an explicit
+ * `--transcript` that is unreadable/usage-free) still throws — those are input
+ * errors, not a host's normal state, and must stay hard errors.
+ */
+export function probeAgentContextSafe(options: ProbeOptions): ProbeAgentContextResult {
+  try {
+    const result = probeAgentContext(options);
+    return { available: true, ...result };
+  } catch (err) {
+    if (err instanceof AgentContextUnavailableError) {
+      return { available: false, reason: 'no-transcript', detail: err.message };
+    }
+    throw err;
+  }
 }
 
 /**
