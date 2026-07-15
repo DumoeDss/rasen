@@ -350,7 +350,7 @@ export class UpdateCommand {
     const availableTools = getAvailableTools(projectPath);
     const configuredSet = new Set(configuredTools);
 
-    const newTools = availableTools.filter((t) => !configuredSet.has(t.value));
+    const newTools = availableTools.filter((t) => !configuredSet.has(t.value) && t.adapted);
 
     if (newTools.length > 0) {
       const newToolNames = newTools.map((tool) => tool.name);

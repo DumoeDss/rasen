@@ -833,33 +833,43 @@ metadata:
     });
 
     it('should only update tools that need updating', async () => {
-      // Initialize both tools so Cursor is fully synced with profile/delivery.
-      const initCommand = new InitCommand({ tools: 'claude,cursor', force: true });
-      await initCommand.execute(testDir);
+      const originalCodexHome = process.env.CODEX_HOME;
+      // Initialize both adapted tools so Codex is fully synced with profile/delivery.
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      try {
+        const initCommand = new InitCommand({ tools: 'claude,codex', force: true });
+        await initCommand.execute(testDir);
 
-      // Make Claude stale to force a version update.
-      const claudeSkillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
-      const claudeContent = await fs.readFile(claudeSkillFile, 'utf-8');
-      await fs.writeFile(
-        claudeSkillFile,
-        claudeContent.replace(/generatedBy:\s*["'][^"']+["']/, 'generatedBy: "0.0.1"')
-      );
+        // Make Claude stale to force a version update.
+        const claudeSkillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
+        const claudeContent = await fs.readFile(claudeSkillFile, 'utf-8');
+        await fs.writeFile(
+          claudeSkillFile,
+          claudeContent.replace(/generatedBy:\s*["'][^"']+["']/, 'generatedBy: "0.0.1"')
+        );
 
-      const consoleSpy = vi.spyOn(console, 'log');
+        const consoleSpy = vi.spyOn(console, 'log');
 
-      await updateCommand.execute(testDir);
+        await updateCommand.execute(testDir);
 
-      // Should show only Claude being updated
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Updating 1 tool(s)')
-      );
+        // Should show only Claude being updated
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('Updating 1 tool(s)')
+        );
 
-      // Should mention Cursor is already up to date
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Already up to date: cursor')
-      );
+        // Should mention Codex is already up to date
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('Already up to date: codex')
+        );
 
-      consoleSpy.mockRestore();
+        consoleSpy.mockRestore();
+      } finally {
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     });
   });
 
@@ -1253,38 +1263,52 @@ content
   });
 
   describe('new tool detection', () => {
-    it('should detect new tool directories not currently configured', async () => {
-      // Set up a configured Claude tool
-      const claudeSkillsDir = path.join(testDir, '.claude', 'skills');
-      await fs.mkdir(path.join(claudeSkillsDir, 'rasen-explore'), { recursive: true });
-      await fs.writeFile(path.join(claudeSkillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+    it('should detect new adapted tool directories not currently configured', async () => {
+      const originalCodexHome = process.env.CODEX_HOME;
+      // Isolate Codex's global command home so this empty test dir isn't
+      // seen as "already configured" via real ~/.codex/prompts files.
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home-empty');
+      try {
+        // Set up a configured Claude tool
+        const claudeSkillsDir = path.join(testDir, '.claude', 'skills');
+        await fs.mkdir(path.join(claudeSkillsDir, 'rasen-explore'), { recursive: true });
+        await fs.writeFile(path.join(claudeSkillsDir, 'rasen-explore', 'SKILL.md'), 'old');
 
-      // Create a Cursor directory (not configured — no skills)
-      await fs.mkdir(path.join(testDir, '.cursor'), { recursive: true });
+        // Create a Codex directory (adapted, not configured — no skills)
+        await fs.mkdir(path.join(testDir, '.codex'), { recursive: true });
 
-      const consoleSpy = vi.spyOn(console, 'log');
+        const consoleSpy = vi.spyOn(console, 'log');
 
-      await updateCommand.execute(testDir);
+        await updateCommand.execute(testDir);
 
-      // Should detect Cursor as a new tool
-      const calls = consoleSpy.mock.calls.map(call =>
-        call.map(arg => String(arg)).join(' ')
-      );
-      const hasNewToolMessage = calls.some(call =>
-        call.includes("Detected new tool: Cursor. Run 'rasen init' to add it.")
-      );
-      expect(hasNewToolMessage).toBe(true);
+        // Should detect Codex as a new tool
+        const calls = consoleSpy.mock.calls.map(call =>
+          call.map(arg => String(arg)).join(' ')
+        );
+        const hasNewToolMessage = calls.some(call =>
+          call.includes("Detected new tool: Codex. Run 'rasen init' to add it.")
+        );
+        expect(hasNewToolMessage).toBe(true);
 
-      consoleSpy.mockRestore();
+        consoleSpy.mockRestore();
+      } finally {
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     });
 
-    it('should consolidate multiple new tools into one message', async () => {
+    it('should not nudge for new unadapted tool directories (GitHub Copilot, Windsurf)', async () => {
       // Set up a configured Claude tool
       const claudeSkillsDir = path.join(testDir, '.claude', 'skills');
       await fs.mkdir(path.join(claudeSkillsDir, 'rasen-explore'), { recursive: true });
       await fs.writeFile(path.join(claudeSkillsDir, 'rasen-explore', 'SKILL.md'), 'old');
 
-      // Create two unconfigured tool directories
+      // Create two unconfigured, unadapted tool directories — the "run rasen
+      // init to add it" nudge must not suggest either, since init would
+      // refuse them (adapted-agent-visibility).
       await fs.mkdir(path.join(testDir, '.github'), { recursive: true });
       await fs.writeFile(path.join(testDir, '.github', 'copilot-instructions.md'), '');
       await fs.mkdir(path.join(testDir, '.windsurf'), { recursive: true });
@@ -1297,20 +1321,48 @@ content
         call.map(arg => String(arg)).join(' ')
       );
 
-      const consolidatedCalls = calls.filter(call =>
-        call.includes('Detected new tools:')
-      );
-      expect(consolidatedCalls).toHaveLength(1);
-      expect(consolidatedCalls[0]).toContain('GitHub Copilot');
-      expect(consolidatedCalls[0]).toContain('Windsurf');
-      expect(consolidatedCalls[0]).toContain("Run 'rasen init' to add them.");
-
-      const repeatedSingularCalls = calls.filter(call =>
-        call.includes('Detected new tool:')
-      );
-      expect(repeatedSingularCalls).toHaveLength(0);
+      expect(calls.some(call => call.includes('Detected new tool'))).toBe(false);
+      expect(calls.some(call => call.includes('GitHub Copilot'))).toBe(false);
+      expect(calls.some(call => call.includes('Windsurf'))).toBe(false);
 
       consoleSpy.mockRestore();
+    });
+
+    it('should consolidate multiple new adapted tools into one message', async () => {
+      const originalCodexHome = process.env.CODEX_HOME;
+      // Isolate Codex's global command home (see note above).
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home-empty');
+      try {
+        // No tools configured yet; both adapted tool directories are present
+        // (Claude configured, Codex detected-only).
+        const claudeSkillsDir = path.join(testDir, '.claude', 'skills');
+        await fs.mkdir(path.join(claudeSkillsDir, 'rasen-explore'), { recursive: true });
+        await fs.writeFile(path.join(claudeSkillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+        await fs.mkdir(path.join(testDir, '.codex'), { recursive: true });
+        // Also mix in an unadapted, unconfigured directory to prove it's excluded.
+        await fs.mkdir(path.join(testDir, '.windsurf'), { recursive: true });
+
+        const consoleSpy = vi.spyOn(console, 'log');
+
+        await updateCommand.execute(testDir);
+
+        const calls = consoleSpy.mock.calls.map(call =>
+          call.map(arg => String(arg)).join(' ')
+        );
+
+        const newToolCalls = calls.filter(call => call.includes('Detected new tool'));
+        expect(newToolCalls).toHaveLength(1);
+        expect(newToolCalls[0]).toContain('Codex');
+        expect(newToolCalls[0]).not.toContain('Windsurf');
+
+        consoleSpy.mockRestore();
+      } finally {
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     });
 
     it('should not show new tool message when no new tools detected', async () => {

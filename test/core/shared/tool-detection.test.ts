@@ -51,11 +51,12 @@ describe('tool-detection', () => {
   });
 
   describe('getToolsWithSkillsDir', () => {
-    it('should return tools that have skillsDir configured', () => {
+    it('should return only adapted tools (claude, codex)', () => {
       const tools = getToolsWithSkillsDir();
       expect(tools).toContain('claude');
-      expect(tools).toContain('cursor');
-      expect(tools).toContain('windsurf');
+      expect(tools).toContain('codex');
+      expect(tools).not.toContain('cursor');
+      expect(tools).not.toContain('windsurf');
       expect(tools.length).toBeGreaterThan(0);
     });
   });

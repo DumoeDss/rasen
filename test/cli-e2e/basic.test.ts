@@ -49,7 +49,7 @@ describe('openspec CLI e2e basics', () => {
     const result = await runCLI(['init', '--help']);
     expect(result.exitCode).toBe(0);
 
-    const expectedTools = AI_TOOLS.filter((tool) => tool.available)
+    const expectedTools = AI_TOOLS.filter((tool) => tool.available && tool.adapted)
       .map((tool) => tool.value)
       .join(', ');
     const normalizedOutput = result.stdout.replace(/\s+/g, ' ').trim();
@@ -140,11 +140,13 @@ describe('openspec CLI e2e basics', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Rasen Setup Complete');
 
-      // Check that skills were created for multiple tools
+      // --tools all now means "all adapted tools" — claude and codex only.
       const claudeSkillPath = path.join(emptyProjectDir, '.claude/skills/rasen-explore/SKILL.md');
+      const codexSkillPath = path.join(emptyProjectDir, '.codex/skills/rasen-explore/SKILL.md');
       const cursorSkillPath = path.join(emptyProjectDir, '.cursor/skills/rasen-explore/SKILL.md');
       expect(await fileExists(claudeSkillPath)).toBe(true);
-      expect(await fileExists(cursorSkillPath)).toBe(true);
+      expect(await fileExists(codexSkillPath)).toBe(true);
+      expect(await fileExists(cursorSkillPath)).toBe(false);
     }, 25000);
 
     it('initializes with --tools list option', async () => {

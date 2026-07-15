@@ -88,10 +88,25 @@ export interface ToolVersionStatus {
 }
 
 /**
- * Gets the list of tools with skillsDir configured.
+ * Gets the list of adapted tools with skillsDir configured.
+ * This is the install/selection surface — it only offers agents Rasen has
+ * adapted orchestration for. Tolerant-read functions below intentionally do
+ * NOT use this filter; they operate on the full AI_TOOLS list so already
+ * configured (but unadapted) tools remain serviceable by update.
  */
 export function getToolsWithSkillsDir(): string[] {
-  return AI_TOOLS.filter((t) => t.skillsDir).map((t) => t.value);
+  return AI_TOOLS.filter((t) => t.skillsDir && t.adapted).map((t) => t.value);
+}
+
+/**
+ * Classifies a token as a known-but-unadapted tool: it matches an AI_TOOLS
+ * entry with a skillsDir, but that entry is not adapted. Used to give a
+ * distinguishing "recognized but not yet adapted" error instead of the
+ * generic "unknown tool" error.
+ */
+export function isKnownUnadaptedTool(value: string): boolean {
+  const tool = AI_TOOLS.find((t) => t.value === value);
+  return Boolean(tool?.skillsDir && !tool.adapted);
 }
 
 /**

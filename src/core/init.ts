@@ -45,6 +45,7 @@ import {
 import {
   SKILL_NAMES,
   getToolsWithSkillsDir,
+  isKnownUnadaptedTool,
   getToolSkillStatus,
   getToolStates,
   getSkillTemplates,
@@ -363,11 +364,12 @@ export class InitCommand {
 
     // Non-interactive mode: use detected tools as fallback (task 7.8)
     if (!canPrompt) {
-      if (detectedToolIds.size > 0) {
-        return [...detectedToolIds];
+      const adaptedDetectedToolIds = [...detectedToolIds].filter((id) => validTools.includes(id));
+      if (adaptedDetectedToolIds.length > 0) {
+        return adaptedDetectedToolIds;
       }
       throw new Error(
-        `No tools detected and no --tools flag provided. Valid tools:\n  ${validTools.join('\n  ')}\n\nUse --tools all, --tools none, or --tools claude,cursor,...`
+        `No tools detected and no --tools flag provided. Valid tools:\n  ${validTools.join('\n  ')}\n\nUse --tools all, --tools none, or --tools ${validTools.join(',')}`
       );
     }
 
@@ -485,6 +487,22 @@ export class InitCommand {
     );
 
     if (invalidTokens.length > 0) {
+      const unadaptedTokens = invalidTokens.filter((token) => isKnownUnadaptedTool(token.toLowerCase()));
+      const unknownTokens = invalidTokens.filter((token) => !isKnownUnadaptedTool(token.toLowerCase()));
+
+      if (unadaptedTokens.length > 0 && unknownTokens.length === 0) {
+        throw new Error(
+          `Tool(s) recognized but not yet adapted in Rasen: ${unadaptedTokens.join(', ')}. Currently adapted tools: ${availableTools.join(', ')}.`
+        );
+      }
+
+      if (unadaptedTokens.length > 0) {
+        throw new Error(
+          `Invalid tool(s): ${unknownTokens.join(', ')}. Available values: ${availableList}\n` +
+          `Tool(s) recognized but not yet adapted in Rasen: ${unadaptedTokens.join(', ')}. Currently adapted tools: ${availableTools.join(', ')}.`
+        );
+      }
+
       throw new Error(
         `Invalid tool(s): ${invalidTokens.join(', ')}. Available values: ${availableList}`
       );
@@ -513,6 +531,13 @@ export class InitCommand {
         const validToolIds = getToolsWithSkillsDir();
         throw new Error(
           `Unknown tool '${toolId}'. Valid tools:\n  ${validToolIds.join('\n  ')}`
+        );
+      }
+
+      if (isKnownUnadaptedTool(toolId)) {
+        const validToolIds = getToolsWithSkillsDir();
+        throw new Error(
+          `Tool '${toolId}' is recognized but not yet adapted in Rasen. Currently adapted tools: ${validToolIds.join(', ')}.`
         );
       }
 
