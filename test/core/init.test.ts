@@ -56,9 +56,11 @@ describe('InitCommand', () => {
 
   afterEach(async () => {
     process.env = originalEnv;
-    await fs.rm(testDir, { recursive: true, force: true });
-    await fs.rm(configTempDir, { recursive: true, force: true });
-    await fs.rm(dataTempDir, { recursive: true, force: true });
+    // maxRetries: Windows CI intermittently throws ENOTEMPTY/EBUSY on rmdir
+    // while antivirus or pending writes still hold handles in the tree.
+    await fs.rm(testDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.rm(configTempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.rm(dataTempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     vi.restoreAllMocks();
   });
 
@@ -251,6 +253,8 @@ describe('InitCommand', () => {
       expect(await fileExists(cursorSkill)).toBe(true);
     });
 
+    // 120s timeout: --tools all writes skill trees for every supported tool
+    // (thousands of small files), which Windows CI can't finish in the 10s default.
     it('should select all tools with --tools all option', async () => {
       const initCommand = new InitCommand({ tools: 'all', force: true });
 
@@ -264,7 +268,7 @@ describe('InitCommand', () => {
       expect(await fileExists(claudeSkill)).toBe(true);
       expect(await fileExists(cursorSkill)).toBe(true);
       expect(await fileExists(windsurfSkill)).toBe(true);
-    });
+    }, 120_000);
 
     it('should skip tool configuration with --tools none option', async () => {
       const initCommand = new InitCommand({ tools: 'none', force: true });
@@ -889,9 +893,11 @@ describe('InitCommand machine-home registration', () => {
 
   afterEach(async () => {
     process.env = originalEnv;
-    await fs.rm(testDir, { recursive: true, force: true });
-    await fs.rm(configTempDir, { recursive: true, force: true });
-    await fs.rm(dataTempDir, { recursive: true, force: true });
+    // maxRetries: Windows CI intermittently throws ENOTEMPTY/EBUSY on rmdir
+    // while antivirus or pending writes still hold handles in the tree.
+    await fs.rm(testDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.rm(configTempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.rm(dataTempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     vi.restoreAllMocks();
   });
 
