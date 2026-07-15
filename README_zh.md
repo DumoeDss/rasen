@@ -5,13 +5,14 @@
 <p align="center">
   <a href="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="许可证: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
+  <a href="https://rasen.io/zh/docs/"><img alt="文档" src="https://img.shields.io/badge/docs-rasen.io-4AF626?style=flat-square&labelColor=050505" /></a>
 </p>
 
 <p align="center">
-  <a href="https://rasen.io/docs/"><img alt="Docs — English" src="https://img.shields.io/badge/docs-English-4AF626?style=flat-square&labelColor=050505" /></a>
-  <a href="https://rasen.io/zh/docs/"><img alt="文档 — 简体中文" src="https://img.shields.io/badge/docs-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-4AF626?style=flat-square&labelColor=050505" /></a>
-  <a href="https://rasen.io/ja/docs/"><img alt="ドキュメント — 日本語" src="https://img.shields.io/badge/docs-%E6%97%A5%E6%9C%AC%E8%AA%9E-4AF626?style=flat-square&labelColor=050505" /></a>
-  <a href="https://rasen.io/ko/docs/"><img alt="문서 — 한국어" src="https://img.shields.io/badge/docs-%ED%95%9C%EA%B5%AD%EC%96%B4-4AF626?style=flat-square&labelColor=050505" /></a>
+  <a href="./README.md"><img alt="English" src="https://img.shields.io/badge/English-9A9A98?style=flat-square" /></a>
+  <a href="./README_zh.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-4AF626?style=flat-square&labelColor=050505" /></a>
+  <a href="./README_ja.md"><img alt="日本語" src="https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-9A9A98?style=flat-square" /></a>
+  <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-9A9A98?style=flat-square" /></a>
 </p>
 
 **Rasen** 是一套规范驱动（spec-driven）的开发工作流，并在其之上叠加了一层自动驾驶编排 harness——你写下规范，harness 便驱动 change 走完 propose → apply → archive，自主迭代直到工作完成。
