@@ -1,0 +1,49 @@
+# adapted-agent-visibility Specification
+
+## Purpose
+Restrict install/selection surfaces to only the AI coding agents Rasen has adapted its orchestration for, while keeping unadapted agents defined in the registry and serviceable once already configured.
+## Requirements
+### Requirement: Only adapted agents are offered for installation
+
+Rasen SHALL offer an AI coding agent for installation only when Rasen has adapted its orchestration for that agent. An agent is "adapted" when Rasen's dispatch, worker lifecycle, and resume behavior are implemented for it. At the time of this capability, the adapted agents SHALL be Claude Code (`claude`) and Codex (`codex`). All other known agents SHALL be hidden from every install/selection surface while remaining defined in the tool registry.
+
+#### Scenario: Install surface lists only adapted agents
+
+- **WHEN** the set of installable tools is computed for any selection surface (interactive multi-select, `--tools all` expansion, or `--tools` help text)
+- **THEN** the result SHALL contain only adapted agents (`claude` and `codex`)
+- **AND** SHALL NOT contain any unadapted agent
+
+#### Scenario: Hidden agents remain defined but not offered
+
+- **WHEN** an agent is defined in the tool registry but is not adapted
+- **THEN** the agent's registry entry, paths, and detection metadata SHALL remain present and unchanged
+- **AND** the agent SHALL NOT appear as an installable choice
+
+### Requirement: Explicitly requesting an unadapted agent is refused with a distinguishing message
+
+When a user explicitly names a known-but-unadapted agent as a tool to install, Rasen SHALL refuse and SHALL explain that the agent is recognized but not yet adapted — distinct from the error shown for an unrecognized token.
+
+#### Scenario: Known unadapted agent requested explicitly
+
+- **WHEN** a user requests installation of a tool that exists in the registry, has a skills directory, but is not adapted (e.g. `cursor`)
+- **THEN** the system SHALL fail with exit code 1
+- **AND** SHALL display a message stating the tool is recognized but not yet adapted in Rasen
+- **AND** SHALL name the currently adapted tools (`claude`, `codex`)
+
+#### Scenario: Unrecognized token requested explicitly
+
+- **WHEN** a user requests installation of a token that does not correspond to any registry entry (e.g. `not-a-tool`)
+- **THEN** the system SHALL fail with exit code 1
+- **AND** SHALL display the existing invalid/unknown-tool error rather than the "not yet adapted" message
+
+### Requirement: Already-configured unadapted agents remain serviceable
+
+Hiding an unadapted agent from the install surface SHALL NOT disable maintenance of a project that already configured that agent before it was hidden. Detection of on-disk tool configuration and refresh of already-installed artifacts SHALL continue to consider all agents, adapted or not.
+
+#### Scenario: Update refreshes a previously configured unadapted agent
+
+- **WHEN** a project already has Rasen artifacts installed for an unadapted agent (e.g. a pre-existing `.cursor/` install)
+- **AND** the user runs `rasen update`
+- **THEN** the agent SHALL still be treated as configured
+- **THEN** its installed artifacts SHALL be refreshed like any configured tool
+- **AND** the agent SHALL NOT be dropped or orphaned because it is unadapted
