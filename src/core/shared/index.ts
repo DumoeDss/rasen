@@ -13,6 +13,7 @@ export {
   type ToolVersionStatus,
   getToolsWithSkillsDir,
   isKnownUnadaptedTool,
+  resolveToolSkillsRoot,
   getToolSkillStatus,
   getToolStates,
   extractGeneratedByVersion,

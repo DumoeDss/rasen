@@ -6,7 +6,8 @@
 
 import path from 'path';
 import * as fs from 'fs';
-import { AI_TOOLS } from '../config.js';
+import { AI_TOOLS, type AIToolOption } from '../config.js';
+import { resolveHermesHome } from '../hermes/hermes-home.js';
 
 /**
  * Names of skill directories created by rasen init.
@@ -110,6 +111,22 @@ export function isKnownUnadaptedTool(value: string): boolean {
 }
 
 /**
+ * Resolves where a tool's Rasen skills root lives on disk.
+ *
+ * Every tool defaults to a project-local skills directory
+ * (`<projectPath>/<skillsDir>/skills`) — this default is unchanged for all
+ * existing tools. A tool marked `skillsHome: 'global'` (currently only
+ * Hermes) instead resolves to its machine-global home's skills directory,
+ * independent of the project path.
+ */
+export function resolveToolSkillsRoot(tool: AIToolOption, projectPath: string): string {
+  if (tool.skillsHome === 'global') {
+    return path.join(resolveHermesHome(), 'skills');
+  }
+  return path.join(projectPath, tool.skillsDir ?? '', 'skills');
+}
+
+/**
  * Checks which skill files exist for a tool.
  */
 export function getToolSkillStatus(projectRoot: string, toolId: string): ToolSkillStatus {
@@ -118,7 +135,7 @@ export function getToolSkillStatus(projectRoot: string, toolId: string): ToolSki
     return { configured: false, fullyConfigured: false, skillCount: 0 };
   }
 
-  const skillsDir = path.join(projectRoot, tool.skillsDir, 'skills');
+  const skillsDir = resolveToolSkillsRoot(tool, projectRoot);
   let skillCount = 0;
 
   for (const skillName of SKILL_NAMES) {
@@ -201,7 +218,7 @@ export function getToolVersionStatus(
     };
   }
 
-  const skillsDir = path.join(projectRoot, tool.skillsDir, 'skills');
+  const skillsDir = resolveToolSkillsRoot(tool, projectRoot);
   let generatedByVersion: string | null = null;
 
   // Find the first skill file that exists and read its version

@@ -365,6 +365,62 @@ Old instructions content
       expect(content).toContain('---');
       expect(content).toContain('name:');
     });
+
+    it('should treat Hermes as configured via its global skills home and refresh only rasen- skills there', async () => {
+      const originalHermesHome = process.env.HERMES_HOME;
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      try {
+        // Pre-install a stale Rasen skill under the global Hermes home.
+        const hermesSkillsDir = path.join(hermesHome, 'skills');
+        await fs.mkdir(path.join(hermesSkillsDir, 'rasen-explore'), { recursive: true });
+        await fs.writeFile(path.join(hermesSkillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+        // A sibling, non-rasen-prefixed skill the user authored themselves —
+        // update must never touch this.
+        await fs.mkdir(path.join(hermesSkillsDir, 'my-own-skill'), { recursive: true });
+        await fs.writeFile(
+          path.join(hermesSkillsDir, 'my-own-skill', 'SKILL.md'),
+          'user-authored, do not touch'
+        );
+
+        const consoleSpy = vi.spyOn(console, 'log');
+
+        await updateCommand.execute(testDir);
+
+        // Hermes was recognized as configured and updated.
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('Updating 1 tool(s)')
+        );
+
+        // The rasen- skill was refreshed (no longer the stale placeholder content).
+        const refreshedSkill = await fs.readFile(
+          path.join(hermesSkillsDir, 'rasen-explore', 'SKILL.md'),
+          'utf-8'
+        );
+        expect(refreshedSkill).toContain('name: rasen-explore');
+        expect(refreshedSkill).not.toBe('old');
+
+        // The sibling non-rasen- skill is untouched.
+        const untouchedSkill = await fs.readFile(
+          path.join(hermesSkillsDir, 'my-own-skill', 'SKILL.md'),
+          'utf-8'
+        );
+        expect(untouchedSkill).toBe('user-authored, do not touch');
+
+        // No project-local .hermes/ tree was created.
+        const projectLocalDir = path.join(testDir, '.hermes');
+        await expect(fs.stat(projectLocalDir)).rejects.toThrow();
+
+        consoleSpy.mockRestore();
+      } finally {
+        if (originalHermesHome === undefined) {
+          delete process.env.HERMES_HOME;
+        } else {
+          process.env.HERMES_HOME = originalHermesHome;
+        }
+      }
+    });
   });
 
   describe('error handling', () => {

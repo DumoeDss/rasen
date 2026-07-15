@@ -207,6 +207,39 @@ describe('InitCommand', () => {
       expect(await fileExists(skillFile)).toBe(true);
     });
 
+    it('should install Hermes skills to the resolved Hermes home, not project-local .hermes/', async () => {
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      const initCommand = new InitCommand({ tools: 'hermes', force: true });
+
+      await initCommand.execute(testDir);
+
+      const globalSkillFile = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(globalSkillFile)).toBe(true);
+
+      // No project-local .hermes/ tree should be created.
+      const projectLocalDir = path.join(testDir, '.hermes');
+      expect(await directoryExists(projectLocalDir)).toBe(false);
+    });
+
+    it('should skip command-file generation for Hermes (no adapter) while still installing skills', async () => {
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      const initCommand = new InitCommand({ tools: 'hermes', force: true });
+
+      await initCommand.execute(testDir);
+
+      const globalSkillFile = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(globalSkillFile)).toBe(true);
+
+      const logCalls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.flat().map(String);
+      expect(
+        logCalls.some(
+          (entry) => entry.includes('Commands skipped for: hermes') && entry.includes('(no adapter)'),
+        ),
+      ).toBe(true);
+    });
+
     it('should reject an unadapted tool (Windsurf) with a "not yet adapted" message', async () => {
       const initCommand = new InitCommand({ tools: 'windsurf', force: true });
 
@@ -232,17 +265,21 @@ describe('InitCommand', () => {
 
     it('should select only adapted tools with --tools all option', async () => {
       process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
       const initCommand = new InitCommand({ tools: 'all', force: true });
 
       await initCommand.execute(testDir);
 
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
       const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
+      const hermesSkill = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
       const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
       const windsurfSkill = path.join(testDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
       expect(await fileExists(codexSkill)).toBe(true);
+      expect(await fileExists(hermesSkill)).toBe(true);
       expect(await fileExists(cursorSkill)).toBe(false);
       expect(await fileExists(windsurfSkill)).toBe(false);
     });

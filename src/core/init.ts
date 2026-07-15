@@ -46,6 +46,7 @@ import {
   SKILL_NAMES,
   getToolsWithSkillsDir,
   isKnownUnadaptedTool,
+  resolveToolSkillsRoot,
   getToolSkillStatus,
   getToolStates,
   getSkillTemplates,
@@ -637,8 +638,13 @@ export class InitCommand {
       const spinner = ora(`Setting up ${tool.name}...`).start();
 
       try {
-        // Use tool-specific skillsDir
-        const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+        // Use tool-specific skills root — project-local for most tools, a
+        // machine-global home for tools like Hermes (skillsHome: 'global').
+        const toolDefinition = AI_TOOLS.find((t) => t.value === tool.value);
+        const skillsDir = resolveToolSkillsRoot(
+          toolDefinition ?? { name: tool.name, value: tool.value, available: true, skillsDir: tool.skillsDir },
+          projectPath
+        );
 
         // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
         // openspec-*); installed dirs are not renamed in place.
@@ -788,15 +794,28 @@ export class InitCommand {
       const profile: Profile = (this.profileOverride as Profile) ?? globalConfig.profile ?? 'full';
       const delivery: Delivery = globalConfig.delivery ?? 'both';
       const workflows = getProfileWorkflows(profile, globalConfig.workflows);
-      const toolDirs = [...new Set(successfulTools.map((t) => t.skillsDir))].join(', ');
+      // Tools with a machine-global skills home (Hermes) report their
+      // resolved global location instead of the project-local `.hermes/`
+      // label, so the user knows skills landed outside the project.
+      const toolDirEntries = [...new Set(successfulTools.map((t) => {
+        const toolDefinition = AI_TOOLS.find((td) => td.value === t.value);
+        if (toolDefinition?.skillsHome === 'global') {
+          return `${resolveToolSkillsRoot(toolDefinition, projectPath)} (global)`;
+        }
+        return t.skillsDir;
+      }))];
+      const hasGlobalTool = toolDirEntries.some((entry) => entry.endsWith('(global)'));
+      // Preserve the exact previous format (single trailing slash) when every
+      // tool is project-local; a global entry already reads as a full path.
+      const toolDirs = hasGlobalTool ? toolDirEntries.join(', ') : `${toolDirEntries.join(', ')}/`;
       const skillCount = getSkillTemplates(workflows).length;
       const commandCount = delivery === 'both' ? getCommandContents(workflows).length : 0;
       if (skillCount > 0 && commandCount > 0) {
-        console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}/`);
+        console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}`);
       } else if (skillCount > 0) {
-        console.log(`${skillCount} skills in ${toolDirs}/`);
+        console.log(`${skillCount} skills in ${toolDirs}`);
       } else if (commandCount > 0) {
-        console.log(`${commandCount} commands in ${toolDirs}/`);
+        console.log(`${commandCount} commands in ${toolDirs}`);
       }
     }
 

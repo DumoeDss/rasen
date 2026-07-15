@@ -13,7 +13,10 @@ import {
   getToolVersionStatus,
   getConfiguredTools,
   getAllToolVersionStatus,
+  resolveToolSkillsRoot,
 } from '../../../src/core/shared/tool-detection.js';
+import { AI_TOOLS } from '../../../src/core/config.js';
+import { resolveHermesHome } from '../../../src/core/hermes/hermes-home.js';
 
 describe('tool-detection', () => {
   let testDir: string;
@@ -51,13 +54,58 @@ describe('tool-detection', () => {
   });
 
   describe('getToolsWithSkillsDir', () => {
-    it('should return only adapted tools (claude, codex)', () => {
+    it('should return only adapted tools (claude, codex, hermes)', () => {
       const tools = getToolsWithSkillsDir();
       expect(tools).toContain('claude');
       expect(tools).toContain('codex');
+      expect(tools).toContain('hermes');
       expect(tools).not.toContain('cursor');
       expect(tools).not.toContain('windsurf');
       expect(tools.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('resolveToolSkillsRoot', () => {
+    let originalHermesHome: string | undefined;
+
+    beforeEach(() => {
+      originalHermesHome = process.env.HERMES_HOME;
+    });
+
+    afterEach(() => {
+      if (originalHermesHome === undefined) {
+        delete process.env.HERMES_HOME;
+      } else {
+        process.env.HERMES_HOME = originalHermesHome;
+      }
+    });
+
+    it('returns the project-local path for a project-local tool (claude)', () => {
+      const claude = AI_TOOLS.find((t) => t.value === 'claude')!;
+      const projectPath = path.join(testDir, 'my-project');
+      expect(resolveToolSkillsRoot(claude, projectPath)).toBe(
+        path.join(projectPath, '.claude', 'skills')
+      );
+    });
+
+    it('returns the default HERMES_HOME-based path for hermes', () => {
+      delete process.env.HERMES_HOME;
+      const hermes = AI_TOOLS.find((t) => t.value === 'hermes')!;
+      const projectPath = path.join(testDir, 'my-project');
+      const result = resolveToolSkillsRoot(hermes, projectPath);
+      expect(result).toBe(path.join(resolveHermesHome(), 'skills'));
+      // The result must not depend on the project path at all.
+      expect(result).not.toContain(projectPath);
+    });
+
+    it('honors a HERMES_HOME override for hermes', () => {
+      const customHome = path.join(testDir, 'custom-hermes-home');
+      process.env.HERMES_HOME = customHome;
+      const hermes = AI_TOOLS.find((t) => t.value === 'hermes')!;
+      const projectPath = path.join(testDir, 'my-project');
+      expect(resolveToolSkillsRoot(hermes, projectPath)).toBe(
+        path.join(customHome, 'skills')
+      );
     });
   });
 
