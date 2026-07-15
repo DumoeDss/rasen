@@ -6,19 +6,19 @@ Quick answers to the questions people ask most. If your question is really a "so
 
 ### What is rasen, in one sentence?
 
-A lightweight layer that gets you and your AI coding assistant to agree on what to build, in writing, before any code is written.
+An autonomous harness that turns your intent into shipped code: tell it what you want, and it plans, implements, reviews, ships, and archives the change on its own. Control the ideas, not the code.
 
 ### Why would I want that?
 
-Because AI assistants are confident even when they're wrong. When the requirements live only in a chat thread, the AI fills gaps with guesses, and you find out after the code exists. Rasen moves the agreement earlier, where mistakes are cheap to fix. See [Core Concepts at a Glance](overview.md) for the full case.
+Because AI assistants are confident even when they're wrong. Left alone, an AI fills requirement gaps with guesses, and you find out after the code exists. Rasen's outer loop captures your intent as a spec up front — its own working memory, not homework handed back to you — so drift gets caught while it's still cheap to fix. See [Core Concepts at a Glance](overview.md) for the full case.
 
 ### Do I have to use it for everything?
 
-No. Use it where agreement matters, which is most non-trivial work. For a one-character typo fix, the ceremony probably isn't worth it, and that's fine.
+No. Use it where catching drift early matters, which is most non-trivial work. For a one-character typo fix, the ceremony probably isn't worth it, and that's fine.
 
 ### Can I use it on a big existing codebase, or only new projects?
 
-Existing codebases are the main event. Rasen is brownfield-first: you do not document your whole app up front. You write specs only for what each change touches, and your specs fill in over time around the work you actually do. There's a dedicated guide: [Using Rasen in an Existing Project](existing-projects.md).
+Existing codebases are the main event. Rasen is brownfield-first: you do not document your whole app up front. The harness writes specs only for what each change touches, and they fill in over time around the work you actually do. There's a dedicated guide: [Using Rasen in an Existing Project](existing-projects.md).
 
 ### Is it tied to one AI tool?
 
