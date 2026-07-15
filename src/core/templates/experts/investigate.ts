@@ -1,9 +1,9 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE } from './_shared.js';
+import { PREAMBLE_DIALOGUE } from './_shared.js';
 
 const BODY = `
-${PREAMBLE}
+${PREAMBLE_DIALOGUE}
 
 # Systematic Debugging
 
@@ -76,7 +76,7 @@ With a minimised repro in hand you know the affected module — lock edits to it
 **If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:
 
 \`\`\`bash
-STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}"
+STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
 mkdir -p "$STATE_DIR"
 echo "<detected-directory>/" > "$STATE_DIR/freeze-dir.txt"
 echo "Debug scope locked to: <detected-directory>/"
@@ -225,7 +225,7 @@ Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 export function getInvestigateSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:investigate',
-    description: '|',
+    description: 'Systematic debugging — reproduce, isolate, and root-cause a bug with evidence before attempting any fix',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

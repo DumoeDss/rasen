@@ -1,11 +1,11 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE } from './_shared.js';
+import { PREAMBLE_LITE } from './_shared.js';
 
 const BODY = `
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
 
-${PREAMBLE}
+${PREAMBLE_LITE}
 
 # Test-Driven Development
 
@@ -43,7 +43,7 @@ Ask: "What's the public interface, and which seams should we test?"
 export function getTddSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:tdd',
-    description: '|',
+    description: 'Test-driven development — red, green, refactor discipline with mocking guidance',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

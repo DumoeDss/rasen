@@ -36,7 +36,7 @@ import {
   pruneRetiredExpertSkillDirs,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
-import { getGlobalConfig, type Delivery, type Profile } from './global-config.js';
+import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
 import { getProfileWorkflows, ALL_WORKFLOWS } from './profiles.js';
 import { getAvailableTools } from './available-tools.js';
 import {
@@ -113,6 +113,8 @@ export class UpdateCommand {
       (ALL_WORKFLOWS as readonly string[]).includes(workflow)
     );
     const shouldGenerateCommands = delivery === 'both';
+    const proactive = globalConfig.proactive ?? true;
+    const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
     // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
     // refreshes only rasen-namespace artifacts; upstream/older-rasen `opsx`
@@ -211,8 +213,15 @@ export class UpdateCommand {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
-          // Use hyphen-based command references for OpenCode
-          const transformer = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+          // Chain transformers: embed config values, then tool-specific transforms
+          // (hyphen-based command references for OpenCode), mirroring init.
+          const configTransform = (text: string) => text
+            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+          const transformer = toolTransform
+            ? (text: string) => toolTransform(configTransform(text))
+            : configTransform;
           const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
           await FileSystemUtils.writeFile(skillFile, skillContent);
 

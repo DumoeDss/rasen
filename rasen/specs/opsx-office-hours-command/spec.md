@@ -22,14 +22,14 @@ The system SHALL provide a SkillTemplate and CommandTemplate for office-hours in
 
 ### Requirement: Dual-Write Output
 
-Output SHALL be dual-written: gstack default location AND `rasen/changes/<name>/office-hours-design.md`.
+Output SHALL be dual-written: the project-scoped default location (`~/.rasen/projects/<slug>/`) AND `rasen/changes/<name>/office-hours-design.md`.
 
 #### Scenario: Output when active change exists
 
 - **WHEN** office-hours completes
 - **AND** an active Rasen change context exists
 - **THEN** the output document SHALL be written to `rasen/changes/<name>/office-hours-design.md`
-- **AND** the output SHALL also be written to the gstack default location
+- **AND** the output SHALL also be written to the project-scoped default location (`~/.rasen/projects/<slug>/`)
 
 #### Scenario: Output when no active change exists
 

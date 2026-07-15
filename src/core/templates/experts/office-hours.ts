@@ -1,9 +1,9 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, CHROME_USE_SETUP, DESIGN_SKETCH, SPEC_REVIEW_LOOP } from './_shared.js';
+import { PREAMBLE_DIALOGUE, CHROME_USE_SETUP, DESIGN_SKETCH, SPEC_REVIEW_LOOP } from './_shared.js';
 
 const BODY = `
-${PREAMBLE}
+${PREAMBLE_DIALOGUE}
 
 ${CHROME_USE_SETUP}
 
@@ -594,7 +594,7 @@ The design doc at \`~/.rasen/projects/\` is automatically discoverable by downst
 export function getOfficeHoursSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:office-hours',
-    description: '|',
+    description: 'YC-style office hours — pressure-test product demand and design direction before building',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

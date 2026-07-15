@@ -337,7 +337,7 @@ If token count is not available, display: \`Tokens: unknown\`
 export function getCodexSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:codex',
-    description: '|',
+    description: 'Multi-AI second opinion — dispatch the OpenAI Codex CLI for an independent review or implementation pass and reconcile its findings',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

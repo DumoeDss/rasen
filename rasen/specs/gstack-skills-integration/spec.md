@@ -69,15 +69,15 @@ The system SHALL install expert skill SKILL.md files to target AI tool directori
 - **THEN** expert skill SKILL.md files are regenerated alongside workflow skill files
 
 ### Requirement: Path References Updated
-All migrated skill files SHALL have path references updated from gstack conventions to OpenSpec conventions.
+All migrated skill files SHALL have path references updated from gstack conventions to Rasen conventions.
 
 #### Scenario: Home directory paths updated
 - **WHEN** a migrated skill file originally contained `~/.gstack/`
-- **THEN** the migrated file contains `~/.openspec/`
+- **THEN** the migrated file contains `~/.rasen/`
 
 #### Scenario: Project directory paths updated
 - **WHEN** a migrated skill file originally contained `.gstack/`
-- **THEN** the migrated file contains `.openspec/`
+- **THEN** the migrated file contains `.rasen/`
 
 #### Scenario: Non-path content preserved
 - **WHEN** a migrated skill file contains text that is not a path reference
