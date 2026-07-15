@@ -7,6 +7,13 @@
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
 </p>
 
+<p align="center">
+  <a href="https://rasen.io/docs/"><img alt="Docs — English" src="https://img.shields.io/badge/docs-English-4AF626?style=flat-square&labelColor=050505" /></a>
+  <a href="https://rasen.io/zh/docs/"><img alt="文档 — 简体中文" src="https://img.shields.io/badge/docs-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-4AF626?style=flat-square&labelColor=050505" /></a>
+  <a href="https://rasen.io/ja/docs/"><img alt="ドキュメント — 日本語" src="https://img.shields.io/badge/docs-%E6%97%A5%E6%9C%AC%E8%AA%9E-4AF626?style=flat-square&labelColor=050505" /></a>
+  <a href="https://rasen.io/ko/docs/"><img alt="문서 — 한국어" src="https://img.shields.io/badge/docs-%ED%95%9C%EA%B5%AD%EC%96%B4-4AF626?style=flat-square&labelColor=050505" /></a>
+</p>
+
 **Rasen** is a spec-driven development workflow with an autonomous orchestration harness on top — you write a spec, and the harness drives the change through propose → apply → archive, iterating on its own until the work is done.
 
 ## Not a circle — a spiral
