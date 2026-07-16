@@ -1,9 +1,7 @@
-# cli-agent-context Specification
+# cli-agent-context Delta
 
-## Purpose
-Defines the `rasen agent context` command that reports an agent transcript's context-window occupancy from its recorded API usage, with no estimation, across both Claude Code transcripts and Codex rollout files. This gives any agent — the LEAD or a role-isolated worker, on either runtime — a deterministic number for deciding when a long run is approaching compaction, together with the context-limit resolution that turns that number into an occupancy fraction.
+## MODIFIED Requirements
 
-## Requirements
 ### Requirement: Context probe command
 The CLI SHALL provide `rasen agent context` that reports the context-window occupancy of an agent transcript from its recorded API usage, without estimation. The probe SHALL support both Claude Code transcripts and Codex rollout files through the same command and output shape (`available`, `model`, `contextTokens`, `limit`, `pct`, `transcript`), detecting the transcript kind from the file (Codex's own `rollout-*.jsonl` naming convention first, a first-line content check for renamed copies) with an explicit `--runtime <claude|codex>` override that wins over detection.
 
@@ -70,21 +68,3 @@ The probe SHALL distinguish two failure classes. **Environmental absence** — r
 - **WHEN** a user passes `--runtime claude` or `--runtime codex`
 - **THEN** the CLI SHALL read the transcript with the named runtime's reader regardless of filename or content detection
 - **AND** SHALL reject any other `--runtime` value with an actionable error
-
-### Requirement: Context-limit resolution
-The probe SHALL resolve the context-window limit per transcript kind: for Claude transcripts, from the transcript's model id via a built-in model map with a conservative default; for Codex rollouts, from the exact `model_context_window` the rollout's token-count event carries inline (no model map). An explicit `--limit <n>` override SHALL win on both kinds, with `pct` recomputed against it.
-
-#### Scenario: Known model
-- **WHEN** the transcript's latest usage entry names a model with a known context window
-- **THEN** the CLI SHALL use that window as `limit`
-
-#### Scenario: Unknown model with override
-- **WHEN** the model is not in the built-in map and `--limit <n>` is provided
-- **THEN** the CLI SHALL use `<n>` as the limit
-- **AND** without an override it SHALL fall back to the conservative default of 200000
-
-#### Scenario: Codex inline window
-- **WHEN** a Codex rollout's last token-count event carries a model context window
-- **THEN** the CLI SHALL use that exact value as `limit` without consulting the built-in model map
-- **AND** an explicit `--limit <n>` SHALL still override it, with `pct` recomputed as contextTokens / n
-

@@ -22,7 +22,7 @@ import {
   listPipelinesWithInfo,
   PipelineGraph,
   parsePipeline,
-  readRunState,
+  readRunStateDetailed,
   resolveRunStateLocation,
   completedStages,
   stageWorkers,
@@ -396,12 +396,37 @@ export class PipelineCommand {
       return;
     }
 
-    // Sticky-legacy (design D4): workDir first, change dir fallback.
+    // Sticky-legacy (design D4): workDir first, change dir fallback. Detailed
+    // read (design D3) so a located-but-unparseable file is reported
+    // distinctly from no file at all, instead of masquerading as "not found".
     const runStateLocation = resolveRunStateLocation(changeDir, workDir);
-    const runState = runStateLocation ? readRunState(runStateLocation.dir) : null;
+    const runStateRead = runStateLocation
+      ? readRunStateDetailed(runStateLocation.dir)
+      : ({ kind: 'absent' } as const);
+    const runState = runStateRead.kind === 'ok' ? runStateRead.state : null;
 
     // No run-state recorded yet (or not in usable form).
     if (!runState || runState.pipeline.length === 0) {
+      if (runStateRead.kind === 'invalid' && runStateLocation) {
+        const result = {
+          change: changeName,
+          hasRunState: false as const,
+          invalidRunState: true as const,
+          runStatePath: runStateLocation.path,
+          pipeline: null,
+          completed: [] as string[],
+          next: null,
+          remaining: [] as string[],
+          note: `Run-state file at ${runStateLocation.path} is invalid: ${runStateRead.reason}`,
+        };
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        console.log(`Change: ${changeName}`);
+        console.log(result.note);
+        return;
+      }
       const result = {
         change: changeName,
         hasRunState: false as const,

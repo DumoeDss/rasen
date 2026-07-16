@@ -586,6 +586,54 @@ stages:
       expect(json.note).toContain('No run-state');
     });
 
+    // design D3: a located-but-unparseable auto-run.json is reported
+    // distinctly from the no-file case, so the failure is diagnosable.
+    it('reports invalidRunState:true with path+reason for a syntactically broken auto-run.json', async () => {
+      const changeDir = path.join(changesDir, 'broken-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'auto-run.json'), '{ not valid json', 'utf-8');
+
+      const result = await runCLI(['pipeline', 'resume', 'broken-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.invalidRunState).toBe(true);
+      expect(json.runStatePath).toContain('auto-run.json');
+      expect(json.note).toContain('invalid');
+
+      const textResult = await runCLI(['pipeline', 'resume', 'broken-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('invalid');
+    });
+
+    it('reports invalidRunState:true for a run-state that fails schema validation', async () => {
+      const changeDir = path.join(changesDir, 'schema-broken-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      // missing required `pipeline` field
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'schema-broken-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.invalidRunState).toBe(true);
+      expect(json.runStatePath).toContain('auto-run.json');
+    });
+
+    it('keeps today\'s "not found" output exactly for an absent auto-run.json (no invalidRunState key)', async () => {
+      await fs.mkdir(path.join(changesDir, 'absent-change'), { recursive: true });
+      const result = await runCLI(['pipeline', 'resume', 'absent-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.invalidRunState).toBeUndefined();
+      expect(json.note).toContain('No run-state');
+    });
+
     it('computes next/remaining from a synthesized auto-run.json', async () => {
       const changeDir = path.join(changesDir, 'wip-change');
       await fs.mkdir(changeDir, { recursive: true });
@@ -1164,6 +1212,42 @@ stages:
       expect(normalizePaths(json.runStateDir)).toContain('both-change/work');
       // Proves the workDir copy (2 stages done) won over the changeDir copy (1).
       expect(json.completed).toContain('implement');
+    });
+
+    // scope item 3 / design D1+D4: covers the screenshot path together —
+    // workDir-first resolution AND host-tolerant parsing of a Codex-LEAD-written
+    // run-state, placed ONLY in the external workDir (no legacy changeDir copy).
+    it('resolves and host-tolerantly parses a Codex-flavored run-state found ONLY in the work directory', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-codex-host');
+      const workDir = await mintWorkDir('codex-host-change', globalDataDir);
+      await fs.mkdir(workDir, { recursive: true });
+      await fs.writeFile(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify(
+          {
+            pipeline: 'bug-fix',
+            stages: {
+              propose: {
+                status: 'done',
+                worker: { transcript: null, runtime: 'codex-host-fallback', agentId: 'codex-1' },
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'codex-host-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.hasRunState).toBe(true);
+      expect(json.invalidRunState).toBeUndefined();
+      expect(normalizePaths(json.runStateDir)).toContain('codex-host-change/work');
+      expect(json.completed).toContain('propose');
     });
 
     it('portfolio-state resolution follows the same workDir-first/change-dir-fallback matrix', async () => {
