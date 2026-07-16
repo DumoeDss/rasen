@@ -146,3 +146,7 @@ Telemetry is also **automatically disabled in CI**.
 MIT — Copyright (c) 2024 OpenSpec Contributors and Copyright (c) 2026 Sayo. See [LICENSE](./LICENSE).
 
 Issues and feedback: [github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen).
+
+## Community
+
+Rasen is shared and discussed on [LINUX DO](https://linux.do) — a community we're glad to be part of.
