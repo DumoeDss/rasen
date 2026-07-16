@@ -1,15 +1,15 @@
 # Design Review Checklist (Lite)
 
-> **Subset of DESIGN_METHODOLOGY** — when adding items here, also update `generateDesignMethodology()` in `scripts/gen-skill-docs.ts`, and vice versa.
+> **Subset of DESIGN_METHODOLOGY** — when adding items here, also update `DESIGN_METHODOLOGY` in `src/core/templates/experts/_shared.ts`, and vice versa.
 
 ## Instructions
 
 This checklist applies to **source code in the diff** — not rendered output. Read each changed frontend file (full file, not just diff hunks) and flag anti-patterns.
 
-**Trigger:** Only run this checklist if the diff touches frontend files. Use `gstack-diff-scope` to detect:
+**Trigger:** Only run this checklist if the diff touches frontend files. Detect by inspecting changed file extensions:
 
 ```bash
-source <(~/.claude/skills/gstack/bin/gstack-diff-scope <base> 2>/dev/null)
+SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\.(tsx|jsx|css|scss|html|vue|svelte)$' && echo "true" || echo "false")
 ```
 
 If `SCOPE_FRONTEND=false`, skip the entire design review silently.

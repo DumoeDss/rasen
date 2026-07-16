@@ -70,7 +70,7 @@ The surviving methodology experts SHALL remain registered and standalone-invokab
 
 ### Requirement: Propose references the design methodology expert
 
-The `/rasen:propose` workflow template SHALL reference `/codebase-design` as a conditional, teaching-level consultation for design-dense changes (a new module or a non-trivial interface), without inlining its skill body. The reference SHALL instruct that resulting interface/design decisions are captured in the change directory (the change's `design.md` Decisions section or a change-directory sidecar), not in gstack-native paths.
+The `/rasen:propose` workflow template SHALL reference `/codebase-design` as a conditional, teaching-level consultation for design-dense changes (a new module or a non-trivial interface), without inlining its skill body. The reference SHALL instruct that resulting interface/design decisions are captured in the change directory (the change's `design.md` Decisions section or a change-directory sidecar), not in expert-skill-native report paths.
 
 #### Scenario: Propose template names the design methodology expert
 

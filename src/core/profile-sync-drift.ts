@@ -9,7 +9,7 @@ import {
   getLegacyCommandFilePath,
   getCommandFilePathCandidates,
 } from './command-generation/index.js';
-import { COMMAND_IDS, getConfiguredTools } from './shared/index.js';
+import { COMMAND_IDS, getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
 
 type WorkflowId = (typeof ALL_WORKFLOWS)[number];
 
@@ -118,7 +118,7 @@ export function hasToolProfileOrDeliveryDrift(
 
   const knownDesiredWorkflows = toKnownWorkflows(desiredWorkflows);
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
-  const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+  const skillsDir = resolveToolSkillsRoot(tool, projectPath);
   const adapter = CommandAdapterRegistry.get(toolId);
   // Skills are always installed; only commands are gated on delivery.
   const shouldGenerateCommands = delivery === 'both';
@@ -212,7 +212,7 @@ function getInstalledWorkflowsForTool(
   if (!tool?.skillsDir) return [];
 
   const installed = new Set<WorkflowId>();
-  const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+  const skillsDir = resolveToolSkillsRoot(tool, projectPath);
 
   if (options.includeSkills) {
     for (const workflow of ALL_WORKFLOWS) {

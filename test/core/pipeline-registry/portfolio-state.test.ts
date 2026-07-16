@@ -104,6 +104,77 @@ describe('portfolio run-state', () => {
     });
   });
 
+  // design D1: parsePortfolioState reuses normalizeRunStateWorkerRecord for
+  // the `planner` field (portfolio-state.ts normalizePortfolioStateJson),
+  // since planner shares the worker shape. Review finding (Minor): this was
+  // previously unguarded by any dedicated test.
+  describe('parsePortfolioState host-tolerant planner normalization (design D1)', () => {
+    it('parses a Codex-LEAD-written planner record (transcript: null, non-enum runtime)', () => {
+      const s = parsePortfolioState(
+        JSON.stringify({
+          parent: 'big-feature',
+          planner: { transcript: null, runtime: 'codex-host-fallback', agentId: 'plan-1' },
+          children: [],
+        })
+      );
+      const planner = s.planner as Record<string, unknown>;
+      expect(planner.transcript).toBeUndefined();
+      expect(planner.runtime).toBeUndefined();
+      expect(planner.runtimeRaw).toBe('codex-host-fallback');
+      expect(planner.agentId).toBe('plan-1');
+    });
+
+    it('parses byte-identical for a canonical planner record (no runtimeRaw, no removed fields)', () => {
+      const input = {
+        parent: 'big-feature',
+        planner: { transcript: 'agent-plan-1.jsonl', runtime: 'codex', agentId: 'plan-1' },
+        children: [],
+      };
+      const s = parsePortfolioState(JSON.stringify(input));
+      const planner = s.planner as Record<string, unknown>;
+      expect(planner).toEqual({ transcript: 'agent-plan-1.jsonl', runtime: 'codex', agentId: 'plan-1' });
+      expect(planner.runtimeRaw).toBeUndefined();
+    });
+
+    it('leaves a bare-string planner label untouched', () => {
+      const s = parsePortfolioState(JSON.stringify({ parent: 'p', planner: 'planner-1', children: [] }));
+      expect(s.planner).toBe('planner-1');
+    });
+
+    // Review finding (Major, transitively Minor #3 for this call site):
+    // runtime: null must be stripped (treated as absent), not left to reach
+    // AgentRuntimeSchema.optional() (which rejects null) or routed into
+    // runtimeRaw (no raw string value to preserve).
+    it('strips planner runtime: null (treated as absent, no runtimeRaw) — previously threw', () => {
+      const s = parsePortfolioState(
+        JSON.stringify({
+          parent: 'big-feature',
+          planner: { runtime: null, agentId: 'plan-2' },
+          children: [],
+        })
+      );
+      const planner = s.planner as Record<string, unknown>;
+      expect(planner.runtime).toBeUndefined();
+      expect(planner.runtimeRaw).toBeUndefined();
+      expect(planner.agentId).toBe('plan-2');
+    });
+
+    it('strips planner runtime: null combined with transcript: null', () => {
+      const s = parsePortfolioState(
+        JSON.stringify({
+          parent: 'big-feature',
+          planner: { runtime: null, transcript: null, agentId: 'plan-3' },
+          children: [],
+        })
+      );
+      const planner = s.planner as Record<string, unknown>;
+      expect(planner.runtime).toBeUndefined();
+      expect(planner.runtimeRaw).toBeUndefined();
+      expect(planner.transcript).toBeUndefined();
+      expect(planner.agentId).toBe('plan-3');
+    });
+  });
+
   describe('runnableChildren (frontier from the DAG)', () => {
     const chain = (): PortfolioState => ({
       parent: 'p',

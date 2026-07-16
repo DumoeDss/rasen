@@ -1,6 +1,6 @@
 # Migrating to OPSX
 
-This guide helps you transition from the legacy OpenSpec workflow to OPSX. The migration is designed to be smooth—your existing work is preserved, and the new system offers more flexibility.
+This guide helps you transition from the legacy workflow to OPSX. The migration is designed to be smooth—your existing work is preserved, and the new system offers more flexibility.
 
 ## What's Changing?
 
@@ -8,7 +8,7 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 
 | Aspect | Legacy | OPSX |
 |--------|--------|------|
-| **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Default: `/rasen:propose`, `/rasen:apply`, `/rasen:sync`, `/rasen:archive` (expanded workflow commands optional) |
+| **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Everyday core: `/rasen:propose`, `/rasen:apply`, `/rasen:sync`, `/rasen:archive` (installed by default alongside the full expanded set) |
 | **Workflow** | Create all artifacts at once | Create incrementally or all at once—your choice |
 | **Going back** | Awkward phase gates | Natural—update any artifact anytime |
 | **Customization** | Fixed structure | Schema-driven, fully hackable |
@@ -27,17 +27,17 @@ The migration process is designed with preservation in mind:
 - **Active changes in `rasen/changes/`** — Completely preserved. You can continue them with OPSX commands.
 - **Archived changes** — Untouched. Your history remains intact.
 - **Main specs in `rasen/specs/`** — Untouched. These are your source of truth.
-- **Your content in CLAUDE.md, AGENTS.md, etc.** — Preserved. Only the OpenSpec marker blocks are removed; everything you wrote stays.
+- **Your content in CLAUDE.md, AGENTS.md, etc.** — Preserved. Only the rasen marker blocks are removed; everything you wrote stays.
 
 ### What Gets Removed
 
-Only OpenSpec-managed files that are being replaced:
+Only rasen-managed files that are being replaced:
 
 | What | Why |
 |------|-----|
 | Legacy slash command directories/files | Replaced by the new skills system |
 | `rasen/AGENTS.md` | Obsolete workflow trigger |
-| OpenSpec markers in `CLAUDE.md`, `AGENTS.md`, etc. | No longer needed |
+| Rasen markers in `CLAUDE.md`, `AGENTS.md`, etc. | No longer needed |
 
 **Legacy command locations by tool** (examples—your tool may vary):
 
@@ -51,7 +51,7 @@ Only OpenSpec-managed files that are being replaced:
 
 The migration detects whichever tools you have configured and cleans up their legacy files.
 
-The removal list may seem long, but these are all files that OpenSpec originally created. Your own content is never deleted.
+The removal list may seem long, but these are all files that rasen originally created. Your own content is never deleted.
 
 ### What Needs Your Attention
 
@@ -67,7 +67,7 @@ One file requires manual migration:
 
 The old `project.md` was passive—agents might read it, might not, might forget what they read. We found reliability was inconsistent.
 
-The new `config.yaml` context is **actively injected into every OpenSpec planning request**. This means your project conventions, tech stack, and rules are always present when the AI is creating artifacts. Higher reliability.
+The new `config.yaml` context is **actively injected into every rasen planning request**. This means your project conventions, tech stack, and rules are always present when the AI is creating artifacts. Higher reliability.
 
 **The tradeoff:**
 
@@ -84,7 +84,7 @@ Don't worry about getting it perfect. We're still learning what works best here,
 
 Both `rasen init` and `rasen update` detect legacy files and guide you through the same cleanup process. Use whichever fits your situation:
 
-- New installs default to profile `core` (`propose`, `explore`, `apply`, `sync`, `archive`).
+- New installs default to the `full` profile (every workflow); switch to `core` (`propose`, `explore`, `apply`, `sync`, `archive`) if you want the slimmed-down set.
 - Migrated installs preserve your previously installed workflows by writing a `custom` profile when needed.
 
 ### Using `rasen init`
@@ -98,9 +98,9 @@ rasen init
 The init command detects legacy files and guides you through cleanup:
 
 ```
-Upgrading to the new OpenSpec
+Upgrading to the new rasen
 
-OpenSpec now uses agent skills, the emerging standard across coding
+Rasen now uses agent skills, the emerging standard across coding
 agents. This simplifies your setup while keeping everything working
 as before.
 
@@ -110,7 +110,7 @@ No user content to preserve:
   • rasen/AGENTS.md
 
 Files to update
-OpenSpec markers will be removed, your content preserved:
+Rasen markers will be removed, your content preserved:
   • CLAUDE.md
   • AGENTS.md
 
@@ -119,7 +119,7 @@ Needs your attention
     We won't delete this file. It may contain useful project context.
 
     The new rasen/config.yaml has a "context:" section for planning
-    context. This is included in every OpenSpec request and works more
+    context. This is included in every rasen request and works more
     reliably than the old project.md approach.
 
     Review project.md, move any useful content to config.yaml's context
@@ -131,7 +131,7 @@ Needs your attention
 **What happens when you say yes:**
 
 1. Legacy slash command directories are removed
-2. OpenSpec markers are stripped from `CLAUDE.md`, `AGENTS.md`, etc. (your content stays)
+2. Rasen markers are stripped from `CLAUDE.md`, `AGENTS.md`, etc. (your content stays)
 3. `rasen/AGENTS.md` is deleted
 4. New skills are installed in `.claude/skills/`
 5. `rasen/config.yaml` is created with a default schema
@@ -260,7 +260,7 @@ When migrating, be selective. Ask yourself: "Does the AI need this for *every* p
 If you're unsure how to distill your project.md, ask your AI assistant:
 
 ```
-I'm migrating from OpenSpec's old project.md to the new config.yaml format.
+I'm migrating from rasen's old project.md to the new config.yaml format.
 
 Here's my current project.md:
 [paste your project.md content]
@@ -280,7 +280,7 @@ The AI will help you identify what's essential vs. what can be trimmed.
 
 Command availability is profile-dependent:
 
-**Default (`core` profile):**
+**Everyday commands (`core` profile subset):**
 
 | Command | Purpose |
 |---------|---------|
@@ -301,7 +301,7 @@ Command availability is profile-dependent:
 | `/rasen:bulk-archive` | Archive multiple changes at once |
 | `/rasen:onboard` | Guided end-to-end onboarding workflow |
 
-Enable expanded commands with `rasen config profile`, then run `rasen update`.
+The default `full` profile already includes these; switch to `core` if you want just the everyday set, or adjust with `rasen config profile`, then run `rasen update`.
 
 ### Command Mapping from Legacy
 
@@ -398,10 +398,10 @@ OPSX uses the emerging **skills** standard:
 
 ```
 .claude/skills/
-├── openspec-explore/SKILL.md
-├── openspec-new-change/SKILL.md
-├── openspec-continue-change/SKILL.md
-├── openspec-apply-change/SKILL.md
+├── rasen-explore/SKILL.md
+├── rasen-new-change/SKILL.md
+├── rasen-continue-change/SKILL.md
+├── rasen-apply-change/SKILL.md
 └── ...
 ```
 
@@ -466,7 +466,7 @@ rules:
 
 ### Schema Resolution
 
-When determining which schema to use, OPSX checks in order:
+When determining which schema to use, rasen checks in order:
 
 1. **CLI flag**: `--schema <name>` (highest priority)
 2. **Change metadata**: `.openspec.yaml` in the change directory
@@ -551,20 +551,20 @@ Run init and decline the cleanup prompt—you'll see the full detection summary 
 
 ```
 project/
-├── openspec/
+├── rasen/
 │   ├── specs/                    # Unchanged
 │   ├── changes/                  # Unchanged
 │   │   └── archive/              # Unchanged
 │   └── config.yaml               # NEW: Project configuration
 ├── .claude/
 │   └── skills/                   # NEW: OPSX skills
-│       ├── openspec-propose/     # default core profile
-│       ├── openspec-explore/
-│       ├── openspec-apply-change/
-│       ├── openspec-sync-specs/
-│       └── ...                   # expanded profile adds new/continue/ff/etc.
-├── CLAUDE.md                     # OpenSpec markers removed, your content preserved
-└── AGENTS.md                     # OpenSpec markers removed, your content preserved
+│       ├── rasen-propose/        # full profile (default); core profile keeps this subset
+│       ├── rasen-explore/
+│       ├── rasen-apply-change/
+│       ├── rasen-sync-specs/
+│       └── ...                   # full profile adds new/continue/ff/etc. too
+├── CLAUDE.md                     # rasen markers removed, your content preserved
+└── AGENTS.md                     # rasen markers removed, your content preserved
 ```
 
 ### What's Gone
@@ -572,7 +572,7 @@ project/
 - `.claude/commands/openspec/` — replaced by `.claude/skills/`
 - `rasen/AGENTS.md` — obsolete
 - `openspec/project.md` — migrate to `config.yaml`, then delete
-- OpenSpec marker blocks in `CLAUDE.md`, `AGENTS.md`, etc.
+- Rasen marker blocks in `CLAUDE.md`, `AGENTS.md`, etc.
 
 ### Command Cheatsheet
 
@@ -592,5 +592,5 @@ project/
 ## Getting Help
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
-- **GitHub Issues**: [github.com/Fission-AI/OpenSpec/issues](https://github.com/Fission-AI/OpenSpec/issues)
+- **GitHub Issues**: [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues)
 - **Documentation**: [docs/opsx.md](opsx.md) for the full OPSX reference

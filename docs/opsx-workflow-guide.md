@@ -75,6 +75,8 @@ Built-in pipelines (can be overridden or augmented by user/project; resolution p
 
 Optional: `rasen pipeline classify "<task>"` for a suggestion, or `rasen pipeline list` to pick another — but explicit choice always overrides; without an explicit choice it goes to the `small-feature` default.
 
+> **Opt-in autonomy**: `--auto-select` lets the LEAD adopt the classify suggestion instead of defaulting, and `--auto-compose` further allows composing a new pipeline from the stage library when nothing fits (machine-enforced review floor). Both default OFF; explicit selection always stays on top. See [autopilot.md](autopilot.md).
+
 Each stage carries metadata the LEAD uses to execute: **kind** (`standard` default / `decompose` fan-out point, §2.7), **skill** (the OPSX skill the worker invokes; the decompose stage has no such field), **childPipeline** (decompose only — the pipeline each sub-change runs, default `small-feature`), **role** (isolation), **gate** (human pause), **loop** (review loop), **parallelGroup** (concurrent fan-out, e.g. verify's expert group), **condition** (runs only when satisfied; mutually exclusive conditions like ui / non-ui pick one), **leadReview** (LEAD checks for direction drift, §2.3), **verifyPolicy** (adaptive / standard / light, §2.3), **model** (the model override for that stage's worker; if omitted it inherits the main agent's model — built-in pipelines set `model: sonnet` for ship/archive).
 
 ### 2.3 Two task-related enhancements
@@ -88,7 +90,7 @@ Each stage carries metadata the LEAD uses to execute: **kind** (`standard` defau
 
 ### 2.5 Pause points and resume
 
-- After stages marked `gate`, the LEAD pauses: showing what's done + the next step, waiting for you to **Continue / Stop (saves for resumption) / switch to manual**.
+- After stages marked `gate`, the LEAD pauses: showing what's done + the next step, waiting for you to **Continue / Stop (saves for resumption) / switch to manual**. For unattended runs, `--no-gate` (or `autopilot.gates: off`) auto-approves ordinary gates with an audit record — `gate: 'vet'` stages still always pause; see [autopilot.md](autopilot.md).
 - Resume: `rasen pipeline resume <change> --json` infers the next incomplete stage from run-state + artifacts (the per-stage state in run-state is authoritative; artifact existence is heuristic / cross-check). The run-state is written to `auto-run.json`, where each stage records the worker's `role` / `agentId` / `transcript` pointers.
 - **Cross-session (after restart) warm seeding**: in a new session the previous session's workers no longer exist and `SendMessage` cannot reach them (`agentId` is a dead handle). To reuse a role (e.g. have the "original reviewer" re-review only the delta), the LEAD reads its persistent transcript (`agent-<agentId>.jsonl`) back and **warm-seeds** a new worker of the same role — new `agentId`, carrying the predecessor's full context. The `workers` field of `resume --json` lists the warm-seedable pointers; if the transcript is no longer valid it degrades to cold-rebuilding from the change directory. This is the closest form to "truly reviving an old subagent session" that the platform allows (Claude Code does not support reviving the same subagent across processes).
 

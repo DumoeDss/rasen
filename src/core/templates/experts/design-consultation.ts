@@ -1,9 +1,9 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, CHROME_USE_SETUP } from './_shared.js';
+import { PREAMBLE_DIALOGUE, CHROME_USE_SETUP } from './_shared.js';
 
 const BODY = `
-${PREAMBLE}
+${PREAMBLE_DIALOGUE}
 
 # /design-consultation: Your Design System, Built Together
 
@@ -357,7 +357,7 @@ List all decisions. Flag any that used agent defaults without explicit user conf
 export function getDesignConsultationSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:design-consultation',
-    description: '|',
+    description: 'Collaborative design consultation — extract, discuss, and lock in the project design system through guided dialogue',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

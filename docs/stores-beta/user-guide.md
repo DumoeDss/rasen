@@ -7,13 +7,13 @@
 
 ## The problem this solves
 
-OpenSpec normally lives inside one code repo: an `openspec/` folder next to
+Rasen normally lives inside one code repo: an `rasen/` folder next to
 your code, holding specs and changes for that repo.
 
 That stops fitting the moment your planning is bigger than one repo:
 
 - Your work spans several repos — one feature touches the API server, the
-  web app, and a shared library. Whose `openspec/` folder does the plan
+  web app, and a shared library. Whose `rasen/` folder does the plan
   live in?
 - Your team plans before code exists, or plans things that never become
   code in *this* repo.
@@ -21,16 +21,16 @@ That stops fitting the moment your planning is bigger than one repo:
   version drifts, and your coding agent can't read it anyway.
 
 A **store** is the answer: a standalone repo whose whole job is planning.
-It has the same `openspec/` shape you already know — specs and changes —
+It has the same `rasen/` shape you already know — specs and changes —
 plus a small identity file. You register it on your machine once, by name,
-and then every normal OpenSpec command can work in it from anywhere.
+and then every normal rasen command can work in it from anywhere.
 
 ## The shape
 
 ```
             team-plans  (a store: planning in its own repo)
-            ├── .openspec-store/store.yaml     identity: "I am team-plans"
-            └── openspec/
+            ├── .rasen-store/store.yaml     identity: "I am team-plans"
+            └── rasen/
                 ├── specs/      what is true
                 └── changes/    what is in motion
                       ▲
@@ -45,9 +45,9 @@ and then every normal OpenSpec command can work in it from anywhere.
 Two rules keep this simple:
 
 1. **A store is just a git repo.** You commit, push, pull, and review it
-   yourself. OpenSpec never clones, syncs, or pushes anything on its own.
+   yourself. Rasen never clones, syncs, or pushes anything on its own.
 2. **Declarations, not machinery.** Repos can *declare* how they relate to
-   stores (shown below). Declarations change what OpenSpec can tell you —
+   stores (shown below). Declarations change what rasen can tell you —
    never where your commands act.
 
 ## Five minutes to your first store
@@ -55,16 +55,16 @@ Two rules keep this simple:
 Two commands take you from nothing to a working, store-scoped change:
 
 ```bash
-rasen store setup team-plans --path ~/openspec/team-plans
+rasen store setup team-plans --path ~/rasen-stores/team-plans
 ```
 
 ```
 Store ready: team-plans
-Location: /Users/you/openspec/team-plans
-OpenSpec root: ready
+Location: /Users/you/rasen-stores/team-plans
+Rasen root: ready
 Registry: registered
 
-Next: run normal OpenSpec commands against this store, for example:
+Next: run normal rasen commands against this store, for example:
   rasen new change <change-id> --store team-plans
 Share this store by committing and pushing it like any Git repo.
 ```
@@ -74,8 +74,8 @@ rasen new change add-login --store team-plans
 ```
 
 ```
-Using OpenSpec root: team-plans (/Users/you/openspec/team-plans)
-Created change 'add-login' at /Users/you/openspec/team-plans/rasen/changes/add-login/
+Using Rasen root: team-plans (/Users/you/rasen-stores/team-plans)
+Created change 'add-login' at /Users/you/rasen-stores/team-plans/rasen/changes/add-login/
 Schema: spec-driven
 Next: rasen status --change add-login --store team-plans
 ```
@@ -83,7 +83,7 @@ Next: rasen status --change add-login --store team-plans
 That's the whole model. From here the lifecycle is exactly what you know —
 `status`, `instructions`, `validate`, `archive` — with `--store team-plans`
 on each command, and every printed hint carries the flag for you. The
-`Using OpenSpec root:` line always tells you where a command is acting.
+`Using Rasen root:` line always tells you where a command is acting.
 
 ## Story: one team, one planning repo
 
@@ -93,13 +93,13 @@ them across code repos.
 **Day one (whoever sets it up):**
 
 ```bash
-rasen store setup team-plans --path ~/openspec/team-plans \
+rasen store setup team-plans --path ~/rasen-stores/team-plans \
   --remote git@github.com:acme/team-plans.git
-git -C ~/openspec/team-plans push -u origin main
+git -C ~/rasen-stores/team-plans push -u origin main
 ```
 
 Passing `--remote` records the clone URL inside the store's own identity
-file (`.openspec-store/store.yaml`), in the initial commit. Every future
+file (`.rasen-store/store.yaml`), in the initial commit. Every future
 clone is born knowing where it came from, so health checks and error
 messages can print a complete, pasteable fix for teammates who don't have
 it yet.
@@ -107,8 +107,8 @@ it yet.
 **Every teammate (once per machine):**
 
 ```bash
-git clone git@github.com:acme/team-plans.git ~/openspec/team-plans
-rasen store register ~/openspec/team-plans
+git clone git@github.com:acme/team-plans.git ~/rasen-stores/team-plans
+rasen store register ~/rasen-stores/team-plans
 ```
 
 From then on, everyone works in the same planning repo by name:
@@ -131,7 +131,7 @@ externalized needs exactly one line, in `rasen/config.yaml`:
 store: team-plans
 ```
 
-Now every OpenSpec command run inside `web-app` acts on `team-plans` with
+Now every rasen command run inside `web-app` acts on `team-plans` with
 no flags at all:
 
 ```bash
@@ -140,7 +140,7 @@ rasen status --change add-login
 ```
 
 ```
-Using OpenSpec root: team-plans (/Users/you/openspec/team-plans)
+Using Rasen root: team-plans (/Users/you/rasen-stores/team-plans)
 ...
 ```
 
@@ -177,7 +177,7 @@ references:
   - platform-reqs
 ```
 
-References are read-only context. The repo keeps its own `openspec/` root;
+References are read-only context. The repo keeps its own `rasen/` root;
 work stays there. What changes: `rasen instructions` in that repo now
 includes an index of the referenced store's specs — each with a one-line
 summary and the exact fetch command (`rasen show <spec-id> --type spec
@@ -200,7 +200,7 @@ committed to the shared planning repo.
 
 ```bash
 rasen workset create platform \
-  --member ~/openspec/platform-reqs \
+  --member ~/rasen-stores/platform-reqs \
   --member ~/src/api-server \
   --member ~/src/web-app
 ```
@@ -215,26 +215,26 @@ Doctor
 
 Root
   Location: /Users/you/src/api-server
-  OpenSpec root: ok
+  Rasen root: ok
 
 References
-  - platform-reqs: ok (/Users/you/openspec/platform-reqs)
+  - platform-reqs: ok (/Users/you/rasen-stores/platform-reqs)
   - design-system: Referenced store 'design-system' is not registered on this machine.
-    Fix: git clone -- git@github.com:acme/design-system.git '/Users/you/openspec/design-system' && rasen store register '/Users/you/openspec/design-system' --id design-system
+    Fix: git clone -- git@github.com:acme/design-system.git '/Users/you/rasen-stores/design-system' && rasen store register '/Users/you/rasen-stores/design-system' --id design-system
 
 ```
 
 **"What am I working with?"** — `rasen context` assembles the working
-set from OpenSpec declarations: the root and the stores it references.
+set from rasen declarations: the root and the stores it references.
 
 ```
 Working context for api-server (/Users/you/src/api-server)
 
-OpenSpec root
+Rasen root
   api-server  /Users/you/src/api-server
 
 Referenced stores
-  platform-reqs  /Users/you/openspec/platform-reqs
+  platform-reqs  /Users/you/rasen-stores/platform-reqs
     Fetch: rasen show <spec-id> --type spec --store platform-reqs
 ```
 
@@ -251,21 +251,21 @@ command in your tool of choice.
 
 ```
   workset "platform"                 rasen workset open platform
-  ├── team-plans   ~/openspec/team-plans         │
+  ├── team-plans   ~/rasen-stores/team-plans         │
   ├── api-server   ~/src/api-server              ▼
   └── web-app      ~/src/web-app       all three open in your tool
 ```
 
 ```bash
 rasen workset create platform \
-  --member ~/openspec/team-plans --member ~/src/api-server \
+  --member ~/rasen-stores/team-plans --member ~/src/api-server \
   --tool code
 rasen workset list
 ```
 
 ```
 platform  (opens in VS Code)
-  team-plans  /Users/you/openspec/team-plans
+  team-plans  /Users/you/rasen-stores/team-plans
   api-server  /Users/you/src/api-server
 ```
 
@@ -286,7 +286,7 @@ Every normal command resolves its root the same way, in this order:
 
 ```
 1. --store <id>          you said so explicitly        → that store
-2. nearest openspec/     a real planning root here     → this repo
+2. nearest rasen/       a real planning root here     → this repo
    (walking up from cwd)
 3. store: pointer        config.yaml declares a store  → that store
 4. none of the above     stores registered on this     → error with a
@@ -296,7 +296,7 @@ Every normal command resolves its root the same way, in this order:
                                                           (classic behavior)
 ```
 
-The `Using OpenSpec root:` line (and the `root` block in `--json` output)
+The `Using Rasen root:` line (and the `root` block in `--json` output)
 tells you which case you're in.
 
 ## Known limitations
@@ -305,7 +305,7 @@ tells you which case you're in.
   names, flags, file formats, JSON keys.
 - **One checkout per store id per machine.** Registering a second checkout
   under the same id fails with a hint to `store unregister` first.
-- **No sync, ever — by design.** OpenSpec never clones, pulls, or pushes.
+- **No sync, ever — by design.** Rasen never clones, pulls, or pushes.
   A stale checkout shows stale specs until *you* pull; references are
   indexed live from whatever is on disk.
 - **Some commands stay where they are.** `view`, `templates`, and `schemas`
@@ -324,10 +324,10 @@ tells you which case you're in.
 
 | What | Where | Shared? |
 |---|---|---|
-| A store's planning | `<store>/openspec/` (specs, changes) | Yes — commit and push it |
-| A store's identity | `<store>/.openspec-store/store.yaml` | Yes — committed with the store |
-| The store registry | `<data dir>/openspec/stores/registry.yaml` | No — this machine only |
-| Worksets | `<data dir>/openspec/worksets/` | No — this machine only |
+| A store's planning | `<store>/rasen/` (specs, changes) | Yes — commit and push it |
+| A store's identity | `<store>/.rasen-store/store.yaml` | Yes — committed with the store |
+| The store registry | `<data dir>/stores/registry.yaml` | No — this machine only |
+| Worksets | `<data dir>/worksets/` | No — this machine only |
 
 `<data dir>` is `~/.rasen` on every platform. Set `RASEN_HOME` to relocate it;
 `$XDG_DATA_HOME/rasen` is still honored below `RASEN_HOME` as a compatibility

@@ -57,7 +57,7 @@ Before reviewing code quality, check: **did they build what was requested — no
 
 ## Step 2: Read the checklist
 
-Read \`.claude/skills/review/checklist.md\`.
+Read \`checklist.md\` from this skill's own directory (beside this SKILL.md; \`\${CLAUDE_SKILL_DIR}/checklist.md\` in Bash).
 
 **If the file cannot be read, STOP and report the error.** Do not proceed without the checklist.
 
@@ -65,7 +65,7 @@ Read \`.claude/skills/review/checklist.md\`.
 
 ## Step 2.5: Check for Greptile review comments
 
-Read \`.claude/skills/review/greptile-triage.md\` and follow the fetch, filter, classify, and **escalation detection** steps.
+Read \`greptile-triage.md\` (beside this SKILL.md) and follow the fetch, filter, classify, and **escalation detection** steps.
 
 **If no PR exists, \`gh\` fails, API returns an error, or there are zero Greptile comments:** Skip this step silently. Greptile integration is additive — the review works without it.
 
@@ -267,7 +267,7 @@ ${ADVERSARIAL_STEP}
 export function getReviewSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:review',
-    description: '|',
+    description: 'Pre-landing PR review — reviews the branch diff with full codebase context, severity-tagged findings, and a fix loop',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

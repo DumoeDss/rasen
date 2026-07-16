@@ -1,57 +1,57 @@
 # Supported Tools
 
-OpenSpec works with many AI coding assistants. When you run `rasen init`, OpenSpec configures selected tools using your active profile/workflow selection and delivery mode.
+Rasen works with many AI coding assistants. When you run `rasen init`, rasen configures selected tools using your active profile/workflow selection and delivery mode.
 
 ## How It Works
 
-For each selected tool, OpenSpec can install:
+For each selected tool, rasen can install:
 
-1. **Skills** (always): `.../skills/openspec-*/SKILL.md`
-2. **Commands** (if delivery is `both`): tool-specific `opsx-*` command files
+1. **Skills** (always): `.../skills/rasen-*/SKILL.md`
+2. **Commands** (if delivery is `both`, and the tool has a command adapter): tool-specific `rasen-*` command files
 
-By default, OpenSpec uses the `core` profile, which includes:
+By default, rasen uses the `full` profile, which installs every workflow. If you'd rather slim down to the everyday essentials, switch to the `core` profile:
 - `propose`
 - `explore`
 - `apply`
 - `sync`
 - `archive`
 
-You can enable expanded workflows (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`) via `rasen config profile`, then run `rasen update`.
+Switch profiles (in either direction) with `rasen config profile`, then run `rasen update`.
 
 ## Tool Directory Reference
 
 | Tool (ID) | Skills path pattern | Command path pattern |
 |-----------|---------------------|----------------------|
-| Amazon Q Developer (`amazon-q`) | `.amazonq/skills/openspec-*/SKILL.md` | `.amazonq/prompts/opsx-<id>.md` |
-| Antigravity (`antigravity`) | `.agent/skills/openspec-*/SKILL.md` | `.agent/workflows/opsx-<id>.md` |
-| Auggie (`auggie`) | `.augment/skills/openspec-*/SKILL.md` | `.augment/commands/opsx-<id>.md` |
-| IBM Bob Shell (`bob`) | `.bob/skills/openspec-*/SKILL.md` | `.bob/commands/opsx-<id>.md` |
-| Claude Code (`claude`) | `.claude/skills/openspec-*/SKILL.md` | `.claude/commands/opsx/<id>.md` |
-| Cline (`cline`) | `.cline/skills/openspec-*/SKILL.md` | `.clinerules/workflows/opsx-<id>.md` |
-| CodeBuddy (`codebuddy`) | `.codebuddy/skills/openspec-*/SKILL.md` | `.codebuddy/commands/opsx/<id>.md` |
-| Codex (`codex`) | `.codex/skills/openspec-*/SKILL.md` | `$CODEX_HOME/prompts/opsx-<id>.md`\* |
-| ForgeCode (`forgecode`) | `.forge/skills/openspec-*/SKILL.md` | Not generated (no command adapter; use skill-based `/openspec-*` invocations) |
-| Continue (`continue`) | `.continue/skills/openspec-*/SKILL.md` | `.continue/prompts/opsx-<id>.prompt` |
-| CoStrict (`costrict`) | `.cospec/skills/openspec-*/SKILL.md` | `.cospec/openspec/commands/opsx-<id>.md` |
-| Crush (`crush`) | `.crush/skills/openspec-*/SKILL.md` | `.crush/commands/opsx/<id>.md` |
-| Cursor (`cursor`) | `.cursor/skills/openspec-*/SKILL.md` | `.cursor/commands/opsx-<id>.md` |
-| Factory Droid (`factory`) | `.factory/skills/openspec-*/SKILL.md` | `.factory/commands/opsx-<id>.md` |
-| Gemini CLI (`gemini`) | `.gemini/skills/openspec-*/SKILL.md` | `.gemini/commands/opsx/<id>.toml` |
-| GitHub Copilot (`github-copilot`) | `.github/skills/openspec-*/SKILL.md` | `.github/prompts/opsx-<id>.prompt.md`\*\* |
-| iFlow (`iflow`) | `.iflow/skills/openspec-*/SKILL.md` | `.iflow/commands/opsx-<id>.md` |
-| Junie (`junie`) | `.junie/skills/openspec-*/SKILL.md` | `.junie/commands/opsx-<id>.md` |
-| Kilo Code (`kilocode`) | `.kilocode/skills/openspec-*/SKILL.md` | `.kilocode/workflows/opsx-<id>.md` |
-| Kimi CLI (`kimi`) | `.kimi/skills/openspec-*/SKILL.md` | Not generated (no command adapter; use skill-based `/skill:openspec-*` invocations) |
-| Kiro (`kiro`) | `.kiro/skills/openspec-*/SKILL.md` | `.kiro/prompts/opsx-<id>.prompt.md` |
-| Lingma (`lingma`) | `.lingma/skills/openspec-*/SKILL.md` | `.lingma/commands/opsx/<id>.md` |
-| Mistral Vibe (`vibe`) | `.vibe/skills/openspec-*/SKILL.md` | Not generated (no command adapter; use skill-based `/openspec-*` invocations) |
-| OpenCode (`opencode`) | `.opencode/skills/openspec-*/SKILL.md` | `.opencode/commands/opsx-<id>.md` |
-| Pi (`pi`) | `.pi/skills/openspec-*/SKILL.md` | `.pi/prompts/opsx-<id>.md` |
-| Qoder (`qoder`) | `.qoder/skills/openspec-*/SKILL.md` | `.qoder/commands/opsx/<id>.md` |
-| Qwen Code (`qwen`) | `.qwen/skills/openspec-*/SKILL.md` | `.qwen/commands/opsx-<id>.toml` |
-| RooCode (`roocode`) | `.roo/skills/openspec-*/SKILL.md` | `.roo/commands/opsx-<id>.md` |
-| Trae (`trae`) | `.trae/skills/openspec-*/SKILL.md` | Not generated (no command adapter; use skill-based `/openspec-*` invocations) |
-| Windsurf (`windsurf`) | `.windsurf/skills/openspec-*/SKILL.md` | `.windsurf/workflows/opsx-<id>.md` |
+| Amazon Q Developer (`amazon-q`) | `.amazonq/skills/rasen-*/SKILL.md` | `.amazonq/prompts/rasen-<id>.md` |
+| Antigravity (`antigravity`) | `.agent/skills/rasen-*/SKILL.md` | `.agent/workflows/rasen-<id>.md` |
+| Auggie (`auggie`) | `.augment/skills/rasen-*/SKILL.md` | `.augment/commands/rasen-<id>.md` |
+| IBM Bob Shell (`bob`) | `.bob/skills/rasen-*/SKILL.md` | `.bob/commands/rasen-<id>.md` |
+| Claude Code (`claude`) | `.claude/skills/rasen-*/SKILL.md` | `.claude/commands/rasen/<id>.md` |
+| Cline (`cline`) | `.cline/skills/rasen-*/SKILL.md` | `.clinerules/workflows/rasen-<id>.md` |
+| CodeBuddy (`codebuddy`) | `.codebuddy/skills/rasen-*/SKILL.md` | `.codebuddy/commands/rasen/<id>.md` |
+| Codex (`codex`) | `.codex/skills/rasen-*/SKILL.md` | `$CODEX_HOME/prompts/rasen-<id>.md`\* |
+| ForgeCode (`forgecode`) | `.forge/skills/rasen-*/SKILL.md` | Not generated (no command adapter; use skill-based `/rasen-*` invocations) |
+| Continue (`continue`) | `.continue/skills/rasen-*/SKILL.md` | `.continue/prompts/rasen-<id>.prompt` |
+| CoStrict (`costrict`) | `.cospec/skills/rasen-*/SKILL.md` | `.cospec/rasen/commands/rasen-<id>.md` |
+| Crush (`crush`) | `.crush/skills/rasen-*/SKILL.md` | `.crush/commands/rasen/<id>.md` |
+| Cursor (`cursor`) | `.cursor/skills/rasen-*/SKILL.md` | `.cursor/commands/rasen-<id>.md` |
+| Factory Droid (`factory`) | `.factory/skills/rasen-*/SKILL.md` | `.factory/commands/rasen-<id>.md` |
+| Gemini CLI (`gemini`) | `.gemini/skills/rasen-*/SKILL.md` | `.gemini/commands/rasen/<id>.toml` |
+| GitHub Copilot (`github-copilot`) | `.github/skills/rasen-*/SKILL.md` | `.github/prompts/rasen-<id>.prompt.md`\*\* |
+| iFlow (`iflow`) | `.iflow/skills/rasen-*/SKILL.md` | `.iflow/commands/rasen-<id>.md` |
+| Junie (`junie`) | `.junie/skills/rasen-*/SKILL.md` | `.junie/commands/rasen-<id>.md` |
+| Kilo Code (`kilocode`) | `.kilocode/skills/rasen-*/SKILL.md` | `.kilocode/workflows/rasen-<id>.md` |
+| Kimi CLI (`kimi`) | `.kimi/skills/rasen-*/SKILL.md` | Not generated (no command adapter; use skill-based `/rasen-*` invocations) |
+| Kiro (`kiro`) | `.kiro/skills/rasen-*/SKILL.md` | `.kiro/prompts/rasen-<id>.prompt.md` |
+| Lingma (`lingma`) | `.lingma/skills/rasen-*/SKILL.md` | `.lingma/commands/rasen/<id>.md` |
+| Mistral Vibe (`vibe`) | `.vibe/skills/rasen-*/SKILL.md` | Not generated (no command adapter; use skill-based `/rasen-*` invocations) |
+| OpenCode (`opencode`) | `.opencode/skills/rasen-*/SKILL.md` | `.opencode/commands/rasen-<id>.md` |
+| Pi (`pi`) | `.pi/skills/rasen-*/SKILL.md` | `.pi/prompts/rasen-<id>.md` |
+| Qoder (`qoder`) | `.qoder/skills/rasen-*/SKILL.md` | `.qoder/commands/rasen/<id>.md` |
+| Qwen Code (`qwen`) | `.qwen/skills/rasen-*/SKILL.md` | `.qwen/commands/rasen-<id>.toml` |
+| RooCode (`roocode`) | `.roo/skills/rasen-*/SKILL.md` | `.roo/commands/rasen-<id>.md` |
+| Trae (`trae`) | `.trae/skills/rasen-*/SKILL.md` | Not generated (no command adapter; use skill-based `/rasen-*` invocations) |
+| Windsurf (`windsurf`) | `.windsurf/skills/rasen-*/SKILL.md` | `.windsurf/workflows/rasen-<id>.md` |
 
 \* Codex commands are installed in the global Codex home (`$CODEX_HOME/prompts/` if set, otherwise `~/.codex/prompts/`), not your project directory.
 
@@ -79,29 +79,30 @@ rasen init --profile core
 
 ## Workflow-Dependent Installation
 
-OpenSpec installs workflow artifacts based on selected workflows:
+rasen installs workflow artifacts based on selected workflows:
 
-- **Core profile (default):** `propose`, `explore`, `apply`, `sync`, `archive`
+- **Full profile (default):** every workflow ID
+- **Core profile:** `propose`, `explore`, `apply`, `sync`, `archive`
 - **Custom selection:** any subset of all workflow IDs:
   `propose`, `explore`, `new`, `continue`, `apply`, `ff`, `sync`, `archive`, `bulk-archive`, `verify`, `onboard`
 
-In other words, skill count is profile-dependent (not fixed); command count additionally depends on delivery — commands are only generated when delivery is `both`.
+In other words, skill count is profile-dependent (not fixed); command count additionally depends both on delivery (commands are only generated when delivery is `both`) and on whether the tool has a command adapter at all (ForgeCode, Kimi CLI, Mistral Vibe, and Trae are skill-only — see the table above).
 
 ## Generated Skill Names
 
-When selected by profile/workflow config, OpenSpec generates these skills:
+When selected by profile/workflow config, rasen generates these skills:
 
-- `openspec-propose`
-- `openspec-explore`
-- `openspec-new-change`
-- `openspec-continue-change`
-- `openspec-apply-change`
-- `openspec-ff-change`
-- `openspec-sync-specs`
-- `openspec-archive-change`
-- `openspec-bulk-archive-change`
-- `openspec-verify-change`
-- `openspec-onboard`
+- `rasen-propose`
+- `rasen-explore`
+- `rasen-new-change`
+- `rasen-continue-change`
+- `rasen-apply-change`
+- `rasen-ff-change`
+- `rasen-sync-specs`
+- `rasen-archive-change`
+- `rasen-bulk-archive-change`
+- `rasen-verify-change`
+- `rasen-onboard`
 
 See [Commands](commands.md) for command behavior and [CLI](cli.md) for `init`/`update` options.
 

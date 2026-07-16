@@ -1054,39 +1054,44 @@ artifacts:
       expect(stat.isFile()).toBe(true);
     });
 
-    it('creates skills for Cursor tool', async () => {
+    it('creates skills for Codex tool', async () => {
+      const codexHome = path.join(tempDir, '.codex-home');
+      const result = await runCLI(['experimental', '--tool', 'codex'], {
+        cwd: tempDir,
+        env: { CODEX_HOME: codexHome },
+      });
+      expect(result.exitCode).toBe(0);
+      const output = normalizePaths(getOutput(result));
+      expect(output).toContain('Codex');
+      expect(output).toContain('.codex/');
+
+      // Verify skill files were created
+      const skillFile = path.join(tempDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
+      const stat = await fs.stat(skillFile);
+      expect(stat.isFile()).toBe(true);
+
+      // Verify commands were created with Codex format (in CODEX_HOME)
+      const commandFile = path.join(codexHome, 'prompts', 'rasen-explore.md');
+      const content = await fs.readFile(commandFile, 'utf-8');
+      expect(content).toContain('description:');
+    });
+
+    it('rejects Cursor tool as recognized but not yet adapted', async () => {
       const result = await runCLI(['experimental', '--tool', 'cursor'], {
         cwd: tempDir,
       });
-      expect(result.exitCode).toBe(0);
-      const output = normalizePaths(getOutput(result));
-      expect(output).toContain('Cursor');
-      expect(output).toContain('.cursor/');
-
-      // Verify skill files were created
-      const skillFile = path.join(tempDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
-      const stat = await fs.stat(skillFile);
-      expect(stat.isFile()).toBe(true);
-
-      // Verify commands were created with Cursor format
-      const commandFile = path.join(tempDir, '.cursor', 'commands', 'rasen-explore.md');
-      const content = await fs.readFile(commandFile, 'utf-8');
-      expect(content).toContain('name: /rasen-explore');
+      expect(result.exitCode).toBe(1);
+      const output = getOutput(result);
+      expect(output).toContain('recognized but not yet adapted');
     });
 
-    it('creates skills for Windsurf tool', async () => {
+    it('rejects Windsurf tool as recognized but not yet adapted', async () => {
       const result = await runCLI(['experimental', '--tool', 'windsurf'], {
         cwd: tempDir,
       });
-      expect(result.exitCode).toBe(0);
-      const output = normalizePaths(getOutput(result));
-      expect(output).toContain('Windsurf');
-      expect(output).toContain('.windsurf/');
-
-      // Verify skill files were created
-      const skillFile = path.join(tempDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
-      const stat = await fs.stat(skillFile);
-      expect(stat.isFile()).toBe(true);
+      expect(result.exitCode).toBe(1);
+      const output = getOutput(result);
+      expect(output).toContain('recognized but not yet adapted');
     });
   });
 

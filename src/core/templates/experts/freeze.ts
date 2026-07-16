@@ -25,7 +25,7 @@ echo "$FREEZE_DIR"
 2. Ensure trailing slash and save to the freeze state file:
 \`\`\`bash
 FREEZE_DIR="\${FREEZE_DIR%/}/"
-STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}"
+STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
 mkdir -p "$STATE_DIR"
 echo "$FREEZE_DIR" > "$STATE_DIR/freeze-dir.txt"
 echo "Freeze boundary set: $FREEZE_DIR"
@@ -55,7 +55,7 @@ script reads it on every Edit/Write invocation.
 export function getFreezeSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:freeze',
-    description: '|',
+    description: 'Restrict edits to a directory — set an edit boundary so writes outside the frozen scope are rejected',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

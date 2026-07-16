@@ -1,11 +1,11 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE } from './_shared.js';
+import { PREAMBLE_LITE } from './_shared.js';
 
 const BODY = `
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
 
-${PREAMBLE}
+${PREAMBLE_LITE}
 
 # Navigator
 

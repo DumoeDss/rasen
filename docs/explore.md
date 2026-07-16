@@ -16,7 +16,7 @@ Explore is the right first step more often than people expect. Use it when any o
 - The requirements are fuzzy and you want to sharpen them before committing.
 - You suspect the work is bigger or smaller than it looks and want to scope it honestly.
 
-Skip explore only when you already know exactly what you want and how. In that case go straight to [`/rasen:propose`](commands.md#opsxpropose).
+Skip explore only when you already know exactly what you want and how. In that case go straight to [`/rasen:propose`](commands.md#rasenpropose).
 
 ## What it does (and doesn't)
 
@@ -38,7 +38,7 @@ That's the point. Exploring costs you nothing and commits you to nothing. You ca
 
 ## It's already installed
 
-Good news: `/rasen:explore` ships in the default **core** profile, right alongside `propose`, `apply`, `sync`, and `archive`. You don't need to enable anything. If OpenSpec is set up in your project, explore is ready in your AI chat. (As with all `/rasen:*` commands, you type it in your assistant's chat, not the terminal. See [How Commands Work](how-commands-work.md).)
+Good news: `/rasen:explore` ships in the default **core** profile, right alongside `propose`, `apply`, `sync`, and `archive`. You don't need to enable anything. If rasen is set up in your project, explore is ready in your AI chat. (As with all `/rasen:*` commands, you type it in your assistant's chat, not the terminal. See [How Commands Work](how-commands-work.md).)
 
 ## A full example
 
@@ -115,7 +115,7 @@ The rule of thumb: the fuzzier the task, the more explore pays off. The clearer 
 
 ## Where to go next
 
-- [Commands: `/rasen:explore`](commands.md#opsxexplore): the precise reference
+- [Commands: `/rasen:explore`](commands.md#rasenexplore): the precise reference
 - [Workflows](workflows.md): explore as part of the everyday loop
 - [Examples & Recipes](examples.md#recipe-3-exploring-before-you-commit): explore in a full walkthrough
 - [Getting Started](getting-started.md): the first-change guide, exploration included

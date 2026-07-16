@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE } from './_shared.js';
+import { PREAMBLE_LITE } from './_shared.js';
 
 // Self-contained by design: this template inlines its own SETUP and endpoint
 // reference and does NOT import browse's `_shared.ts` browse constants
@@ -8,7 +8,7 @@ import { PREAMBLE } from './_shared.js';
 // seam clean — the sibling expert-templates change can rewrite those constants
 // and the browse-removal change can delete browse without touching chrome-use.
 const BODY = `
-${PREAMBLE}
+${PREAMBLE_LITE}
 
 # chrome-use: Browser QA via CDP
 
@@ -124,7 +124,7 @@ output file so the user can actually see it — otherwise the screenshot is invi
 export function getChromeUseSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:chrome-use',
-    description: '|',
+    description: 'Browser QA via CDP — drive the real Chrome browser through a local proxy for DOM snapshots, clicks, network capture, screenshots, and responsive audits',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

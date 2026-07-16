@@ -28,6 +28,7 @@ import {
   generateSkillContent,
   copySkillSidecars,
   getToolsWithSkillsDir,
+  resolveToolSkillsRoot,
   type ToolVersionStatus,
 } from './shared/index.js';
 import {
@@ -36,7 +37,7 @@ import {
   pruneRetiredExpertSkillDirs,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
-import { getGlobalConfig, type Delivery, type Profile } from './global-config.js';
+import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
 import { getProfileWorkflows, ALL_WORKFLOWS } from './profiles.js';
 import { getAvailableTools } from './available-tools.js';
 import {
@@ -113,6 +114,8 @@ export class UpdateCommand {
       (ALL_WORKFLOWS as readonly string[]).includes(workflow)
     );
     const shouldGenerateCommands = delivery === 'both';
+    const proactive = globalConfig.proactive ?? true;
+    const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
     // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
     // refreshes only rasen-namespace artifacts; upstream/older-rasen `opsx`
@@ -163,7 +166,7 @@ export class UpdateCommand {
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
       if (!tool?.skillsDir) continue;
-      await pruneRetiredExpertSkillDirs(path.join(resolvedProjectPath, tool.skillsDir, 'skills'));
+      await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
     }
 
     if (!this.force && toolsToUpdateSet.size === 0) {
@@ -204,15 +207,22 @@ export class UpdateCommand {
       const spinner = ora(`Updating ${tool.name}...`).start();
 
       try {
-        const skillsDir = path.join(resolvedProjectPath, tool.skillsDir, 'skills');
+        const skillsDir = resolveToolSkillsRoot(tool, resolvedProjectPath);
 
         // Generate skill files (always installed regardless of delivery)
         for (const { template, dirName, workflowId } of skillTemplates) {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
-          // Use hyphen-based command references for OpenCode
-          const transformer = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+          // Chain transformers: embed config values, then tool-specific transforms
+          // (hyphen-based command references for OpenCode), mirroring init.
+          const configTransform = (text: string) => text
+            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+          const transformer = toolTransform
+            ? (text: string) => toolTransform(configTransform(text))
+            : configTransform;
           const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
           await FileSystemUtils.writeFile(skillFile, skillContent);
 
@@ -341,7 +351,7 @@ export class UpdateCommand {
     const availableTools = getAvailableTools(projectPath);
     const configuredSet = new Set(configuredTools);
 
-    const newTools = availableTools.filter((t) => !configuredSet.has(t.value));
+    const newTools = availableTools.filter((t) => !configuredSet.has(t.value) && t.adapted);
 
     if (newTools.length > 0) {
       const newToolNames = newTools.map((tool) => tool.name);

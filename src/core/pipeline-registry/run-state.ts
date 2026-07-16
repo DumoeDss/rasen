@@ -215,16 +215,117 @@ export function runStatePath(changeDir: string): string {
   return path.join(changeDir, RUN_STATE_FILENAME);
 }
 
+/**
+ * Nullable-optional string fields on a worker record. A non-Claude LEAD may
+ * legitimately write JSON `null` for one of these ("field known, value
+ * unknown") where the schema means "field absent" — normalization treats the
+ * two as equivalent at the read boundary (design D1).
+ */
+const WORKER_NULLABLE_STRING_KEYS = [
+  'transcript',
+  'agentId',
+  'threadId',
+  'turnId',
+  'jobId',
+  'threadName',
+  'model',
+  'effort',
+  'resumeMode',
+  'previousThreadId',
+  'reusedFrom',
+  'updatedAt',
+  'role',
+] as const;
+
+/**
+ * Normalize a RAW (untyped, pre-validation) worker-shaped record so host
+ * variance a non-Claude LEAD legitimately writes does not reject the file
+ * (design D1): a JSON `null` on any nullable-optional string field is treated
+ * as the field being absent (key removed); a `runtime` string outside
+ * `claude|codex` is preserved under the passthrough key `runtimeRaw` and
+ * `runtime` is removed (never coerced to a runtime the worker did not use).
+ * Non-object input (e.g. a bare-string worker) passes through unchanged.
+ * Shared by `parseRunState` (per-stage `worker`) and `parsePortfolioState`
+ * (the `planner` record, which reuses the same shape). This is a READ-side
+ * tolerance only — `writeRunState`/`writePortfolioState` keep validating
+ * against the unwidened schema.
+ */
+export function normalizeRunStateWorkerRecord(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const obj: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  for (const key of WORKER_NULLABLE_STRING_KEYS) {
+    if (obj[key] === null) delete obj[key];
+  }
+  // `runtime: null` is the same "field known, value unknown" statement as
+  // null on any other nullable-optional field above — treat it as absent
+  // (drop the key) rather than routing it into `runtimeRaw`, since there is
+  // no raw value to preserve for observability. Only a non-enum STRING gets
+  // the runtimeRaw passthrough treatment.
+  if (obj.runtime === null) {
+    delete obj.runtime;
+  } else if (typeof obj.runtime === 'string' && obj.runtime !== 'claude' && obj.runtime !== 'codex') {
+    obj.runtimeRaw = obj.runtime;
+    delete obj.runtime;
+  }
+  return obj;
+}
+
+/** Normalize the raw run-state JSON's per-stage `worker` records before validation. */
+function normalizeRunStateJson(json: unknown): unknown {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return json;
+  const obj: Record<string, unknown> = { ...(json as Record<string, unknown>) };
+  if (typeof obj.stages === 'object' && obj.stages !== null && !Array.isArray(obj.stages)) {
+    const stages: Record<string, unknown> = { ...(obj.stages as Record<string, unknown>) };
+    for (const [id, stage] of Object.entries(stages)) {
+      if (typeof stage !== 'object' || stage === null || Array.isArray(stage)) continue;
+      const s: Record<string, unknown> = { ...(stage as Record<string, unknown>) };
+      if (typeof s.worker === 'object' && s.worker !== null) {
+        s.worker = normalizeRunStateWorkerRecord(s.worker);
+      }
+      stages[id] = s;
+    }
+    obj.stages = stages;
+  }
+  return obj;
+}
+
 /** Parse + validate run-state JSON. Throws on malformed JSON or schema mismatch. */
 export function parseRunState(content: string): RunState {
   const json = JSON.parse(content) as unknown;
-  const result = RunStateSchema.safeParse(json);
+  const normalized = normalizeRunStateJson(json);
+  const result = RunStateSchema.safeParse(normalized);
   if (!result.success) {
     throw new RunStateValidationError(
       `Invalid run-state: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`
     );
   }
   return result.data;
+}
+
+/**
+ * Tagged result of a detailed run-state read (design D3): exactly one of a
+ * parsed state, an invalid-file report (present but unparseable, with a
+ * human-readable reason), or absent (no file at that path).
+ */
+export type RunStateReadResult =
+  | { kind: 'ok'; state: RunState }
+  | { kind: 'invalid'; reason: string }
+  | { kind: 'absent' };
+
+/**
+ * Read run-state for a change directory, distinguishing "no file" from "file
+ * present but invalid" (design D3) — `resume` uses this to report a broken
+ * `auto-run.json` diagnosably instead of masquerading as "not found". Other
+ * callers that only need the null-swallowing shape keep using `readRunState`.
+ */
+export function readRunStateDetailed(changeDir: string): RunStateReadResult {
+  const p = runStatePath(changeDir);
+  if (!fs.existsSync(p)) return { kind: 'absent' };
+  try {
+    return { kind: 'ok', state: parseRunState(fs.readFileSync(p, 'utf-8')) };
+  } catch (err) {
+    return { kind: 'invalid', reason: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /**

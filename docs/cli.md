@@ -1,13 +1,13 @@
 # CLI Reference
 
-The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/rasen:propose`) documented in [Commands](commands.md).
+The rasen CLI (`rasen`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/rasen:propose`) documented in [Commands](commands.md).
 
 ## Summary
 
 | Category | Commands | Purpose |
 |----------|----------|---------|
-| **Setup** | `init`, `update` | Initialize and update OpenSpec in your project |
-| **Stores (standalone OpenSpec repos)** | `store setup`, `store register`, `store unregister`, `store remove`, `store list`, `store doctor` | Manage stores — standalone OpenSpec repos you've registered |
+| **Setup** | `init`, `update` | Initialize and update rasen in your project |
+| **Stores (standalone rasen repos)** | `store setup`, `store register`, `store unregister`, `store remove`, `store list`, `store doctor` | Manage stores — standalone rasen repos you've registered |
 | **Health** | `doctor` | Report relationship health for the resolved root |
 | **Working context** | `context` | Assemble the working set (root + referenced stores) |
 | **Personal worksets** | `workset create`, `workset list`, `workset open`, `workset remove` | Keep and open personal, local working views in your tool |
@@ -57,7 +57,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen store remove <id>` | Delete a registered local store folder | `--yes --json` for non-interactive deletion |
 | `rasen store list` | Browse registered stores | `--json` for structured registrations |
 | `rasen store doctor` | Check local store setup | `--json` for structured diagnostics |
-| `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the OpenSpec root |
+| `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the Rasen root |
 | `rasen workset create [name]` | Compose a personal working view | `--member <path> --json` for non-interactive composition |
 | `rasen workset list` | Browse saved worksets | `--json` for structured views |
 | `rasen workset remove <name>` | Delete a saved view | `--yes --json` for non-interactive removal |
@@ -80,9 +80,9 @@ These options work with all commands:
 
 ### `rasen init`
 
-Initialize OpenSpec in your project. Creates the folder structure and configures AI tool integrations.
+Initialize rasen in your project. Creates the folder structure and configures AI tool integrations.
 
-Default behavior uses global config defaults: profile `core`, delivery `both`, workflows `propose, explore, apply, sync, archive`.
+Default behavior uses global config defaults: profile `full` (every workflow), delivery `both`.
 
 ```
 rasen init [path] [options]
@@ -100,7 +100,7 @@ rasen init [path] [options]
 |--------|-------------|
 | `--tools <list>` | Configure AI tools non-interactively. Use `all`, `none`, or comma-separated list |
 | `--force` | Auto-cleanup legacy files without prompting |
-| `--profile <profile>` | Override global profile for this init run (`core` or `custom`) |
+| `--profile <profile>` | Override global profile for this init run (`full`, `core`, or `custom`) |
 
 `--profile custom` uses whatever workflows are currently selected in global config (`rasen config profile`).
 
@@ -133,7 +133,7 @@ rasen init --force
 **What it creates:**
 
 ```
-openspec/
+rasen/
 ├── specs/              # Your specifications (source of truth)
 ├── changes/            # Proposed changes
 └── config.yaml         # Project configuration
@@ -148,7 +148,7 @@ openspec/
 
 ### `rasen update`
 
-Update OpenSpec instruction files after upgrading the CLI. Re-generates AI tool configuration files using your current global profile, selected workflows, and delivery mode.
+Update rasen instruction files after upgrading the CLI. Re-generates AI tool configuration files using your current global profile, selected workflows, and delivery mode.
 
 ```
 rasen update [path] [options]
@@ -170,22 +170,22 @@ rasen update [path] [options]
 
 ```bash
 # Update instruction files after npm upgrade
-npm update @fission-ai/openspec
+npm update @atelierai/rasen
 rasen update
 ```
 
 ---
 
-## Stores (standalone OpenSpec repos)
+## Stores (standalone rasen repos)
 
 > **Beta.** Stores and the features built on them (references, working context, worksets) are new; command names, flags, file formats, and JSON output may change shape between releases. For the problem-first walkthrough, see the [stores guide](stores-beta/user-guide.md).
 
-A store is a standalone OpenSpec repo you've registered on this machine — for example a planning repo or a contracts repo. Registering a store lets normal commands (`list`, `show`, `status`, `validate`, `new change`, `archive`, ...) act in it from anywhere by passing `--store <id>`.
+A store is a standalone rasen repo you've registered on this machine — for example a planning repo or a contracts repo. Registering a store lets normal commands (`list`, `show`, `status`, `validate`, `new change`, `archive`, ...) act in it from anywhere by passing `--store <id>`.
 
 ### `rasen store setup`
 
 Create and register a local store. With no arguments in a terminal,
-OpenSpec guides the user through setup. Agents and scripts should pass explicit
+Rasen guides the user through setup. Agents and scripts should pass explicit
 inputs and use `--json`.
 
 ```bash
@@ -196,21 +196,21 @@ rasen store setup [id] [options]
 
 | Option | Description |
 |--------|-------------|
-| `--path <path>` | Folder where the store should live (for example `~/openspec/<id>`) |
+| `--path <path>` | Folder where the store should live (for example `~/rasen/<id>`) |
 | `--remote <url>` | Record the canonical remote in the new store's `store.yaml` |
 | `--init-git` | Initialize a Git repository with an initial commit (default) |
 | `--no-init-git` | Skip every Git action: no init, no initial commit |
 | `--json` | Output JSON |
 
-Non-interactive runs (`--json`, scripts, agents) must pass both the store id and `--path`. In an interactive terminal, setup prompts for the location with an editable suggestion in a visible, user-owned place (for example `~/openspec/<id>`); it never defaults to OpenSpec's managed data directory.
+Non-interactive runs (`--json`, scripts, agents) must pass both the store id and `--path`. In an interactive terminal, setup prompts for the location with an editable suggestion in a visible, user-owned place (for example `~/rasen/<id>`); it never defaults to rasen's managed data directory.
 
 Examples:
 
 ```bash
 rasen store setup
 rasen store setup team-context
-rasen store setup team-context --path ~/openspec/team-context --no-init-git
-rasen store setup team-context --path ~/openspec/team-context --no-init-git --json
+rasen store setup team-context --path ~/rasen/team-context --no-init-git
+rasen store setup team-context --path ~/rasen/team-context --no-init-git --json
 ```
 
 ### `rasen store register`
@@ -226,7 +226,7 @@ rasen store register [path] [options]
 | Option | Description |
 |--------|-------------|
 | `--id <id>` | Store id; defaults to store metadata or folder name |
-| `--yes` | Confirm creating store identity metadata for a healthy OpenSpec root |
+| `--yes` | Confirm creating store identity metadata for a healthy Rasen root |
 | `--json` | Output JSON |
 
 ### `rasen store unregister`
@@ -238,7 +238,7 @@ rasen store unregister <id> [--json]
 ```
 
 Use this when a store was moved, cloned somewhere else, or should no longer be
-shown by OpenSpec on this machine.
+shown by rasen on this machine.
 
 ### `rasen store remove`
 
@@ -250,7 +250,7 @@ rasen store remove <id> [--yes] [--json]
 
 `remove` shows the exact folder before deleting in an interactive terminal.
 Agents, scripts, and JSON callers must pass `--yes` to confirm deletion.
-OpenSpec refuses to delete a folder that does not contain matching
+Rasen refuses to delete a folder that does not contain matching
 store metadata.
 
 ### `rasen store list`
@@ -291,11 +291,11 @@ References are read-only context. They never change where commands act: work sta
 A store can record its canonical clone source in its committed identity file, so onboarding never dead-ends at "register the store":
 
 ```bash
-rasen store setup team-context --path ~/openspec/team-context \
+rasen store setup team-context --path ~/rasen/team-context \
   --remote git@github.com:acme/team-context.git
 ```
 
-The remote lands in `.openspec-store/store.yaml` inside the initial commit, so every clone is born knowing it. For an existing store, edit `store.yaml` by hand and commit. `store doctor` shows the recorded remote (and the checkout's observed Git origin); setup/register sharing guidance names it; and register records the checkout's origin in the machine-local registry.
+The remote lands in `.rasen-store/store.yaml` inside the initial commit, so every clone is born knowing it. For an existing store, edit `store.yaml` by hand and commit. `store doctor` shows the recorded remote (and the checkout's observed Git origin); setup/register sharing guidance names it; and register records the checkout's origin in the machine-local registry.
 
 A reference declaration can carry the clone source too, so a teammate who doesn't have the store yet gets a complete, pasteable fix (`git clone <remote> <path> && rasen store register <path> --id <id>`):
 
@@ -304,22 +304,22 @@ references:
   - { id: team-context, remote: "git@github.com:acme/team-context.git" }
 ```
 
-Recording a remote is not sync: OpenSpec never clones, pulls, or pushes on its own.
+Recording a remote is not sync: rasen never clones, pulls, or pushes on its own.
 
 ### Declaring a default store
 
 A repo whose planning is fully externalized — no local `rasen/specs/` or `rasen/changes/` — can declare its store once instead of passing `--store` on every command:
 
 ```yaml
-# rasen/config.yaml (the only file under openspec/)
+# rasen/config.yaml (the only file under rasen/)
 store: team-context
 ```
 
-Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins, and a directory with real planning folders ignores the pointer (with a warning). To convert a pointer repo into a local OpenSpec root, remove the `store:` line and run `rasen init` — init refuses to scaffold while the declaration is present.
+Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins, and a directory with real planning folders ignores the pointer (with a warning). To convert a pointer repo into a local Rasen root, remove the `store:` line and run `rasen init` — init refuses to scaffold while the declaration is present.
 
 ## Doctor (relationship health)
 
-One read-only question, one place: is the OpenSpec root healthy, and are the stores it references available on this machine?
+One read-only question, one place: is the Rasen root healthy, and are the stores it references available on this machine?
 
 ```bash
 rasen doctor [--store <id>] [--json]
@@ -329,7 +329,7 @@ The report separates root health, store metadata health (including a note when t
 
 ## Working context (the assembled set)
 
-Everything this work relates to through OpenSpec declarations, in one working set: the OpenSpec root and the stores it references.
+Everything this work relates to through rasen declarations, in one working set: the Rasen root and the stores it references.
 
 ```bash
 rasen context [--store <id>] [--json] [--code-workspace <path> [--force]]
@@ -504,7 +504,7 @@ rasen validate [item-name] [options]
 | `--type <type>` | Specify type when name is ambiguous: `change` or `spec` |
 | `--strict` | Enable strict validation mode |
 | `--json` | Output as JSON |
-| `--concurrency <n>` | Max parallel validations (default: 6, or `OPENSPEC_CONCURRENCY` env) |
+| `--concurrency <n>` | Max parallel validations (default: 6, or `RASEN_CONCURRENCY` env) |
 | `--no-interactive` | Disable prompts |
 
 **Examples:**
@@ -616,7 +616,7 @@ These commands support the artifact-driven OPSX workflow. They're useful for bot
 
 ### `rasen new change`
 
-Create a change directory and optional checked-in metadata in the resolved OpenSpec root.
+Create a change directory and optional checked-in metadata in the resolved Rasen root.
 
 ```bash
 rasen new change <name> [options]
@@ -629,7 +629,7 @@ rasen new change <name> [options]
 | `--description <text>` | Description to add to `README.md` |
 | `--goal <text>` | Optional goal metadata to store with the change |
 | `--schema <name>` | Workflow schema to use |
-| `--store <id>` | Store id to use as the OpenSpec root (a store is a standalone OpenSpec repo you've registered) |
+| `--store <id>` | Store id to use as the Rasen root (a store is a standalone rasen repo you've registered) |
 | `--json` | Output JSON |
 
 Examples:
@@ -783,10 +783,10 @@ rasen templates --json
 Schema: spec-driven
 
 Templates:
-  proposal  → ~/.openspec/schemas/spec-driven/templates/proposal.md
-  specs     → ~/.openspec/schemas/spec-driven/templates/specs.md
-  design    → ~/.openspec/schemas/spec-driven/templates/design.md
-  tasks     → ~/.openspec/schemas/spec-driven/templates/tasks.md
+  proposal  → ~/.rasen/schemas/spec-driven/templates/proposal.md
+  specs     → ~/.rasen/schemas/spec-driven/templates/specs.md
+  design    → ~/.rasen/schemas/spec-driven/templates/design.md
+  tasks     → ~/.rasen/schemas/spec-driven/templates/tasks.md
 ```
 
 ---
@@ -872,7 +872,7 @@ rasen schema init rapid \
 **What it creates:**
 
 ```
-openspec/schemas/<name>/
+rasen/schemas/<name>/
 ├── schema.yaml           # Schema definition
 └── templates/
     ├── proposal.md       # Template for each artifact
@@ -979,12 +979,12 @@ rasen schema which spec-driven
 
 ```
 spec-driven resolves from: package
-  Source: /usr/local/lib/node_modules/@fission-ai/openspec/schemas/spec-driven
+  Source: /usr/local/lib/node_modules/@atelierai/rasen/schemas/spec-driven
 ```
 
 **Schema precedence:**
 
-1. Project: `openspec/schemas/<name>/`
+1. Project: `rasen/schemas/<name>/`
 2. User: `~/.rasen/schemas/<name>/` (or `$RASEN_HOME/schemas/<name>/` when set)
 3. Package: Built-in schemas
 
@@ -994,7 +994,7 @@ spec-driven resolves from: package
 
 ### `rasen config`
 
-View and modify global OpenSpec configuration.
+View and modify global rasen configuration.
 
 ```
 rasen config <subcommand> [options]
@@ -1054,7 +1054,7 @@ rasen config profile core
 - Keep current settings (exit)
 
 If you keep current settings, no changes are written and no update prompt is shown.
-If there are no config changes but the current project files are out of sync with your global profile/delivery, OpenSpec will show a warning and suggest `rasen update`.
+If there are no config changes but the current project files are out of sync with your global profile/delivery, rasen will show a warning and suggest `rasen update`.
 Pressing `Ctrl+C` also cancels the flow cleanly (no stack trace) and exits with code `130`.
 In the workflow checklist, `[x]` means the workflow is selected in global config. To apply those selections to project files, run `rasen update` (or choose `Apply changes to this project now?` when prompted inside a project).
 
@@ -1078,7 +1078,7 @@ rasen config profile
 
 ### `rasen feedback`
 
-Submit feedback about OpenSpec. Creates a GitHub issue.
+Submit feedback about rasen. Creates a GitHub issue.
 
 ```
 rasen feedback <message> [options]
@@ -1109,7 +1109,7 @@ rasen feedback "Add support for custom artifact types" \
 
 ### `rasen completion`
 
-Manage shell completions for the OpenSpec CLI.
+Manage shell completions for the rasen CLI.
 
 ```
 rasen completion <subcommand> [shell]
@@ -1135,7 +1135,7 @@ rasen completion install
 rasen completion install zsh
 
 # Generate script for manual installation
-rasen completion generate bash > ~/.bash_completion.d/openspec
+rasen completion generate bash > ~/.bash_completion.d/rasen
 
 # Uninstall
 rasen completion uninstall
@@ -1156,9 +1156,9 @@ rasen completion uninstall
 
 | Variable | Description |
 |----------|-------------|
-| `OPENSPEC_TELEMETRY` | Set to `0` to disable telemetry |
+| `RASEN_TELEMETRY` | Set to `0` to disable telemetry |
 | `DO_NOT_TRACK` | Set to `1` to disable telemetry (standard DNT signal) |
-| `OPENSPEC_CONCURRENCY` | Default concurrency for bulk validation (default: 6) |
+| `RASEN_CONCURRENCY` | Default concurrency for bulk validation (default: 6) |
 | `EDITOR` or `VISUAL` | Editor for `rasen config edit` |
 | `NO_COLOR` | Disable color output when set |
 

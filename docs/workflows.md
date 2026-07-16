@@ -1,6 +1,6 @@
 # Workflows
 
-This guide covers common workflow patterns for OpenSpec and when to use each one. For basic setup, see [Getting Started](getting-started.md). For command reference, see [Commands](commands.md).
+This guide covers common workflow patterns for rasen and when to use each one. For basic setup, see [Getting Started](getting-started.md). For command reference, see [Commands](commands.md).
 
 ## Philosophy: Actions, Not Phases
 
@@ -30,9 +30,9 @@ OPSX (fluid actions):
 
 ## Two Modes
 
-### Default Quick Path (`core` profile)
+### Quick Path (`core` profile)
 
-New installs default to `core`, which provides:
+New installs default to the `full` profile (every workflow). `core` is a slimmed-down profile you can switch to for the everyday rhythm:
 - `/rasen:explore`
 - `/rasen:propose`
 - `/rasen:apply`
@@ -74,10 +74,10 @@ Explore creates no artifacts and writes no code. It's a free, no-stakes conversa
 
 ### Expanded/Full Workflow (custom selection)
 
-If you want explicit scaffold-and-build commands (`/rasen:new`, `/rasen:continue`, `/rasen:ff`, `/rasen:verify`, `/rasen:bulk-archive`, `/rasen:onboard`), enable them with:
+The explicit scaffold-and-build commands (`/rasen:new`, `/rasen:continue`, `/rasen:ff`, `/rasen:verify`, `/rasen:bulk-archive`, `/rasen:onboard`) are already installed by default, since new installs default to the `full` profile. If you'd rather slim down to just the `core` set, switch with:
 
 ```bash
-rasen config profile
+rasen config profile core
 rasen update
 ```
 
@@ -311,7 +311,7 @@ Verify won't block archive, but it surfaces issues you might want to address fir
 review ──► triage ──► fix ──► re-review(Δ) ──► { pass | loop | escalate }
 ```
 
-Each review pass delegates to the always-installed `openspec-review` engine — the loop does not reimplement review heuristics. It adds four things on top:
+Each review pass delegates to the always-installed `rasen-review` engine — the loop does not reimplement review heuristics. It adds four things on top:
 
 - **Fix-size triage.** Each finding is routed by the size of its fix: **trivial** → orchestrator inline; **non-trivial** → the implementing agent that wrote the code; **design-level** → a separate fix agent (not the original author).
 - **Author ≠ verifier.** A finding is resolved only when a reviewer who did NOT author the fix confirms it against the original finding. For a trivial inline fix, an independent gate-run (tests/lint/build) plus a diff-read of the exact change is the equivalent non-author check — and it must be recorded in the cycle report.
@@ -493,7 +493,7 @@ For full command details and options, see [Commands](commands.md).
 
 - [Writing Good Specs](writing-specs.md) - What a strong requirement and scenario look like, and how to right-size a change
 - [Reviewing a Change](reviewing-changes.md) - The two-minute pass on a drafted plan before any code
-- [OpenSpec on a Team](team-workflow.md) - How changes fit branches and pull requests
+- [Rasen on a Team](team-workflow.md) - How changes fit branches and pull requests
 - [Commands](commands.md) - Full command reference with options
 - [Concepts](concepts.md) - Deep dive into specs, artifacts, and schemas
 - [Customization](customization.md) - Create custom workflows

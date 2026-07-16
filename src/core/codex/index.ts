@@ -43,11 +43,13 @@ export {
   findRolloutPath,
   readRolloutOccupancy,
   readRolloutConversation,
+  listRolloutFiles,
   type FindRolloutPathOptions,
   type RolloutOccupancy,
   type RolloutConversation,
   type RolloutConversationTurn,
   type RolloutFinalAnswerRecord,
+  type RolloutFileEntry,
 } from './rollout.js';
 export { buildCodexWorkerRecord, type BuildCodexWorkerRecordOptions } from './identity.js';
 export {

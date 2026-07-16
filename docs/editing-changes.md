@@ -47,7 +47,7 @@ Concretely, after some `/rasen:apply` work:
 
 There's no "review phase" to return to, because review is something you can do at any point, including after implementation.
 
-## "I edited the code by hand. How do I reconcile that with OpenSpec?"
+## "I edited the code by hand. How do I reconcile that with rasen?"
 
 This happens constantly and it's fine. You tweaked something in your editor, and now the code and the artifacts disagree. Bring them back in sync in whichever direction is true:
 

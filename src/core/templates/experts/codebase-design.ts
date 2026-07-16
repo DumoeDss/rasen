@@ -1,11 +1,11 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE } from './_shared.js';
+import { PREAMBLE_LITE } from './_shared.js';
 
 const BODY = `
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
 
-${PREAMBLE}
+${PREAMBLE_LITE}
 
 # Codebase Design
 
@@ -121,7 +121,7 @@ Good interfaces make testing natural:
 export function getCodebaseDesignSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:codebase-design',
-    description: '|',
+    description: 'Codebase design methodology — design it twice, deepen module boundaries, and keep implementation aligned with the intended architecture',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

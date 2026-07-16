@@ -1,6 +1,6 @@
 # Multi-Language Guide
 
-Configure OpenSpec to generate artifacts in languages other than English.
+Configure rasen to generate artifacts in languages other than English.
 
 ## Quick Setup
 

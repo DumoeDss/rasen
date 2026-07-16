@@ -70,6 +70,34 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText.toLowerCase()).toContain('always wins');
     });
 
+    it('supports opt-in automatic pipeline selection via --auto-select / autopilot.selection', () => {
+      expect(skillText).toContain('--auto-select');
+      expect(skillText).toContain('autopilot.selection');
+      // adoption rule: classify policy adopts the suggestion exactly, never escalates
+      expect(skillText.toLowerCase()).toContain('adopt it exactly as returned');
+      expect(skillText.toLowerCase()).toContain('never escalate or substitute a different pipeline');
+      // explicit-wins rule holds even with the policy in play
+      expect(skillText.toLowerCase()).toContain('explicit selection sits above the policy');
+      // small-feature fallback rule when classify is unavailable/unhelpful
+      expect(skillText.toLowerCase()).toContain('fall back to `small-feature` and display the fallback');
+    });
+
+    it('supports composed pipelines via --auto-compose / autopilot.selection: compose (autonomy-ladder rung 2)', () => {
+      expect(skillText).toContain('--auto-compose');
+      expect(skillText.toLowerCase()).toContain('classify|manual|compose');
+      // origin marker and quality floor
+      expect(skillText).toContain('origin: composed');
+      expect(skillText).toContain('role: reviewer');
+      expect(skillText).toContain('loop.kind: review-cycle');
+      // composed- naming rule with collision handling, never overwrite
+      expect(skillText).toContain('composed-<slug>');
+      expect(skillText.toLowerCase()).toContain('never overwrite or reuse an existing name');
+      // validation gate before execution, existing CLI surface, no new subcommand
+      expect(skillText).toContain('rasen validate <name> --type pipeline --json');
+      // no unregistered in-memory DAG guardrail
+      expect(skillText.toLowerCase()).toContain('never executes an unregistered, in-memory dag');
+    });
+
     it('allows per-role Claude/Codex runtime overrides', () => {
       expect(skillText).toContain('--planner claude|codex');
       expect(skillText).toContain('--reviewer claude|codex');

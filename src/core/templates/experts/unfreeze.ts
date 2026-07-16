@@ -9,7 +9,7 @@ Remove the edit restriction set by \`/freeze\`, allowing edits to all directorie
 ## Clear the boundary
 
 \`\`\`bash
-STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}"
+STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
 if [ -f "$STATE_DIR/freeze-dir.txt" ]; then
   PREV=$(cat "$STATE_DIR/freeze-dir.txt")
   rm -f "$STATE_DIR/freeze-dir.txt"
@@ -27,7 +27,7 @@ run \`/freeze\` again.
 export function getUnfreezeSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:unfreeze',
-    description: '|',
+    description: 'Clear the freeze boundary — lift the edit restriction set by freeze or guard',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

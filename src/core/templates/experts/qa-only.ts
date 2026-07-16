@@ -94,7 +94,7 @@ Report filenames use the domain and date: \`qa-report-myapp-com-2026-03-12.md\`
 export function getQaOnlySkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:qa-only',
-    description: '|',
+    description: 'Report-only browser QA — the same exploration and health score as qa, but never edits code',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

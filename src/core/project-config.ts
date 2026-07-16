@@ -97,6 +97,12 @@ export const ProjectConfigSchema = z.object({
         .describe(
           'Default autopilot gate policy: on (gates pause, default) or off (ordinary gates auto-approved)'
         ),
+      selection: z
+        .enum(['classify', 'manual', 'compose'])
+        .optional()
+        .describe(
+          'Default autopilot pipeline-selection policy: classify (adopt the classify suggestion), compose (classify-first, composition permitted on no-fit), or manual (default; explicit-or-small-feature, classify advisory-only)'
+        ),
     })
     .optional()
     .describe('Autopilot behavior configuration'),
@@ -113,6 +119,9 @@ export type AutopilotGatePolicy = 'on' | 'off';
 
 /** String prefix addressing the project namespace in a `references:` entry. */
 export const PROJECT_REFERENCE_PREFIX = 'project:';
+
+/** Valid `autopilot.selection` values. */
+export type AutopilotSelectionPolicy = 'classify' | 'manual' | 'compose';
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -392,9 +401,10 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
       }
     }
 
-    // Parse autopilot field: an optional map with an optional `gates` field.
-    // Non-map -> whole block dropped with a warning. An invalid field -> that
-    // field dropped with a warning, siblings (and future fields) still parse.
+    // Parse autopilot field: an optional map with optional `gates` and
+    // `selection` fields. Non-map -> whole block dropped with a warning. An
+    // invalid field -> that field dropped with a warning, siblings (and
+    // future fields) still parse.
     if (raw.autopilot !== undefined) {
       if (raw.autopilot && typeof raw.autopilot === 'object' && !Array.isArray(raw.autopilot)) {
         const autopilotRaw = raw.autopilot as Record<string, unknown>;
@@ -404,6 +414,19 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
             autopilot.gates = autopilotRaw.gates;
           } else {
             console.warn(`Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`);
+          }
+        }
+        if (autopilotRaw.selection !== undefined) {
+          if (
+            autopilotRaw.selection === 'classify' ||
+            autopilotRaw.selection === 'manual' ||
+            autopilotRaw.selection === 'compose'
+          ) {
+            autopilot.selection = autopilotRaw.selection;
+          } else {
+            console.warn(
+              `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`
+            );
           }
         }
         config.autopilot = autopilot;
@@ -759,6 +782,50 @@ export function resolveAutopilotGatePolicy(
     return { effective: configValue, source: 'config' };
   }
   return { effective: 'on', source: 'default' };
+}
+
+// -----------------------------------------------------------------------------
+// Autopilot selection policy (config axis)
+// -----------------------------------------------------------------------------
+
+/** The resolved autopilot pipeline-selection policy plus which layer produced it. */
+export interface ResolvedSelectionPolicy {
+  effective: AutopilotSelectionPolicy;
+  source: 'flag' | 'config' | 'default';
+}
+
+/**
+ * Resolves the effective autopilot pipeline-selection policy with precedence:
+ * the run arguments first — `--auto-compose` ahead of `--auto-select` when
+ * both are present (compose is the superset policy: classify-first, with
+ * composition permitted on no-fit — see `autopilot-composed-pipelines`) —
+ * then the project config default (`autopilot.selection`), then the built-in
+ * default (`manual`). Every consumer (the `/rasen:auto` selection-policy
+ * resolution) MUST resolve through this function so precedence is applied
+ * identically everywhere. An absent or previously-dropped
+ * `autopilot.selection` value falls back to the built-in default without
+ * failing config parsing. Mirrors `resolveAutopilotGatePolicy`'s shape (same
+ * source vocabulary) by design — this is that axis's sibling. Kept as a
+ * single resolver (not split by flag) so precedence lives in exactly one
+ * place; `autoComposeFlag` defaults to `false` so existing two-argument call
+ * sites (pre-dating the `compose` policy) are unaffected.
+ */
+export function resolveAutopilotSelectionPolicy(
+  config: ProjectConfig | null | undefined,
+  autoSelectFlag: boolean,
+  autoComposeFlag: boolean = false
+): ResolvedSelectionPolicy {
+  if (autoComposeFlag) {
+    return { effective: 'compose', source: 'flag' };
+  }
+  if (autoSelectFlag) {
+    return { effective: 'classify', source: 'flag' };
+  }
+  const configValue = config?.autopilot?.selection;
+  if (configValue === 'classify' || configValue === 'manual' || configValue === 'compose') {
+    return { effective: configValue, source: 'config' };
+  }
+  return { effective: 'manual', source: 'default' };
 }
 
 // -----------------------------------------------------------------------------

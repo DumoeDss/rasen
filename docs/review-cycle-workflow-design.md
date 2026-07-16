@@ -9,7 +9,7 @@
 
 ## 1. Motivation
 
-OpenSpec's flow is `propose → apply → archive`, and the OPSX/gstack fusion work added expert skills and runtime commands:
+OpenSpec's flow is `propose → apply → archive`, and the OPSX expert-skill fusion work added expert skills and runtime commands:
 
 - **Planning-phase review** is covered by the propose workflow's methodology consultation for design-intensive changes (`/codebase-design`, conditionally referenced); `schemas/spec-driven/schema.yaml` no longer carries any `enhance` hook (mechanism retained, currently no consumers).
 - **One-shot code review** exists as the always-installed expert skill `openspec-review` (source: `src/core/templates/experts/review.ts`).
@@ -157,7 +157,7 @@ The generated Claude skill (`.claude/skills/openspec-review-cycle/SKILL.md`) doc
 2. **Standalone command vs folding into `verify-enhanced`** — `verify-enhanced` already runs a multi-stage validation pass; should `review-cycle` be its sibling, or should the loop be folded into `verify-enhanced`? Proposed: **sibling** (single responsibility = iterative fix loop), composed before `verify-enhanced`. Needs a decision.
 3. **How to express "author ≠ verifier" for tools without addressable subagents?** For tools with no separate reviewer persona, the invariant degrades to "an independent review of the delta passes" + the orchestrator's independent gate re-run. This degradation must be explicitly documented.
 4. **Default max rounds** (proposed 3), and whether it is configurable via `openspec/config.yaml`'s `rules`.
-5. **Relationship/ordering with the in-progress `add-opsx-fusion-commands` change** — should `review-cycle` be added *into* that change, or land after it as its own standalone change? Proposed: as a standalone change depending on the fusion change (so the gstack `review` skill it reuses exists by then).
+5. **Relationship/ordering with the in-progress `add-opsx-fusion-commands` change** — should `review-cycle` be added *into* that change, or land after it as its own standalone change? Proposed: as a standalone change depending on the fusion change (so the expert `review` skill it reuses exists by then).
 
 ---
 
