@@ -22,6 +22,7 @@ import {
   resolveCodexHome,
   CODEX_CLI_VERSION_PREMISE,
 } from './codex/index.js';
+import { resolveModelPreset } from './model-presets.js';
 
 export interface AgentContextResult {
   model: string;
@@ -29,6 +30,8 @@ export interface AgentContextResult {
   limit: number;
   /** contextTokens / limit, rounded to 6 decimals (0–1). */
   pct: number;
+  /** max(0, limit - contextTokens) — 0 when no limit is known. */
+  remainingTokens: number;
   transcript: string;
 }
 
@@ -37,38 +40,25 @@ export interface ContextEstimate {
   contextTokens: number;
   limit: number;
   pct: number;
+  remainingTokens: number;
 }
 
 /** Conservative fallback window for unknown models. */
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
-const HAIKU_LIMIT = 200_000;
-const LARGE_LIMIT = 1_000_000;
 
 /**
- * Resolve a model id to its context-window size via a built-in prefix map.
- *
- *  - ids containing `haiku` → 200k;
- *  - current large-context generations (`opus-4`, `sonnet-5`, `sonnet-4-6`,
- *    `fable`, `mythos`) → 1M;
- *  - everything else → the conservative 200k default.
- *
- * Matching is case-insensitive and substring-based so provider-prefixed ids
- * (e.g. `claude-opus-4-8`, `us.anthropic.claude-...`) resolve correctly.
+ * Resolve a model id to its context-window size via the built-in
+ * {@link resolveModelPreset} registry, falling back to the conservative
+ * default for unknown models. One source of truth for context-window sizes;
+ * identical resolutions to the previous ad-hoc map for every id it resolved
+ * before.
  */
 export function resolveModelLimit(model: string | undefined | null): number {
-  if (!model) return DEFAULT_CONTEXT_LIMIT;
-  const id = model.toLowerCase();
-  if (id.includes('haiku')) return HAIKU_LIMIT;
-  if (
-    id.includes('opus-4') ||
-    id.includes('sonnet-5') ||
-    id.includes('sonnet-4-6') ||
-    id.includes('fable') ||
-    id.includes('mythos')
-  ) {
-    return LARGE_LIMIT;
-  }
-  return DEFAULT_CONTEXT_LIMIT;
+  return resolveModelPreset(model)?.contextWindow ?? DEFAULT_CONTEXT_LIMIT;
+}
+
+function remainingTokens(limit: number, contextTokens: number): number {
+  return Math.max(0, limit - contextTokens);
 }
 
 function roundPct(n: number): number {
@@ -149,6 +139,7 @@ export function computeContextFromTranscript(
     contextTokens,
     limit,
     pct: roundPct(contextTokens / limit),
+    remainingTokens: remainingTokens(limit, contextTokens),
     transcript: transcriptPath,
   };
 }
@@ -280,7 +271,14 @@ export function computeContextFromRollout(
 
   if (!occupancy) {
     const limit = options.limit ?? 0;
-    return { model, contextTokens: 0, limit, pct: 0, transcript: rolloutPath };
+    return {
+      model,
+      contextTokens: 0,
+      limit,
+      pct: 0,
+      remainingTokens: remainingTokens(limit, 0),
+      transcript: rolloutPath,
+    };
   }
 
   const limit = options.limit ?? occupancy.modelContextWindow;
@@ -289,6 +287,7 @@ export function computeContextFromRollout(
     contextTokens: occupancy.totalTokens,
     limit,
     pct: limit > 0 ? roundPct(occupancy.totalTokens / limit) : 0,
+    remainingTokens: remainingTokens(limit, occupancy.totalTokens),
     transcript: rolloutPath,
   };
 }
@@ -524,7 +523,12 @@ export function tryContextEstimate(
       kind === 'codex'
         ? computeContextFromRollout(transcriptPath, { limit })
         : computeContextFromTranscript(transcriptPath, { limit });
-    return { contextTokens: r.contextTokens, limit: r.limit, pct: r.pct };
+    return {
+      contextTokens: r.contextTokens,
+      limit: r.limit,
+      pct: r.pct,
+      remainingTokens: r.remainingTokens,
+    };
   } catch {
     return undefined;
   }

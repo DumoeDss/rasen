@@ -288,6 +288,127 @@ stages:
       });
     });
 
+    it('a fraction-only pipeline show --json is byte-identical to pre-change output', async () => {
+      // Regression guard for the dual-form threshold widening: a fixture that
+      // declares no absolute thresholds and names no preset-known model must
+      // resolve to EXACTLY the same handoff/reuse shape a pre-change build
+      // would have produced. toEqual is exact (no extra/missing/renamed
+      // keys tolerated) — a key add/rename/reorder in the resolved shape
+      // fails this test, unlike a typeof/enum-membership check.
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'fraction-only');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: fraction-only
+handoff:
+  threshold: 0.4
+  roles:
+    reviewer: 0.65
+  maxRelays: 4
+  stallLimit: 3
+reuse:
+  threshold: 0.3
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+  - id: review
+    skill: rasen:review
+    role: reviewer
+    requires: [propose]
+  - id: fix
+    skill: rasen-apply-change
+    role: fixer
+    requires: [review]
+    handoff:
+      threshold: 0.8
+  - id: none
+    skill: rasen-apply-change
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'fraction-only', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+
+      expect(json.reuse).toEqual({
+        planner: 'auto',
+        implementer: 'auto',
+        threshold: 0.3,
+        roles: { planner: 0.3, implementer: 0.3 },
+      });
+
+      const byId = Object.fromEntries(json.stages.map((s: any) => [s.id, s.handoff]));
+      expect(byId).toEqual({
+        propose: { threshold: 0.4, maxRelays: 4, stallLimit: 3, source: 'pipeline' },
+        review: { threshold: 0.65, maxRelays: 4, stallLimit: 3, source: 'role' },
+        fix: { threshold: 0.8, maxRelays: 4, stallLimit: 3, source: 'stage' },
+        none: { threshold: 0.4, maxRelays: 4, stallLimit: 3, source: 'pipeline' },
+      });
+    });
+
+    it('reports an absolute { remainingTokens } handoff threshold as the object form', async () => {
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'handoff-abs');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: handoff-abs
+handoff:
+  threshold:
+    remainingTokens: 60000
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'handoff-abs', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      const propose = json.stages.find((s: any) => s.id === 'propose');
+      expect(propose.handoff).toMatchObject({
+        threshold: { remainingTokens: 60000 },
+        source: 'pipeline',
+      });
+    });
+
+    it('resolves source: preset when the stage model matches a preset and nothing is configured', async () => {
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'handoff-preset');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: handoff-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'handoff-preset', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      const apply = json.stages.find((s: any) => s.id === 'apply');
+      expect(apply.handoff).toMatchObject({
+        threshold: { remainingTokens: 60000 },
+        source: 'preset',
+      });
+
+      const humanResult = await runCLI(['pipeline', 'show', 'handoff-preset'], { cwd: testDir });
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('handoff=60000 tokens remaining(preset)');
+    });
+
     // Goal-loop `pipeline show` human-readable rendering. goal-loop-core
     // generalized the meta line (pipeline.ts) to emit the goal-loop gate label,
     // but shipped no command test for the string. These assert the exact format.
@@ -841,6 +962,7 @@ stages:
         contextTokens: 250000,
         limit: 1_000_000,
         pct: 0.25,
+        remainingTokens: 750000,
       });
       // Unreadable transcript: worker still present, estimate silently omitted.
       expect(json.workers.verify.agentId).toBe('rev-9');

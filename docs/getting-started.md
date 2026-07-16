@@ -28,7 +28,7 @@ Two terminal steps to set up, then you live in chat. The rest of this guide unpa
 
 ## How It Works
 
-Rasen helps you and your AI coding assistant agree on what to build before any code is written.
+Rasen is an autonomous harness: you supply the intent, and it drives the change through propose, implement, review, fix, ship, and archive on its own.
 
 **Quick path (core command set):**
 

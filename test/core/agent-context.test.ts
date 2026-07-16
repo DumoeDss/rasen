@@ -108,6 +108,7 @@ describe('agent-context', () => {
       expect(r.model).toBe('claude-opus-4-8');
       expect(r.limit).toBe(1_000_000);
       expect(r.pct).toBe(0.00035);
+      expect(r.remainingTokens).toBe(999_650);
       expect(r.transcript).toBe(p);
     });
 
@@ -519,6 +520,7 @@ describe('agent-context', () => {
         contextTokens: 250_000,
         limit: 1_000_000,
         pct: 0.25,
+        remainingTokens: 750_000,
       });
     });
 
@@ -582,6 +584,7 @@ describe('agent-context', () => {
       expect(r.limit).toBe(353_400);
       expect(r.model).toBe('gpt-5.6-sol');
       expect(r.pct).toBeCloseTo(12_885 / 353_400, 6);
+      expect(r.remainingTokens).toBe(353_400 - 12_885);
       expect(r.transcript).toBe(p);
     });
 
@@ -618,6 +621,8 @@ describe('agent-context', () => {
       expect(r.pct).toBe(0);
       expect(r.limit).toBe(0);
       expect(r.model).toBe('gpt-5.6-sol');
+      // Honest zero — no window was ever reported, so remainingTokens is not fabricated.
+      expect(r.remainingTokens).toBe(0);
     });
 
     it('an explicit --limit still applies on a zero-turn rollout', () => {
@@ -625,6 +630,7 @@ describe('agent-context', () => {
       const r = computeContextFromRollout(p, { limit: 1_000_000 });
       expect(r.limit).toBe(1_000_000);
       expect(r.pct).toBe(0);
+      expect(r.remainingTokens).toBe(1_000_000);
     });
 
     it('falls back to unknown when no turn_context row carries a model', () => {

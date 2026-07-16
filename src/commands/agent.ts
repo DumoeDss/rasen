@@ -58,7 +58,7 @@ export class AgentCommand {
 
     const pctDisplay = (result.pct * 100).toFixed(1);
     console.log(
-      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) transcript=${result.transcript}`
+      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript}`
     );
   }
 
@@ -68,6 +68,7 @@ export class AgentCommand {
     contextTokens: number;
     limit: number;
     pct: number;
+    remainingTokens: number;
     transcript: string;
   } {
     return {
@@ -76,6 +77,7 @@ export class AgentCommand {
       contextTokens: result.contextTokens,
       limit: result.limit,
       pct: result.pct,
+      remainingTokens: result.remainingTokens,
       transcript: result.transcript,
     };
   }
