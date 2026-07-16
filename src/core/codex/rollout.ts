@@ -61,13 +61,23 @@ function newestMatch(matches: Array<{ path: string; mtimeMs: number }>): string 
   return matches[0].path;
 }
 
+/** A rollout file found by {@link listRolloutFiles}, with its mtime for newest-first sorting. */
+export interface RolloutFileEntry {
+  path: string;
+  mtimeMs: number;
+}
+
 /**
- * Bounded newest-first scan of the fixed-depth `sessions/<Y>/<M>/<D>/` tree
- * for a file whose name contains `threadId`. Bounded by the tree's fixed
- * three-level structure — no unbounded recursion.
+ * Bounded scan of the fixed-depth `sessions/<Y>/<M>/<D>/` tree, collecting
+ * every `rollout-*.jsonl`-named file (codex-cli's own naming convention, the
+ * same one `findRolloutPath` builds paths from). Bounded by the tree's fixed
+ * three-level structure — no unbounded recursion. Tolerant `safeReadDir`/stat
+ * semantics: unreadable directories yield no entries, a file that disappears
+ * between readdir and stat is skipped (design D8). Unsorted — callers order
+ * as needed (e.g. newest-first).
  */
-function scanForRollout(sessionsDir: string, threadId: string): string | undefined {
-  const matches: Array<{ path: string; mtimeMs: number }> = [];
+export function listRolloutFiles(sessionsDir: string): RolloutFileEntry[] {
+  const found: RolloutFileEntry[] = [];
   for (const yearEntry of safeReadDir(sessionsDir)) {
     if (!yearEntry.isDirectory()) continue;
     const yearDir = path.join(sessionsDir, yearEntry.name);
@@ -79,11 +89,11 @@ function scanForRollout(sessionsDir: string, threadId: string): string | undefin
         const dayDir = path.join(monthDir, dayEntry.name);
         for (const fileEntry of safeReadDir(dayDir)) {
           if (!fileEntry.isFile()) continue;
+          if (!fileEntry.name.startsWith('rollout-')) continue;
           if (!fileEntry.name.endsWith('.jsonl')) continue;
-          if (!fileEntry.name.includes(threadId)) continue;
           const full = path.join(dayDir, fileEntry.name);
           try {
-            matches.push({ path: full, mtimeMs: fs.statSync(full).mtimeMs });
+            found.push({ path: full, mtimeMs: fs.statSync(full).mtimeMs });
           } catch {
             // File disappeared between readdir and stat; skip.
           }
@@ -91,6 +101,17 @@ function scanForRollout(sessionsDir: string, threadId: string): string | undefin
       }
     }
   }
+  return found;
+}
+
+/**
+ * Bounded newest-first scan of the fixed-depth `sessions/<Y>/<M>/<D>/` tree
+ * for a file whose name contains `threadId`, built on {@link listRolloutFiles}.
+ */
+function scanForRollout(sessionsDir: string, threadId: string): string | undefined {
+  const matches = listRolloutFiles(sessionsDir).filter((entry) =>
+    path.basename(entry.path).includes(threadId)
+  );
   return newestMatch(matches);
 }
 

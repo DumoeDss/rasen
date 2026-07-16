@@ -16,7 +16,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readRolloutOccupancy, CODEX_CLI_VERSION_PREMISE } from './codex/index.js';
+import {
+  readRolloutOccupancy,
+  listRolloutFiles,
+  resolveCodexHome,
+  CODEX_CLI_VERSION_PREMISE,
+} from './codex/index.js';
 
 export interface AgentContextResult {
   model: string;
@@ -328,7 +333,7 @@ export function findLatestMainTranscript(baseDir: string): string {
     entries = fs.readdirSync(baseDir, { withFileTypes: true });
   } catch {
     throw new AgentContextUnavailableError(
-      `No Claude transcript directory at ${baseDir}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
+      `No Claude transcript directory at ${baseDir}. Run from the project whose session you want to probe, or pass --transcript / --dir. On a Codex host, pass --runtime codex with --latest.`
     );
   }
 
@@ -348,10 +353,70 @@ export function findLatestMainTranscript(baseDir: string): string {
 
   if (!newest) {
     throw new AgentContextUnavailableError(
-      `No main-session transcript (*.jsonl) found in ${baseDir}. It holds only subagent files or is empty.`
+      `No main-session transcript (*.jsonl) found in ${baseDir}. It holds only subagent files or is empty. On a Codex host, pass --runtime codex with --latest.`
     );
   }
   return newest;
+}
+
+/** Parsed first line of a candidate rollout, or `undefined` when unreadable/malformed/not `session_meta`. */
+function readSessionMeta(rolloutPath: string): Record<string, unknown> | undefined {
+  let content: string;
+  try {
+    content = fs.readFileSync(rolloutPath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  let firstLine: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      firstLine = trimmed;
+      break;
+    }
+  }
+  if (!firstLine) return undefined;
+  let row: Record<string, unknown>;
+  try {
+    row = JSON.parse(firstLine) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (row.type !== 'session_meta') return undefined;
+  const payload = row.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  return payload as Record<string, unknown>;
+}
+
+/**
+ * Newest Codex rollout under `sessionsDir` whose recorded session `cwd`
+ * (`session_meta.payload.cwd`, resolved) equals the resolved probe `cwd`,
+ * excluding forked-child (subagent) rollouts — the Codex analog of
+ * {@link findLatestMainTranscript} (design D2). Candidates are ordered
+ * newest-mtime-first and inspected candidate-lazily (each candidate's file is
+ * read whole, `readJsonlLines`-style, to get its `session_meta` first line —
+ * the laziness is that the walk stops early, not a partial file read): the walk stops at the
+ * first match, so in practice only the LEAD's own recent rollout (or a
+ * handful of misses) pay the read. Throws {@link AgentContextUnavailableError}
+ * naming the sessions root and the cwd filter when nothing matches
+ * (environmental absence, reachable only via `--latest`).
+ */
+export function findLatestRollout(sessionsDir: string, cwd: string): string {
+  const resolvedCwd = path.resolve(cwd);
+  const candidates = listRolloutFiles(sessionsDir).sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  for (const candidate of candidates) {
+    const meta = readSessionMeta(candidate.path);
+    if (!meta) continue;
+    if (meta.forked_from_id !== undefined || meta.parent_thread_id !== undefined) continue;
+    const metaCwd = meta.cwd;
+    if (typeof metaCwd !== 'string') continue;
+    if (path.resolve(metaCwd) === resolvedCwd) return candidate.path;
+  }
+
+  throw new AgentContextUnavailableError(
+    `No Codex rollout found in ${sessionsDir} whose session cwd matches ${resolvedCwd}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
+  );
 }
 
 export interface ProbeOptions {
@@ -373,12 +438,21 @@ export interface ProbeOptions {
 
 /**
  * Resolve which transcript a probe should read. `--transcript` wins; otherwise
- * `--latest` resolves the newest main-session transcript under `--dir` (or the
- * cwd-derived Claude projects dir). Throws when neither is provided.
+ * `--latest` resolves the newest main-session transcript — the Claude-side
+ * path under `--dir` (or the cwd-derived Claude projects dir) when `runtime`
+ * is absent/`'claude'`, or the newest cwd-matching Codex rollout under `--dir`
+ * (or the default Codex sessions root) when `runtime` is `'codex'` (design
+ * D1/D3). `runtime` here is the already-validated value — callers must
+ * validate `--runtime` before calling. Throws when neither `--transcript` nor
+ * `--latest` is provided.
  */
-export function resolveTranscriptPath(options: ProbeOptions): string {
+export function resolveTranscriptPath(options: ProbeOptions, runtime?: TranscriptKind): string {
   if (options.transcript) return options.transcript;
   if (options.latest) {
+    if (runtime === 'codex') {
+      const sessionsDir = options.dir ?? path.join(resolveCodexHome(), 'sessions');
+      return findLatestRollout(sessionsDir, options.cwd ?? process.cwd());
+    }
     const baseDir =
       options.dir ?? claudeProjectsDir(options.cwd ?? process.cwd(), options.homeDir);
     return findLatestMainTranscript(baseDir);
@@ -400,7 +474,7 @@ export function probeAgentContext(options: ProbeOptions): AgentContextResult {
   ) {
     throw new Error('--limit must be a positive integer (token count of the context window).');
   }
-  const transcriptPath = resolveTranscriptPath(options);
+  const transcriptPath = resolveTranscriptPath(options, runtime);
   const kind = detectTranscriptKind(transcriptPath, runtime);
   return kind === 'codex'
     ? computeContextFromRollout(transcriptPath, { limit: options.limit })

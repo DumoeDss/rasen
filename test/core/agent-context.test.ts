@@ -13,6 +13,7 @@ import {
   detectTranscriptKind,
   claudeProjectsDir,
   findLatestMainTranscript,
+  findLatestRollout,
   resolveTranscriptPath,
   probeAgentContext,
   probeAgentContextSafe,
@@ -230,6 +231,119 @@ describe('agent-context', () => {
     });
   });
 
+  describe('findLatestRollout', () => {
+    function writeRolloutAt(relativePath: string, lines: string[], mtime?: Date): string {
+      const full = path.join(dir, 'sessions', relativePath);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, lines.join('\n') + '\n', 'utf-8');
+      if (mtime) fs.utimesSync(full, mtime, mtime);
+      return full;
+    }
+
+    function sessionMeta(cwd: string, extra: Record<string, unknown> = {}): string {
+      return JSON.stringify({ type: 'session_meta', payload: { cwd, ...extra } });
+    }
+
+    const sessionsDir = () => path.join(dir, 'sessions');
+
+    it('picks the newest-mtime rollout among cwd matches', () => {
+      const cwd = path.join(dir, 'project');
+      const older = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      const newer = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        [sessionMeta(cwd)],
+        new Date(2_000_000)
+      );
+      void older;
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(newer);
+    });
+
+    it('skips a newer rollout recorded under a different cwd', () => {
+      const cwd = path.join(dir, 'project');
+      const otherCwd = path.join(dir, 'other-project');
+      const match = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        [sessionMeta(otherCwd)],
+        new Date(2_000_000)
+      );
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(match);
+    });
+
+    it('skips a forked-child (subagent) rollout even when newest', () => {
+      const cwd = path.join(dir, 'project');
+      const match = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        [sessionMeta(cwd, { forked_from_id: 'thread-1' })],
+        new Date(2_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T11-00-00-ccc.jsonl',
+        [sessionMeta(cwd, { parent_thread_id: 'thread-1' })],
+        new Date(3_000_000)
+      );
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(match);
+    });
+
+    it('skips a candidate with a malformed first line', () => {
+      const cwd = path.join(dir, 'project');
+      const match = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        ['{ not json'],
+        new Date(2_000_000)
+      );
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(match);
+    });
+
+    it('throws AgentContextUnavailableError when the sessions root is missing', () => {
+      const cwd = path.join(dir, 'project');
+      expect(() => findLatestRollout(path.join(dir, 'no-sessions'), cwd)).toThrow(
+        AgentContextUnavailableError
+      );
+    });
+
+    it('throws AgentContextUnavailableError when the sessions root is empty', () => {
+      fs.mkdirSync(sessionsDir(), { recursive: true });
+      const cwd = path.join(dir, 'project');
+      expect(() => findLatestRollout(sessionsDir(), cwd)).toThrow(AgentContextUnavailableError);
+    });
+
+    it('throws AgentContextUnavailableError when no rollout matches the cwd', () => {
+      const cwd = path.join(dir, 'project');
+      writeRolloutAt('2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl', [
+        sessionMeta(path.join(dir, 'unrelated')),
+      ]);
+      expect(() => findLatestRollout(sessionsDir(), cwd)).toThrow(AgentContextUnavailableError);
+    });
+
+    it('compares resolved absolute paths, tolerating a non-normalized probe cwd', () => {
+      const cwd = path.join(dir, 'project');
+      const match = writeRolloutAt('2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl', [
+        sessionMeta(cwd),
+      ]);
+      const messyCwd = path.join(dir, 'project', '..', 'project');
+      expect(findLatestRollout(sessionsDir(), messyCwd)).toBe(match);
+    });
+  });
+
   // design D2: graceful degradation for environmental absence under --latest.
   describe('probeAgentContextSafe', () => {
     it('returns {available:false, reason:"no-transcript"} when the projects dir is absent', () => {
@@ -322,6 +436,77 @@ describe('agent-context', () => {
 
     it('throws when neither transcript nor latest is provided', () => {
       expect(() => resolveTranscriptPath({})).toThrow(/--transcript|--latest/);
+    });
+  });
+
+  describe('--latest --runtime codex (design D1/D2/D3/D4)', () => {
+    function writeRolloutAt(relativePath: string, lines: string[]): string {
+      const full = path.join(dir, 'sessions', relativePath);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, lines.join('\n') + '\n', 'utf-8');
+      return full;
+    }
+
+    function sessionMeta(cwd: string): string {
+      return JSON.stringify({ type: 'session_meta', payload: { cwd } });
+    }
+
+    it('probeAgentContextSafe discovers and probes the matching rollout, landing on the codex reader', () => {
+      const cwd = path.join(dir, 'project');
+      writeRolloutAt('2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl', [
+        sessionMeta(cwd),
+        turnContextLine('gpt-5.6-sol'),
+        tokenCountLine(1_234, 100_000),
+      ]);
+
+      const result = probeAgentContextSafe({
+        latest: true,
+        runtime: 'codex',
+        dir: path.join(dir, 'sessions'),
+        cwd,
+      });
+
+      expect(result.available).toBe(true);
+      if (result.available) {
+        expect(result.contextTokens).toBe(1_234);
+        expect(result.limit).toBe(100_000);
+        expect(result.model).toBe('gpt-5.6-sol');
+      }
+    });
+
+    it('returns {available:false, reason:"no-transcript"} when no rollout matches', () => {
+      const cwd = path.join(dir, 'project');
+      const result = probeAgentContextSafe({
+        latest: true,
+        runtime: 'codex',
+        dir: path.join(dir, 'sessions'),
+        cwd,
+      });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('no-transcript');
+        expect(result.detail).toMatch(/sessions/);
+      }
+    });
+
+    it('--dir retargets the sessions root that is searched', () => {
+      const cwd = path.join(dir, 'project');
+      const altRoot = path.join(dir, 'alt-sessions');
+      const full = path.join(altRoot, '2026', '07', '12', 'rollout-2026-07-12T09-00-00-aaa.jsonl');
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, [sessionMeta(cwd), tokenCountLine(1, 1_000)].join('\n') + '\n', 'utf-8');
+
+      const result = probeAgentContextSafe({ latest: true, runtime: 'codex', dir: altRoot, cwd });
+      expect(result.available).toBe(true);
+      if (result.available) expect(result.transcript).toBe(full);
+    });
+
+    it('leaves Claude --latest behavior unchanged, with the unavailable detail mentioning the Codex pointer', () => {
+      const result = probeAgentContextSafe({ latest: true, dir: path.join(dir, 'missing') });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.detail).toMatch(/--runtime codex/);
+      }
     });
   });
 
