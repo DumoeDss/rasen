@@ -197,73 +197,91 @@ describe('InitCommand', () => {
       }
     });
 
-    it('should create skills in Cursor skills directory', async () => {
-      const initCommand = new InitCommand({ tools: 'cursor', force: true });
+    it('should create skills in Codex skills directory', async () => {
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const initCommand = new InitCommand({ tools: 'codex', force: true });
 
       await initCommand.execute(testDir);
 
-      const skillFile = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
+      const skillFile = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
       expect(await fileExists(skillFile)).toBe(true);
     });
 
-    it('should create skills in Windsurf skills directory', async () => {
-      const initCommand = new InitCommand({ tools: 'windsurf', force: true });
+    it('should install Hermes skills to the resolved Hermes home, not project-local .hermes/', async () => {
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      const initCommand = new InitCommand({ tools: 'hermes', force: true });
 
       await initCommand.execute(testDir);
 
-      const skillFile = path.join(testDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
-      expect(await fileExists(skillFile)).toBe(true);
+      const globalSkillFile = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(globalSkillFile)).toBe(true);
+
+      // No project-local .hermes/ tree should be created.
+      const projectLocalDir = path.join(testDir, '.hermes');
+      expect(await directoryExists(projectLocalDir)).toBe(false);
     });
 
-    it('should support Kimi CLI as an adapterless skills-only tool', async () => {
-      saveGlobalConfig({
-        featureFlags: {},
-        profile: 'core',
-        delivery: 'both',
-      });
+    it('should skip command-file generation for Hermes (no adapter) while still installing skills', async () => {
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      const initCommand = new InitCommand({ tools: 'hermes', force: true });
 
-      const initCommand = new InitCommand({ tools: 'kimi', force: true });
       await initCommand.execute(testDir);
 
-      const skillFile = path.join(testDir, '.kimi', 'skills', 'rasen-explore', 'SKILL.md');
-      expect(await fileExists(skillFile)).toBe(true);
-
-      const commandsDir = path.join(testDir, '.kimi', 'commands');
-      expect(await directoryExists(commandsDir)).toBe(false);
+      const globalSkillFile = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(globalSkillFile)).toBe(true);
 
       const logCalls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.flat().map(String);
       expect(
         logCalls.some(
-          (entry) => entry.includes('Commands skipped for: kimi') && entry.includes('(no adapter)'),
+          (entry) => entry.includes('Commands skipped for: hermes') && entry.includes('(no adapter)'),
         ),
       ).toBe(true);
     });
 
+    it('should reject an unadapted tool (Windsurf) with a "not yet adapted" message', async () => {
+      const initCommand = new InitCommand({ tools: 'windsurf', force: true });
+
+      await expect(initCommand.execute(testDir)).rejects.toThrow(/recognized but not yet adapted/);
+
+      // No skills should have been created for the rejected tool.
+      const skillFile = path.join(testDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(skillFile)).toBe(false);
+    });
+
     it('should create skills for multiple tools at once', async () => {
-      const initCommand = new InitCommand({ tools: 'claude,cursor', force: true });
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const initCommand = new InitCommand({ tools: 'claude,codex', force: true });
 
       await initCommand.execute(testDir);
 
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
-      const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
+      const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
-      expect(await fileExists(cursorSkill)).toBe(true);
+      expect(await fileExists(codexSkill)).toBe(true);
     });
 
-    it('should select all tools with --tools all option', async () => {
+    it('should select only adapted tools with --tools all option', async () => {
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
       const initCommand = new InitCommand({ tools: 'all', force: true });
 
       await initCommand.execute(testDir);
 
-      // Check a few representative tools
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
+      const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
+      const hermesSkill = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
       const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
       const windsurfSkill = path.join(testDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
-      expect(await fileExists(cursorSkill)).toBe(true);
-      expect(await fileExists(windsurfSkill)).toBe(true);
+      expect(await fileExists(codexSkill)).toBe(true);
+      expect(await fileExists(hermesSkill)).toBe(true);
+      expect(await fileExists(cursorSkill)).toBe(false);
+      expect(await fileExists(windsurfSkill)).toBe(false);
     });
 
     it('should skip tool configuration with --tools none option', async () => {
@@ -286,16 +304,25 @@ describe('InitCommand', () => {
       await expect(initCommand.execute(testDir)).rejects.toThrow(/Invalid tool\(s\): invalid-tool/);
     });
 
+    it('should reject a known but unadapted tool with a "not yet adapted" message', async () => {
+      const initCommand = new InitCommand({ tools: 'cursor', force: true });
+
+      await expect(initCommand.execute(testDir)).rejects.toThrow(
+        /recognized but not yet adapted in Rasen.*claude, codex/
+      );
+    });
+
     it('should handle comma-separated tool names with spaces', async () => {
-      const initCommand = new InitCommand({ tools: 'claude, cursor', force: true });
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const initCommand = new InitCommand({ tools: 'claude, codex', force: true });
 
       await initCommand.execute(testDir);
 
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
-      const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
+      const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
-      expect(await fileExists(cursorSkill)).toBe(true);
+      expect(await fileExists(codexSkill)).toBe(true);
     });
 
     it('should reject combining reserved keywords with explicit tool ids', async () => {
@@ -340,15 +367,16 @@ describe('InitCommand', () => {
       await initCommand1.execute(testDir);
 
       // Run init again with a different tool
-      const initCommand2 = new InitCommand({ tools: 'cursor', force: true });
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const initCommand2 = new InitCommand({ tools: 'codex', force: true });
       await initCommand2.execute(testDir);
 
       // Both tools should have skills
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
-      const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
+      const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
-      expect(await fileExists(cursorSkill)).toBe(true);
+      expect(await fileExists(codexSkill)).toBe(true);
     });
 
     it('should refresh skills on re-run for the same tool', async () => {
@@ -445,11 +473,12 @@ describe('InitCommand', () => {
       expect(content).toContain('description:');
     });
 
-    it('should generate Cursor commands with correct format', async () => {
-      const initCommand = new InitCommand({ tools: 'cursor', force: true });
+    it('should generate Codex commands with correct format', async () => {
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const initCommand = new InitCommand({ tools: 'codex', force: true });
       await initCommand.execute(testDir);
 
-      const cmdFile = path.join(testDir, '.cursor', 'commands', 'rasen-explore.md');
+      const cmdFile = path.join(process.env.CODEX_HOME, 'prompts', 'rasen-explore.md');
       expect(await fileExists(cmdFile)).toBe(true);
 
       const content = await fs.readFile(cmdFile, 'utf-8');
@@ -487,55 +516,13 @@ describe('InitCommand', () => {
     });
   });
 
-  describe('tool-specific adapters', () => {
-    it('should generate Gemini CLI commands as TOML files', async () => {
-      const initCommand = new InitCommand({ tools: 'gemini', force: true });
-      await initCommand.execute(testDir);
-
-      const cmdFile = path.join(testDir, '.gemini', 'commands', 'rasen', 'explore.toml');
-      expect(await fileExists(cmdFile)).toBe(true);
-
-      const content = await fs.readFile(cmdFile, 'utf-8');
-      expect(content).toContain('description =');
-      expect(content).toContain('prompt =');
-    });
-
-    it('should generate Windsurf commands', async () => {
-      const initCommand = new InitCommand({ tools: 'windsurf', force: true });
-      await initCommand.execute(testDir);
-
-      const cmdFile = path.join(testDir, '.windsurf', 'workflows', 'rasen-explore.md');
-      expect(await fileExists(cmdFile)).toBe(true);
-    });
-
-    it('should generate Continue prompt files', async () => {
-      const initCommand = new InitCommand({ tools: 'continue', force: true });
-      await initCommand.execute(testDir);
-
-      const cmdFile = path.join(testDir, '.continue', 'prompts', 'rasen-explore.prompt');
-      expect(await fileExists(cmdFile)).toBe(true);
-
-      const content = await fs.readFile(cmdFile, 'utf-8');
-      expect(content).toContain('name: rasen-explore');
-      expect(content).toContain('invokable: true');
-    });
-
-    it('should generate Cline workflow files', async () => {
-      const initCommand = new InitCommand({ tools: 'cline', force: true });
-      await initCommand.execute(testDir);
-
-      const cmdFile = path.join(testDir, '.clinerules', 'workflows', 'rasen-explore.md');
-      expect(await fileExists(cmdFile)).toBe(true);
-    });
-
-    it('should generate GitHub Copilot prompt files', async () => {
-      const initCommand = new InitCommand({ tools: 'github-copilot', force: true });
-      await initCommand.execute(testDir);
-
-      const cmdFile = path.join(testDir, '.github', 'prompts', 'rasen-explore.prompt.md');
-      expect(await fileExists(cmdFile)).toBe(true);
-    });
-  });
+  // Per-adapter format/path coverage for unadapted tools (Gemini, Windsurf,
+  // Continue, Cline, GitHub Copilot, etc.) lives in
+  // test/core/command-generation/adapters.test.ts, which exercises each
+  // adapter's getFilePath/formatFile directly. Those tools are no longer
+  // reachable through InitCommand's --tools surface (adapted-agent-visibility
+  // change), so the integration-level coverage here was removed rather than
+  // updated to a tool that can't reach it.
 });
 
 describe('InitCommand - profile and detection features', () => {
@@ -616,17 +603,17 @@ describe('InitCommand - profile and detection features', () => {
   });
 
   it('should leave legacy artifacts untouched and print a coexistence notice', async () => {
-    // Create legacy OpenCode command files (singular 'command' path)
-    const legacyDir = path.join(testDir, '.opencode', 'command');
+    // Create legacy Claude command directory (old openspec-namespaced path)
+    const legacyDir = path.join(testDir, '.claude', 'commands', 'openspec');
     await fs.mkdir(legacyDir, { recursive: true });
-    await fs.writeFile(path.join(legacyDir, 'opsx-propose.md'), 'legacy content');
+    await fs.writeFile(path.join(legacyDir, 'propose.md'), 'legacy content');
 
     // Run init in non-interactive mode without --force
-    const initCommand = new InitCommand({ tools: 'opencode' });
+    const initCommand = new InitCommand({ tools: 'claude' });
     await initCommand.execute(testDir);
 
     // rasen never deletes legacy artifacts — the file stays put.
-    expect(await fileExists(path.join(legacyDir, 'opsx-propose.md'))).toBe(true);
+    expect(await fileExists(path.join(legacyDir, 'propose.md'))).toBe(true);
 
     // A one-time coexistence notice is printed instead.
     const logCalls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.flat().map(String);
@@ -634,8 +621,8 @@ describe('InitCommand - profile and detection features', () => {
       logCalls.some((entry) => entry.includes('Legacy OpenSpec-namespace artifacts detected'))
     ).toBe(true);
 
-    // New rasen-namespaced commands are still created at the correct plural path.
-    const newCommandsDir = path.join(testDir, '.opencode', 'commands');
+    // New rasen-namespaced commands are still created at the correct path.
+    const newCommandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
     expect(await directoryExists(newCommandsDir)).toBe(true);
   });
 
@@ -648,9 +635,9 @@ describe('InitCommand - profile and detection features', () => {
     await fs.mkdir(claudeSkillDir, { recursive: true });
     await fs.writeFile(path.join(claudeSkillDir, 'SKILL.md'), 'configured');
 
-    // Directory detected only (not configured with Rasen)
-    await fs.mkdir(path.join(testDir, '.github'), { recursive: true });
-    await fs.writeFile(path.join(testDir, '.github', 'copilot-instructions.md'), '');
+    // Directory detected only (not configured with Rasen) — an adapted tool
+    // (codex) so it still appears in the narrowed choices list.
+    await fs.mkdir(path.join(testDir, '.codex'), { recursive: true });
 
     searchableMultiSelectMock.mockResolvedValue(['claude']);
 
@@ -663,19 +650,19 @@ describe('InitCommand - profile and detection features', () => {
     const [{ choices }] = searchableMultiSelectMock.mock.calls[0] as [{ choices: Array<{ value: string; preSelected?: boolean; detected?: boolean }> }];
 
     const claude = choices.find((choice) => choice.value === 'claude');
-    const githubCopilot = choices.find((choice) => choice.value === 'github-copilot');
+    const codex = choices.find((choice) => choice.value === 'codex');
 
     expect(claude?.preSelected).toBe(true);
-    expect(githubCopilot?.preSelected).toBe(false);
-    expect(githubCopilot?.detected).toBe(true);
+    expect(codex?.preSelected).toBe(false);
+    expect(codex?.detected).toBe(true);
   });
 
   it('should preselect detected tools for first-time interactive setup', async () => {
     // First-time init: no openspec/ directory and no configured Rasen skills.
-    await fs.mkdir(path.join(testDir, '.github'), { recursive: true });
-    await fs.writeFile(path.join(testDir, '.github', 'copilot-instructions.md'), '');
+    await fs.mkdir(path.join(testDir, '.codex'), { recursive: true });
 
-    searchableMultiSelectMock.mockResolvedValue(['github-copilot']);
+    process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+    searchableMultiSelectMock.mockResolvedValue(['codex']);
 
     const initCommand = new InitCommand({ force: true });
     vi.spyOn(initCommand as any, 'canPromptInteractively').mockReturnValue(true);
@@ -684,9 +671,9 @@ describe('InitCommand - profile and detection features', () => {
 
     expect(searchableMultiSelectMock).toHaveBeenCalledTimes(1);
     const [{ choices }] = searchableMultiSelectMock.mock.calls[0] as [{ choices: Array<{ value: string; preSelected?: boolean }> }];
-    const githubCopilot = choices.find((choice) => choice.value === 'github-copilot');
+    const codex = choices.find((choice) => choice.value === 'codex');
 
-    expect(githubCopilot?.preSelected).toBe(true);
+    expect(codex?.preSelected).toBe(true);
   });
 
   it('should respect custom profile from global config', async () => {

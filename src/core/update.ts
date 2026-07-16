@@ -28,6 +28,7 @@ import {
   generateSkillContent,
   copySkillSidecars,
   getToolsWithSkillsDir,
+  resolveToolSkillsRoot,
   type ToolVersionStatus,
 } from './shared/index.js';
 import {
@@ -165,7 +166,7 @@ export class UpdateCommand {
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
       if (!tool?.skillsDir) continue;
-      await pruneRetiredExpertSkillDirs(path.join(resolvedProjectPath, tool.skillsDir, 'skills'));
+      await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
     }
 
     if (!this.force && toolsToUpdateSet.size === 0) {
@@ -206,7 +207,7 @@ export class UpdateCommand {
       const spinner = ora(`Updating ${tool.name}...`).start();
 
       try {
-        const skillsDir = path.join(resolvedProjectPath, tool.skillsDir, 'skills');
+        const skillsDir = resolveToolSkillsRoot(tool, resolvedProjectPath);
 
         // Generate skill files (always installed regardless of delivery)
         for (const { template, dirName, workflowId } of skillTemplates) {
@@ -350,7 +351,7 @@ export class UpdateCommand {
     const availableTools = getAvailableTools(projectPath);
     const configuredSet = new Set(configuredTools);
 
-    const newTools = availableTools.filter((t) => !configuredSet.has(t.value));
+    const newTools = availableTools.filter((t) => !configuredSet.has(t.value) && t.adapted);
 
     if (newTools.length > 0) {
       const newToolNames = newTools.map((tool) => tool.name);
