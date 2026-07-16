@@ -439,3 +439,59 @@ describe('agent-context', () => {
     });
   });
 });
+
+describe('resolveHandoffThresholdReport', () => {
+  let tempDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-threshold-'));
+    originalEnv = { ...process.env };
+    delete process.env.RASEN_HOME;
+    process.env.XDG_CONFIG_HOME = tempDir;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function writeProjectConfig(projectRoot: string, content: string): void {
+    const dir2 = path.join(projectRoot, 'rasen');
+    fs.mkdirSync(dir2, { recursive: true });
+    fs.writeFileSync(path.join(dir2, 'config.yaml'), content);
+  }
+
+  it('reports the default threshold outside a project with no global config', async () => {
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-outside-'));
+
+    const result = resolveHandoffThresholdReport(0.3, outsideDir);
+
+    expect(result).toEqual({ threshold: 0.5, thresholdSource: 'default', shouldHandoff: false });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('reports shouldHandoff true when occupancy meets a project threshold', async () => {
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const projectRoot = path.join(tempDir, 'project');
+    writeProjectConfig(projectRoot, 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n');
+
+    const result = resolveHandoffThresholdReport(0.62, projectRoot);
+
+    expect(result).toEqual({ threshold: 0.6, thresholdSource: 'project', shouldHandoff: true });
+  });
+
+  it('falls back to global config when no project threshold is set', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    saveGlobalConfig({ handoff: { threshold: 0.65 } } as never);
+
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-'));
+
+    const result = resolveHandoffThresholdReport(0.5, outsideDir);
+
+    expect(result).toEqual({ threshold: 0.65, thresholdSource: 'global', shouldHandoff: false });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+});

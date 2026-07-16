@@ -917,6 +917,103 @@ stages:
         source: 'default',
       });
     });
+
+    describe('config layers (unified-config-layer)', () => {
+      const noPipelineHandoff = parsePipeline(`
+name: config-layer-test
+stages:
+  - id: a
+    skill: rasen-propose
+    role: planner
+`).stages[0];
+      const pipelineNoHandoff = parsePipeline(`
+name: config-layer-test
+stages:
+  - id: a
+    skill: rasen-propose
+    role: planner
+`);
+
+      it('applies the project config threshold below pipeline declarations', () => {
+        const result = resolveStageHandoffConfig(noPipelineHandoff, pipelineNoHandoff, {
+          projectThreshold: 0.4,
+        });
+        expect(result).toEqual({
+          threshold: 0.4,
+          maxRelays: DEFAULT_HANDOFF_CONFIG.maxRelays,
+          stallLimit: DEFAULT_HANDOFF_CONFIG.stallLimit,
+          source: 'project-config',
+        });
+      });
+
+      it('falls back to the global config threshold when no project threshold is set', () => {
+        const result = resolveStageHandoffConfig(noPipelineHandoff, pipelineNoHandoff, {
+          globalThreshold: 0.65,
+        });
+        expect(result.threshold).toBe(0.65);
+        expect(result.source).toBe('global-config');
+      });
+
+      it('pipeline declarations beat config layers', () => {
+        const pipeline = parsePipeline(`
+name: config-layer-beats
+handoff:
+  threshold: 0.7
+stages:
+  - id: a
+    skill: rasen-propose
+    role: planner
+`);
+        const result = resolveStageHandoffConfig(pipeline.stages[0], pipeline, {
+          projectThreshold: 0.4,
+          globalThreshold: 0.2,
+        });
+        expect(result.threshold).toBe(0.7);
+        expect(result.source).toBe('pipeline');
+      });
+
+      it('attributes source to the config layer, not the pipeline, when the pipeline declares only maxRelays (no threshold) (MIN3)', () => {
+        const pipeline = parsePipeline(`
+name: config-layer-non-threshold-fields
+handoff:
+  maxRelays: 5
+stages:
+  - id: a
+    skill: rasen-propose
+    role: planner
+`);
+        const result = resolveStageHandoffConfig(pipeline.stages[0], pipeline, {
+          projectThreshold: 0.4,
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.maxRelays).toBe(5);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('attributes source to the config layer when a stage declares only stallLimit (no threshold)', () => {
+        const pipeline = parsePipeline(`
+name: config-layer-stage-non-threshold
+stages:
+  - id: a
+    skill: rasen-propose
+    role: planner
+    handoff:
+      stallLimit: 4
+`);
+        const result = resolveStageHandoffConfig(pipeline.stages[0], pipeline, {
+          globalThreshold: 0.55,
+        });
+        expect(result.threshold).toBe(0.55);
+        expect(result.stallLimit).toBe(4);
+        expect(result.source).toBe('global-config');
+      });
+
+      it('resolves built-in default when no config layers are passed', () => {
+        const result = resolveStageHandoffConfig(noPipelineHandoff, pipelineNoHandoff);
+        expect(result.threshold).toBe(DEFAULT_HANDOFF_CONFIG.threshold);
+        expect(result.source).toBe('default');
+      });
+    });
   });
 
   describe('reuse config', () => {

@@ -432,7 +432,13 @@ export interface ResolvedStageHandoffConfig {
   threshold: number;
   maxRelays: number;
   stallLimit: number;
-  source: 'stage' | 'role' | 'pipeline' | 'default';
+  source: 'stage' | 'role' | 'pipeline' | 'project-config' | 'global-config' | 'default';
+}
+
+/** Project/global config-layer threshold values, slotted below pipeline declarations and above the built-in default. */
+export interface HandoffConfigLayers {
+  projectThreshold?: number;
+  globalThreshold?: number;
 }
 
 /**
@@ -442,14 +448,21 @@ export interface ResolvedStageHandoffConfig {
  * 1. Stage-level `handoff`.
  * 2. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
  * 3. Pipeline-level `handoff`.
- * 4. Built-in defaults.
+ * 4. Project config `handoff.threshold` — threshold ONLY.
+ * 5. Global config `handoff.threshold` — threshold ONLY.
+ * 6. Built-in defaults.
  *
  * `source` names the highest-precedence layer that contributed anything, so
- * callers can report where the effective config came from.
+ * callers can report where the effective config came from. The config layers
+ * (`configLayers`) are passed in rather than read here — this function stays
+ * pure/synchronous; callers resolve the values via
+ * `resolveHandoffThresholdLayers()` (src/core/effective-config.ts) using the
+ * pipeline's project root.
  */
 export function resolveStageHandoffConfig(
   stage: Stage,
-  pipeline: PipelineYaml
+  pipeline: PipelineYaml,
+  configLayers?: HandoffConfigLayers
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
@@ -459,26 +472,30 @@ export function resolveStageHandoffConfig(
     stageHandoff?.threshold ??
     roleThreshold ??
     pipelineHandoff?.threshold ??
+    configLayers?.projectThreshold ??
+    configLayers?.globalThreshold ??
     DEFAULT_HANDOFF_CONFIG.threshold;
   const maxRelays =
     stageHandoff?.maxRelays ?? pipelineHandoff?.maxRelays ?? DEFAULT_HANDOFF_CONFIG.maxRelays;
   const stallLimit =
     stageHandoff?.stallLimit ?? pipelineHandoff?.stallLimit ?? DEFAULT_HANDOFF_CONFIG.stallLimit;
 
-  const hasFields = (h: HandoffConfig | undefined): boolean =>
-    h !== undefined &&
-    (h.threshold !== undefined ||
-      h.maxRelays !== undefined ||
-      h.stallLimit !== undefined ||
-      h.roles !== undefined);
-
-  const source: ResolvedStageHandoffConfig['source'] = hasFields(stageHandoff)
+  // `source` names where the effective THRESHOLD came from — checked against
+  // `.threshold` specifically (not "did this layer declare any handoff
+  // field"), so a stage/pipeline block that sets only maxRelays/stallLimit
+  // (no threshold) correctly attributes the threshold to whichever layer
+  // beneath it actually supplied it, instead of over-claiming credit.
+  const source: ResolvedStageHandoffConfig['source'] = stageHandoff?.threshold !== undefined
     ? 'stage'
     : roleThreshold !== undefined
       ? 'role'
-      : hasFields(pipelineHandoff)
+      : pipelineHandoff?.threshold !== undefined
         ? 'pipeline'
-        : 'default';
+        : configLayers?.projectThreshold !== undefined
+          ? 'project-config'
+          : configLayers?.globalThreshold !== undefined
+            ? 'global-config'
+            : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
 }

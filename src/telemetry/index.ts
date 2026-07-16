@@ -23,7 +23,9 @@
  */
 import { randomUUID } from 'crypto';
 import https from 'node:https';
+import * as fs from 'node:fs';
 import { getTelemetryConfig, updateTelemetryConfig } from './config.js';
+import { getGlobalConfigPath } from '../core/global-config.js';
 
 // Maintainer-owned Cloudflare Worker (fork-phase1-telemetry-backend). No API
 // key required — the Worker is unauthenticated by design.
@@ -87,30 +89,60 @@ function sendEvent(payload: Record<string, unknown>): Promise<void> {
 }
 
 /**
+ * True when an environment kill-switch (`RASEN_TELEMETRY=0`, `DO_NOT_TRACK=1`,
+ * or CI auto-detection) forces telemetry off. These always outrank the
+ * persisted `telemetry.enabled` config value. Exported so
+ * `src/core/effective-config.ts` reports the same `env-override` verdict for
+ * `telemetry.enabled` that this module enforces — one source of truth for
+ * what counts as a kill-switch.
+ */
+export function isTelemetryEnvDisabled(): boolean {
+  if (process.env.RASEN_TELEMETRY === '0') return true;
+  if (process.env.DO_NOT_TRACK === '1') return true;
+  if (process.env.CI === 'true') return true;
+  return false;
+}
+
+// Memoized per process: `telemetry.enabled` is read from the same global
+// config file `getGlobalConfig()` already reads synchronously on most
+// commands, and this check is hot (guards every event). A missing or
+// unparseable config file fails open to enabled.
+let cachedConfigTelemetryEnabled: boolean | undefined;
+
+function readTelemetryEnabledFromConfig(): boolean {
+  if (cachedConfigTelemetryEnabled !== undefined) {
+    return cachedConfigTelemetryEnabled;
+  }
+  try {
+    const configPath = getGlobalConfigPath();
+    if (!fs.existsSync(configPath)) {
+      cachedConfigTelemetryEnabled = true;
+      return cachedConfigTelemetryEnabled;
+    }
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      telemetry?: { enabled?: boolean };
+    };
+    cachedConfigTelemetryEnabled = raw.telemetry?.enabled !== false;
+  } catch {
+    cachedConfigTelemetryEnabled = true;
+  }
+  return cachedConfigTelemetryEnabled;
+}
+
+/**
  * Check if telemetry is enabled.
  *
- * Disabled when:
- * - RASEN_TELEMETRY=0
- * - DO_NOT_TRACK=1
- * - CI=true (any CI environment)
+ * Precedence: environment kill-switches first (`RASEN_TELEMETRY=0`,
+ * `DO_NOT_TRACK=1`, CI auto-disable) — unchanged, always win — then the
+ * persisted `telemetry.enabled` config value (`false` disables), then the
+ * default (enabled).
  */
 export function isTelemetryEnabled(): boolean {
-  // Check explicit opt-out
-  if (process.env.RASEN_TELEMETRY === '0') {
+  if (isTelemetryEnvDisabled()) {
     return false;
   }
 
-  // Respect DO_NOT_TRACK standard
-  if (process.env.DO_NOT_TRACK === '1') {
-    return false;
-  }
-
-  // Auto-disable in CI environments
-  if (process.env.CI === 'true') {
-    return false;
-  }
-
-  return true;
+  return readTelemetryEnabledFromConfig();
 }
 
 /**

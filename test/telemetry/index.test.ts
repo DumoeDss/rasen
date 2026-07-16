@@ -131,9 +131,60 @@ describe('telemetry/index', () => {
       const { isTelemetryEnabled } = await loadTelemetry();
       expect(isTelemetryEnabled()).toBe(false);
     });
+
+    it('is disabled when the persisted config sets telemetry.enabled to false', async () => {
+      const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ telemetry: { enabled: false } } as never);
+
+      const { isTelemetryEnabled } = await loadTelemetry();
+      expect(isTelemetryEnabled()).toBe(false);
+    });
+
+    it('is enabled when the persisted config sets telemetry.enabled to true', async () => {
+      const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ telemetry: { enabled: true } } as never);
+
+      const { isTelemetryEnabled } = await loadTelemetry();
+      expect(isTelemetryEnabled()).toBe(true);
+    });
+
+    it('environment opt-out beats a config value of telemetry.enabled = true', async () => {
+      const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ telemetry: { enabled: true } } as never);
+      process.env.DO_NOT_TRACK = '1';
+
+      const { isTelemetryEnabled } = await loadTelemetry();
+      expect(isTelemetryEnabled()).toBe(false);
+    });
+
+    it('falls back to enabled when the config file is unreadable/unparseable', async () => {
+      const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+      const configPath = getGlobalConfigPath();
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, '{ not valid json');
+
+      const { isTelemetryEnabled } = await loadTelemetry();
+      expect(isTelemetryEnabled()).toBe(true);
+    });
+
+    it('falls back to enabled when the config file is missing', async () => {
+      const { isTelemetryEnabled } = await loadTelemetry();
+      expect(isTelemetryEnabled()).toBe(true);
+    });
   });
 
   describe('trackCommand', () => {
+    it('sends nothing when the persisted config disables telemetry', async () => {
+      const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ telemetry: { enabled: false } } as never);
+
+      const { trackCommand, shutdown } = await loadTelemetry();
+      await trackCommand('change:apply', '0.1.0');
+      await shutdown();
+
+      expect(requestSpy).not.toHaveBeenCalled();
+    });
+
     it('POSTs the event to the maintainer Worker endpoint', async () => {
       const { trackCommand, shutdown } = await loadTelemetry();
 

@@ -24,13 +24,21 @@ const TURN_CONTEXT_LINE = JSON.stringify({ type: 'turn_context', payload: { mode
 describe('AgentCommand.context — Codex rollout support', () => {
   let dir: string;
   let cmd: AgentCommand;
+  let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentcmd-'));
     cmd = new AgentCommand();
+
+    // Isolate global config reads (resolveHandoffThresholdReport consults
+    // it) from the shared vitest safety-net machine root.
+    originalEnv = { ...process.env };
+    delete process.env.RASEN_HOME;
+    process.env.XDG_CONFIG_HOME = dir;
   });
 
   afterEach(() => {
+    process.env = originalEnv;
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -100,5 +108,51 @@ describe('AgentCommand.context — Codex rollout support', () => {
     }
 
     expect(JSON.parse(logs[0]).contextTokens).toBe(500);
+  });
+
+  it('--json includes threshold, thresholdSource, and shouldHandoff (MIN6b)', async () => {
+    const { saveGlobalConfig } = await import('../../../src/core/global-config.js');
+    saveGlobalConfig({ handoff: { threshold: 0.05 } } as never);
+
+    const p = writeRollout('rollout-2026-01-01T00-00-03-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(50_000, 100_000), // 50% occupancy, well above the 0.05 threshold
+    ]);
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p, json: true });
+    } finally {
+      console.log = orig;
+    }
+
+    const parsed = JSON.parse(logs[0]);
+    expect(parsed.threshold).toBe(0.05);
+    expect(parsed.thresholdSource).toBe('global');
+    expect(parsed.shouldHandoff).toBe(true);
+  });
+
+  it('the human-readable line reports the resolved threshold and verdict', async () => {
+    const p = writeRollout('rollout-2026-01-01T00-00-04-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(1_000, 353_400), // low occupancy, default 0.5 threshold not met
+    ]);
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p });
+    } finally {
+      console.log = orig;
+    }
+
+    expect(logs[0]).toContain('handoff not yet needed');
+    expect(logs[0]).toContain('50%');
+    expect(logs[0]).toContain('default');
   });
 });

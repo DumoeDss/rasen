@@ -994,7 +994,7 @@ spec-driven resolves from: package
 
 ### `rasen config`
 
-View and modify global rasen configuration.
+View and modify global or project rasen configuration. Every subcommand accepts `--scope <global|project>` (default `global`); `--scope project` reads and writes the current project's `rasen/config.yaml` instead of the global config file. Running `rasen config` with no subcommand opens an interactive full-view editor (in a TTY) showing every configurable key, its effective value, and which layer produced it (`default`, `global`, `project`, or `env-override`); outside a TTY it prints that same effective view non-interactively and exits.
 
 ```
 rasen config <subcommand> [options]
@@ -1007,11 +1007,26 @@ rasen config <subcommand> [options]
 | `path` | Show config file location |
 | `list` | Show all current settings |
 | `get <key>` | Get a specific value |
-| `set <key> <value>` | Set a value |
+| `set <key> <value>` | Set a value (validated against the config-key registry) |
 | `unset <key>` | Remove a key |
-| `reset` | Reset to defaults |
-| `edit` | Open in `$EDITOR` |
+| `reset` | Reset to defaults (global scope only) |
+| `edit` | Open in `$EDITOR` (global scope only) |
 | `profile [preset]` | Configure workflow profile interactively or via preset |
+
+**Configurable keys** (see `rasen config` with no arguments for the full list with current values):
+
+| Key | Scope | Description |
+|-----|-------|-------------|
+| `profile`, `delivery`, `workflows` | global | Workflow profile (use `rasen config profile` to edit) |
+| `featureFlags.<name>` | global | Feature flag toggle |
+| `proactive` | global | Whether agents proactively suggest next steps |
+| `repoMode` | global | `solo` or `collaborative` |
+| `telemetry.enabled` | global | Telemetry on/off (environment opt-outs always win) |
+| `handoff.threshold` | global, project | Context-handoff occupancy threshold in `(0, 1]`; project wins over global |
+| `schema` | project | The workflow schema this project uses |
+| `autopilot.gates` | project | Default autopilot gate policy (`on`/`off`) |
+| `autopilot.selection` | project | Default autopilot pipeline-selection policy |
+| `archive.timing`, `archive.destination` | project | Archive behavior |
 
 **Examples:**
 
@@ -1029,16 +1044,24 @@ rasen config get telemetry.enabled
 rasen config set telemetry.enabled false
 
 # Set a string value explicitly
-rasen config set user.name "My Name" --string
+rasen config set featureFlags.myFlag "custom" --string
 
 # Remove a custom setting
-rasen config unset user.name
+rasen config unset handoff.threshold
+
+# Project-scope config (writes rasen/config.yaml, preserving comments)
+rasen config set --scope project autopilot.gates off
+rasen config get --scope project autopilot.gates
+rasen config list --scope project
 
 # Reset all configuration
 rasen config reset --all --yes
 
 # Edit config in your editor
 rasen config edit
+
+# Open the interactive full-view editor
+rasen config
 
 # Configure profile with action-based wizard
 rasen config profile

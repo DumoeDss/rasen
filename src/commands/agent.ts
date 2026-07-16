@@ -9,7 +9,12 @@
  * A thin consumer of `src/core/agent-context.ts`; all sensing logic lives there.
  */
 
-import { probeAgentContext, type AgentContextResult } from '../core/agent-context.js';
+import {
+  probeAgentContext,
+  resolveHandoffThresholdReport,
+  type AgentContextResult,
+  type HandoffThresholdReport,
+} from '../core/agent-context.js';
 
 export interface AgentContextOptions {
   transcript?: string;
@@ -35,24 +40,35 @@ export class AgentCommand {
       limit: options.limit,
       runtime: options.runtime,
     });
+    const handoff = resolveHandoffThresholdReport(result.pct);
 
     if (options.json) {
-      console.log(JSON.stringify(this.toJson(result)));
+      console.log(JSON.stringify(this.toJson(result, handoff)));
       return;
     }
 
     const pctDisplay = (result.pct * 100).toFixed(1);
+    const thresholdDisplay = (handoff.threshold * 100).toFixed(0);
+    const handoffVerdict = handoff.shouldHandoff
+      ? `handoff recommended (>= ${thresholdDisplay}%, ${handoff.thresholdSource})`
+      : `handoff not yet needed (< ${thresholdDisplay}%, ${handoff.thresholdSource})`;
     console.log(
-      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) transcript=${result.transcript}`
+      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) transcript=${result.transcript} ${handoffVerdict}`
     );
   }
 
-  private toJson(result: AgentContextResult): {
+  private toJson(
+    result: AgentContextResult,
+    handoff: HandoffThresholdReport
+  ): {
     model: string;
     contextTokens: number;
     limit: number;
     pct: number;
     transcript: string;
+    threshold: number;
+    thresholdSource: string;
+    shouldHandoff: boolean;
   } {
     return {
       model: result.model,
@@ -60,6 +76,9 @@ export class AgentCommand {
       limit: result.limit,
       pct: result.pct,
       transcript: result.transcript,
+      threshold: handoff.threshold,
+      thresholdSource: handoff.thresholdSource,
+      shouldHandoff: handoff.shouldHandoff,
     };
   }
 }

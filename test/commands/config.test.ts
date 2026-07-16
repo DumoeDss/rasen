@@ -361,3 +361,231 @@ describe('config profile command', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('config command --scope project and promoted keys', () => {
+  let tempDir: string;
+  let projectDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+  let originalCwd: string;
+  let originalTTY: boolean | undefined;
+  let originalExitCode: number | undefined;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    tempDir = fs.realpathSync(
+      fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'rasen-config-scope-test-'))
+    );
+    projectDir = path.join(tempDir, 'project');
+    fs.mkdirSync(path.join(projectDir, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+
+    originalEnv = { ...process.env };
+    originalCwd = process.cwd();
+    originalTTY = (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+    originalExitCode = process.exitCode;
+
+    delete process.env.RASEN_HOME;
+    process.env.XDG_CONFIG_HOME = tempDir;
+    process.chdir(projectDir);
+    process.exitCode = undefined;
+
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    process.chdir(originalCwd);
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = originalTTY;
+    process.exitCode = originalExitCode;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+    vi.resetModules();
+  });
+
+  it('rejects an invalid --scope value', async () => {
+    await runConfigCommand(['set', 'proactive', 'false', '--scope', 'bogus']);
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('--scope must be'));
+  });
+
+  it('set --scope project writes rasen/config.yaml, preserving comments', async () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\n# keep me\n'
+    );
+
+    await runConfigCommand(['set', 'autopilot.gates', 'off', '--scope', 'project']);
+
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).toContain('# keep me');
+    expect(raw).toMatch(/gates: off/);
+    expect(consoleLogSpy).toHaveBeenCalledWith('Set autopilot.gates = "off"');
+  });
+
+  it('get/list --scope project reads rasen/config.yaml', async () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nautopilot:\n  gates: off\n'
+    );
+
+    await runConfigCommand(['get', 'autopilot.gates', '--scope', 'project']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('off');
+
+    await runConfigCommand(['list', '--scope', 'project', '--json']);
+    const jsonCall = consoleLogSpy.mock.calls.find(([line]) => typeof line === 'string' && line.includes('"schema"'));
+    expect(jsonCall).toBeTruthy();
+  });
+
+  it('unset --scope project removes the key and falls back to default', async () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nhandoff:\n  threshold: 0.4\n'
+    );
+
+    await runConfigCommand(['unset', 'handoff.threshold', '--scope', 'project']);
+
+    expect(consoleLogSpy).toHaveBeenCalledWith('Unset handoff.threshold (reverted to default)');
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).not.toContain('threshold');
+  });
+
+  it('unset --scope project rejects a hand-edit-only field (context) without touching the file (MIN5)', async () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\ncontext: |\n  keep me\n'
+    );
+    const before = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+
+    await runConfigCommand(['unset', 'context', '--scope', 'project']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid configuration key'));
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).toBe(before);
+  });
+
+  it('path --scope project prints the project config file location', async () => {
+    await runConfigCommand(['path', '--scope', 'project']);
+    expect(consoleLogSpy).toHaveBeenCalledWith(path.join(projectDir, 'rasen', 'config.yaml'));
+  });
+
+  it('fails --scope project operations outside a Rasen project', async () => {
+    process.chdir(tempDir); // no rasen/ here
+    await runConfigCommand(['get', 'schema', '--scope', 'project']);
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('no Rasen project found'));
+  });
+
+  it('rejects an unknown project key without modifying the file', async () => {
+    const before = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+
+    await runConfigCommand(['set', '--scope', 'project', 'someUnknownKey', '1']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown configuration key'));
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).toBe(before);
+  });
+
+  it('rejects an out-of-range project handoff.threshold without writing', async () => {
+    const before = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+
+    await runConfigCommand(['set', '--scope', 'project', 'handoff.threshold', '1.5']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('(0, 1]'));
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).toBe(before);
+  });
+
+  it.each([
+    ['proactive', 'false'],
+    ['repoMode', 'solo'],
+    ['telemetry.enabled', 'false'],
+    ['handoff.threshold', '0.6'],
+  ])('sets promoted global key %s without --allow-unknown', async (key, value) => {
+    await runConfigCommand(['set', key, value]);
+    expect(process.exitCode).not.toBe(1);
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid enum value for a promoted global key', async () => {
+    await runConfigCommand(['set', 'repoMode', 'banana']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects an out-of-range global handoff.threshold without writing (MIN6a, zod branch)', async () => {
+    const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+    const existedBefore = fs.existsSync(getGlobalConfigPath());
+
+    await runConfigCommand(['set', 'handoff.threshold', '1.5']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid configuration'));
+    expect(fs.existsSync(getGlobalConfigPath())).toBe(existedBefore);
+  });
+
+  it('rejects a machine-managed telemetry field', async () => {
+    await runConfigCommand(['set', 'telemetry.anonymousId', 'abc']);
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('not settable'));
+  });
+
+  it('non-TTY no-arg prints the effective view and exits 0', async () => {
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = false;
+
+    await runConfigCommand([]);
+
+    expect(process.exitCode).not.toBe(1);
+    const printed = consoleLogSpy.mock.calls.map(([line]) => String(line));
+    expect(printed.some((line) => line.startsWith('proactive ='))).toBe(true);
+    expect(printed.some((line) => line.includes('--help'))).toBe(true);
+  });
+
+  describe('reset/edit reject --scope project (M1)', () => {
+    it('reset --scope project fails and does not touch the global config file', async () => {
+      const { getGlobalConfigPath, saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ proactive: false } as never);
+      const before = fs.readFileSync(getGlobalConfigPath(), 'utf-8');
+
+      await runConfigCommand(['reset', '--all', '--yes', '--scope', 'project']);
+
+      expect(process.exitCode).toBe(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('only supports global scope'));
+      const after = fs.readFileSync(getGlobalConfigPath(), 'utf-8');
+      expect(after).toBe(before);
+    });
+
+    it('reset --all --yes (global scope) still resets the global config, unaffected by the guard', async () => {
+      const { getGlobalConfig, saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ proactive: false } as never);
+
+      await runConfigCommand(['reset', '--all', '--yes']);
+
+      expect(process.exitCode).not.toBe(1);
+      const config = getGlobalConfig();
+      expect(config.proactive).toBe(true);
+    });
+
+    it('edit --scope project fails without touching or spawning an editor', async () => {
+      process.env.EDITOR = 'true';
+
+      await runConfigCommand(['edit', '--scope', 'project']);
+
+      expect(process.exitCode).toBe(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('only supports global scope'));
+      const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+      expect(fs.existsSync(getGlobalConfigPath())).toBe(false);
+    });
+
+    it('reset/edit reject an invalid --scope value the same way other subcommands do', async () => {
+      await runConfigCommand(['reset', '--all', '--yes', '--scope', 'bogus']);
+      expect(process.exitCode).toBe(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('--scope must be'));
+    });
+  });
+});
