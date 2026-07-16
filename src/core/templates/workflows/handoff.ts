@@ -49,11 +49,13 @@ NEVER inline the prompt into the spawn command as a bare quoted string: nested s
 
 **Spawn a visible interactive window** (never headless — the user must be able to watch and take over), from the project root:
 
-- Windows (verified): build the command string \`claude "$(Get-Content -Raw '<abs path to relay-prompt.txt>')"\`, base64-encode it (\`[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))\`), then \`Start-Process powershell -WorkingDirectory '<project root>' -ArgumentList '-NoProfile','-NoExit','-EncodedCommand',$enc\`.
-- macOS: write a small executable \`relay.command\` script containing \`cd '<project root>' && claude "$(cat '<abs path to relay-prompt.txt>')"\`, then \`open relay.command\`.
-- Linux: \`gnome-terminal -- bash -lc 'cd <project root> && claude "$(cat <abs path>)"'\` (or \`konsole -e\` with the same body).
+- Windows (verified): build the command string \`claude --dangerously-skip-permissions "$(Get-Content -Raw '<abs path to relay-prompt.txt>')"\`, base64-encode it (\`[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))\`), then \`Start-Process powershell -WorkingDirectory '<project root>' -ArgumentList '-NoProfile','-NoExit','-EncodedCommand',$enc\`. The flag goes BEFORE the \`"$(...)"\` so it survives the base64 \`-EncodedCommand\` wrapping.
+- macOS: write a small executable \`relay.command\` script containing \`cd '<project root>' && claude --dangerously-skip-permissions "$(cat '<abs path to relay-prompt.txt>')"\`, then \`open relay.command\`.
+- Linux: \`gnome-terminal -- bash -lc 'cd <project root> && claude --dangerously-skip-permissions "$(cat <abs path>)"'\` (or \`konsole -e\` with the same body).
 
-**Fallback is always manual.** If the terminal form is unknown or the spawn errors, print the project root, the relay-prompt file path, and the exact launch command for the user to run themselves — never retry headless.
+**Full permissions on the successor is intentional.** All three launches invoke \`claude --dangerously-skip-permissions\`, not bare \`claude\`: a relay is authorized precisely so the successor continues UNATTENDED, and a bare successor inherits none of the predecessor's permission grants — the first tool call needing approval would block with no human present. Do NOT soften this to a scoped mode (\`--permission-mode acceptEdits\`), which still prompts for bash/network/etc.; the requirement is full permissions for the unattended successor. (A Codex-hosted relay LEAD is the same story: its interactive \`codex resume [SESSION_ID]\` / \`codex fork --last\` relay primitives carry \`--dangerously-bypass-approvals-and-sandbox\`, the Codex analogue of \`--dangerously-skip-permissions\` — verified on codex-cli 0.144.1, accepted by both \`codex resume\` and \`codex fork\`. That mechanism is named, not yet designed.)
+
+**Fallback is always manual.** If the terminal form is unknown or the spawn errors, print the project root, the relay-prompt file path, and the exact launch command for the user to run themselves — the same \`claude --dangerously-skip-permissions "$(cat '<abs path to relay-prompt.txt>')"\` so a user-launched successor equals a spawned one — never retry headless.
 
 **After the spawn**, end your turn: tell the user the successor window is up and this session can be closed. Do not keep working in the predecessor.
 
