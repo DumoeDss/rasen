@@ -917,6 +917,256 @@ stages:
         source: 'default',
       });
     });
+
+    describe('dual-form threshold: { remainingTokens: N }', () => {
+      it('parses the absolute form at pipeline, role, and stage level', () => {
+        const pipeline = parsePipeline(`
+name: hoff-abs
+handoff:
+  threshold:
+    remainingTokens: 60000
+  roles:
+    implementer:
+      remainingTokens: 40000
+stages:
+  - id: a
+    skill: rasen-propose
+    role: implementer
+    handoff:
+      threshold:
+        remainingTokens: 20000
+`);
+        expect(pipeline.handoff?.threshold).toEqual({ remainingTokens: 60000 });
+        expect(pipeline.handoff?.roles?.implementer).toEqual({ remainingTokens: 40000 });
+        expect(pipeline.stages[0].handoff?.threshold).toEqual({ remainingTokens: 20000 });
+      });
+
+      it('resolves the object form through unchanged (no fraction normalization)', () => {
+        const pipeline = parsePipeline(`
+name: hoff-abs-resolve
+handoff:
+  threshold:
+    remainingTokens: 60000
+stages:
+  - id: a
+    skill: rasen-propose
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toEqual({ remainingTokens: 60000 });
+        expect(resolved.source).toBe('pipeline');
+      });
+
+      it('rejects a non-positive remainingTokens', () => {
+        for (const bad of [0, -5]) {
+          expect(() =>
+            parsePipeline(`
+name: bad-tokens
+handoff:
+  threshold:
+    remainingTokens: ${bad}
+stages:
+  - id: a
+    skill: rasen-propose
+`)
+          ).toThrow(/remainingTokens must be a positive integer/);
+        }
+      });
+
+      it('rejects a non-integer remainingTokens', () => {
+        expect(() =>
+          parsePipeline(`
+name: bad-tokens-float
+handoff:
+  threshold:
+    remainingTokens: 1.5
+stages:
+  - id: a
+    skill: rasen-propose
+`)
+        ).toThrow(PipelineValidationError);
+      });
+
+      it('rejects unknown keys inside the threshold object', () => {
+        expect(() =>
+          parsePipeline(`
+name: bad-threshold-key
+handoff:
+  threshold:
+    remainingTokens: 1000
+    bogus: 1
+stages:
+  - id: a
+    skill: rasen-propose
+`)
+        ).toThrow(PipelineValidationError);
+      });
+
+      it('a bare number is never read as a token count, even when large', () => {
+        expect(() =>
+          parsePipeline(`
+name: bare-large
+handoff:
+  threshold: 50
+stages:
+  - id: a
+    skill: rasen-propose
+`)
+        ).toThrow(/threshold must be in \(0, 1\]/);
+      });
+    });
+
+    describe('model preset layer', () => {
+      it('applies the preset threshold when nothing is configured and the stage model matches', () => {
+        const pipeline = parsePipeline(`
+name: hoff-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toEqual({ remainingTokens: 60000 });
+        expect(resolved.source).toBe('preset');
+        expect(resolved.maxRelays).toBe(DEFAULT_HANDOFF_CONFIG.maxRelays);
+        expect(resolved.stallLimit).toBe(DEFAULT_HANDOFF_CONFIG.stallLimit);
+      });
+
+      it('a configured threshold at any layer wins over the preset', () => {
+        const pipeline = parsePipeline(`
+name: hoff-preset-override
+agents:
+  implementer:
+    model: gpt-5.6-sol
+handoff:
+  threshold: 0.6
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toBe(0.6);
+        expect(resolved.source).toBe('pipeline');
+      });
+
+      it('skips the preset layer when the stage has no resolvable model', () => {
+        const pipeline = parsePipeline(`
+name: hoff-no-model
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.source).toBe('default');
+        expect(resolved.threshold).toBe(DEFAULT_HANDOFF_CONFIG.threshold);
+      });
+
+      it('skips the preset layer when the model has no suggested handoff threshold', () => {
+        const pipeline = parsePipeline(`
+name: hoff-large-window
+agents:
+  implementer:
+    model: claude-fable-5
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.source).toBe('default');
+        expect(resolved.threshold).toBe(DEFAULT_HANDOFF_CONFIG.threshold);
+      });
+
+      it('reports source: preset even when a pipeline-level handoff block sets an UNRELATED field (M3 regression)', () => {
+        // `handoff.roles.reviewer` touches the pipeline handoff block but says
+        // nothing about the implementer stage below — `hasFields` alone would
+        // wrongly tag this stage's preset-sourced threshold as 'pipeline'.
+        const pipeline = parsePipeline(`
+name: hoff-preset-unrelated-pipeline-field
+agents:
+  implementer:
+    model: gpt-5.6-sol
+handoff:
+  roles:
+    reviewer: 0.65
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toEqual({ remainingTokens: 60000 });
+        expect(resolved.source).toBe('preset');
+      });
+
+      it('reports source: pipeline (not stage) when only stage maxRelays is set and pipeline supplies the threshold', () => {
+        // Threshold-specific provenance: the stage block contributes
+        // maxRelays only, so the resolved THRESHOLD still traces to the
+        // pipeline layer even though the stage handoff block is non-empty.
+        const pipeline = parsePipeline(`
+name: hoff-stage-maxrelays-only
+handoff:
+  threshold: 0.4
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+    handoff:
+      maxRelays: 6
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toBe(0.4);
+        expect(resolved.maxRelays).toBe(6);
+        expect(resolved.source).toBe('pipeline');
+      });
+
+      it('reports source: role (not stage) when only stage maxRelays is set and a role threshold is available', () => {
+        // Same threshold-specific provenance fix, but the resolved THRESHOLD
+        // traces to the pipeline-level role override rather than the
+        // pipeline-level threshold — the stage's own maxRelays-only block
+        // must not shadow that.
+        const pipeline = parsePipeline(`
+name: hoff-stage-maxrelays-only-role-threshold
+handoff:
+  roles:
+    reviewer: 0.65
+stages:
+  - id: a
+    skill: rasen:review
+    role: reviewer
+    handoff:
+      maxRelays: 6
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toBe(0.65);
+        expect(resolved.maxRelays).toBe(6);
+        expect(resolved.source).toBe('role');
+      });
+
+      it('falls back to hasFields-based source when no layer supplies a threshold at all', () => {
+        // Nothing (stage/role/pipeline/preset) supplies a threshold, so it
+        // resolves to the built-in default — but the stage's maxRelays
+        // override still identifies 'stage' as the contributing layer,
+        // matching pre-preset behavior for this edge.
+        const pipeline = parsePipeline(`
+name: hoff-stage-maxrelays-only-no-pipeline-threshold
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+    handoff:
+      maxRelays: 6
+`);
+        const resolved = resolveStageHandoffConfig(pipeline.stages[0], pipeline);
+        expect(resolved.threshold).toBe(DEFAULT_HANDOFF_CONFIG.threshold);
+        expect(resolved.maxRelays).toBe(6);
+        expect(resolved.source).toBe('stage');
+      });
+    });
   });
 
   describe('reuse config', () => {
@@ -1073,6 +1323,121 @@ stages:
           planner: DEFAULT_REUSE_CONFIG.threshold,
           implementer: DEFAULT_REUSE_CONFIG.threshold,
         },
+      });
+    });
+
+    describe('dual-form threshold: { remainingTokens: N }', () => {
+      it('parses the absolute form top-level and per-role', () => {
+        const pipeline = parsePipeline(`
+name: reuse-abs
+reuse:
+  threshold:
+    remainingTokens: 200000
+  roles:
+    implementer:
+      remainingTokens: 180000
+stages:
+  - id: a
+    skill: rasen-propose
+`);
+        expect(pipeline.reuse?.threshold).toEqual({ remainingTokens: 200000 });
+        expect(pipeline.reuse?.roles?.implementer).toEqual({ remainingTokens: 180000 });
+
+        const resolved = resolvePipelineReuseConfig(pipeline);
+        expect(resolved.threshold).toEqual({ remainingTokens: 200000 });
+        expect(resolved.roles.implementer).toEqual({ remainingTokens: 180000 });
+        expect(resolved.roles.planner).toEqual({ remainingTokens: 200000 });
+      });
+
+      it('rejects a non-positive-integer remainingTokens', () => {
+        expect(() =>
+          parsePipeline(`
+name: bad-reuse-tokens
+reuse:
+  threshold:
+    remainingTokens: -1
+stages:
+  - id: a
+    skill: rasen-propose
+`)
+        ).toThrow(/remainingTokens must be a positive integer/);
+      });
+
+      it('rejects unknown keys inside a reuse threshold object', () => {
+        expect(() =>
+          parsePipeline(`
+name: bad-reuse-threshold-key
+reuse:
+  threshold:
+    remainingTokens: 1000
+    bogus: 1
+stages:
+  - id: a
+    skill: rasen-propose
+`)
+        ).toThrow(PipelineValidationError);
+      });
+    });
+
+    describe('model preset layer', () => {
+      it('applies the preset reuse threshold to a role with a matching configured model', () => {
+        const pipeline = parsePipeline(`
+name: reuse-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: a
+    skill: rasen-propose
+`);
+        const resolved = resolvePipelineReuseConfig(pipeline);
+        expect(resolved.roles.implementer).toEqual({ remainingTokens: 180000 });
+        // planner has no configured model → no preset → built-in default.
+        expect(resolved.roles.planner).toBe(DEFAULT_REUSE_CONFIG.threshold);
+      });
+
+      it('a declared reuse.threshold or reuse.roles value wins over the preset', () => {
+        const pipeline = parsePipeline(`
+name: reuse-preset-override
+agents:
+  implementer:
+    model: gpt-5.6-sol
+reuse:
+  threshold: 0.3
+stages:
+  - id: a
+    skill: rasen-propose
+`);
+        const resolved = resolvePipelineReuseConfig(pipeline);
+        expect(resolved.roles.implementer).toBe(0.3);
+      });
+
+      it('skips the preset layer when the role model has no suggested reuse threshold', () => {
+        const pipeline = parsePipeline(`
+name: reuse-large-window
+agents:
+  implementer:
+    model: claude-fable-5
+stages:
+  - id: a
+    skill: rasen-propose
+`);
+        const resolved = resolvePipelineReuseConfig(pipeline);
+        expect(resolved.roles.implementer).toBe(DEFAULT_REUSE_CONFIG.threshold);
+      });
+
+      it('the top-level threshold has no preset layer regardless of role models', () => {
+        const pipeline = parsePipeline(`
+name: reuse-top-level-no-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: a
+    skill: rasen-propose
+`);
+        const resolved = resolvePipelineReuseConfig(pipeline);
+        expect(resolved.threshold).toBe(DEFAULT_REUSE_CONFIG.threshold);
       });
     });
   });

@@ -60,7 +60,29 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(parsed.contextTokens).toBe(12_885);
     expect(parsed.limit).toBe(353_400);
     expect(parsed.model).toBe('gpt-5.6-sol');
+    expect(parsed.remainingTokens).toBe(353_400 - 12_885);
     expect(parsed.transcript).toBe(p);
+  });
+
+  it('an explicit --limit recomputes remainingTokens', async () => {
+    const p = writeRollout('rollout-2026-01-01T00-00-08-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(12_885, 353_400),
+    ]);
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p, limit: 1_000_000, json: true });
+    } finally {
+      console.log = orig;
+    }
+
+    const parsed = JSON.parse(logs[0]);
+    expect(parsed.limit).toBe(1_000_000);
+    expect(parsed.remainingTokens).toBe(1_000_000 - 12_885);
   });
 
   it('a zero-turn rollout exits 0 (no throw) with zero occupancy', async () => {

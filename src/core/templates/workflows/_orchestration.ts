@@ -250,13 +250,19 @@ A dependent child directly consumes its prerequisite's code, so the implementer 
 
 Agents cannot feel their own context usage; they MEASURE it. \`rasen agent context\` reads exact occupancy from a transcript's recorded API usage — \`--latest\` probes your own (the LEAD's) main session, \`--transcript <path>\` probes a worker via the pointer recorded in run-state (Step B). Probe ONLY at the discrete decision points below. NEVER inject a running token countdown into any agent's context — it breaks the prompt-cache prefix and induces premature wrap-up (context anxiety).
 
-Thresholds and caps resolve from the pipeline's \`handoff\` config: stage-level \`handoff\` > pipeline \`handoff.roles[<role>]\` (threshold only) > pipeline \`handoff\` > built-in defaults \`{ threshold: 0.5, maxRelays: 3, stallLimit: 2 }\`. \`rasen pipeline show <name> --json\` reports each stage's resolved values. Context-heavy roles (reviewer, fixer) typically carry higher thresholds — their bootstrap (diff + specs + findings) is expensive, and retiring them too early buys relays that spend most of their window re-loading. When a role keeps hitting its threshold right after bootstrap, the durable fix is better seeding (hand the successor a distilled context pack), not a higher threshold.
+Thresholds and caps resolve from the pipeline's \`handoff\` config: stage-level \`handoff\` > pipeline \`handoff.roles[<role>]\` (threshold only) > pipeline \`handoff\` > model preset (the suggested \`handoffThreshold\` of the preset matching the stage's resolved model) > built-in defaults \`{ threshold: 0.5, maxRelays: 3, stallLimit: 2 }\`. \`rasen pipeline show <name> --json\` reports each stage's resolved values. Context-heavy roles (reviewer, fixer) typically carry higher thresholds — their bootstrap (diff + specs + findings) is expensive, and retiring them too early buys relays that spend most of their window re-loading. When a role keeps hitting its threshold right after bootstrap, the durable fix is better seeding (hand the successor a distilled context pack), not a higher threshold.
 
 **Two threshold families, two decisions.** Which threshold governs a context-occupancy decision depends on WHAT you are deciding:
-- A **mid-task relay** ("should this worker keep going on the task in hand?") compares occupancy to the **handoff** threshold (\`handoff.roles[<role>]\` > \`handoff\` > default **0.5**).
+- A **mid-task relay** ("should this worker keep going on the task in hand?") compares occupancy to the **handoff** threshold (\`handoff.roles[<role>]\` > \`handoff\` > model preset > default **0.5**).
 - A **cross-change re-staffing** decision ("should this worker take on a whole NEW child change?" — persistent-planner reuse per Step B.1.5, cross-child implementer reuse per Step G.1.3) compares occupancy to the **reuse** threshold (\`resolvePipelineReuseConfig(pipeline).roles[<role>]\`, default **0.25** — stricter/lower, because taking on a fresh change needs more headroom than finishing the current one).
 
 These are different numbers for a reason; do NOT apply the handoff threshold to a reuse decision or vice-versa.
+
+**Dual-form threshold comparison.** A resolved threshold is either a fraction or an absolute \`{ remainingTokens: N }\` — \`rasen pipeline show <name> --json\` reports whichever form resolved, and a probe (\`rasen agent context\`) reports both \`pct\` and \`remainingTokens\` so either form reads off one field:
+- **Fraction** \`t\`: handoff fires at \`pct >= t\`; reuse permits at \`pct <= t\`.
+- **Absolute** \`{ remainingTokens: N }\`: handoff fires at \`remainingTokens <= N\`; reuse permits at \`remainingTokens >= N\`.
+
+A probe reporting \`limit: 0\` (no window known — e.g. a Codex rollout with zero completed turns) fires NEITHER form: a young rollout is by definition not near its limit, so treat the threshold as not-yet-fired and re-probe later.
 
 **Counter table — every orchestration counter, what it counts, and its independence.** Several caps share the same default value; they are DISTINCT counters and never share a tally:
 

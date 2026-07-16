@@ -50,6 +50,7 @@ import {
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
   type ResolvedReuseConfig,
+  type ThresholdValue,
   type RunStateWorker,
   type Stage,
   type StageRole,
@@ -136,6 +137,15 @@ const FULL_FEATURE_KEYWORDS = [
 function matchesKeyword(keyword: string, lowercasedText: string): boolean {
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`).test(lowercasedText);
+}
+
+/**
+ * Legible rendering of a dual-form threshold for the human-readable detail
+ * view: a bare fraction as-is, the absolute `{ remainingTokens }` form as
+ * `N tokens remaining`.
+ */
+function formatThreshold(threshold: ThresholdValue): string {
+  return typeof threshold === 'number' ? String(threshold) : `${threshold.remainingTokens} tokens remaining`;
 }
 
 export class PipelineCommand {
@@ -758,6 +768,12 @@ export class PipelineCommand {
       meta.push(`runtime=${runtime.runtime}${runtime.source === 'default' ? '' : `(${runtime.source})`}`);
       if (runtime.sessionReuse) meta.push(`sessionReuse=${runtime.sessionReuse}`);
       if (runtime.sandbox) meta.push(`sandbox=${runtime.sandbox}`);
+      const stageView = result.stages.find((s) => s.id === id);
+      if (stageView && stageView.handoff.source !== 'default') {
+        meta.push(
+          `handoff=${formatThreshold(stageView.handoff.threshold)}(${stageView.handoff.source})`
+        );
+      }
       const suffix = meta.length > 0 ? `  (${meta.join('; ')})` : '';
       // A decompose stage has no leaf skill; show its fan-out target instead.
       const action =

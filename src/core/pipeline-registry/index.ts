@@ -41,6 +41,7 @@ export {
   type PipelineYaml,
   type CompletedSet,
   type BlockedStages,
+  type ThresholdValue,
 } from './types.js';
 
 // Pipeline loading and validation
