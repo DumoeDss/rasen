@@ -272,6 +272,22 @@ function formatEntryValue(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Renders a just-written value for the `Set <key> = <value>` confirmation
+ * line: strings quoted (so `Set schema = "spec-driven"` reads unambiguously),
+ * a plain object (e.g. the `{ remainingTokens: N }` absolute threshold form)
+ * as JSON — without this, an object value renders as `[object Object]` —
+ * arrays and scalars keep their established `String()` rendering (e.g.
+ * `workflows` as a comma-joined list) unchanged.
+ */
+function formatSetDisplayValue(value: unknown): string {
+  if (typeof value === 'string') return `"${value}"`;
+  if (!Array.isArray(value) && typeof value === 'object' && value !== null) {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 /** Non-TTY no-arg `rasen config`: the effective view, one line per registered key, then exit 0. */
 function printEffectiveConfigView(): void {
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
@@ -356,6 +372,18 @@ async function editConfigEntry(
       message: `${definition.key}:`,
       choices: (definition.enumValues ?? []).map((v) => ({ value: v, name: v })),
     });
+  } else if (definition.type === 'threshold') {
+    // Dual-form: a bare fraction ("0.6") or the absolute object form
+    // ('{"remainingTokens": 60000}') — coerceValue's number/JSON-container
+    // branches parse either, same as `rasen config set`'s CLI value.
+    const answer = await inquirer.input({
+      message: `${definition.key} (fraction in (0, 1], or {"remainingTokens": N}):`,
+      validate: (raw: string) => {
+        const error = validateConfigValue(definition, coerceValue(raw));
+        return error ?? true;
+      },
+    });
+    rawValue = coerceValue(answer);
   } else {
     const answer = await inquirer.input({
       message: `${definition.key} (${definition.type}):`,
@@ -395,8 +423,7 @@ async function editConfigEntry(
     saveGlobalConfig(config as GlobalConfig);
   }
 
-  const displayValue = typeof rawValue === 'string' ? `"${rawValue}"` : String(rawValue);
-  console.log(`Set ${definition.key} = ${displayValue}`);
+  console.log(`Set ${definition.key} = ${formatSetDisplayValue(rawValue)}`);
 }
 
 /**
@@ -665,9 +692,7 @@ export function registerConfigCommand(program: Command): void {
             saveGlobalConfig(config as GlobalConfig);
           }
 
-          const displayValue =
-            typeof coercedValue === 'string' ? `"${coercedValue}"` : String(coercedValue);
-          console.log(`Set ${key} = ${displayValue}`);
+          console.log(`Set ${key} = ${formatSetDisplayValue(coercedValue)}`);
         });
       }
     );

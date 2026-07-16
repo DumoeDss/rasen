@@ -15,7 +15,14 @@
  */
 
 export type ConfigScope = 'global' | 'project';
-export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array';
+/**
+ * 'threshold' is the dual-form handoff/reuse shape (see `ThresholdValue` in
+ * src/core/model-presets.ts): a bare number in (0, 1], or the strict object
+ * `{ remainingTokens: <positive integer> }`. It has no built-in type check in
+ * `validateConfigValue` (neither form matches a plain 'number' check) — the
+ * registry entry's `validate` fn does the whole job.
+ */
+export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array' | 'threshold';
 
 export interface ConfigKeyDefinition {
   /** Dot path, e.g. "handoff.threshold". For a wildcard entry, the family prefix (e.g. "featureFlags"). */
@@ -48,11 +55,35 @@ export const NOT_SETTABLE_KEYS: ReadonlySet<string> = new Set([
   'telemetry.noticeSeen',
 ]);
 
-function inRangeThreshold(value: unknown): string | null {
-  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0 || value > 1) {
-    return 'threshold must be a number in (0, 1]';
+/**
+ * Dual-form threshold validator: a bare number in (0, 1], or the strict
+ * object `{ remainingTokens: <positive integer> }`. Mirrors the zod union
+ * `thresholdSchema()` in src/core/pipeline-registry/types.ts (not imported
+ * directly — that module's schema is internal, and this registry avoids a
+ * zod dependency), so keep the two in sync if the shape ever changes.
+ */
+function validateThreshold(value: unknown): string | null {
+  if (typeof value === 'number') {
+    if (Number.isNaN(value) || value <= 0 || value > 1) {
+      return 'threshold must be a number in (0, 1], or an object { remainingTokens: <positive integer> }';
+    }
+    return null;
   }
-  return null;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (
+      keys.length === 1 &&
+      keys[0] === 'remainingTokens' &&
+      typeof obj.remainingTokens === 'number' &&
+      Number.isInteger(obj.remainingTokens) &&
+      obj.remainingTokens > 0
+    ) {
+      return null;
+    }
+    return 'threshold object must be exactly { remainingTokens: <positive integer> }';
+  }
+  return 'threshold must be a number in (0, 1], or an object { remainingTokens: <positive integer> }';
 }
 
 export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
@@ -166,10 +197,11 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   {
     key: 'handoff.threshold',
     scopes: ['global', 'project'],
-    type: 'number',
+    type: 'threshold',
     defaultValue: 0.5,
-    validate: inRangeThreshold,
-    description: 'Context-window occupancy fraction at which agents should hand off (project wins over global)',
+    validate: validateThreshold,
+    description:
+      'Context-handoff threshold at which agents should hand off (project wins over global): a fraction in (0, 1], or an absolute { remainingTokens: N } headroom',
     group: 'Workflow',
   },
 ];

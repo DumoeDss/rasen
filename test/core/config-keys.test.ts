@@ -83,6 +83,46 @@ describe('config-keys registry', () => {
       expect(validateConfigValue(def, 0.6)).toBeNull();
     });
 
+    describe('the threshold key accepts its dual form', () => {
+      const def = findConfigKeyDefinition('handoff.threshold', 'global')!;
+
+      it('accepts a valid { remainingTokens } object', () => {
+        expect(validateConfigValue(def, { remainingTokens: 60_000 })).toBeNull();
+        expect(validateConfigValue(def, { remainingTokens: 1 })).toBeNull();
+      });
+
+      it('rejects remainingTokens: 0', () => {
+        expect(validateConfigValue(def, { remainingTokens: 0 })).toMatch(/positive integer/);
+      });
+
+      it('rejects a negative remainingTokens', () => {
+        expect(validateConfigValue(def, { remainingTokens: -5 })).toMatch(/positive integer/);
+      });
+
+      it('rejects a non-integer remainingTokens', () => {
+        expect(validateConfigValue(def, { remainingTokens: 1.5 })).toMatch(/positive integer/);
+      });
+
+      it('rejects an object with an extra key', () => {
+        expect(validateConfigValue(def, { remainingTokens: 60_000, bogus: 1 })).toMatch(
+          /exactly \{ remainingTokens/
+        );
+      });
+
+      it('rejects an object missing remainingTokens', () => {
+        expect(validateConfigValue(def, {})).toMatch(/exactly \{ remainingTokens/);
+      });
+
+      it('rejects an array', () => {
+        expect(validateConfigValue(def, [0.5])).toMatch(/must be a number in \(0, 1\]/);
+      });
+
+      it('rejects null and a bare string', () => {
+        expect(validateConfigValue(def, null)).toMatch(/must be a number in \(0, 1\]/);
+        expect(validateConfigValue(def, '0.5')).toMatch(/must be a number in \(0, 1\]/);
+      });
+    });
+
     it('rejects a non-boolean for a boolean key', () => {
       const def = findConfigKeyDefinition('proactive', 'global')!;
       expect(validateConfigValue(def, 'yes')).toMatch(/boolean/);

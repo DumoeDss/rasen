@@ -8,6 +8,7 @@ import {
   parseProjectRegistryState,
   type ProjectRegistryState,
 } from './project-registry.js';
+import type { ThresholdValue } from './model-presets.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -76,7 +77,7 @@ export interface GlobalConfig {
   };
   /** Context-handoff threshold; project config of the same name wins over this. */
   handoff?: {
-    threshold?: number;
+    threshold?: ThresholdValue;
   };
 }
 

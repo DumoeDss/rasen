@@ -104,6 +104,144 @@ describe('pipeline run-state', () => {
     });
   });
 
+  // design D1: host-tolerant parse-boundary normalization for a non-Claude
+  // (e.g. Codex) LEAD's legitimate write variance.
+  describe('parseRunState host-tolerant normalization (design D1)', () => {
+    it('parses a Codex-LEAD-written worker record (transcript: null, non-enum runtime)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { transcript: null, runtime: 'codex-host-fallback', agentId: 'a1' },
+            },
+          },
+        })
+      );
+      const worker = s.stages?.apply.worker as Record<string, unknown>;
+      expect(worker.transcript).toBeUndefined();
+      expect(worker.runtime).toBeUndefined();
+      expect(worker.runtimeRaw).toBe('codex-host-fallback');
+      expect(worker.agentId).toBe('a1');
+    });
+
+    it('parses byte-identical for a canonical record (no runtimeRaw, no removed fields)', () => {
+      const input = {
+        pipeline: 'small-feature',
+        stages: {
+          apply: { status: 'done', worker: { transcript: 't.jsonl', runtime: 'codex', agentId: 'a1' } },
+        },
+      };
+      const s = parseRunState(JSON.stringify(input));
+      const worker = s.stages?.apply.worker as Record<string, unknown>;
+      expect(worker).toEqual({ transcript: 't.jsonl', runtime: 'codex', agentId: 'a1' });
+      expect(worker.runtimeRaw).toBeUndefined();
+    });
+
+    it('leaves a bare-string worker untouched', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'small-feature', stages: { propose: { status: 'done', worker: 'planner-1' } } })
+      );
+      expect(s.stages?.propose.worker).toBe('planner-1');
+    });
+
+    it('strips null on other nullable-optional string fields (threadId, role, etc.)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            review: {
+              status: 'done',
+              worker: { role: null, threadId: null, model: null, agentId: 'a2' },
+            },
+          },
+        })
+      );
+      const worker = s.stages?.review.worker as Record<string, unknown>;
+      expect(worker.role).toBeUndefined();
+      expect(worker.threadId).toBeUndefined();
+      expect(worker.model).toBeUndefined();
+      expect(worker.agentId).toBe('a2');
+    });
+
+    // Review finding (Major): runtime: null is the same "field known, value
+    // unknown" statement as null on any other nullable field — must be
+    // stripped (treated as absent) like the rest, not routed to runtimeRaw
+    // (there is no raw string value to preserve) and never left to reach
+    // z.enum(...).optional(), which rejects null.
+    it('strips runtime: null (treated as absent, no runtimeRaw)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            apply: { status: 'done', worker: { runtime: null, agentId: 'a3' } },
+          },
+        })
+      );
+      const worker = s.stages?.apply.worker as Record<string, unknown>;
+      expect(worker.runtime).toBeUndefined();
+      expect(worker.runtimeRaw).toBeUndefined();
+      expect(worker.agentId).toBe('a3');
+    });
+
+    it('strips runtime: null combined with other null fields (transcript, threadId)', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { runtime: null, transcript: null, threadId: null, agentId: 'a4' },
+            },
+          },
+        })
+      );
+      const worker = s.stages?.apply.worker as Record<string, unknown>;
+      expect(worker.runtime).toBeUndefined();
+      expect(worker.runtimeRaw).toBeUndefined();
+      expect(worker.transcript).toBeUndefined();
+      expect(worker.threadId).toBeUndefined();
+      expect(worker.agentId).toBe('a4');
+    });
+  });
+
+  describe('writeRunState still rejects non-canonical values (design D1)', () => {
+    it('rejects transcript: null', () => {
+      expect(() =>
+        writeRunState(dir, {
+          pipeline: 'small-feature',
+          stages: { apply: { status: 'done', worker: { transcript: null as unknown as string } } },
+        } as RunState)
+      ).toThrow();
+    });
+
+    it('rejects a non-enum runtime', () => {
+      expect(() =>
+        writeRunState(dir, {
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { runtime: 'codex-host-fallback' as unknown as 'codex' },
+            },
+          },
+        } as RunState)
+      ).toThrow();
+    });
+
+    it('rejects runtime: null', () => {
+      expect(() =>
+        writeRunState(dir, {
+          pipeline: 'small-feature',
+          stages: {
+            apply: { status: 'done', worker: { runtime: null as unknown as 'codex' } },
+          },
+        } as RunState)
+      ).toThrow();
+    });
+  });
+
   describe('readRunState', () => {
     it('returns null when the file is absent', () => {
       expect(readRunState(dir)).toBeNull();

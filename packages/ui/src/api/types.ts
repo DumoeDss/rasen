@@ -14,7 +14,7 @@
  */
 
 export type ConfigScope = 'global' | 'project';
-export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array';
+export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array' | 'threshold';
 export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
 
 /** A registered project, or the server's launch project. */
@@ -27,7 +27,14 @@ export interface ProjectRef {
 export interface WireConstraints {
   type: ConfigValueType;
   enumValues?: readonly string[];
+  /** For `type: 'number'`, or the fraction branch of `type: 'threshold'`. */
   range?: { gt: number; lte: number };
+  /**
+   * Present only for `type: 'threshold'`: describes the alternate absolute
+   * form, a strict object `{ remainingTokens: N }` where `N` is an integer
+   * greater than `remainingTokensGt`.
+   */
+  remainingTokensGt?: number;
 }
 
 /** `ConfigKeyDefinition` minus the unserializable `validate` function, plus derived `constraints`. */

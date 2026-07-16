@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
 import { isKebabId } from './id.js';
+import { thresholdSchema } from './pipeline-registry/types.js';
 
 /**
  * Zod schema for project configuration.
@@ -109,14 +110,13 @@ export const ProjectConfigSchema = z.object({
 
   // Optional: context-handoff threshold. Project scope wins over the global
   // config value of the same name (see effective-config.ts); both fall back
-  // to the built-in default (0.5) when absent.
+  // to the built-in default (0.5) when absent. Dual-form (a bare fraction in
+  // (0, 1], or the absolute `{ remainingTokens: N }` headroom form) — reuses
+  // the same schema builder as pipeline-registry/types.ts so the two never
+  // drift on what a valid threshold looks like.
   handoff: z
     .object({
-      threshold: z
-        .number()
-        .gt(0, { error: 'threshold must be in (0, 1]' })
-        .lte(1, { error: 'threshold must be in (0, 1]' })
-        .optional(),
+      threshold: thresholdSchema('threshold').optional(),
     })
     .optional()
     .describe('Context-handoff threshold configuration'),
@@ -467,23 +467,23 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
       }
     }
 
-    // Parse handoff field: an optional map with an optional `threshold`
-    // field in (0, 1]. Non-map -> whole block dropped with a warning. An
-    // out-of-range/invalid threshold -> the field dropped with a warning,
-    // the rest of the config still parses.
+    // Parse handoff field: an optional map with an optional dual-form
+    // `threshold` field (a bare fraction in (0, 1], or the absolute
+    // `{ remainingTokens: N }` headroom form). Non-map -> whole block dropped
+    // with a warning. An invalid threshold (either form) -> the field
+    // dropped with a warning, the rest of the config still parses.
     if (raw.handoff !== undefined) {
       if (raw.handoff && typeof raw.handoff === 'object' && !Array.isArray(raw.handoff)) {
         const handoffRaw = raw.handoff as Record<string, unknown>;
         const handoff: ProjectConfig['handoff'] = {};
         if (handoffRaw.threshold !== undefined) {
-          if (
-            typeof handoffRaw.threshold === 'number' &&
-            handoffRaw.threshold > 0 &&
-            handoffRaw.threshold <= 1
-          ) {
-            handoff.threshold = handoffRaw.threshold;
+          const parsedThreshold = thresholdSchema('threshold').safeParse(handoffRaw.threshold);
+          if (parsedThreshold.success) {
+            handoff.threshold = parsedThreshold.data;
           } else {
-            console.warn(`Invalid 'handoff.threshold' field in config (must be a number in (0, 1])`);
+            console.warn(
+              `Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            );
           }
         }
         config.handoff = handoff;

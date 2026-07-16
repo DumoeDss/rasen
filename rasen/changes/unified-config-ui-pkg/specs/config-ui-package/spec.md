@@ -87,11 +87,16 @@ The configuration page SHALL render every configuration entry the API lists, gro
 - **THEN** the entry displays the warning message and the value is not silently corrected
 
 ### Requirement: Editing is constraint-driven and scope-explicit
-Edit controls SHALL be rendered from each entry's serialized constraints — toggles for booleans, selection lists for enumerations, bounded numeric inputs for ranged numbers, text inputs for strings. Every write and unset SHALL carry an explicit scope; when a key is settable in more than one scope, the user chooses the scope. Client-side validation gives immediate feedback, but the API's verdict is authoritative: API errors SHALL be surfaced with their message and fix guidance at the level they apply — on the field for value and scope errors (including an invalid-scope answer naming the correct scope), on the page for project-resolution errors — and a successful write SHALL update the entry's displayed value and source from the API's re-resolved response.
+Edit controls SHALL be rendered from each entry's serialized constraints — toggles for booleans, selection lists for enumerations, bounded numeric inputs for ranged numbers, a form-picker plus bounded numeric input for dual-form thresholds, text inputs for strings. Every write and unset SHALL carry an explicit scope; when a key is settable in more than one scope, the user chooses the scope. Client-side validation gives immediate feedback, but the API's verdict is authoritative: API errors SHALL be surfaced with their message and fix guidance at the level they apply — on the field for value and scope errors (including an invalid-scope answer naming the correct scope), on the page for project-resolution errors — and a successful write SHALL update the entry's displayed value and source from the API's re-resolved response.
 
 #### Scenario: Control types follow constraints
 - **WHEN** the page renders a boolean key, an enum key, and a ranged numeric key
 - **THEN** they render as a toggle, a selection list, and a bounded numeric input respectively
+
+#### Scenario: Dual-form threshold control lets the user pick either form
+- **WHEN** the page renders a `threshold`-typed key (e.g. `handoff.threshold`)
+- **THEN** it offers a choice between the fraction form and the absolute `{ remainingTokens: N }` form, with a bounded numeric input for whichever form is selected
+- **AND** the current value's form (fraction or absolute) is pre-selected
 
 #### Scenario: Scope-explicit write
 - **WHEN** the user edits a key settable in both scopes

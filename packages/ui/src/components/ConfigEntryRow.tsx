@@ -2,8 +2,19 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { WireConfigEntry, ConfigScope } from '../api/types.js';
-import { selectControl, validateRangedNumber, writableScopes, defaultWriteScope } from '../config/controls.js';
+import {
+  selectControl,
+  validateRangedNumber,
+  validateThresholdValue,
+  writableScopes,
+  defaultWriteScope,
+} from '../config/controls.js';
 import { errorSurface } from '../config/errors.js';
+
+/** Renders a value for display — objects (e.g. a `{ remainingTokens: N }` threshold) as JSON, everything else via `String()`. */
+function formatDisplayValue(value: unknown): string {
+  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+}
 
 interface Props {
   entry: WireConfigEntry;
@@ -93,7 +104,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
     if (control.readonly) {
       return (
         <span class="control control--readonly">
-          {String(entry.value)}
+          {formatDisplayValue(entry.value)}
           {disabledForNoProject && (
             <span class="config-entry__no-project-hint">
               {' '}
@@ -154,6 +165,91 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
             }}
           />
         );
+      case 'threshold': {
+        const isAbsolute =
+          typeof draft === 'object' && draft !== null && 'remainingTokens' in (draft as object);
+        const fractionValue = isAbsolute ? 0.5 : (draft as number);
+        // A sensible, always-valid seed for switching TO the absolute form:
+        // clearly above the floor (never the boundary-invalid `floor + 1`,
+        // which reads as an arbitrary edge case rather than a real default).
+        const remainingSeed = Math.max((control.remainingTokensGt ?? 0) + 1, 50_000);
+        const remainingValue = isAbsolute
+          ? (draft as { remainingTokens: number }).remainingTokens
+          : remainingSeed;
+        return (
+          <div class="control control--threshold">
+            <label>
+              <input
+                type="radio"
+                name={`${key}-form`}
+                checked={!isAbsolute}
+                disabled={pending}
+                onChange={() => {
+                  // Radio selection commits immediately (same invariant as
+                  // every other control here): the displayed form must never
+                  // diverge from the stored value, so switching forms writes
+                  // through with a sensible seed rather than waiting for the
+                  // number input to be edited (MIN-M3).
+                  const value = Number.isNaN(fractionValue) ? 0.5 : fractionValue;
+                  setDraft(value);
+                  if (scope) commit(value, scope);
+                }}
+              />
+              Fraction
+            </label>
+            <label>
+              <input
+                type="radio"
+                name={`${key}-form`}
+                checked={isAbsolute}
+                disabled={pending}
+                onChange={() => {
+                  const value = { remainingTokens: remainingSeed };
+                  setDraft(value);
+                  if (scope) commit(value, scope);
+                }}
+              />
+              Remaining tokens
+            </label>
+            {!isAbsolute ? (
+              <input
+                type="number"
+                step="any"
+                value={String(fractionValue)}
+                disabled={pending}
+                onChange={(e) => {
+                  const raw = Number((e.target as HTMLInputElement).value);
+                  setDraft(raw);
+                  const localError = validateThresholdValue(raw, control.range, control.remainingTokensGt);
+                  if (localError) {
+                    setFieldError({ message: localError });
+                    return;
+                  }
+                  if (scope) commit(raw, scope);
+                }}
+              />
+            ) : (
+              <input
+                type="number"
+                step="1"
+                value={String(remainingValue)}
+                disabled={pending}
+                onChange={(e) => {
+                  const raw = Number((e.target as HTMLInputElement).value);
+                  const value = { remainingTokens: raw };
+                  setDraft(value);
+                  const localError = validateThresholdValue(value, control.range, control.remainingTokensGt);
+                  if (localError) {
+                    setFieldError({ message: localError });
+                    return;
+                  }
+                  if (scope) commit(value, scope);
+                }}
+              />
+            )}
+          </div>
+        );
+      }
       case 'text':
       default:
         return (
@@ -209,17 +305,17 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
         entry.scopeValues.global !== undefined &&
         entry.scopeValues.project !== undefined && (
           <p class="config-entry__shadowed">
-            Global value: {String(entry.scopeValues.global)} (shadowed by project)
+            Global value: {formatDisplayValue(entry.scopeValues.global)} (shadowed by project)
           </p>
         )}
       {entry.source === 'env-override' && (
         <p class="config-entry__shadowed">
           Environment variable overrides every scope
           {entry.scopeValues.global !== undefined
-            ? ` (global value: ${String(entry.scopeValues.global)})`
+            ? ` (global value: ${formatDisplayValue(entry.scopeValues.global)})`
             : ''}
           {entry.scopeValues.project !== undefined
-            ? ` (project value: ${String(entry.scopeValues.project)})`
+            ? ` (project value: ${formatDisplayValue(entry.scopeValues.project)})`
             : ''}
         </p>
       )}

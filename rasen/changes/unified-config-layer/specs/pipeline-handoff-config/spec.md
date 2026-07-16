@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Handoff config resolution order
-The effective handoff config for a stage SHALL resolve as: stage-level `handoff` > pipeline `handoff.roles[<stage role>]` (threshold only) > pipeline `handoff` > project config `handoff.threshold` (threshold only) > global config `handoff.threshold` (threshold only) > built-in defaults (`threshold: 0.5`, `maxRelays: 3`, `stallLimit: 2`). The config layers tune only the threshold; `maxRelays` and `stallLimit` resolve from pipeline declarations or built-in defaults. The resolved config's source SHALL name the config layers distinctly (e.g. `project-config`, `global-config`) so callers can report where the effective threshold came from.
+The effective handoff config for a stage SHALL resolve as: stage-level `handoff` > pipeline `handoff.roles[<stage role>]` (threshold only) > pipeline `handoff` > project config `handoff.threshold` (threshold only) > global config `handoff.threshold` (threshold only) > model preset (threshold only — the suggested `handoffThreshold` of the preset matching the stage's resolved model) > built-in defaults (`threshold: 0.5`, `maxRelays: 3`, `stallLimit: 2`). The config layers and the preset layer tune only the threshold; `maxRelays` and `stallLimit` resolve from pipeline declarations or built-in defaults. Every threshold value at every layer (pipeline, role, stage, project config, global config, preset) SHALL accept the dual form: a bare number, ALWAYS a fraction of the context window in (0, 1], or the object `{ remainingTokens: <positive integer> }`, an absolute required-headroom threshold in tokens. The resolved config's source SHALL name the layer that supplied the resolved threshold specifically, in this same precedence order (`stage`, `role`, `pipeline`, `project-config`, `global-config`, `preset`, or `default`) — not merely a layer whose `handoff` block is non-empty.
 
 #### Scenario: Role threshold applies when stage has no override
 - **WHEN** a stage with `role: reviewer` has no stage-level `handoff` and the pipeline declares `handoff.roles.reviewer: 0.65`
@@ -28,3 +28,12 @@ The effective handoff config for a stage SHALL resolve as: stage-level `handoff`
 #### Scenario: Pipeline declarations beat config layers
 - **WHEN** a pipeline declares `handoff.threshold: 0.7` and the project config sets `handoff.threshold: 0.4`
 - **THEN** the resolved threshold for its stages SHALL be 0.7
+
+#### Scenario: A config layer accepts the absolute threshold form
+- **WHEN** the project or global config sets `handoff.threshold: { remainingTokens: 45000 }`
+- **THEN** the resolved threshold SHALL be `{ remainingTokens: 45000 }` with a source identifying that config layer
+
+#### Scenario: A config layer beats the model-preset layer
+- **WHEN** neither the pipeline nor the stage declares a handoff threshold, the project or global config sets one, and the stage's resolved model also matches a preset carrying a suggested handoff threshold
+- **THEN** the resolved threshold SHALL come from the config layer, not the preset
+- **AND** the resolved config's source SHALL identify the config layer, not `preset`

@@ -1022,7 +1022,7 @@ rasen config <subcommand> [options]
 | `proactive` | global | Whether agents proactively suggest next steps |
 | `repoMode` | global | `solo` or `collaborative` |
 | `telemetry.enabled` | global | Telemetry on/off (environment opt-outs always win) |
-| `handoff.threshold` | global, project | Context-handoff occupancy threshold in `(0, 1]`; project wins over global |
+| `handoff.threshold` | global, project | Context-handoff threshold; project wins over global. Dual-form: a fraction in `(0, 1]`, or the absolute `{ remainingTokens: N }` headroom form (a positive integer token count) |
 | `schema` | project | The workflow schema this project uses |
 | `autopilot.gates` | project | Default autopilot gate policy (`on`/`off`) |
 | `autopilot.selection` | project | Default autopilot pipeline-selection policy |
@@ -1045,6 +1045,10 @@ rasen config set telemetry.enabled false
 
 # Set a string value explicitly
 rasen config set featureFlags.myFlag "custom" --string
+
+# Set a dual-form threshold: a fraction, or the absolute { remainingTokens: N } headroom form
+rasen config set handoff.threshold 0.6
+rasen config set --scope global handoff.threshold '{"remainingTokens": 60000}'
 
 # Remove a custom setting
 rasen config unset handoff.threshold

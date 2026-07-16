@@ -22,7 +22,9 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     expect(configListFixture.entries.length).toBeGreaterThan(0);
     for (const entry of configListFixture.entries) {
       expect(['default', 'global', 'project', 'env-override']).toContain(entry.source);
-      expect(['boolean', 'number', 'string', 'enum', 'array']).toContain(entry.definition.type);
+      expect(['boolean', 'number', 'string', 'enum', 'array', 'threshold']).toContain(
+        entry.definition.type
+      );
     }
   });
 

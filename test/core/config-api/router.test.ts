@@ -137,7 +137,12 @@ describe('config-api router (integration, via real http server)', () => {
       const body = res.json() as any;
       const threshold = body.entries.find((e: any) => e.definition.key === 'handoff.threshold');
       expect(threshold.source).toBe('default');
-      expect(threshold.definition.constraints).toEqual({ type: 'number', enumValues: undefined, range: { gt: 0, lte: 1 } });
+      expect(threshold.definition.constraints).toEqual({
+        type: 'threshold',
+        enumValues: undefined,
+        range: { gt: 0, lte: 1 },
+        remainingTokensGt: 0,
+      });
     });
 
     it('gets a single key', async () => {
@@ -229,6 +234,36 @@ describe('config-api router (integration, via real http server)', () => {
       expect(body.entry.source).toBe('project');
       const yaml = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
       expect(yaml).toContain('threshold: 0.4');
+    });
+
+    it('sets the absolute { remainingTokens } threshold form and re-resolves it (MIN-M2)', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/handoff.threshold',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'project', value: { remainingTokens: 60000 } }),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.entry.value).toEqual({ remainingTokens: 60000 });
+      expect(body.entry.source).toBe('project');
+      const yaml = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('remainingTokens: 60000');
+    });
+
+    it('rejects an invalid absolute-form threshold value with invalid_value and does not write (MIN-M2)', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/handoff.threshold',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'project', value: { remainingTokens: 0 } }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_value');
+      const yaml = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).not.toContain('remainingTokens');
     });
 
     it('unsets a project value, reverting to the global layer', async () => {

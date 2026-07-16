@@ -255,6 +255,38 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(getGlobalConfig().handoff?.threshold).toBe(0.7);
   });
 
+  it('editing a threshold key with the absolute { remainingTokens } form via input() writes the object (MIN-M2)', async () => {
+    const { select, input } = await getPromptMocks();
+    select
+      .mockResolvedValueOnce('handoff.threshold') // pick the key
+      .mockResolvedValueOnce('__exit__'); // refreshed view, exit
+    input.mockResolvedValueOnce('{"remainingTokens": 60000}');
+
+    await runConfigCommand([]);
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      'Set handoff.threshold = {"remainingTokens":60000}'
+    );
+    const { getGlobalConfig } = await import('../../src/core/global-config.js');
+    expect(getGlobalConfig().handoff?.threshold).toEqual({ remainingTokens: 60000 });
+  });
+
+  it('the threshold input() validator accepts both dual forms and rejects an invalid absolute form (MIN-M2)', async () => {
+    const { select, input } = await getPromptMocks();
+    select
+      .mockResolvedValueOnce('handoff.threshold')
+      .mockResolvedValueOnce('__exit__');
+    input.mockResolvedValueOnce('0.5');
+
+    await runConfigCommand([]);
+
+    const validate = (input.mock.calls[0][0] as { validate: (v: string) => string | true }).validate;
+    expect(validate('0.5')).toBe(true);
+    expect(validate('{"remainingTokens": 60000}')).toBe(true);
+    expect(validate('{"remainingTokens": 0}')).toMatch(/positive integer/);
+    expect(validate('1.5')).toMatch(/\(0, 1\]/);
+  });
+
   it('the input() validator rejects an out-of-range value before it is accepted', async () => {
     const { select, input } = await getPromptMocks();
     select

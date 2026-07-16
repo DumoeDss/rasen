@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   selectControl,
   validateRangedNumber,
+  validateThresholdValue,
   writableScopes,
   defaultWriteScope,
 } from '../../src/config/controls.js';
@@ -22,10 +23,11 @@ describe('selectControl', () => {
     expect(spec.enumValues).toEqual(['both', 'skills']);
   });
 
-  it('renders ranged numbers with their bounds', () => {
+  it('renders a dual-form threshold with its fraction bounds and remainingTokens floor', () => {
     const spec = selectControl(byKey('handoff.threshold'), true);
-    expect(spec.kind).toBe('ranged-number');
+    expect(spec.kind).toBe('threshold');
     expect(spec.range).toEqual({ gt: 0, lte: 1 });
+    expect(spec.remainingTokensGt).toBe(0);
   });
 
   it('treats env-override entries as read-only regardless of type', () => {
@@ -48,8 +50,21 @@ describe('selectControl', () => {
 
   it('keeps a dual-scope key editable (global-only) when no project is selected', () => {
     const spec = selectControl(byKey('handoff.threshold'), false);
-    expect(spec.kind).toBe('ranged-number');
+    expect(spec.kind).toBe('threshold');
     expect(spec.readonly).toBe(false);
+  });
+});
+
+describe('validateThresholdValue', () => {
+  it('validates the fraction branch like validateRangedNumber', () => {
+    expect(validateThresholdValue(0.5, { gt: 0, lte: 1 })).toBeNull();
+    expect(validateThresholdValue(1.5, { gt: 0, lte: 1 })).not.toBeNull();
+  });
+
+  it('validates the absolute { remainingTokens } branch against the floor', () => {
+    expect(validateThresholdValue({ remainingTokens: 60_000 }, undefined, 0)).toBeNull();
+    expect(validateThresholdValue({ remainingTokens: 0 }, undefined, 0)).not.toBeNull();
+    expect(validateThresholdValue({ remainingTokens: 1.5 }, undefined, 0)).not.toBeNull();
   });
 });
 

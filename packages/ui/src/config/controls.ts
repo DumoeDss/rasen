@@ -5,7 +5,7 @@
  */
 import type { WireConfigEntry } from '../api/types.js';
 
-export type ControlKind = 'toggle' | 'select' | 'ranged-number' | 'text' | 'readonly';
+export type ControlKind = 'toggle' | 'select' | 'ranged-number' | 'threshold' | 'text' | 'readonly';
 
 export interface ControlSpec {
   kind: ControlKind;
@@ -13,6 +13,8 @@ export interface ControlSpec {
   readonly: boolean;
   enumValues?: readonly string[];
   range?: { gt: number; lte: number };
+  /** For `kind: 'threshold'`: the absolute form's `remainingTokens` floor. */
+  remainingTokensGt?: number;
 }
 
 /**
@@ -44,6 +46,13 @@ export function selectControl(entry: WireConfigEntry, projectSelected: boolean):
       return { kind: 'select', readonly: false, enumValues: constraints.enumValues };
     case 'number':
       return { kind: 'ranged-number', readonly: false, range: constraints.range };
+    case 'threshold':
+      return {
+        kind: 'threshold',
+        readonly: false,
+        range: constraints.range,
+        remainingTokensGt: constraints.remainingTokensGt,
+      };
     case 'string':
       return { kind: 'text', readonly: false };
     case 'array':
@@ -58,6 +67,29 @@ export function validateRangedNumber(value: number, range?: { gt: number; lte: n
   if (!range) return null;
   if (value <= range.gt || value > range.lte) {
     return `Must be greater than ${range.gt} and at most ${range.lte}`;
+  }
+  return null;
+}
+
+/**
+ * Client-side mirror of the dual-form threshold validator (see
+ * `validateThreshold` in src/core/config-keys.ts): a bare fraction (checked
+ * via `validateRangedNumber`), or the strict object
+ * `{ remainingTokens: <integer greater than remainingTokensGt> }`.
+ * Immediate feedback only — the server is authoritative.
+ */
+export function validateThresholdValue(
+  value: number | { remainingTokens: number },
+  range?: { gt: number; lte: number },
+  remainingTokensGt?: number
+): string | null {
+  if (typeof value === 'number') {
+    return validateRangedNumber(value, range);
+  }
+  const n = value.remainingTokens;
+  const floor = remainingTokensGt ?? 0;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n <= floor) {
+    return `remainingTokens must be an integer greater than ${floor}`;
   }
   return null;
 }

@@ -16,6 +16,7 @@ import { CONFIG_KEY_REGISTRY, type ConfigKeyDefinition } from './config-keys.js'
 import { getGlobalConfig, getGlobalConfigPath } from './global-config.js';
 import { readProjectConfig, type ProjectConfig } from './project-config.js';
 import { isTelemetryEnvDisabled } from '../telemetry/index.js';
+import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 
 export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
 
@@ -137,27 +138,25 @@ export function resolveEffectiveConfig(
 
 /** Threshold values from the project/global config layers, for `resolveStageHandoffConfig` and the `rasen agent context` probe. */
 export interface HandoffThresholdLayers {
-  projectThreshold?: number;
-  globalThreshold?: number;
-}
-
-/** In-range check shared with the project-config resilient parser's own `handoff.threshold` gate. */
-function isValidThreshold(value: number | undefined): value is number {
-  return typeof value === 'number' && value > 0 && value <= 1;
+  projectThreshold?: ThresholdValue;
+  globalThreshold?: ThresholdValue;
 }
 
 /**
  * Resolves the `handoff.threshold` project/global config layers, shared by
  * `resolveStageHandoffConfig` call sites (pipeline resolution) and
  * `rasen agent context`'s threshold reporting, so the two consumers can
- * never drift on what "the configured threshold" means.
+ * never drift on what "the configured threshold" means. Dual-form: a bare
+ * fraction in (0, 1], or the absolute `{ remainingTokens: N }` headroom form
+ * (validated via the same `thresholdSchema()` builder pipeline-registry
+ * uses, so the two never drift on what a valid threshold looks like).
  *
- * `readProjectConfig()` already drops an out-of-range project threshold
+ * `readProjectConfig()` already drops an invalid project threshold
  * resiliently (with a warning) during parsing, so `projectConfig.handoff`
  * never carries an invalid value here. `getGlobalConfig()` has no such
  * schema gate on read (it's a raw JSON.parse + merge), so a hand-edited
- * out-of-range global value is re-validated here, dropped with a warning
- * rather than silently reaching resolution as an unusable threshold.
+ * invalid global value is re-validated here, dropped with a warning rather
+ * than silently reaching resolution as an unusable threshold.
  */
 export function resolveHandoffThresholdLayers(
   projectRoot?: string | null
@@ -166,16 +165,19 @@ export function resolveHandoffThresholdLayers(
   const projectConfig = projectRoot ? readProjectConfig(projectRoot) : null;
 
   const rawGlobalThreshold = globalConfig.handoff?.threshold;
-  let globalThreshold: number | undefined;
+  let globalThreshold: ThresholdValue | undefined;
   if (rawGlobalThreshold === undefined) {
     globalThreshold = undefined;
-  } else if (isValidThreshold(rawGlobalThreshold)) {
-    globalThreshold = rawGlobalThreshold;
   } else {
-    console.warn(
-      `Invalid 'handoff.threshold' in the global config (must be a number in (0, 1], got ${rawGlobalThreshold}); ignoring it.`
-    );
-    globalThreshold = undefined;
+    const parsed = thresholdSchema('threshold').safeParse(rawGlobalThreshold);
+    if (parsed.success) {
+      globalThreshold = parsed.data;
+    } else {
+      console.warn(
+        `Invalid 'handoff.threshold' in the global config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> }, got ${JSON.stringify(rawGlobalThreshold)}); ignoring it.`
+      );
+      globalThreshold = undefined;
+    }
   }
 
   return {

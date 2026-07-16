@@ -44,7 +44,8 @@ export const errorsFixture: Record<
     body: {
       error: {
         code: 'invalid_value',
-        message: 'handoff.threshold must be a number in (0, 1]',
+        message:
+          'threshold must be a number in (0, 1], or an object { remainingTokens: <positive integer> }',
       },
     },
   },

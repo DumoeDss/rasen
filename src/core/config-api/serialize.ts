@@ -17,11 +17,21 @@ const RANGE_CONSTRAINTS: Record<string, { gt: number; lte: number }> = {
   'handoff.threshold': { gt: 0, lte: 1 },
 };
 
+/**
+ * `remainingTokensGt` for `type: 'threshold'` keys — the absolute-form
+ * companion to `RANGE_CONSTRAINTS` above. Today only `handoff.threshold`.
+ */
+const REMAINING_TOKENS_CONSTRAINTS: Record<string, number> = {
+  'handoff.threshold': 0,
+};
+
 function deriveConstraints(definition: ConfigKeyDefinition): WireConstraints {
   return {
     type: definition.type,
     enumValues: definition.enumValues,
     range: RANGE_CONSTRAINTS[definition.key],
+    remainingTokensGt:
+      definition.type === 'threshold' ? REMAINING_TOKENS_CONSTRAINTS[definition.key] : undefined,
   };
 }
 

@@ -18,7 +18,15 @@ export interface ProjectRef {
 export interface WireConstraints {
   type: ConfigValueType;
   enumValues?: readonly string[];
+  /** For `type: 'number'`, or the fraction branch of `type: 'threshold'`. */
   range?: { gt: number; lte: number };
+  /**
+   * Present only for `type: 'threshold'` (dual-form): describes the
+   * alternate absolute form, a strict object `{ remainingTokens: N }` where
+   * `N` is an integer greater than `remainingTokensGt`. The fraction form's
+   * range is `range` above — a `'threshold'` entry always carries both.
+   */
+  remainingTokensGt?: number;
 }
 
 /** `ConfigKeyDefinition` minus the `validate` function, plus derived `constraints` for form rendering. */

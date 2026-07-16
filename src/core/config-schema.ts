@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { validateConfigKeyPath as registryValidateConfigKeyPath } from './config-keys.js';
 import type { ConfigScope } from './config-keys.js';
+import { thresholdSchema } from './pipeline-registry/types.js';
 
 /**
  * Zod schema for global Rasen configuration.
@@ -41,11 +42,7 @@ export const GlobalConfigSchema = z
       .optional(),
     handoff: z
       .object({
-        threshold: z
-          .number()
-          .gt(0, { error: 'threshold must be in (0, 1]' })
-          .lte(1, { error: 'threshold must be in (0, 1]' })
-          .optional(),
+        threshold: thresholdSchema('threshold').optional(),
       })
       .optional(),
   })

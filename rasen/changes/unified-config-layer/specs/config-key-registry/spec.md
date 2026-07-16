@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Declarative registry of settable configuration keys
-The system SHALL maintain a single declarative registry of every CLI-settable configuration key, where each entry declares the key path, the scopes it may be set in (`global`, `project`, or both), its value type (boolean, number, string, or enum with allowed values), any extra validation constraint, its built-in default, a one-line description, and a display group. Key validation for `config set`/`unset`, the interactive editor, and effective-config resolution SHALL all derive their key knowledge from this registry.
+The system SHALL maintain a single declarative registry of every CLI-settable configuration key, where each entry declares the key path, the scopes it may be set in (`global`, `project`, or both), its value type (boolean, number, string, enum with allowed values, array, or the dual-form `threshold` type), any extra validation constraint, its built-in default, a one-line description, and a display group. Key validation for `config set`/`unset`, the interactive editor, and effective-config resolution SHALL all derive their key knowledge from this registry.
 
 #### Scenario: Registry drives set validation in both scopes
 - **WHEN** a user runs `rasen config set <key> <value>` in either scope
@@ -12,8 +12,12 @@ The system SHALL maintain a single declarative registry of every CLI-settable co
 
 #### Scenario: Rejection names the constraint
 - **WHEN** a user sets `handoff.threshold` to `1.5`
-- **THEN** the command fails with a message stating the allowed range
+- **THEN** the command fails with a message stating the allowed range or the alternate absolute `{ remainingTokens: N }` form
 - **AND** no config file is modified
+
+#### Scenario: The threshold type accepts its dual form
+- **WHEN** a user sets `handoff.threshold` to `0.6`, or to `{"remainingTokens": 60000}`
+- **THEN** both are accepted — a bare number as the fraction form, the object as the absolute form
 
 #### Scenario: Registered keys cover the promoted options
 - **WHEN** the registry is consulted

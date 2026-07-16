@@ -63,12 +63,12 @@ export const configListFixture = {
       definition: {
         key: 'handoff.threshold',
         scopes: ['global', 'project'],
-        type: 'number',
+        type: 'threshold',
         defaultValue: 0.5,
         description:
-          'Context-window occupancy fraction at which agents should hand off (project wins over global)',
+          'Context-handoff threshold at which agents should hand off (project wins over global): a fraction in (0, 1], or an absolute { remainingTokens: N } headroom',
         group: 'Workflow',
-        constraints: { type: 'number', range: { gt: 0, lte: 1 } },
+        constraints: { type: 'threshold', range: { gt: 0, lte: 1 }, remainingTokensGt: 0 },
       },
       value: 0.8,
       source: 'project',

@@ -513,6 +513,55 @@ describe('config command --scope project and promoted keys', () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
+  it('sets the absolute { remainingTokens } threshold form at project scope, formatting the confirmation as JSON (MIN-M1/M2)', async () => {
+    await runConfigCommand([
+      'set',
+      '--scope',
+      'project',
+      'handoff.threshold',
+      '{"remainingTokens": 60000}',
+    ]);
+
+    expect(process.exitCode).not.toBe(1);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      'Set handoff.threshold = {"remainingTokens":60000}'
+    );
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).toMatch(/remainingTokens: 60000/);
+
+    await runConfigCommand(['get', 'handoff.threshold', '--scope', 'project']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('{"remainingTokens":60000}');
+  });
+
+  it('sets the absolute { remainingTokens } threshold form at global scope, formatting the confirmation as JSON (MIN-M1/M2)', async () => {
+    await runConfigCommand(['set', 'handoff.threshold', '{"remainingTokens": 60000}']);
+
+    expect(process.exitCode).not.toBe(1);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      'Set handoff.threshold = {"remainingTokens":60000}'
+    );
+
+    await runConfigCommand(['get', 'handoff.threshold']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('{"remainingTokens":60000}');
+  });
+
+  it('rejects an invalid absolute-form threshold at project scope without writing (MIN-M2)', async () => {
+    const before = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+
+    await runConfigCommand([
+      'set',
+      '--scope',
+      'project',
+      'handoff.threshold',
+      '{"remainingTokens": 0}',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('positive integer'));
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).toBe(before);
+  });
+
   it('rejects an invalid enum value for a promoted global key', async () => {
     await runConfigCommand(['set', 'repoMode', 'banana']);
     expect(process.exitCode).toBe(1);

@@ -16,11 +16,26 @@ function entryFor(key: string, scope: 'global' | 'project', overrides: Partial<E
 }
 
 describe('serializeConfigEntry', () => {
-  it('drops the validate function and derives constraints for a ranged key', () => {
+  it('drops the validate function and derives constraints for a dual-form threshold key', () => {
     const entry = entryFor('handoff.threshold', 'global', { value: 0.5, source: 'default' });
     const wire = serializeConfigEntry(entry);
     expect(wire.definition).not.toHaveProperty('validate');
-    expect(wire.definition.constraints).toEqual({ type: 'number', enumValues: undefined, range: { gt: 0, lte: 1 } });
+    expect(wire.definition.constraints).toEqual({
+      type: 'threshold',
+      enumValues: undefined,
+      range: { gt: 0, lte: 1 },
+      remainingTokensGt: 0,
+    });
+  });
+
+  it('flags an on-disk absolute-form { remainingTokens } value as valid (no warning)', () => {
+    const entry = entryFor('handoff.threshold', 'global', {
+      value: { remainingTokens: 60_000 },
+      source: 'global',
+      scopeValues: { global: { remainingTokens: 60_000 } },
+    });
+    const wire = serializeConfigEntry(entry);
+    expect(wire.warnings).toBeUndefined();
   });
 
   it('derives enum constraints for an enum key', () => {
