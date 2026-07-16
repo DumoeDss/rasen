@@ -13,6 +13,7 @@ import {
   resolveArchiveDestinationValue,
   resolveAutopilotGatePolicy,
   resolveAutopilotSelectionPolicy,
+  updateProjectConfigKey,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -1540,6 +1541,121 @@ rules:
           'other-store',
         ]);
       });
+    });
+  });
+
+  describe('handoff field parsing', () => {
+    it('parses a valid handoff threshold', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nhandoff:\n  threshold: 0.6\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff?.threshold).toBe(0.6);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops an out-of-range threshold with a warning, keeping other fields', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nhandoff:\n  threshold: 1.5\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.schema).toBe('spec-driven');
+      expect(config?.handoff?.threshold).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('handoff.threshold'));
+    });
+
+    it('resolves to no threshold when the handoff block is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff).toBeUndefined();
+    });
+  });
+
+  describe('updateProjectConfigKey', () => {
+    function writeConfig(content: string): string {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(configPath, content);
+      return configPath;
+    }
+
+    it('sets a nested key, preserving comments and unrelated fields', () => {
+      const configPath = writeConfig(
+        'schema: spec-driven\n# a helpful comment\ncontext: |\n  keep me\n'
+      );
+
+      updateProjectConfigKey(tempDir, 'autopilot.gates', 'off');
+
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      expect(raw).toContain('# a helpful comment');
+      expect(raw).toContain('context:');
+      expect(raw).toContain('keep me');
+      expect(raw).toMatch(/autopilot:\s*\n\s*gates: off/);
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.autopilot?.gates).toBe('off');
+      expect(config?.context).toContain('keep me');
+    });
+
+    it('honors the .yml alias when no config.yaml exists (MIN6c)', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const ymlPath = path.join(configDir, 'config.yml');
+      fs.writeFileSync(ymlPath, 'schema: spec-driven\n# yml alias comment\n');
+
+      const result = updateProjectConfigKey(tempDir, 'autopilot.gates', 'off');
+
+      expect(result.configPath).toBe(ymlPath);
+      const raw = fs.readFileSync(ymlPath, 'utf-8');
+      expect(raw).toContain('# yml alias comment');
+      expect(raw).toMatch(/gates: off/);
+      expect(fs.existsSync(path.join(configDir, 'config.yaml'))).toBe(false);
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.autopilot?.gates).toBe('off');
+    });
+
+    it('creates intermediate maps for a new nested key', () => {
+      writeConfig('schema: spec-driven\n');
+
+      updateProjectConfigKey(tempDir, 'handoff.threshold', 0.4);
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff?.threshold).toBe(0.4);
+    });
+
+    it('unsets an existing key and reports it existed', () => {
+      writeConfig('schema: spec-driven\nhandoff:\n  threshold: 0.4\n');
+
+      const result = updateProjectConfigKey(tempDir, 'handoff.threshold', undefined);
+
+      expect(result.existed).toBe(true);
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff?.threshold).toBeUndefined();
+    });
+
+    it('unsetting an absent key is a no-op that reports it did not exist', () => {
+      writeConfig('schema: spec-driven\n');
+
+      const result = updateProjectConfigKey(tempDir, 'handoff.threshold', undefined);
+
+      expect(result.existed).toBe(false);
+    });
+
+    it('throws with guidance when no config file exists', () => {
+      expect(() => updateProjectConfigKey(tempDir, 'autopilot.gates', 'off')).toThrow(/rasen init/);
     });
   });
 });

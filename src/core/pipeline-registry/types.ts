@@ -71,7 +71,7 @@ export type PipelineAgentRuntimeOverrides = z.infer<typeof PipelineAgentRuntimeO
  * self-describing per threshold family (cf. HandoffThresholdSchema vs
  * ReuseThresholdSchema).
  */
-function thresholdSchema(label: string) {
+export function thresholdSchema(label: string) {
   return z.union([
     z.number().gt(0, { error: `${label} must be in (0, 1]` }).lte(1, {
       error: `${label} must be in (0, 1]`,
@@ -459,7 +459,20 @@ export interface ResolvedStageHandoffConfig {
   threshold: ThresholdValue;
   maxRelays: number;
   stallLimit: number;
-  source: 'stage' | 'role' | 'pipeline' | 'preset' | 'default';
+  source:
+    | 'stage'
+    | 'role'
+    | 'pipeline'
+    | 'project-config'
+    | 'global-config'
+    | 'preset'
+    | 'default';
+}
+
+/** Project/global config-layer threshold values, slotted below pipeline declarations and above the model-preset layer. */
+export interface HandoffConfigLayers {
+  projectThreshold?: ThresholdValue;
+  globalThreshold?: ThresholdValue;
 }
 
 /**
@@ -469,22 +482,28 @@ export interface ResolvedStageHandoffConfig {
  * 1. Stage-level `handoff`.
  * 2. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
  * 3. Pipeline-level `handoff`.
- * 4. Model preset (the suggested `handoffThreshold` of the preset matching the
+ * 4. Project config `handoff.threshold` — threshold ONLY.
+ * 5. Global config `handoff.threshold` — threshold ONLY.
+ * 6. Model preset (the suggested `handoffThreshold` of the preset matching the
  *    stage's resolved model, per `resolveStageRuntimeConfig`) — threshold ONLY.
- * 5. Built-in defaults.
+ * 7. Built-in defaults.
  *
  * `source` names the layer that supplied the resolved THRESHOLD specifically
  * (provenance-first, in this same precedence order), so callers can report
  * where the effective threshold came from — not merely a layer that touched
  * the handoff block at all. Only when no layer supplies a threshold (every
  * field falls through to the built-in default) does `source` fall back to
- * whichever layer configured `maxRelays`/`stallLimit`. A stage with no
- * resolvable model, or whose model has no preset (or no suggested handoff
- * threshold), skips the preset layer.
+ * whichever layer configured `maxRelays`/`stallLimit`. The config layers
+ * (`configLayers`) are passed in rather than read here — this function stays
+ * pure/synchronous; callers resolve the values via
+ * `resolveHandoffThresholdLayers()` (src/core/effective-config.ts) using the
+ * pipeline's project root. A stage with no resolvable model, or whose model
+ * has no preset (or no suggested handoff threshold), skips the preset layer.
  */
 export function resolveStageHandoffConfig(
   stage: Stage,
-  pipeline: PipelineYaml
+  pipeline: PipelineYaml,
+  configLayers?: HandoffConfigLayers
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
@@ -497,6 +516,8 @@ export function resolveStageHandoffConfig(
     stageHandoff?.threshold ??
     roleThreshold ??
     pipelineHandoff?.threshold ??
+    configLayers?.projectThreshold ??
+    configLayers?.globalThreshold ??
     presetThreshold ??
     DEFAULT_HANDOFF_CONFIG.threshold;
   const maxRelays =
@@ -528,13 +549,17 @@ export function resolveStageHandoffConfig(
         ? 'role'
         : pipelineHandoff?.threshold !== undefined
           ? 'pipeline'
-          : presetThreshold !== undefined
-            ? 'preset'
-            : hasFields(stageHandoff)
-              ? 'stage'
-              : hasFields(pipelineHandoff)
-                ? 'pipeline'
-                : 'default';
+          : configLayers?.projectThreshold !== undefined
+            ? 'project-config'
+            : configLayers?.globalThreshold !== undefined
+              ? 'global-config'
+              : presetThreshold !== undefined
+                ? 'preset'
+                : hasFields(stageHandoff)
+                  ? 'stage'
+                  : hasFields(pipelineHandoff)
+                    ? 'pipeline'
+                    : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
 }

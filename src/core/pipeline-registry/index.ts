@@ -31,6 +31,7 @@ export {
   type PipelineAgentRuntimeOverrides,
   type ResolvedStageRuntimeConfig,
   type ResolvedStageHandoffConfig,
+  type HandoffConfigLayers,
   type ResolvedReuseConfig,
   type HandoffConfig,
   type ReuseConfig,

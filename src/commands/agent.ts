@@ -9,7 +9,20 @@
  * A thin consumer of `src/core/agent-context.ts`; all sensing logic lives there.
  */
 
-import { probeAgentContextSafe, type AgentContextResult } from '../core/agent-context.js';
+import {
+  probeAgentContextSafe,
+  resolveHandoffThresholdReport,
+  type AgentContextResult,
+  type HandoffThresholdReport,
+} from '../core/agent-context.js';
+import type { ThresholdValue } from '../core/pipeline-registry/types.js';
+
+/** Human-readable rendering of a dual-form threshold for the text-mode verdict line. */
+function formatThresholdDisplay(threshold: ThresholdValue): string {
+  return typeof threshold === 'number'
+    ? `${(threshold * 100).toFixed(0)}%`
+    : `${threshold.remainingTokens} remaining`;
+}
 
 export interface AgentContextOptions {
   transcript?: string;
@@ -41,7 +54,6 @@ export class AgentCommand {
       limit: options.limit,
       runtime: options.runtime,
     });
-
     if (!result.available) {
       if (options.json) {
         console.log(JSON.stringify({ available: false, reason: result.reason, detail: result.detail }));
@@ -51,18 +63,28 @@ export class AgentCommand {
       return;
     }
 
+    const handoff = resolveHandoffThresholdReport(result.pct, result.remainingTokens);
+
     if (options.json) {
-      console.log(JSON.stringify(this.toJson(result)));
+      console.log(JSON.stringify(this.toJson(result, handoff)));
       return;
     }
 
     const pctDisplay = (result.pct * 100).toFixed(1);
+    const thresholdDisplay = formatThresholdDisplay(handoff.threshold);
+    const comparator = typeof handoff.threshold === 'number' ? '>=' : 'remaining <=';
+    const handoffVerdict = handoff.shouldHandoff
+      ? `handoff recommended (${comparator} ${thresholdDisplay}, ${handoff.thresholdSource})`
+      : `handoff not yet needed (${comparator} ${thresholdDisplay} not met, ${handoff.thresholdSource})`;
     console.log(
-      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript}`
+      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
     );
   }
 
-  private toJson(result: AgentContextResult): {
+  private toJson(
+    result: AgentContextResult,
+    handoff: HandoffThresholdReport
+  ): {
     available: true;
     model: string;
     contextTokens: number;
@@ -70,6 +92,9 @@ export class AgentCommand {
     pct: number;
     remainingTokens: number;
     transcript: string;
+    threshold: ThresholdValue;
+    thresholdSource: string;
+    shouldHandoff: boolean;
   } {
     return {
       available: true,
@@ -79,6 +104,9 @@ export class AgentCommand {
       pct: result.pct,
       remainingTokens: result.remainingTokens,
       transcript: result.transcript,
+      threshold: handoff.threshold,
+      thresholdSource: handoff.thresholdSource,
+      shouldHandoff: handoff.shouldHandoff,
     };
   }
 }

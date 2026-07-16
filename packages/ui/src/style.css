@@ -1,0 +1,50 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  color: #1a1a1a;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.app-content {
+  padding: 1.5rem;
+  max-width: 900px;
+}
+
+.config-group {
+  margin-bottom: 2rem;
+}
+
+.config-entry {
+  border-bottom: 1px solid #eee;
+  padding: 0.75rem 0;
+}
+
+.config-entry__source {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  background: #eee;
+  margin-left: 0.5rem;
+}
+
+.config-entry__warnings,
+.config-entry__error {
+  color: #a33;
+}
+
+.relaunch-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  text-align: center;
+  gap: 0.5rem;
+}

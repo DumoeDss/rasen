@@ -49,12 +49,14 @@ import {
   type PipelineInfo,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
+  type HandoffConfigLayers,
   type ResolvedReuseConfig,
   type ThresholdValue,
   type RunStateWorker,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
+import { resolveHandoffThresholdLayers } from '../core/effective-config.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
@@ -203,7 +205,8 @@ export class PipelineCommand {
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline));
+    const configLayers = resolveHandoffThresholdLayers(projectRoot);
+    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers));
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
 
     const result = {
@@ -243,7 +246,7 @@ export class PipelineCommand {
     const updates = this.runtimeUpdatesFromOptions(options);
 
     if (Object.keys(updates).length === 0) {
-      const result = this.toAgentsResult(normalizedName, pipeline, null);
+      const result = this.toAgentsResult(normalizedName, pipeline, null, projectRoot);
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
         return;
@@ -254,7 +257,7 @@ export class PipelineCommand {
 
     const updatedPipeline = this.applyAgentRuntimeUpdates(pipeline, updates);
     const overridePath = this.writeProjectPipelineOverride(projectRoot, normalizedName, updatedPipeline);
-    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath);
+    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath, projectRoot);
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -679,7 +682,8 @@ export class PipelineCommand {
   private toAgentsResult(
     name: string,
     pipeline: PipelineYaml,
-    overridePath: string | null
+    overridePath: string | null,
+    projectRoot: string
   ): {
     name: string;
     overridePath: string | null;
@@ -694,16 +698,21 @@ export class PipelineCommand {
       ])
     ) as Record<StageRole, AgentRuntime>;
 
+    const configLayers = resolveHandoffThresholdLayers(projectRoot);
     return {
       name,
       overridePath,
       agents: pipeline.agents ?? {},
       effectiveRoles,
-      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline)),
+      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers)),
     };
   }
 
-  private toStageView(stage: Stage, pipeline: PipelineYaml): StageView {
+  private toStageView(
+    stage: Stage,
+    pipeline: PipelineYaml,
+    configLayers?: HandoffConfigLayers
+  ): StageView {
     const runtime = resolveStageRuntimeConfig(stage, pipeline);
     return {
       id: stage.id,
@@ -726,7 +735,7 @@ export class PipelineCommand {
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
       effort: runtime.effort ?? null,
-      handoff: resolveStageHandoffConfig(stage, pipeline),
+      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers),
     };
   }
 
