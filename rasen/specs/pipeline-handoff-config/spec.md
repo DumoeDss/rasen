@@ -5,28 +5,67 @@ Adds an optional `handoff` configuration block to pipeline definitions at both p
 
 ## Requirements
 ### Requirement: Handoff configuration block
-Pipeline definitions SHALL accept an optional `handoff` block at pipeline level and at stage level, carrying `threshold` (0–1), `roles` (per-role threshold overrides), `maxRelays`, and `stallLimit`.
+Pipeline definitions SHALL accept an optional `handoff` block at pipeline level and at stage level, carrying `threshold`, `roles` (per-role threshold overrides), `maxRelays`, and `stallLimit`. Every threshold value (pipeline-level, per-role, stage-level) SHALL accept two forms: a bare number, which is ALWAYS a fraction of the context window in (0, 1], or the object `{ remainingTokens: <positive integer> }`, an absolute required-headroom threshold in tokens. No bare number SHALL ever be interpreted as a token count.
 
 #### Scenario: Valid handoff config parses
 - **WHEN** a pipeline.yaml declares `handoff: { threshold: 0.5, roles: { reviewer: 0.65 }, maxRelays: 3, stallLimit: 2 }` and a stage declares `handoff: { threshold: 0.7, maxRelays: 5 }`
 - **THEN** `rasen validate <name> --type pipeline` SHALL pass
 - **AND** `rasen pipeline show <name> --json` SHALL expose the resolved handoff config
 
+#### Scenario: Absolute threshold form parses
+- **WHEN** a pipeline.yaml declares `handoff: { threshold: { remainingTokens: 60000 }, roles: { implementer: { remainingTokens: 40000 } } }` or a stage declares `handoff: { threshold: { remainingTokens: 60000 } }`
+- **THEN** `rasen validate <name> --type pipeline` SHALL pass
+- **AND** `rasen pipeline show <name> --json` SHALL expose the resolved threshold as the `{ remainingTokens }` object
+
 #### Scenario: Invalid handoff config rejected
-- **WHEN** a pipeline.yaml declares a `threshold` outside (0, 1] or a non-positive `maxRelays`/`stallLimit`
+- **WHEN** a pipeline.yaml declares a bare-number `threshold` outside (0, 1], a `remainingTokens` that is not a positive integer, an unknown key inside a threshold object, or a non-positive `maxRelays`/`stallLimit`
 - **THEN** validation SHALL fail with an actionable message
 
 ### Requirement: Handoff config resolution order
-The effective handoff config for a stage SHALL resolve as: stage-level `handoff` > pipeline `handoff.roles[<stage role>]` (threshold only) > pipeline `handoff` > built-in defaults (`threshold: 0.5`, `maxRelays: 3`, `stallLimit: 2`).
+The effective handoff config for a stage SHALL resolve as: stage-level `handoff` > pipeline `handoff.roles[<stage role>]` (threshold only) > pipeline `handoff` > project config `handoff.threshold` (threshold only) > global config `handoff.threshold` (threshold only) > model preset (threshold only — the suggested `handoffThreshold` of the preset matching the stage's resolved model) > built-in defaults (`threshold: 0.5`, `maxRelays: 3`, `stallLimit: 2`). The config layers and the preset layer tune only the threshold; `maxRelays` and `stallLimit` resolve from pipeline declarations or built-in defaults. Every threshold value at every layer (pipeline, role, stage, project config, global config, preset) SHALL accept the dual form: a bare number, ALWAYS a fraction of the context window in (0, 1], or the object `{ remainingTokens: <positive integer> }`, an absolute required-headroom threshold in tokens. The resolved config's source SHALL name the layer that supplied the resolved threshold specifically, in this same precedence order (`stage`, `role`, `pipeline`, `project-config`, `global-config`, `preset`, or `default`) — not merely a layer whose `handoff` block is non-empty.
 
 #### Scenario: Role threshold applies when stage has no override
 - **WHEN** a stage with `role: reviewer` has no stage-level `handoff` and the pipeline declares `handoff.roles.reviewer: 0.65`
 - **THEN** the resolved threshold for that stage SHALL be 0.65
 - **AND** its `maxRelays`/`stallLimit` SHALL come from the pipeline block or built-in defaults
 
+#### Scenario: Model preset applies when nothing is configured
+- **WHEN** neither the pipeline nor the stage declares any handoff threshold and the stage's resolved model matches a preset carrying a suggested handoff threshold
+- **THEN** the resolved threshold SHALL be the preset's suggested value
+- **AND** the resolved config's `source` SHALL be `preset`
+- **AND** `maxRelays`/`stallLimit` SHALL remain the built-in defaults
+
+#### Scenario: Configured threshold overrides the preset
+- **WHEN** the pipeline declares any handoff threshold (stage, role, or pipeline level) for a stage whose model matches a preset
+- **THEN** the configured value SHALL win over the preset's suggested value
+
 #### Scenario: Defaults apply when nothing is configured
-- **WHEN** neither the pipeline nor the stage declares `handoff`
+- **WHEN** neither the pipeline nor the stage declares `handoff` and no config layer sets `handoff.threshold`
 - **THEN** the resolved config SHALL be the built-in defaults
+
+#### Scenario: Project config threshold applies below pipeline declarations
+- **WHEN** neither the pipeline nor the stage declares a handoff threshold
+- **AND** the project's `rasen/config.yaml` sets `handoff.threshold: 0.4`
+- **THEN** the resolved threshold SHALL be 0.4 with a source identifying the project config layer
+- **AND** `maxRelays`/`stallLimit` SHALL still resolve from pipeline declarations or built-in defaults
+
+#### Scenario: Global config threshold is the project fallback
+- **WHEN** no pipeline, stage, or project config threshold is set
+- **AND** the global config sets `handoff.threshold: 0.65`
+- **THEN** the resolved threshold SHALL be 0.65 with a source identifying the global config layer
+
+#### Scenario: Pipeline declarations beat config layers
+- **WHEN** a pipeline declares `handoff.threshold: 0.7` and the project config sets `handoff.threshold: 0.4`
+- **THEN** the resolved threshold for its stages SHALL be 0.7
+
+#### Scenario: A config layer accepts the absolute threshold form
+- **WHEN** the project or global config sets `handoff.threshold: { remainingTokens: 45000 }`
+- **THEN** the resolved threshold SHALL be `{ remainingTokens: 45000 }` with a source identifying that config layer
+
+#### Scenario: A config layer beats the model-preset layer
+- **WHEN** neither the pipeline nor the stage declares a handoff threshold, the project or global config sets one, and the stage's resolved model also matches a preset carrying a suggested handoff threshold
+- **THEN** the resolved threshold SHALL come from the config layer, not the preset
+- **AND** the resolved config's source SHALL identify the config layer, not `preset`
 
 ### Requirement: Run-state handoff records
 The run-state reader SHALL accept optional `sessionHandoff` (top level, including an optional generation number `n`) and per-stage `handoffs[]` records, and `rasen pipeline resume` SHALL report them.
