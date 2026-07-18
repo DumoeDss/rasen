@@ -31,6 +31,7 @@ export {
   type PipelineAgentRuntimeOverrides,
   type ResolvedStageRuntimeConfig,
   type ResolvedStageHandoffConfig,
+  type HandoffConfigLayers,
   type ResolvedReuseConfig,
   type HandoffConfig,
   type ReuseConfig,
@@ -41,6 +42,7 @@ export {
   type PipelineYaml,
   type CompletedSet,
   type BlockedStages,
+  type ThresholdValue,
 } from './types.js';
 
 // Pipeline loading and validation
@@ -75,10 +77,12 @@ export {
   runStatePath,
   parseRunState,
   readRunState,
+  readRunStateDetailed,
   writeRunState,
   resolveRunStateLocation,
   completedStages,
   normalizeWorker,
+  normalizeRunStateWorkerRecord,
   stageWorkers,
   stagesWithStatus,
   stagesLackingDurableHandle,
@@ -92,6 +96,7 @@ export {
   type StageHandoffRecord,
   type SessionHandoff,
   type RunStateLocation,
+  type RunStateReadResult,
 } from './run-state.js';
 
 // Pipeline resolution

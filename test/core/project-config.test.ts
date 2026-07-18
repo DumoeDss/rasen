@@ -12,6 +12,8 @@ import {
   resolveArchiveTiming,
   resolveArchiveDestinationValue,
   resolveAutopilotGatePolicy,
+  resolveAutopilotSelectionPolicy,
+  updateProjectConfigKey,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -1155,6 +1157,185 @@ rules:
     });
   });
 
+  describe('autopilot.selection parsing', () => {
+    it('exposes a valid classify policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  selection: classify\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { selection: 'classify' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes a valid manual policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  selection: manual\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { selection: 'manual' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes a valid compose policy unchanged', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  selection: compose\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { selection: 'compose' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops an invalid selection value with a warning, keeping sibling gates', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: off\n  selection: clasify\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { gates: 'off' },
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'autopilot.selection' field")
+      );
+    });
+
+    it('does not warn when the selection field is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: on\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({
+        schema: 'spec-driven',
+        autopilot: { gates: 'on' },
+      });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveAutopilotSelectionPolicy', () => {
+    it('defaults to manual when no config and no flag', () => {
+      expect(resolveAutopilotSelectionPolicy(null, false)).toEqual({
+        effective: 'manual',
+        source: 'default',
+      });
+    });
+
+    it('defaults to manual when the autopilot block is absent', () => {
+      expect(resolveAutopilotSelectionPolicy({ schema: 'spec-driven' }, false)).toEqual({
+        effective: 'manual',
+        source: 'default',
+      });
+    });
+
+    it('honors an explicit config default of classify', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'classify' } },
+          false
+        )
+      ).toEqual({ effective: 'classify', source: 'config' });
+    });
+
+    it('honors an explicit config default of manual', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false
+        )
+      ).toEqual({ effective: 'manual', source: 'config' });
+    });
+
+    it('the run flag overrides a manual config default', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          true
+        )
+      ).toEqual({ effective: 'classify', source: 'flag' });
+    });
+
+    it('the run flag overrides an absent config (same effective value, flag source)', () => {
+      expect(resolveAutopilotSelectionPolicy(null, true)).toEqual({
+        effective: 'classify',
+        source: 'flag',
+      });
+    });
+
+    it('honors an explicit config default of compose', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'compose' } },
+          false
+        )
+      ).toEqual({ effective: 'compose', source: 'config' });
+    });
+
+    it('the --auto-compose flag resolves compose alone (no --auto-select)', () => {
+      expect(resolveAutopilotSelectionPolicy(null, false, true)).toEqual({
+        effective: 'compose',
+        source: 'flag',
+      });
+    });
+
+    it('--auto-compose wins when both flags are present (superset policy)', () => {
+      expect(resolveAutopilotSelectionPolicy(null, true, true)).toEqual({
+        effective: 'compose',
+        source: 'flag',
+      });
+    });
+
+    it('--auto-compose overrides a manual config default', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false,
+          true
+        )
+      ).toEqual({ effective: 'compose', source: 'flag' });
+    });
+
+    it('an absent --auto-compose flag (default false) does not affect classify-flag resolution', () => {
+      expect(resolveAutopilotSelectionPolicy(null, true)).toEqual({
+        effective: 'classify',
+        source: 'flag',
+      });
+    });
+  });
+
   describe('ensureProjectIdInConfig', () => {
     // Minting now locks under the project registry (MINOR-3). Give every
     // test in this block its own globalDataDir so the lock file never
@@ -1360,6 +1541,121 @@ rules:
           'other-store',
         ]);
       });
+    });
+  });
+
+  describe('handoff field parsing', () => {
+    it('parses a valid handoff threshold', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nhandoff:\n  threshold: 0.6\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff?.threshold).toBe(0.6);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops an out-of-range threshold with a warning, keeping other fields', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nhandoff:\n  threshold: 1.5\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.schema).toBe('spec-driven');
+      expect(config?.handoff?.threshold).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('handoff.threshold'));
+    });
+
+    it('resolves to no threshold when the handoff block is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff).toBeUndefined();
+    });
+  });
+
+  describe('updateProjectConfigKey', () => {
+    function writeConfig(content: string): string {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(configPath, content);
+      return configPath;
+    }
+
+    it('sets a nested key, preserving comments and unrelated fields', () => {
+      const configPath = writeConfig(
+        'schema: spec-driven\n# a helpful comment\ncontext: |\n  keep me\n'
+      );
+
+      updateProjectConfigKey(tempDir, 'autopilot.gates', 'off');
+
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      expect(raw).toContain('# a helpful comment');
+      expect(raw).toContain('context:');
+      expect(raw).toContain('keep me');
+      expect(raw).toMatch(/autopilot:\s*\n\s*gates: off/);
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.autopilot?.gates).toBe('off');
+      expect(config?.context).toContain('keep me');
+    });
+
+    it('honors the .yml alias when no config.yaml exists (MIN6c)', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const ymlPath = path.join(configDir, 'config.yml');
+      fs.writeFileSync(ymlPath, 'schema: spec-driven\n# yml alias comment\n');
+
+      const result = updateProjectConfigKey(tempDir, 'autopilot.gates', 'off');
+
+      expect(result.configPath).toBe(ymlPath);
+      const raw = fs.readFileSync(ymlPath, 'utf-8');
+      expect(raw).toContain('# yml alias comment');
+      expect(raw).toMatch(/gates: off/);
+      expect(fs.existsSync(path.join(configDir, 'config.yaml'))).toBe(false);
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.autopilot?.gates).toBe('off');
+    });
+
+    it('creates intermediate maps for a new nested key', () => {
+      writeConfig('schema: spec-driven\n');
+
+      updateProjectConfigKey(tempDir, 'handoff.threshold', 0.4);
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff?.threshold).toBe(0.4);
+    });
+
+    it('unsets an existing key and reports it existed', () => {
+      writeConfig('schema: spec-driven\nhandoff:\n  threshold: 0.4\n');
+
+      const result = updateProjectConfigKey(tempDir, 'handoff.threshold', undefined);
+
+      expect(result.existed).toBe(true);
+      const config = readProjectConfig(tempDir);
+      expect(config?.handoff?.threshold).toBeUndefined();
+    });
+
+    it('unsetting an absent key is a no-op that reports it did not exist', () => {
+      writeConfig('schema: spec-driven\n');
+
+      const result = updateProjectConfigKey(tempDir, 'handoff.threshold', undefined);
+
+      expect(result.existed).toBe(false);
+    });
+
+    it('throws with guidance when no config file exists', () => {
+      expect(() => updateProjectConfigKey(tempDir, 'autopilot.gates', 'off')).toThrow(/rasen init/);
     });
   });
 });

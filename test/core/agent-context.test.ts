@@ -13,10 +13,13 @@ import {
   detectTranscriptKind,
   claudeProjectsDir,
   findLatestMainTranscript,
+  findLatestRollout,
   resolveTranscriptPath,
   probeAgentContext,
+  probeAgentContextSafe,
   tryContextEstimate,
   DEFAULT_CONTEXT_LIMIT,
+  AgentContextUnavailableError,
 } from '../../src/core/agent-context.js';
 
 /** Serialize an assistant usage entry as one transcript jsonl line. */
@@ -105,6 +108,7 @@ describe('agent-context', () => {
       expect(r.model).toBe('claude-opus-4-8');
       expect(r.limit).toBe(1_000_000);
       expect(r.pct).toBe(0.00035);
+      expect(r.remainingTokens).toBe(999_650);
       expect(r.transcript).toBe(p);
     });
 
@@ -211,6 +215,196 @@ describe('agent-context', () => {
       ]);
       expect(() => findLatestMainTranscript(dir)).toThrow(/No main-session transcript/);
     });
+
+    // design D2: both environmental-absence cases are typed, not generic
+    // Errors, so the command layer can catch ONLY these and degrade gracefully.
+    it('throws AgentContextUnavailableError (typed) when the directory is absent', () => {
+      expect(() => findLatestMainTranscript(path.join(dir, 'missing'))).toThrow(
+        AgentContextUnavailableError
+      );
+    });
+
+    it('throws AgentContextUnavailableError (typed) when only subagent transcripts exist', () => {
+      writeTranscript('agent-only.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 1 }),
+      ]);
+      expect(() => findLatestMainTranscript(dir)).toThrow(AgentContextUnavailableError);
+    });
+  });
+
+  describe('findLatestRollout', () => {
+    function writeRolloutAt(relativePath: string, lines: string[], mtime?: Date): string {
+      const full = path.join(dir, 'sessions', relativePath);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, lines.join('\n') + '\n', 'utf-8');
+      if (mtime) fs.utimesSync(full, mtime, mtime);
+      return full;
+    }
+
+    function sessionMeta(cwd: string, extra: Record<string, unknown> = {}): string {
+      return JSON.stringify({ type: 'session_meta', payload: { cwd, ...extra } });
+    }
+
+    const sessionsDir = () => path.join(dir, 'sessions');
+
+    it('picks the newest-mtime rollout among cwd matches', () => {
+      const cwd = path.join(dir, 'project');
+      const older = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      const newer = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        [sessionMeta(cwd)],
+        new Date(2_000_000)
+      );
+      void older;
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(newer);
+    });
+
+    it('skips a newer rollout recorded under a different cwd', () => {
+      const cwd = path.join(dir, 'project');
+      const otherCwd = path.join(dir, 'other-project');
+      const match = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        [sessionMeta(otherCwd)],
+        new Date(2_000_000)
+      );
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(match);
+    });
+
+    it('skips a forked-child (subagent) rollout even when newest', () => {
+      const cwd = path.join(dir, 'project');
+      const match = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        [sessionMeta(cwd, { forked_from_id: 'thread-1' })],
+        new Date(2_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T11-00-00-ccc.jsonl',
+        [sessionMeta(cwd, { parent_thread_id: 'thread-1' })],
+        new Date(3_000_000)
+      );
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(match);
+    });
+
+    it('skips a candidate with a malformed first line', () => {
+      const cwd = path.join(dir, 'project');
+      const match = writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl',
+        [sessionMeta(cwd)],
+        new Date(1_000_000)
+      );
+      writeRolloutAt(
+        '2026/07/12/rollout-2026-07-12T10-00-00-bbb.jsonl',
+        ['{ not json'],
+        new Date(2_000_000)
+      );
+      expect(findLatestRollout(sessionsDir(), cwd)).toBe(match);
+    });
+
+    it('throws AgentContextUnavailableError when the sessions root is missing', () => {
+      const cwd = path.join(dir, 'project');
+      expect(() => findLatestRollout(path.join(dir, 'no-sessions'), cwd)).toThrow(
+        AgentContextUnavailableError
+      );
+    });
+
+    it('throws AgentContextUnavailableError when the sessions root is empty', () => {
+      fs.mkdirSync(sessionsDir(), { recursive: true });
+      const cwd = path.join(dir, 'project');
+      expect(() => findLatestRollout(sessionsDir(), cwd)).toThrow(AgentContextUnavailableError);
+    });
+
+    it('throws AgentContextUnavailableError when no rollout matches the cwd', () => {
+      const cwd = path.join(dir, 'project');
+      writeRolloutAt('2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl', [
+        sessionMeta(path.join(dir, 'unrelated')),
+      ]);
+      expect(() => findLatestRollout(sessionsDir(), cwd)).toThrow(AgentContextUnavailableError);
+    });
+
+    it('compares resolved absolute paths, tolerating a non-normalized probe cwd', () => {
+      const cwd = path.join(dir, 'project');
+      const match = writeRolloutAt('2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl', [
+        sessionMeta(cwd),
+      ]);
+      const messyCwd = path.join(dir, 'project', '..', 'project');
+      expect(findLatestRollout(sessionsDir(), messyCwd)).toBe(match);
+    });
+  });
+
+  // design D2: graceful degradation for environmental absence under --latest.
+  describe('probeAgentContextSafe', () => {
+    it('returns {available:false, reason:"no-transcript"} when the projects dir is absent', () => {
+      const result = probeAgentContextSafe({ latest: true, dir: path.join(dir, 'missing') });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('no-transcript');
+        expect(result.detail).toMatch(/No Claude transcript directory/);
+      }
+    });
+
+    it('returns {available:false, reason:"no-transcript"} when the dir holds no main-session transcript', () => {
+      writeTranscript('agent-only.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 1 }),
+      ]);
+      const result = probeAgentContextSafe({ latest: true, dir });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('no-transcript');
+        expect(result.detail).toMatch(/No main-session transcript/);
+      }
+    });
+
+    it('returns {available:true, ...AgentContextResult} on a successful probe', () => {
+      const p = writeTranscript('ok-safe.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 10 }),
+      ]);
+      const result = probeAgentContextSafe({ transcript: p });
+      expect(result.available).toBe(true);
+      if (result.available) {
+        expect(result.contextTokens).toBe(10);
+        expect(result.model).toBe('claude-opus-4-8');
+      }
+    });
+
+    it('still throws for an explicit --transcript that is missing (input error, not environmental absence)', () => {
+      expect(() => probeAgentContextSafe({ transcript: path.join(dir, 'nope.jsonl') })).toThrow(
+        /Cannot read transcript/
+      );
+    });
+
+    it('still throws for an explicit --transcript with no usage entry (input error)', () => {
+      const p = writeTranscript('nousage-safe.jsonl', [
+        JSON.stringify({ type: 'user', message: { role: 'user' } }),
+      ]);
+      expect(() => probeAgentContextSafe({ transcript: p })).toThrow(/No assistant usage/);
+    });
+
+    it('still throws for an invalid --limit (input error)', () => {
+      const p = writeTranscript('bad-limit.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 10 }),
+      ]);
+      expect(() => probeAgentContextSafe({ transcript: p, limit: -1 })).toThrow(
+        /--limit must be a positive integer/
+      );
+    });
+
+    it('still throws when neither --transcript nor --latest is provided (input error)', () => {
+      expect(() => probeAgentContextSafe({})).toThrow(/--transcript|--latest/);
+    });
   });
 
   describe('resolveTranscriptPath / probeAgentContext', () => {
@@ -246,6 +440,77 @@ describe('agent-context', () => {
     });
   });
 
+  describe('--latest --runtime codex (design D1/D2/D3/D4)', () => {
+    function writeRolloutAt(relativePath: string, lines: string[]): string {
+      const full = path.join(dir, 'sessions', relativePath);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, lines.join('\n') + '\n', 'utf-8');
+      return full;
+    }
+
+    function sessionMeta(cwd: string): string {
+      return JSON.stringify({ type: 'session_meta', payload: { cwd } });
+    }
+
+    it('probeAgentContextSafe discovers and probes the matching rollout, landing on the codex reader', () => {
+      const cwd = path.join(dir, 'project');
+      writeRolloutAt('2026/07/12/rollout-2026-07-12T09-00-00-aaa.jsonl', [
+        sessionMeta(cwd),
+        turnContextLine('gpt-5.6-sol'),
+        tokenCountLine(1_234, 100_000),
+      ]);
+
+      const result = probeAgentContextSafe({
+        latest: true,
+        runtime: 'codex',
+        dir: path.join(dir, 'sessions'),
+        cwd,
+      });
+
+      expect(result.available).toBe(true);
+      if (result.available) {
+        expect(result.contextTokens).toBe(1_234);
+        expect(result.limit).toBe(100_000);
+        expect(result.model).toBe('gpt-5.6-sol');
+      }
+    });
+
+    it('returns {available:false, reason:"no-transcript"} when no rollout matches', () => {
+      const cwd = path.join(dir, 'project');
+      const result = probeAgentContextSafe({
+        latest: true,
+        runtime: 'codex',
+        dir: path.join(dir, 'sessions'),
+        cwd,
+      });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('no-transcript');
+        expect(result.detail).toMatch(/sessions/);
+      }
+    });
+
+    it('--dir retargets the sessions root that is searched', () => {
+      const cwd = path.join(dir, 'project');
+      const altRoot = path.join(dir, 'alt-sessions');
+      const full = path.join(altRoot, '2026', '07', '12', 'rollout-2026-07-12T09-00-00-aaa.jsonl');
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, [sessionMeta(cwd), tokenCountLine(1, 1_000)].join('\n') + '\n', 'utf-8');
+
+      const result = probeAgentContextSafe({ latest: true, runtime: 'codex', dir: altRoot, cwd });
+      expect(result.available).toBe(true);
+      if (result.available) expect(result.transcript).toBe(full);
+    });
+
+    it('leaves Claude --latest behavior unchanged, with the unavailable detail mentioning the Codex pointer', () => {
+      const result = probeAgentContextSafe({ latest: true, dir: path.join(dir, 'missing') });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.detail).toMatch(/--runtime codex/);
+      }
+    });
+  });
+
   describe('tryContextEstimate', () => {
     it('returns the estimate for a readable transcript', () => {
       const p = writeTranscript('ok.jsonl', [
@@ -255,6 +520,7 @@ describe('agent-context', () => {
         contextTokens: 250_000,
         limit: 1_000_000,
         pct: 0.25,
+        remainingTokens: 750_000,
       });
     });
 
@@ -318,6 +584,7 @@ describe('agent-context', () => {
       expect(r.limit).toBe(353_400);
       expect(r.model).toBe('gpt-5.6-sol');
       expect(r.pct).toBeCloseTo(12_885 / 353_400, 6);
+      expect(r.remainingTokens).toBe(353_400 - 12_885);
       expect(r.transcript).toBe(p);
     });
 
@@ -354,6 +621,8 @@ describe('agent-context', () => {
       expect(r.pct).toBe(0);
       expect(r.limit).toBe(0);
       expect(r.model).toBe('gpt-5.6-sol');
+      // Honest zero — no window was ever reported, so remainingTokens is not fabricated.
+      expect(r.remainingTokens).toBe(0);
     });
 
     it('an explicit --limit still applies on a zero-turn rollout', () => {
@@ -361,6 +630,7 @@ describe('agent-context', () => {
       const r = computeContextFromRollout(p, { limit: 1_000_000 });
       expect(r.limit).toBe(1_000_000);
       expect(r.pct).toBe(0);
+      expect(r.remainingTokens).toBe(1_000_000);
     });
 
     it('falls back to unknown when no turn_context row carries a model', () => {
@@ -437,5 +707,79 @@ describe('agent-context', () => {
     it('returns undefined on an unreadable rollout-named path (never throws)', () => {
       expect(tryContextEstimate(path.join(dir, 'rollout-missing-abc.jsonl'))).toBeUndefined();
     });
+  });
+});
+
+describe('resolveHandoffThresholdReport', () => {
+  let tempDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-threshold-'));
+    originalEnv = { ...process.env };
+    delete process.env.RASEN_HOME;
+    process.env.XDG_CONFIG_HOME = tempDir;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function writeProjectConfig(projectRoot: string, content: string): void {
+    const dir2 = path.join(projectRoot, 'rasen');
+    fs.mkdirSync(dir2, { recursive: true });
+    fs.writeFileSync(path.join(dir2, 'config.yaml'), content);
+  }
+
+  it('reports the default threshold outside a project with no global config', async () => {
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-outside-'));
+
+    const result = resolveHandoffThresholdReport(0.3, 700_000, outsideDir);
+
+    expect(result).toEqual({ threshold: 0.5, thresholdSource: 'default', shouldHandoff: false });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('reports shouldHandoff true when occupancy meets a project threshold', async () => {
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const projectRoot = path.join(tempDir, 'project');
+    writeProjectConfig(projectRoot, 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n');
+
+    const result = resolveHandoffThresholdReport(0.62, 380_000, projectRoot);
+
+    expect(result).toEqual({ threshold: 0.6, thresholdSource: 'project', shouldHandoff: true });
+  });
+
+  it('falls back to global config when no project threshold is set', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    saveGlobalConfig({ handoff: { threshold: 0.65 } } as never);
+
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-'));
+
+    const result = resolveHandoffThresholdReport(0.5, 500_000, outsideDir);
+
+    expect(result).toEqual({ threshold: 0.65, thresholdSource: 'global', shouldHandoff: false });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('compares remainingTokens (not pct) against an absolute { remainingTokens } threshold', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    saveGlobalConfig({ handoff: { threshold: { remainingTokens: 60_000 } } } as never);
+
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-abs-'));
+
+    // Low pct but remainingTokens under the floor: should still fire.
+    const result = resolveHandoffThresholdReport(0.1, 50_000, outsideDir);
+
+    expect(result).toEqual({
+      threshold: { remainingTokens: 60_000 },
+      thresholdSource: 'global',
+      shouldHandoff: true,
+    });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 });

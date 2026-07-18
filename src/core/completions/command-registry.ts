@@ -639,6 +639,21 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         positionals: [{ name: 'preset', optional: true }],
         flags: [],
       },
+      {
+        name: 'ui',
+        description: 'Start the localhost config API + optional web UI',
+        flags: [
+          {
+            name: 'no-open',
+            description: 'Do not open the default browser',
+          },
+          {
+            name: 'port',
+            description: 'Pin the listen port (default: ephemeral)',
+            takesValue: true,
+          },
+        ],
+      },
     ],
   },
   {

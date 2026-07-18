@@ -8,6 +8,7 @@ import {
   parseProjectRegistryState,
   type ProjectRegistryState,
 } from './project-registry.js';
+import type { ThresholdValue } from './model-presets.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -64,6 +65,20 @@ export interface GlobalConfig {
   repoMode?: RepoMode;
   /** Workset opener rows (slice 7.1); hand-edited, validated on use. */
   openers?: unknown;
+  /**
+   * Telemetry state, shared with `src/telemetry/config.ts`'s async accessor
+   * (same file, same `telemetry` block). `enabled` is the CLI-settable
+   * toggle; `anonymousId`/`noticeSeen` are machine-managed.
+   */
+  telemetry?: {
+    enabled?: boolean;
+    anonymousId?: string;
+    noticeSeen?: boolean;
+  };
+  /** Context-handoff threshold; project config of the same name wins over this. */
+  handoff?: {
+    threshold?: ThresholdValue;
+  };
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {

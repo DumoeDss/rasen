@@ -53,7 +53,7 @@ import {
   getGoalReportSkillTemplate,
   getGoalCommandSkillTemplate,
   getOpsxGoalCommandTemplate,
-  // Expert skill templates (from gstack)
+  // Expert skill templates
   getBenchmarkSkillTemplate,
   getCarefulSkillTemplate,
   getChromeUseSkillTemplate,
@@ -144,8 +144,18 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  *   that does not bundle `skills/`), matching the expert-template `readFileSync`
  *   try/catch behavior. Re-running overwrites in place (idempotent).
  */
+/**
+ * Skills that ship no sidecar directory of their own but whose body references
+ * another skill's sidecars (qa-only shares the QA_METHODOLOGY block with qa,
+ * which points at `templates/` and `references/` beside the SKILL.md).
+ */
+const SIDECAR_SOURCE_ALIASES: Record<string, string> = {
+  'qa-only': 'qa',
+};
+
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
-  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', workflowId);
+  const sourceId = SIDECAR_SOURCE_ALIASES[workflowId] ?? workflowId;
+  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
   if (!existsSync(sourceDir)) return;
 
   copySidecarTree(sourceDir, targetSkillDir);

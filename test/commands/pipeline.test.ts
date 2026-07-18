@@ -145,6 +145,48 @@ stages:
       expect(result.stderr).toContain('bug-fix');
     });
 
+    it('surfaces origin: composed for a LEAD-composed project pipeline (autonomy-ladder rung 2)', async () => {
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'composed-widget');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: composed-widget
+origin: composed
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen:review
+    role: reviewer
+    requires: [apply]
+  - id: review-loop
+    skill: rasen-review-cycle
+    requires: [verify]
+    loop:
+      kind: review-cycle
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'composed-widget', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.origin).toBe('composed');
+
+      const humanResult = await runCLI(['pipeline', 'show', 'composed-widget'], { cwd: testDir });
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('Origin: composed');
+    });
+
+    it('omits origin from a human-authored pipeline (bug-fix built-in)', async () => {
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(Object.prototype.hasOwnProperty.call(json, 'origin')).toBe(false);
+    });
+
     it('surfaces a decompose stage with its kind and resolved childPipeline', async () => {
       const result = await runCLI(['pipeline', 'show', 'auto-decompose', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
@@ -244,6 +286,127 @@ stages:
         threshold: 0.25,
         roles: { planner: 0.25, implementer: 0.25 },
       });
+    });
+
+    it('a fraction-only pipeline show --json is byte-identical to pre-change output', async () => {
+      // Regression guard for the dual-form threshold widening: a fixture that
+      // declares no absolute thresholds and names no preset-known model must
+      // resolve to EXACTLY the same handoff/reuse shape a pre-change build
+      // would have produced. toEqual is exact (no extra/missing/renamed
+      // keys tolerated) — a key add/rename/reorder in the resolved shape
+      // fails this test, unlike a typeof/enum-membership check.
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'fraction-only');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: fraction-only
+handoff:
+  threshold: 0.4
+  roles:
+    reviewer: 0.65
+  maxRelays: 4
+  stallLimit: 3
+reuse:
+  threshold: 0.3
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+  - id: review
+    skill: rasen:review
+    role: reviewer
+    requires: [propose]
+  - id: fix
+    skill: rasen-apply-change
+    role: fixer
+    requires: [review]
+    handoff:
+      threshold: 0.8
+  - id: none
+    skill: rasen-apply-change
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'fraction-only', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+
+      expect(json.reuse).toEqual({
+        planner: 'auto',
+        implementer: 'auto',
+        threshold: 0.3,
+        roles: { planner: 0.3, implementer: 0.3 },
+      });
+
+      const byId = Object.fromEntries(json.stages.map((s: any) => [s.id, s.handoff]));
+      expect(byId).toEqual({
+        propose: { threshold: 0.4, maxRelays: 4, stallLimit: 3, source: 'pipeline' },
+        review: { threshold: 0.65, maxRelays: 4, stallLimit: 3, source: 'role' },
+        fix: { threshold: 0.8, maxRelays: 4, stallLimit: 3, source: 'stage' },
+        none: { threshold: 0.4, maxRelays: 4, stallLimit: 3, source: 'pipeline' },
+      });
+    });
+
+    it('reports an absolute { remainingTokens } handoff threshold as the object form', async () => {
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'handoff-abs');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: handoff-abs
+handoff:
+  threshold:
+    remainingTokens: 60000
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'handoff-abs', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      const propose = json.stages.find((s: any) => s.id === 'propose');
+      expect(propose.handoff).toMatchObject({
+        threshold: { remainingTokens: 60000 },
+        source: 'pipeline',
+      });
+    });
+
+    it('resolves source: preset when the stage model matches a preset and nothing is configured', async () => {
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'handoff-preset');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: handoff-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'handoff-preset', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      const apply = json.stages.find((s: any) => s.id === 'apply');
+      expect(apply.handoff).toMatchObject({
+        threshold: { remainingTokens: 60000 },
+        source: 'preset',
+      });
+
+      const humanResult = await runCLI(['pipeline', 'show', 'handoff-preset'], { cwd: testDir });
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('handoff=60000 tokens remaining(preset)');
     });
 
     // Goal-loop `pipeline show` human-readable rendering. goal-loop-core
@@ -367,6 +530,7 @@ stages:
       expect(json.matched).toContain('broken');
       expect(json.matched).toContain('crash');
       expect(json.available).toContain('bug-fix');
+      expect(json.basis).toBe('keyword');
     });
 
     it('maps full-feature indicators', async () => {
@@ -379,6 +543,7 @@ stages:
       expect(json.suggested).toBe('full-feature');
       expect(json.matched).toContain('implement');
       expect(json.matched).toContain('module');
+      expect(json.basis).toBe('keyword');
     });
 
     it('defaults to small-feature with no matched indicators', async () => {
@@ -390,6 +555,7 @@ stages:
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('small-feature');
       expect(json.matched).toEqual([]);
+      expect(json.basis).toBe('default');
     });
 
     it('prefers bug-fix over full-feature when both classes match', async () => {
@@ -401,6 +567,7 @@ stages:
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('bug-fix');
+      expect(json.basis).toBe('keyword');
     });
   });
 
@@ -416,6 +583,54 @@ stages:
       expect(json.completed).toEqual([]);
       expect(json.next).toBeNull();
       expect(json.remaining).toEqual([]);
+      expect(json.note).toContain('No run-state');
+    });
+
+    // design D3: a located-but-unparseable auto-run.json is reported
+    // distinctly from the no-file case, so the failure is diagnosable.
+    it('reports invalidRunState:true with path+reason for a syntactically broken auto-run.json', async () => {
+      const changeDir = path.join(changesDir, 'broken-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'auto-run.json'), '{ not valid json', 'utf-8');
+
+      const result = await runCLI(['pipeline', 'resume', 'broken-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.invalidRunState).toBe(true);
+      expect(json.runStatePath).toContain('auto-run.json');
+      expect(json.note).toContain('invalid');
+
+      const textResult = await runCLI(['pipeline', 'resume', 'broken-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('invalid');
+    });
+
+    it('reports invalidRunState:true for a run-state that fails schema validation', async () => {
+      const changeDir = path.join(changesDir, 'schema-broken-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      // missing required `pipeline` field
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'schema-broken-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.invalidRunState).toBe(true);
+      expect(json.runStatePath).toContain('auto-run.json');
+    });
+
+    it('keeps today\'s "not found" output exactly for an absent auto-run.json (no invalidRunState key)', async () => {
+      await fs.mkdir(path.join(changesDir, 'absent-change'), { recursive: true });
+      const result = await runCLI(['pipeline', 'resume', 'absent-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.invalidRunState).toBeUndefined();
       expect(json.note).toContain('No run-state');
     });
 
@@ -747,6 +962,7 @@ stages:
         contextTokens: 250000,
         limit: 1_000_000,
         pct: 0.25,
+        remainingTokens: 750000,
       });
       // Unreadable transcript: worker still present, estimate silently omitted.
       expect(json.workers.verify.agentId).toBe('rev-9');
@@ -996,6 +1212,42 @@ stages:
       expect(normalizePaths(json.runStateDir)).toContain('both-change/work');
       // Proves the workDir copy (2 stages done) won over the changeDir copy (1).
       expect(json.completed).toContain('implement');
+    });
+
+    // scope item 3 / design D1+D4: covers the screenshot path together —
+    // workDir-first resolution AND host-tolerant parsing of a Codex-LEAD-written
+    // run-state, placed ONLY in the external workDir (no legacy changeDir copy).
+    it('resolves and host-tolerantly parses a Codex-flavored run-state found ONLY in the work directory', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-codex-host');
+      const workDir = await mintWorkDir('codex-host-change', globalDataDir);
+      await fs.mkdir(workDir, { recursive: true });
+      await fs.writeFile(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify(
+          {
+            pipeline: 'bug-fix',
+            stages: {
+              propose: {
+                status: 'done',
+                worker: { transcript: null, runtime: 'codex-host-fallback', agentId: 'codex-1' },
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'codex-host-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.hasRunState).toBe(true);
+      expect(json.invalidRunState).toBeUndefined();
+      expect(normalizePaths(json.runStateDir)).toContain('codex-host-change/work');
+      expect(json.completed).toContain('propose');
     });
 
     it('portfolio-state resolution follows the same workDir-first/change-dir-fallback matrix', async () => {

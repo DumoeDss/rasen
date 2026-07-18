@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "sections": [
+    {
+      "label": "Start here",
+      "pages": [
+        { "title": "Introduction", "slug": "index", "source": "README.md" },
+        { "title": "Installation", "slug": "installation", "source": "installation.md" },
+        { "title": "Getting Started", "slug": "getting-started", "source": "getting-started.md" },
+        { "title": "How Commands Work", "slug": "how-commands-work", "source": "how-commands-work.md" }
+      ]
+    },
+    {
+      "label": "Understand it",
+      "pages": [
+        { "title": "Core Concepts at a Glance", "slug": "overview", "source": "overview.md" },
+        { "title": "Concepts", "slug": "core-concepts", "source": "concepts.md" },
+        { "title": "Workflows", "slug": "the-workflow", "source": "workflows.md" },
+        { "title": "OPSX Workflow", "slug": "opsx", "source": "opsx.md" },
+        { "title": "Explore First", "slug": "explore", "source": "explore.md" }
+      ]
+    },
+    {
+      "label": "Guides",
+      "pages": [
+        { "title": "Examples & Recipes", "slug": "examples", "source": "examples.md" },
+        { "title": "Writing Good Specs", "slug": "writing-specs", "source": "writing-specs.md" },
+        { "title": "Reviewing a Change", "slug": "reviewing-changes", "source": "reviewing-changes.md" },
+        { "title": "Using Rasen in an Existing Project", "slug": "existing-projects", "source": "existing-projects.md" },
+        { "title": "Editing & Iterating on a Change", "slug": "editing-changes", "source": "editing-changes.md" },
+        { "title": "Customization", "slug": "customization", "source": "customization.md" },
+        { "title": "Multi-Language", "slug": "multi-language", "source": "multi-language.md" },
+        { "title": "Rasen on a Team", "slug": "team-workflow", "source": "team-workflow.md" },
+        { "title": "Stores: User Guide", "slug": "stores", "source": "stores-beta/user-guide.md" }
+      ]
+    },
+    {
+      "label": "Reference",
+      "pages": [
+        { "title": "Commands", "slug": "reference/slash-commands", "source": "commands.md" },
+        { "title": "CLI", "slug": "reference/cli", "source": "cli.md" },
+        { "title": "Supported Tools", "slug": "reference/supported-tools", "source": "supported-tools.md" },
+        { "title": "Agent Contract", "slug": "reference/agents", "source": "agent-contract.md" }
+      ]
+    },
+    {
+      "label": "Help",
+      "pages": [
+        { "title": "FAQ", "slug": "faq", "source": "faq.md" },
+        { "title": "Troubleshooting", "slug": "troubleshooting", "source": "troubleshooting.md" },
+        { "title": "Glossary", "slug": "glossary", "source": "glossary.md" },
+        { "title": "Migration Guide", "slug": "migration-guide", "source": "migration-guide.md" }
+      ]
+    }
+  ]
+}

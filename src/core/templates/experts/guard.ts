@@ -9,7 +9,7 @@ This is the combination of \`/careful\` + \`/freeze\` in a single command.
 
 **Dependency note:** This skill references hook scripts from the sibling \`/careful\`
 and \`/freeze\` skill directories. Both must be installed (they are installed together
-by the gstack setup script).
+by rasen init/update).
 
 ## Setup
 
@@ -29,7 +29,7 @@ echo "$FREEZE_DIR"
 2. Ensure trailing slash and save to the freeze state file:
 \`\`\`bash
 FREEZE_DIR="\${FREEZE_DIR%/}/"
-STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}"
+STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
 mkdir -p "$STATE_DIR"
 echo "$FREEZE_DIR" > "$STATE_DIR/freeze-dir.txt"
 echo "Freeze boundary set: $FREEZE_DIR"
@@ -50,7 +50,7 @@ See \`/freeze\` for how edit boundary enforcement works.
 export function getGuardSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:guard',
-    description: '|',
+    description: 'Full safety mode — destructive-command guardrails plus an edit boundary in one switch',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

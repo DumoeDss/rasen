@@ -2,7 +2,7 @@
  * Verify-Enhanced Rasen Workflow Command
  *
  * Enhanced verification combining Rasen artifact consistency checks
- * with gstack expert reviews (code review, security, QA, design review).
+ * with expert reviews (code review, security, QA, design review).
  * Auto-scales review depth based on change scope.
  */
 import type { SkillTemplate, CommandTemplate } from '../types.js';

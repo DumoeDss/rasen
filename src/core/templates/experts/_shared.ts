@@ -12,7 +12,7 @@
  * endpoint names/params mirror `skills/experts/chrome-use/references/cdp-api.md`.
  */
 
-export const PREAMBLE = `## Preamble (run first)
+const PREAMBLE_BASE = `## Preamble (run first)
 
 \`\`\`bash
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
@@ -20,10 +20,11 @@ echo "BRANCH: $_BRANCH"
 \`\`\`
 
 **Config (embedded at install time):**
-- **Proactive:** \`__OPENSPEC_PROACTIVE__\` — if \`false\`, do not proactively suggest expert skills. Only invoke them when the user explicitly asks.
-- **Repo mode:** \`__OPENSPEC_REPO_MODE__\` — controls issue ownership behavior (see Repo Ownership Mode below).
+- **Proactive:** \`__OPENSPEC_PROACTIVE__\` — if \`false\`, do not proactively suggest expert skills. Only invoke them when the user explicitly asks.`;
 
-## Canonical severity vocabulary
+const REPO_MODE_CONFIG = `- **Repo mode:** \`__OPENSPEC_REPO_MODE__\` — controls issue ownership behavior (see Repo Ownership Mode below).`;
+
+const SEVERITY_VOCABULARY = `## Canonical severity vocabulary
 
 Findings from the generic expert skills (review, cso, qa, qa-only, benchmark, design-review) feed one canonical severity scale — the same scale the review→fix loop and the verify stage consume to decide clean vs. escalate. Classify against these four levels:
 
@@ -43,9 +44,9 @@ Each expert speaks a native scale; map it onto the canonical scale below. **Find
 | design-review impact \`high\` / \`medium\` / \`polish\` (+ Grade A–F) | high-impact broken / unusable UI (rare) | high impact | medium | polish |
 | codex \`[P1]\` / \`[P2]\` (display-only, not gate-consumed) | \`[P1]\` | \`[P2]\` | — | — |
 
-In dispatched mode (see below) each expert self-maps and tags every finding it emits with a canonical severity in its report file, so the LEAD and the loop never have to infer a mapping.
+In dispatched mode (see below) each expert self-maps and tags every finding it emits with a canonical severity in its report file, so the LEAD and the loop never have to infer a mapping.`;
 
-## Dispatched vs standalone mode
+const DISPATCH_CONTRACT = `## Dispatched vs standalone mode
 
 The generic expert skills (review, cso, qa, qa-only, benchmark, design-review) run in one of two modes. Detect the mode from your own invocation — no flag is required:
 
@@ -63,9 +64,9 @@ If an explicit \`MODE: dispatched (report-only)\` token is present in your instr
 
 These dispatched-mode prohibitions **override** any contrary standalone instruction later in this skill (fix loops, batched questions, clean-tree gates, adversarial subagent dispatch, native report paths). Standalone mode retains all of that behavior.
 
-**Denied-edit honesty.** If an Edit or Write you attempt is **denied** by an active edit boundary — a \`/freeze\` or \`/guard\` whose target is outside the allowed directory — the fix did NOT land. Report it as an un-applied finding, \`[BLOCKED: freeze/guard] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. The boundary hook wins over any Fix-First rule; do not claim a fix succeeded when it was refused. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)
+**Denied-edit honesty.** If an Edit or Write you attempt is **denied** by an active edit boundary — a \`/freeze\` or \`/guard\` whose target is outside the allowed directory — the fix did NOT land. Report it as an un-applied finding, \`[BLOCKED: freeze/guard] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. The boundary hook wins over any Fix-First rule; do not claim a fix succeeded when it was refused. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
 
-## AskUserQuestion Format
+const ASK_USER_QUESTION_FORMAT = `## AskUserQuestion Format
 
 **ALWAYS follow this structure for every AskUserQuestion call:**
 1. **Re-ground (per the Dialogue Override):** State the project, the current branch (use the \`_BRANCH\` value printed by the preamble — NOT any branch from conversation history or gitStatus), and the current plan/task (1-2 sentences). This step follows the Dialogue Override's re-ground rule — restate at the START of a session or after a genuine long gap, NOT on every consecutive AskUserQuestion call in continuous back-and-forth. The "for every AskUserQuestion call" framing above does NOT require repeating the full project/branch/plan opener between consecutive replies (steps 2–4 apply every call; this re-ground is gap-gated).
@@ -75,17 +76,17 @@ These dispatched-mode prohibitions **override** any contrary standalone instruct
 
 Assume the user hasn't looked at this window in 20 minutes and doesn't have the code open. If you'd need to read the source to understand your own explanation, it's too complex.
 
-Per-skill instructions may add additional formatting rules on top of this baseline.
+Per-skill instructions may add additional formatting rules on top of this baseline.`;
 
-## Dialogue Override
+const DIALOGUE_OVERRIDE = `## Dialogue Override
 
 AskUserQuestion is a **decision tool, not a conversation tool.** Before every AskUserQuestion call, read the user's previous message. If it contains a question, a request to explain or discuss, or free-text that is not a clean selection of one of your options → **pause the question flow.** Answer in body prose — no lettered options, no \`RECOMMENDATION\`, no \`Completeness\` score — and keep discussing until the user explicitly signals to proceed. Then resume the phase exactly where you paused; never skip ahead.
 
 - **Never answer and advance in the same turn.** Answer the question this turn; ask your next question only once the user signals they are ready.
 - **A request for more dialogue is the opposite of a skip signal.** "Answer me first," "let's discuss," and repeated follow-up questions mean the user wants *more* conversation — they NEVER trigger a fast-forward, an escape hatch, or a jump to the next phase.
-- **Re-ground only after a genuine long gap.** In continuous back-and-forth, do not repeat the template opener (project / branch / plan restatement) on every turn — it belongs at the start of a session or after the user has been away, not between consecutive replies.
+- **Re-ground only after a genuine long gap.** In continuous back-and-forth, do not repeat the template opener (project / branch / plan restatement) on every turn — it belongs at the start of a session or after the user has been away, not between consecutive replies.`;
 
-## Repo Ownership Mode — See Something, Say Something
+const REPO_OWNERSHIP = `## Repo Ownership Mode — See Something, Say Something
 
 \`Repo mode\` from the preamble config tells you who owns issues in this repo:
 
@@ -97,9 +98,9 @@ AskUserQuestion is a **decision tool, not a conversation tool.** Before every As
 
 Never let a noticed issue silently pass. The whole point is proactive communication.
 
-**Scope (dispatched leaf workers override this section):** every absolute above — \`solo\`'s "**investigate and offer to fix proactively**" / "**Default to action**", the "**ANY workflow step**" reach of See-Something-Say-Something, and "**Never let a noticed issue silently pass**" — is scoped to **interactive / standalone** sessions, where you can actually reach the user to offer a fix. When you are a **dispatched leaf worker** (a one-unit-of-work dispatch under the LEAD; see the dispatched-mode contract), this whole section is OVERRIDDEN: an out-of-scope issue you notice goes into your \`DONE\` **durable-findings** for the LEAD to triage — you do NOT investigate it, fix it, or ask the user about it (you cannot reach the user, and investigating breaks your one-unit-of-work isolation). Recording it in durable-findings IS "not letting it silently pass" — it is the dispatched-mode form of the same discipline. This is consistent with the dispatched-mode one-unit-of-work contract; it does NOT reopen the report-only dispatched contract.
+**Scope (dispatched leaf workers override this section):** every absolute above — \`solo\`'s "**investigate and offer to fix proactively**" / "**Default to action**", the "**ANY workflow step**" reach of See-Something-Say-Something, and "**Never let a noticed issue silently pass**" — is scoped to **interactive / standalone** sessions, where you can actually reach the user to offer a fix. When you are a **dispatched leaf worker** (a one-unit-of-work dispatch under the LEAD; see the dispatched-mode contract), this whole section is OVERRIDDEN: an out-of-scope issue you notice goes into your \`DONE\` **durable-findings** for the LEAD to triage — you do NOT investigate it, fix it, or ask the user about it (you cannot reach the user, and investigating breaks your one-unit-of-work isolation). Recording it in durable-findings IS "not letting it silently pass" — it is the dispatched-mode form of the same discipline. This is consistent with the dispatched-mode one-unit-of-work contract; it does NOT reopen the report-only dispatched contract.`;
 
-## Completion Status Protocol
+const COMPLETION_STATUS = `## Completion Status Protocol
 
 When completing a skill workflow, report status using one of:
 - **DONE** — All steps completed successfully. Evidence provided for each claim.
@@ -122,18 +123,18 @@ STATUS: BLOCKED | NEEDS_CONTEXT
 REASON: [1-2 sentences]
 ATTEMPTED: [what you tried]
 RECOMMENDATION: [what the user should do next]
-\`\`\`
+\`\`\``;
 
-## Plan Status Footer
+const PLAN_STATUS_FOOTER = `## Plan Status Footer
 
 When you are in plan mode and about to call ExitPlanMode:
 
-1. Check if the plan file already has a \`## GSTACK REVIEW REPORT\` section.
+1. Check if the plan file already has a \`## RASEN REVIEW REPORT\` section.
 2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — write a \`## GSTACK REVIEW REPORT\` section to the end of the plan file with this placeholder table:
+3. If it does NOT — write a \`## RASEN REVIEW REPORT\` section to the end of the plan file with this placeholder table:
 
 \\\`\\\`\\\`markdown
-## GSTACK REVIEW REPORT
+## RASEN REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
@@ -148,6 +149,42 @@ When you are in plan mode and about to call ExitPlanMode:
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.`;
+
+/**
+ * Full orchestration preamble — for the generic review-family experts
+ * (review, cso, qa, qa-only, benchmark, design-review, codex) whose findings
+ * feed the canonical severity scale and the dispatched-mode contract.
+ */
+export const PREAMBLE = [
+  `${PREAMBLE_BASE}\n${REPO_MODE_CONFIG}`,
+  SEVERITY_VOCABULARY,
+  DISPATCH_CONTRACT,
+  ASK_USER_QUESTION_FORMAT,
+  DIALOGUE_OVERRIDE,
+  REPO_OWNERSHIP,
+  COMPLETION_STATUS,
+  PLAN_STATUS_FOOTER,
+].join('\n\n');
+
+/**
+ * Dialogue preamble — for interactive experts that run AskUserQuestion-driven
+ * sessions (office-hours, design-consultation, investigate) but emit no
+ * severity-scaled findings and are never dispatched as leaf reviewers.
+ */
+export const PREAMBLE_DIALOGUE = [
+  `${PREAMBLE_BASE}\n${REPO_MODE_CONFIG}`,
+  ASK_USER_QUESTION_FORMAT,
+  DIALOGUE_OVERRIDE,
+  REPO_OWNERSHIP,
+  COMPLETION_STATUS,
+].join('\n\n');
+
+/**
+ * Lite preamble — for tool-type experts (chrome-use, prototype, tdd,
+ * codebase-design, navigator). Branch echo plus the proactive config flag;
+ * none of the review-orchestration protocol applies to them.
+ */
+export const PREAMBLE_LITE = PREAMBLE_BASE;
 
 export const CHROME_USE_SETUP = `## SETUP (run this BEFORE any chrome-use command)
 
@@ -305,7 +342,7 @@ Summary. For prior reviews, use the JSONL fields directly — they contain all r
 Produce this markdown table:
 
 \\\`\\\`\\\`markdown
-## GSTACK REVIEW REPORT
+## RASEN REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
@@ -329,9 +366,9 @@ Below the table, add these lines (omit any that are empty/not applicable):
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-- Search the plan file for a \\\`## GSTACK REVIEW REPORT\\\` section **anywhere** in the file
+- Search the plan file for a \\\`## RASEN REVIEW REPORT\\\` section **anywhere** in the file
   (not just at the end — content may have been added after it).
-- If found, **replace it** entirely using the Edit tool. Match from \\\`## GSTACK REVIEW REPORT\\\`
+- If found, **replace it** entirely using the Edit tool. Match from \\\`## RASEN REVIEW REPORT\\\`
   through either the next \\\`## \\\` heading or end of file, whichever comes first. This ensures
   content added after the report section is preserved, not eaten. If the Edit fails
   (e.g., concurrent edit changed the content), re-read the plan file and retry once.
@@ -406,7 +443,7 @@ Run full mode, then load \`baseline.json\` from a previous run. Diff: which issu
 
 1. Run SETUP — \`check-deps.mjs\` and open a tab \`$TAB\` via \`/new\` (see Setup above)
 2. Create output directories
-3. Copy report template from \`qa/templates/qa-report-template.md\` to output dir
+3. Copy report template from \`templates/qa-report-template.md\` (beside this SKILL.md) to output dir
 4. Start timer for duration tracking
 
 ### Phase 2: Authenticate (if needed)
@@ -464,7 +501,7 @@ curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/scree
 curl --noproxy '*' "localhost:3456/console?target=$TAB&level=error"
 \`\`\`
 
-Then follow the **per-page exploration checklist** (see \`qa/references/issue-taxonomy.md\`):
+Then follow the **per-page exploration checklist** (see \`references/issue-taxonomy.md\` beside this SKILL.md):
 
 1. **Visual scan** — Look at the annotated screenshot for layout issues
 2. **Interactive elements** — Click buttons, links, controls. Do they work?
@@ -511,7 +548,7 @@ curl --noproxy '*' "localhost:3456/snapshot?target=$TAB&mode=D"
 curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=$REPORT_DIR/screenshots/issue-002.png&full=true"
 \`\`\`
 
-**Write each issue to the report immediately** using the template format from \`qa/templates/qa-report-template.md\`.
+**Write each issue to the report immediately** using the template format from \`templates/qa-report-template.md\` (beside this SKILL.md).
 
 ### Phase 6: Wrap Up
 
@@ -971,7 +1008,7 @@ SCOPE_FRONTEND=$(git diff <base>...HEAD --name-only 2>/dev/null | grep -qE '\\.(
 
 1. **Check for DESIGN.md.** If \`DESIGN.md\` or \`design-system.md\` exists in the repo root, read it. All design findings are calibrated against it — patterns blessed in DESIGN.md are not flagged. If not found, use universal design principles.
 
-2. **Read \`.claude/skills/review/design-checklist.md\`.** If the file cannot be read, skip design review with a note: "Design checklist not found — skipping design review."
+2. **Read \`design-checklist.md\` from this skill's own directory (beside this SKILL.md).** If the file cannot be read, skip design review with a note: "Design checklist not found — skipping design review."
 
 3. **Read each changed frontend file** (full file, not just diff hunks). Frontend files are identified by the patterns listed in the checklist.
 
@@ -1463,14 +1500,14 @@ Generate a single-page HTML file with these constraints:
 
 Write to a temp file:
 \`\`\`bash
-SKETCH_FILE="/tmp/gstack-sketch-$(date +%s).html"
+SKETCH_FILE="/tmp/rasen-sketch-$(date +%s).html"
 \`\`\`
 
 **Step 3: Render and capture**
 
 \`\`\`bash
 TAB=$(curl --noproxy '*' -s "localhost:3456/new?url=file://$SKETCH_FILE" | jq -r .targetId)
-curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=/tmp/gstack-sketch.png&full=true"
+curl --noproxy '*' "localhost:3456/screenshot?target=$TAB&file=/tmp/rasen-sketch.png&full=true"
 \`\`\`
 
 If the chrome-use proxy is not available (\`check-deps.mjs\` failed), skip the render
@@ -1487,7 +1524,7 @@ If they approve or say "good enough," proceed.
 **Step 5: Include in design doc**
 
 Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
-The screenshot file at \`/tmp/gstack-sketch.png\` can be referenced by downstream skills
+The screenshot file at \`/tmp/rasen-sketch.png\` can be referenced by downstream skills
 (\`/design-review\`) to see what was originally envisioned.`;
 
 export const SPEC_REVIEW_LOOP = `## Spec Review Loop

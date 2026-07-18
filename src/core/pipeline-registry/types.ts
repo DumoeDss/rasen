@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { resolveModelPreset, type ThresholdValue } from '../model-presets.js';
+
+export type { ThresholdValue };
 
 /**
  * The role a stage plays in an orchestration pipeline.
@@ -60,13 +63,37 @@ export const PipelineAgentRuntimeOverridesSchema = z
 export type PipelineAgentRuntimeOverrides = z.infer<typeof PipelineAgentRuntimeOverridesSchema>;
 
 /**
- * A context-handoff threshold: a fraction of the context window in (0, 1] at or
- * above which an agent should hand off before compaction degrades it.
+ * Build the dual-form threshold schema shared by handoff and reuse: a bare
+ * number is ALWAYS a fraction of the context window in (0, 1]; the absolute
+ * form is ALWAYS the strict object `{ remainingTokens: <positive integer> }`
+ * — a required-headroom threshold in tokens. No bare number is ever read as
+ * a token count. `label` customizes the fraction error message so it stays
+ * self-describing per threshold family (cf. HandoffThresholdSchema vs
+ * ReuseThresholdSchema).
  */
-const HandoffThresholdSchema = z
-  .number()
-  .gt(0, { error: 'threshold must be in (0, 1]' })
-  .lte(1, { error: 'threshold must be in (0, 1]' });
+export function thresholdSchema(label: string) {
+  return z.union([
+    z.number().gt(0, { error: `${label} must be in (0, 1]` }).lte(1, {
+      error: `${label} must be in (0, 1]`,
+    }),
+    z
+      .object({
+        remainingTokens: z
+          .number()
+          .int({ error: `${label} remainingTokens must be a positive integer` })
+          .positive({ error: `${label} remainingTokens must be a positive integer` }),
+      })
+      .strict(),
+  ]);
+}
+
+/**
+ * A context-handoff threshold: a fraction of the context window in (0, 1] at or
+ * above which an agent should hand off before compaction degrades it, OR the
+ * absolute form `{ remainingTokens: N }` — hand off when N tokens or fewer
+ * remain.
+ */
+const HandoffThresholdSchema = thresholdSchema('threshold');
 
 /**
  * Per-role threshold overrides. Each role's value tunes only the handoff
@@ -124,19 +151,19 @@ export const ReuseModeSchema = z.enum(['auto', 'never']);
 export type ReuseMode = z.infer<typeof ReuseModeSchema>;
 
 /**
- * A reuse threshold: the maximum context OCCUPANCY in (0, 1] at which a worker
- * may take on a whole new child change — the orchestrator reuses the worker when
- * measured occupancy `pct <= threshold`, retires it otherwise (playbook Step
- * G.1.3). It is an occupancy CEILING, not required headroom; stricter (lower)
- * than the handoff threshold, because taking on a fresh change needs more free
- * context than finishing the task in hand. Numerically in the same (0, 1] range
- * as HandoffThresholdSchema, kept separate so its validation message vocabulary
- * ("reuse threshold") stays self-describing.
+ * A reuse threshold, in two forms with distinct comparison directions:
+ *  - fraction, in (0, 1]: the maximum context OCCUPANCY at which a worker may
+ *    take on a whole new child change — the orchestrator reuses the worker
+ *    when measured occupancy `pct <= threshold`, retires it otherwise
+ *    (playbook Step G.1.3). It is an occupancy CEILING, not required
+ *    headroom; stricter (lower) than the handoff threshold, because taking on
+ *    a fresh change needs more free context than finishing the task in hand.
+ *  - absolute, `{ remainingTokens: N }`: a required-headroom FLOOR — the
+ *    orchestrator reuses the worker only when `remainingTokens >= N`.
+ * Kept as a separate schema (not shared with HandoffThresholdSchema) so its
+ * validation message vocabulary ("reuse threshold") stays self-describing.
  */
-const ReuseThresholdSchema = z
-  .number()
-  .gt(0, { error: 'reuse threshold must be in (0, 1]' })
-  .lte(1, { error: 'reuse threshold must be in (0, 1]' });
+const ReuseThresholdSchema = thresholdSchema('reuse threshold');
 
 /**
  * Per-role reuse threshold overrides. Only `planner` and `implementer` are
@@ -341,6 +368,14 @@ export const PipelineYamlSchema = z.object({
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
   handoff: HandoffConfigSchema.optional(),
   reuse: ReuseConfigSchema.optional(),
+  // Marks a pipeline assembled by the autopilot LEAD (autonomy-ladder rung 2:
+  // composed pipelines). Absent means human-authored. The ONLY value is
+  // 'composed' — the marker scopes the quality-floor guard (see
+  // validateComposedPolicyFloor in pipeline.ts) to exactly the LEAD-composed
+  // population, leaving human-authored pipelines (built-in or project) unaffected.
+  origin: z.literal('composed').optional().describe(
+    "Marks a pipeline assembled by the autopilot LEAD; absent means human-authored. When 'composed', the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
+  ),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 });
 
@@ -421,10 +456,23 @@ export const DEFAULT_HANDOFF_CONFIG = {
 } as const;
 
 export interface ResolvedStageHandoffConfig {
-  threshold: number;
+  threshold: ThresholdValue;
   maxRelays: number;
   stallLimit: number;
-  source: 'stage' | 'role' | 'pipeline' | 'default';
+  source:
+    | 'stage'
+    | 'role'
+    | 'pipeline'
+    | 'project-config'
+    | 'global-config'
+    | 'preset'
+    | 'default';
+}
+
+/** Project/global config-layer threshold values, slotted below pipeline declarations and above the model-preset layer. */
+export interface HandoffConfigLayers {
+  projectThreshold?: ThresholdValue;
+  globalThreshold?: ThresholdValue;
 }
 
 /**
@@ -434,23 +482,43 @@ export interface ResolvedStageHandoffConfig {
  * 1. Stage-level `handoff`.
  * 2. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
  * 3. Pipeline-level `handoff`.
- * 4. Built-in defaults.
+ * 4. Project config `handoff.threshold` — threshold ONLY.
+ * 5. Global config `handoff.threshold` — threshold ONLY.
+ * 6. Model preset (the suggested `handoffThreshold` of the preset matching the
+ *    stage's resolved model, per `resolveStageRuntimeConfig`) — threshold ONLY.
+ * 7. Built-in defaults.
  *
- * `source` names the highest-precedence layer that contributed anything, so
- * callers can report where the effective config came from.
+ * `source` names the layer that supplied the resolved THRESHOLD specifically
+ * (provenance-first, in this same precedence order), so callers can report
+ * where the effective threshold came from — not merely a layer that touched
+ * the handoff block at all. Only when no layer supplies a threshold (every
+ * field falls through to the built-in default) does `source` fall back to
+ * whichever layer configured `maxRelays`/`stallLimit`. The config layers
+ * (`configLayers`) are passed in rather than read here — this function stays
+ * pure/synchronous; callers resolve the values via
+ * `resolveHandoffThresholdLayers()` (src/core/effective-config.ts) using the
+ * pipeline's project root. A stage with no resolvable model, or whose model
+ * has no preset (or no suggested handoff threshold), skips the preset layer.
  */
 export function resolveStageHandoffConfig(
   stage: Stage,
-  pipeline: PipelineYaml
+  pipeline: PipelineYaml,
+  configLayers?: HandoffConfigLayers
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
   const roleThreshold = stage.role ? pipelineHandoff?.roles?.[stage.role] : undefined;
+  const presetThreshold = resolveModelPreset(
+    resolveStageRuntimeConfig(stage, pipeline).model
+  )?.handoffThreshold;
 
   const threshold =
     stageHandoff?.threshold ??
     roleThreshold ??
     pipelineHandoff?.threshold ??
+    configLayers?.projectThreshold ??
+    configLayers?.globalThreshold ??
+    presetThreshold ??
     DEFAULT_HANDOFF_CONFIG.threshold;
   const maxRelays =
     stageHandoff?.maxRelays ?? pipelineHandoff?.maxRelays ?? DEFAULT_HANDOFF_CONFIG.maxRelays;
@@ -464,13 +532,34 @@ export function resolveStageHandoffConfig(
       h.stallLimit !== undefined ||
       h.roles !== undefined);
 
-  const source: ResolvedStageHandoffConfig['source'] = hasFields(stageHandoff)
-    ? 'stage'
-    : roleThreshold !== undefined
-      ? 'role'
-      : hasFields(pipelineHandoff)
-        ? 'pipeline'
-        : 'default';
+  // `source` names the layer that supplied the resolved THRESHOLD, in the
+  // same precedence order the threshold itself resolves in — not merely a
+  // layer that touched the handoff block at all. Without this, a pipeline
+  // block that sets `roles.reviewer` alone would tag an unrelated
+  // implementer stage's preset-sourced threshold as 'pipeline' (hasFields
+  // sees `roles` and stops there), misreporting a form-changing preset
+  // object as pipeline config. Only when NO layer supplies a threshold
+  // (every field falls through to the built-in default) does source fall
+  // back to whichever layer configured maxRelays/stallLimit, preserving the
+  // pre-preset behavior for that edge.
+  const source: ResolvedStageHandoffConfig['source'] =
+    stageHandoff?.threshold !== undefined
+      ? 'stage'
+      : roleThreshold !== undefined
+        ? 'role'
+        : pipelineHandoff?.threshold !== undefined
+          ? 'pipeline'
+          : configLayers?.projectThreshold !== undefined
+            ? 'project-config'
+            : configLayers?.globalThreshold !== undefined
+              ? 'global-config'
+              : presetThreshold !== undefined
+                ? 'preset'
+                : hasFields(stageHandoff)
+                  ? 'stage'
+                  : hasFields(pipelineHandoff)
+                    ? 'pipeline'
+                    : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
 }
@@ -490,33 +579,47 @@ export const DEFAULT_REUSE_CONFIG = {
 export interface ResolvedReuseConfig {
   planner: ReuseMode;
   implementer: ReuseMode;
-  /** Pipeline-level resolved reuse threshold. */
-  threshold: number;
+  /** Pipeline-level resolved reuse threshold. No preset layer — not model-specific. */
+  threshold: ThresholdValue;
   /** Per-role resolved reuse thresholds. */
-  roles: { planner: number; implementer: number };
+  roles: { planner: ThresholdValue; implementer: ThresholdValue };
 }
 
 /**
  * Resolve the effective reuse config for a pipeline.
  *
  * Precedence (field-wise):
- *  - per-role threshold: `reuse.roles[<role>]` > `reuse.threshold` > built-in default.
+ *  - per-role threshold: `reuse.roles[<role>]` > `reuse.threshold` > model
+ *    preset (the suggested `reuseThreshold` of the preset matching that
+ *    role's `agents[<role>]` model, when one is configured) > built-in default.
  *  - mode: `reuse[<role>]` > built-in default.
- *  - top-level threshold: `reuse.threshold` > built-in default.
+ *  - top-level threshold: `reuse.threshold` > built-in default (no preset
+ *    layer — there is no single pipeline-wide model).
  *
  * Reuse has no stage dimension, so this is pipeline-scoped (unlike the
- * stage-scoped resolveStageHandoffConfig).
+ * stage-scoped resolveStageHandoffConfig). A role with no configured model, or
+ * whose model has no preset (or no suggested reuse threshold), skips the
+ * preset layer.
  */
 export function resolvePipelineReuseConfig(pipeline: PipelineYaml): ResolvedReuseConfig {
   const reuse = pipeline.reuse;
   const threshold = reuse?.threshold ?? DEFAULT_REUSE_CONFIG.threshold;
+
+  const roleThreshold = (role: 'planner' | 'implementer'): ThresholdValue => {
+    if (reuse?.roles?.[role] !== undefined) return reuse.roles[role];
+    if (reuse?.threshold !== undefined) return reuse.threshold;
+    const roleModel = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.model;
+    const presetThreshold = resolveModelPreset(roleModel)?.reuseThreshold;
+    return presetThreshold ?? DEFAULT_REUSE_CONFIG.threshold;
+  };
+
   return {
     planner: reuse?.planner ?? DEFAULT_REUSE_CONFIG.planner,
     implementer: reuse?.implementer ?? DEFAULT_REUSE_CONFIG.implementer,
     threshold,
     roles: {
-      planner: reuse?.roles?.planner ?? threshold,
-      implementer: reuse?.roles?.implementer ?? threshold,
+      planner: roleThreshold('planner'),
+      implementer: roleThreshold('implementer'),
     },
   };
 }

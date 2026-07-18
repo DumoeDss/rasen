@@ -1,15 +1,15 @@
-# OpenSpec Documentation
+# Rasen Documentation
 
-Welcome. This is the home for everything OpenSpec.
+Welcome. This is the home for everything rasen.
 
-OpenSpec helps you and your AI coding assistant **agree on what to build before any code is written.** You describe the change, the AI drafts a short spec and a task list, you both look at the same plan, and then the work happens. No more discovering halfway through that the AI built the wrong thing.
+Rasen is an **autonomous harness**: you describe the intent — a goal, a bug, a feature — and it drives the outer loop on its own, drafting the spec and task list, implementing, reviewing, fixing, and shipping the change. No more discovering halfway through that the AI built the wrong thing.
 
 If you read nothing else, read these two pages:
 
 1. [Getting Started](getting-started.md): install, initialize, and ship your first change.
 2. [How Commands Work](how-commands-work.md): where you actually type `/rasen:propose` (hint: in your AI chat, not the terminal). This trips up almost everyone once.
 
-That second one matters more than it looks. OpenSpec has two halves: a command line tool you run in your terminal, and slash commands you give to your AI assistant. Knowing which is which saves you the most common moment of confusion.
+That second one matters more than it looks. Rasen has two halves: a command line tool you run in your terminal, and slash commands you give to your AI assistant. Knowing which is which saves you the most common moment of confusion.
 
 > **The best habit to build first: when you're not sure what to build, start with `/rasen:explore`.** It's a no-stakes thinking partner that reads your code, weighs options, and sharpens a fuzzy idea into a concrete plan before any artifact or code exists. The [Explore First](explore.md) guide makes the case.
 
@@ -19,7 +19,7 @@ That second one matters more than it looks. OpenSpec has two halves: a command l
 
 **I have a problem but not a plan.** This is the common case, and it has a dedicated answer: [Explore First](explore.md). Use `/rasen:explore` to think it through with the AI before committing to anything.
 
-**I have a big existing codebase.** You don't document all of it. [Using OpenSpec in an Existing Project](existing-projects.md) shows how to start on real, brownfield code without boiling the ocean.
+**I have a big existing codebase.** You don't document all of it. [Using Rasen in an Existing Project](existing-projects.md) shows how to start on real, brownfield code without boiling the ocean.
 
 **I just want to get it working.** [Install](installation.md), run `rasen init`, then read [How Commands Work](how-commands-work.md) so your first slash command lands in the right place.
 
@@ -27,7 +27,7 @@ That second one matters more than it looks. OpenSpec has two halves: a command l
 
 **The AI just drafted a plan — now what?** Read it. [Reviewing a Change](reviewing-changes.md) shows the two-minute pass that catches a wrong turn while it's still cheap, and [Writing Good Specs](writing-specs.md) covers what a plan worth approving is made of.
 
-**I work on a team.** [OpenSpec on a Team](team-workflow.md) shows how a change maps onto a branch and a pull request, and how teammates review a plan before the code.
+**I work on a team.** [Rasen on a Team](team-workflow.md) shows how a change maps onto a branch and a pull request, and how teammates review a plan before the code.
 
 **I'm coming from the old workflow.** The [Migration Guide](migration-guide.md) explains what changed and why, and promises your existing work is safe.
 
@@ -52,14 +52,15 @@ That second one matters more than it looks. OpenSpec has two halves: a command l
 | Doc | What it gives you |
 |-----|-------------------|
 | [Workflows](workflows.md) | Common patterns and when to reach for each command |
+| [Autopilot Policies](autopilot.md) | Opt-in autonomy for `/rasen:auto`: `--no-gate`, `--auto-select`, composed pipelines |
 | [Examples & Recipes](examples.md) | Full walkthroughs of real changes, copy-pasteable |
 | [Writing Good Specs](writing-specs.md) | What a strong requirement and scenario look like, and how to right-size a change |
 | [Reviewing a Change](reviewing-changes.md) | The two-minute pass on a drafted plan before any code is written |
-| [OpenSpec on a Team](team-workflow.md) | How changes fit branches, pull requests, and review |
-| [Using OpenSpec in an Existing Project](existing-projects.md) | Adopting OpenSpec on a large brownfield codebase |
+| [Rasen on a Team](team-workflow.md) | How changes fit branches, pull requests, and review |
+| [Using Rasen in an Existing Project](existing-projects.md) | Adopting rasen on a large brownfield codebase |
 | [Editing & Iterating on a Change](editing-changes.md) | Update artifacts, go back, reconcile manual edits |
 | [Commands](commands.md) | Reference for every `/rasen:*` slash command |
-| [CLI](cli.md) | Reference for every `openspec` terminal command |
+| [CLI](cli.md) | Reference for every `rasen` terminal command |
 
 ### Understand it deeply
 
@@ -75,7 +76,7 @@ That second one matters more than it looks. OpenSpec has two halves: a command l
 |-----|-------------------|
 | [Customization](customization.md) | Project config, custom schemas, shared context |
 | [Multi-Language](multi-language.md) | Generate artifacts in languages other than English |
-| [Supported Tools](supported-tools.md) | The 25+ AI tools OpenSpec integrates with, and where files land |
+| [Supported Tools](supported-tools.md) | The 25+ AI tools rasen integrates with, and where files land |
 
 ### When you need help
 
@@ -95,7 +96,7 @@ That second one matters more than it looks. OpenSpec has two halves: a command l
 ## The thirty-second version
 
 ```text
-1. Install        npm install -g @fission-ai/openspec@latest
+1. Install        npm install -g @atelierai/rasen@latest
 2. Initialize     cd your-project && rasen init
 3. Explore        (in your AI chat)  /rasen:explore           ← optional, but a great habit
 4. Propose        (in your AI chat)  /rasen:propose add-dark-mode
@@ -108,7 +109,11 @@ Steps 1 and 2 happen in your terminal. The rest happen in your AI assistant's ch
 ## Where else to get help
 
 - **Discord:** [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC) for questions, ideas, and help.
-- **GitHub Issues:** [github.com/Fission-AI/OpenSpec/issues](https://github.com/Fission-AI/OpenSpec/issues) for bugs and feature requests.
+- **GitHub Issues:** [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues) for bugs and feature requests.
 - **`rasen feedback "your message"`** sends feedback straight from your terminal (it opens a GitHub issue).
 
 Found something in these docs that's wrong, stale, or confusing? That's a bug. Open an issue or a PR. Documentation improvements are some of the most valuable contributions you can make.
+
+## Website publication
+
+The public rasen website publishes a curated, ordered subset of this `docs/` tree. `website-manifest.json` in this directory is the interface: it declares exactly which pages are published, their section, order, title, and slug. If you're adding or renaming a doc that should appear on the site, update the manifest alongside it — the site build reads it directly and doesn't guess.

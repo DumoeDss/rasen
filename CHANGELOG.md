@@ -1,5 +1,19 @@
 # rasen
 
+## 0.1.4
+
+### Added
+
+- **Autonomy ladder (opt-in)** — autopilot now treats pipeline selection as a classified decision and can compose pipelines from stages, with machine-enforced quality floors via gate policy. (#3)
+- **Unified config entry** — a layered configuration system: project + global scopes with a validated config-key registry, `rasen config` gains `--scope`, project-scope operations, and a no-arg interactive full-view editor; plus a local config HTTP API and an optional web UI package. (#8)
+- **Dual-form handoff thresholds + model presets** — handoff context thresholds accept either a bare number (percentage) or `{ remainingTokens: N }` (absolute budget); a model-preset registry supplies per-model context windows (e.g. gpt-5 at 272K) so sensible thresholds apply without configuration. (#7)
+- **Agent adapters** — the install surface is narrowed to adapted agents (Claude + Codex), and a Hermes adapter is added with global-skills-root resolution. (#6)
+
+### Fixed
+
+- **Codex-host LEAD compatibility** — run-state reading tolerates schema variance (invalid-vs-absent fields no longer swallowed into "run state not found"), agent-context probe degrades gracefully, and Codex rollout paths are self-probed. (#5)
+- **Session relay** — successor worker launches now pass full permission flags on all three platforms (Claude `--dangerously-skip-permissions`, Codex bypass equivalent), and Windows PowerShell 5.1 no longer garbles CJK relay payloads (UTF-8 encoding pinned inline). (#9)
+
 ## 0.1.3
 
 ### Added

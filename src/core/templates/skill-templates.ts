@@ -33,7 +33,7 @@ export { getGoalIterateSkillTemplate } from './workflows/goal-iterate.js';
 export { getGoalReportSkillTemplate } from './workflows/goal-report.js';
 export { getGoalCommandSkillTemplate, getOpsxGoalCommandTemplate } from './workflows/goal-command.js';
 
-// Expert skill templates (migrated from gstack)
+// Expert skill templates (inlined prompts)
 export {
   getBenchmarkSkillTemplate,
   getCarefulSkillTemplate,

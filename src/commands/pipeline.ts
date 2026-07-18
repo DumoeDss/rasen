@@ -22,7 +22,7 @@ import {
   listPipelinesWithInfo,
   PipelineGraph,
   parsePipeline,
-  readRunState,
+  readRunStateDetailed,
   resolveRunStateLocation,
   completedStages,
   stageWorkers,
@@ -49,11 +49,14 @@ import {
   type PipelineInfo,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
+  type HandoffConfigLayers,
   type ResolvedReuseConfig,
+  type ThresholdValue,
   type RunStateWorker,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
+import { resolveHandoffThresholdLayers } from '../core/effective-config.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
@@ -138,6 +141,15 @@ function matchesKeyword(keyword: string, lowercasedText: string): boolean {
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`).test(lowercasedText);
 }
 
+/**
+ * Legible rendering of a dual-form threshold for the human-readable detail
+ * view: a bare fraction as-is, the absolute `{ remainingTokens }` form as
+ * `N tokens remaining`.
+ */
+function formatThreshold(threshold: ThresholdValue): string {
+  return typeof threshold === 'number' ? String(threshold) : `${threshold.remainingTokens} tokens remaining`;
+}
+
 export class PipelineCommand {
   /**
    * Resolve the Rasen root through the shared root-selection layer, exactly
@@ -193,7 +205,8 @@ export class PipelineCommand {
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline));
+    const configLayers = resolveHandoffThresholdLayers(projectRoot);
+    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers));
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
 
     const result = {
@@ -203,6 +216,10 @@ export class PipelineCommand {
       reuse,
       buildOrder,
       stages,
+      // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
+      // included only when declared so a human-authored pipeline's JSON shape
+      // is unchanged.
+      ...(pipeline.origin ? { origin: pipeline.origin } : {}),
     };
 
     if (options.json) {
@@ -229,7 +246,7 @@ export class PipelineCommand {
     const updates = this.runtimeUpdatesFromOptions(options);
 
     if (Object.keys(updates).length === 0) {
-      const result = this.toAgentsResult(normalizedName, pipeline, null);
+      const result = this.toAgentsResult(normalizedName, pipeline, null, projectRoot);
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
         return;
@@ -240,7 +257,7 @@ export class PipelineCommand {
 
     const updatedPipeline = this.applyAgentRuntimeUpdates(pipeline, updates);
     const overridePath = this.writeProjectPipelineOverride(projectRoot, normalizedName, updatedPipeline);
-    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath);
+    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath, projectRoot);
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -276,7 +293,13 @@ export class PipelineCommand {
       matched = [];
     }
 
-    const result = { suggested, matched, available };
+    // basis names WHY suggested was chosen: 'keyword' when an indicator
+    // matched, 'default' when nothing matched and small-feature is the
+    // unmatched fallback. Lets an adopting caller (autopilot-selection-policy)
+    // distinguish an affirmative suggestion from a shrug.
+    const basis: 'keyword' | 'default' = matched.length > 0 ? 'keyword' : 'default';
+
+    const result = { suggested, matched, available, basis };
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -289,6 +312,7 @@ export class PipelineCommand {
     } else {
       console.log('Matched indicators: (none — defaulted to small-feature)');
     }
+    console.log(`Basis: ${basis}`);
     console.log('This suggestion is advisory; you can override it with any available pipeline.');
     if (available.length > 0) {
       console.log(`Available: ${available.join(', ')}`);
@@ -375,12 +399,37 @@ export class PipelineCommand {
       return;
     }
 
-    // Sticky-legacy (design D4): workDir first, change dir fallback.
+    // Sticky-legacy (design D4): workDir first, change dir fallback. Detailed
+    // read (design D3) so a located-but-unparseable file is reported
+    // distinctly from no file at all, instead of masquerading as "not found".
     const runStateLocation = resolveRunStateLocation(changeDir, workDir);
-    const runState = runStateLocation ? readRunState(runStateLocation.dir) : null;
+    const runStateRead = runStateLocation
+      ? readRunStateDetailed(runStateLocation.dir)
+      : ({ kind: 'absent' } as const);
+    const runState = runStateRead.kind === 'ok' ? runStateRead.state : null;
 
     // No run-state recorded yet (or not in usable form).
     if (!runState || runState.pipeline.length === 0) {
+      if (runStateRead.kind === 'invalid' && runStateLocation) {
+        const result = {
+          change: changeName,
+          hasRunState: false as const,
+          invalidRunState: true as const,
+          runStatePath: runStateLocation.path,
+          pipeline: null,
+          completed: [] as string[],
+          next: null,
+          remaining: [] as string[],
+          note: `Run-state file at ${runStateLocation.path} is invalid: ${runStateRead.reason}`,
+        };
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        console.log(`Change: ${changeName}`);
+        console.log(result.note);
+        return;
+      }
       const result = {
         change: changeName,
         hasRunState: false as const,
@@ -633,7 +682,8 @@ export class PipelineCommand {
   private toAgentsResult(
     name: string,
     pipeline: PipelineYaml,
-    overridePath: string | null
+    overridePath: string | null,
+    projectRoot: string
   ): {
     name: string;
     overridePath: string | null;
@@ -648,16 +698,21 @@ export class PipelineCommand {
       ])
     ) as Record<StageRole, AgentRuntime>;
 
+    const configLayers = resolveHandoffThresholdLayers(projectRoot);
     return {
       name,
       overridePath,
       agents: pipeline.agents ?? {},
       effectiveRoles,
-      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline)),
+      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers)),
     };
   }
 
-  private toStageView(stage: Stage, pipeline: PipelineYaml): StageView {
+  private toStageView(
+    stage: Stage,
+    pipeline: PipelineYaml,
+    configLayers?: HandoffConfigLayers
+  ): StageView {
     const runtime = resolveStageRuntimeConfig(stage, pipeline);
     return {
       id: stage.id,
@@ -680,7 +735,7 @@ export class PipelineCommand {
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
       effort: runtime.effort ?? null,
-      handoff: resolveStageHandoffConfig(stage, pipeline),
+      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers),
     };
   }
 
@@ -704,12 +759,16 @@ export class PipelineCommand {
       agents?: PipelineYaml['agents'];
       buildOrder: string[];
       stages: StageView[];
+      origin?: PipelineYaml['origin'];
     },
     graph: PipelineGraph
   ): void {
     console.log(`Pipeline: ${result.name}`);
     if (result.description) {
       console.log(result.description.replace(/\s+/g, ' ').trim());
+    }
+    if (result.origin) {
+      console.log(`Origin: ${result.origin}`);
     }
     console.log();
     console.log('Build order:');
@@ -743,6 +802,12 @@ export class PipelineCommand {
       meta.push(`runtime=${runtime.runtime}${runtime.source === 'default' ? '' : `(${runtime.source})`}`);
       if (runtime.sessionReuse) meta.push(`sessionReuse=${runtime.sessionReuse}`);
       if (runtime.sandbox) meta.push(`sandbox=${runtime.sandbox}`);
+      const stageView = result.stages.find((s) => s.id === id);
+      if (stageView && stageView.handoff.source !== 'default') {
+        meta.push(
+          `handoff=${formatThreshold(stageView.handoff.threshold)}(${stageView.handoff.source})`
+        );
+      }
       const suffix = meta.length > 0 ? `  (${meta.join('; ')})` : '';
       // A decompose stage has no leaf skill; show its fan-out target instead.
       const action =

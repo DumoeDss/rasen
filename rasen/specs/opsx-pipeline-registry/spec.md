@@ -11,6 +11,7 @@ The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.ya
 
 - **WHEN** a `pipeline.yaml` is loaded
 - **THEN** it SHALL declare a `name`, optional `description`, and a non-empty `stages` array
+- **AND** it MAY declare an `origin` field whose only value is `composed`, marking a pipeline assembled by the autopilot LEAD (absent means human-authored); `rasen pipeline show` SHALL surface the field when present
 - **AND** each stage SHALL declare an `id` and a `skill`, and MAY declare `role`, `requires`, `gate`, `loop`, `parallelGroup`, `condition`, `leadReview`, and `verifyPolicy`
 - **AND** parse or validation failures SHALL raise a typed error identifying the offending file and field
 
@@ -50,6 +51,7 @@ The system SHALL provide a `rasen pipeline` command group with `list`, `show <na
 
 - **WHEN** `rasen pipeline classify "<task description>" --json` runs
 - **THEN** it SHALL return a suggested pipeline name plus the indicators that drove the suggestion
+- **AND** it SHALL report the suggestion's basis: `keyword` when indicators matched, `default` when the suggestion is the fallback default with no matched indicators
 - **AND** the suggestion SHALL be overridable by the caller
 
 #### Scenario: Resume
@@ -84,6 +86,12 @@ The system SHALL provide a `rasen pipeline` command group with `list`, `show <na
 - **WHEN** a pipeline is validated
 - **THEN** validation SHALL fail if stage ids are not unique, if any `requires` references a missing stage, if the dependency graph contains a cycle, if a `skill` is not a registered skill, or if a `role` is unknown
 - **AND** `parallelGroup` members SHALL be mutually independent in the DAG
+
+#### Scenario: Composed-pipeline quality floor enforced
+
+- **WHEN** a pipeline declaring `origin: composed` is parsed or validated
+- **THEN** it SHALL fail unless it contains at least one stage with role `reviewer` and at least one stage with `loop.kind: review-cycle`
+- **AND** pipelines without an `origin` field SHALL be entirely unaffected by this rule — existing built-in, user, and project pipelines parse and validate unchanged
 
 ### Requirement: Built-In Pipelines
 
@@ -204,4 +212,33 @@ The human-readable `rasen pipeline show <name>` output SHALL render a stage's lo
 
 - **WHEN** `rasen pipeline show <pipeline>` renders a stage with a `review-cycle` loop
 - **THEN** the stage meta SHALL include `loop=review-cycle(max <N>)` and SHALL NOT include the goal-loop bracket format
+
+### Requirement: Host-tolerant run-state parsing
+Run-state parsing SHALL be host-runtime-neutral: before schema validation, `parseRunState` SHALL normalize worker records (per-stage workers and the portfolio planner record, which share the worker shape) so legitimate variance from a non-Claude LEAD does not reject the file. Normalization SHALL: (1) treat a JSON `null` on an optional string field of the worker record (e.g. `transcript`, `agentId`, `threadId`) as the field being absent, removing the key; (2) when `runtime` carries a string outside `claude|codex`, preserve the original value under the passthrough key `runtimeRaw` and remove `runtime`, rather than rejecting the record or coercing the value to a runtime the worker did not use. The canonical write contract SHALL remain strict: `writeRunState` continues to validate against the unwidened schema.
+
+#### Scenario: Codex-LEAD-written worker record parses
+- **WHEN** `parseRunState` reads a run-state whose stage worker carries `"transcript": null` and `"runtime": "codex-host-fallback"`
+- **THEN** parsing SHALL succeed
+- **AND** the parsed worker SHALL have no `transcript` and no `runtime` field
+- **AND** the parsed worker SHALL carry `runtimeRaw: "codex-host-fallback"`
+
+#### Scenario: Canonical records are untouched
+- **WHEN** `parseRunState` reads a run-state whose workers carry only canonical values (`runtime` in `claude|codex`, string `transcript`)
+- **THEN** the parsed state SHALL be identical to today's parse (no `runtimeRaw`, no removed fields)
+
+#### Scenario: Write contract stays strict
+- **WHEN** `writeRunState` is given a state whose worker carries `transcript: null` or a non-enum `runtime`
+- **THEN** it SHALL reject the state (validation error) — tolerance is a read-boundary property, not a license to write non-canonical values
+
+### Requirement: Resume distinguishes invalid run-state from absent run-state
+`rasen pipeline resume` SHALL report a located-but-unparseable `auto-run.json` (malformed JSON, or schema validation failure after normalization) distinctly from the no-file case, so the failure is diagnosable instead of masquerading as "no run-state found". The JSON output SHALL keep `hasRunState: false` for both cases (additive compatibility) and, for the invalid case, SHALL additionally carry `invalidRunState: true`, the file path, and a note naming the validation reason.
+
+#### Scenario: Invalid run-state file is reported with its reason
+- **WHEN** `rasen pipeline resume <change> --json` locates an `auto-run.json` (workDir-first, change-dir fallback) that fails to parse even after host-tolerance normalization
+- **THEN** the output SHALL report `hasRunState: false` and `invalidRunState: true`
+- **AND** SHALL name the file path and the parse/validation reason in the note
+
+#### Scenario: Absent run-state is unchanged
+- **WHEN** `rasen pipeline resume <change> --json` finds no `auto-run.json` in either location
+- **THEN** the output SHALL report `hasRunState: false` without `invalidRunState`, with the existing "no run-state" note
 

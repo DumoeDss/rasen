@@ -4,13 +4,13 @@
 
 ## What Is It?
 
-OPSX is now the standard workflow for OpenSpec.
+OPSX is now the standard workflow for rasen.
 
-It's a **fluid, iterative workflow** for OpenSpec changes. No more rigid phases — just actions you can take anytime.
+It's a **fluid, iterative workflow** for rasen changes. No more rigid phases — just actions you can take anytime.
 
 ## Why This Exists
 
-The legacy OpenSpec workflow works, but it's **locked down**:
+The legacy workflow works, but it's **locked down**:
 
 - **Instructions are hardcoded** — buried in TypeScript, you can't change them
 - **All-or-nothing** — one big command creates everything, can't test individual pieces
@@ -39,7 +39,7 @@ Legacy workflow:                      OPSX:
 **This is for everyone:**
 - **Teams** — create workflows that match how you actually work
 - **Power users** — tweak prompts to get better AI outputs for your codebase
-- **OpenSpec contributors** — experiment with new approaches without releases
+- **Rasen contributors** — experiment with new approaches without releases
 
 We're all still learning what works best. OPSX lets us learn together.
 
@@ -65,7 +65,7 @@ rasen init
 
 This creates skills in `.claude/skills/` (or equivalent) that AI coding assistants auto-detect.
 
-By default, OpenSpec uses the `core` workflow profile (`propose`, `explore`, `apply`, `sync`, `archive`). If you want the expanded workflow commands (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`), configure them with `rasen config profile` and apply with `rasen update`.
+By default, rasen uses the `full` workflow profile — every workflow, including the expanded commands (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`). If you'd rather slim down to the everyday `core` set (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and apply with `rasen update`.
 
 During setup, you'll be prompted to create a **project config** (`rasen/config.yaml`). This is optional but recommended.
 
@@ -225,7 +225,7 @@ You see one command. The LEAD classifies the task and selects ONE backend pipeli
 | `evaluate` — `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | a fresh reviewer worker judges `{satisfied, gaps}` | ship → archive |
 | `research` — `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | a fresh reviewer worker | report (no ship) |
 
-The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen:goal` shares the same orchestration playbook as `/rasen:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-goal-driven-iteration-opsxgoal).
+The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen:goal` shares the same orchestration playbook as `/rasen:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
 
 ## When to Update vs. Start Fresh
 
@@ -327,7 +327,7 @@ Think of it like git branches:
 ## Architecture Deep Dive
 
 This section explains how OPSX works under the hood and how it compares to the legacy workflow.
-Examples in this section use the expanded command set (`new`, `continue`, etc.); default `core` users can map the same flow to `propose → apply → sync → archive`.
+Examples in this section use the expanded command set (`new`, `continue`, etc.); `core`-profile users can map the same flow to `propose → apply → sync → archive`.
 
 ### Philosophy: Phases vs Actions
 
@@ -424,7 +424,7 @@ Examples in this section use the expanded command set (`new`, `continue`, etc.);
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                    │                                                        │
 │                    ▼                                                        │
-│   Skill Files (.claude/skills/openspec-*/SKILL.md)                          │
+│   Skill Files (.claude/skills/rasen-*/SKILL.md)                             │
 │                                                                             │
 │   • Cross-editor compatible (Claude Code, Cursor, Windsurf)                 │
 │   • Skills query CLI for structured data                                    │
@@ -590,11 +590,11 @@ rasen schema validate my-workflow
 rasen schema which my-workflow
 ```
 
-Schemas are stored in `openspec/schemas/` (project-local, version controlled) or `~/.rasen/schemas/` (user global; override the location with `RASEN_HOME`).
+Schemas are stored in `rasen/schemas/` (project-local, version controlled) or `~/.rasen/schemas/` (user global; override the location with `RASEN_HOME`).
 
 **Schema structure:**
 ```
-openspec/schemas/research-first/
+rasen/schemas/research-first/
 ├── schema.yaml
 └── templates/
     ├── research.md
@@ -670,4 +670,4 @@ rasen schema validate my-workflow
 
 This is rough. That's intentional — we're learning what works.
 
-Found a bug? Have ideas? Join us on [Discord](https://discord.gg/YctCnvvshC) or open an issue on [GitHub](https://github.com/Fission-AI/openspec/issues).
+Found a bug? Have ideas? Join us on [Discord](https://discord.gg/YctCnvvshC) or open an issue on [GitHub](https://github.com/DumoeDss/rasen/issues).

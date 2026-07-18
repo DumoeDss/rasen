@@ -51,7 +51,7 @@ Verification depth SHALL auto-scale based on change scope: Full, Standard, or Li
 
 ### Requirement: Full Verification Pipeline
 
-Full verification SHALL run artifact checks combined with multiple gstack expert reviews.
+Full verification SHALL run artifact checks combined with multiple expert reviews.
 
 #### Scenario: Full pipeline execution with security-relevant change
 

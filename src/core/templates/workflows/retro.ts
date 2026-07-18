@@ -77,7 +77,7 @@ Run the same git-analysis contract as 2B, but across every accessible repository
 - Aggregate shipping streaks and work patterns across projects and compare productivity between them
 - If only the current repo is accessible, note that and report it as a single-project global retro
 
-Do NOT persist gstack-style \`.context/retros/*.json\` snapshots or run history-compare against them — write only to Rasen's own report path (Step 4).
+Do NOT persist legacy \`.context/retros/*.json\` snapshots or run history-compare against them — write only to Rasen's own report path (Step 4).
 
 ### 3. Generate Report
 

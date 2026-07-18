@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs
 import { promises as fsPromises } from 'fs';
 import { randomUUID } from 'crypto';
 import path from 'path';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
 import { isKebabId } from './id.js';
+import { thresholdSchema } from './pipeline-registry/types.js';
 
 /**
  * Zod schema for project configuration.
@@ -97,9 +98,28 @@ export const ProjectConfigSchema = z.object({
         .describe(
           'Default autopilot gate policy: on (gates pause, default) or off (ordinary gates auto-approved)'
         ),
+      selection: z
+        .enum(['classify', 'manual', 'compose'])
+        .optional()
+        .describe(
+          'Default autopilot pipeline-selection policy: classify (adopt the classify suggestion), compose (classify-first, composition permitted on no-fit), or manual (default; explicit-or-small-feature, classify advisory-only)'
+        ),
     })
     .optional()
     .describe('Autopilot behavior configuration'),
+
+  // Optional: context-handoff threshold. Project scope wins over the global
+  // config value of the same name (see effective-config.ts); both fall back
+  // to the built-in default (0.5) when absent. Dual-form (a bare fraction in
+  // (0, 1], or the absolute `{ remainingTokens: N }` headroom form) — reuses
+  // the same schema builder as pipeline-registry/types.ts so the two never
+  // drift on what a valid threshold looks like.
+  handoff: z
+    .object({
+      threshold: thresholdSchema('threshold').optional(),
+    })
+    .optional()
+    .describe('Context-handoff threshold configuration'),
 });
 
 /** Valid `archive.timing` values. */
@@ -113,6 +133,9 @@ export type AutopilotGatePolicy = 'on' | 'off';
 
 /** String prefix addressing the project namespace in a `references:` entry. */
 export const PROJECT_REFERENCE_PREFIX = 'project:';
+
+/** Valid `autopilot.selection` values. */
+export type AutopilotSelectionPolicy = 'classify' | 'manual' | 'compose';
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -234,14 +257,32 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
 
   try {
     const content = readFileSync(configPath, 'utf-8');
-    const raw = parseYaml(content);
+    return parseProjectConfigContent(content, projectRoot);
+  } catch (error) {
+    console.warn(
+      `Warning: could not parse ${configPathForWarnings(projectRoot)} (${error instanceof Error ? error.message.split('\n')[0] : String(error)}); ignoring it.`
+    );
+    return null;
+  }
+}
 
-    if (!raw || typeof raw !== 'object') {
-      console.warn(`openspec/config.yaml is not a valid YAML object`);
-      return null;
-    }
+/**
+ * Resilient field-by-field parse of raw YAML config content into a
+ * `ProjectConfig`, shared by `readProjectConfig` (reads the file from disk)
+ * and `updateProjectConfigKey`'s post-write sanity check (parses the
+ * in-memory document string before it is trusted). Never throws on invalid
+ * YAML content passed in as a string — that only happens via
+ * `readProjectConfig`'s own try/catch, since `parseYaml` can throw.
+ */
+function parseProjectConfigContent(content: string, projectRoot: string): ProjectConfig | null {
+  const raw = parseYaml(content);
 
-    const config: Partial<ProjectConfig> = {};
+  if (!raw || typeof raw !== 'object') {
+    console.warn(`openspec/config.yaml is not a valid YAML object`);
+    return null;
+  }
+
+  const config: Partial<ProjectConfig> = {};
 
     // Parse schema field using Zod
     const schemaField = z.string().min(1);
@@ -392,9 +433,10 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
       }
     }
 
-    // Parse autopilot field: an optional map with an optional `gates` field.
-    // Non-map -> whole block dropped with a warning. An invalid field -> that
-    // field dropped with a warning, siblings (and future fields) still parse.
+    // Parse autopilot field: an optional map with optional `gates` and
+    // `selection` fields. Non-map -> whole block dropped with a warning. An
+    // invalid field -> that field dropped with a warning, siblings (and
+    // future fields) still parse.
     if (raw.autopilot !== undefined) {
       if (raw.autopilot && typeof raw.autopilot === 'object' && !Array.isArray(raw.autopilot)) {
         const autopilotRaw = raw.autopilot as Record<string, unknown>;
@@ -406,20 +448,52 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
             console.warn(`Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`);
           }
         }
+        if (autopilotRaw.selection !== undefined) {
+          if (
+            autopilotRaw.selection === 'classify' ||
+            autopilotRaw.selection === 'manual' ||
+            autopilotRaw.selection === 'compose'
+          ) {
+            autopilot.selection = autopilotRaw.selection;
+          } else {
+            console.warn(
+              `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`
+            );
+          }
+        }
         config.autopilot = autopilot;
       } else {
         console.warn(`Invalid 'autopilot' field in config (must be an object)`);
       }
     }
 
-    // Return partial config even if some fields failed
-    return Object.keys(config).length > 0 ? (config as ProjectConfig) : null;
-  } catch (error) {
-    console.warn(
-      `Warning: could not parse ${configPathForWarnings(projectRoot)} (${error instanceof Error ? error.message.split('\n')[0] : String(error)}); ignoring it.`
-    );
-    return null;
-  }
+    // Parse handoff field: an optional map with an optional dual-form
+    // `threshold` field (a bare fraction in (0, 1], or the absolute
+    // `{ remainingTokens: N }` headroom form). Non-map -> whole block dropped
+    // with a warning. An invalid threshold (either form) -> the field
+    // dropped with a warning, the rest of the config still parses.
+    if (raw.handoff !== undefined) {
+      if (raw.handoff && typeof raw.handoff === 'object' && !Array.isArray(raw.handoff)) {
+        const handoffRaw = raw.handoff as Record<string, unknown>;
+        const handoff: ProjectConfig['handoff'] = {};
+        if (handoffRaw.threshold !== undefined) {
+          const parsedThreshold = thresholdSchema('threshold').safeParse(handoffRaw.threshold);
+          if (parsedThreshold.success) {
+            handoff.threshold = parsedThreshold.data;
+          } else {
+            console.warn(
+              `Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            );
+          }
+        }
+        config.handoff = handoff;
+      } else {
+        console.warn(`Invalid 'handoff' field in config (must be an object)`);
+      }
+    }
+
+  // Return partial config even if some fields failed
+  return Object.keys(config).length > 0 ? (config as ProjectConfig) : null;
 }
 
 function configPathForWarnings(projectRoot: string): string {
@@ -759,6 +833,127 @@ export function resolveAutopilotGatePolicy(
     return { effective: configValue, source: 'config' };
   }
   return { effective: 'on', source: 'default' };
+}
+
+// -----------------------------------------------------------------------------
+// Autopilot selection policy (config axis)
+// -----------------------------------------------------------------------------
+
+/** The resolved autopilot pipeline-selection policy plus which layer produced it. */
+export interface ResolvedSelectionPolicy {
+  effective: AutopilotSelectionPolicy;
+  source: 'flag' | 'config' | 'default';
+}
+
+/**
+ * Resolves the effective autopilot pipeline-selection policy with precedence:
+ * the run arguments first — `--auto-compose` ahead of `--auto-select` when
+ * both are present (compose is the superset policy: classify-first, with
+ * composition permitted on no-fit — see `autopilot-composed-pipelines`) —
+ * then the project config default (`autopilot.selection`), then the built-in
+ * default (`manual`). Every consumer (the `/rasen:auto` selection-policy
+ * resolution) MUST resolve through this function so precedence is applied
+ * identically everywhere. An absent or previously-dropped
+ * `autopilot.selection` value falls back to the built-in default without
+ * failing config parsing. Mirrors `resolveAutopilotGatePolicy`'s shape (same
+ * source vocabulary) by design — this is that axis's sibling. Kept as a
+ * single resolver (not split by flag) so precedence lives in exactly one
+ * place; `autoComposeFlag` defaults to `false` so existing two-argument call
+ * sites (pre-dating the `compose` policy) are unaffected.
+ */
+export function resolveAutopilotSelectionPolicy(
+  config: ProjectConfig | null | undefined,
+  autoSelectFlag: boolean,
+  autoComposeFlag: boolean = false
+): ResolvedSelectionPolicy {
+  if (autoComposeFlag) {
+    return { effective: 'compose', source: 'flag' };
+  }
+  if (autoSelectFlag) {
+    return { effective: 'classify', source: 'flag' };
+  }
+  const configValue = config?.autopilot?.selection;
+  if (configValue === 'classify' || configValue === 'manual' || configValue === 'compose') {
+    return { effective: configValue, source: 'config' };
+  }
+  return { effective: 'manual', source: 'default' };
+}
+
+// -----------------------------------------------------------------------------
+// Project-scope config writes (`rasen config set/unset --scope project`)
+// -----------------------------------------------------------------------------
+
+export interface UpdateProjectConfigKeyResult {
+  configPath: string;
+  /** For an unset (value === undefined): whether the key existed before the write. */
+  existed: boolean;
+}
+
+/**
+ * Sets or removes (`value === undefined`) a registry-validated key in the
+ * project's `rasen/config.yaml`, preserving comments, key ordering, and every
+ * unrelated field. Uses the `yaml` package's `parseDocument`/`setIn`/`deleteIn`
+ * document-tree API rather than parse-mutate-`stringifyYaml(object)`, which
+ * would destroy comments and ordering in a file documented as hand-editable.
+ * Intermediate maps are created automatically for nested paths.
+ *
+ * Requires an existing `rasen/config.yaml` (or `.yml`) — this never creates
+ * one; a config-less project fails with guidance instead, matching D4.
+ * Callers MUST validate the key/value against the config-key registry
+ * BEFORE calling this function; as a post-write sanity check, the written
+ * content is re-parsed through the resilient `parseProjectConfigContent` so a
+ * document-tree edit that somehow produces unparseable or schema-invalid YAML
+ * is still surfaced (it should not happen once the registry has validated,
+ * but the check is cheap and mirrors the validate-before-save pattern used by
+ * the global `config set`).
+ */
+export function updateProjectConfigKey(
+  projectRoot: string,
+  keyPath: string,
+  value: unknown
+): UpdateProjectConfigKeyResult {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No rasen/config.yaml found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}. Create the file (e.g. run 'rasen init') before setting project-scope config.`
+    );
+  }
+
+  const originalContent = readFileSync(configPath, 'utf-8');
+  const doc = parseDocument(originalContent);
+  const keys = keyPath.split('.');
+
+  let existed = false;
+  if (value === undefined) {
+    existed = doc.hasIn(keys);
+    if (existed) {
+      doc.deleteIn(keys);
+    }
+  } else {
+    doc.setIn(keys, value);
+  }
+
+  const nextContent = String(doc);
+
+  let reparsedRaw: unknown;
+  try {
+    reparsedRaw = parseYaml(nextContent);
+  } catch (error) {
+    throw new Error(
+      `Writing "${keyPath}" would produce invalid YAML in ${configPath}; the file was not modified (${
+        error instanceof Error ? error.message.split('\n')[0] : String(error)
+      }).`
+    );
+  }
+  void reparsedRaw;
+
+  writeFileSync(configPath, nextContent, 'utf-8');
+
+  // Post-write sanity check via the resilient reader (warnings, if any, are
+  // real signal at this point — the registry validated the value already).
+  parseProjectConfigContent(nextContent, projectRoot);
+
+  return { configPath, existed };
 }
 
 // -----------------------------------------------------------------------------

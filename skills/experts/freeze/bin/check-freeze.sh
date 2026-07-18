@@ -8,7 +8,7 @@ set -euo pipefail
 INPUT=$(cat)
 
 # Locate the freeze directory state file
-STATE_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}"
+STATE_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
 FREEZE_FILE="$STATE_DIR/freeze-dir.txt"
 
 # If no freeze file exists, allow everything (not yet configured)

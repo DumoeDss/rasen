@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+import { validateConfigKeyPath as registryValidateConfigKeyPath } from './config-keys.js';
+import type { ConfigScope } from './config-keys.js';
+import { thresholdSchema } from './pipeline-registry/types.js';
+
 /**
  * Zod schema for global Rasen configuration.
  * Uses passthrough() to preserve unknown fields for forward compatibility.
@@ -28,6 +32,19 @@ export const GlobalConfigSchema = z
     workflows: z
       .array(z.string())
       .optional(),
+    proactive: z.boolean().optional(),
+    repoMode: z.enum(['solo', 'collaborative']).optional(),
+    telemetry: z
+      .object({
+        enabled: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
+    handoff: z
+      .object({
+        threshold: thresholdSchema('threshold').optional(),
+      })
+      .optional(),
   })
   .passthrough();
 
@@ -42,36 +59,19 @@ export const DEFAULT_CONFIG: GlobalConfigType = {
   delivery: 'both',
 };
 
-const KNOWN_TOP_LEVEL_KEYS = new Set([...Object.keys(DEFAULT_CONFIG), 'workflows']);
-
 /**
- * Validate a config key path for CLI set operations.
- * Unknown top-level keys are rejected unless explicitly allowed by the caller.
+ * Validate a config key path for CLI set operations, scope-aware.
+ * Delegates key knowledge to the config-key registry (src/core/config-keys.ts)
+ * so validation, the interactive editor, and effective-config resolution
+ * cannot drift. Unknown keys are rejected unless explicitly allowed by the
+ * caller (global scope's `--allow-unknown` escape hatch; project scope has
+ * no bypass).
  */
-export function validateConfigKeyPath(path: string): { valid: boolean; reason?: string } {
-  const rawKeys = path.split('.');
-
-  if (rawKeys.length === 0 || rawKeys.some((key) => key.trim() === '')) {
-    return { valid: false, reason: 'Key path must not be empty' };
-  }
-
-  const rootKey = rawKeys[0];
-  if (!KNOWN_TOP_LEVEL_KEYS.has(rootKey)) {
-    return { valid: false, reason: `Unknown top-level key "${rootKey}"` };
-  }
-
-  if (rootKey === 'featureFlags') {
-    if (rawKeys.length > 2) {
-      return { valid: false, reason: 'featureFlags values are booleans and do not support nested keys' };
-    }
-    return { valid: true };
-  }
-
-  if (rawKeys.length > 1) {
-    return { valid: false, reason: `"${rootKey}" does not support nested keys` };
-  }
-
-  return { valid: true };
+export function validateConfigKeyPath(
+  path: string,
+  scope: ConfigScope = 'global'
+): { valid: boolean; reason?: string } {
+  return registryValidateConfigKeyPath(path, scope);
 }
 
 /**

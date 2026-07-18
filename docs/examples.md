@@ -1,8 +1,8 @@
 # Examples & Recipes
 
-Real changes, start to finish. Each recipe shows the commands you'd type and what you'd see back, so you can match your situation to a pattern and copy it. These use the default **core** commands (`propose`, `explore`, `apply`, `sync`, `archive`); where the expanded set helps, it's noted.
+Real changes, start to finish. Each recipe shows the commands you'd type and what you'd see back, so you can match your situation to a pattern and copy it. These use the everyday **core** commands (`propose`, `explore`, `apply`, `sync`, `archive`, available out of the box in the default `full` profile); where the expanded set helps, it's noted.
 
-A reminder before you start: slash commands like `/rasen:propose` go in your **AI assistant's chat**, and `openspec` commands go in your **terminal**. If that's new, read [How Commands Work](how-commands-work.md) first. In the transcripts below, `You:` and `AI:` are the chat, and lines starting with `$` are the terminal.
+A reminder before you start: slash commands like `/rasen:propose` go in your **AI assistant's chat**, and `rasen` commands go in your **terminal**. If that's new, read [How Commands Work](how-commands-work.md) first. In the transcripts below, `You:` and `AI:` are the chat, and lines starting with `$` are the terminal.
 
 > **Not sure what you're building yet?** Most of these recipes are sharper if you start with `/rasen:explore` to think it through first. [Recipe 3](#recipe-3-exploring-before-you-commit) shows it in action, and the [Explore First](explore.md) guide makes the full case.
 
@@ -23,7 +23,7 @@ AI:  Created rasen/changes/add-logout-button/
      Ready for implementation. Run /rasen:apply.
 ```
 
-Now read the plan. Open the proposal and the delta spec. This is the moment OpenSpec is built for: catching a wrong assumption while it's still one paragraph, not 400 lines of code. Edit any artifact directly if something's off, then continue.
+Now read the plan. Open the proposal and the delta spec. This is the moment rasen is built for: catching a wrong assumption while it's still one paragraph, not 400 lines of code. Edit any artifact directly if something's off, then continue.
 
 ```text
 You: /rasen:apply
@@ -175,23 +175,23 @@ You: /rasen:continue
 AI:  Created specs/auth/spec.md. Now available: design.
 ```
 
-Review each artifact as it lands, edit freely, and continue when you're happy. When you want the rest drafted in one go, `/rasen:ff` fast-forwards through the remaining planning artifacts. Before archiving, `/rasen:verify` checks that the implementation actually matches the specs. See [Workflows](workflows.md#opsxff-vs-opsxcontinue).
+Review each artifact as it lands, edit freely, and continue when you're happy. When you want the rest drafted in one go, `/rasen:ff` fast-forwards through the remaining planning artifacts. Before archiving, `/rasen:verify` checks that the implementation actually matches the specs. See [Workflows](workflows.md#rasenff-vs-rasencontinue).
 
 ## Recipe 7: Learning the whole loop hands-on
 
-**When to use it:** you've installed OpenSpec and want to *feel* the workflow on your own code, not a toy example.
+**When to use it:** you've installed rasen and want to *feel* the workflow on your own code, not a toy example.
 
 Turn on the expanded commands (see Recipe 6), then:
 
 ```text
 You: /rasen:onboard
 
-AI:  Welcome to OpenSpec! I'll walk you through a complete change
+AI:  Welcome to rasen! I'll walk you through a complete change
      using your actual codebase. Let me scan for a small, safe
      improvement we can make together...
 ```
 
-`/rasen:onboard` finds a real (small) improvement, creates a change for it, implements it, and archives it, narrating every step. It takes 15 to 30 minutes and leaves you with a real change you can keep or discard. It's the gentlest way to learn. See [Commands](commands.md#opsxonboard).
+`/rasen:onboard` finds a real (small) improvement, creates a change for it, implements it, and archives it, narrating every step. It takes 15 to 30 minutes and leaves you with a real change you can keep or discard. It's the gentlest way to learn. See [Commands](commands.md#rasenonboard).
 
 ## Checking your work from the terminal
 

@@ -43,7 +43,7 @@ Pre-flight checks SHALL verify readiness before shipping. A dirty working tree S
 
 ### Requirement: Ship Execution
 
-Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/rasen:ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a gstack `/ship` expert skill.
+Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/rasen:ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a legacy `/ship` expert skill.
 
 #### Scenario: Merge base branch only in pr mode
 
@@ -77,7 +77,7 @@ Ship SHALL commit, integrate, and deliver according to the resolved delivery mod
 
 - **WHEN** the test gate is satisfied
 - **THEN** in `pr` mode the system SHALL push the branch with upstream tracking and create a pull request via `gh pr create`; in `push` mode it SHALL push the current branch without creating a PR; in `local` mode it SHALL NOT push and SHALL record that delivery is deferred to the portfolio/parent level
-- **AND** the ship phase SHALL complete without invoking any gstack `/ship` expert skill
+- **AND** the ship phase SHALL complete without invoking any legacy `/ship` expert skill
 
 #### Scenario: Documentation sync is inline, not delegated
 

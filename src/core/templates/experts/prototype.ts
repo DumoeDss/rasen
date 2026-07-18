@@ -1,12 +1,12 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
 import { CHANGE_CONTEXT_CAPTURE_GUIDANCE } from '../workflows/change-context.js';
-import { PREAMBLE } from './_shared.js';
+import { PREAMBLE_LITE } from './_shared.js';
 
 const BODY = `
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
 
-${PREAMBLE}
+${PREAMBLE_LITE}
 
 # Prototype
 
@@ -38,7 +38,7 @@ The _answer_ is the only thing worth keeping from a prototype. Capture it somewh
 export function getPrototypeSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen:prototype',
-    description: '|',
+    description: 'Rapid prototyping — build a throwaway UI or logic spike to answer a question fast',
     instructions: `${BODY.trim()}\n\n${CHANGE_CONTEXT_CAPTURE_GUIDANCE}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };

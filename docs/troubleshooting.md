@@ -4,12 +4,12 @@ Concrete fixes for concrete problems. Each entry names a symptom, explains the l
 
 ## Installation and setup
 
-### `openspec: command not found`
+### `rasen: command not found`
 
 The CLI isn't installed, or your shell can't find it. Install it globally and check:
 
 ```bash
-npm install -g @fission-ai/openspec@latest
+npm install -g @atelierai/rasen@latest
 rasen --version
 ```
 
@@ -17,13 +17,13 @@ If it installed but still isn't found, your global npm bin directory probably is
 
 ### "Requires Node.js 20.19.0 or higher"
 
-OpenSpec runs on Node 20.19.0+. Check your version and upgrade if needed:
+Rasen runs on Node 20.19.0+. Check your version and upgrade if needed:
 
 ```bash
 node --version
 ```
 
-If you use bun to install OpenSpec, note that OpenSpec still *runs* on Node, so you need Node 20.19.0+ available on your `PATH` regardless. See [Installation](installation.md).
+If you use bun to install rasen, note that rasen still *runs* on Node, so you need Node 20.19.0+ available on your `PATH` regardless. See [Installation](installation.md).
 
 ### `rasen init` didn't configure my AI tool
 
@@ -51,11 +51,11 @@ If `/rasen:propose` (or your tool's equivalent) doesn't appear or doesn't do any
 
 3. **Restart your assistant.** Most tools scan for skills and commands at startup. A fresh window often does it.
 
-4. **Confirm the files exist.** For Claude Code, check that `.claude/skills/` contains `openspec-*` folders. Other tools use their own directories, all listed in [Supported Tools](supported-tools.md).
+4. **Confirm the files exist.** For Claude Code, check that `.claude/skills/` contains `rasen-*` folders. Other tools use their own directories, all listed in [Supported Tools](supported-tools.md).
 
 5. **Check you initialized this project.** Skills are written per project. If you cloned a repo or switched folders, run `rasen init` (or `rasen update`) there.
 
-6. **Confirm your tool supports command files.** A few tools (Kimi CLI, Trae, ForgeCode, Mistral Vibe) don't get generated `opsx-*` command files; they use skill-based invocations instead. The forms differ per tool: see [Supported Tools](supported-tools.md) and [How Commands Work](how-commands-work.md#slash-command-syntax-by-tool).
+6. **Confirm your tool supports command files.** A few tools (Kimi CLI, Trae, ForgeCode, Mistral Vibe) don't get generated `rasen-*` command files; they use skill-based invocations instead. The forms differ per tool: see [Supported Tools](supported-tools.md) and [How Commands Work](how-commands-work.md#slash-command-syntax-by-tool).
 
 ## Working with changes
 
@@ -90,7 +90,7 @@ rasen validate --all            # validate everything
 rasen validate --all --strict   # stricter checks, good for CI
 ```
 
-Common causes are a missing required section (like a spec with no scenarios) or a malformed delta header. Fix the file and re-run. The [CLI reference](cli.md#openspec-validate) documents the output format.
+Common causes are a missing required section (like a spec with no scenarios) or a malformed delta header. Fix the file and re-run. The [CLI reference](cli.md#rasen-validate) documents the output format.
 
 ### The AI created incomplete or wrong artifacts
 
@@ -143,7 +143,7 @@ See [Customization](customization.md#custom-schemas).
 
 ### "Legacy files detected in non-interactive mode"
 
-You're in CI or a non-interactive shell, and OpenSpec found old files to clean up but can't prompt you. Approve automatically:
+You're in CI or a non-interactive shell, and rasen found old files to clean up but can't prompt you. Approve automatically:
 
 ```bash
 rasen init --force
@@ -155,12 +155,12 @@ Restart your IDE. Skills are detected at startup. If they still don't appear, ru
 
 ### My old `project.md` wasn't migrated
 
-That's intentional. OpenSpec never deletes `project.md` automatically because it may hold context you wrote. Move the useful parts into `config.yaml`'s `context:` section, then delete it yourself. The [Migration Guide](migration-guide.md#migrating-projectmd-to-configyaml) walks through this, including a prompt you can hand to your AI to do the distilling.
+That's intentional. Rasen never deletes `project.md` automatically because it may hold context you wrote. Move the useful parts into `config.yaml`'s `context:` section, then delete it yourself. The [Migration Guide](migration-guide.md#migrating-projectmd-to-configyaml) walks through this, including a prompt you can hand to your AI to do the distilling.
 
 ## Still stuck?
 
 - **Discord:** [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
-- **GitHub Issues:** [github.com/Fission-AI/OpenSpec/issues](https://github.com/Fission-AI/OpenSpec/issues)
+- **GitHub Issues:** [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues)
 - **From your terminal:** `rasen feedback "what went wrong"` opens an issue for you.
 
-When you report a problem, include your OpenSpec version (`rasen --version`), your Node version (`node --version`), your AI tool, and the exact command and output. It makes help much faster.
+When you report a problem, include your rasen version (`rasen --version`), your Node version (`node --version`), your AI tool, and the exact command and output. It makes help much faster.

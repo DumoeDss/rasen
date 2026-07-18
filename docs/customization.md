@@ -1,6 +1,6 @@
 # Customization
 
-OpenSpec provides three levels of customization:
+Rasen provides three levels of customization:
 
 | Level | What it does | Best for |
 |-------|--------------|----------|
@@ -12,7 +12,7 @@ OpenSpec provides three levels of customization:
 
 ## Project Configuration
 
-The `rasen/config.yaml` file is the easiest way to customize OpenSpec for your team. It lets you:
+The `rasen/config.yaml` file is the easiest way to customize rasen for your team. It lets you:
 
 - **Set a default schema** - Skip `--schema` on every command
 - **Inject project context** - AI sees your tech stack, conventions, etc.
@@ -82,7 +82,7 @@ Tech stack: TypeScript, React, Node.js, PostgreSQL
 
 ### Schema Resolution Order
 
-When OpenSpec needs a schema, it checks in this order:
+When rasen needs a schema, it checks in this order:
 
 1. CLI flag: `--schema <name>`
 2. Change metadata (`.openspec.yaml` in the change folder)
@@ -93,11 +93,11 @@ When OpenSpec needs a schema, it checks in this order:
 
 ## Custom Schemas
 
-When project config isn't enough, create your own schema with a completely custom workflow. Custom schemas live in your project's `openspec/schemas/` directory and are version-controlled with your code.
+When project config isn't enough, create your own schema with a completely custom workflow. Custom schemas live in your project's `rasen/schemas/` directory and are version-controlled with your code.
 
 ```text
 your-project/
-├── openspec/
+├── rasen/
 │   ├── config.yaml        # Project config
 │   ├── schemas/           # Custom schemas live here
 │   │   └── my-workflow/
@@ -115,12 +115,12 @@ The fastest way to customize is to fork a built-in schema:
 rasen schema fork spec-driven my-workflow
 ```
 
-This copies the entire `spec-driven` schema to `openspec/schemas/my-workflow/` where you can edit it freely.
+This copies the entire `spec-driven` schema to `rasen/schemas/my-workflow/` where you can edit it freely.
 
 **What you get:**
 
 ```text
-openspec/schemas/my-workflow/
+rasen/schemas/my-workflow/
 ├── schema.yaml           # Workflow definition
 └── templates/
     ├── proposal.md       # Template for proposal artifact
@@ -151,7 +151,7 @@ rasen schema init rapid \
 A schema defines the artifacts in your workflow and how they depend on each other:
 
 ```yaml
-# openspec/schemas/my-workflow/schema.yaml
+# rasen/schemas/my-workflow/schema.yaml
 name: my-workflow
 version: 1
 description: My team's custom workflow
@@ -264,12 +264,12 @@ Output shows whether it's from your project, user directory, or the package:
 ```text
 Schema: my-workflow
 Source: project
-Path: /path/to/project/openspec/schemas/my-workflow
+Path: /path/to/project/rasen/schemas/my-workflow
 ```
 
 ---
 
-> **Note:** OpenSpec also supports user-level schemas at `~/.rasen/schemas/` (override the location with `RASEN_HOME`) for sharing across projects, but project-level schemas in `openspec/schemas/` are recommended since they're version-controlled with your code.
+> **Note:** Rasen also supports user-level schemas at `~/.rasen/schemas/` (override the location with `RASEN_HOME`) for sharing across projects, but project-level schemas in `rasen/schemas/` are recommended since they're version-controlled with your code.
 
 ---
 
@@ -280,7 +280,7 @@ Path: /path/to/project/openspec/schemas/my-workflow
 A minimal workflow for quick iterations:
 
 ```yaml
-# openspec/schemas/rapid/schema.yaml
+# rasen/schemas/rapid/schema.yaml
 name: rapid
 version: 1
 description: Fast iteration with minimal overhead
@@ -339,13 +339,13 @@ Then edit `schema.yaml` to add:
 
 ## Community Schemas
 
-OpenSpec also supports community-maintained schemas distributed via standalone repositories. These provide opinionated workflows that integrate OpenSpec with other tools or systems, similar to how [github/spec-kit's community extension catalog](https://github.com/github/spec-kit/tree/main/extensions) works for spec-kit.
+Rasen also supports community-maintained schemas distributed via standalone repositories. These provide opinionated workflows that integrate rasen with other tools or systems, similar to how [github/spec-kit's community extension catalog](https://github.com/github/spec-kit/tree/main/extensions) works for spec-kit.
 
-Community schemas are not vendored into OpenSpec core — they live in their own repositories with their own release cadence. To use one, copy the schema bundle into your project's `openspec/schemas/<schema-name>/` directory (each repo's README has install instructions).
+Community schemas are not vendored into rasen core — they live in their own repositories with their own release cadence. To use one, copy the schema bundle into your project's `rasen/schemas/<schema-name>/` directory (each repo's README has install instructions).
 
 | Schema | Maintainer | Repository | Description |
 |--------|-----------|-----------|-------------|
-| `superpowers-bridge` | @JiangWay | [JiangWay/openspec-schemas](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) | Integrates OpenSpec's artifact governance with [obra/superpowers](https://github.com/obra/superpowers) execution skills (brainstorming, writing-plans, TDD via subagents, code review, finishing). Adds an evidence-first `retrospective` artifact filling a gap Superpowers does not natively cover. |
+| `superpowers-bridge` | @JiangWay | [JiangWay/openspec-schemas](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) | Integrates rasen's artifact governance with [obra/superpowers](https://github.com/obra/superpowers) execution skills (brainstorming, writing-plans, TDD via subagents, code review, finishing). Adds an evidence-first `retrospective` artifact filling a gap Superpowers does not natively cover. |
 
 > Want to contribute a community schema? Open an issue with a link to your repository, or submit a PR adding a row to this table.
 

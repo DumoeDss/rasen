@@ -16,7 +16,16 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readRolloutOccupancy, CODEX_CLI_VERSION_PREMISE } from './codex/index.js';
+import {
+  readRolloutOccupancy,
+  listRolloutFiles,
+  resolveCodexHome,
+  CODEX_CLI_VERSION_PREMISE,
+} from './codex/index.js';
+import { findRepoPlanningRootSync } from './planning-home.js';
+import { resolveHandoffThresholdLayers } from './effective-config.js';
+import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry/types.js';
+import { resolveModelPreset } from './model-presets.js';
 
 export interface AgentContextResult {
   model: string;
@@ -24,6 +33,8 @@ export interface AgentContextResult {
   limit: number;
   /** contextTokens / limit, rounded to 6 decimals (0–1). */
   pct: number;
+  /** max(0, limit - contextTokens) — 0 when no limit is known. */
+  remainingTokens: number;
   transcript: string;
 }
 
@@ -32,38 +43,25 @@ export interface ContextEstimate {
   contextTokens: number;
   limit: number;
   pct: number;
+  remainingTokens: number;
 }
 
 /** Conservative fallback window for unknown models. */
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
-const HAIKU_LIMIT = 200_000;
-const LARGE_LIMIT = 1_000_000;
 
 /**
- * Resolve a model id to its context-window size via a built-in prefix map.
- *
- *  - ids containing `haiku` → 200k;
- *  - current large-context generations (`opus-4`, `sonnet-5`, `sonnet-4-6`,
- *    `fable`, `mythos`) → 1M;
- *  - everything else → the conservative 200k default.
- *
- * Matching is case-insensitive and substring-based so provider-prefixed ids
- * (e.g. `claude-opus-4-8`, `us.anthropic.claude-...`) resolve correctly.
+ * Resolve a model id to its context-window size via the built-in
+ * {@link resolveModelPreset} registry, falling back to the conservative
+ * default for unknown models. One source of truth for context-window sizes;
+ * identical resolutions to the previous ad-hoc map for every id it resolved
+ * before.
  */
 export function resolveModelLimit(model: string | undefined | null): number {
-  if (!model) return DEFAULT_CONTEXT_LIMIT;
-  const id = model.toLowerCase();
-  if (id.includes('haiku')) return HAIKU_LIMIT;
-  if (
-    id.includes('opus-4') ||
-    id.includes('sonnet-5') ||
-    id.includes('sonnet-4-6') ||
-    id.includes('fable') ||
-    id.includes('mythos')
-  ) {
-    return LARGE_LIMIT;
-  }
-  return DEFAULT_CONTEXT_LIMIT;
+  return resolveModelPreset(model)?.contextWindow ?? DEFAULT_CONTEXT_LIMIT;
+}
+
+function remainingTokens(limit: number, contextTokens: number): number {
+  return Math.max(0, limit - contextTokens);
 }
 
 function roundPct(n: number): number {
@@ -144,6 +142,7 @@ export function computeContextFromTranscript(
     contextTokens,
     limit,
     pct: roundPct(contextTokens / limit),
+    remainingTokens: remainingTokens(limit, contextTokens),
     transcript: transcriptPath,
   };
 }
@@ -275,7 +274,14 @@ export function computeContextFromRollout(
 
   if (!occupancy) {
     const limit = options.limit ?? 0;
-    return { model, contextTokens: 0, limit, pct: 0, transcript: rolloutPath };
+    return {
+      model,
+      contextTokens: 0,
+      limit,
+      pct: 0,
+      remainingTokens: remainingTokens(limit, 0),
+      transcript: rolloutPath,
+    };
   }
 
   const limit = options.limit ?? occupancy.modelContextWindow;
@@ -284,6 +290,7 @@ export function computeContextFromRollout(
     contextTokens: occupancy.totalTokens,
     limit,
     pct: limit > 0 ? roundPct(occupancy.totalTokens / limit) : 0,
+    remainingTokens: remainingTokens(limit, occupancy.totalTokens),
     transcript: rolloutPath,
   };
 }
@@ -300,17 +307,35 @@ export function claudeProjectsDir(cwd: string, homeDir: string = os.homedir()): 
 }
 
 /**
+ * Environmental absence of a Claude transcript under `--latest`: the derived
+ * projects directory does not exist, or exists but holds no main-session
+ * transcript (design D2). This is NOT an error on a non-Claude host (e.g. a
+ * Codex CLI session as the LEAD) — it is that host's normal state, and the
+ * probe is contractually a non-blocking pre-flight. Distinguished by type
+ * (not message matching) so the command layer can catch ONLY this case and
+ * degrade gracefully, while every other throw (including an explicit
+ * `--transcript` failure) stays a hard error.
+ */
+export class AgentContextUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentContextUnavailableError';
+  }
+}
+
+/**
  * Newest MAIN-session transcript (`*.jsonl`, excluding `agent-*.jsonl` subagent
- * files) directly under `baseDir`, by mtime. Throws an actionable error when the
- * directory is absent or holds no main-session transcript.
+ * files) directly under `baseDir`, by mtime. Throws {@link AgentContextUnavailableError}
+ * when the directory is absent or holds no main-session transcript — both are
+ * environmental-absence cases, reachable only via `--latest` (design D2).
  */
 export function findLatestMainTranscript(baseDir: string): string {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(baseDir, { withFileTypes: true });
   } catch {
-    throw new Error(
-      `No Claude transcript directory at ${baseDir}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
+    throw new AgentContextUnavailableError(
+      `No Claude transcript directory at ${baseDir}. Run from the project whose session you want to probe, or pass --transcript / --dir. On a Codex host, pass --runtime codex with --latest.`
     );
   }
 
@@ -329,11 +354,71 @@ export function findLatestMainTranscript(baseDir: string): string {
   }
 
   if (!newest) {
-    throw new Error(
-      `No main-session transcript (*.jsonl) found in ${baseDir}. It holds only subagent files or is empty.`
+    throw new AgentContextUnavailableError(
+      `No main-session transcript (*.jsonl) found in ${baseDir}. It holds only subagent files or is empty. On a Codex host, pass --runtime codex with --latest.`
     );
   }
   return newest;
+}
+
+/** Parsed first line of a candidate rollout, or `undefined` when unreadable/malformed/not `session_meta`. */
+function readSessionMeta(rolloutPath: string): Record<string, unknown> | undefined {
+  let content: string;
+  try {
+    content = fs.readFileSync(rolloutPath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  let firstLine: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      firstLine = trimmed;
+      break;
+    }
+  }
+  if (!firstLine) return undefined;
+  let row: Record<string, unknown>;
+  try {
+    row = JSON.parse(firstLine) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (row.type !== 'session_meta') return undefined;
+  const payload = row.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  return payload as Record<string, unknown>;
+}
+
+/**
+ * Newest Codex rollout under `sessionsDir` whose recorded session `cwd`
+ * (`session_meta.payload.cwd`, resolved) equals the resolved probe `cwd`,
+ * excluding forked-child (subagent) rollouts — the Codex analog of
+ * {@link findLatestMainTranscript} (design D2). Candidates are ordered
+ * newest-mtime-first and inspected candidate-lazily (each candidate's file is
+ * read whole, `readJsonlLines`-style, to get its `session_meta` first line —
+ * the laziness is that the walk stops early, not a partial file read): the walk stops at the
+ * first match, so in practice only the LEAD's own recent rollout (or a
+ * handful of misses) pay the read. Throws {@link AgentContextUnavailableError}
+ * naming the sessions root and the cwd filter when nothing matches
+ * (environmental absence, reachable only via `--latest`).
+ */
+export function findLatestRollout(sessionsDir: string, cwd: string): string {
+  const resolvedCwd = path.resolve(cwd);
+  const candidates = listRolloutFiles(sessionsDir).sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  for (const candidate of candidates) {
+    const meta = readSessionMeta(candidate.path);
+    if (!meta) continue;
+    if (meta.forked_from_id !== undefined || meta.parent_thread_id !== undefined) continue;
+    const metaCwd = meta.cwd;
+    if (typeof metaCwd !== 'string') continue;
+    if (path.resolve(metaCwd) === resolvedCwd) return candidate.path;
+  }
+
+  throw new AgentContextUnavailableError(
+    `No Codex rollout found in ${sessionsDir} whose session cwd matches ${resolvedCwd}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
+  );
 }
 
 export interface ProbeOptions {
@@ -355,17 +440,84 @@ export interface ProbeOptions {
 
 /**
  * Resolve which transcript a probe should read. `--transcript` wins; otherwise
- * `--latest` resolves the newest main-session transcript under `--dir` (or the
- * cwd-derived Claude projects dir). Throws when neither is provided.
+ * `--latest` resolves the newest main-session transcript — the Claude-side
+ * path under `--dir` (or the cwd-derived Claude projects dir) when `runtime`
+ * is absent/`'claude'`, or the newest cwd-matching Codex rollout under `--dir`
+ * (or the default Codex sessions root) when `runtime` is `'codex'` (design
+ * D1/D3). `runtime` here is the already-validated value — callers must
+ * validate `--runtime` before calling. Throws when neither `--transcript` nor
+ * `--latest` is provided.
  */
-export function resolveTranscriptPath(options: ProbeOptions): string {
+export function resolveTranscriptPath(options: ProbeOptions, runtime?: TranscriptKind): string {
   if (options.transcript) return options.transcript;
   if (options.latest) {
+    if (runtime === 'codex') {
+      const sessionsDir = options.dir ?? path.join(resolveCodexHome(), 'sessions');
+      return findLatestRollout(sessionsDir, options.cwd ?? process.cwd());
+    }
     const baseDir =
       options.dir ?? claudeProjectsDir(options.cwd ?? process.cwd(), options.homeDir);
     return findLatestMainTranscript(baseDir);
   }
   throw new Error('Specify a transcript to probe: pass --transcript <path> or --latest.');
+}
+
+export type HandoffThresholdSource = 'project' | 'global' | 'default';
+
+export interface HandoffThresholdReport {
+  threshold: ThresholdValue;
+  thresholdSource: HandoffThresholdSource;
+  /**
+   * True when the probe has crossed `threshold`: for a fraction, `pct >=
+   * threshold`; for the absolute `{ remainingTokens }` form, `remainingTokens
+   * <= threshold.remainingTokens` (design D2, same direction as
+   * `resolveStageHandoffConfig`'s handoff comparison).
+   */
+  shouldHandoff: boolean;
+}
+
+/**
+ * Resolves the configured context-handoff threshold for `rasen agent
+ * context`: project config `handoff.threshold` (when `cwd` resolves inside a
+ * Rasen project) else global config `handoff.threshold` else the built-in
+ * default (0.5), and reports whether the probe has crossed it, in either
+ * dual-form (D1/D2). Role-agnostic by design — a transcript probe has no
+ * stage identity, so pipeline/stage/role overrides (which apply only to
+ * `resolveStageHandoffConfig`) do not apply here, and neither does the
+ * model-preset layer (that is a stage/role-scoped suggestion, not a bare
+ * probe's business). Shares `resolveHandoffThresholdLayers()`
+ * (src/core/effective-config.ts) with the pipeline resolver so the two
+ * consumers cannot drift on what "the configured threshold" means. Remains a
+ * probe: callers must not treat `shouldHandoff` as a reason to change the
+ * exit code.
+ */
+export function resolveHandoffThresholdReport(
+  pct: number,
+  remainingTokens: number,
+  cwd: string = process.cwd()
+): HandoffThresholdReport {
+  const projectRoot = findRepoPlanningRootSync(cwd);
+  const layers = resolveHandoffThresholdLayers(projectRoot);
+
+  let threshold: ThresholdValue;
+  let thresholdSource: HandoffThresholdSource;
+  if (layers.projectThreshold !== undefined) {
+    threshold = layers.projectThreshold;
+    thresholdSource = 'project';
+  } else if (layers.globalThreshold !== undefined) {
+    threshold = layers.globalThreshold;
+    thresholdSource = 'global';
+  } else {
+    threshold = DEFAULT_HANDOFF_CONFIG.threshold;
+    thresholdSource = 'default';
+  }
+
+  const shouldHandoff =
+    typeof threshold === 'number'
+      ? pct >= threshold
+      : remainingTokens <= threshold.remainingTokens;
+
+  return { threshold, thresholdSource, shouldHandoff };
 }
 
 /**
@@ -382,11 +534,36 @@ export function probeAgentContext(options: ProbeOptions): AgentContextResult {
   ) {
     throw new Error('--limit must be a positive integer (token count of the context window).');
   }
-  const transcriptPath = resolveTranscriptPath(options);
+  const transcriptPath = resolveTranscriptPath(options, runtime);
   const kind = detectTranscriptKind(transcriptPath, runtime);
   return kind === 'codex'
     ? computeContextFromRollout(transcriptPath, { limit: options.limit })
     : computeContextFromTranscript(transcriptPath, { limit: options.limit });
+}
+
+/** Tagged result of {@link probeAgentContextSafe} — success or environmental unavailability. */
+export type ProbeAgentContextResult =
+  | ({ available: true } & AgentContextResult)
+  | { available: false; reason: 'no-transcript'; detail: string };
+
+/**
+ * Same resolution as {@link probeAgentContext}, but catches ONLY environmental
+ * absence under `--latest` ({@link AgentContextUnavailableError}) and returns it
+ * as a tagged `{available:false}` result instead of throwing (design D2). Every
+ * other failure (invalid `--runtime`/`--limit`, no source flag, an explicit
+ * `--transcript` that is unreadable/usage-free) still throws — those are input
+ * errors, not a host's normal state, and must stay hard errors.
+ */
+export function probeAgentContextSafe(options: ProbeOptions): ProbeAgentContextResult {
+  try {
+    const result = probeAgentContext(options);
+    return { available: true, ...result };
+  } catch (err) {
+    if (err instanceof AgentContextUnavailableError) {
+      return { available: false, reason: 'no-transcript', detail: err.message };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -407,7 +584,12 @@ export function tryContextEstimate(
       kind === 'codex'
         ? computeContextFromRollout(transcriptPath, { limit })
         : computeContextFromTranscript(transcriptPath, { limit });
-    return { contextTokens: r.contextTokens, limit: r.limit, pct: r.pct };
+    return {
+      contextTokens: r.contextTokens,
+      limit: r.limit,
+      pct: r.pct,
+      remainingTokens: r.remainingTokens,
+    };
   } catch {
     return undefined;
   }

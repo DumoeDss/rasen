@@ -6,7 +6,8 @@
 
 import path from 'path';
 import * as fs from 'fs';
-import { AI_TOOLS } from '../config.js';
+import { AI_TOOLS, type AIToolOption } from '../config.js';
+import { resolveHermesHome } from '../hermes/hermes-home.js';
 
 /**
  * Names of skill directories created by rasen init.
@@ -88,10 +89,41 @@ export interface ToolVersionStatus {
 }
 
 /**
- * Gets the list of tools with skillsDir configured.
+ * Gets the list of adapted tools with skillsDir configured.
+ * This is the install/selection surface — it only offers agents Rasen has
+ * adapted orchestration for. Tolerant-read functions below intentionally do
+ * NOT use this filter; they operate on the full AI_TOOLS list so already
+ * configured (but unadapted) tools remain serviceable by update.
  */
 export function getToolsWithSkillsDir(): string[] {
-  return AI_TOOLS.filter((t) => t.skillsDir).map((t) => t.value);
+  return AI_TOOLS.filter((t) => t.skillsDir && t.adapted).map((t) => t.value);
+}
+
+/**
+ * Classifies a token as a known-but-unadapted tool: it matches an AI_TOOLS
+ * entry with a skillsDir, but that entry is not adapted. Used to give a
+ * distinguishing "recognized but not yet adapted" error instead of the
+ * generic "unknown tool" error.
+ */
+export function isKnownUnadaptedTool(value: string): boolean {
+  const tool = AI_TOOLS.find((t) => t.value === value);
+  return Boolean(tool?.skillsDir && !tool.adapted);
+}
+
+/**
+ * Resolves where a tool's Rasen skills root lives on disk.
+ *
+ * Every tool defaults to a project-local skills directory
+ * (`<projectPath>/<skillsDir>/skills`) — this default is unchanged for all
+ * existing tools. A tool marked `skillsHome: 'global'` (currently only
+ * Hermes) instead resolves to its machine-global home's skills directory,
+ * independent of the project path.
+ */
+export function resolveToolSkillsRoot(tool: AIToolOption, projectPath: string): string {
+  if (tool.skillsHome === 'global') {
+    return path.join(resolveHermesHome(), 'skills');
+  }
+  return path.join(projectPath, tool.skillsDir ?? '', 'skills');
 }
 
 /**
@@ -103,7 +135,7 @@ export function getToolSkillStatus(projectRoot: string, toolId: string): ToolSki
     return { configured: false, fullyConfigured: false, skillCount: 0 };
   }
 
-  const skillsDir = path.join(projectRoot, tool.skillsDir, 'skills');
+  const skillsDir = resolveToolSkillsRoot(tool, projectRoot);
   let skillCount = 0;
 
   for (const skillName of SKILL_NAMES) {
@@ -186,7 +218,7 @@ export function getToolVersionStatus(
     };
   }
 
-  const skillsDir = path.join(projectRoot, tool.skillsDir, 'skills');
+  const skillsDir = resolveToolSkillsRoot(tool, projectRoot);
   let generatedByVersion: string | null = null;
 
   // Find the first skill file that exists and read its version
