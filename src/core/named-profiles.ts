@@ -57,6 +57,25 @@ export interface AvailableProfile {
   builtIn: boolean;
   definition?: ProfileDefinition;
   error?: string;
+  /** Non-enumerable when present so legacy JSON payload fields remain stable. */
+  errorDescriptor?: NamedProfileMessageDescriptor;
+}
+
+export type NamedProfileErrorMessageKey =
+  | 'invalidName'
+  | 'reservedName'
+  | 'invalidSource'
+  | 'fileNotFound'
+  | 'pathNotFile'
+  | 'fileTooLarge'
+  | 'unsupportedFormat'
+  | 'destinationNotFile'
+  | 'destinationExists'
+  | 'profileNotFound';
+
+export interface NamedProfileMessageDescriptor {
+  key: NamedProfileErrorMessageKey;
+  values?: Record<string, string | number>;
 }
 
 export class NamedProfileError extends Error {
@@ -68,7 +87,8 @@ export class NamedProfileError extends Error {
       | 'not_found'
       | 'already_exists'
       | 'invalid_file'
-      | 'unsupported_format'
+      | 'unsupported_format',
+    readonly messageDescriptor?: NamedProfileMessageDescriptor
   ) {
     super(message);
     this.name = 'NamedProfileError';
@@ -95,7 +115,10 @@ export function assertValidUserProfileName(name: string): void {
   const code = RESERVED_PROFILE_NAMES.includes(name as (typeof RESERVED_PROFILE_NAMES)[number])
     ? 'reserved_name'
     : 'invalid_name';
-  throw new NamedProfileError(error, code);
+  throw new NamedProfileError(error, code, {
+    key: code === 'reserved_name' ? 'reservedName' : 'invalidName',
+    values: { name },
+  });
 }
 
 export function getNamedProfilePath(name: string): string {
@@ -117,7 +140,11 @@ export function parseProfileDefinition(raw: unknown, source = 'profile definitio
   if (!result.success) {
     throw new NamedProfileError(
       `Invalid ${source}: ${formatZodIssues(result.error)}`,
-      'invalid_file'
+      'invalid_file',
+      {
+        key: 'invalidSource',
+        values: { source, detail: formatZodIssues(result.error) },
+      }
     );
   }
   return normalizeProfileDefinition(result.data);
@@ -130,7 +157,11 @@ function parseProfileContent(content: string, extension: string, source: string)
   } catch (error) {
     throw new NamedProfileError(
       `Invalid ${source}: ${error instanceof Error ? error.message : String(error)}`,
-      'invalid_file'
+      'invalid_file',
+      {
+        key: 'invalidSource',
+        values: { source, detail: error instanceof Error ? error.message : String(error) },
+      }
     );
   }
   return parseProfileDefinition(raw, source);
@@ -142,17 +173,27 @@ export function readProfileDefinitionFile(filePath: string): ProfileDefinition {
     stat = fs.statSync(filePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new NamedProfileError(`Profile file not found: ${filePath}`, 'not_found');
+      throw new NamedProfileError(`Profile file not found: ${filePath}`, 'not_found', {
+        key: 'fileNotFound',
+        values: { path: filePath },
+      });
     }
     throw error;
   }
   if (!stat.isFile()) {
-    throw new NamedProfileError(`Profile path is not a file: ${filePath}`, 'invalid_file');
+    throw new NamedProfileError(`Profile path is not a file: ${filePath}`, 'invalid_file', {
+      key: 'pathNotFile',
+      values: { path: filePath },
+    });
   }
   if (stat.size > MAX_PROFILE_FILE_BYTES) {
     throw new NamedProfileError(
       `Profile file is too large (${stat.size} bytes; maximum ${MAX_PROFILE_FILE_BYTES}).`,
-      'invalid_file'
+      'invalid_file',
+      {
+        key: 'fileTooLarge',
+        values: { size: stat.size, maximum: MAX_PROFILE_FILE_BYTES },
+      }
     );
   }
 
@@ -160,7 +201,8 @@ export function readProfileDefinitionFile(filePath: string): ProfileDefinition {
   if (!SUPPORTED_IMPORT_EXTENSIONS.has(extension)) {
     throw new NamedProfileError(
       `Unsupported profile format "${extension || '(none)'}". Use .yaml, .yml, or .json.`,
-      'unsupported_format'
+      'unsupported_format',
+      { key: 'unsupportedFormat', values: { extension: extension || '(none)' } }
     );
   }
 
@@ -191,10 +233,16 @@ function writeFileSafely(targetPath: string, content: string, overwrite: boolean
 
   if (targetStat) {
     if (!targetStat.isFile() && !targetStat.isSymbolicLink()) {
-      throw new NamedProfileError(`Destination is not a file: ${targetPath}`, 'invalid_file');
+      throw new NamedProfileError(`Destination is not a file: ${targetPath}`, 'invalid_file', {
+        key: 'destinationNotFile',
+        values: { path: targetPath },
+      });
     }
     if (!overwrite) {
-      throw new NamedProfileError(`Destination already exists: ${targetPath}`, 'already_exists');
+      throw new NamedProfileError(`Destination already exists: ${targetPath}`, 'already_exists', {
+        key: 'destinationExists',
+        values: { path: targetPath },
+      });
     }
   }
 
@@ -261,7 +309,10 @@ export function namedProfileExists(name: string): boolean {
 export function deleteNamedProfile(name: string): void {
   const profilePath = getNamedProfilePath(name);
   if (!fs.existsSync(profilePath)) {
-    throw new NamedProfileError(`Profile "${name}" was not found.`, 'not_found');
+    throw new NamedProfileError(`Profile "${name}" was not found.`, 'not_found', {
+      key: 'profileNotFound',
+      values: { name },
+    });
   }
   fs.rmSync(profilePath);
 }
@@ -297,11 +348,18 @@ export function listUserProfiles(): AvailableProfile[] {
     try {
       return { name, builtIn: false, definition: readNamedProfile(name) };
     } catch (error) {
-      return {
+      const profile: AvailableProfile = {
         name,
         builtIn: false,
         error: error instanceof Error ? error.message : String(error),
       };
+      if (error instanceof NamedProfileError && error.messageDescriptor) {
+        Object.defineProperty(profile, 'errorDescriptor', {
+          value: error.messageDescriptor,
+          enumerable: false,
+        });
+      }
+      return profile;
     }
   });
 }
@@ -335,7 +393,8 @@ export function importNamedProfile(
   if (!SUPPORTED_IMPORT_EXTENSIONS.has(extension)) {
     throw new NamedProfileError(
       `Unsupported profile format "${extension || '(none)'}". Use .yaml, .yml, or .json.`,
-      'unsupported_format'
+      'unsupported_format',
+      { key: 'unsupportedFormat', values: { extension: extension || '(none)' } }
     );
   }
   const name = userProfileNameFromPath(resolvedSource);

@@ -632,13 +632,13 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'config',
-    description: 'View and modify global Rasen configuration',
+    description: 'View and modify global or project Rasen configuration',
     flags: [
       {
         name: 'scope',
-        description: 'Config scope (only "global" supported currently)',
+        description: 'Config scope: "global" (default) or "project"',
         takesValue: true,
-        values: ['global'],
+        values: ['global', 'project'],
       },
     ],
     subcommands: [

@@ -9,6 +9,10 @@ import {
   type ProjectRegistryState,
 } from './project-registry.js';
 import type { ThresholdValue } from './model-presets.js';
+import {
+  reportConfigDiagnostic,
+  type ConfigDiagnosticReporter,
+} from './config-diagnostics.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -25,6 +29,7 @@ const LEGACY_BRAND_DIR_NAME = 'openspec';
 // TypeScript types
 export type Profile = 'full' | 'core' | 'custom';
 export type Delivery = 'both' | 'skills';
+export type Language = 'auto' | 'en' | 'ja';
 type LegacyDelivery = 'commands' | 'skills-first' | 'commands-first';
 export type RepoMode = 'solo' | 'collaborative';
 
@@ -61,6 +66,7 @@ export interface GlobalConfig {
   profile?: Profile;
   delivery?: Delivery;
   workflows?: string[];
+  language?: Language;
   proactive?: boolean;
   repoMode?: RepoMode;
   /** Workset opener rows (slice 7.1); hand-edited, validated on use. */
@@ -85,6 +91,7 @@ const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
   profile: 'full',
   delivery: 'both',
+  language: 'auto',
   proactive: true,
   repoMode: 'collaborative',
 };
@@ -202,7 +209,14 @@ export function getGlobalConfigPath(): string {
  * Returns default configuration if file doesn't exist or is invalid.
  * Merges loaded config with defaults to ensure new fields are available.
  */
-export function getGlobalConfig(): GlobalConfig {
+export interface GetGlobalConfigOptions {
+  /** Receives locale-neutral diagnostics instead of writing legacy English output. */
+  reporter?: ConfigDiagnosticReporter;
+  /** Locale probing must not rewrite the file before the command can report a migration. */
+  persistMigrations?: boolean;
+}
+
+export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalConfig {
   const configPath = getGlobalConfigPath();
 
   try {
@@ -231,6 +245,9 @@ export function getGlobalConfig(): GlobalConfig {
     if (parsed.delivery === undefined) {
       merged.delivery = DEFAULT_CONFIG.delivery;
     }
+    if (parsed.language !== 'auto' && parsed.language !== 'en' && parsed.language !== 'ja') {
+      merged.language = DEFAULT_CONFIG.language;
+    }
     if (parsed.proactive === undefined) {
       merged.proactive = DEFAULT_CONFIG.proactive;
     }
@@ -245,13 +262,21 @@ export function getGlobalConfig(): GlobalConfig {
       const { delivery, legacy } = normalizeDelivery(parsed.delivery);
       merged.delivery = delivery;
       if (legacy) {
-        console.error(
-          `Note: delivery mode '${legacy}' has been consolidated into '${delivery}' (skills are always installed). Your config has been updated.`
+        reportConfigDiagnostic(
+          {
+            key: 'legacyDelivery',
+            values: { legacy, delivery },
+            fallback: `Note: delivery mode '${legacy}' has been consolidated into '${delivery}' (skills are always installed). Your config has been updated.`,
+            output: 'error',
+          },
+          options.reporter
         );
-        try {
-          saveGlobalConfig({ ...merged, delivery });
-        } catch {
-          // Best-effort: persistence failure must not fail the read.
+        if (options.persistMigrations !== false) {
+          try {
+            saveGlobalConfig({ ...merged, delivery });
+          } catch {
+            // Best-effort: persistence failure must not fail the read.
+          }
         }
       }
     }
@@ -260,7 +285,15 @@ export function getGlobalConfig(): GlobalConfig {
   } catch (error) {
     // Log warning for parse errors, but not for missing files
     if (error instanceof SyntaxError) {
-      console.error(`Warning: Invalid JSON in ${configPath}, using defaults`);
+      reportConfigDiagnostic(
+        {
+          key: 'invalidGlobalJson',
+          values: { path: configPath },
+          fallback: `Warning: Invalid JSON in ${configPath}, using defaults`,
+          output: 'error',
+        },
+        options.reporter
+      );
     }
     return { ...DEFAULT_CONFIG };
   }

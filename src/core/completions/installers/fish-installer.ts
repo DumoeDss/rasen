@@ -2,7 +2,11 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { FileSystemUtils } from '../../../utils/file-system.js';
-import { InstallationResult } from '../factory.js';
+import {
+  InstallationResult,
+  type InstallerMessageDescriptor,
+  type UninstallationResult,
+} from '../factory.js';
 
 /**
  * Installer for Fish completion scripts.
@@ -53,6 +57,8 @@ export class FishInstaller {
   async install(completionScript: string): Promise<InstallationResult> {
     try {
       const targetPath = this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: InstallerMessageDescriptor[] = [];
 
       // Check if already installed with same content
       let isUpdate = false;
@@ -64,9 +70,14 @@ export class FishInstaller {
             success: true,
             installedPath: targetPath,
             message: 'Completion script is already installed (up to date)',
+            messageDescriptor: { key: 'alreadyInstalled' },
             instructions: [
               'The completion script is already installed and up to date.',
               'Fish automatically loads completions - they should be available immediately.',
+            ],
+            instructionDescriptors: [
+              { key: 'alreadyInstalledDetail' },
+              { key: 'fishAlreadyAvailable' },
             ],
           };
         }
@@ -74,10 +85,18 @@ export class FishInstaller {
         isUpdate = true;
       } catch (error: any) {
         // File doesn't exist or can't be read, proceed with installation
-        console.debug(`Unable to read existing completion file at ${targetPath}: ${error.message}`);
+        if (error?.code !== 'ENOENT') {
+          warnings.push(
+            `Warning: Could not read existing completion file at ${targetPath}: ${error.message}`
+          );
+          warningDescriptors.push({
+            key: 'unableReadCompletionFile',
+            values: { path: targetPath, detail: error.message },
+          });
+        }
       }
 
-      if (!(await FileSystemUtils.canWriteFile(targetPath))) {
+      if (!(await FileSystemUtils.canWriteFile(targetPath, { onDiagnostic: false }))) {
         throw new Error(`Path is not writable: ${targetPath}`);
       }
 
@@ -93,12 +112,15 @@ export class FishInstaller {
 
       // Determine appropriate message
       let message: string;
+      let messageDescriptor: InstallerMessageDescriptor;
       if (isUpdate) {
         message = backupPath
           ? 'Completion script updated successfully (previous version backed up)'
           : 'Completion script updated successfully';
+        messageDescriptor = { key: backupPath ? 'updatedWithBackup' : 'updated' };
       } else {
         message = 'Completion script installed successfully for Fish';
+        messageDescriptor = { key: 'installedForFish' };
       }
 
       return {
@@ -106,15 +128,26 @@ export class FishInstaller {
         installedPath: targetPath,
         backupPath,
         message,
+        messageDescriptor,
         instructions: [
           'Fish automatically loads completions from ~/.config/fish/completions/',
           'Completions are available immediately - no shell restart needed.',
         ],
+        instructionDescriptors: [
+          { key: 'fishLoadsFrom' },
+          { key: 'fishAvailableImmediately' },
+        ],
+        warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to install completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'installFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }
@@ -126,7 +159,7 @@ export class FishInstaller {
    * @param options.yes - Skip confirmation prompt (handled by command layer)
    * @returns Uninstallation result
    */
-  async uninstall(options?: { yes?: boolean }): Promise<{ success: boolean; message: string }> {
+  async uninstall(options?: { yes?: boolean }): Promise<UninstallationResult> {
     try {
       const targetPath = this.getInstallationPath();
 
@@ -137,11 +170,12 @@ export class FishInstaller {
         return {
           success: false,
           message: 'Completion script is not installed',
+          messageDescriptor: { key: 'notInstalled' },
         };
       }
 
       const targetDir = path.dirname(targetPath);
-      if (!(await FileSystemUtils.canWriteFile(targetDir))) {
+      if (!(await FileSystemUtils.canWriteFile(targetDir, { onDiagnostic: false }))) {
         throw new Error(`Path is not writable: ${targetDir}`);
       }
 
@@ -151,11 +185,16 @@ export class FishInstaller {
       return {
         success: true,
         message: 'Completion script uninstalled successfully',
+        messageDescriptor: { key: 'uninstalled' },
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to uninstall completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'uninstallFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }

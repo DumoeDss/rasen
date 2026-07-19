@@ -5,6 +5,10 @@ import { COMMAND_REGISTRY } from '../../../src/core/completions/command-registry
 import { COMMON_FLAGS } from '../../../src/core/completions/shared-flags.js';
 import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
 import { getCommandPath, program } from '../../../src/cli/index.js';
+import {
+  hasJapaneseDescription,
+  localizeCommandRegistry,
+} from '../../../src/core/completions/description-localization.js';
 import type {
   CommandDefinition,
   FlagDefinition,
@@ -145,6 +149,36 @@ describe('command completion registry', () => {
 
   it('matches visible Commander command flags and aliases', () => {
     assertRegistryParity(program, COMMAND_REGISTRY);
+  });
+
+  it('has Japanese descriptions for every command and flag', () => {
+    function assertLocalized(definitions: CommandDefinition[]): void {
+      for (const definition of definitions) {
+        expect(
+          hasJapaneseDescription(definition.description),
+          `missing Japanese command description: ${definition.name} / ${definition.description}`
+        ).toBe(true);
+        for (const flag of definition.flags) {
+          expect(
+            hasJapaneseDescription(flag.description),
+            `missing Japanese flag description: ${definition.name} --${flag.name} / ${flag.description}`
+          ).toBe(true);
+        }
+        assertLocalized(definition.subcommands ?? []);
+      }
+    }
+
+    assertLocalized(COMMAND_REGISTRY);
+  });
+
+  it('creates a Japanese completion registry without changing command structure', () => {
+    const localized = localizeCommandRegistry(COMMAND_REGISTRY, 'ja');
+    expect(localized.map((entry) => entry.name)).toEqual(
+      COMMAND_REGISTRY.map((entry) => entry.name)
+    );
+    expect(localized.find((entry) => entry.name === 'profile')?.description).toBe(
+      '再利用可能なワークフロープロファイルを管理します'
+    );
   });
 
   it('uses one --store description on every lifecycle command', () => {

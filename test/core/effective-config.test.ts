@@ -74,6 +74,18 @@ describe('effective-config', () => {
       expect(telemetry.source).toBe('env-override');
     });
 
+    it('reports RASEN_LANG as an environment override for language', () => {
+      saveGlobalConfig({ language: 'en' });
+      process.env.RASEN_LANG = 'ja';
+
+      const entries = resolveEffectiveConfig();
+      const language = entries.find((entry) => entry.definition.key === 'language')!;
+
+      expect(language.value).toBe('ja');
+      expect(language.source).toBe('env-override');
+      expect(language.scopeValues.global).toBe('en');
+    });
+
     it('resolves without error and without project contribution when no project root is passed', () => {
       const entries = resolveEffectiveConfig();
       const gates = entries.find((e) => e.definition.key === 'autopilot.gates')!;

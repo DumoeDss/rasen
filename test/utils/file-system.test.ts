@@ -269,6 +269,52 @@ describe('FileSystemUtils', () => {
       expect(canWrite).toBe(false);
     });
 
+    it('should preserve diagnostics by default for malformed parent paths', async () => {
+      const fileInPath = path.join(testDir, 'blocking-file.txt');
+      await fs.writeFile(fileInPath, 'content');
+      const filePath = path.join(fileInPath, 'nested', 'file.txt');
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      try {
+        const canWrite = await FileSystemUtils.canWriteFile(filePath);
+
+        expect(canWrite).toBe(false);
+        expect(debugSpy).toHaveBeenCalledWith(
+          expect.stringContaining(
+            `Unable to determine write permissions for ${filePath}: ENOTDIR`
+          )
+        );
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
+    it('should suppress or redirect diagnostics when requested', async () => {
+      const fileInPath = path.join(testDir, 'blocking-file.txt');
+      await fs.writeFile(fileInPath, 'content');
+      const filePath = path.join(fileInPath, 'nested', 'file.txt');
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const diagnostics: string[] = [];
+
+      try {
+        await expect(
+          FileSystemUtils.canWriteFile(filePath, { onDiagnostic: false })
+        ).resolves.toBe(false);
+        await expect(
+          FileSystemUtils.canWriteFile(filePath, {
+            onDiagnostic: (message) => diagnostics.push(message),
+          })
+        ).resolves.toBe(false);
+
+        expect(debugSpy).not.toHaveBeenCalled();
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0]).toContain('Unable to determine write permissions');
+        expect(diagnostics[0]).toContain(filePath);
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
     // Skip on Windows: creating symlinks requires elevated privileges or Developer Mode
     it.skipIf(process.platform === 'win32')('should follow symbolic links to files', async () => {
       const realFile = path.join(testDir, 'real-file.txt');

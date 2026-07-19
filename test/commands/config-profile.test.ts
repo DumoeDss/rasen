@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 
+import { ALL_WORKFLOWS } from '../../src/core/profiles.js';
+
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
   return {
@@ -46,6 +48,7 @@ describe('diffProfileState workflow formatting', () => {
     const diff = diffProfileState(
       { profile: 'custom', delivery: 'both', workflows: ['propose', 'sync'] },
       { profile: 'custom', delivery: 'both', workflows: ['propose'] },
+      'en',
     );
 
     expect(diff.hasChanges).toBe(true);
@@ -58,6 +61,7 @@ describe('diffProfileState workflow formatting', () => {
     const diff = diffProfileState(
       { profile: 'custom', delivery: 'both', workflows: ['propose', 'sync'] },
       { profile: 'custom', delivery: 'both', workflows: ['propose', 'verify'] },
+      'en',
     );
 
     expect(diff.hasChanges).toBe(true);
@@ -149,6 +153,7 @@ describe('config profile interactive flow', () => {
     // actually resolves into tempDir.
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
+    process.env.RASEN_LANG = 'en';
     process.chdir(tempDir);
     (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
@@ -259,7 +264,7 @@ describe('config profile interactive flow', () => {
     ]));
   });
 
-  it('workflow picker should use friendly names with descriptions', async () => {
+  it('workflow picker should align public workflow ids with friendly names and descriptions', async () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select, checkbox } = await getPromptMocks();
 
@@ -278,15 +283,76 @@ describe('config profile interactive flow', () => {
     expect(checkboxCall.choices).toEqual(expect.arrayContaining([
       expect.objectContaining({
         value: 'propose',
-        name: 'Propose change',
-        description: 'Create proposal, design, and tasks from a request',
+        name: 'propose         - Propose change',
+        description: 'Turn a request into a complete proposal, specs, design, and task list',
       }),
       expect.objectContaining({
         value: 'verify',
-        name: 'Verify change',
-        description: 'Run verification checks against a change',
+        name: 'verify          - Verify change',
+        description: 'Check that implementation matches the change artifacts before archiving',
       }),
     ]));
+    expect(checkboxCall.choices).toHaveLength(ALL_WORKFLOWS.length);
+    expect(checkboxCall.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'goal-command',
+        name: 'goal            - Run goal loop',
+        description: 'Orchestrate planning, iterations, and reporting for a long-running goal',
+      }),
+    ]));
+    expect(
+      checkboxCall.choices.map((choice: { name: string }) => choice.name.indexOf(' - '))
+    ).toEqual(ALL_WORKFLOWS.map(() => 15));
+    expect(
+      checkboxCall.choices.find(
+        (choice: { value: string }) => choice.value === 'verify-enhanced-command'
+      )
+    ).toEqual(
+      expect.objectContaining({
+        name: 'verify-enhanced - Enhanced verification',
+      })
+    );
+  });
+
+  it('workflow picker should localize every choice in Japanese', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    const { select, checkbox } = await getPromptMocks();
+
+    process.env.RASEN_LANG = 'ja';
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both' });
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+
+    await runConfigCommand(['profile']);
+
+    const actionCall = select.mock.calls[0][0];
+    expect(actionCall.message).toBe('何を設定しますか?');
+    expect(actionCall.choices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'workflows', name: 'ワークフローのみ' }),
+      ])
+    );
+    const checkboxCall = checkbox.mock.calls[0][0];
+    expect(checkboxCall.message).toBe('利用可能にするワークフローを選択:');
+    expect(checkboxCall.instructions).toBe(
+      'Spaceで切り替え、Aですべて選択・解除、Enterで確定'
+    );
+    expect(checkboxCall.choices).toHaveLength(ALL_WORKFLOWS.length);
+    expect(checkboxCall.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'propose',
+        name: 'propose         - 変更を提案',
+        description: '依頼から変更提案、仕様、設計、タスクリストをまとめて作成します',
+      }),
+      expect.objectContaining({
+        value: 'goal-command',
+        name: 'goal            - 目標ループを実行',
+        description: '長期目標の計画、反復、結果報告をまとめて進行します',
+      }),
+    ]));
+    expect(
+      checkboxCall.choices.map((choice: { name: string }) => choice.name.indexOf(' - '))
+    ).toEqual(ALL_WORKFLOWS.map(() => 15));
   });
 
   it('selecting current values only should be a no-op and should not ask apply', async () => {

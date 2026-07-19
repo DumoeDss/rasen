@@ -43,6 +43,7 @@ import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/i
 import { adoptLegacyMachineData } from '../core/global-config.js';
 import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { isInteractive } from '../utils/interactive.js';
+import { localizeProgramHelp, ROOT_OPTION_DESCRIPTIONS } from './help-localization.js';
 
 const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
 const PROJECT_OPTION_DESCRIPTION = COMMON_FLAGS.project.description;
@@ -114,7 +115,7 @@ program
   .version(version);
 
 // Global options
-program.option('--no-color', 'Disable color output');
+program.option('--no-color', ROOT_OPTION_DESCRIPTIONS[0]);
 
 // Apply global flags and telemetry before any command runs
 // Note: preAction receives (thisCommand, actionCommand) where:
@@ -745,6 +746,7 @@ export function runCli(argv = process.argv): void {
   // relocation) into the resolved config/data locations. Best-effort and
   // synchronous; must run before any config is read.
   adoptLegacyMachineData();
+  localizeProgramHelp(program);
   program.parse(argv);
 }
 

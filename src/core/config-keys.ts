@@ -115,6 +115,15 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     group: 'Profile',
   },
   {
+    key: 'language',
+    scopes: ['global'],
+    type: 'enum',
+    enumValues: ['auto', 'en', 'ja'],
+    defaultValue: 'auto',
+    description: 'Language for interactive prompts and CLI help (`auto` detects the system locale)',
+    group: 'Appearance',
+  },
+  {
     key: 'featureFlags',
     scopes: ['global'],
     type: 'boolean',

@@ -35,6 +35,15 @@ import { startConfigApiServer } from '../core/config-api/server.js';
 import { resolveLaunchProjectRef } from '../core/config-api/project-addressing.js';
 import { resolveUiPackageDir, UI_PACKAGE_NAME } from '../core/config-api/ui-package.js';
 import { runLegacyConfigProfileCommand } from './profile.js';
+import {
+  configDescription,
+  configGroup,
+  createConfigDiagnosticReporter,
+  getConfigCommandMessages,
+  getConfigEditorMessages,
+} from './config-messages.js';
+import { getCliLocale } from '../core/cli-locale.js';
+import type { CliLocale } from '../utils/locale.js';
 
 export {
   deriveProfileFromWorkflowSelection,
@@ -53,9 +62,10 @@ const require = createRequire(import.meta.url);
  * callers can bail out early.
  */
 function resolveScope(command: Command): ConfigScope | undefined {
+  const messages = getConfigCommandMessages();
   const scope = (command.optsWithGlobals() as { scope?: string }).scope ?? 'global';
   if (scope !== 'global' && scope !== 'project') {
-    console.error(`Error: --scope must be "global" or "project" (got "${scope}").`);
+    console.error(messages.invalidScope(scope));
     process.exitCode = 1;
     return undefined;
   }
@@ -69,12 +79,11 @@ function resolveScope(command: Command): ConfigScope | undefined {
  * Exits 1 with guidance when no project is found.
  */
 function resolveProjectRootOrFail(): string | undefined {
+  const messages = getConfigCommandMessages();
   const root = findRepoPlanningRootSync(process.cwd());
   if (!root) {
-    console.error(
-      `Error: no Rasen project found (no "${WORKSPACE_DIR_NAME}/" directory in this directory or its ancestors).`
-    );
-    console.error(`Run 'rasen init' to create one, or omit --scope project to use global config.`);
+    console.error(messages.projectNotFound(WORKSPACE_DIR_NAME));
+    console.error(messages.projectInitGuidance);
     process.exitCode = 1;
     return undefined;
   }
@@ -87,9 +96,22 @@ function runScoped(command: Command, fn: (scope: ConfigScope) => void): void {
   fn(scope);
 }
 
+function getGlobalConfigForCli(locale: CliLocale = getCliLocale()): GlobalConfig {
+  return getGlobalConfig({ reporter: createConfigDiagnosticReporter(locale) });
+}
+
+function readProjectConfigForCli(
+  projectRoot: string,
+  locale: CliLocale = getCliLocale()
+) {
+  return readProjectConfig(projectRoot, {
+    reporter: createConfigDiagnosticReporter(locale),
+  });
+}
+
 /** Renders an effective-config value for CLI display: scalars as-is, containers as JSON. */
-function formatEntryValue(value: unknown): string {
-  if (value === undefined) return '(unset)';
+function formatEntryValue(value: unknown, locale: CliLocale = getCliLocale()): string {
+  if (value === undefined) return getConfigEditorMessages(locale).unsetValue;
   if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
     return JSON.stringify(value);
   }
@@ -114,14 +136,21 @@ function formatSetDisplayValue(value: unknown): string {
 
 /** Non-TTY no-arg `rasen config`: the effective view, one line per registered key, then exit 0. */
 function printEffectiveConfigView(): void {
+  const locale = getCliLocale();
+  const ui = getConfigEditorMessages(locale);
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
-  const entries = resolveEffectiveConfig({ projectRoot });
+  const entries = resolveEffectiveConfig({
+    projectRoot,
+    reporter: createConfigDiagnosticReporter(locale),
+  });
 
   for (const entry of entries) {
-    console.log(`${entry.definition.key} = ${formatEntryValue(entry.value)} (${entry.source})`);
+    console.log(
+      `${entry.definition.key} = ${formatEntryValue(entry.value, locale)} (${ui.source[entry.source]})`
+    );
   }
   console.log();
-  console.log('Run `rasen config --help` for subcommands.');
+  console.log(ui.effectiveHelp);
 }
 
 type ChalkModule = typeof import('chalk')['default'];
@@ -131,31 +160,38 @@ type InquirerModule = typeof import('@inquirer/prompts');
 function buildEditorChoice(
   entry: EffectiveConfigEntry,
   projectRoot: string | undefined,
-  chalk: ChalkModule
+  chalk: ChalkModule,
+  locale: CliLocale
 ): { value: string; name: string; description?: string; disabled?: boolean | string } {
+  const ui = getConfigEditorMessages(locale);
   const definition = entry.definition;
-  const sourceLabel = entry.source === 'default' ? chalk.dim('default') : entry.source;
-  let label = `${definition.group} / ${definition.key} = ${formatEntryValue(entry.value)} (${sourceLabel})`;
+  const localizedSource = ui.source[entry.source];
+  const sourceLabel = entry.source === 'default' ? chalk.dim(localizedSource) : localizedSource;
+  let label = `${configGroup(definition.group, locale)} / ${definition.key} = ${formatEntryValue(entry.value, locale)} (${sourceLabel})`;
 
   if (entry.source === 'env-override') {
-    label += chalk.yellow(' [environment variable takes precedence]');
+    label += chalk.yellow(ui.environmentOverrideNote);
   }
 
   if (definition.key === 'workflows') {
     return {
       value: '__workflows__',
       name: label,
-      description: 'Use `rasen profile` to change workflows',
-      disabled: 'use `rasen profile`',
+      description: ui.workflowsDescription,
+      disabled: ui.workflowsDisabled,
     };
   }
 
   const isProjectOnly = definition.scopes.length === 1 && definition.scopes[0] === 'project';
   if (isProjectOnly && !projectRoot) {
-    return { value: definition.key, name: label, disabled: 'requires a Rasen project' };
+    return {
+      value: definition.key,
+      name: label,
+      disabled: ui.projectRequired,
+    };
   }
 
-  return { value: definition.key, name: label, description: definition.description };
+  return { value: definition.key, name: label, description: configDescription(definition, locale) };
 }
 
 /** Prompts for and writes a new value for one registry key, per its type/scope. */
@@ -163,17 +199,19 @@ async function editConfigEntry(
   entry: EffectiveConfigEntry,
   projectRoot: string | undefined,
   inquirer: Pick<InquirerModule, 'select' | 'input'>,
-  chalk: ChalkModule
+  chalk: ChalkModule,
+  locale: CliLocale
 ): Promise<void> {
+  const ui = getConfigEditorMessages(locale);
   const definition = entry.definition;
 
   let scope: ConfigScope;
   if (definition.scopes.length === 2 && projectRoot) {
     scope = await inquirer.select<ConfigScope>({
-      message: `Set "${definition.key}" at which scope?`,
+      message: ui.scopePrompt(definition.key),
       choices: [
-        { value: 'project', name: 'Project (this repo)' },
-        { value: 'global', name: 'Global (this machine)' },
+        { value: 'project', name: ui.projectScope },
+        { value: 'global', name: ui.globalScope },
       ],
     });
   } else if (definition.scopes.includes('project') && projectRoot) {
@@ -201,7 +239,7 @@ async function editConfigEntry(
     // ('{"remainingTokens": 60000}') — coerceValue's number/JSON-container
     // branches parse either, same as `rasen config set`'s CLI value.
     const answer = await inquirer.input({
-      message: `${definition.key} (fraction in (0, 1], or {"remainingTokens": N}):`,
+      message: ui.thresholdPrompt(definition.key),
       validate: (raw: string) => {
         const error = validateConfigValue(definition, coerceValue(raw));
         return error ?? true;
@@ -222,32 +260,38 @@ async function editConfigEntry(
 
   const valueError = validateConfigValue(definition, rawValue);
   if (valueError) {
-    console.error(chalk.red(`Error: ${valueError}`));
+    console.error(chalk.red(`${ui.errorPrefix} ${valueError}`));
     return;
   }
 
   if (scope === 'project') {
     if (!projectRoot) return;
     try {
-      updateProjectConfigKey(projectRoot, definition.key, rawValue);
+      updateProjectConfigKey(projectRoot, definition.key, rawValue, {
+        reporter: createConfigDiagnosticReporter(locale),
+      });
     } catch (error) {
-      console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+      console.error(
+        chalk.red(`${ui.errorPrefix} ${error instanceof Error ? error.message : String(error)}`)
+      );
       return;
     }
   } else {
-    const config = getGlobalConfig() as Record<string, unknown>;
+    const config = getGlobalConfigForCli(locale) as Record<string, unknown>;
     const newConfig = JSON.parse(JSON.stringify(config));
     setNestedValue(newConfig, definition.key, rawValue);
     const validation = validateConfig(newConfig);
     if (!validation.success) {
-      console.error(chalk.red(`Error: Invalid configuration - ${validation.error}`));
+      console.error(
+        chalk.red(`${ui.errorPrefix} ${ui.invalidConfiguration(String(validation.error))}`)
+      );
       return;
     }
     setNestedValue(config, definition.key, rawValue);
     saveGlobalConfig(config as GlobalConfig);
   }
 
-  console.log(`Set ${definition.key} = ${formatSetDisplayValue(rawValue)}`);
+  console.log(ui.setValue(definition.key, formatSetDisplayValue(rawValue)));
 }
 
 /**
@@ -260,18 +304,24 @@ async function runInteractiveConfigEditor(): Promise<void> {
   const inquirer = await import('@inquirer/prompts');
   const { select, Separator } = inquirer;
   const chalk = (await import('chalk')).default;
+  const locale = getCliLocale();
+  const ui = getConfigEditorMessages(locale);
 
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
 
   try {
     for (;;) {
-      const entries = resolveEffectiveConfig({ projectRoot });
+      const entries = resolveEffectiveConfig({
+        projectRoot,
+        reporter: createConfigDiagnosticReporter(locale),
+      });
 
       const byGroup = new Map<string, EffectiveConfigEntry[]>();
       for (const entry of entries) {
-        const list = byGroup.get(entry.definition.group) ?? [];
+        const group = configGroup(entry.definition.group, locale);
+        const list = byGroup.get(group) ?? [];
         list.push(entry);
-        byGroup.set(entry.definition.group, list);
+        byGroup.set(group, list);
       }
 
       type EditorChoice = ReturnType<typeof buildEditorChoice> | InstanceType<typeof Separator>;
@@ -279,33 +329,33 @@ async function runInteractiveConfigEditor(): Promise<void> {
       for (const [group, groupEntries] of byGroup) {
         choices.push(new Separator(chalk.bold(`-- ${group} --`)));
         for (const entry of groupEntries) {
-          choices.push(buildEditorChoice(entry, projectRoot, chalk));
+          choices.push(buildEditorChoice(entry, projectRoot, chalk, locale));
         }
       }
       choices.push(new Separator());
-      choices.push({ value: '__exit__', name: 'Exit' });
+      choices.push({ value: '__exit__', name: ui.exit });
 
-      console.log(chalk.bold('\nRasen configuration'));
+      console.log(chalk.bold(ui.heading));
       if (!projectRoot) {
-        console.log(chalk.dim('  (not inside a Rasen project — project-only keys are unavailable)'));
+        console.log(chalk.dim(ui.outsideProject));
       }
 
       const picked = await select<string>({
-        message: 'Select a key to edit:',
+        message: ui.selectKey,
         choices,
         pageSize: 20,
       });
 
       if (picked === '__exit__') return;
       if (picked === '__workflows__') {
-        console.log('Manage workflows via `rasen profile`.');
+        console.log(ui.manageWorkflows);
         continue;
       }
 
       const entry = entries.find((e) => e.definition.key === picked);
       if (!entry) continue;
 
-      await editConfigEntry(entry, projectRoot, inquirer, chalk);
+      await editConfigEntry(entry, projectRoot, inquirer, chalk, locale);
     }
   } catch (error) {
     if (isPromptCancellationError(error)) {
@@ -365,16 +415,17 @@ export function registerConfigCommand(program: Command): void {
         if (scope === 'project') {
           const projectRoot = resolveProjectRootOrFail();
           if (!projectRoot) return;
-          const projectConfig = readProjectConfig(projectRoot) ?? {};
+          const projectConfig = readProjectConfigForCli(projectRoot) ?? {};
           console.log(options.json ? JSON.stringify(projectConfig, null, 2) : formatValueYaml(projectConfig));
           return;
         }
 
-        const config = getGlobalConfig();
+        const config = getGlobalConfigForCli();
 
         if (options.json) {
           console.log(JSON.stringify(config, null, 2));
         } else {
+          const messages = getConfigCommandMessages();
           // Read raw config to determine which values are explicit vs defaults
           const configPath = getGlobalConfigPath();
           let rawConfig: Record<string, unknown> = {};
@@ -389,19 +440,23 @@ export function registerConfigCommand(program: Command): void {
           console.log(formatValueYaml(config));
 
           // Annotate profile settings
-          const profileSource = rawConfig.profile !== undefined ? '(explicit)' : '(default)';
-          const deliverySource = rawConfig.delivery !== undefined ? '(explicit)' : '(default)';
-          console.log(`\nProfile settings:`);
+          const profileSource = rawConfig.profile !== undefined
+            ? messages.explicitSource
+            : messages.defaultSource;
+          const deliverySource = rawConfig.delivery !== undefined
+            ? messages.explicitSource
+            : messages.defaultSource;
+          console.log(`\n${messages.profileSettingsHeading}`);
           console.log(`  profile: ${config.profile} ${profileSource}`);
           console.log(`  delivery: ${config.delivery} ${deliverySource}`);
           if (config.profile === 'full') {
-            console.log(`  workflows: ${ALL_WORKFLOWS.join(', ')} (from full profile)`);
+            console.log(`  workflows: ${ALL_WORKFLOWS.join(', ')} ${messages.fromFullProfile}`);
           } else if (config.profile === 'core') {
-            console.log(`  workflows: ${CORE_WORKFLOWS.join(', ')} (from core profile)`);
+            console.log(`  workflows: ${CORE_WORKFLOWS.join(', ')} ${messages.fromCoreProfile}`);
           } else if (config.workflows && config.workflows.length > 0) {
-            console.log(`  workflows: ${config.workflows.join(', ')} (explicit)`);
+            console.log(`  workflows: ${config.workflows.join(', ')} ${messages.explicitSource}`);
           } else {
-            console.log(`  workflows: (none)`);
+            console.log(`  workflows: ${messages.noneValue}`);
           }
         }
       });
@@ -417,10 +472,10 @@ export function registerConfigCommand(program: Command): void {
         if (scope === 'project') {
           const projectRoot = resolveProjectRootOrFail();
           if (!projectRoot) return;
-          const projectConfig = readProjectConfig(projectRoot) ?? {};
+          const projectConfig = readProjectConfigForCli(projectRoot) ?? {};
           value = getNestedValue(projectConfig as Record<string, unknown>, key);
         } else {
-          const config = getGlobalConfig();
+          const config = getGlobalConfigForCli();
           value = getNestedValue(config as Record<string, unknown>, key);
         }
 
@@ -451,14 +506,19 @@ export function registerConfigCommand(program: Command): void {
         command: Command
       ) => {
         runScoped(command, (scope) => {
+          const messages = getConfigCommandMessages();
           const allowUnknown = scope === 'global' && Boolean(options.allowUnknown);
           const keyValidation = validateConfigKeyPath(key, scope);
           if (!keyValidation.valid && !allowUnknown) {
             const reason = keyValidation.reason ? ` ${keyValidation.reason}.` : '';
-            console.error(`Error: Invalid configuration key "${key}".${reason}`);
-            console.error(`Use "rasen config list${scope === 'project' ? ' --scope project' : ''}" to see available keys.`);
+            console.error(messages.invalidKey(key, reason));
+            console.error(
+              messages.listKeysGuidance(
+                `rasen config list${scope === 'project' ? ' --scope project' : ''}`
+              )
+            );
             if (scope === 'global') {
-              console.error('Pass --allow-unknown to bypass this check.');
+              console.error(messages.allowUnknownGuidance);
             }
             process.exitCode = 1;
             return;
@@ -479,7 +539,7 @@ export function registerConfigCommand(program: Command): void {
             if (definition) {
               const valueError = validateConfigValue(definition, coercedValue);
               if (valueError) {
-                console.error(`Error: ${valueError}`);
+                console.error(messages.errorWithDetail(valueError));
                 process.exitCode = 1;
                 return;
               }
@@ -490,14 +550,18 @@ export function registerConfigCommand(program: Command): void {
             const projectRoot = resolveProjectRootOrFail();
             if (!projectRoot) return;
             try {
-              updateProjectConfigKey(projectRoot, key, coercedValue);
+              updateProjectConfigKey(projectRoot, key, coercedValue, {
+                reporter: createConfigDiagnosticReporter(),
+              });
             } catch (error) {
-              console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+              console.error(
+                messages.errorWithDetail(error instanceof Error ? error.message : String(error))
+              );
               process.exitCode = 1;
               return;
             }
           } else {
-            const config = getGlobalConfig() as Record<string, unknown>;
+            const config = getGlobalConfigForCli() as Record<string, unknown>;
 
             // Create a copy to validate before saving
             const newConfig = JSON.parse(JSON.stringify(config));
@@ -506,7 +570,7 @@ export function registerConfigCommand(program: Command): void {
             // Validate the new config
             const validation = validateConfig(newConfig);
             if (!validation.success) {
-              console.error(`Error: Invalid configuration - ${validation.error}`);
+              console.error(messages.invalidConfiguration(String(validation.error)));
               process.exitCode = 1;
               return;
             }
@@ -516,7 +580,7 @@ export function registerConfigCommand(program: Command): void {
             saveGlobalConfig(config as GlobalConfig);
           }
 
-          console.log(`Set ${key} = ${formatSetDisplayValue(coercedValue)}`);
+          console.log(messages.setValue(key, formatSetDisplayValue(coercedValue)));
         });
       }
     );
@@ -527,6 +591,7 @@ export function registerConfigCommand(program: Command): void {
     .description('Remove a key (revert to default)')
     .action((key: string, _options: unknown, command: Command) => {
       runScoped(command, (scope) => {
+        const messages = getConfigCommandMessages();
         if (scope === 'project') {
           // Registry-gated like `set`: unset must not delete hand-edit-only
           // fields (context, rules, quality-rules, ...) the design explicitly
@@ -534,8 +599,8 @@ export function registerConfigCommand(program: Command): void {
           const keyValidation = validateConfigKeyPath(key, scope);
           if (!keyValidation.valid) {
             const reason = keyValidation.reason ? ` ${keyValidation.reason}.` : '';
-            console.error(`Error: Invalid configuration key "${key}".${reason}`);
-            console.error('Use "rasen config list --scope project" to see available keys.');
+            console.error(messages.invalidKey(key, reason));
+            console.error(messages.listKeysGuidance('rasen config list --scope project'));
             process.exitCode = 1;
             return;
           }
@@ -544,26 +609,30 @@ export function registerConfigCommand(program: Command): void {
           if (!projectRoot) return;
           let result: { existed: boolean };
           try {
-            result = updateProjectConfigKey(projectRoot, key, undefined);
+            result = updateProjectConfigKey(projectRoot, key, undefined, {
+              reporter: createConfigDiagnosticReporter(),
+            });
           } catch (error) {
-            console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(
+              messages.errorWithDetail(error instanceof Error ? error.message : String(error))
+            );
             process.exitCode = 1;
             return;
           }
           console.log(
-            result.existed ? `Unset ${key} (reverted to default)` : `Key "${key}" was not set`
+            result.existed ? messages.unsetValue(key) : messages.keyNotSet(key)
           );
           return;
         }
 
-        const config = getGlobalConfig() as Record<string, unknown>;
+        const config = getGlobalConfigForCli() as Record<string, unknown>;
         const existed = deleteNestedValue(config, key);
 
         if (existed) {
           saveGlobalConfig(config as GlobalConfig);
-          console.log(`Unset ${key} (reverted to default)`);
+          console.log(messages.unsetValue(key));
         } else {
-          console.log(`Key "${key}" was not set`);
+          console.log(messages.keyNotSet(key));
         }
       });
     });
@@ -575,20 +644,19 @@ export function registerConfigCommand(program: Command): void {
     .option('--all', 'Reset all configuration (required)')
     .option('-y, --yes', 'Skip confirmation prompts')
     .action(async (options: { all?: boolean; yes?: boolean }, command: Command) => {
+      const messages = getConfigCommandMessages();
       const scope = resolveScope(command);
       if (!scope) return;
       if (scope === 'project') {
-        console.error('Error: "rasen config reset" only supports global scope.');
-        console.error(
-          `Project config has no bulk reset — remove or hand-edit ${WORKSPACE_DIR_NAME}/config.yaml directly, or unset individual keys with "rasen config unset --scope project <key>".`
-        );
+        console.error(messages.resetGlobalOnly);
+        console.error(messages.resetProjectGuidance(WORKSPACE_DIR_NAME));
         process.exitCode = 1;
         return;
       }
 
       if (!options.all) {
-        console.error('Error: --all flag is required for reset');
-        console.error('Usage: rasen config reset --all [-y]');
+        console.error(messages.resetAllRequired);
+        console.error(messages.resetUsage);
         process.exitCode = 1;
         return;
       }
@@ -598,12 +666,12 @@ export function registerConfigCommand(program: Command): void {
         let confirmed: boolean;
         try {
           confirmed = await confirm({
-            message: 'Reset all configuration to defaults?',
+            message: messages.resetPrompt,
             default: false,
           });
         } catch (error) {
           if (isPromptCancellationError(error)) {
-            console.log('Reset cancelled.');
+            console.log(messages.resetCancelled);
             process.exitCode = 130;
             return;
           }
@@ -611,13 +679,13 @@ export function registerConfigCommand(program: Command): void {
         }
 
         if (!confirmed) {
-          console.log('Reset cancelled.');
+          console.log(messages.resetCancelled);
           return;
         }
       }
 
       saveGlobalConfig({ ...DEFAULT_CONFIG });
-      console.log('Configuration reset to defaults');
+      console.log(messages.resetComplete);
     });
 
   // config edit
@@ -625,13 +693,12 @@ export function registerConfigCommand(program: Command): void {
     .command('edit')
     .description('Open config in $EDITOR (global scope only)')
     .action(async (_options: unknown, command: Command) => {
+      const messages = getConfigCommandMessages();
       const scope = resolveScope(command);
       if (!scope) return;
       if (scope === 'project') {
-        console.error('Error: "rasen config edit" only supports global scope.');
-        console.error(
-          `Project config is hand-edited directly — open ${WORKSPACE_DIR_NAME}/config.yaml in your editor, or use "rasen config set/get/unset --scope project <key>".`
-        );
+        console.error(messages.editGlobalOnly);
+        console.error(messages.editProjectGuidance(WORKSPACE_DIR_NAME));
         process.exitCode = 1;
         return;
       }
@@ -639,9 +706,9 @@ export function registerConfigCommand(program: Command): void {
       const editor = process.env.EDITOR || process.env.VISUAL;
 
       if (!editor) {
-        console.error('Error: No editor configured');
-        console.error('Set the EDITOR or VISUAL environment variable to your preferred editor');
-        console.error('Example: export EDITOR=vim');
+        console.error(messages.noEditor);
+        console.error(messages.editorGuidance);
+        console.error(messages.editorExample);
         process.exitCode = 1;
         return;
       }
@@ -666,7 +733,7 @@ export function registerConfigCommand(program: Command): void {
           if (code === 0) {
             resolve();
           } else {
-            reject(new Error(`Editor exited with code ${code}`));
+            reject(new Error(messages.editorExited(code)));
           }
         });
         child.on('error', reject);
@@ -678,17 +745,19 @@ export function registerConfigCommand(program: Command): void {
         const validation = validateConfig(parsedConfig);
 
         if (!validation.success) {
-          console.error(`Error: Invalid configuration - ${validation.error}`);
+          console.error(messages.invalidConfiguration(String(validation.error)));
           process.exitCode = 1;
         }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          console.error(`Error: Config file not found at ${configPath}`);
+          console.error(messages.configFileNotFound(configPath));
         } else if (error instanceof SyntaxError) {
-          console.error(`Error: Invalid JSON in ${configPath}`);
+          console.error(messages.invalidJson(configPath));
           console.error(error.message);
         } else {
-          console.error(`Error: Unable to validate configuration - ${error instanceof Error ? error.message : String(error)}`);
+          console.error(
+            messages.unableToValidate(error instanceof Error ? error.message : String(error))
+          );
         }
         process.exitCode = 1;
       }

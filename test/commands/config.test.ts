@@ -30,6 +30,7 @@ describe('config command integration', () => {
     // actually resolves into tempDir instead of the shared net root.
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
+    process.env.RASEN_LANG = 'en';
 
     // Spy on console.error
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -150,6 +151,41 @@ describe('config command integration', () => {
     expect(config2.delivery).toBe('both');
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
+
+  it('localizes the legacy delivery migration notice in Japanese', async () => {
+    process.env.RASEN_LANG = 'ja';
+    const { getGlobalConfigDir, getGlobalConfigPath } = await import(
+      '../../src/core/global-config.js'
+    );
+    fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
+    fs.writeFileSync(
+      getGlobalConfigPath(),
+      JSON.stringify({ featureFlags: {}, language: 'ja', delivery: 'commands-first' }),
+      'utf-8'
+    );
+
+    await runConfigCommand(['list']);
+
+    const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("deliveryモード'commands-first'は'both'へ統合されました");
+    expect(diagnostics).not.toContain('Note: delivery mode');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBe('both');
+  });
+
+  it('localizes invalid global JSON diagnostics in Japanese', async () => {
+    process.env.RASEN_LANG = 'ja';
+    const { getGlobalConfigDir, getGlobalConfigPath } = await import(
+      '../../src/core/global-config.js'
+    );
+    fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
+    fs.writeFileSync(getGlobalConfigPath(), '{ invalid json }', 'utf-8');
+
+    await runConfigCommand(['list']);
+
+    const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain('JSONが無効なため、デフォルトを使用します');
+    expect(diagnostics).not.toContain('Warning: Invalid JSON');
+  });
 });
 
 describe('config command shell completion registry', () => {
@@ -158,7 +194,9 @@ describe('config command shell completion registry', () => {
 
     const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
     expect(configCmd).toBeDefined();
-    expect(configCmd?.description).toBe('View and modify global Rasen configuration');
+    expect(configCmd?.description).toBe(
+      'View and modify global or project Rasen configuration'
+    );
   });
 
   it('should have all config subcommands in registry', async () => {
@@ -215,6 +253,19 @@ describe('config command shell completion registry', () => {
     const flagNames = configCmd?.flags?.map((f) => f.name) ?? [];
 
     expect(flagNames).toContain('scope');
+    expect(configCmd?.flags.find((flag) => flag.name === 'scope')?.values).toEqual([
+      'global',
+      'project',
+    ]);
+  });
+
+  it('should generate both accepted --scope values for Zsh', async () => {
+    const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
+    const { ZshGenerator } = await import('../../src/core/completions/generators/zsh-generator.js');
+
+    const script = new ZshGenerator().generate(COMMAND_REGISTRY);
+
+    expect(script).toContain(':value:(global project)');
   });
 });
 
@@ -262,6 +313,7 @@ describe('config profile command', () => {
     // XDG_CONFIG_HOME isolation actually applies.
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
+    process.env.RASEN_LANG = 'en';
   });
 
   afterEach(() => {
@@ -331,6 +383,8 @@ describe('config profile command', () => {
     expect(validateConfig({ featureFlags: {}, profile: 'full', delivery: 'both' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'core', delivery: 'both' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills' }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, language: 'ja' }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, language: 'fr' }).success).toBe(false);
   });
 
   it('config schema should accept legacy delivery values and transform them to the mapped value', async () => {
@@ -387,6 +441,7 @@ describe('config command --scope project and promoted keys', () => {
 
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
+    process.env.RASEN_LANG = 'en';
     process.chdir(projectDir);
     process.exitCode = undefined;
 
@@ -503,6 +558,7 @@ describe('config command --scope project and promoted keys', () => {
   });
 
   it.each([
+    ['language', 'ja'],
     ['proactive', 'false'],
     ['repoMode', 'solo'],
     ['telemetry.enabled', 'false'],
@@ -511,6 +567,68 @@ describe('config command --scope project and promoted keys', () => {
     await runConfigCommand(['set', key, value]);
     expect(process.exitCode).not.toBe(1);
     expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  it('persists the selected CLI language in the global JSON config', async () => {
+    const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+
+    await runConfigCommand(['set', 'language', 'ja']);
+
+    const saved = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')) as {
+      language?: string;
+    };
+    expect(saved.language).toBe('ja');
+  });
+
+  it('localizes non-JSON list, set, unset, and validation output in Japanese', async () => {
+    process.env.RASEN_LANG = 'ja';
+
+    await runConfigCommand(['set', 'proactive', 'false']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('proactive = false に設定しました');
+
+    await runConfigCommand(['list']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('\nプロファイル設定:');
+
+    await runConfigCommand(['unset', 'proactive']);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      'proactiveの設定を解除しました（デフォルトへ戻しました）'
+    );
+
+    await runConfigCommand(['set', 'unknownKey', '1']);
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('エラー: 設定キー"unknownKey"は無効です。')
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('利用可能なキー')
+    );
+  });
+
+  it('localizes invalid project YAML and field diagnostics in Japanese', async () => {
+    process.env.RASEN_LANG = 'ja';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const configPath = path.join(projectDir, 'rasen', 'config.yaml');
+
+    fs.writeFileSync(configPath, 'schema: [\n', 'utf-8');
+    await runConfigCommand(['list', '--scope', 'project']);
+    let diagnostics = warnSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain('解析できませんでした');
+    expect(diagnostics).not.toContain('Warning: could not parse');
+
+    warnSpy.mockClear();
+    fs.writeFileSync(
+      configPath,
+      'schema: 123\nautopilot:\n  gates: maybe\n',
+      'utf-8'
+    );
+    await runConfigCommand(['get', 'schema', '--scope', 'project']);
+    diagnostics = warnSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("'schema'フィールドが無効です");
+    expect(diagnostics).toContain("'autopilot.gates'フィールドが無効です");
+    expect(diagnostics).not.toContain("Invalid 'schema'");
+    expect(diagnostics).not.toContain("Invalid 'autopilot.gates'");
+
+    warnSpy.mockRestore();
   });
 
   it('sets the absolute { remainingTokens } threshold form at project scope, formatting the confirmation as JSON (MIN-M1/M2)', async () => {

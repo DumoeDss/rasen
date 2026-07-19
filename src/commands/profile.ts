@@ -22,6 +22,11 @@ import {
 } from '../core/named-profiles.js';
 import { isPromptCancellationError } from './shared-output.js';
 import {
+  formatNamedProfileError,
+  formatNamedProfileMessageDescriptor,
+  getProfileUiMessages,
+} from './profile-messages.js';
+import {
   applyProfileState,
   deriveProfileFromWorkflowSelection,
   diffProfileState,
@@ -61,13 +66,25 @@ function currentProfileDefinition(): ProfileDefinition {
 }
 
 function validateNewProfileName(name: string): string | true {
+  const messages = getProfileUiMessages();
   const validationError = validateUserProfileName(name);
-  if (validationError) return validationError;
-  return namedProfileExists(name) ? `Profile "${name}" already exists.` : true;
+  if (validationError) {
+    const reserved =
+      BUILTIN_PROFILE_NAMES.includes(name as (typeof BUILTIN_PROFILE_NAMES)[number]) ||
+      name === 'custom';
+    return reserved ? messages.profileNameReserved(name) : messages.invalidProfileName;
+  }
+  return namedProfileExists(name) ? messages.profileAlreadyExists(name) : true;
 }
 
 function printProfileError(error: unknown): void {
-  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  const messages = getProfileUiMessages();
+  const detail = error instanceof NamedProfileError
+    ? formatNamedProfileError(error)
+    : error instanceof Error
+      ? error.message
+      : String(error);
+  console.error(`${messages.errorPrefix} ${detail}`);
   process.exitCode = 1;
 }
 
@@ -76,12 +93,19 @@ async function runProfileAction(action: () => void | Promise<void>): Promise<voi
     await action();
   } catch (error) {
     if (isPromptCancellationError(error)) {
-      console.log('Profile command cancelled.');
+      console.log(getProfileUiMessages().profileCommandCancelled);
       process.exitCode = 130;
       return;
     }
     printProfileError(error);
   }
+}
+
+function formatAvailableProfileError(profile: AvailableProfile): string {
+  return formatNamedProfileMessageDescriptor(
+    profile.errorDescriptor,
+    profile.error ?? getProfileUiMessages().invalidProfile
+  );
 }
 
 function availableProfileChoices(): Array<{
@@ -90,20 +114,21 @@ function availableProfileChoices(): Array<{
   description: string;
   disabled?: string;
 }> {
+  const messages = getProfileUiMessages();
   const delivery = getGlobalConfig().delivery ?? 'both';
   return listAvailableProfiles(delivery).map((profile) => {
     if (!profile.definition) {
       return {
         value: profile.name,
         name: profile.name,
-        description: profile.error ?? 'Invalid profile',
-        disabled: 'invalid profile file',
+        description: formatAvailableProfileError(profile),
+        disabled: messages.invalidProfileFile,
       };
     }
     return {
       value: profile.name,
       name: profile.name,
-      description: `${profile.builtIn ? 'built-in' : 'saved'} · ${profile.definition.delivery} · ${profile.definition.workflows.length} workflows`,
+      description: `${messages.profileSource(profile.builtIn)} · ${profile.definition.delivery} · ${messages.workflowCount(profile.definition.workflows.length)}`,
     };
   });
 }
@@ -111,7 +136,7 @@ function availableProfileChoices(): Array<{
 async function chooseProfileName(message: string): Promise<string> {
   if (!process.stdout.isTTY) {
     throw new NamedProfileError(
-      'A profile name is required outside an interactive terminal.',
+      getProfileUiMessages().profileNameRequired,
       'invalid_name'
     );
   }
@@ -122,13 +147,13 @@ async function chooseProfileName(message: string): Promise<string> {
 async function chooseUserProfileName(message: string): Promise<string> {
   if (!process.stdout.isTTY) {
     throw new NamedProfileError(
-      'A profile name is required outside an interactive terminal.',
+      getProfileUiMessages().profileNameRequired,
       'invalid_name'
     );
   }
   const profiles = listUserProfiles();
   if (profiles.length === 0) {
-    throw new NamedProfileError('No saved profiles are available.', 'not_found');
+    throw new NamedProfileError(getProfileUiMessages().noSavedProfiles, 'not_found');
   }
   const { select } = await import('@inquirer/prompts');
   return select<string>({
@@ -137,8 +162,8 @@ async function chooseUserProfileName(message: string): Promise<string> {
       value: profile.name,
       name: profile.name,
       description: profile.definition
-        ? `${profile.definition.delivery} · ${profile.definition.workflows.length} workflows`
-        : profile.error,
+        ? `${profile.definition.delivery} · ${getProfileUiMessages().workflowCount(profile.definition.workflows.length)}`
+        : formatAvailableProfileError(profile),
     })),
   });
 }
@@ -147,7 +172,7 @@ export function useProfile(name: string): void {
   const config = getGlobalConfig();
   const definition = resolveProfileDefinition(name, config.delivery ?? 'both');
   applyProfileState(profileStateFromDefinition(definition));
-  console.log(`Using profile "${name}".`);
+  console.log(getProfileUiMessages().usingProfile(name));
   printProfileApplyGuidance();
 }
 
@@ -160,51 +185,56 @@ export async function runLegacyConfigProfileCommand(preset?: string): Promise<vo
 }
 
 async function createProfile(nameArgument?: string): Promise<void> {
+  const messages = getProfileUiMessages();
   if (!process.stdout.isTTY) {
-    throw new NamedProfileError('`rasen profile new` requires an interactive terminal.', 'invalid_name');
+    throw new NamedProfileError(messages.profileNewRequiresTty, 'invalid_name');
   }
 
   const { input, confirm } = await import('@inquirer/prompts');
   const name =
     nameArgument ??
     (await input({
-      message: 'Profile name:',
+      message: messages.profileNamePrompt,
       validate: validateNewProfileName,
     }));
 
-  assertValidUserProfileName(name);
-  if (namedProfileExists(name)) {
-    throw new NamedProfileError(`Profile "${name}" already exists.`, 'already_exists');
+  const nameValidation = validateNewProfileName(name);
+  if (nameValidation !== true) {
+    throw new NamedProfileError(
+      nameValidation,
+      namedProfileExists(name) ? 'already_exists' : 'invalid_name'
+    );
   }
 
   const currentState = resolveCurrentProfileState(getGlobalConfig());
   const nextState = await promptForNewProfileState(currentState);
   const diff = diffProfileState(currentState, nextState);
 
-  console.log(`\nNew profile: ${name}`);
+  console.log(messages.newProfile(name));
   if (diff.hasChanges) {
     for (const line of diff.lines) console.log(`  ${line}`);
   } else {
-    console.log('  Uses the current profile settings.');
+    console.log(messages.usesCurrentSettings);
   }
 
   const confirmed = await confirm({
-    message: `Save and use profile "${name}"?`,
+    message: messages.saveAndUseProfile(name),
     default: true,
   });
   if (!confirmed) {
-    console.log('Profile creation cancelled.');
+    console.log(messages.profileCreationCancelled);
     return;
   }
 
   saveNamedProfile(name, profileDefinitionFromState(nextState));
   applyProfileState(nextState);
-  console.log(`Created and selected profile "${name}".`);
+  console.log(messages.profileCreated(name));
   printProfileApplyGuidance();
 }
 
 async function useProfileCommand(nameArgument?: string): Promise<void> {
-  const name = nameArgument ?? (await chooseProfileName('Select a profile to use:'));
+  const name =
+    nameArgument ?? (await chooseProfileName(getProfileUiMessages().selectProfileToUse));
   useProfile(name);
 }
 
@@ -213,81 +243,98 @@ function profileListPayload(): {
   profiles: Array<AvailableProfile & { matchesCurrent: boolean }>;
 } {
   const current = currentProfileDefinition();
-  const profiles = listAvailableProfiles(current.delivery).map((profile) => ({
-    ...profile,
-    matchesCurrent: profile.definition
-      ? definitionsMatch(profile.definition, current)
-      : false,
-  }));
+  const profiles = listAvailableProfiles(current.delivery).map((profile) => {
+    const entry: AvailableProfile & { matchesCurrent: boolean } = {
+      ...profile,
+      matchesCurrent: profile.definition
+        ? definitionsMatch(profile.definition, current)
+        : false,
+    };
+    if (profile.errorDescriptor) {
+      Object.defineProperty(entry, 'errorDescriptor', {
+        value: profile.errorDescriptor,
+        enumerable: false,
+      });
+    }
+    return entry;
+  });
   return { current, profiles };
 }
 
 function listProfiles(options: { json?: boolean }): void {
+  const messages = getProfileUiMessages();
   const payload = profileListPayload();
   if (options.json) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  console.log('Profiles:');
+  console.log(messages.profilesHeading);
   for (const profile of payload.profiles) {
     const marker = profile.matchesCurrent ? '*' : ' ';
     if (!profile.definition) {
-      console.log(`${marker} ${profile.name} [invalid] ${profile.error ?? ''}`.trimEnd());
+      console.log(
+        `${marker} ${profile.name} [${messages.invalidMarker}] ${formatAvailableProfileError(profile)}`.trimEnd()
+      );
       continue;
     }
-    const source = profile.builtIn ? 'built-in' : 'saved';
+    const source = messages.profileSource(profile.builtIn);
     console.log(
-      `${marker} ${profile.name} [${source}] ${profile.definition.delivery}, ${profile.definition.workflows.length} workflows`
+      `${marker} ${profile.name} [${source}] ${profile.definition.delivery}, ${messages.workflowCount(profile.definition.workflows.length)}`
     );
   }
-  console.log('\n* matches the current profile settings');
+  console.log(messages.matchesCurrentSettings);
 }
 
 async function deleteProfileCommand(
   nameArgument: string | undefined,
   options: { yes?: boolean }
 ): Promise<void> {
-  const name = nameArgument ?? (await chooseUserProfileName('Select a profile to delete:'));
+  const messages = getProfileUiMessages();
+  const name = nameArgument ?? (await chooseUserProfileName(messages.selectProfileToDelete));
   if (BUILTIN_PROFILE_NAMES.includes(name as (typeof BUILTIN_PROFILE_NAMES)[number])) {
-    throw new NamedProfileError(`Built-in profile "${name}" cannot be deleted.`, 'reserved_name');
+    throw new NamedProfileError(messages.builtInCannotDelete(name), 'reserved_name');
   }
   assertValidUserProfileName(name);
 
   if (!options.yes) {
     if (!process.stdout.isTTY) {
       throw new NamedProfileError(
-        'Deletion requires confirmation in a terminal or the --yes flag.',
+        messages.deletionRequiresConfirmation,
         'invalid_name'
       );
     }
     const { confirm } = await import('@inquirer/prompts');
     const confirmed = await confirm({
-      message: `Delete profile "${name}"?`,
+      message: messages.deleteProfile(name),
       default: false,
     });
     if (!confirmed) {
-      console.log('Profile deletion cancelled.');
+      console.log(messages.profileDeletionCancelled);
       return;
     }
   }
 
   deleteNamedProfile(name);
-  console.log(`Deleted profile "${name}". Current settings were not changed.`);
+  console.log(messages.profileDeleted(name));
 }
 
 function importProfileCommand(sourcePath: string, options: { force?: boolean }): void {
+  const messages = getProfileUiMessages();
   const imported = importNamedProfile(sourcePath, { overwrite: options.force });
-  console.log(
-    `Imported profile "${imported.name}" (${imported.definition.delivery}, ${imported.definition.workflows.length} workflows).`
-  );
-  console.log(`Run \`rasen profile use ${imported.name}\` to use it.`);
+  console.log(messages.profileImported(
+    imported.name,
+    imported.definition.delivery,
+    imported.definition.workflows.length
+  ));
+  console.log(messages.useImportedProfile(imported.name));
 }
 
 async function exportProfileCommand(
   destinationPath: string,
   options: { profile?: string; force?: boolean }
 ): Promise<void> {
+  const messages = getProfileUiMessages();
   const config = getGlobalConfig();
   const definition = options.profile
     ? resolveProfileDefinition(options.profile, config.delivery ?? 'both')
@@ -297,25 +344,26 @@ async function exportProfileCommand(
   if (fs.existsSync(destinationPath) && !overwrite) {
     if (!process.stdout.isTTY) {
       throw new NamedProfileError(
-        `Destination already exists: ${destinationPath}. Pass --force to overwrite it.`,
+        messages.destinationExists(destinationPath),
         'already_exists'
       );
     }
     const { confirm } = await import('@inquirer/prompts');
     overwrite = await confirm({
-      message: `Overwrite existing file "${destinationPath}"?`,
+      message: messages.overwriteFile(destinationPath),
       default: false,
     });
     if (!overwrite) {
-      console.log('Profile export cancelled.');
+      console.log(messages.profileExportCancelled);
       return;
     }
   }
 
   const exportedPath = exportProfileDefinition(destinationPath, definition, { overwrite });
-  console.log(
-    `Exported ${options.profile ? `profile "${options.profile}"` : 'current profile settings'} to ${exportedPath}.`
-  );
+  const subject = options.profile
+    ? messages.namedProfileSettings(options.profile)
+    : messages.currentProfileSettings;
+  console.log(messages.profileExported(subject, exportedPath));
 }
 
 export function registerProfileCommand(program: Command): void {

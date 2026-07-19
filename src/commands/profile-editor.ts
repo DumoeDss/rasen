@@ -6,8 +6,15 @@ import type { GlobalConfig, Profile, Delivery } from '../core/global-config.js';
 import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import { OPENSPEC_DIR_NAME } from '../core/config.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS, getProfileWorkflows } from '../core/profiles.js';
+import { getCommandFileId } from '../core/command-generation/command-file-id.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
+import {
+  getProfilePromptMessages,
+  type ProfilePromptMessages,
+  getProfileUiMessages,
+} from './profile-messages.js';
 import { isPromptCancellationError } from './shared-output.js';
+import type { CliLocale } from '../utils/locale.js';
 
 type ProfileAction = 'both' | 'delivery' | 'workflows' | 'keep';
 
@@ -22,61 +29,13 @@ export interface ProfileStateDiff {
   lines: string[];
 }
 
-interface WorkflowPromptMeta {
-  name: string;
-  description: string;
-}
-
-const WORKFLOW_PICKER_INSTRUCTIONS =
-  'Space to toggle, A to select/clear all, Enter to confirm';
 const WORKFLOW_PICKER_SHORTCUTS = { all: 'a' } as const;
-
-const WORKFLOW_PROMPT_META: Record<string, WorkflowPromptMeta> = {
-  propose: {
-    name: 'Propose change',
-    description: 'Create proposal, design, and tasks from a request',
-  },
-  explore: {
-    name: 'Explore ideas',
-    description: 'Investigate a problem before implementation',
-  },
-  new: {
-    name: 'New change',
-    description: 'Create a new change scaffold quickly',
-  },
-  continue: {
-    name: 'Continue change',
-    description: 'Resume work on an existing change',
-  },
-  apply: {
-    name: 'Apply tasks',
-    description: 'Implement tasks from the current change',
-  },
-  ff: {
-    name: 'Fast-forward',
-    description: 'Run a faster implementation workflow',
-  },
-  sync: {
-    name: 'Sync specs',
-    description: 'Sync change artifacts with specs',
-  },
-  archive: {
-    name: 'Archive change',
-    description: 'Finalize and archive a completed change',
-  },
-  'bulk-archive': {
-    name: 'Bulk archive',
-    description: 'Archive multiple completed changes together',
-  },
-  verify: {
-    name: 'Verify change',
-    description: 'Run verification checks against a change',
-  },
-  onboard: {
-    name: 'Onboard',
-    description: 'Guided onboarding flow for Rasen',
-  },
-};
+const WORKFLOW_DISPLAY_IDS = new Map(
+  ALL_WORKFLOWS.map((workflow) => [workflow, getCommandFileId(workflow)])
+);
+const WORKFLOW_ID_COLUMN_WIDTH = Math.max(
+  ...[...WORKFLOW_DISPLAY_IDS.values()].map((workflow) => workflow.length)
+);
 
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
   const profile = config.profile || 'full';
@@ -99,8 +58,12 @@ export function deriveProfileFromWorkflowSelection(selectedWorkflows: string[]):
   return isCoreMatch ? 'core' : 'custom';
 }
 
-export function formatWorkflowSummary(workflows: readonly string[], profile: Profile): string {
-  return `${workflows.length} selected (${profile})`;
+export function formatWorkflowSummary(
+  workflows: readonly string[],
+  profile: Profile,
+  locale?: CliLocale
+): string {
+  return getProfileUiMessages(locale).workflowSummary(workflows.length, profile);
 }
 
 function stableWorkflowOrder(workflows: readonly string[]): string[] {
@@ -128,14 +91,19 @@ function stableWorkflowOrder(workflows: readonly string[]): string[] {
   return ordered;
 }
 
-export function diffProfileState(before: ProfileState, after: ProfileState): ProfileStateDiff {
+export function diffProfileState(
+  before: ProfileState,
+  after: ProfileState,
+  locale?: CliLocale
+): ProfileStateDiff {
+  const messages = getProfileUiMessages(locale);
   const lines: string[] = [];
 
   if (before.delivery !== after.delivery) {
-    lines.push(`delivery: ${before.delivery} -> ${after.delivery}`);
+    lines.push(messages.diffDelivery(before.delivery, after.delivery));
   }
   if (before.profile !== after.profile) {
-    lines.push(`profile: ${before.profile} -> ${after.profile}`);
+    lines.push(messages.diffProfile(before.profile, after.profile));
   }
 
   const beforeOrdered = stableWorkflowOrder(before.workflows);
@@ -146,16 +114,16 @@ export function diffProfileState(before: ProfileState, after: ProfileState): Pro
   const removed = beforeOrdered.filter((workflow) => !afterSet.has(workflow));
 
   if (added.length > 0 || removed.length > 0) {
-    const tokens: string[] = [];
-    if (added.length > 0) tokens.push(`added ${added.join(', ')}`);
-    if (removed.length > 0) tokens.push(`removed ${removed.join(', ')}`);
-    lines.push(`workflows: ${tokens.join('; ')}`);
+    lines.push(messages.diffWorkflows(added, removed));
   }
 
   return { hasChanges: lines.length > 0, lines };
 }
 
-function workflowChoices(currentState: ProfileState): Array<{
+function workflowChoices(
+  currentState: ProfileState,
+  messages: ProfilePromptMessages
+): Array<{
   value: string;
   name: string;
   description: string;
@@ -163,13 +131,11 @@ function workflowChoices(currentState: ProfileState): Array<{
   checked: boolean;
 }> {
   return ALL_WORKFLOWS.map((workflow) => {
-    const metadata = WORKFLOW_PROMPT_META[workflow] ?? {
-      name: workflow,
-      description: `Workflow: ${workflow}`,
-    };
+    const metadata = messages.workflows[workflow];
+    const displayId = WORKFLOW_DISPLAY_IDS.get(workflow) ?? workflow;
     return {
       value: workflow,
-      name: metadata.name,
+      name: `${displayId.padEnd(WORKFLOW_ID_COLUMN_WIDTH)} - ${metadata.name}`,
       description: metadata.description,
       short: metadata.name,
       checked: currentState.workflows.includes(workflow),
@@ -177,7 +143,10 @@ function workflowChoices(currentState: ProfileState): Array<{
   });
 }
 
-function deliveryChoices(currentDelivery?: Delivery): Array<{
+function deliveryChoices(
+  currentDelivery: Delivery | undefined,
+  messages: ProfilePromptMessages
+): Array<{
   value: Delivery;
   name: string;
   description: string;
@@ -185,35 +154,34 @@ function deliveryChoices(currentDelivery?: Delivery): Array<{
   const choices = [
     {
       value: 'both' as const,
-      name: 'Both (skills + commands)',
-      description: 'Install workflows as both skills and slash commands',
+      ...messages.delivery.both,
     },
     {
       value: 'skills' as const,
-      name: 'Skills only',
-      description: 'Install workflows only as skills',
+      ...messages.delivery.skills,
     },
   ];
   for (const choice of choices) {
-    if (choice.value === currentDelivery) choice.name += ' [current]';
+    if (choice.value === currentDelivery) choice.name += messages.currentSuffix;
   }
   return choices;
 }
 
 export async function promptForNewProfileState(currentState: ProfileState): Promise<ProfileState> {
   const { select, checkbox } = await import('@inquirer/prompts');
+  const messages = getProfilePromptMessages();
   const delivery = await select<Delivery>({
-    message: 'Delivery mode (how workflows are installed):',
-    choices: deliveryChoices(currentState.delivery),
+    message: messages.deliveryPickerMessage,
+    choices: deliveryChoices(currentState.delivery, messages),
     default: currentState.delivery,
   });
   const workflows = await checkbox<string>({
-    message: 'Select workflows to make available:',
-    instructions: WORKFLOW_PICKER_INSTRUCTIONS,
+    message: messages.workflowPickerMessage,
+    instructions: messages.workflowPickerInstructions,
     shortcuts: WORKFLOW_PICKER_SHORTCUTS,
     pageSize: ALL_WORKFLOWS.length,
     theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-    choices: workflowChoices(currentState),
+    choices: workflowChoices(currentState, messages),
   });
   return {
     profile: deriveProfileFromWorkflowSelection(workflows),
@@ -230,11 +198,11 @@ function maybeWarnProjectConfigDrift(
   const openspecDir = path.join(projectDir, OPENSPEC_DIR_NAME);
   if (!fs.existsSync(openspecDir)) return;
   if (!hasProjectConfigDrift(projectDir, state.workflows, state.delivery)) return;
-  console.log(colorize('Warning: Global config is not applied to this project. Run `rasen update` to sync.'));
+  console.log(colorize(getProfileUiMessages().driftWarning));
 }
 
 export function printProfileApplyGuidance(): void {
-  console.log('Config updated. Run `rasen update` in your projects to apply.');
+  console.log(getProfileUiMessages().applyGuidance);
 }
 
 export function applyProfileState(state: ProfileState): void {
@@ -246,10 +214,9 @@ export function applyProfileState(state: ProfileState): void {
 }
 
 export async function runInteractiveProfileEditor(): Promise<void> {
+  const ui = getProfileUiMessages();
   if (!process.stdout.isTTY) {
-    console.error(
-      'Interactive mode required. Use `rasen profile use <name>` or set config via environment/flags.'
-    );
+    console.error(ui.interactiveRequired);
     process.exitCode = 1;
     return;
   }
@@ -260,46 +227,39 @@ export async function runInteractiveProfileEditor(): Promise<void> {
   try {
     const config = getGlobalConfig();
     const currentState = resolveCurrentProfileState(config);
+    const messages = getProfilePromptMessages();
 
-    console.log(chalk.bold('\nCurrent profile settings'));
-    console.log(`  Delivery: ${currentState.delivery}`);
-    console.log(`  Workflows: ${formatWorkflowSummary(currentState.workflows, currentState.profile)}`);
-    console.log(
-      chalk.dim(
-        '  Delivery = whether commands are installed alongside skills (skills are always installed)'
-      )
-    );
-    console.log(chalk.dim('  Workflows = which actions are available (propose, explore, apply, etc.)'));
+    console.log(chalk.bold(ui.currentSettingsHeading));
+    console.log(`  ${ui.deliveryLabel}: ${currentState.delivery}`);
+    console.log(`  ${ui.workflowsLabel}: ${formatWorkflowSummary(currentState.workflows, currentState.profile)}`);
+    console.log(chalk.dim(ui.deliveryExplanation));
+    console.log(chalk.dim(ui.workflowsExplanation));
     console.log();
 
     const action = await select<ProfileAction>({
-      message: 'What do you want to configure?',
+      message: ui.configurePrompt,
       choices: [
         {
           value: 'both',
-          name: 'Delivery and workflows',
-          description: 'Update install mode and available actions together',
+          ...ui.actions.both,
         },
         {
           value: 'delivery',
-          name: 'Delivery only',
-          description: 'Change where workflows are installed',
+          ...ui.actions.delivery,
         },
         {
           value: 'workflows',
-          name: 'Workflows only',
-          description: 'Change which workflow actions are available',
+          ...ui.actions.workflows,
         },
         {
           value: 'keep',
-          name: 'Keep current settings (exit)',
-          description: 'Leave configuration unchanged and exit',
+          ...ui.actions.keep,
         },
       ],
     });
 
     if (action === 'keep') {
-      console.log('No config changes.');
+      console.log(ui.noConfigChanges);
       maybeWarnProjectConfigDrift(process.cwd(), currentState, chalk.yellow);
       return;
     }
@@ -312,20 +272,20 @@ export async function runInteractiveProfileEditor(): Promise<void> {
 
     if (action === 'both' || action === 'delivery') {
       nextState.delivery = await select<Delivery>({
-        message: 'Delivery mode (how workflows are installed):',
-        choices: deliveryChoices(currentState.delivery),
+        message: messages.deliveryPickerMessage,
+        choices: deliveryChoices(currentState.delivery, messages),
         default: currentState.delivery,
       });
     }
 
     if (action === 'both' || action === 'workflows') {
       const selectedWorkflows = await checkbox<string>({
-        message: 'Select workflows to make available:',
-        instructions: WORKFLOW_PICKER_INSTRUCTIONS,
+        message: messages.workflowPickerMessage,
+        instructions: messages.workflowPickerInstructions,
         shortcuts: WORKFLOW_PICKER_SHORTCUTS,
         pageSize: ALL_WORKFLOWS.length,
         theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-        choices: workflowChoices(currentState),
+        choices: workflowChoices(currentState, messages),
       });
       nextState.workflows = selectedWorkflows;
       nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
@@ -333,12 +293,12 @@ export async function runInteractiveProfileEditor(): Promise<void> {
 
     const diff = diffProfileState(currentState, nextState);
     if (!diff.hasChanges) {
-      console.log('No config changes.');
+      console.log(ui.noConfigChanges);
       maybeWarnProjectConfigDrift(process.cwd(), nextState, chalk.yellow);
       return;
     }
 
-    console.log(chalk.bold('\nProfile changes:'));
+    console.log(chalk.bold(ui.profileChangesHeading));
     for (const line of diff.lines) console.log(`  ${line}`);
     console.log();
 
@@ -348,7 +308,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     const openspecDir = path.join(projectDir, OPENSPEC_DIR_NAME);
     if (fs.existsSync(openspecDir)) {
       const applyNow = await confirm({
-        message: 'Apply changes to this project now?',
+        message: ui.applyToProject,
         default: true,
       });
 
@@ -358,9 +318,9 @@ export async function runInteractiveProfileEditor(): Promise<void> {
             stdio: 'inherit',
             cwd: projectDir,
           });
-          console.log('Run `rasen update` in your other projects to apply.');
+          console.log(ui.updateOtherProjects);
         } catch {
-          console.error('`rasen update` failed. Please run it manually to apply the profile changes.');
+          console.error(ui.updateFailed);
           process.exitCode = 1;
         }
         return;
@@ -370,7 +330,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     printProfileApplyGuidance();
   } catch (error) {
     if (isPromptCancellationError(error)) {
-      console.log('Config profile cancelled.');
+      console.log(ui.profileCancelled);
       process.exitCode = 130;
       return;
     }
