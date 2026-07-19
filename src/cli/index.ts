@@ -16,6 +16,7 @@ import { ShowCommand } from '../commands/show.js';
 import { CompletionCommand } from '../commands/completion.js';
 import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
+import { registerProfileCommand } from '../commands/profile.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
 import { AgentCommand } from '../commands/agent.js';
@@ -350,6 +351,7 @@ program
   });
 
 registerConfigCommand(program);
+registerProfileCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);
 registerDoctorCommand(program);

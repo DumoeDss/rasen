@@ -864,7 +864,7 @@ export class InitCommand {
       console.log(chalk.bold('Getting started:'));
       console.log('  Start your first change: /rasen:new "your idea"');
     } else {
-      console.log("Done. Run 'rasen config profile' to configure your workflows.");
+      console.log("Done. Run 'rasen profile' to configure your workflows.");
     }
 
     // Safety hook configuration hint

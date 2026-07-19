@@ -251,6 +251,14 @@ describe('CompletionCommand', () => {
       expect(consoleLogSpy).toHaveBeenCalledWith('spec-driven\tschema');
       expect(process.exitCode).toBe(0);
     });
+
+    it('should output built-in profile names for shell completion', async () => {
+      await command.complete({ type: 'profiles' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith('full\tbuilt-in profile');
+      expect(consoleLogSpy).toHaveBeenCalledWith('core\tbuilt-in profile');
+      expect(process.exitCode).toBe(0);
+    });
   });
 
   describe('shell detection integration', () => {

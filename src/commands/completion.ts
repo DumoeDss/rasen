@@ -4,6 +4,8 @@ import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
 import { detectShell, SupportedShell } from '../utils/shell-detection.js';
 import { CompletionProvider } from '../core/completions/completion-provider.js';
 import { getArchivedChangeIds } from '../utils/item-discovery.js';
+import { getGlobalConfig } from '../core/global-config.js';
+import { listAvailableProfiles } from '../core/named-profiles.js';
 
 interface GenerateOptions {
   shell?: string;
@@ -283,6 +285,22 @@ export class CompletionCommand {
           const schemaNames = await this.completionProvider.getSchemaNames();
           for (const name of schemaNames) {
             console.log(`${name}\tschema`);
+          }
+          break;
+        }
+        case 'profiles': {
+          const delivery = getGlobalConfig().delivery ?? 'both';
+          for (const profile of listAvailableProfiles(delivery)) {
+            if (!profile.definition) continue;
+            console.log(`${profile.name}\t${profile.builtIn ? 'built-in' : 'saved'} profile`);
+          }
+          break;
+        }
+        case 'saved-profiles': {
+          const delivery = getGlobalConfig().delivery ?? 'both';
+          for (const profile of listAvailableProfiles(delivery)) {
+            if (profile.builtIn || !profile.definition) continue;
+            console.log(`${profile.name}\tsaved profile`);
           }
           break;
         }

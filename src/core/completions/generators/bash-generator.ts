@@ -187,6 +187,12 @@ complete -F _rasen_completion rasen
       case 'schema-name':
         lines.push(`${indent}_rasen_complete_schemas`);
         break;
+      case 'profile-name':
+        lines.push(`${indent}_rasen_complete_profiles`);
+        break;
+      case 'saved-profile-name':
+        lines.push(`${indent}_rasen_complete_saved_profiles`);
+        break;
       case 'shell':
         lines.push(`${indent}local shells="zsh bash fish powershell"`);
         lines.push(`${indent}COMPREPLY=($(compgen -W "$shells" -- "$cur"))`);

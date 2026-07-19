@@ -111,7 +111,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     scopes: ['global'],
     type: 'array',
     defaultValue: [],
-    description: 'Explicit workflow selection (edit via `rasen config profile`)',
+    description: 'Explicit workflow selection (edit via `rasen profile`)',
     group: 'Profile',
   },
   {

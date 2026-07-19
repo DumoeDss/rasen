@@ -283,6 +283,16 @@ Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
         lines.push(`${indent}    [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", "Schema: $_")`);
         lines.push(`${indent}}`);
         break;
+      case 'profile-name':
+        lines.push(`${indent}Get-RasenProfiles | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {`);
+        lines.push(`${indent}    [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", "Profile: $_")`);
+        lines.push(`${indent}}`);
+        break;
+      case 'saved-profile-name':
+        lines.push(`${indent}Get-RasenSavedProfiles | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {`);
+        lines.push(`${indent}    [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", "Saved profile: $_")`);
+        lines.push(`${indent}}`);
+        break;
       case 'shell':
         lines.push(`${indent}$shells = @("zsh", "bash", "fish", "powershell")`);
         lines.push(`${indent}$shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {`);

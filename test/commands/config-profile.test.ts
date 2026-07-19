@@ -271,6 +271,10 @@ describe('config profile interactive flow', () => {
 
     const checkboxCall = checkbox.mock.calls[0][0];
     expect(checkboxCall.message).toBe('Select workflows to make available:');
+    expect(checkboxCall.instructions).toBe(
+      'Space to toggle, A to select/clear all, Enter to confirm'
+    );
+    expect(checkboxCall.shortcuts).toEqual({ all: 'a' });
     expect(checkboxCall.choices).toEqual(expect.arrayContaining([
       expect.objectContaining({
         value: 'propose',

@@ -122,7 +122,7 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(process.exitCode).not.toBe(130);
   });
 
-  it('the workflows row is a disabled pointer to `rasen config profile`', async () => {
+  it('the workflows row is a disabled pointer to `rasen profile`', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
@@ -131,7 +131,7 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     const choices = await choicesFromCall(0);
     const workflowsRow = choices.find((c) => c.value === '__workflows__')!;
     expect(workflowsRow.disabled).toBeTruthy();
-    expect(String(workflowsRow.disabled)).toContain('rasen config profile');
+    expect(String(workflowsRow.disabled)).toContain('rasen profile');
   });
 
   it('project-only keys are disabled outside a Rasen project', async () => {

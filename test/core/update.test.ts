@@ -985,7 +985,7 @@ metadata:
         call.includes('The core profile now includes sync')
       )).toBe(true);
       expect(calls.some(call =>
-        call.includes('rasen config profile core') && call.includes('rasen update')
+        call.includes('rasen profile use core') && call.includes('rasen update')
       )).toBe(true);
 
       expect(await FileSystemUtils.fileExists(

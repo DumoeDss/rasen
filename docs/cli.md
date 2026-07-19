@@ -16,7 +16,7 @@ The rasen CLI (`rasen`) provides terminal commands for project setup, validation
 | **Lifecycle** | `archive` | Finalize completed changes |
 | **Workflow** | `new change`, `status`, `instructions`, `templates`, `schemas` | Artifact-driven workflow support |
 | **Schemas** | `schema init`, `schema fork`, `schema validate`, `schema which` | Create and manage custom workflows |
-| **Config** | `config` | View and modify settings |
+| **Config** | `profile`, `config` | Manage workflow profiles and other settings |
 | **Utility** | `feedback`, `completion` | Feedback and shell integration |
 
 ---
@@ -102,7 +102,7 @@ rasen init [path] [options]
 | `--force` | Auto-cleanup legacy files without prompting |
 | `--profile <profile>` | Override global profile for this init run (`full`, `core`, or `custom`) |
 
-`--profile custom` uses whatever workflows are currently selected in global config (`rasen config profile`).
+`--profile custom` uses whatever workflows are currently selected in global config (`rasen profile`).
 
 **Supported tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
 
@@ -992,6 +992,38 @@ spec-driven resolves from: package
 
 ## Configuration Commands
 
+### `rasen profile`
+
+Edit the current workflow selection or manage reusable named profile snapshots. Profile changes update global configuration; run `rasen update` in each project to install the selected workflows.
+
+```
+rasen profile
+rasen profile new [name]
+rasen profile use [name]
+rasen profile list [--json]
+rasen profile delete [name] [--yes]
+rasen profile import <path> [--force]
+rasen profile export <path> [--profile <name>] [--force]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| _(none)_ | Edit the current delivery mode and workflow selection interactively |
+| `new [name]` | Create, save, and use a named profile; prompts for the name when omitted |
+| `use [name]` | Use a built-in or saved profile; opens a picker when omitted |
+| `list` | List built-in and saved profiles; add `--json` for structured output |
+| `delete [name]` | Delete a saved profile; add `--yes` to skip confirmation |
+| `import <path>` | Import a YAML or JSON profile; add `--force` to replace the same name |
+| `export <path>` | Export current settings or the profile selected by `--profile`; add `--force` to overwrite |
+
+Named profiles are saved snapshots. Using one copies its delivery and workflows into global configuration, where `profile` remains the effective classification (`full`, `core`, or `custom`) rather than the saved profile name. The saved name is retained by its file in the machine-global profiles directory.
+
+When `new` prompts for a name, invalid, reserved, and existing names show an inline error so another name can be entered. An invalid name supplied directly as `new <name>` fails without opening the remaining prompts.
+
+In the workflow checklist, press `Space` to toggle one workflow, `A` to select all workflows or clear all when every workflow is already selected, and `Enter` to confirm.
+
+`rasen config profile [full|core]` remains available as a compatibility entry point, but `rasen profile` is the canonical command.
+
 ### `rasen config`
 
 View and modify global or project rasen configuration. Every subcommand accepts `--scope <global|project>` (default `global`); `--scope project` reads and writes the current project's `rasen/config.yaml` instead of the global config file. Running `rasen config` with no subcommand opens an interactive full-view editor (in a TTY) showing every configurable key, its effective value, and which layer produced it (`default`, `global`, `project`, or `env-override`); outside a TTY it prints that same effective view non-interactively and exits.
@@ -1011,13 +1043,13 @@ rasen config <subcommand> [options]
 | `unset <key>` | Remove a key |
 | `reset` | Reset to defaults (global scope only) |
 | `edit` | Open in `$EDITOR` (global scope only) |
-| `profile [preset]` | Configure workflow profile interactively or via preset |
+| `profile [preset]` | Compatibility entry point for `rasen profile` or `rasen profile use <preset>` |
 
 **Configurable keys** (see `rasen config` with no arguments for the full list with current values):
 
 | Key | Scope | Description |
 |-----|-------|-------------|
-| `profile`, `delivery`, `workflows` | global | Workflow profile (use `rasen config profile` to edit) |
+| `profile`, `delivery`, `workflows` | global | Workflow profile (use `rasen profile` to edit) |
 | `featureFlags.<name>` | global | Feature flag toggle |
 | `proactive` | global | Whether agents proactively suggest next steps |
 | `repoMode` | global | `solo` or `collaborative` |
@@ -1068,13 +1100,13 @@ rasen config edit
 rasen config
 
 # Configure profile with action-based wizard
-rasen config profile
+rasen profile
 
 # Fast preset: switch workflows to core (keeps delivery mode)
-rasen config profile core
+rasen profile use core
 ```
 
-`rasen config profile` starts with a current-state summary, then lets you choose:
+`rasen profile` starts with a current-state summary, then lets you choose:
 - Change delivery + workflows
 - Change delivery only
 - Change workflows only
@@ -1083,18 +1115,18 @@ rasen config profile core
 If you keep current settings, no changes are written and no update prompt is shown.
 If there are no config changes but the current project files are out of sync with your global profile/delivery, rasen will show a warning and suggest `rasen update`.
 Pressing `Ctrl+C` also cancels the flow cleanly (no stack trace) and exits with code `130`.
-In the workflow checklist, `[x]` means the workflow is selected in global config. To apply those selections to project files, run `rasen update` (or choose `Apply changes to this project now?` when prompted inside a project).
+In the workflow checklist, `[x]` means the workflow is selected in global config. Press `A` to select all, or press it again when everything is selected to clear all. To apply those selections to project files, run `rasen update` (or choose `Apply changes to this project now?` when prompted inside a project).
 
 **Interactive examples:**
 
 ```bash
 # Delivery-only update
-rasen config profile
+rasen profile
 # choose: Change delivery only
 # choose delivery: Skills only
 
 # Workflows-only update
-rasen config profile
+rasen profile
 # choose: Change workflows only
 # toggle workflows in the checklist, then confirm
 ```

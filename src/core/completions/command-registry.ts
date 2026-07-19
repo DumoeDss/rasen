@@ -559,6 +559,78 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'profile',
+    description: 'Manage reusable workflow profiles',
+    flags: [],
+    subcommands: [
+      {
+        name: 'new',
+        description: 'Create and use a named profile interactively',
+        acceptsPositional: true,
+        positionals: [{ name: 'name', optional: true }],
+        flags: [],
+      },
+      {
+        name: 'use',
+        description: 'Use a built-in or saved profile',
+        acceptsPositional: true,
+        positionalType: 'profile-name',
+        positionals: [{ name: 'name', type: 'profile-name', optional: true }],
+        flags: [],
+      },
+      {
+        name: 'list',
+        description: 'List built-in and saved profiles',
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'delete',
+        description: 'Delete a saved profile',
+        acceptsPositional: true,
+        positionalType: 'saved-profile-name',
+        positionals: [{ name: 'name', type: 'saved-profile-name', optional: true }],
+        flags: [
+          {
+            name: 'yes',
+            short: 'y',
+            description: 'Skip confirmation',
+          },
+        ],
+      },
+      {
+        name: 'import',
+        description: 'Import a YAML or JSON profile',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [
+          {
+            name: 'force',
+            description: 'Replace an existing profile with the same name',
+          },
+        ],
+      },
+      {
+        name: 'export',
+        description: 'Export current settings or a named profile',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [
+          {
+            name: 'profile',
+            description: 'Export a built-in or saved profile instead of current settings',
+            takesValue: true,
+          },
+          {
+            name: 'force',
+            description: 'Overwrite an existing destination',
+          },
+        ],
+      },
+    ],
+  },
+  {
     name: 'config',
     description: 'View and modify global Rasen configuration',
     flags: [
@@ -634,7 +706,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'profile',
-        description: 'Configure workflow profile (interactive picker or preset shortcut)',
+        description: 'Compatibility alias for `rasen profile`',
         acceptsPositional: true,
         positionals: [{ name: 'preset', optional: true }],
         flags: [],
