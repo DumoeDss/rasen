@@ -1022,6 +1022,14 @@ When `new` prompts for a name, invalid, reserved, and existing names show an inl
 
 In the workflow checklist, press `Space` to toggle one workflow, `A` to select all workflows or clear all when every workflow is already selected, and `Enter` to confirm.
 
+Profile prompts, CLI help, the interactive config editor, and shell-completion descriptions and management messages are available in English and Japanese. The selected language is stored as `language: "auto" | "en" | "ja"` in the machine-global JSON config. Set it with `rasen config set language ja` or `rasen config set language en`.
+
+The workflow picker shows the stable public workflow id before the localized name, with the separator aligned across rows (for example, `propose - 変更を提案`). Tool-specific slash punctuation is intentionally omitted because assistants may expose the same workflow as `/rasen:propose`, `/rasen-propose`, or a skill.
+
+With `language: "auto"` (the default), Unix-like systems check `LC_ALL`, `LC_MESSAGES`, and `LANG`, then fall back to the runtime's system locale. Windows uses the system locale reported by Node.js. Unsupported locales fall back to English. `RASEN_LANG=en` or `RASEN_LANG=ja` temporarily overrides the saved setting. Reinstall shell completions after changing the saved language so generated descriptions are refreshed.
+
+Translation catalogs are maintained as `src/locales/en.json` and `src/locales/ja.json`. The build copies them to `dist/locales/`, which is included in the published package. Both catalogs use the same keys and placeholders.
+
 `rasen config profile [full|core]` remains available as a compatibility entry point, but `rasen profile` is the canonical command.
 
 ### `rasen config`
@@ -1050,6 +1058,7 @@ rasen config <subcommand> [options]
 | Key | Scope | Description |
 |-----|-------|-------------|
 | `profile`, `delivery`, `workflows` | global | Workflow profile (use `rasen profile` to edit) |
+| `language` | global | CLI display language: `auto`, `en`, or `ja` |
 | `featureFlags.<name>` | global | Feature flag toggle |
 | `proactive` | global | Whether agents proactively suggest next steps |
 | `repoMode` | global | `solo` or `collaborative` |
@@ -1074,6 +1083,9 @@ rasen config get telemetry.enabled
 
 # Set a value
 rasen config set telemetry.enabled false
+
+# Persist Japanese CLI prompts and help
+rasen config set language ja
 
 # Set a string value explicitly
 rasen config set featureFlags.myFlag "custom" --string
@@ -1218,6 +1230,7 @@ rasen completion uninstall
 | `RASEN_TELEMETRY` | Set to `0` to disable telemetry |
 | `DO_NOT_TRACK` | Set to `1` to disable telemetry (standard DNT signal) |
 | `RASEN_CONCURRENCY` | Default concurrency for bulk validation (default: 6) |
+| `RASEN_LANG` | Temporarily override the saved CLI language (`en` or `ja`) |
 | `EDITOR` or `VISUAL` | Editor for `rasen config edit` |
 | `NO_COLOR` | Disable color output when set |
 
