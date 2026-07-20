@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 import { runCLI } from '../helpers/run-cli.js';
 
 const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'] as const;
@@ -407,6 +408,39 @@ stages:
       const humanResult = await runCLI(['pipeline', 'show', 'handoff-preset'], { cwd: testDir });
       expect(humanResult.exitCode).toBe(0);
       expect(humanResult.stdout).toContain('handoff=60000 tokens remaining(preset)');
+    });
+
+    it('pipeline show --json reflects the machine-config model (config-page-coherence)', async () => {
+      const rasenHome = await fs.mkdtemp(path.join(os.tmpdir(), 'rasen-pipeline-model-home-'));
+      await fs.writeFile(
+        path.join(rasenHome, 'config.json'),
+        JSON.stringify({ models: { default: 'sonnet', roles: { reviewer: 'fable' } } }),
+        'utf-8'
+      );
+      await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nmodels:\n  roles:\n    implementer: opus\n',
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: rasenHome },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+
+      const reviewerStage = json.stages.find((s: any) => s.role === 'reviewer');
+      if (reviewerStage) {
+        expect(reviewerStage.model).toBe('fable');
+        expect(reviewerStage.modelSource).toBe('global-role');
+      }
+      const implementerStage = json.stages.find((s: any) => s.role === 'implementer');
+      if (implementerStage) {
+        expect(implementerStage.model).toBe('opus');
+        expect(implementerStage.modelSource).toBe('project-role');
+      }
     });
 
     // Goal-loop `pipeline show` human-readable rendering. goal-loop-core

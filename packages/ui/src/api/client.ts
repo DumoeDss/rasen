@@ -10,6 +10,7 @@ import type {
   GetConfigKeyResponse,
   HealthResponse,
   ListConfigResponse,
+  ListPipelinesResponse,
   ListProjectsResponse,
   WriteConfigKeyResponse,
 } from './types.js';
@@ -93,6 +94,11 @@ export function listProjects(): Promise<ListProjectsResponse> {
 
 export function listConfig(project?: string): Promise<ListConfigResponse> {
   return request<ListConfigResponse>(`/api/v1/config${projectQuery(project)}`);
+}
+
+/** Read-only gates inventory (D5/D6): the available pipelines and their gate-carrying stages. */
+export function listPipelines(): Promise<ListPipelinesResponse> {
+  return request<ListPipelinesResponse>('/api/v1/pipelines');
 }
 
 export function getKey(key: string, project?: string): Promise<GetConfigKeyResponse> {

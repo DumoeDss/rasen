@@ -14,12 +14,12 @@ describe('groupEntries', () => {
     );
   });
 
-  it('orders known groups per the stable GROUP_ORDER', () => {
+  it('orders known groups per the stable GROUP_ORDER (Autopilot and Workflow lead)', () => {
     const groups = groupEntries(entries);
     const names = groups.map((g) => g.group);
-    // Profile, Behavior, Autopilot, Telemetry, Workflow is the GROUP_ORDER
-    // subsequence present in the fixture.
-    expect(names).toEqual(['Profile', 'Behavior', 'Autopilot', 'Telemetry', 'Workflow']);
+    // Autopilot, Workflow, Profile, Behavior, Telemetry is the GROUP_ORDER
+    // subsequence present in the fixture (config-page-coherence D6).
+    expect(names).toEqual(['Autopilot', 'Workflow', 'Profile', 'Behavior', 'Telemetry']);
   });
 
   it('sorts unrecognized groups alphabetically after known ones', () => {

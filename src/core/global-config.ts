@@ -75,9 +75,47 @@ export interface GlobalConfig {
     anonymousId?: string;
     noticeSeen?: boolean;
   };
-  /** Context-handoff threshold; project config of the same name wins over this. */
+  /**
+   * Context-handoff threshold; project config of the same name wins over
+   * this. `roles` carries per-role overrides (planner/implementer/
+   * reviewer/fixer/shipper) mirroring the pipeline registry's
+   * `handoff.roles.<role>` shape — a role-specific value wins over the
+   * scalar `threshold` at this same (global) scope tier.
+   */
   handoff?: {
     threshold?: ThresholdValue;
+    roles?: {
+      planner?: ThresholdValue;
+      implementer?: ThresholdValue;
+      reviewer?: ThresholdValue;
+      fixer?: ThresholdValue;
+      shipper?: ThresholdValue;
+    };
+  };
+  /**
+   * Machine-wide autopilot defaults; project config of the same name wins
+   * over this (see `resolveAutopilotGatePolicy`/`resolveAutopilotSelectionPolicy`
+   * in project-config.ts, which take this block as their `globalConfig` layer).
+   */
+  autopilot?: {
+    gates?: 'on' | 'off';
+    selection?: 'classify' | 'manual' | 'compose';
+  };
+  /**
+   * Machine-wide per-agent model defaults; project config of the same name
+   * wins over this. `default` is the base model for every role; `roles`
+   * overrides it per role (planner/implementer/reviewer/fixer/shipper).
+   * Model ids are free strings — never validated against an allow-list.
+   */
+  models?: {
+    default?: string;
+    roles?: {
+      planner?: string;
+      implementer?: string;
+      reviewer?: string;
+      fixer?: string;
+      shipper?: string;
+    };
   };
 }
 

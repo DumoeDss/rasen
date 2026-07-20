@@ -5,6 +5,7 @@ import type { WireConfigEntry } from '../api/types.js';
 import { groupEntries } from '../config/grouping.js';
 import { useProjectState } from '../store/use-project-state.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
+import { GatesInventoryPanel } from './GatesInventoryPanel.js';
 
 /**
  * The config page (design.md D6): one `listConfig` call renders the whole
@@ -86,6 +87,7 @@ export function ConfigPage() {
     return groups.map((group) => (
       <section key={group.group} class="config-group">
         <h2>{group.group}</h2>
+        {group.group === 'Autopilot' && <GatesInventoryPanel />}
         {group.entries.map((entry) => (
           <ConfigEntryRow
             key={entry.definition.key}

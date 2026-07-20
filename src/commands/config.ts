@@ -472,6 +472,15 @@ async function runInteractiveConfigEditor(): Promise<void> {
         pageSize: 20,
       });
 
+      // Defensive: a degenerate prompt result (undefined/null — an exhausted
+      // mock queue in tests, or a closed stdin in production) must not spin
+      // this `for (;;)` loop forever re-resolving config and rebuilding
+      // choices every iteration. Treat it as an implicit exit rather than
+      // looping on it.
+      if (picked === undefined || picked === null) {
+        return;
+      }
+
       if (picked === '__exit__') return;
       if (picked === '__workflows__') {
         console.log('Manage workflows via `rasen config profile`.');

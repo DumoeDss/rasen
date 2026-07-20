@@ -310,6 +310,109 @@ stages:
       });
     });
 
+    describe('per-role machine model config layers (config-page-coherence)', () => {
+      const noModelPipeline = parsePipeline(`
+name: model-layer-test
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`);
+      const reviewerStage = noModelPipeline.stages[0];
+
+      it('the global base model applies when nothing more specific is set', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('sonnet');
+        expect(result.modelSource).toBe('global-default');
+      });
+
+      it('a per-role model beats the base within the same scope', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+          globalRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('global-role');
+
+        const implementerPipeline = parsePipeline(`
+name: model-layer-test-2
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const nonReviewer = resolveStageRuntimeConfig(implementerPipeline.stages[0], implementerPipeline, {
+          globalDefault: 'sonnet',
+          globalRoles: { reviewer: 'fable' },
+        });
+        expect(nonReviewer.model).toBe('sonnet');
+        expect(nonReviewer.modelSource).toBe('global-default');
+      });
+
+      it('project model config beats global', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('project-role');
+      });
+
+      it('the pipeline role default beats machine config', () => {
+        const pipeline = parsePipeline(`
+name: model-layer-pipeline-role
+agents:
+  reviewer:
+    model: opus
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`);
+        const result = resolveStageRuntimeConfig(pipeline.stages[0], pipeline, {
+          globalRoles: { reviewer: 'sonnet' },
+        });
+        expect(result.model).toBe('opus');
+        expect(result.modelSource).toBe('agent');
+      });
+
+      it('a stage-level model wins over everything', () => {
+        const pipeline = parsePipeline(`
+name: model-layer-stage-wins
+agents:
+  reviewer:
+    model: opus
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+    model: haiku
+`);
+        const result = resolveStageRuntimeConfig(pipeline.stages[0], pipeline, {
+          globalRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('haiku');
+        expect(result.modelSource).toBe('stage');
+      });
+
+      it('an unrecognized model id resolves as-is (no preset)', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          projectDefault: 'not-a-real-model-xyz',
+        });
+        expect(result.model).toBe('not-a-real-model-xyz');
+        expect(result.modelSource).toBe('project-default');
+      });
+
+      it('resolves modelSource default when no layer sets a model', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline);
+        expect(result.model).toBeUndefined();
+        expect(result.modelSource).toBe('default');
+      });
+    });
+
     it('should reject invalid runtime selection', () => {
       const yaml = `
 name: bad-runtime
@@ -1042,6 +1145,108 @@ stages:
         });
         expect(result.threshold).toBe(0.45);
         expect(result.source).toBe('global-config');
+      });
+    });
+
+    describe('per-role config layers (config-page-coherence)', () => {
+      const reviewerStage = parsePipeline(`
+name: role-layer-test
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`).stages[0];
+      const reviewerPipeline = parsePipeline(`
+name: role-layer-test
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`);
+      const implementerStage = parsePipeline(`
+name: role-layer-test-2
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`).stages[0];
+      const implementerPipeline = parsePipeline(`
+name: role-layer-test-2
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+
+      it('project per-role threshold beats the project scalar for a matching role', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          projectRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.7);
+        expect(result.source).toBe('project-role');
+      });
+
+      it('a non-matching role resolves to the project scalar', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          projectThreshold: 0.4,
+          projectRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('global per-role threshold beats the global scalar', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          globalThreshold: 0.6,
+          globalRoles: { implementer: 0.8 },
+        });
+        expect(result.threshold).toBe(0.8);
+        expect(result.source).toBe('global-role');
+      });
+
+      it('project role beats global role for the same role', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectRoles: { reviewer: 0.5 },
+          globalRoles: { reviewer: 0.9 },
+        });
+        expect(result.threshold).toBe(0.5);
+        expect(result.source).toBe('project-role');
+      });
+
+      it('project role beats the project scalar, which beats global role', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          globalRoles: { reviewer: 0.9 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('a config layer role beats the model-preset layer', () => {
+        const pipeline = parsePipeline(`
+name: role-layer-beats-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const result = resolveStageHandoffConfig(pipeline.stages[0], pipeline, {
+          globalRoles: { implementer: 0.42 },
+        });
+        expect(result.threshold).toBe(0.42);
+        expect(result.source).toBe('global-role');
+      });
+
+      it('accepts the absolute { remainingTokens } form for a per-role config layer', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectRoles: { reviewer: { remainingTokens: 40_000 } },
+        });
+        expect(result.threshold).toEqual({ remainingTokens: 40_000 });
+        expect(result.source).toBe('project-role');
       });
     });
 

@@ -43,6 +43,35 @@ export const GlobalConfigSchema = z
     handoff: z
       .object({
         threshold: thresholdSchema('threshold').optional(),
+        roles: z
+          .object({
+            planner: thresholdSchema('threshold').optional(),
+            implementer: thresholdSchema('threshold').optional(),
+            reviewer: thresholdSchema('threshold').optional(),
+            fixer: thresholdSchema('threshold').optional(),
+            shipper: thresholdSchema('threshold').optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+    autopilot: z
+      .object({
+        gates: z.enum(['on', 'off']).optional(),
+        selection: z.enum(['classify', 'manual', 'compose']).optional(),
+      })
+      .optional(),
+    models: z
+      .object({
+        default: z.string().min(1).optional(),
+        roles: z
+          .object({
+            planner: z.string().min(1).optional(),
+            implementer: z.string().min(1).optional(),
+            reviewer: z.string().min(1).optional(),
+            fixer: z.string().min(1).optional(),
+            shipper: z.string().min(1).optional(),
+          })
+          .optional(),
       })
       .optional(),
   })

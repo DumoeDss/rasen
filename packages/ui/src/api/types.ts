@@ -87,3 +87,26 @@ export interface GetConfigKeyResponse {
 
 /** PUT and DELETE both respond with the re-resolved entry. */
 export type WriteConfigKeyResponse = GetConfigKeyResponse;
+
+/**
+ * A trimmed projection of a pipeline stage for the read-only gates inventory
+ * (design.md D5/D6 of `config-page-coherence`). `gate: 'vet'` marks a stage
+ * that ALWAYS pauses, distinct from an ordinary `gate: true`.
+ */
+export interface WirePipelineStage {
+  id: string;
+  role: string | null;
+  skill: string | null;
+  gate: false | true | 'vet';
+}
+
+/** A pipeline's identity plus its stage list, for `GET /api/v1/pipelines`. */
+export interface WirePipeline {
+  name: string;
+  description: string;
+  stages: WirePipelineStage[];
+}
+
+export interface ListPipelinesResponse {
+  pipelines: WirePipeline[];
+}

@@ -86,6 +86,18 @@ function validateThreshold(value: unknown): string | null {
   return 'threshold must be a number in (0, 1], or an object { remainingTokens: <positive integer> }';
 }
 
+/**
+ * Model-id validator: any non-empty string is accepted. Mirrors the pipeline
+ * stage `model: z.string().min(1)` — a known preset id and an unrecognized
+ * id are both valid; only an empty string is rejected.
+ */
+function validateModelId(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) {
+    return 'a model id is required (any non-empty string, e.g. "sonnet" or "fable")';
+  }
+  return null;
+}
+
 export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   // ---- global scope ----
   {
@@ -159,20 +171,20 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'autopilot.gates',
-    scopes: ['project'],
+    scopes: ['global', 'project'],
     type: 'enum',
     enumValues: ['on', 'off'],
     defaultValue: 'on',
-    description: 'Default autopilot gate policy',
+    description: 'Default autopilot gate policy (project wins over global)',
     group: 'Autopilot',
   },
   {
     key: 'autopilot.selection',
-    scopes: ['project'],
+    scopes: ['global', 'project'],
     type: 'enum',
     enumValues: ['classify', 'manual', 'compose'],
     defaultValue: 'manual',
-    description: 'Default autopilot pipeline-selection policy',
+    description: 'Default autopilot pipeline-selection policy (project wins over global)',
     group: 'Autopilot',
   },
   {
@@ -201,7 +213,106 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     defaultValue: 0.5,
     validate: validateThreshold,
     description:
-      'Context-handoff threshold at which agents should hand off (project wins over global): a fraction in (0, 1], or an absolute { remainingTokens: N } headroom',
+      'Context-handoff threshold at which agents should hand off (project wins over global; a per-role handoff.roles.<role> value wins over this scalar at the same scope): a fraction in (0, 1], or an absolute { remainingTokens: N } headroom',
+    group: 'Workflow',
+  },
+  {
+    key: 'handoff.roles.planner',
+    scopes: ['global', 'project'],
+    type: 'threshold',
+    defaultValue: undefined,
+    validate: validateThreshold,
+    description: 'Per-role context-handoff threshold override for the planner role (wins over handoff.threshold at the same scope)',
+    group: 'Workflow',
+  },
+  {
+    key: 'handoff.roles.implementer',
+    scopes: ['global', 'project'],
+    type: 'threshold',
+    defaultValue: undefined,
+    validate: validateThreshold,
+    description: 'Per-role context-handoff threshold override for the implementer role (wins over handoff.threshold at the same scope)',
+    group: 'Workflow',
+  },
+  {
+    key: 'handoff.roles.reviewer',
+    scopes: ['global', 'project'],
+    type: 'threshold',
+    defaultValue: undefined,
+    validate: validateThreshold,
+    description: 'Per-role context-handoff threshold override for the reviewer role (wins over handoff.threshold at the same scope)',
+    group: 'Workflow',
+  },
+  {
+    key: 'handoff.roles.fixer',
+    scopes: ['global', 'project'],
+    type: 'threshold',
+    defaultValue: undefined,
+    validate: validateThreshold,
+    description: 'Per-role context-handoff threshold override for the fixer role (wins over handoff.threshold at the same scope)',
+    group: 'Workflow',
+  },
+  {
+    key: 'handoff.roles.shipper',
+    scopes: ['global', 'project'],
+    type: 'threshold',
+    defaultValue: undefined,
+    validate: validateThreshold,
+    description: 'Per-role context-handoff threshold override for the shipper role (wins over handoff.threshold at the same scope)',
+    group: 'Workflow',
+  },
+  {
+    key: 'models.default',
+    scopes: ['global', 'project'],
+    type: 'string',
+    defaultValue: undefined,
+    validate: validateModelId,
+    description: 'Base model for every agent role (project wins over global); any model id is accepted',
+    group: 'Workflow',
+  },
+  {
+    key: 'models.roles.planner',
+    scopes: ['global', 'project'],
+    type: 'string',
+    defaultValue: undefined,
+    validate: validateModelId,
+    description: 'Per-role model override for the planner role (wins over models.default at the same scope); any model id is accepted',
+    group: 'Workflow',
+  },
+  {
+    key: 'models.roles.implementer',
+    scopes: ['global', 'project'],
+    type: 'string',
+    defaultValue: undefined,
+    validate: validateModelId,
+    description: 'Per-role model override for the implementer role (wins over models.default at the same scope); any model id is accepted',
+    group: 'Workflow',
+  },
+  {
+    key: 'models.roles.reviewer',
+    scopes: ['global', 'project'],
+    type: 'string',
+    defaultValue: undefined,
+    validate: validateModelId,
+    description: 'Per-role model override for the reviewer role (wins over models.default at the same scope); any model id is accepted',
+    group: 'Workflow',
+  },
+  {
+    key: 'models.roles.fixer',
+    scopes: ['global', 'project'],
+    type: 'string',
+    defaultValue: undefined,
+    validate: validateModelId,
+    description: 'Per-role model override for the fixer role (wins over models.default at the same scope); any model id is accepted',
+    group: 'Workflow',
+  },
+  {
+    key: 'models.roles.shipper',
+    scopes: ['global', 'project'],
+    type: 'string',
+    defaultValue: undefined,
+    validate: validateModelId,
+    description: 'Per-role model override for the shipper role (wins over models.default at the same scope); any model id is accepted',
     group: 'Workflow',
   },
 ];

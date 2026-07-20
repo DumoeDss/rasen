@@ -32,6 +32,8 @@ export {
   type ResolvedStageRuntimeConfig,
   type ResolvedStageHandoffConfig,
   type HandoffConfigLayers,
+  type ModelConfigLayers,
+  type ModelSource,
   type ResolvedReuseConfig,
   type HandoffConfig,
   type ReuseConfig,

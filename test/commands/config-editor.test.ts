@@ -135,19 +135,34 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
   });
 
   it('project-only keys are disabled outside a Rasen project', async () => {
+    // config-page-coherence D3 promoted autopilot.gates to BOTH scopes, so it
+    // is never row-disabled anymore (it always has a settable global
+    // fallback) — archive.timing stays genuinely project-only and exercises
+    // the same `isProjectOnly` branch (config.ts:329-332) this test targets.
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
     await runConfigCommand([]);
 
     const choices = await choicesFromCall(0);
-    const gatesRow = choices.find((c) => c.value === 'autopilot.gates')!;
-    expect(gatesRow.disabled).toBeTruthy();
-    expect(String(gatesRow.disabled)).toContain('requires a Rasen project');
+    const archiveRow = choices.find((c) => c.value === 'archive.timing')!;
+    expect(archiveRow.disabled).toBeTruthy();
+    expect(String(archiveRow.disabled)).toContain('requires a Rasen project');
   });
 
   it('project-only keys are editable inside a Rasen project (not disabled)', async () => {
     makeProject();
+    const { select } = await getPromptMocks();
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const archiveRow = choices.find((c) => c.value === 'archive.timing')!;
+    expect(archiveRow.disabled).toBeFalsy();
+  });
+
+  it('the promoted autopilot.gates key is never row-disabled (settable at global scope even outside a project)', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
@@ -171,23 +186,28 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(telemetryRow.name).toContain('environment variable takes precedence');
   });
 
-  it('editing a single-scope project enum key (autopilot.gates) writes it and refreshes the view', async () => {
+  it('editing a both-scope project/global enum key (autopilot.gates) prompts for scope, writes it, and refreshes the view', async () => {
+    // config-page-coherence D3 promoted autopilot.gates to BOTH scopes, so
+    // inside a project the editor now inserts a scope prompt between the key
+    // pick and the enum-value prompt (editConfigEntry, config.ts:347) — one
+    // more select() call than the pre-change single-scope shape.
     const projectRoot = makeProject();
     const { select } = await getPromptMocks();
     select
       .mockResolvedValueOnce('autopilot.gates') // pick the key
-      .mockResolvedValueOnce('off') // enum value prompt (no scope prompt: single-scope key)
+      .mockResolvedValueOnce('project') // scope prompt (both-scope key, inside a project)
+      .mockResolvedValueOnce('off') // enum value prompt
       .mockResolvedValueOnce('__exit__'); // refreshed view, exit
 
     await runConfigCommand([]);
 
-    expect(select).toHaveBeenCalledTimes(3);
+    expect(select).toHaveBeenCalledTimes(4);
     expect(consoleLogSpy).toHaveBeenCalledWith('Set autopilot.gates = "off"');
     const raw = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
     expect(raw).toMatch(/gates: off/);
 
     // The enum choices offered were exactly the registry's enumValues.
-    const enumChoices = (select.mock.calls[1][0] as { choices: { value: string }[] }).choices;
+    const enumChoices = (select.mock.calls[2][0] as { choices: { value: string }[] }).choices;
     expect(enumChoices.map((c) => c.value).sort()).toEqual(['off', 'on']);
   });
 

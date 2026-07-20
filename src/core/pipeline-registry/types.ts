@@ -386,8 +386,33 @@ export type VerifyPolicy = z.infer<typeof VerifyPolicySchema>;
 export type Stage = z.infer<typeof StageSchema>;
 export type PipelineYaml = z.infer<typeof PipelineYamlSchema>;
 
+/** Provenance of the MODEL field specifically — tracked separately from `source` (which names the runtime/session/sandbox/effort provenance) because the two can differ: e.g. a stage with only `runtime` overridden still resolves its model from machine config. */
+export type ModelSource =
+  | 'stage'
+  | 'agent'
+  | 'project-role'
+  | 'project-default'
+  | 'global-role'
+  | 'global-default'
+  | 'default';
+
 export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
   source: 'stage' | 'agent' | 'default';
+  /** Provenance of the resolved `model` field; always present, independent of `source`. */
+  modelSource: ModelSource;
+}
+
+/**
+ * Project/global machine-config model layers, slotted below the pipeline
+ * `agents.<role>.model` role default and above the runtime's own default.
+ * `roles` carries the per-role `models.roles.<role>` overrides at each
+ * scope; `default`/`Default` name each scope's base `models.default`.
+ */
+export interface ModelConfigLayers {
+  projectRoles?: Partial<Record<StageRole, string>>;
+  projectDefault?: string;
+  globalRoles?: Partial<Record<StageRole, string>>;
+  globalDefault?: string;
 }
 
 export function normalizeAgentRuntimeConfig(
@@ -401,14 +426,30 @@ export function normalizeAgentRuntimeConfig(
 /**
  * Resolve the runtime that should execute a stage.
  *
- * Precedence:
+ * Precedence (runtime/sessionReuse/sandbox/effort):
  * 1. Stage-level override (`runtime`, `model`, etc.).
  * 2. Pipeline role default (`agents.<role>`).
  * 3. Existing Claude behavior.
+ *
+ * Precedence (model field ONLY — independent of the above, since a stage
+ * with no model override still resolves its model from machine config):
+ * 1. Stage-level `model`.
+ * 2. Pipeline `agents.<role>.model`.
+ * 3. Project config `models.roles.<role>` (`modelLayers.projectRoles`).
+ * 4. Project config `models.default` (`modelLayers.projectDefault`).
+ * 5. Global config `models.roles.<role>` (`modelLayers.globalRoles`).
+ * 6. Global config `models.default` (`modelLayers.globalDefault`).
+ * 7. Runtime's own default (no model configured).
+ *
+ * A model id at any layer is an opaque string used as-is — no allow-list
+ * rejection. `modelLayers` is optional so existing two-argument call sites
+ * are unaffected (model then resolves exactly as before, falling to
+ * `undefined` when neither the stage nor the pipeline role sets one).
  */
 export function resolveStageRuntimeConfig(
   stage: Stage,
-  pipeline: PipelineYaml
+  pipeline: PipelineYaml,
+  modelLayers?: ModelConfigLayers
 ): ResolvedStageRuntimeConfig {
   const roleDefault = stage.role
     ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
@@ -420,27 +461,60 @@ export function resolveStageRuntimeConfig(
     stage.model !== undefined ||
     stage.effort !== undefined;
 
+  const projectRoleModel = stage.role ? modelLayers?.projectRoles?.[stage.role] : undefined;
+  const globalRoleModel = stage.role ? modelLayers?.globalRoles?.[stage.role] : undefined;
+
+  let model: string | undefined;
+  let modelSource: ModelSource;
+  if (stage.model !== undefined) {
+    model = stage.model;
+    modelSource = 'stage';
+  } else if (roleDefault?.model !== undefined) {
+    model = roleDefault.model;
+    modelSource = 'agent';
+  } else if (projectRoleModel !== undefined) {
+    model = projectRoleModel;
+    modelSource = 'project-role';
+  } else if (modelLayers?.projectDefault !== undefined) {
+    model = modelLayers.projectDefault;
+    modelSource = 'project-default';
+  } else if (globalRoleModel !== undefined) {
+    model = globalRoleModel;
+    modelSource = 'global-role';
+  } else if (modelLayers?.globalDefault !== undefined) {
+    model = modelLayers.globalDefault;
+    modelSource = 'global-default';
+  } else {
+    model = undefined;
+    modelSource = 'default';
+  }
+
   if (stageHasOverride) {
     return {
       runtime: stage.runtime ?? roleDefault?.runtime ?? 'claude',
       sessionReuse: stage.sessionReuse ?? roleDefault?.sessionReuse,
       sandbox: stage.sandbox ?? roleDefault?.sandbox,
-      model: stage.model ?? roleDefault?.model,
+      model,
       effort: stage.effort ?? roleDefault?.effort,
       source: 'stage',
+      modelSource,
     };
   }
 
   if (roleDefault) {
     return {
       ...roleDefault,
+      model,
       source: 'agent',
+      modelSource,
     };
   }
 
   return {
     runtime: 'claude',
+    model,
     source: 'default',
+    modelSource,
   };
 }
 
@@ -463,16 +537,25 @@ export interface ResolvedStageHandoffConfig {
     | 'stage'
     | 'role'
     | 'pipeline'
+    | 'project-role'
     | 'project-config'
+    | 'global-role'
     | 'global-config'
     | 'preset'
     | 'default';
 }
 
-/** Project/global config-layer threshold values, slotted below pipeline declarations and above the model-preset layer. */
+/**
+ * Project/global config-layer threshold values, slotted below pipeline
+ * declarations and above the model-preset layer. `projectRoles`/`globalRoles`
+ * carry the per-role `handoff.roles.<role>` overrides at each scope — a
+ * role-specific value wins over that scope's scalar threshold.
+ */
 export interface HandoffConfigLayers {
   projectThreshold?: ThresholdValue;
   globalThreshold?: ThresholdValue;
+  projectRoles?: Partial<Record<StageRole, ThresholdValue>>;
+  globalRoles?: Partial<Record<StageRole, ThresholdValue>>;
 }
 
 /**
@@ -482,11 +565,13 @@ export interface HandoffConfigLayers {
  * 1. Stage-level `handoff`.
  * 2. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
  * 3. Pipeline-level `handoff`.
- * 4. Project config `handoff.threshold` — threshold ONLY.
- * 5. Global config `handoff.threshold` — threshold ONLY.
- * 6. Model preset (the suggested `handoffThreshold` of the preset matching the
+ * 4. Project config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 5. Project config `handoff.threshold` — threshold ONLY.
+ * 6. Global config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 7. Global config `handoff.threshold` — threshold ONLY.
+ * 8. Model preset (the suggested `handoffThreshold` of the preset matching the
  *    stage's resolved model, per `resolveStageRuntimeConfig`) — threshold ONLY.
- * 7. Built-in defaults.
+ * 9. Built-in defaults.
  *
  * `source` names the layer that supplied the resolved THRESHOLD specifically
  * (provenance-first, in this same precedence order), so callers can report
@@ -503,20 +588,25 @@ export interface HandoffConfigLayers {
 export function resolveStageHandoffConfig(
   stage: Stage,
   pipeline: PipelineYaml,
-  configLayers?: HandoffConfigLayers
+  configLayers?: HandoffConfigLayers,
+  modelLayers?: ModelConfigLayers
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
   const roleThreshold = stage.role ? pipelineHandoff?.roles?.[stage.role] : undefined;
+  const projectRoleThreshold = stage.role ? configLayers?.projectRoles?.[stage.role] : undefined;
+  const globalRoleThreshold = stage.role ? configLayers?.globalRoles?.[stage.role] : undefined;
   const presetThreshold = resolveModelPreset(
-    resolveStageRuntimeConfig(stage, pipeline).model
+    resolveStageRuntimeConfig(stage, pipeline, modelLayers).model
   )?.handoffThreshold;
 
   const threshold =
     stageHandoff?.threshold ??
     roleThreshold ??
     pipelineHandoff?.threshold ??
+    projectRoleThreshold ??
     configLayers?.projectThreshold ??
+    globalRoleThreshold ??
     configLayers?.globalThreshold ??
     presetThreshold ??
     DEFAULT_HANDOFF_CONFIG.threshold;
@@ -549,17 +639,21 @@ export function resolveStageHandoffConfig(
         ? 'role'
         : pipelineHandoff?.threshold !== undefined
           ? 'pipeline'
-          : configLayers?.projectThreshold !== undefined
-            ? 'project-config'
-            : configLayers?.globalThreshold !== undefined
-              ? 'global-config'
-              : presetThreshold !== undefined
-                ? 'preset'
-                : hasFields(stageHandoff)
-                  ? 'stage'
-                  : hasFields(pipelineHandoff)
-                    ? 'pipeline'
-                    : 'default';
+          : projectRoleThreshold !== undefined
+            ? 'project-role'
+            : configLayers?.projectThreshold !== undefined
+              ? 'project-config'
+              : globalRoleThreshold !== undefined
+                ? 'global-role'
+                : configLayers?.globalThreshold !== undefined
+                  ? 'global-config'
+                  : presetThreshold !== undefined
+                    ? 'preset'
+                    : hasFields(stageHandoff)
+                      ? 'stage'
+                      : hasFields(pipelineHandoff)
+                        ? 'pipeline'
+                        : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
 }
