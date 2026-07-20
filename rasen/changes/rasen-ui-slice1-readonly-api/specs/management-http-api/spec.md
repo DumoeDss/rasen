@@ -32,16 +32,22 @@ Every response from the management server SHALL carry the headers `x-rasen-daemo
 - **WHEN** a client requests a config-API path or sends an unauthenticated request to the management server
 - **THEN** the response still carries both `x-rasen-daemon` and `x-rasen-pid` headers
 
-### Requirement: Changes listing matches CLI-visible change state
-`GET /api/v1/changes` SHALL list the project's active changes with, per change: name, schema name, per-artifact status (done / ready / blocked), whether all apply-required artifacts are complete, and task progress (total and completed counts). The data SHALL be derived from the same core change-enumeration and status logic the CLI uses, so the listing agrees with `rasen change list` and `rasen status` for the same project state.
+### Requirement: Changes listing matches the workflow's active-change definition
+`GET /api/v1/changes` SHALL list the project's active changes with, per change: name, schema name, per-artifact status (done / ready / blocked), whether all apply-required artifacts are complete, and task progress (total and completed counts). Change enumeration SHALL use `getActiveChangeIds` — the same source of truth as `rasen status`, `validate`, `archive`, and the instruction loader — which requires a `proposal.md` in the change directory. Per-change status SHALL be derived from the same core status logic those commands use, so the listing agrees with `rasen status` for the same project state.
+
+This definition is intentionally narrower than `rasen list`, whose bare directory scan also reports change directories that hold only planning documents and that no workflow command can act on. The endpoint SHALL NOT be widened to reproduce that scan; converging `rasen list` onto `getActiveChangeIds` is a recorded follow-up outside this change.
 
 #### Scenario: Active changes listed with status
 - **WHEN** a project has active changes with differing artifact and task completion
-- **THEN** the response lists each active change with its schema name, artifact statuses, apply-readiness, and task counts matching what the CLI reports
+- **THEN** the response lists each active change with its schema name, artifact statuses, apply-readiness, and task counts matching what `rasen status` reports
 
 #### Scenario: Archived changes excluded
 - **WHEN** a project has archived changes alongside active ones
 - **THEN** only active changes appear in the listing
+
+#### Scenario: Directory without a proposal excluded
+- **WHEN** a directory under `rasen/changes/` contains planning documents but no `proposal.md`
+- **THEN** it is absent from the listing, matching `rasen status` rather than `rasen list`
 
 #### Scenario: No project resolvable
 - **WHEN** the server was launched outside any Rasen project and no project selector is provided

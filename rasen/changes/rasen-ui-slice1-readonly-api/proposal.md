@@ -8,7 +8,7 @@ Rasen has no visual surface for the thing users actually manage all day: changes
 
 - New **read-only management API route group** (all-new files under `src/core/management-api/`, sibling of the existing config-api, which is not modified):
   - `GET /api/v1/status` — server identity (version, pid, launch project); every management response also carries `x-rasen-daemon: <version>` and `x-rasen-pid: <pid>` headers, the discovery contract a future adopt-or-spawn daemon mechanism will probe.
-  - `GET /api/v1/changes` — active changes with schema, artifact completion, and task progress; data sourced from the same core seams as `rasen change list` / `rasen status` so the board and the CLI can never disagree.
+  - `GET /api/v1/changes` — active changes with schema, artifact completion, and task progress; data sourced from the same core seam as `rasen status` (`getActiveChangeIds`, which requires a `proposal.md`), so the board and the workflow's notion of an active change can never disagree. This is intentionally narrower than `rasen list`, whose bare directory scan also lists planning-only folders no command can act on; converging `list.ts` is a recorded follow-up in design.md.
   - `GET /api/v1/runs` — per-change pipeline run state read live from `auto-run.json` / `goal-run.json` / `portfolio-run.json` (resolved via `resolveProjectHome`, non-mutating); files are re-read on every request — no cache, no database, the filesystem stays the single source of truth.
   - Same security model as the config API: 127.0.0.1-only bind + per-session bearer token.
   - Unmatched routes delegate to the existing config-api router, so one server (and one token) serves both API groups and the static UI.
@@ -23,7 +23,7 @@ Explicitly out of scope (second batch / slice 3): renaming `rasen config ui`, ge
 ### New Capabilities
 
 - `management-http-api`: read-only localhost management API — status endpoint with daemon identity headers, changes listing, and run-state reporting; loopback + bearer security; per-request filesystem reads.
-- `board-ui`: kanban board page in the UI package showing active changes as cards in lifecycle columns with task/run status, matching CLI output.
+- `board-ui`: kanban board page in the UI package showing active changes as cards in lifecycle columns with task/run status, matching the `rasen status` active-change definition.
 - `management-ui-command`: hidden experimental `rasen ui` command that starts the management server (config API included via delegation) and opens the board in the browser.
 
 ### Modified Capabilities

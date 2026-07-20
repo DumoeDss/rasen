@@ -17,7 +17,7 @@ Reference pattern: omnicross's AdminServer stamps `x-omnicross-daemon`/`x-omnicr
 
 **Goals:**
 
-- Read-only management endpoints (`status`, `changes`, `runs`) whose data provably matches CLI output, because they call the same core functions the CLI commands call.
+- Read-only management endpoints (`status`, `changes`, `runs`) whose data provably matches the workflow's active-change definition (`getActiveChangeIds`, the `rasen status` source of truth), because they call the same core functions those commands call. Deliberately not parity with `rasen list` — see D4.
 - Daemon identity headers on every management response, establishing the discovery contract early.
 - A kanban board page rendering real change data, reachable through a launch entry that does not disturb `rasen config ui`.
 - Zero edits to the frozen files; minimal deltas to `src/cli/index.ts`, `app.tsx`, and the UI API client.
@@ -53,7 +53,7 @@ Reference pattern: omnicross's AdminServer stamps `x-omnicross-daemon`/`x-omnicr
 
 **Decision:** The changes handler enumerates via `getActiveChangeIds(root)` (`src/utils/item-discovery.ts`), loads per-change state via `loadChangeContext` (`src/core/artifact-graph/instruction-loader.ts`) for schema + artifact completion, and computes task progress via `countTasksFromContent` (`src/utils/task-progress.ts`). The wire shape carries raw facts per change: `name`, `schemaName`, per-artifact `status` (`done|ready|blocked`), `isComplete`, task counts (`total`/`completed`), and whether run-state files exist. Kanban column assignment (planning / ready / in-progress / done) is a pure function in the UI, not an API field.
 
-**Rationale:** The roadmap's acceptance criterion is "board data identical to `rasen change list` output" — calling the same functions is the only way that holds by construction rather than by testing luck. Keeping column derivation client-side keeps the API stable while board semantics iterate. **Alternative:** a server-computed `column` field — rejected; it bakes UI policy into a wire contract this early.
+**Rationale:** The board must agree with the workflow's real notion of an active change — the `getActiveChangeIds` definition that `rasen status`, `validate`, `archive`, and the instruction loader all share — and calling the same functions is the only way that holds by construction rather than by testing luck. Note that this is deliberately *not* parity with `rasen list`, which does a bare `readdir` of `rasen/changes/` and so advertises directories lacking a `proposal.md` that no other command can act on; on this repo that gap is four directories out of ten. The API takes the narrower, actionable definition; widening a brand-new wire contract to mimic `list.ts` would propagate the looser definition into a surface that is hard to narrow later. Keeping column derivation client-side keeps the API stable while board semantics iterate. **Alternative:** a server-computed `column` field — rejected; it bakes UI policy into a wire contract this early.
 
 ### D5 — `GET /runs` resolves run-state read-only via `resolveProjectHome(root, { ensure: false })`
 
@@ -95,3 +95,7 @@ None required — all-new surfaces, no existing behavior changes, no data migrat
 
 - Should `/api/v1/status` also report registered-projects count or store ids for the future multi-project board? Deferred to batch 2 (additive).
 - Board auto-refresh (polling interval) — deferred until the daemon-residency slice defines liveness semantics.
+
+## Follow-ups
+
+- **Converge `src/core/list.ts` onto `getActiveChangeIds`.** `ListCommand` (`src/core/list.ts:113-115`) enumerates changes with a bare `readdir` filtered only on `entry.name !== 'archive'`, so `rasen list` advertises change directories that have no `proposal.md` and that `status`, `validate`, `archive`, and the instruction loader cannot act on. That is the divergence behind the board showing 6 changes where `rasen list` shows 10 on this repo. The fix belongs to `list.ts`, not to this slice: this change deliberately does not touch `src/core/list.ts`. A later change should switch `ListCommand` to `getActiveChangeIds` (deciding whether non-actionable directories are dropped silently or surfaced as a distinct warning), after which `rasen list` and the board agree row for row.

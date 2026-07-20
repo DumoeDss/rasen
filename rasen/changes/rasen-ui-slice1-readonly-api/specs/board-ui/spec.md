@@ -21,12 +21,16 @@ The UI package SHALL provide a board page at the `/board` route that displays th
 - **WHEN** the project has no active changes
 - **THEN** the board shows an explicit empty state, not a blank page
 
-### Requirement: Board data agrees with the CLI
-The board SHALL present change data sourced exclusively from the management API so that, for the same project state, the set of changes and their statuses on the board match the output of `rasen change list` and `rasen status`.
+### Requirement: Board data agrees with the workflow's active-change definition
+The board SHALL present change data sourced exclusively from the management API, which enumerates changes through the same source of truth as `rasen status` — the `getActiveChangeIds` definition, which requires a `proposal.md` in the change directory. For the same project state, the set of changes and their statuses on the board SHALL match that definition. A change directory that holds only planning documents and no `proposal.md` is intentionally absent from the board, because no workflow command (`status`, `validate`, `archive`, the instruction loader) can act on it. The board SHALL NOT be widened to reproduce `rasen list`'s bare directory scan, which is the outlier definition.
 
-#### Scenario: Parity with CLI listing
-- **WHEN** the board and `rasen change list` are consulted for the same project at the same time
+#### Scenario: Parity with the active-change definition
+- **WHEN** the board and `rasen status` are consulted for the same project at the same time
 - **THEN** they show the same set of active changes with consistent status information
+
+#### Scenario: Planning-only directory absent from the board
+- **WHEN** a directory under `rasen/changes/` contains planning documents but no `proposal.md`
+- **THEN** it does not appear on the board, matching `rasen status` rather than `rasen list`
 
 ### Requirement: Board uses the shared API seam and auth handling
 All board data fetching SHALL go through the UI package's single API client seam, inheriting bearer-token injection and unauthorized handling; a 401 during board fetches SHALL surface the existing re-launch notice rather than a broken board.
