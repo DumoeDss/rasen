@@ -2,14 +2,14 @@
 
 `/rasen:auto` has three **opt-in policy axes** that control how much the LEAD decides on its own. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-run-the-entire-workflow-with-one-command-opsxauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
 
-| Axis | Run flag | Config key (`rasen/config.yaml`) | Values | Built-in default |
+| Axis | Run flag | Config key (project `rasen/config.yaml` AND global config) | Values | Built-in default |
 |---|---|---|---|---|
 | **Gate policy** | `--no-gate` | `autopilot.gates` | `on` / `off` | `on` (gates pause) |
 | **Selection policy** | `--auto-select` / `--auto-compose` | `autopilot.selection` | `classify` / `compose` / `manual` | `manual` |
 
-Precedence on every axis: **run flag > config default > built-in default.** An absent or unrecognized config value falls back to the built-in default with a warning — it never breaks config parsing, and sibling fields still parse.
+Precedence on every axis: **run flag > project config > global config > built-in default.** Both `autopilot.gates` and `autopilot.selection` are settable at BOTH the project and the global (machine-wide) scope — project always wins over global. An absent or unrecognized config value at either scope falls back to the next layer with a warning — it never breaks config parsing, and sibling fields still parse.
 
-The resolved policies are **displayed at run start with their source** (e.g. `Gate policy: off (--no-gate)` / `Selection policy: classify (config)`), so an opted-in run is never silent about how it will behave.
+The resolved policies are **displayed at run start with their source** (e.g. `Gate policy: off (--no-gate)` / `Selection policy: classify (project)`), so an opted-in run is never silent about how it will behave.
 
 ```
 /rasen:auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
@@ -20,7 +20,7 @@ The resolved policies are **displayed at run start with their source** (e.g. `Ga
 
 ## 1. Gate policy — `--no-gate`
 
-By default, stages marked `gate: true` pause the run: the LEAD summarizes what was done and waits for you to Continue / Stop / switch to Manual. When you want autopilot to run unattended — instead of saying "no gates, don't stop" every time — pass `--no-gate` (or set `autopilot.gates: off` as the project default):
+By default, stages marked `gate: true` pause the run: the LEAD summarizes what was done and waits for you to Continue / Stop / switch to Manual. When you want autopilot to run unattended — instead of saying "no gates, don't stop" every time — pass `--no-gate` (or set `autopilot.gates: off` as the project or global default):
 
 - **Ordinary gates are auto-approved**: the run proceeds past each `gate: true` stage without pausing.
 - **Nothing is silently skipped**: every auto-approved gate is recorded in run-state as an explicit gate decision naming the policy source (e.g. `auto-approved (--no-gate)`). The audit trail shows the stage advanced by auto-approval, not by a human Continue.

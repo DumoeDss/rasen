@@ -122,9 +122,40 @@ export const ProjectConfigSchema = z.object({
   handoff: z
     .object({
       threshold: thresholdSchema('threshold').optional(),
+      roles: z
+        .object({
+          planner: thresholdSchema('threshold').optional(),
+          implementer: thresholdSchema('threshold').optional(),
+          reviewer: thresholdSchema('threshold').optional(),
+          fixer: thresholdSchema('threshold').optional(),
+          shipper: thresholdSchema('threshold').optional(),
+        })
+        .optional()
+        .describe('Per-role context-handoff threshold overrides (role beats the scalar threshold above)'),
     })
     .optional()
     .describe('Context-handoff threshold configuration'),
+
+  // Optional: per-agent model configuration. `default` is the base model for
+  // all roles; `roles` overrides it per role. Project scope wins over the
+  // global config value of the same name (see effective-config.ts). Model
+  // ids are free strings — never validated against an allow-list.
+  models: z
+    .object({
+      default: z.string().min(1).optional(),
+      roles: z
+        .object({
+          planner: z.string().min(1).optional(),
+          implementer: z.string().min(1).optional(),
+          reviewer: z.string().min(1).optional(),
+          fixer: z.string().min(1).optional(),
+          shipper: z.string().min(1).optional(),
+        })
+        .optional()
+        .describe('Per-role model overrides (role beats the base default above)'),
+    })
+    .optional()
+    .describe('Per-agent model configuration'),
 });
 
 /** Valid `archive.timing` values. */
@@ -617,9 +648,11 @@ function parseProjectConfigContent(
 
     // Parse handoff field: an optional map with an optional dual-form
     // `threshold` field (a bare fraction in (0, 1], or the absolute
-    // `{ remainingTokens: N }` headroom form). Non-map -> whole block dropped
-    // with a warning. An invalid threshold (either form) -> the field
-    // dropped with a warning, the rest of the config still parses.
+    // `{ remainingTokens: N }` headroom form), plus an optional `roles` map
+    // of per-role dual-form threshold overrides. Non-map -> whole block
+    // dropped with a warning. An invalid threshold (either form, at either
+    // the scalar or a per-role field) -> that field dropped with a warning,
+    // siblings still parse.
     if (raw.handoff !== undefined) {
       if (raw.handoff && typeof raw.handoff === 'object' && !Array.isArray(raw.handoff)) {
         const handoffRaw = raw.handoff as Record<string, unknown>;
@@ -638,6 +671,28 @@ function parseProjectConfigContent(
             );
           }
         }
+        if (handoffRaw.roles !== undefined) {
+          if (handoffRaw.roles && typeof handoffRaw.roles === 'object' && !Array.isArray(handoffRaw.roles)) {
+            const rolesRaw = handoffRaw.roles as Record<string, unknown>;
+            const roles: NonNullable<ProjectConfig['handoff']>['roles'] = {};
+            for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const) {
+              if (rolesRaw[role] === undefined) continue;
+              const parsedRoleThreshold = thresholdSchema('threshold').safeParse(rolesRaw[role]);
+              if (parsedRoleThreshold.success) {
+                roles[role] = parsedRoleThreshold.data;
+              } else {
+                console.warn(
+                  `Invalid 'handoff.roles.${role}' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+                );
+              }
+            }
+            if (Object.keys(roles).length > 0) {
+              handoff.roles = roles;
+            }
+          } else {
+            console.warn(`Invalid 'handoff.roles' field in config (must be an object)`);
+          }
+        }
         config.handoff = handoff;
       } else {
         warnConfig(
@@ -647,6 +702,47 @@ function parseProjectConfigContent(
           },
           reporter
         );
+      }
+    }
+
+    // Parse models field: an optional map with an optional `default` string
+    // and an optional `roles` map of per-role model strings. Non-map -> whole
+    // block dropped with a warning. An invalid field -> that field dropped
+    // with a warning, siblings still parse. Model ids are free strings — any
+    // non-empty string is accepted, never validated against an allow-list.
+    if (raw.models !== undefined) {
+      if (raw.models && typeof raw.models === 'object' && !Array.isArray(raw.models)) {
+        const modelsRaw = raw.models as Record<string, unknown>;
+        const models: ProjectConfig['models'] = {};
+        if (modelsRaw.default !== undefined) {
+          if (typeof modelsRaw.default === 'string' && modelsRaw.default.length > 0) {
+            models.default = modelsRaw.default;
+          } else {
+            console.warn(`Invalid 'models.default' field in config (must be a non-empty string)`);
+          }
+        }
+        if (modelsRaw.roles !== undefined) {
+          if (modelsRaw.roles && typeof modelsRaw.roles === 'object' && !Array.isArray(modelsRaw.roles)) {
+            const rolesRaw = modelsRaw.roles as Record<string, unknown>;
+            const roles: NonNullable<ProjectConfig['models']>['roles'] = {};
+            for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const) {
+              if (rolesRaw[role] === undefined) continue;
+              if (typeof rolesRaw[role] === 'string' && (rolesRaw[role] as string).length > 0) {
+                roles[role] = rolesRaw[role] as string;
+              } else {
+                console.warn(`Invalid 'models.roles.${role}' field in config (must be a non-empty string)`);
+              }
+            }
+            if (Object.keys(roles).length > 0) {
+              models.roles = roles;
+            }
+          } else {
+            console.warn(`Invalid 'models.roles' field in config (must be an object)`);
+          }
+        }
+        config.models = models;
+      } else {
+        console.warn(`Invalid 'models' field in config (must be an object)`);
       }
     }
 
@@ -967,28 +1063,42 @@ export function resolveArchiveDestinationValue(
 /** The resolved autopilot gate policy plus which layer produced it. */
 export interface ResolvedGatePolicy {
   effective: AutopilotGatePolicy;
-  source: 'flag' | 'config' | 'default';
+  source: 'flag' | 'project' | 'global' | 'default';
+}
+
+/** Minimal shape of the global config's `autopilot` block, accepted so this module need not import `GlobalConfig` for one field. */
+export interface AutopilotGlobalConfig {
+  autopilot?: {
+    gates?: 'on' | 'off';
+    selection?: 'classify' | 'manual' | 'compose';
+  };
 }
 
 /**
  * Resolves the effective autopilot gate policy with precedence: the run
  * argument (`--no-gate`) first, then the project config default
- * (`autopilot.gates`), then the built-in default (gates ON). Every consumer
- * (the `/rasen:auto` gate-policy resolution, run-state recording) MUST
- * resolve through this function so precedence is applied identically
- * everywhere. An absent or previously-dropped `autopilot.gates` value falls
- * back to the built-in default without failing config parsing.
+ * (`autopilot.gates`), then the global config default (`autopilot.gates`),
+ * then the built-in default (gates ON). Every consumer (the `/rasen:auto`
+ * gate-policy resolution, run-state recording) MUST resolve through this
+ * function so precedence is applied identically everywhere. An absent or
+ * previously-dropped `autopilot.gates` value at either scope falls back to
+ * the next layer without failing config parsing.
  */
 export function resolveAutopilotGatePolicy(
   config: ProjectConfig | null | undefined,
-  noGateFlag: boolean
+  noGateFlag: boolean,
+  globalConfig?: AutopilotGlobalConfig | null
 ): ResolvedGatePolicy {
   if (noGateFlag) {
     return { effective: 'off', source: 'flag' };
   }
-  const configValue = config?.autopilot?.gates;
-  if (configValue === 'on' || configValue === 'off') {
-    return { effective: configValue, source: 'config' };
+  const projectValue = config?.autopilot?.gates;
+  if (projectValue === 'on' || projectValue === 'off') {
+    return { effective: projectValue, source: 'project' };
+  }
+  const globalValue = globalConfig?.autopilot?.gates;
+  if (globalValue === 'on' || globalValue === 'off') {
+    return { effective: globalValue, source: 'global' };
   }
   return { effective: 'on', source: 'default' };
 }
@@ -1000,7 +1110,7 @@ export function resolveAutopilotGatePolicy(
 /** The resolved autopilot pipeline-selection policy plus which layer produced it. */
 export interface ResolvedSelectionPolicy {
   effective: AutopilotSelectionPolicy;
-  source: 'flag' | 'config' | 'default';
+  source: 'flag' | 'project' | 'global' | 'default';
 }
 
 /**
@@ -1008,21 +1118,25 @@ export interface ResolvedSelectionPolicy {
  * the run arguments first — `--auto-compose` ahead of `--auto-select` when
  * both are present (compose is the superset policy: classify-first, with
  * composition permitted on no-fit — see `autopilot-composed-pipelines`) —
- * then the project config default (`autopilot.selection`), then the built-in
- * default (`manual`). Every consumer (the `/rasen:auto` selection-policy
- * resolution) MUST resolve through this function so precedence is applied
- * identically everywhere. An absent or previously-dropped
- * `autopilot.selection` value falls back to the built-in default without
- * failing config parsing. Mirrors `resolveAutopilotGatePolicy`'s shape (same
- * source vocabulary) by design — this is that axis's sibling. Kept as a
- * single resolver (not split by flag) so precedence lives in exactly one
- * place; `autoComposeFlag` defaults to `false` so existing two-argument call
- * sites (pre-dating the `compose` policy) are unaffected.
+ * then the project config default (`autopilot.selection`), then the global
+ * config default (`autopilot.selection`), then the built-in default
+ * (`manual`). Every consumer (the `/rasen:auto` selection-policy resolution)
+ * MUST resolve through this function so precedence is applied identically
+ * everywhere. An absent or previously-dropped `autopilot.selection` value at
+ * either scope falls back to the next layer without failing config parsing.
+ * Mirrors `resolveAutopilotGatePolicy`'s shape (same source vocabulary) by
+ * design — this is that axis's sibling. Kept as a single resolver (not split
+ * by flag) so precedence lives in exactly one place; `autoComposeFlag`
+ * defaults to `false` so existing call sites (pre-dating the `compose`
+ * policy) are unaffected, and `globalConfig` defaults to `undefined` so
+ * existing two/three-argument call sites (pre-dating the global layer) are
+ * unaffected.
  */
 export function resolveAutopilotSelectionPolicy(
   config: ProjectConfig | null | undefined,
   autoSelectFlag: boolean,
-  autoComposeFlag: boolean = false
+  autoComposeFlag: boolean = false,
+  globalConfig?: AutopilotGlobalConfig | null
 ): ResolvedSelectionPolicy {
   if (autoComposeFlag) {
     return { effective: 'compose', source: 'flag' };
@@ -1030,9 +1144,13 @@ export function resolveAutopilotSelectionPolicy(
   if (autoSelectFlag) {
     return { effective: 'classify', source: 'flag' };
   }
-  const configValue = config?.autopilot?.selection;
-  if (configValue === 'classify' || configValue === 'manual' || configValue === 'compose') {
-    return { effective: configValue, source: 'config' };
+  const projectValue = config?.autopilot?.selection;
+  if (projectValue === 'classify' || projectValue === 'manual' || projectValue === 'compose') {
+    return { effective: projectValue, source: 'project' };
+  }
+  const globalValue = globalConfig?.autopilot?.selection;
+  if (globalValue === 'classify' || globalValue === 'manual' || globalValue === 'compose') {
+    return { effective: globalValue, source: 'global' };
   }
   return { effective: 'manual', source: 'default' };
 }

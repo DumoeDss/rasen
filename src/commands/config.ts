@@ -1,7 +1,5 @@
 import { Command } from 'commander';
 import { spawn } from 'node:child_process';
-import * as crypto from 'node:crypto';
-import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
@@ -31,9 +29,7 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { CORE_WORKFLOWS, ALL_WORKFLOWS } from '../core/profiles.js';
 import { isPromptCancellationError } from './shared-output.js';
-import { startConfigApiServer } from '../core/config-api/server.js';
-import { resolveLaunchProjectRef } from '../core/config-api/project-addressing.js';
-import { resolveUiPackageDir, UI_PACKAGE_NAME } from '../core/config-api/ui-package.js';
+import { runUiLaunch } from './ui-launch.js';
 import { runLegacyConfigProfileCommand } from './profile.js';
 import {
   configDescription,
@@ -51,8 +47,6 @@ export {
   formatWorkflowSummary,
   resolveCurrentProfileState,
 } from './profile-editor.js';
-
-const require = createRequire(import.meta.url);
 
 /**
  * Resolve `--scope` from the subcommand's merged (own + inherited) options,
@@ -345,6 +339,15 @@ async function runInteractiveConfigEditor(): Promise<void> {
         choices,
         pageSize: 20,
       });
+
+      // Defensive: a degenerate prompt result (undefined/null — an exhausted
+      // mock queue in tests, or a closed stdin in production) must not spin
+      // this `for (;;)` loop forever re-resolving config and rebuilding
+      // choices every iteration. Treat it as an implicit exit rather than
+      // looping on it.
+      if (picked === undefined || picked === null) {
+        return;
+      }
 
       if (picked === '__exit__') return;
       if (picked === '__workflows__') {
@@ -771,95 +774,20 @@ export function registerConfigCommand(program: Command): void {
       await runLegacyConfigProfileCommand(preset);
     });
 
-  // config ui
+  // config ui — deprecated alias (design D1): launches the same unified
+  // management server as `rasen ui`, opens the config view, and prints a
+  // one-line deprecation notice. Thin wrapper over the shared launch flow.
   configCmd
     .command('ui')
-    .description('Start the localhost config API + optional web UI')
+    .description('[Deprecated: use `rasen ui`] Start the localhost management server and open the config view')
     .option('--no-open', 'Do not open the default browser')
     .option('--port <n>', 'Pin the listen port (default: ephemeral)')
     .action(async (options: { open?: boolean; port?: string }) => {
-      let port: number | undefined;
-      if (options.port !== undefined) {
-        port = Number(options.port);
-        if (!Number.isInteger(port) || port < 0 || port > 65535) {
-          console.error(`Error: --port must be an integer between 0 and 65535 (got "${options.port}").`);
-          process.exitCode = 1;
-          return;
-        }
-      }
-
-      const launchProjectRoot = findRepoPlanningRootSync(process.cwd());
-      const launchProjectRef = await resolveLaunchProjectRef(launchProjectRoot);
-      const uiAssetsDir = resolveUiPackageDir();
-      const token = crypto.randomBytes(32).toString('hex');
-      const { version } = require('../../package.json') as { version: string };
-
-      let handle: Awaited<ReturnType<typeof startConfigApiServer>>;
-      try {
-        handle = await startConfigApiServer({
-          port,
-          context: { token, launchProjectRoot, launchProjectRef, version, uiAssetsDir },
-        });
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'EADDRINUSE') {
-          console.error(`Error: port ${port} is already in use. Try a different --port, or omit it for an ephemeral one.`);
-        } else {
-          console.error(`Error: could not start the config server (${error instanceof Error ? error.message : String(error)}).`);
-        }
-        process.exitCode = 1;
-        return;
-      }
-
-      const url = `http://127.0.0.1:${handle.port}/#token=${token}`;
-      console.log(`Config UI: ${url}`);
-      if (!uiAssetsDir) {
-        console.log(`UI package not installed. Run: npm install -g ${UI_PACKAGE_NAME}`);
-      }
-
-      if (options.open !== false) {
-        openInBrowser(url);
-      }
-
-      let shuttingDown = false;
-      const shutdown = async () => {
-        if (shuttingDown) return;
-        shuttingDown = true;
-        await handle.stopServer();
-        process.exit(0);
-      };
-      process.on('SIGINT', () => void shutdown());
-      process.on('SIGTERM', () => void shutdown());
+      await runUiLaunch(options, {
+        entryPath: '/config',
+        label: 'Config UI',
+        serverLabel: 'management server',
+        notice: 'Notice: `rasen config ui` is deprecated — use `rasen ui` instead.',
+      });
     });
-}
-
-/**
- * Best-effort default-browser launch via the platform opener (`open` /
- * `cmd /c start` / `xdg-open`), spawned detached with stdio ignored and
- * unref'd so it never holds the CLI process's event loop open (design D6).
- * Deliberately not the `open` npm package — one dependency this repo has
- * chosen not to add for a single `spawn` call.
- */
-function openInBrowser(url: string): void {
-  try {
-    let command: string;
-    let args: string[];
-    if (process.platform === 'darwin') {
-      command = 'open';
-      args = [url];
-    } else if (process.platform === 'win32') {
-      command = 'cmd';
-      args = ['/c', 'start', '""', url];
-    } else {
-      command = 'xdg-open';
-      args = [url];
-    }
-    const child = spawn(command, args, { stdio: 'ignore', detached: true, shell: false });
-    child.on('error', () => {
-      // Best-effort: the URL is already printed for manual opening.
-    });
-    child.unref();
-  } catch {
-    // Best-effort: the URL is already printed for manual opening.
-  }
 }

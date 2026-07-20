@@ -6,11 +6,15 @@
 import { getToken, markUnauthorized } from './token.js';
 import type {
   ApiErrorBody,
+  ChangesResponse,
   ConfigScope,
   GetConfigKeyResponse,
   HealthResponse,
   ListConfigResponse,
+  ListPipelinesResponse,
   ListProjectsResponse,
+  RunsResponse,
+  StatusResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -95,6 +99,11 @@ export function listConfig(project?: string): Promise<ListConfigResponse> {
   return request<ListConfigResponse>(`/api/v1/config${projectQuery(project)}`);
 }
 
+/** Read-only gates inventory (D5/D6): the available pipelines and their gate-carrying stages. */
+export function listPipelines(): Promise<ListPipelinesResponse> {
+  return request<ListPipelinesResponse>('/api/v1/pipelines');
+}
+
 export function getKey(key: string, project?: string): Promise<GetConfigKeyResponse> {
   return request<GetConfigKeyResponse>(
     `/api/v1/config/${encodeURIComponent(key)}${projectQuery(project)}`
@@ -114,6 +123,20 @@ export function putKey(
       body: JSON.stringify(body),
     }
   );
+}
+
+// ---- Management API (board) ----
+
+export function getStatus(): Promise<StatusResponse> {
+  return request<StatusResponse>('/api/v1/status');
+}
+
+export function listChanges(): Promise<ChangesResponse> {
+  return request<ChangesResponse>('/api/v1/changes');
+}
+
+export function listRuns(): Promise<RunsResponse> {
+  return request<RunsResponse>('/api/v1/runs');
 }
 
 export function deleteKey(

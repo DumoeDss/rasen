@@ -560,6 +560,8 @@
     "Sort order: \"recent\" (default) or \"name\"": "並び順です: \"recent\"（既定）または \"name\"",
     "Specify item type when ambiguous": "曖昧な場合に項目種別を指定します",
     "Start the localhost config API + optional web UI": "localhostのconfig APIと任意のWeb UIを起動します",
+    "Start the Rasen management platform (board + config) on a localhost server": "Rasen管理プラットフォーム（ボード＋設定）をlocalhostサーバーで起動します",
+    "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[非推奨: `rasen ui` を使用してください] localhostの管理サーバーを起動し、設定画面を開きます",
     "Store id": "store IDです",
     "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）",
     "Submit feedback about Rasen": "Rasenについてのフィードバックを送信します",

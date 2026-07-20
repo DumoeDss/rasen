@@ -16,9 +16,16 @@ import { CONFIG_KEY_REGISTRY, type ConfigKeyDefinition } from './config-keys.js'
 import { getGlobalConfig, getGlobalConfigPath } from './global-config.js';
 import { readProjectConfig, type ProjectConfig } from './project-config.js';
 import { isTelemetryEnvDisabled } from '../telemetry/index.js';
-import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
+import {
+  thresholdSchema,
+  type ThresholdValue,
+  type StageRole,
+  type ModelConfigLayers,
+} from './pipeline-registry/types.js';
 import { parseCliLocale } from '../utils/locale.js';
 import type { ConfigDiagnosticReporter } from './config-diagnostics.js';
+
+const STAGE_ROLES = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const satisfies readonly StageRole[];
 
 export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
 
@@ -148,6 +155,36 @@ export function resolveEffectiveConfig(
 export interface HandoffThresholdLayers {
   projectThreshold?: ThresholdValue;
   globalThreshold?: ThresholdValue;
+  projectRoles?: Partial<Record<StageRole, ThresholdValue>>;
+  globalRoles?: Partial<Record<StageRole, ThresholdValue>>;
+}
+
+/**
+ * Re-validates a raw `handoff.roles` map (from the global config's raw JSON,
+ * which has no schema gate on read) against the dual-form threshold schema,
+ * dropping any invalid per-role value with a warning — mirrors the scalar
+ * `handoff.threshold` re-validation below. Project config roles need no
+ * re-validation here (`readProjectConfig` already drops invalid role
+ * thresholds resiliently during parsing).
+ */
+function validateGlobalHandoffRoles(
+  raw: Partial<Record<StageRole, unknown>> | undefined
+): Partial<Record<StageRole, ThresholdValue>> | undefined {
+  if (!raw) return undefined;
+  const result: Partial<Record<StageRole, ThresholdValue>> = {};
+  for (const role of STAGE_ROLES) {
+    const rawValue = raw[role];
+    if (rawValue === undefined) continue;
+    const parsed = thresholdSchema('threshold').safeParse(rawValue);
+    if (parsed.success) {
+      result[role] = parsed.data;
+    } else {
+      console.warn(
+        `Invalid 'handoff.roles.${role}' in the global config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> }, got ${JSON.stringify(rawValue)}); ignoring it.`
+      );
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 /**
@@ -191,5 +228,60 @@ export function resolveHandoffThresholdLayers(
   return {
     projectThreshold: projectConfig?.handoff?.threshold,
     globalThreshold,
+    projectRoles: projectConfig?.handoff?.roles,
+    globalRoles: validateGlobalHandoffRoles(globalConfig.handoff?.roles),
+  };
+}
+
+/**
+ * Re-validates a raw global `models.default` value (the global config has no
+ * schema gate on read), dropping a non-string or empty value with a warning.
+ */
+function validateGlobalModelDefault(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'string' && raw.length > 0) return raw;
+  console.warn(
+    `Invalid 'models.default' in the global config (must be a non-empty string, got ${JSON.stringify(raw)}); ignoring it.`
+  );
+  return undefined;
+}
+
+/** Re-validates a raw global `models.roles` map, dropping any invalid per-role value with a warning — mirrors `validateGlobalHandoffRoles`. */
+function validateGlobalModelRoles(
+  raw: Partial<Record<StageRole, unknown>> | undefined
+): Partial<Record<StageRole, string>> | undefined {
+  if (!raw) return undefined;
+  const result: Partial<Record<StageRole, string>> = {};
+  for (const role of STAGE_ROLES) {
+    const rawValue = raw[role];
+    if (rawValue === undefined) continue;
+    if (typeof rawValue === 'string' && rawValue.length > 0) {
+      result[role] = rawValue;
+    } else {
+      console.warn(
+        `Invalid 'models.roles.${role}' in the global config (must be a non-empty string, got ${JSON.stringify(rawValue)}); ignoring it.`
+      );
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Resolves the `models.default`/`models.roles.<role>` project/global config
+ * layers, sibling of `resolveHandoffThresholdLayers` for the per-agent model
+ * axis. `readProjectConfig()` already drops invalid project model fields
+ * resiliently (with a warning) during parsing; the global config's raw
+ * `models` block (no schema gate on read) is re-validated here. A model id
+ * at any layer is an opaque string used as-is — no allow-list rejection.
+ */
+export function resolveModelConfigLayers(projectRoot?: string | null): ModelConfigLayers {
+  const globalConfig = getGlobalConfig();
+  const projectConfig = projectRoot ? readProjectConfig(projectRoot) : null;
+
+  return {
+    projectRoles: projectConfig?.models?.roles,
+    projectDefault: projectConfig?.models?.default,
+    globalRoles: validateGlobalModelRoles(globalConfig.models?.roles),
+    globalDefault: validateGlobalModelDefault(globalConfig.models?.default),
   };
 }

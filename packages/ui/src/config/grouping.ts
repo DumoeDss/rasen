@@ -6,13 +6,13 @@ import type { WireConfigEntry } from '../api/types.js';
 
 /** Stable display order for registry groups — anything unrecognized sorts last, alphabetically. */
 export const GROUP_ORDER = [
+  'Autopilot',
+  'Workflow',
   'Profile',
   'Behavior',
-  'Autopilot',
   'Telemetry',
   'Project',
   'Archive',
-  'Workflow',
   'Advanced',
 ] as const;
 

@@ -17,11 +17,12 @@ import {
 import { resolveEffectiveConfig } from '../effective-config.js';
 import { updateProjectConfigKey } from '../project-config.js';
 import { readProjectRegistryState } from '../project-registry.js';
+import { listPipelinesWithInfo, loadPipelineByName } from '../pipeline-registry/index.js';
 import { resolveProjectSelector } from './project-addressing.js';
 import { serializeConfigEntry } from './serialize.js';
 import { writeGlobalConfigKeyMinimalDiff, GlobalConfigWriteError } from './global-write.js';
 import { serveStatic } from './static.js';
-import type { ProjectRef } from './wire-types.js';
+import type { ProjectRef, WirePipeline } from './wire-types.js';
 
 export interface ConfigApiContext {
   /** Per-session bearer token minted at server startup (D5). */
@@ -210,6 +211,42 @@ async function handleListProjects(res: http.ServerResponse): Promise<void> {
       }))
     : [];
   sendJson(res, 200, { projects });
+}
+
+/**
+ * Read-only gates inventory (D5): reuses the same in-process pipeline
+ * registry loader the CLI uses (`listPipelinesWithInfo` +
+ * `loadPipelineByName`), resolved against the server's launch project root
+ * — no pipeline logic reimplemented here. A pipeline that fails to (re)load
+ * between the listing and load calls (e.g. deleted mid-request) is skipped
+ * rather than failing the whole response.
+ */
+async function handleListPipelines(
+  res: http.ServerResponse,
+  context: ConfigApiContext
+): Promise<void> {
+  const projectRoot = context.launchProjectRoot ?? undefined;
+  const infos = listPipelinesWithInfo(projectRoot);
+  const pipelines: WirePipeline[] = [];
+  for (const info of infos) {
+    let pipeline;
+    try {
+      pipeline = loadPipelineByName(info.name, projectRoot);
+    } catch {
+      continue;
+    }
+    pipelines.push({
+      name: pipeline.name,
+      description: pipeline.description ?? '',
+      stages: pipeline.stages.map((stage) => ({
+        id: stage.id,
+        role: stage.role ?? null,
+        skill: stage.skill ?? null,
+        gate: stage.gate,
+      })),
+    });
+  }
+  sendJson(res, 200, { pipelines });
 }
 
 /** Shared key-path/value validation for PUT and DELETE (D3). */
@@ -470,6 +507,15 @@ export function createRouter(
         return;
       }
       await handleListProjects(res);
+      return;
+    }
+
+    if (pathname === '/api/v1/pipelines') {
+      if (req.method !== 'GET') {
+        sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on /api/v1/pipelines.`);
+        return;
+      }
+      await handleListPipelines(res, context);
       return;
     }
 

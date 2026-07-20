@@ -3,13 +3,16 @@ import { LocationProvider, Router, Route } from 'preact-iso';
 import { hasToken, isUnauthorized, onUnauthorized } from './api/token.js';
 import { Layout } from './components/Layout.js';
 import { ConfigPage } from './components/ConfigPage.js';
+import { BoardPage } from './components/BoardPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 
 /**
- * Root shell (design.md D6): boots with the full-screen re-launch notice when
- * there is no token, and switches to it on any subsequent 401. Otherwise
- * mounts path-based routing (design.md D3) with the config page as the sole
- * module and a catch-all redirect to it.
+ * Root shell: boots with the full-screen re-launch notice when there is no
+ * token, and switches to it on any subsequent 401. Otherwise mounts
+ * path-based routing with the board as the platform home (design D4 of
+ * `rasen-ui-unify-management-surface`): `/` and `/board` both render the
+ * board, `/config` renders the config page, and unknown paths fall back to
+ * the board rather than the config page.
  */
 export function App() {
   const [unauthorized, setUnauthorized] = useState(!hasToken() || isUnauthorized());
@@ -24,9 +27,10 @@ export function App() {
     <LocationProvider>
       <Layout>
         <Router>
-          <Route path="/" component={ConfigPage} />
+          <Route path="/" component={BoardPage} />
+          <Route path="/board" component={BoardPage} />
           <Route path="/config" component={ConfigPage} />
-          <Route default component={ConfigPage} />
+          <Route default component={BoardPage} />
         </Router>
       </Layout>
     </LocationProvider>

@@ -132,14 +132,17 @@ export const RunStateSchema = z
     classification: z.string().optional(),
     tier: z.enum(['A', 'B', 'C']).optional(),
     // autopilot-gate-policy: the resolved gate policy for this run, recorded
-    // once at run start (precedence flag > autopilot.gates config > default
-    // on — see resolveAutopilotGatePolicy in project-config.ts) so `pipeline
-    // resume` can read it back without the user re-passing `--no-gate`.
-    // Absent on runs from before this capability existed (defaults to on).
+    // once at run start (precedence flag > project autopilot.gates > global
+    // autopilot.gates > default on — see resolveAutopilotGatePolicy in
+    // project-config.ts) so `pipeline resume` can read it back without the
+    // user re-passing `--no-gate`. Absent on runs from before this capability
+    // existed (defaults to on). `source: 'config'` is a legacy value from
+    // before the global layer existed (pre-config-page-coherence runs) —
+    // still accepted here for backward compatibility with recorded run-state.
     gatePolicy: z
       .object({
         effective: z.enum(['on', 'off']),
-        source: z.enum(['flag', 'config', 'default']),
+        source: z.enum(['flag', 'project', 'global', 'config', 'default']),
       })
       .optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),

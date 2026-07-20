@@ -6,10 +6,13 @@ import * as os from 'node:os';
 
 // Mocked so this suite never opens a real socket, spawns a real browser
 // process, or leaves a live server/SIGINT handler dangling after the test.
+// `config ui` is now a deprecated alias over the unified management server
+// (design D1 of `rasen-ui-unify-management-surface`), so this mocks the same
+// seam `ui.test.ts` mocks.
 const stopServerMock = vi.fn().mockResolvedValue(undefined);
-const startConfigApiServerMock = vi.fn();
-vi.mock('../../src/core/config-api/server.js', () => ({
-  startConfigApiServer: (...args: unknown[]) => startConfigApiServerMock(...args),
+const startManagementServerMock = vi.fn();
+vi.mock('../../src/core/management-api/server.js', () => ({
+  startManagementServer: (...args: unknown[]) => startManagementServerMock(...args),
 }));
 
 const resolveUiPackageDirMock = vi.fn(() => null);
@@ -51,12 +54,12 @@ describe('config ui command', () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     process.exitCode = undefined;
 
-    startConfigApiServerMock.mockReset();
+    startManagementServerMock.mockReset();
     stopServerMock.mockClear();
     resolveUiPackageDirMock.mockReset().mockReturnValue(null);
     spawnMock.mockClear();
 
-    startConfigApiServerMock.mockResolvedValue({
+    startManagementServerMock.mockResolvedValue({
       port: 4321,
       server: {},
       stopServer: stopServerMock,
@@ -71,13 +74,20 @@ describe('config ui command', () => {
     vi.resetModules();
   });
 
-  it('starts the server, prints the URL with the token fragment, and opens the browser by default', async () => {
+  it('starts the unified management server, prints the /config URL with the token fragment, and opens the browser by default', async () => {
     await runConfigCommand(['ui']);
 
-    expect(startConfigApiServerMock).toHaveBeenCalledTimes(1);
+    expect(startManagementServerMock).toHaveBeenCalledTimes(1);
     const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toMatch(/^Config UI: http:\/\/127\.0\.0\.1:4321\/#token=[0-9a-f]{64}$/m);
+    expect(printed).toMatch(/^Config UI: http:\/\/127\.0\.0\.1:4321\/config#token=[0-9a-f]{64}$/m);
     expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('prints a one-line deprecation notice naming `rasen ui` (design D1)', async () => {
+    await runConfigCommand(['ui']);
+    const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('deprecated');
+    expect(printed).toContain('rasen ui');
   });
 
   it('prints the install hint when the UI package is not resolved', async () => {
@@ -93,18 +103,18 @@ describe('config ui command', () => {
 
   it('passes --port through to the server start call', async () => {
     await runConfigCommand(['ui', '--port', '5555']);
-    expect(startConfigApiServerMock).toHaveBeenCalledWith(expect.objectContaining({ port: 5555 }));
+    expect(startManagementServerMock).toHaveBeenCalledWith(expect.objectContaining({ port: 5555 }));
   });
 
   it('rejects a non-numeric --port without starting the server', async () => {
     await runConfigCommand(['ui', '--port', 'not-a-number']);
     expect(process.exitCode).toBe(1);
-    expect(startConfigApiServerMock).not.toHaveBeenCalled();
+    expect(startManagementServerMock).not.toHaveBeenCalled();
   });
 
   it('reports a clear error on port collision (EADDRINUSE) and exits non-zero', async () => {
     const err = Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' });
-    startConfigApiServerMock.mockRejectedValueOnce(err);
+    startManagementServerMock.mockRejectedValueOnce(err);
 
     await runConfigCommand(['ui', '--port', '5555']);
 

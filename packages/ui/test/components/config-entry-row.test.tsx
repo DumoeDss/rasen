@@ -206,4 +206,40 @@ describe('ConfigEntryRow', () => {
     const [, body] = putKeyMock.mock.calls[0];
     expect(body.value).toBe(0.5);
   });
+
+  it('config-page-coherence: renders a models.* key as a text input with a datalist of known suggestions', () => {
+    const modelKey: WireConfigEntry = {
+      definition: {
+        key: 'models.roles.reviewer',
+        scopes: ['global', 'project'],
+        type: 'string',
+        defaultValue: undefined,
+        description: 'Per-role model override for the reviewer role',
+        group: 'Workflow',
+        constraints: { type: 'string' },
+      },
+      value: 'fable',
+      source: 'default',
+      scopeValues: {},
+    };
+    mount(modelKey, 'proj_abc123', container);
+
+    const input = container.querySelector('input[type="text"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.value).toBe('fable');
+    const listId = input.getAttribute('list');
+    expect(listId).toBeTruthy();
+    const datalist = document.getElementById(listId!);
+    expect(datalist).not.toBeNull();
+    const options = [...(datalist?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'));
+    expect(options).toContain('sonnet-5');
+    expect(options).toContain('fable');
+
+    // A typed id matching no suggestion is still accepted (no allow-list).
+    act(() => {
+      input.value = 'not-a-real-model-xyz';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(input.value).toBe('not-a-real-model-xyz');
+  });
 });

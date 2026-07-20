@@ -50,13 +50,15 @@ import {
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
   type HandoffConfigLayers,
+  type ModelConfigLayers,
+  type ModelSource,
   type ResolvedReuseConfig,
   type ThresholdValue,
   type RunStateWorker,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
-import { resolveHandoffThresholdLayers } from '../core/effective-config.js';
+import { resolveHandoffThresholdLayers, resolveModelConfigLayers } from '../core/effective-config.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
@@ -104,6 +106,7 @@ interface StageView {
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
+  modelSource: ModelSource;
   effort: string | null;
   handoff: ResolvedStageHandoffConfig;
 }
@@ -206,7 +209,10 @@ export class PipelineCommand {
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const configLayers = resolveHandoffThresholdLayers(projectRoot);
-    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers));
+    const modelLayers = resolveModelConfigLayers(projectRoot);
+    const stages: StageView[] = pipeline.stages.map((s) =>
+      this.toStageView(s, pipeline, configLayers, modelLayers)
+    );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
 
     const result = {
@@ -699,21 +705,23 @@ export class PipelineCommand {
     ) as Record<StageRole, AgentRuntime>;
 
     const configLayers = resolveHandoffThresholdLayers(projectRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot);
     return {
       name,
       overridePath,
       agents: pipeline.agents ?? {},
       effectiveRoles,
-      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers)),
+      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers, modelLayers)),
     };
   }
 
   private toStageView(
     stage: Stage,
     pipeline: PipelineYaml,
-    configLayers?: HandoffConfigLayers
+    configLayers?: HandoffConfigLayers,
+    modelLayers?: ModelConfigLayers
   ): StageView {
-    const runtime = resolveStageRuntimeConfig(stage, pipeline);
+    const runtime = resolveStageRuntimeConfig(stage, pipeline, modelLayers);
     return {
       id: stage.id,
       kind: stage.kind,
@@ -734,8 +742,9 @@ export class PipelineCommand {
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
+      modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
-      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers),
+      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers, modelLayers),
     };
   }
 
@@ -793,16 +802,19 @@ export class PipelineCommand {
       if (stage.condition) meta.push(`condition=${stage.condition}`);
       if (stage.leadReview) meta.push('leadReview');
       if (stage.verifyPolicy) meta.push(`verifyPolicy=${stage.verifyPolicy}`);
-      const runtime = resolveStageRuntimeConfig(stage, {
-        name: result.name,
-        description: result.description,
-        agents: result.agents,
-        stages: [],
-      });
-      meta.push(`runtime=${runtime.runtime}${runtime.source === 'default' ? '' : `(${runtime.source})`}`);
-      if (runtime.sessionReuse) meta.push(`sessionReuse=${runtime.sessionReuse}`);
-      if (runtime.sandbox) meta.push(`sandbox=${runtime.sandbox}`);
+      // Read runtime fields from the stageView (resolved once in toStageView
+      // WITH the machine-config model layers) rather than re-resolving here
+      // layerlessly — a second resolveStageRuntimeConfig call without
+      // modelLayers would silently report a machine-config-blind model the
+      // day someone renders `model` from it.
       const stageView = result.stages.find((s) => s.id === id);
+      if (stageView) {
+        meta.push(
+          `runtime=${stageView.runtime}${stageView.runtimeSource === 'default' ? '' : `(${stageView.runtimeSource})`}`
+        );
+        if (stageView.sessionReuse) meta.push(`sessionReuse=${stageView.sessionReuse}`);
+        if (stageView.sandbox) meta.push(`sandbox=${stageView.sandbox}`);
+      }
       if (stageView && stageView.handoff.source !== 'default') {
         meta.push(
           `handoff=${formatThreshold(stageView.handoff.threshold)}(${stageView.handoff.source})`

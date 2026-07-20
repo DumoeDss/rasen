@@ -212,7 +212,7 @@ An agent can't perceive its own context usage — it can only **measure** it. `r
   | | `threshold` | `0.25` | headroom required to *accept a whole new change* (stricter than `handoff.threshold`) |
   | | `roles` | `{}` | per-role reuse-threshold override — `planner` / `implementer` only |
 
-  **`handoff`** — *when to retire a worker mid-stage*. Resolution per stage: stage `handoff` > pipeline `handoff.roles[<role>]` (threshold only) > pipeline `handoff` > built-in defaults `{ threshold: 0.5, maxRelays: 3, stallLimit: 2 }`. `roles` accepts any stage role; expensive-to-load roles (reviewer, fixer) typically get more headroom.
+  **`handoff`** — *when to retire a worker mid-stage*. Resolution per stage: stage `handoff` > pipeline `handoff.roles[<role>]` (threshold only) > pipeline `handoff` > project config `handoff.roles[<role>]` (threshold only) > project config `handoff.threshold` (threshold only) > global config `handoff.roles[<role>]` (threshold only) > global config `handoff.threshold` (threshold only) > model preset (threshold only) > built-in defaults `{ threshold: 0.5, maxRelays: 3, stallLimit: 2 }`. Within each machine config scope a per-role value wins over that scope's scalar threshold, and project wins over global. `roles` accepts any stage role; expensive-to-load roles (reviewer, fixer) typically get more headroom.
 
   ```yaml
   handoff:

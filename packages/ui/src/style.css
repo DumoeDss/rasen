@@ -1,50 +1,683 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Rasen Config editor — warm-editorial identity.
+ *
+ * Adapted from design-systems/claude (DESIGN.md / tokens.css): parchment
+ * canvas, terracotta accent, exclusively warm-toned neutrals, serif headlines
+ * + sans UI, ring-based depth. Anthropic's proprietary faces are substituted
+ * with system serif/sans/mono stacks — no webfonts, no runtime network fetches.
+ *
+ * Structure: a :root design-token layer (light) → a prefers-color-scheme dark
+ * token override → component rules that consume only var(--*).
+ * ─────────────────────────────────────────────────────────────────── */
+
+/* ═══ 1. Design tokens (light) ═══════════════════════════════════════════ */
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces — parchment → ivory → warm sand; never pure white. */
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
+
+  /* Foreground ramp — every gray carries a yellow-brown undertone. */
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #5e5d59;
+  --meta: #87867f;
+
+  /* Borders — cream-tinted, the gentlest possible containment. */
+  --border: #f0eee6;
+  --border-soft: #e8e6dc;
+
+  /* Accent — terracotta, the single chromatic brand moment. */
+  --accent: #c96442;
+  --accent-on: #faf9f5;
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --accent-active: color-mix(in oklab, var(--accent), black 14%);
+
+  /* Semantic — warm crimson danger; blue reserved for focus only. */
+  --success: #17a34a;
+  --warn: #eab308;
+  --danger: #b53333;
+
+  /* Typography — system serif for headlines, sans for UI, mono for code. */
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono: ui-monospace, Menlo, "Cascadia Code", "Segoe UI Mono", monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+
+  --leading-body: 1.6;
+  --leading-tight: 1.15;
+
+  /* Spacing — 8px base unit. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Radius — softness is core identity; no sharp corners. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  /* Elevation — ring shadows (border-like halo) over drop shadows. */
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: rgba(0, 0, 0, 0.05) 0px 4px 24px;
+
+  /* Focus — Focus Blue is the ONLY cool color in the system. */
+  --focus-ring: 0 0 0 3px rgba(56, 152, 236, 0.3);
+  --focus-border: #3898ec;
+
+  /* Motion — short, calm, purposeful. */
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout — an editorial column scaled down for a config tool. */
+  --container-max: 880px;
+  --container-gutter: 24px;
+}
+
+/* ═══ 2. Design tokens (dark) — token override, same layout ══════════════ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141413;
+    --surface: #1e1e1c;
+    --surface-warm: #30302e;
+
+    --fg: #ecebe4;
+    --fg-2: #d4d2c8;
+    --muted: #b0aea5;
+    --meta: #87867f;
+
+    --border: #30302e;
+    --border-soft: #3a3a37;
+
+    --accent: #d97757;
+    --accent-on: #141413;
+
+    --elev-ring: 0 0 0 1px var(--border);
+    --elev-raised: rgba(0, 0, 0, 0.35) 0px 4px 24px;
+  }
+}
+
+/* ═══ 3. Base ════════════════════════════════════════════════════════════ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
 body {
-  font-family: system-ui, sans-serif;
   margin: 0;
-  color: #1a1a1a;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  margin: 0;
+}
+
+a {
+  color: var(--fg-2);
+  text-decoration: none;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+
+a:hover {
+  color: var(--accent);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ═══ 4. App shell — header, nav, project switcher, content column ═══════ */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid #ddd;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--container-gutter);
+  background: color-mix(in oklab, var(--bg), transparent 15%);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header__inner {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+}
+
+.app-header h1 {
+  font-size: var(--text-lg);
+  letter-spacing: 0.01em;
+}
+
+.app-header nav {
+  display: flex;
+  gap: var(--space-4);
+  margin-right: auto;
+}
+
+.app-header nav a {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--muted);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.app-header nav a:hover {
+  color: var(--fg);
 }
 
 .app-content {
-  padding: 1.5rem;
-  max-width: 900px;
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding: var(--space-12) var(--container-gutter);
+  flex: 1;
 }
 
+/* Project switcher — warm control treatment in the header. */
+.project-switcher {
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.project-switcher select {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.project-switcher--loading {
+  color: var(--meta);
+}
+
+.project-switcher label {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ═══ 5. Config page & groups ═══════════════════════════════════════════ */
 .config-group {
-  margin-bottom: 2rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-ring), var(--elev-raised);
+  padding: var(--space-6) var(--space-8);
+  margin-bottom: var(--space-8);
 }
 
+.config-group > h2 {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-2);
+}
+
+.config-page__no-project-hint,
+.config-page__error {
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-6);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.config-page__no-project-hint {
+  background: var(--surface-warm);
+  color: var(--muted);
+  box-shadow: var(--elev-ring);
+}
+
+.config-page__error {
+  background: color-mix(in oklab, var(--danger), transparent 90%);
+  color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--danger), transparent 78%);
+}
+
+/* ═══ 6. Config entry row (test hooks preserved) ════════════════════════ */
 .config-entry {
-  border-bottom: 1px solid #eee;
-  padding: 0.75rem 0;
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.config-entry:first-of-type {
+  border-top: none;
+  padding-top: var(--space-3);
+}
+
+.config-entry__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.config-entry__key {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg);
 }
 
 .config-entry__source {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.25rem;
-  background: #eee;
-  margin-left: 0.5rem;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-warm);
+  color: var(--muted);
 }
 
-.config-entry__warnings,
+/* Per-source tints — warm; class names asserted by tests, kept intact. */
+.config-entry__source--default {
+  background: color-mix(in oklab, var(--meta), transparent 86%);
+  color: var(--muted);
+}
+
+.config-entry__source--global {
+  background: color-mix(in oklab, var(--accent), transparent 86%);
+  color: var(--accent);
+}
+
+.config-entry__source--project {
+  background: color-mix(in oklab, var(--success), transparent 86%);
+  color: var(--success);
+}
+
+.config-entry__source--env-override {
+  background: color-mix(in oklab, var(--warn), transparent 82%);
+  color: color-mix(in oklab, var(--warn), var(--fg) 45%);
+}
+
+.config-entry__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.config-entry__warnings {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.config-entry__shadowed {
+  margin: 0;
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.config-entry__no-project-hint {
+  color: var(--meta);
+  font-style: italic;
+}
+
 .config-entry__error {
-  color: #a33;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
+.config-entry__scope-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ═══ 7. Controls — native elements, warm surfaces, terracotta accent ═══ */
+input[type="text"],
+input[type="number"],
+select {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+input[type="text"]:hover,
+input[type="number"]:hover,
+select:hover {
+  border-color: var(--meta);
+}
+
+input[type="text"]:focus-visible,
+input[type="number"]:focus-visible,
+select:focus-visible {
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.control {
+  font-size: var(--text-sm);
+}
+
+.control--readonly {
+  display: inline-block;
+  font-family: var(--font-mono);
+  color: var(--fg-2);
+  background: var(--surface-warm);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.control--threshold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.control--threshold label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* ═══ 8. Buttons — unset actions get the warm-sand secondary treatment ══ */
+.config-entry button {
+  align-self: flex-start;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--fg-2);
+  background: var(--surface-warm);
+  border: none;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border-soft);
+  padding: 6px var(--space-3);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.config-entry button:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--surface-warm), var(--fg) 6%);
+}
+
+.config-entry button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.config-entry button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Optional additive primary treatment for a future highest-signal action. */
+.btn--primary {
+  color: var(--accent-on);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--primary:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+/* ═══ 9. Relaunch notice — centered editorial empty-state ═══════════════ */
 .relaunch-notice {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
   text-align: center;
-  gap: 0.5rem;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.relaunch-notice h1 {
+  font-size: var(--text-2xl);
+}
+
+.relaunch-notice p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 44ch;
+  line-height: var(--leading-body);
+}
+
+.relaunch-notice code {
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface-warm);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+}
+
+/* ═══ 10. Loading text ══════════════════════════════════════════════════ */
+.app-content > p:only-child {
+  color: var(--meta);
+}
+
+/* ═══ 11. Board — kanban columns of change cards ═══════════════════════ */
+.board-page__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.board-page__error,
+.board-page__empty,
+.board-page__loading {
+  color: var(--muted);
+}
+
+.board-page__error,
+.board-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.board-page__broken {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.board-card--broken {
+  border: 1px solid var(--danger);
+}
+
+.board-card__error-message {
+  margin: var(--space-1) 0 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.board-column {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-ring);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.board-column__title {
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.board-column__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--surface-warm);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.board-column__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.board-column__empty {
+  color: var(--meta);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.board-card {
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-ring);
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+
+.board-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.board-card__name {
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+}
+
+.board-card__schema {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.board-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.board-card__badge,
+.board-card__run-indicator {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+.board-card__badge--escalated {
+  color: var(--accent-on);
+  background: var(--danger);
+}
+
+.board-card__run-indicator {
+  color: var(--muted);
+  background: var(--surface-warm);
 }

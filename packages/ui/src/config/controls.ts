@@ -5,7 +5,7 @@
  */
 import type { WireConfigEntry } from '../api/types.js';
 
-export type ControlKind = 'toggle' | 'select' | 'ranged-number' | 'threshold' | 'text' | 'readonly';
+export type ControlKind = 'toggle' | 'select' | 'ranged-number' | 'threshold' | 'text' | 'model' | 'readonly';
 
 export interface ControlSpec {
   kind: ControlKind;
@@ -15,6 +15,35 @@ export interface ControlSpec {
   range?: { gt: number; lte: number };
   /** For `kind: 'threshold'`: the absolute form's `remainingTokens` floor. */
   remainingTokensGt?: number;
+  /** For `kind: 'model'`: known model-preset ids offered as non-binding suggestions (a datalist) — any other value is still accepted. */
+  modelSuggestions?: readonly string[];
+}
+
+/**
+ * Model ids offered as non-binding datalist suggestions on a `models.*`
+ * control — never an allow-list; a typed id matching none of these is still
+ * accepted. Source of truth: the `match` substrings of `MODEL_PRESETS`
+ * (src/core/model-presets.ts, matched by `id.includes(match)`) — every id
+ * here MUST resolve to a preset, so the control never steers a user toward
+ * an id (like bare `sonnet` or `opus`) that silently misses preset-derived
+ * thresholds and context windows. Kept as a literal so the standalone UI
+ * bundle imports nothing from the root package; drift is pinned by the
+ * preset-parity test in test/config/controls.test.ts, which imports the
+ * real `MODEL_PRESETS`.
+ */
+export const KNOWN_MODEL_IDS = [
+  'sonnet-5',
+  'sonnet-4-6',
+  'opus-4',
+  'fable',
+  'mythos',
+  'haiku',
+  'gpt-5',
+] as const;
+
+/** True for the `models.default` / `models.roles.<role>` key family — the only `string`-typed keys that render as a model control instead of plain text. */
+function isModelKey(key: string): boolean {
+  return key === 'models.default' || key.startsWith('models.roles.');
 }
 
 /**
@@ -54,6 +83,9 @@ export function selectControl(entry: WireConfigEntry, projectSelected: boolean):
         remainingTokensGt: constraints.remainingTokensGt,
       };
     case 'string':
+      if (isModelKey(entry.definition.key)) {
+        return { kind: 'model', readonly: false, modelSuggestions: KNOWN_MODEL_IDS };
+      }
       return { kind: 'text', readonly: false };
     case 'array':
     default:

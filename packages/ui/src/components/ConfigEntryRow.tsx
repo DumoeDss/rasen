@@ -250,6 +250,30 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
           </div>
         );
       }
+      case 'model': {
+        // A datalist offers known model-preset ids as non-binding suggestions
+        // (design.md D6/D8) — the input never restricts the typed value to
+        // the list; an id matching none of them is still accepted as-is.
+        const listId = `${key}-model-suggestions`;
+        return (
+          <>
+            <input
+              type="text"
+              list={listId}
+              value={String(draft)}
+              disabled={pending}
+              onChange={(e) => {
+                const value = (e.target as HTMLInputElement).value;
+                setDraft(value);
+                if (scope) commit(value, scope);
+              }}
+            />
+            <datalist id={listId}>
+              {control.modelSuggestions?.map((id) => <option key={id} value={id} />)}
+            </datalist>
+          </>
+        );
+      }
       case 'text':
       default:
         return (

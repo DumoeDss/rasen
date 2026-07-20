@@ -1134,13 +1134,13 @@ rules:
     it('honors an explicit config default of off', () => {
       expect(
         resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'off' } }, false)
-      ).toEqual({ effective: 'off', source: 'config' });
+      ).toEqual({ effective: 'off', source: 'project' });
     });
 
     it('honors an explicit config default of on', () => {
       expect(
         resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'on' } }, false)
-      ).toEqual({ effective: 'on', source: 'config' });
+      ).toEqual({ effective: 'on', source: 'project' });
     });
 
     it('the run flag overrides an on config default', () => {
@@ -1154,6 +1154,39 @@ rules:
         effective: 'off',
         source: 'flag',
       });
+    });
+
+    it('honors a global default when no project value is set', () => {
+      expect(
+        resolveAutopilotGatePolicy(null, false, { autopilot: { gates: 'off' } })
+      ).toEqual({ effective: 'off', source: 'global' });
+    });
+
+    it('project value wins over global', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          { schema: 'spec-driven', autopilot: { gates: 'on' } },
+          false,
+          { autopilot: { gates: 'off' } }
+        )
+      ).toEqual({ effective: 'on', source: 'project' });
+    });
+
+    it('falls back to the built-in default when neither scope sets a value', () => {
+      expect(resolveAutopilotGatePolicy(null, false, {})).toEqual({
+        effective: 'on',
+        source: 'default',
+      });
+    });
+
+    it('the run flag wins over both project and global', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          { schema: 'spec-driven', autopilot: { gates: 'on' } },
+          true,
+          { autopilot: { gates: 'on' } }
+        )
+      ).toEqual({ effective: 'off', source: 'flag' });
     });
   });
 
@@ -1267,7 +1300,7 @@ rules:
           { schema: 'spec-driven', autopilot: { selection: 'classify' } },
           false
         )
-      ).toEqual({ effective: 'classify', source: 'config' });
+      ).toEqual({ effective: 'classify', source: 'project' });
     });
 
     it('honors an explicit config default of manual', () => {
@@ -1276,7 +1309,7 @@ rules:
           { schema: 'spec-driven', autopilot: { selection: 'manual' } },
           false
         )
-      ).toEqual({ effective: 'manual', source: 'config' });
+      ).toEqual({ effective: 'manual', source: 'project' });
     });
 
     it('the run flag overrides a manual config default', () => {
@@ -1301,7 +1334,7 @@ rules:
           { schema: 'spec-driven', autopilot: { selection: 'compose' } },
           false
         )
-      ).toEqual({ effective: 'compose', source: 'config' });
+      ).toEqual({ effective: 'compose', source: 'project' });
     });
 
     it('the --auto-compose flag resolves compose alone (no --auto-select)', () => {
@@ -1333,6 +1366,34 @@ rules:
         effective: 'classify',
         source: 'flag',
       });
+    });
+
+    it('honors a global default when no project value is set', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, false, false, { autopilot: { selection: 'classify' } })
+      ).toEqual({ effective: 'classify', source: 'global' });
+    });
+
+    it('project value wins over global', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false,
+          false,
+          { autopilot: { selection: 'classify' } }
+        )
+      ).toEqual({ effective: 'manual', source: 'project' });
+    });
+
+    it('the run flag wins over both project and global', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          true,
+          false,
+          { autopilot: { selection: 'manual' } }
+        )
+      ).toEqual({ effective: 'classify', source: 'flag' });
     });
   });
 

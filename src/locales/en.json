@@ -560,6 +560,8 @@
     "Sort order: \"recent\" (default) or \"name\"": "Sort order: \"recent\" (default) or \"name\"",
     "Specify item type when ambiguous": "Specify item type when ambiguous",
     "Start the localhost config API + optional web UI": "Start the localhost config API + optional web UI",
+    "Start the Rasen management platform (board + config) on a localhost server": "Start the Rasen management platform (board + config) on a localhost server",
+    "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view",
     "Store id": "Store id",
     "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)",
     "Submit feedback about Rasen": "Submit feedback about Rasen",

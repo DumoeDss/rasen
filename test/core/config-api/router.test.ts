@@ -168,6 +168,44 @@ describe('config-api router (integration, via real http server)', () => {
     });
   });
 
+  describe('pipelines inventory (config-page-coherence)', () => {
+    it('returns gated-stage metadata for a valid token, with vet distinguishable', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(Array.isArray(body.pipelines)).toBe(true);
+
+      const bugFix = body.pipelines.find((p: any) => p.name === 'bug-fix');
+      expect(bugFix).toBeDefined();
+      expect(typeof bugFix.description).toBe('string');
+      const propose = bugFix.stages.find((s: any) => s.id === 'propose');
+      expect(propose).toMatchObject({ id: 'propose', role: 'planner', skill: 'rasen-propose', gate: true });
+
+      const goalLoop = body.pipelines.find((p: any) => p.name === 'goal-loop-measure');
+      if (goalLoop) {
+        const defineGoal = goalLoop.stages.find((s: any) => s.id === 'define-goal');
+        expect(defineGoal.gate).toBe('vet');
+      }
+    });
+
+    it('rejects non-GET methods with 405 and no state change', async () => {
+      const h = await startServer();
+      for (const method of ['PUT', 'POST', 'DELETE']) {
+        const res = await req(h.port, { method, path: '/api/v1/pipelines', headers: authed() });
+        expect(res.status).toBe(405);
+        expect((res.json() as any).error.code).toBe('method_not_allowed');
+      }
+    });
+
+    it('requires the session token', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines' });
+      expect(res.status).toBe(401);
+      expect((res.json() as any).error.code).toBe('unauthorized');
+    });
+  });
+
   describe('writes', () => {
     it('rejects a PUT with no content-type', async () => {
       const h = await startServer();

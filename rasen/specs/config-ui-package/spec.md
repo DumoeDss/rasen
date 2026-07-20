@@ -37,34 +37,39 @@ The UI package SHALL build, with a plain `pnpm build` run inside the package dir
 - **THEN** they behave the same as on macOS and Linux
 
 ### Requirement: The package stays independent of the root package
-The UI package SHALL be self-contained under `packages/ui` with its own manifest and its own lockfile, leaving the root package's workflows untouched: root install, build, test, and packaging SHALL behave exactly as before, the CLI's published tarball SHALL NOT include any UI package files, and the root lockfile SHALL NOT change. The package SHALL remain unpublished (marked private) until the user decides to publish it, and nothing in this change SHALL assert or embed a release version.
+The UI package SHALL be self-contained under `packages/ui` with its own manifest and its own lockfile, leaving the root package's workflows untouched: root install, build, test, and packaging SHALL behave exactly as before, the CLI's published tarball SHALL NOT include any UI package files, and the root lockfile SHALL NOT change. The package SHALL carry its own version line, released independently of the CLI: no code SHALL hard-code or compare the UI package's version, the CLI SHALL locate an installed package by resolving its `dist/` rather than by matching a version, and bumping or publishing that version SHALL remain the user's decision.
 
 #### Scenario: Root workflows unaffected
 - **WHEN** root `pnpm run build` and the root pack checks run after the UI package is added
 - **THEN** they pass with no change in behavior or tarball contents, and the root lockfile is unchanged
 
-#### Scenario: Publishing remains the user's decision
-- **WHEN** the change is implemented and merged
-- **THEN** no publish of the UI package has occurred and no version number has been bumped or hard-coded anywhere in the change
+#### Scenario: Version lines stay decoupled
+- **WHEN** an installed UI package's version differs from the CLI's version
+- **THEN** the CLI serves that package's assets normally, having resolved it by location rather than by version, and nothing warns or fails on the mismatch
+
+#### Scenario: Releasing the package remains the user's decision
+- **WHEN** a change modifies the UI package
+- **THEN** it does not bump the package version or publish it as a side effect; the release is a separate, explicit user decision
 
 ### Requirement: The app authenticates with the session token from the URL fragment
-On load, the app SHALL take the session token from the URL fragment, keep it only in memory, and immediately remove it from the address bar; it SHALL never store the token persistently. Every config API request SHALL carry the token as a bearer authorization header. When no token is present or the API answers unauthorized (a stale tab after a server restart), the app SHALL show a clear notice telling the user to re-launch via `rasen config ui` rather than failing silently or retrying.
+On load, the app SHALL take the session token from the URL fragment, keep it only in memory, and immediately remove it from the address bar; it SHALL never store the token persistently. Every API request SHALL carry the token as a bearer authorization header. When no token is present or the API answers unauthorized (a stale tab after a server restart), the app SHALL show a clear notice telling the user to re-launch via `rasen ui` rather than failing silently or retrying.
 
 #### Scenario: Token consumed and scrubbed on load
-- **WHEN** the browser opens the URL printed by `rasen config ui` (token in the fragment)
+- **WHEN** the browser opens the URL printed by the launch command (token in the fragment)
 - **THEN** the app authenticates its API calls with that token
 - **AND** the token no longer appears in the address bar or in the URL the user would copy
 
 #### Scenario: Stale tab after server restart
 - **WHEN** a previously-opened tab talks to a newly-restarted server (its token is no longer valid)
-- **THEN** the app shows a notice instructing the user to re-launch `rasen config ui`
+- **THEN** the app shows a notice instructing the user to re-launch `rasen ui`
 
 ### Requirement: Platform shell scoped to routing, layout, and API client
-The app SHALL provide a platform shell — client-side routing, an application layout with navigation and a project switcher, and a typed API client mirroring the config API's wire shapes — with the configuration page as its only module. The shell SHALL NOT pre-build task, kanban, or session-supervision modules or their state management; future modules extend the shell.
+The app SHALL provide a platform shell — client-side routing, an application layout with navigation and a project switcher, and a typed API client mirroring the served APIs' wire shapes — whose navigation offers the platform's views: the board (the platform home) and the configuration page. The shell SHALL NOT pre-build task-submission or session-supervision modules or their state management; future modules extend the shell.
 
-#### Scenario: Config page is the sole module
+#### Scenario: Navigation offers the platform views
 - **WHEN** the user explores the app's navigation
-- **THEN** the configuration page is the only functional module offered
+- **THEN** it offers the board and the configuration page, with the active view indicated
+- **AND** no task-submission or session-supervision module is offered
 
 #### Scenario: Project switcher
 - **WHEN** the user opens the project switcher
@@ -124,3 +129,82 @@ Every pull request SHALL build the UI package, run its tests, and verify the con
 #### Scenario: Matrix unchanged
 - **WHEN** the CI configuration is inspected after this change
 - **THEN** the existing os/node/shell test matrix jobs are unchanged and the UI package builds in one additional job
+
+### Requirement: The editor presents a coherent warm-editorial visual identity
+
+The configuration editor SHALL present a considered, coherent visual identity across every surface it renders — the app shell (header, navigation, project switcher), the configuration page and its groups, each configuration entry (key, source annotation, description, warnings, scope chooser, edit controls, shadowed-value notes, errors, unset actions), and the full-screen relaunch notice. The visual language SHALL be warm and editorial: a parchment-toned page canvas (never pure white), warm-toned neutrals throughout (no cool blue-grays outside the accessibility focus ring), a single terracotta brand accent reserved for the highest-signal action, serif headlines paired with sans UI text, generous editorial spacing, and ring-based depth rather than heavy drop shadows. Every visible value SHALL be driven by named design tokens (color, type scale, spacing, radius, elevation) rather than ad-hoc values, so the identity is consistent across all surfaces.
+
+#### Scenario: Warm parchment canvas and warm neutrals
+
+- **WHEN** the editor loads on any surface
+- **THEN** the page background is a warm parchment tone rather than pure white, elevated surfaces use a warm ivory, and text and borders use warm-toned neutrals — with no cool blue-gray anywhere except the keyboard focus ring
+
+#### Scenario: Serif headlines, sans UI, single terracotta accent
+
+- **WHEN** the editor renders headings and interactive controls
+- **THEN** headings use a serif type family and UI/body text uses a sans type family, and the terracotta accent is applied only to the primary action, not spread across the interface
+
+#### Scenario: Token-driven consistency
+
+- **WHEN** the same kind of element (a card surface, a body-text color, a control radius) appears on more than one surface
+- **THEN** it resolves to the same named design token, so the treatment is identical across the app shell, the config page, and the relaunch notice
+
+### Requirement: The visual identity adapts to light and dark color schemes
+
+The editor SHALL render a light theme as its primary presentation and a dark theme when the viewer's environment requests a dark color scheme, both drawn from the same design-token set so the two themes stay in visual lockstep. Switching between schemes SHALL require no user action and SHALL preserve all behavior, contrast, and legibility.
+
+#### Scenario: Dark scheme requested by the environment
+
+- **WHEN** the viewer's operating system or browser requests a dark color scheme
+- **THEN** the editor renders its dark theme — warm dark surfaces and parchment-tinted light text — with the same layout, controls, and behavior as the light theme
+
+#### Scenario: Light scheme as the default
+
+- **WHEN** the viewer expresses no preference or requests a light color scheme
+- **THEN** the editor renders the light (parchment) theme
+
+### Requirement: Styling assets are fully self-contained with no runtime network fetches
+
+The editor's visual identity SHALL be delivered entirely by assets bundled into the package's static build: it SHALL NOT fetch webfonts, stylesheets, icons, or any other styling asset from a CDN or remote host at runtime, and SHALL rely on system font stacks (a system serif for headlines, a system sans for UI) rather than downloaded typefaces. The restyle SHALL add no new runtime dependency to the package.
+
+#### Scenario: No external requests for styling
+
+- **WHEN** the CLI serves the built editor and the page loads
+- **THEN** all fonts and styles resolve from the served static assets with no request to any external host, so the editor renders identically offline
+
+#### Scenario: Restyle adds no runtime dependency
+
+- **WHEN** the package's dependencies are inspected after the restyle
+- **THEN** no new runtime dependency has been added and the build remains a pure static-asset front end
+
+### Requirement: Autopilot and Workflow groups lead the configuration page
+The configuration page SHALL order its groups so that the `Autopilot` and `Workflow` groups appear at the top of the page, ahead of the remaining groups (Profile, Behavior, Telemetry, Project, Archive, Advanced). Within the `Workflow` group, the per-agent tuning keys SHALL render as per-role overrides of their base: the five per-role handoff threshold keys (`handoff.roles.<role>`) each as a dual-form threshold control alongside the base `handoff.threshold`, and the five per-role model keys (`models.roles.<role>`) each as a model control alongside the base `models.default`. Each per-role control SHALL be scope-explicit exactly like its base (settable at global and project scope). A per-role model control SHALL be a text input that accepts any model id, offering known model-preset ids as non-binding suggestions (e.g. a datalist) rather than restricting the value to an allow-list.
+
+#### Scenario: Autopilot and Workflow lead the page
+- **WHEN** the configuration page loads
+- **THEN** the `Autopilot` group and the `Workflow` group appear before the other groups in the page order
+
+#### Scenario: Per-role thresholds render as threshold controls
+- **WHEN** the page renders the `Workflow` group
+- **THEN** the base `handoff.threshold` and each `handoff.roles.<role>` key render as dual-form threshold controls (fraction or absolute `{ remainingTokens: N }`), each with a scope choice
+- **AND** a per-role value set at project scope displays with a project source annotation over any global value for the same role
+
+#### Scenario: Per-role models render as suggestion-backed text controls
+- **WHEN** the page renders the `Workflow` group
+- **THEN** the base `models.default` and each `models.roles.<role>` key render as text inputs that accept any model id, each with a scope choice
+- **AND** known model-preset ids are offered as non-binding suggestions, and a typed id that matches no preset is still accepted (not blocked by the control)
+
+### Requirement: The Autopilot group shows a read-only gates inventory
+The configuration page SHALL render, within the `Autopilot` group, a read-only gates inventory sourced from `GET /api/v1/pipelines`. The inventory SHALL show, per pipeline, the stages that act as gates, and SHALL mark every stage whose gate value is `'vet'` as always-pausing — a gate that cannot be disabled by an `autopilot.gates: off` default or a `--no-gate` run — distinctly from an ordinary `gate: true` stage. The inventory SHALL be display-only: it never writes configuration and offers no gate-editing controls.
+
+#### Scenario: Gates inventory lists gated stages per pipeline
+- **WHEN** the user views the `Autopilot` group
+- **THEN** a gates inventory lists each pipeline and its gated stages, fed by the pipelines endpoint
+
+#### Scenario: The vet gate is marked as always-pausing
+- **WHEN** the inventory renders a stage whose gate value is `'vet'`
+- **THEN** that stage is marked as always pausing and not disableable by gates-off, distinctly from ordinary gates
+
+#### Scenario: The inventory is read-only
+- **WHEN** the user interacts with the gates inventory
+- **THEN** no gate-editing control is offered and no configuration write is issued from it

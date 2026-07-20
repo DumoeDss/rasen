@@ -46,7 +46,22 @@ describe('config-keys registry', () => {
     });
 
     it('rejects a project-only key at global scope', () => {
-      expect(validateConfigKeyPath('autopilot.gates', 'global').valid).toBe(false);
+      expect(validateConfigKeyPath('archive.timing', 'global').valid).toBe(false);
+    });
+
+    it('accepts the promoted autopilot keys at global scope', () => {
+      expect(validateConfigKeyPath('autopilot.gates', 'global').valid).toBe(true);
+      expect(validateConfigKeyPath('autopilot.selection', 'global').valid).toBe(true);
+    });
+
+    it('accepts the per-role handoff and model keys at both scopes', () => {
+      for (const scope of ['global', 'project'] as const) {
+        for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper']) {
+          expect(validateConfigKeyPath(`handoff.roles.${role}`, scope).valid).toBe(true);
+          expect(validateConfigKeyPath(`models.roles.${role}`, scope).valid).toBe(true);
+        }
+        expect(validateConfigKeyPath('models.default', scope).valid).toBe(true);
+      }
     });
 
     it('rejects unknown keys', () => {

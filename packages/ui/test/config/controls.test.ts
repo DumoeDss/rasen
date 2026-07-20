@@ -5,12 +5,32 @@ import {
   validateThresholdValue,
   writableScopes,
   defaultWriteScope,
+  KNOWN_MODEL_IDS,
 } from '../../src/config/controls.js';
 import { configListFixture } from '../fixtures/config-list.js';
 import type { WireConfigEntry } from '../../src/api/types.js';
 
 const entries: WireConfigEntry[] = configListFixture.entries;
 const byKey = (key: string) => entries.find((e) => e.definition.key === key)!;
+
+/** Synthesizes a `models.*`-shaped entry (config-page-coherence) — not in the recorded fixture, since it predates this change. */
+function modelEntry(key: string, overrides: Partial<WireConfigEntry> = {}): WireConfigEntry {
+  return {
+    definition: {
+      key,
+      scopes: ['global', 'project'],
+      type: 'string',
+      defaultValue: undefined,
+      description: 'test model key',
+      group: 'Workflow',
+      constraints: { type: 'string' },
+    },
+    value: 'sonnet',
+    source: 'default',
+    scopeValues: {},
+    ...overrides,
+  };
+}
 
 describe('selectControl', () => {
   it('renders boolean constraints as a toggle', () => {
@@ -52,6 +72,41 @@ describe('selectControl', () => {
     const spec = selectControl(byKey('handoff.threshold'), false);
     expect(spec.kind).toBe('threshold');
     expect(spec.readonly).toBe(false);
+  });
+
+  it('renders models.default as a model control with known-id suggestions (config-page-coherence)', () => {
+    const spec = selectControl(modelEntry('models.default'), true);
+    expect(spec.kind).toBe('model');
+    expect(spec.readonly).toBe(false);
+    expect(spec.modelSuggestions).toEqual(KNOWN_MODEL_IDS);
+  });
+
+  it('renders models.roles.<role> as a model control too', () => {
+    const spec = selectControl(modelEntry('models.roles.reviewer'), true);
+    expect(spec.kind).toBe('model');
+    expect(spec.modelSuggestions).toEqual(KNOWN_MODEL_IDS);
+  });
+
+  it('does not treat an ordinary string key as a model control', () => {
+    const spec = selectControl(modelEntry('schema', { definition: { ...modelEntry('schema').definition, scopes: ['project'] } }), true);
+    expect(spec.kind).toBe('text');
+    expect(spec.modelSuggestions).toBeUndefined();
+  });
+});
+
+describe('KNOWN_MODEL_IDS preset parity', () => {
+  // Drift guard for the hand-maintained suggestion list: every datalist
+  // suggestion must resolve to a MODEL_PRESETS entry under the real
+  // `id.includes(match)` matching, so the control never steers a user
+  // toward an id that silently misses preset-derived thresholds/windows
+  // (bare 'sonnet'/'opus' were exactly that trap). Imports the root
+  // package's registry directly — test-only; the shipped bundle stays
+  // self-contained.
+  it('every suggested id resolves to a model preset', async () => {
+    const { resolveModelPreset } = await import('../../../../src/core/model-presets');
+    for (const id of KNOWN_MODEL_IDS) {
+      expect(resolveModelPreset(id), `suggestion '${id}' must match a MODEL_PRESETS entry`).toBeDefined();
+    }
   });
 });
 

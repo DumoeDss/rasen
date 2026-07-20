@@ -1,8 +1,21 @@
 {
   "name": "@atelierai/rasen-ui",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.1",
   "description": "Optional web UI for the Rasen config API — a visual configuration editor served by `rasen config ui`.",
+  "license": "MIT",
+  "author": "Sayo",
+  "homepage": "https://github.com/DumoeDss/rasen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DumoeDss/rasen",
+    "directory": "packages/ui"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
@@ -10,6 +23,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

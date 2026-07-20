@@ -3,7 +3,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-import { resolveEffectiveConfig, resolveHandoffThresholdLayers } from '../../src/core/effective-config.js';
+import {
+  resolveEffectiveConfig,
+  resolveHandoffThresholdLayers,
+  resolveModelConfigLayers,
+} from '../../src/core/effective-config.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 
 describe('effective-config', () => {
@@ -146,6 +150,81 @@ describe('effective-config', () => {
 
       expect(layers.globalThreshold).toBeUndefined();
       expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('reports project and global per-role layers independently', () => {
+      saveGlobalConfig({ handoff: { roles: { implementer: 0.8 } } } as never);
+      const projectRoot = path.join(tempDir, 'role-threshold-project');
+      writeProjectConfig(
+        projectRoot,
+        'schema: spec-driven\nhandoff:\n  roles:\n    reviewer: 0.7\n'
+      );
+
+      const layers = resolveHandoffThresholdLayers(projectRoot);
+      expect(layers.projectRoles).toEqual({ reviewer: 0.7 });
+      expect(layers.globalRoles).toEqual({ implementer: 0.8 });
+    });
+
+    it('drops a hand-edited invalid global per-role threshold with a warning, keeping valid siblings', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      saveGlobalConfig({ handoff: { roles: { reviewer: 5, implementer: 0.6 } } } as never);
+
+      const layers = resolveHandoffThresholdLayers(null);
+
+      expect(layers.globalRoles).toEqual({ implementer: 0.6 });
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('handoff.roles.reviewer'));
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('resolveModelConfigLayers', () => {
+    it('reports project and global model layers independently', () => {
+      saveGlobalConfig({ models: { default: 'sonnet', roles: { reviewer: 'fable' } } } as never);
+      const projectRoot = path.join(tempDir, 'model-project');
+      writeProjectConfig(
+        projectRoot,
+        'schema: spec-driven\nmodels:\n  default: haiku\n  roles:\n    implementer: opus\n'
+      );
+
+      const layers = resolveModelConfigLayers(projectRoot);
+      expect(layers).toEqual({
+        projectDefault: 'haiku',
+        projectRoles: { implementer: 'opus' },
+        globalDefault: 'sonnet',
+        globalRoles: { reviewer: 'fable' },
+      });
+    });
+
+    it('reports undefined layers when nothing is configured', () => {
+      const layers = resolveModelConfigLayers(null);
+      expect(layers).toEqual({
+        projectDefault: undefined,
+        projectRoles: undefined,
+        globalDefault: undefined,
+        globalRoles: undefined,
+      });
+    });
+
+    it('drops a hand-edited empty-string global default with a warning', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      saveGlobalConfig({ models: { default: '' } } as never);
+
+      const layers = resolveModelConfigLayers(null);
+
+      expect(layers.globalDefault).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('models.default'));
+      warnSpy.mockRestore();
+    });
+
+    it('drops a hand-edited invalid global per-role model with a warning, keeping valid siblings', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      saveGlobalConfig({ models: { roles: { reviewer: 42, implementer: 'opus' } } } as never);
+
+      const layers = resolveModelConfigLayers(null);
+
+      expect(layers.globalRoles).toEqual({ implementer: 'opus' });
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('models.roles.reviewer'));
       warnSpy.mockRestore();
     });
   });

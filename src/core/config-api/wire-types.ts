@@ -55,3 +55,23 @@ export interface WireConfigEntry {
 export interface ApiErrorBody {
   error: { code: string; message: string; fix?: string };
 }
+
+/**
+ * A trimmed projection of a pipeline stage for the read-only gates inventory
+ * (D5 of `config-page-coherence`) — only what a gates panel needs, not the
+ * CLI's full `StageView` (no runtime/handoff/model detail). `gate: 'vet'`
+ * marks a stage that ALWAYS pauses, distinct from an ordinary `gate: true`.
+ */
+export interface WirePipelineStage {
+  id: string;
+  role: string | null;
+  skill: string | null;
+  gate: false | true | 'vet';
+}
+
+/** A pipeline's identity plus its gate-carrying stage list, for `GET /api/v1/pipelines`. */
+export interface WirePipeline {
+  name: string;
+  description: string;
+  stages: WirePipelineStage[];
+}
