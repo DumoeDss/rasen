@@ -21,3 +21,4 @@ export * from './planning-home.js';
 export * from './workspace-root.js';
 export * from './codex/index.js';
 export * from './workflow-registry/index.js';
+export * from './workflow-package/index.js';

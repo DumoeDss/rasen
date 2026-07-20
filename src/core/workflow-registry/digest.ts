@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import canonicalize from 'canonicalize';
 
 import type { WorkflowFileEntry } from './types.js';
 
@@ -13,6 +14,7 @@ export function computeWorkflowDigest(id: string, files: readonly WorkflowFileEn
     id,
     files: files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   };
-  return sha256(JSON.stringify(preimage));
+  const canonical = canonicalize(preimage);
+  if (canonical === undefined) throw new TypeError('Workflow digest preimage is not JSON');
+  return sha256(canonical);
 }
-

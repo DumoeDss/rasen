@@ -1,0 +1,9 @@
+{
+  "canonical": "{\"format\":\"rasen-package\",\"formatVersion\":1,\"kind\":\"workflow\",\"packageDigest\":\"sha256:26187fd1d0578fc1d3f8d426560da4cacc7f08a39be19b98b73f721dca5bf07b\",\"roots\":[\"alpha\"],\"workflows\":[{\"digest\":\"sha256:4486e2d7897bf49068a6c3a7dc8c0dce444a90e7d5c426693f6c2e5e78192b0f\",\"files\":[{\"content\":\"---\\nname: rasen-alpha\\ndescription: Run alpha.\\n---\\n\\nComplete alpha.\\n\",\"encoding\":\"utf8\",\"path\":\"SKILL.md\",\"sha256\":\"sha256:2383fc7636ec44533049d31a65a4601852af9122c701286b63512c3a9ecc30aa\"},{\"content\":\"version: 1\\nid: alpha\\n\",\"encoding\":\"utf8\",\"path\":\"workflow.yaml\",\"sha256\":\"sha256:7341d0f4d16b4169620ed21e092a635a985cd69972e32b7f3f14fc612c526528\"}],\"id\":\"alpha\"}]}",
+  "files": {
+    "SKILL.md": "sha256:2383fc7636ec44533049d31a65a4601852af9122c701286b63512c3a9ecc30aa",
+    "workflow.yaml": "sha256:7341d0f4d16b4169620ed21e092a635a985cd69972e32b7f3f14fc612c526528"
+  },
+  "workflowDigest": "sha256:4486e2d7897bf49068a6c3a7dc8c0dce444a90e7d5c426693f6c2e5e78192b0f",
+  "packageDigest": "sha256:26187fd1d0578fc1d3f8d426560da4cacc7f08a39be19b98b73f721dca5bf07b"
+}

@@ -71,12 +71,14 @@
   "dependencies": {
     "@inquirer/core": "^10.3.2",
     "@inquirer/prompts": "^7.10.1",
+    "canonicalize": "^3.0.0",
     "chalk": "^5.5.0",
     "commander": "^14.0.0",
     "cross-spawn": "7.0.6",
     "fast-glob": "^3.3.3",
+    "jsonc-parser": "^3.3.1",
     "ora": "^8.2.0",
-    "yaml": "^2.8.2",
+    "yaml": "^2.9.0",
     "zod": "^4.0.17"
   }
 }
