@@ -36,6 +36,7 @@ export {
 } from './registry.js';
 export {
   validateWorkflowDirectory,
+  type ValidateWorkflowDirectoryOptions,
   type WorkflowValidationResult,
 } from './validator.js';
 export type {

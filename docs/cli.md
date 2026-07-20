@@ -1081,6 +1081,44 @@ Every JSON success payload includes `status: []`. Failures emit one JSON documen
 
 **Kind classification**: every workflow definition carries a `kind` — `task` (an inner-loop operation invoked directly), `driver` (an outer-loop engine that consumes pipelines, e.g. `auto-command`/`goal-command`), or `internal` (a sub-unit invoked only by a driver, e.g. the `goal-plan`/`goal-iterate`/`goal-report` trio). The human `list` table groups entries into `task` and `driver` sections and hides `internal` unless `--all` is passed. `--json` always lists every workflow, ungrouped, with its `kind` — machine consumers see the full catalog regardless of `--all`. A user workflow's `workflow.yaml` defaults to `kind: task` and may optionally declare `kind: internal`; `driver` is reserved for built-in engines. `kind` is presentation metadata only — it never enters a workflow's digest, so classifying or reclassifying a workflow never triggers drift-healing.
 
+### `rasen pipeline`
+
+Inspect, package, install, and remove orchestration pipelines — the outer-loop DAGs that sequence workflows (see [Concepts](concepts.md) for the schema/workflow/pipeline model). Pipelines resolve from three layers, highest precedence first: project (`rasen/pipelines/<name>/pipeline.yaml`), user (installed via `import`, machine-global), and package (built-in, shipped with rasen).
+
+```text
+rasen pipeline list [--json]
+rasen pipeline show <name> [--for-execution] [--json]
+rasen pipeline agents <name> [--planner|--implementer|--reviewer|--fixer|--shipper <runtime>] [--json]
+rasen pipeline classify <task> [--json]
+rasen pipeline resume <change> [--json]
+rasen pipeline init <name> --output <path> [--json]
+rasen pipeline validate <name-or-path> [--json]
+rasen pipeline import <path> [--force] [--json]
+rasen pipeline export <name> <path> [--force] [--json]
+rasen pipeline delete <name> [--yes] [--force] [--json]
+```
+
+All ten subcommands accept `--store <id>` / `--project <id>`, resolving their root exactly like `rasen validate`.
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List available pipelines (project > user > package) with description and stage ids |
+| `show <name>` | Show a pipeline's stage DAG, build order, and resolved per-stage runtime/handoff/reuse config; `--for-execution` also validates active-profile skills |
+| `agents <name>` | Show, or set (writing a project-local override), per-role Claude/Codex runtimes |
+| `classify <task>` | Suggest a pipeline for a task string via an advisory keyword heuristic |
+| `resume <change>` | Show a change's (or portfolio's) next/remaining stages from its run-state |
+| `init <name>` | Create a minimal `pipeline.yaml` draft in the required empty `--output` directory without installing it |
+| `validate <name-or-path>` | Structurally validate an installed pipeline name, a draft directory, or a `kind: pipeline` `.rasenpkg` — parse, duplicate/cycle/parallel-group/decompose-stage checks; does not require referenced skills to already be installed |
+| `import <path>` | Validate, stage, digest-reverify, and atomically install every pipeline in a `kind: pipeline` `.rasenpkg` into the user layer; `--force` allows overwriting an already-installed pipeline of the same name |
+| `export <name> <path>` | Package an installed **user** pipeline as a deterministic `.rasenpkg`; built-in and project-local pipelines cannot be exported |
+| `delete <name>` | Delete an unreferenced user pipeline after a refcount check; built-in pipelines cannot be deleted |
+
+`.rasenpkg` files carry a `kind` discriminant — `workflow`, `profile`, or `pipeline` — sharing one package format. A `kind: pipeline` package's digest, transactional install (temp stage → atomic rename, all-or-nothing across every packaged pipeline), and file-limit rules mirror the `kind: workflow` contract in [Installable workflows and `.rasenpkg`](workflow-packages.md). Every package also carries an optional `minRasenVersion`, stamped from the packing CLI's own version: an older CLI importing a package that requires a newer one gets a clear upgrade message instead of an opaque schema error. This preflight only helps CLIs from this point forward — an already-shipped CLI predating this field still rejects an unrecognized package `kind` opaquely; there is no way to retrofit that.
+
+`delete`'s refcount guard refuses to delete a pipeline referenced by any installed workflow's `requires.pipelines` or by another pipeline's `decompose` stage `childPipeline` (explicit or the `small-feature` default), naming every referrer; `--force` bypasses the guard (not the built-in-pipeline prohibition) and warns about the referrers left dangling.
+
+Pipeline stage `skill:` fields appear in both the workflow directory-name form (`rasen-propose`) and the skill-name form (`rasen:review`) across the built-in pipelines; `validate` and package import accept either form and do not require the skill to be installed at import time — a missing skill is caught at execution time instead.
+
 ### `rasen config`
 
 View and modify global or project rasen configuration. Every subcommand accepts `--scope <global|project>` (default `global`); `--scope project` reads and writes the current project's `rasen/config.yaml` instead of the global config file. Running `rasen config` with no subcommand opens an interactive full-view editor (in a TTY) showing every configurable key, its effective value, and which layer produced it (`default`, `global`, `project`, or `env-override`); outside a TTY it prints that same effective view non-interactively and exits.

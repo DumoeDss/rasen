@@ -25,6 +25,20 @@ export function computePackagedWorkflowDigest(
   );
 }
 
+export function computePackagedPipelineDigest(
+  name: string,
+  files: readonly Pick<PackageFile, 'path' | 'sha256'>[]
+): string {
+  return packageSha256(
+    canonicalBytes({
+      format: 'rasen-pipeline-digest',
+      version: 1,
+      name,
+      files: files.map((file) => ({ path: file.path, sha256: file.sha256 })),
+    })
+  );
+}
+
 export function computePackageDigest(
   kind: RasenPackageKind,
   packageWithoutDigest: PackageWithoutDigest

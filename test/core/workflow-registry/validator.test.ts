@@ -319,6 +319,42 @@ describe('workflow directory validator', () => {
       expect.arrayContaining(['pipeline_dependency_missing', 'schema_dependency_missing'])
     );
   });
+
+  it('resolves project-layer requires.pipelines/schemas only when a projectRoot is supplied (D6)', () => {
+    const parent = temporaryDirectory();
+    const project = temporaryDirectory();
+    const projectPipelineDir = path.join(project, 'rasen', 'pipelines', 'project-only-pipeline');
+    fs.mkdirSync(projectPipelineDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectPipelineDir, 'pipeline.yaml'),
+      'name: project-only-pipeline\nstages:\n  - id: a\n    skill: rasen-apply-change\n    requires: []\n'
+    );
+    const projectSchemaDir = path.join(project, 'rasen', 'schemas', 'project-only-schema');
+    fs.mkdirSync(projectSchemaDir, { recursive: true });
+    fs.writeFileSync(path.join(projectSchemaDir, 'schema.yaml'), 'name: project-only-schema\nartifacts: []\n');
+
+    const root = writeWorkflow(parent, 'project-context-consumer', {
+      requiresPipelines: ['project-only-pipeline'],
+      requiresSchemas: ['project-only-schema'],
+    });
+
+    // No regression without a project context: still built-in+user-only resolution.
+    const withoutContext = validateWorkflowDirectory(root);
+    expect(withoutContext.valid).toBe(false);
+    expect(withoutContext.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining(['pipeline_dependency_missing', 'schema_dependency_missing'])
+    );
+
+    // With a project context, the project-layer pipeline/schema resolve.
+    const withContext = validateWorkflowDirectory(root, { projectRoot: project });
+    expect(withContext.valid).toBe(true);
+    expect(withContext.definition?.requires).toEqual({
+      workflows: [],
+      skills: [],
+      pipelines: ['project-only-pipeline'],
+      schemas: ['project-only-schema'],
+    });
+  });
 });
 
 describe('portable path policy', () => {

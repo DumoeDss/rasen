@@ -205,7 +205,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .action(async (idOrPath: string, options: JsonOption) => {
       await runWorkflowAction(options, { validation: null }, () => {
         const messages = getWorkflowUiMessages();
-        const validation = validateWorkflowInput(idOrPath);
+        const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+        const validation = validateWorkflowInput(idOrPath, { projectRoot });
         if (options.json) printJson({ validation, status: [] });
         else {
           console.log(validation.valid ? messages.workflowValid : messages.workflowInvalid);
@@ -228,7 +229,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .action(async (sourcePath: string, options: JsonOption) => {
       await runWorkflowAction(options, { imported: [], reused: [], roots: [] }, async () => {
         const messages = getWorkflowUiMessages();
-        const result = await importWorkflow(sourcePath);
+        const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+        const result = await importWorkflow(sourcePath, { projectRoot });
         if (options.json) printJson({ ...result, status: [] });
         else {
           if (result.imported.length > 0) console.log(messages.imported(result.imported.join(', ')));

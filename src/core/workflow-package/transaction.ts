@@ -202,9 +202,14 @@ function assertPackagedClosure(
 ): void {
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
   const builtIns = new Set<string>(BUILT_IN_WORKFLOW_IDS);
+  // A pipeline package embeds no workflows this round (`workflows: []`), and
+  // its `roots` names packaged PIPELINE names — a different ID space than
+  // workflow IDs — so it has no workflow entrypoints to trace a closure from.
   const entrypoints = packageValue.kind === 'workflow'
     ? new Set(packageValue.roots)
-    : new Set(packageValue.profile.workflows.filter((id) => byId.has(id)));
+    : packageValue.kind === 'profile'
+      ? new Set(packageValue.profile.workflows.filter((id) => byId.has(id)))
+      : new Set<string>();
 
   if (packageValue.kind === 'profile') {
     for (const workflowId of packageValue.profile.workflows) {
@@ -271,7 +276,7 @@ export function stageWorkflowDefinitions(
     for (const definition of definitions) {
       const target = path.join(stageRoot, definition.id);
       writeDefinitionToStage(definition, target);
-      const validation = validateWorkflowDirectory(target);
+      const validation = validateWorkflowDirectory(target, { projectRoot: options.projectRoot });
       if (!validation.valid || !validation.definition) {
         throw new WorkflowTransactionError(
           `Staged workflow "${definition.id}" failed validation`,
@@ -319,7 +324,7 @@ export function stagePackageWorkflows(
           mode: 0o600,
         });
       }
-      const validation = validateWorkflowDirectory(target);
+      const validation = validateWorkflowDirectory(target, { projectRoot: options.projectRoot });
       if (!validation.valid || !validation.definition) {
         throw new WorkflowTransactionError(
           `Packaged workflow "${packaged.id}" failed domain validation`,
@@ -336,8 +341,15 @@ export function stagePackageWorkflows(
       definitions.push(validation.definition);
     }
     assertPackagedClosure(packageValue, definitions);
-    assertInstallableSet(definitions, packageValue.roots, options);
-    return { definitions, roots: [...packageValue.roots], stageRoot };
+    // A pipeline package's `roots` names packaged pipeline names, not workflow
+    // IDs (and it embeds no workflows this round). Treat it as having NO
+    // workflow roots here — both for this function's own resolvability check
+    // AND in the returned plan, since `commitWorkflowInstall` independently
+    // re-runs the same workflow-root check against `plan.roots`. Otherwise a
+    // pipeline name would be misread as an unknown workflow ID by either call.
+    const workflowRoots = packageValue.kind === 'pipeline' ? [] : packageValue.roots;
+    assertInstallableSet(definitions, workflowRoots, options);
+    return { definitions, roots: [...workflowRoots], stageRoot };
   } catch (error) {
     fs.rmSync(stageRoot, { recursive: true, force: true });
     throw error;

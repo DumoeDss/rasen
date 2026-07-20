@@ -113,7 +113,19 @@ function referencedSidecarPaths(instructions: string): string[] {
   return [...references];
 }
 
-export function validateWorkflowDirectory(sourcePath: string): WorkflowValidationResult {
+export interface ValidateWorkflowDirectoryOptions {
+  /**
+   * Repo/project root used to resolve project-layer `requires.pipelines` /
+   * `requires.schemas` referents. Omitting it keeps directory-time validation
+   * scoped to built-in + user resolution only (no regression).
+   */
+  projectRoot?: string;
+}
+
+export function validateWorkflowDirectory(
+  sourcePath: string,
+  options: ValidateWorkflowDirectoryOptions = {}
+): WorkflowValidationResult {
   const tree = loadWorkflowSourceTree(sourcePath);
   const diagnostics = [...tree.diagnostics];
   const byPath = new Map(tree.files.map((file) => [file.path, file] as const));
@@ -329,7 +341,7 @@ export function validateWorkflowDirectory(sourcePath: string): WorkflowValidatio
       });
       continue;
     }
-    if (!resolvePipelinePath(pipeline)) {
+    if (!resolvePipelinePath(pipeline, options.projectRoot)) {
       diagnostics.push({
         code: 'pipeline_dependency_missing',
         severity: 'error',
@@ -340,7 +352,7 @@ export function validateWorkflowDirectory(sourcePath: string): WorkflowValidatio
       });
     }
   }
-  const knownSchemas = new Set(listSchemas());
+  const knownSchemas = new Set(listSchemas(options.projectRoot));
   for (const schema of manifest.requires.schemas) {
     if (!isPortableWorkflowId(schema)) {
       diagnostics.push({

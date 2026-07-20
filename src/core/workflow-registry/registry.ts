@@ -18,6 +18,12 @@ export const USER_WORKFLOWS_DIR_NAME = 'workflows';
 export interface WorkflowRegistryOptions {
   globalDataDir?: string;
   workflowsDir?: string;
+  /**
+   * Repo/project root used to resolve project-layer `requires.pipelines` /
+   * `requires.schemas` referents during directory validation. Optional —
+   * omitting it keeps today's built-in+user-only resolution (no regression).
+   */
+  projectRoot?: string;
 }
 
 export function getUserWorkflowsDir(options: WorkflowRegistryOptions = {}): string {

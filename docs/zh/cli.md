@@ -1031,6 +1031,44 @@ rasen workflow delete <id> [--yes] [--json]
 
 **kind 分类**：每个工作流定义都带有一个 `kind` —— `task`（可直接调用的内循环操作）、`driver`（消费 pipeline 的外循环引擎，例如 `auto-command`/`goal-command`），或 `internal`（仅由某个 driver 调用的子单元，例如 `goal-plan`/`goal-iterate`/`goal-report` 三件套）。面向人类的 `list` 表格会把条目分为 `task` 和 `driver` 两组，并默认隐藏 `internal`，除非传入 `--all`。`--json` 始终列出全部工作流（不分组），并带上各自的 `kind`——机器消费者无论是否传 `--all` 都能看到完整目录。用户工作流的 `workflow.yaml` 默认 `kind: task`，也可以选择声明 `kind: internal`；`driver` 保留给内置引擎使用。`kind` 只是呈现层元数据——它从不进入工作流的 digest，因此分类或重新分类一个工作流永远不会触发 drift-healing。
 
+### `rasen pipeline`
+
+检查、打包、安装并移除编排 pipeline——串联工作流的外循环 DAG（schema/workflow/pipeline 模型见[概念](concepts.md)）。Pipeline 按以下优先级从三层解析（从高到低）：project（`rasen/pipelines/<name>/pipeline.yaml`）、user（通过 `import` 安装，机器全局）、package（内置，随 rasen 发布）。
+
+```text
+rasen pipeline list [--json]
+rasen pipeline show <name> [--for-execution] [--json]
+rasen pipeline agents <name> [--planner|--implementer|--reviewer|--fixer|--shipper <runtime>] [--json]
+rasen pipeline classify <task> [--json]
+rasen pipeline resume <change> [--json]
+rasen pipeline init <name> --output <path> [--json]
+rasen pipeline validate <name-or-path> [--json]
+rasen pipeline import <path> [--force] [--json]
+rasen pipeline export <name> <path> [--force] [--json]
+rasen pipeline delete <name> [--yes] [--force] [--json]
+```
+
+全部十个子命令都接受 `--store <id>` / `--project <id>`，其根解析方式与 `rasen validate` 完全一致。
+
+| 子命令 | 说明 |
+|------------|-------------|
+| `list` | 列出可用 pipeline（project > user > package），含描述与 stage id |
+| `show <name>` | 显示某 pipeline 的 stage DAG、build order，以及解析后的逐 stage runtime/handoff/reuse 配置；`--for-execution` 还会校验当前 profile 下的 skill |
+| `agents <name>` | 显示或（写入项目级覆盖）设置逐角色的 Claude/Codex runtime |
+| `classify <task>` | 用建议性的关键词启发式方法为任务字符串推荐一个 pipeline |
+| `resume <change>` | 根据 run-state 显示某 change（或 portfolio）的下一个/剩余 stage |
+| `init <name>` | 在必须为空的 `--output` 目录下创建最小 `pipeline.yaml` 草稿，不安装它 |
+| `validate <name-or-path>` | 对已安装的 pipeline 名、草稿目录，或 `kind: pipeline` 的 `.rasenpkg` 做结构性校验（解析、重复/环/parallel-group/decompose stage 检查）；不要求所引用的 skill 已安装 |
+| `import <path>` | 校验、暂存、复校 digest，然后把 `kind: pipeline` 包中的每个 pipeline 原子化安装进 user 层；`--force` 允许覆盖同名的已安装 pipeline |
+| `export <name> <path>` | 将一个已安装的 **user** pipeline 打包为确定性的 `.rasenpkg`；内置与项目本地 pipeline 不可导出 |
+| `delete <name>` | 在引用计数检查后删除一个未被引用的 user pipeline；内置 pipeline 不可删除 |
+
+`.rasenpkg` 携带一个 `kind` 判别字段——`workflow`、`profile`、或 `pipeline`——共享同一套包格式。`kind: pipeline` 包的 digest、事务性安装（暂存到临时目录 → 原子重命名，包内全部 pipeline 要么全装要么全不装）与文件限额规则，均与[可安装工作流与 `.rasenpkg`](workflow-packages.md)中 `kind: workflow` 的约定一致。每个包还携带一个可选的 `minRasenVersion`，在打包时由打包 CLI 自身版本戳入：较旧的 CLI 导入一个要求更新版本的包时，会收到清晰的升级提示，而不是含糊的 schema 错误。这个预检只对本次改动之后的 CLI 生效——早于此字段存在的已发布 CLI，遇到无法识别的包 `kind` 时仍会含糊拒绝，无法回补。
+
+`delete` 的引用计数守卫会拒绝删除被任一已安装工作流的 `requires.pipelines`、或另一个 pipeline 的 `decompose` stage 的 `childPipeline`（显式声明或默认的 `small-feature`）所引用的 pipeline，并列出每个引用方；`--force` 会绕过该守卫（但不会绕过对内置 pipeline 的禁止删除），并警告哪些引用方将变成悬空引用。
+
+内置 pipeline 中的 stage `skill:` 字段同时存在工作流目录名形式（`rasen-propose`）与 skill 名形式（`rasen:review`）两种写法；`validate` 与包导入两者都接受，且不要求该 skill 在导入时已安装——缺失的 skill 会在执行期才被捕获。
+
 ### `rasen config`
 
 查看和修改全局 OpenSpec 配置。

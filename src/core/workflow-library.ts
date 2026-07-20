@@ -245,7 +245,7 @@ export async function importWorkflow(
     );
   }
   if (stats.isDirectory() && !stats.isSymbolicLink()) {
-    const validation = validateWorkflowDirectory(resolved);
+    const validation = validateWorkflowDirectory(resolved, { projectRoot: options.projectRoot });
     if (!validation.valid || !validation.definition) {
       throw new WorkflowLibraryError(
         'Workflow directory failed validation',
@@ -301,7 +301,7 @@ export function validateWorkflowInput(
   if (fs.existsSync(resolved)) {
     const stats = fs.lstatSync(resolved);
     if (stats.isDirectory() && !stats.isSymbolicLink()) {
-      const result = validateWorkflowDirectory(resolved);
+      const result = validateWorkflowDirectory(resolved, { projectRoot: options.projectRoot });
       return {
         valid: result.valid,
         kind: 'directory',
@@ -315,6 +315,7 @@ export function validateWorkflowInput(
       try {
         const plan = stagePackageWorkflows(packageValue, {
           workflowsDir: path.join(temporary, 'workflows'),
+          projectRoot: options.projectRoot,
         });
         discardWorkflowInstall(plan);
       } finally {
