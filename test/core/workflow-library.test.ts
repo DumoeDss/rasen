@@ -352,4 +352,22 @@ describe('workflow library lifecycle', () => {
       code: 'builtin_delete_forbidden',
     });
   });
+
+  it('protects an expert referenced by a workflow\'s requires.skills, and never lets --force delete it', async () => {
+    // review-cycle declares requires.skills: ['rasen-review'] (builtins.ts) — the
+    // referrer scan (workflow-library.ts) must resolve that hyphen-form skill
+    // identity back to the 'review' expert catalog unit.
+    const usage = scanWorkflowUsage('review');
+    expect(usage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'dependency', consumer: 'review-cycle' }),
+      ])
+    );
+
+    // Built-in experts are non-deletable regardless of usage or --force, same
+    // as any other built-in workflow.
+    await expect(deleteWorkflow('review', { force: true })).rejects.toMatchObject({
+      code: 'builtin_delete_forbidden',
+    });
+  });
 });

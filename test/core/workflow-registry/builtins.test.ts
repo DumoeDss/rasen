@@ -9,6 +9,8 @@ import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
   WorkflowCatalog,
+  getBuiltInCatalogDefinitions,
+  getBuiltInExpertDefinitions,
   getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
 } from '../../../src/core/workflow-registry/index.js';
@@ -18,13 +20,16 @@ const fixturePath = fileURLToPath(
 );
 
 describe('built-in workflow catalog', () => {
-  it('preserves the public built-in order and mappings', () => {
+  it('preserves the public built-in catalog order and mappings (workflows + experts)', () => {
+    // Digests deliberately exclude `kind` (see `digestBuiltIn`/`digestExpert` preimages),
+    // so projecting it here is safe: this is a catalog-shape fixture, not a digest fixture.
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-    const actual = getBuiltInWorkflowDefinitions().map((definition) => ({
+    const actual = getBuiltInCatalogDefinitions().map((definition) => ({
       id: definition.id,
       skillName: definition.skill.template.name,
       dirName: definition.skill.dirName,
       commandId: definition.command?.content.id ?? null,
+      kind: definition.kind,
     }));
 
     expect(actual).toEqual(fixture);
@@ -43,14 +48,28 @@ describe('built-in workflow catalog', () => {
     expect(catalog.getByCommandId('goal-plan')).toBeUndefined();
   });
 
-  it('keeps always-installed expert skills outside the workflow catalog', () => {
-    const catalogSkillNames = new Set(
-      getBuiltInWorkflowDefinitions().map((definition) => definition.skill.template.name)
-    );
-    const experts = getExpertSkillDefinitions();
+  it('folds the 21 experts into the built-in catalog as kind:expert members', () => {
+    const workflowIds = new Set(getBuiltInWorkflowDefinitions().map((definition) => definition.id));
+    const experts = getBuiltInExpertDefinitions();
 
-    expect(experts).not.toHaveLength(0);
-    expect(experts.every((expert) => !catalogSkillNames.has(expert.template.name))).toBe(true);
+    expect(experts).toHaveLength(21);
+    expect(experts.every((expert) => expert.kind === 'expert')).toBe(true);
+    expect(experts.every((expert) => expert.source === 'built-in')).toBe(true);
+    expect(experts.every((expert) => expert.command === undefined)).toBe(true);
+    expect(experts.every((expert) => expert.files.length === 0)).toBe(true);
+    expect(experts.some((expert) => workflowIds.has(expert.id))).toBe(false);
+
+    // qa-only shares qa's sidecar directory but is still its own catalog unit
+    // with its own digest (id/dirName/template differ).
+    const qa = experts.find((expert) => expert.id === 'qa');
+    const qaOnly = experts.find((expert) => expert.id === 'qa-only');
+    expect(qaOnly?.sidecarSourceId).toBe('qa');
+    expect(qa?.digest).not.toBe(qaOnly?.digest);
+
+    // `getExpertSkillDefinitions` stays a catalog-backed filter shape (least
+    // caller churn) — same ids/names, just the older narrower shape.
+    const legacyIds = new Set(getExpertSkillDefinitions().map((definition) => definition.id));
+    expect(legacyIds).toEqual(new Set(experts.map((expert) => expert.id)));
   });
 
   it('fails fast when an indexed identity is duplicated', () => {
@@ -70,18 +89,17 @@ describe('built-in workflow catalog', () => {
     expect(byId.get('apply')).toBe('task');
   });
 
-  it('does not change the digest when kind is added or changed', () => {
-    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-    const actual = getBuiltInWorkflowDefinitions().map((definition) => ({
-      id: definition.id,
-      skillName: definition.skill.template.name,
-      dirName: definition.skill.dirName,
-      commandId: definition.command?.content.id ?? null,
-    }));
+  it('produces well-formed, stable digests for both workflows and experts', () => {
+    const digestPattern = /^sha256:[0-9a-f]{64}$/;
+    for (const definition of getBuiltInCatalogDefinitions()) {
+      expect(definition.digest).toMatch(digestPattern);
+    }
 
-    // kind is catalog metadata and is deliberately excluded from digestBuiltIn's
-    // preimage, so the golden fixture (which does not project kind) stays exact.
-    expect(actual).toEqual(fixture);
+    // Same-process recompute must be deterministic (no timestamps/randomness
+    // leaking into either preimage).
+    const first = getBuiltInCatalogDefinitions().map((definition) => definition.digest);
+    const second = getBuiltInCatalogDefinitions().map((definition) => definition.digest);
+    expect(second).toEqual(first);
   });
 
   it('populates the audited requires edges and keeps them resolvable', () => {

@@ -139,8 +139,12 @@ function workflowChoices(
   disabled?: string;
 }> {
   const catalog = loadWorkflowCatalog();
+  // Experts (kind:'expert') are always-installed catalog members, not
+  // user-selectable profile entries this round (the install flip is 6b) —
+  // exclude them from the picker so they never surface as a checkbox choice.
+  const selectableDefinitions = catalog.definitions.filter((definition) => definition.kind !== 'expert');
   const displayIds = new Map(
-    catalog.definitions.map((definition) => [
+    selectableDefinitions.map((definition) => [
       definition.id,
       definition.command ? getCommandFileId(definition.id) : definition.id,
     ])
@@ -148,12 +152,12 @@ function workflowChoices(
   const columnWidth = Math.max(...[...displayIds.values()].map((workflow) => workflow.length));
   const requiredBy = new Map<string, string>();
   const terminalColumns = resolveTerminalColumns();
-  for (const definition of catalog.definitions) {
+  for (const definition of selectableDefinitions) {
     if (!currentState.workflows.includes(definition.id)) continue;
     for (const dependency of definition.requires.workflows) requiredBy.set(dependency, definition.id);
   }
 
-  return catalog.definitions.map((definition) => {
+  return selectableDefinitions.map((definition) => {
     const workflow = definition.id;
     const metadata = definition.source === 'built-in'
       ? messages.workflows[workflow as keyof typeof messages.workflows]
@@ -210,7 +214,7 @@ export async function promptForNewProfileState(currentState: ProfileState): Prom
     message: messages.workflowPickerMessage,
     instructions: messages.workflowPickerInstructions,
     shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-    pageSize: loadWorkflowCatalog().definitions.length,
+    pageSize: workflowChoices(currentState, messages).length,
     theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
     choices: workflowChoices(currentState, messages),
   });
@@ -314,7 +318,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
         message: messages.workflowPickerMessage,
         instructions: messages.workflowPickerInstructions,
         shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-        pageSize: loadWorkflowCatalog().definitions.length,
+        pageSize: workflowChoices(currentState, messages).length,
         theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
         choices: workflowChoices(currentState, messages),
       });

@@ -31,6 +31,7 @@ export interface WorkflowUiMessages {
   projectConsumerWarning: string;
   taskGroupHeading: string;
   driverGroupHeading: string;
+  expertGroupHeading: string;
   internalGroupHeading: string;
   kindLabel: string;
   error: (code: string, fallback: string) => string;

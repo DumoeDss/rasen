@@ -105,9 +105,10 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           printJson({ workflows, invalid, diagnostics: catalog.diagnostics, status: [] });
           return;
         }
-        const groupOrder: Array<{ kind: 'task' | 'driver' | 'internal'; heading: string }> = [
+        const groupOrder: Array<{ kind: 'task' | 'driver' | 'expert' | 'internal'; heading: string }> = [
           { kind: 'task', heading: messages.taskGroupHeading },
           { kind: 'driver', heading: messages.driverGroupHeading },
+          { kind: 'expert', heading: messages.expertGroupHeading },
           ...(options.all ? [{ kind: 'internal' as const, heading: messages.internalGroupHeading }] : []),
         ];
         for (const group of groupOrder) {

@@ -343,7 +343,10 @@ export class CompletionCommand {
           break;
         }
         case 'workflows': {
+          // Experts (kind:'expert') are always-installed, not a selectable
+          // --workflows value this round — exclude them from completion.
           for (const workflow of loadWorkflowCatalog().definitions) {
+            if (workflow.kind === 'expert') continue;
             console.log(`${workflow.id}\t${labels.workflow}`);
           }
           break;

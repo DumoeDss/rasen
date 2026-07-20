@@ -10,7 +10,6 @@ import {
 } from '../file-state.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
-  getExpertSkillDefinitions,
   getUserWorkflowsDir,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
@@ -87,11 +86,11 @@ function assertInstallableSet(
   options: WorkflowRegistryOptions
 ): { install: WorkflowDefinition[]; reused: string[] } {
   const current = loadWorkflowCatalog(options);
-  const expertDefinitions = getExpertSkillDefinitions();
-  const expertNames = new Set(expertDefinitions.map((definition) => definition.template.name));
+  const expertDefinitions = current.definitions.filter((definition) => definition.kind === 'expert');
+  const expertNames = new Set(expertDefinitions.map((definition) => definition.skill.template.name));
   const expertSkillIdentities = new Map<string, string>();
   for (const expert of expertDefinitions) {
-    for (const name of new Set([expert.template.name, expert.dirName])) {
+    for (const name of new Set([expert.skill.template.name, expert.skill.dirName])) {
       expertSkillIdentities.set(portablePathCollisionKey(name), expert.id);
     }
   }

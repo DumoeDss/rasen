@@ -5,7 +5,6 @@ import { getGlobalConfig } from '../global-config.js';
 import { getProfileWorkflows } from '../profiles.js';
 import {
   filterKnownWorkflowRoots,
-  getExpertSkillDefinitions,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
 } from '../workflow-registry/index.js';
@@ -52,9 +51,9 @@ export interface PipelineExecutionSkillSets {
 /** Resolve the machine's known skills and active-profile skills once per preflight. */
 export function resolvePipelineExecutionSkillSets(): PipelineExecutionSkillSets {
   const catalog = loadWorkflowCatalog();
-  const expertSkillNames = getExpertSkillDefinitions().map(
-    (definition) => definition.template.name
-  );
+  const expertSkillNames = catalog.definitions
+    .filter((definition) => definition.kind === 'expert')
+    .map((definition) => definition.skill.template.name);
   const knownSkillNames = new Set([
     ...catalog.definitions.map((definition) => definition.skill.template.name),
     ...expertSkillNames,

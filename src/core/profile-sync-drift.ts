@@ -119,7 +119,7 @@ export function hasToolProfileOrDeliveryDrift(
   }
 
   // Deselecting workflows in a profile should trigger sync.
-  for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+  for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
     if (desiredWorkflowSet.has(definition.id)) continue;
     const dirName = definition.skill.dirName;
     const skillDir = path.join(skillsDir, dirName);
@@ -143,7 +143,7 @@ export function hasToolProfileOrDeliveryDrift(
       }
     }
 
-    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
       const workflow = definition.id;
       // Deselecting workflows in a profile should trigger sync.
       if (definition.command && !desiredWorkflowSet.has(workflow)) {
@@ -163,7 +163,7 @@ export function hasToolProfileOrDeliveryDrift(
       }
     }
   } else if (!shouldGenerateCommands && adapter) {
-    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
       if (!definition.command) continue;
       for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
@@ -206,7 +206,7 @@ function getInstalledWorkflowsForTool(
   const definitions = loadWorkflowCatalog().definitions;
 
   if (options.includeSkills) {
-    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
       const workflow = definition.id;
       const dirName = definition.skill.dirName;
       const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
@@ -219,7 +219,7 @@ function getInstalledWorkflowsForTool(
   if (options.includeCommands) {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (adapter) {
-      for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+      for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
         if (!definition.command) continue;
         const workflow = definition.id;
         for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {

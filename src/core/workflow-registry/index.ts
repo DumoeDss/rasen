@@ -7,6 +7,7 @@ export {
 export { WorkflowCatalog, WorkflowCatalogError } from './catalog.js';
 export { computeWorkflowDigest, sha256 } from './digest.js';
 export {
+  getBuiltInExpertDefinitions,
   getExpertSkillDefinitions,
   getExpertSkillNames,
   type ExpertSkillDefinition,
@@ -29,6 +30,7 @@ export {
   type PortablePathCheck,
 } from './path-policy.js';
 export {
+  getBuiltInCatalogDefinitions,
   getUserWorkflowsDir,
   loadWorkflowCatalog,
   USER_WORKFLOWS_DIR_NAME,

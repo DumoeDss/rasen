@@ -37,6 +37,7 @@
       "projectConsumerWarning": "警告: 現在のプロジェクト外に検出できないproject-localの利用元が残っている可能性があります。",
       "taskGroupHeading": "タスク",
       "driverGroupHeading": "ドライバー",
+      "expertGroupHeading": "エキスパート",
       "internalGroupHeading": "内部",
       "kindLabel": "種別"
     },

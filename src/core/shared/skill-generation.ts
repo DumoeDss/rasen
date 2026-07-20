@@ -127,24 +127,28 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
   const definitions = workflowFilter
     ? resolveWorkflowSelection(catalog, workflowFilter.filter((workflow) => catalog.has(workflow)))
     : catalog.definitions;
-  const workflowSkills: SkillTemplateEntry[] = definitions.map(
-    (definition) => ({
+  // Experts are catalog members too (kind:'expert'), but they're handled by
+  // the always-install branch below, not by workflowFilter selection — exclude
+  // them here so they aren't counted (and installed) twice.
+  const workflowSkills: SkillTemplateEntry[] = definitions
+    .filter((definition) => definition.kind !== 'expert')
+    .map((definition) => ({
       template: definition.skill.template,
       dirName: definition.skill.dirName,
       workflowId: definition.id,
       escapeFrontmatter: definition.source === 'user',
-    })
-  );
+    }));
 
-  // Expert skills are always installed regardless of workflowFilter
-  const expertSkills: SkillTemplateEntry[] = getExpertSkillDefinitions().map(
-    (definition) => ({
-      template: definition.template,
-      dirName: definition.dirName,
+  // Expert skills are always installed regardless of workflowFilter (behavior
+  // preserved this round — see design.md D3/6b for the planned closure-driven flip).
+  const expertSkills: SkillTemplateEntry[] = catalog.definitions
+    .filter((definition) => definition.kind === 'expert')
+    .map((definition) => ({
+      template: definition.skill.template,
+      dirName: definition.skill.dirName,
       workflowId: definition.id,
       escapeFrontmatter: false,
-    })
-  );
+    }));
 
   return [...workflowSkills, ...expertSkills];
 }

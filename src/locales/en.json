@@ -37,6 +37,7 @@
       "projectConsumerWarning": "Warning: project-local consumers outside the current project may still exist.",
       "taskGroupHeading": "Tasks",
       "driverGroupHeading": "Drivers",
+      "expertGroupHeading": "Experts",
       "internalGroupHeading": "Internal",
       "kindLabel": "Kind"
     },

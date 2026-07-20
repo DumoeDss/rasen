@@ -114,6 +114,22 @@ describe('workflow command', () => {
     expect(linesWithAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(true);
   });
 
+  it('shows the expert group by default (unlike internal), and JSON tags experts with kind:expert', async () => {
+    await runWorkflowCommand(['list']);
+    const lines = log.mock.calls.map((call) => call[0]);
+    expect(lines).toContain('Experts:');
+    expect(lines.some((line) => String(line).startsWith('review\t'))).toBe(true);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+    expect(lastJson().workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'review', source: 'built-in', commandId: null, kind: 'expert' }),
+        expect.objectContaining({ id: 'qa-only', source: 'built-in', commandId: null, kind: 'expert' }),
+      ])
+    );
+  });
+
   it('scans the catalog and usage sources once per list invocation', async () => {
     const ids = [
       'batch-config',

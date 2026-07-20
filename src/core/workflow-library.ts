@@ -30,6 +30,7 @@ import {
   getUserWorkflowsDir,
   isPortableWorkflowId,
   loadWorkflowCatalog,
+  portablePathCollisionKey,
   resolveWorkflowSelection,
   validateWorkflowDirectory,
   type WorkflowCatalog,
@@ -470,6 +471,32 @@ export function createWorkflowUsageContext(
   for (const candidate of catalog.definitions) {
     if (candidate.source !== 'user') continue;
     for (const id of new Set(candidate.requires.workflows)) {
+      addWorkflowUsage(usageByWorkflowId, id, {
+        kind: 'dependency',
+        consumer: candidate.id,
+        path: candidate.sourcePath,
+        hard: true,
+      });
+    }
+  }
+
+  // requires.skills references a skill identity (colon `template.name` or
+  // hyphen `dirName` form — both appear in the wild, e.g. built-in
+  // verify-enhanced-command/auto-command/review-cycle use the hyphen form), not
+  // a workflow ID, so resolve through both identities before recording usage.
+  // Scanned across every source (not just `user`) so a built-in workflow's
+  // requires.skills (e.g. review-cycle -> rasen-review) protects the expert it
+  // depends on.
+  const skillIdentityToWorkflowId = new Map<string, string>();
+  for (const definition of catalog.definitions) {
+    for (const name of new Set([definition.skill.template.name, definition.skill.dirName])) {
+      skillIdentityToWorkflowId.set(portablePathCollisionKey(name), definition.id);
+    }
+  }
+  for (const candidate of catalog.definitions) {
+    for (const skillName of new Set(candidate.requires.skills)) {
+      const id = skillIdentityToWorkflowId.get(portablePathCollisionKey(skillName));
+      if (!id) continue;
       addWorkflowUsage(usageByWorkflowId, id, {
         kind: 'dependency',
         consumer: candidate.id,
