@@ -225,6 +225,56 @@ severity, location, evidence, and required fix. Review is a quality layer, not
 a security boundary or package attestation; manual import remains valid without
 review metadata.
 
+## Trust boundary
+
+A community package — whether `kind: workflow`, `kind: profile`, or a
+pipeline `.rasenpkg` — is a set of executable prompts, not sandboxed data.
+Importing one and later selecting it means an agent will read and act on its
+`SKILL.md`/instruction content, any declared sidecars, and (for a pipeline) its
+`pipeline.yaml` stage sequence. There is no code execution at import time —
+scripts are treated as inert UTF-8 files and never run by the CLI — but the
+content itself is designed to direct an agent's actions once installed and
+selected.
+
+The mitigations available today are:
+
+- **Transactional install** — staged, re-validated, then atomically
+  materialized; a failed import rolls back only the paths it created.
+- **Content digest verification** — SHA-256 over declared files (workflows)
+  or the pipeline's own files, so what you install is provably the bytes that
+  were packaged.
+- **Structural validation** — `rasen workflow validate` / `rasen pipeline
+  validate` check manifest shape, path safety, stage-DAG acyclicity, and
+  (for pipelines) decompose recursion bounds and skill references, before
+  install and again before each execution (`validatePipelineForExecution`).
+- **Author/review experts** — `rasen:workflow-author` and
+  `rasen:workflow-review` (covering both workflows and pipelines) give a
+  structured authoring and independent-review pass before anyone imports.
+
+There is no signature system and no marketplace. Provenance is whatever the
+distributor claims through their distribution channel (a git remote, a PR, a
+shared file) — Rasen does not verify publisher identity.
+
+State the limits honestly, not just the mitigations:
+
+- **A digest verifies byte integrity, not safety.** It proves the installed
+  content matches what was packaged; it says nothing about whether that
+  content is benign.
+- **Validation is structural, not behavioral.** `validate` confirms the
+  manifest/pipeline shape parses and its declared references resolve; it does
+  not simulate what an agent following the instructions would do.
+- **Review is a mitigation, not a guarantee.** A passing
+  `rasen:workflow-review` pass raises the bar against careless or naive
+  authoring; it is not an attestation, a signature, or proof of safety, and a
+  reviewer can miss an adversarially crafted package.
+- **No signatures, no marketplace.** Anyone can author and distribute a
+  package; nothing in the format authenticates who packaged it or vouches for
+  its trustworthiness beyond the digest matching its own bytes.
+
+Treat any package from outside your own team the way you would treat an
+unreviewed pull request that runs with agent-level trust: read it before you
+import it, and import only what you are prepared to have an agent act on.
+
 ## Security and known limits
 
 - SHA-256 identifies content and detects corruption; it does not authenticate a

@@ -58,6 +58,7 @@ export {
   resolvePipelineExecutionSkillSets,
   validatePipelineForExecution,
   type PipelineExecutionSkillSets,
+  type PipelineExecutionOptions,
 } from './execution-validation.js';
 
 // Graph operations
