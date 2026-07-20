@@ -28,7 +28,12 @@ export function BoardPage() {
       .then(([changesRes, runsRes]) => {
         if (cancelled) return;
         setChanges(changesRes.changes);
-        setLoadErrors(changesRes.errors);
+        // `@atelierai/rasen-ui` is published/resolved independently of the
+        // CLI (design.md D1 of `unified-config-ui-pkg`) — a UI build newer
+        // than the serving CLI could be talking to a server that predates
+        // the `errors[]` field (review round 2 N2). Fall back to `[]`
+        // rather than crashing the whole board on `undefined.length`.
+        setLoadErrors(changesRes.errors ?? []);
         setRuns(runsRes.runs);
       })
       .catch((err) => {

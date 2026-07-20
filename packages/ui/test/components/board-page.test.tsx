@@ -120,6 +120,24 @@ describe('BoardPage', () => {
     expect(container.querySelector('.board')).toBeNull(); // no columns to show
   });
 
+  it('tolerates a server response with no errors field, without crashing the board (review round 2 N2)', async () => {
+    // A UI build newer than the serving CLI could talk to a server that
+    // predates the `errors[]` field — `changesRes.errors` would be
+    // `undefined` on the wire, not `[]`.
+    (client.listChanges as any).mockResolvedValue({
+      changes: [changesListFixture.changes[1]!], // ready-change
+      errors: undefined,
+    });
+    (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+    await mount(container);
+
+    expect(container.querySelector('.board-page__error')).toBeNull();
+    expect(container.querySelector('.board-card--broken')).toBeNull();
+    expect(container.querySelector('.board')).not.toBeNull();
+    expect(container.textContent).toContain('ready-change');
+  });
+
   it('shows an error state (not partial/stale content) on a non-auth fetch failure', async () => {
     (client.listChanges as any).mockRejectedValue(new ApiError(500, { error: { code: 'internal_error', message: 'boom' } }));
     (client.listRuns as any).mockResolvedValue({ runs: [] });
