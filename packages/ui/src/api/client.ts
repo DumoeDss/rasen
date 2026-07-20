@@ -15,6 +15,8 @@ import type {
   ListProjectsResponse,
   RunsResponse,
   StatusResponse,
+  SubmitChangeRequest,
+  SubmitChangeResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -137,6 +139,20 @@ export function listChanges(): Promise<ChangesResponse> {
 
 export function listRuns(): Promise<RunsResponse> {
   return request<RunsResponse>('/api/v1/runs');
+}
+
+/**
+ * The platform's first write path (design D1 of
+ * `platform-slice2-task-submission`): submits `{ name, description }` to
+ * the CLI-backed bridge. On failure the thrown `ApiError.message` is the
+ * CLI's own error text, verbatim.
+ */
+export function createChange(body: SubmitChangeRequest): Promise<SubmitChangeResponse> {
+  return request<SubmitChangeResponse>('/api/v1/changes', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 export function deleteKey(

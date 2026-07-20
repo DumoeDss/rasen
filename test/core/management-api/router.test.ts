@@ -35,7 +35,7 @@ interface HttpResult {
 
 function req(
   port: number,
-  options: { method: string; path: string; headers?: Record<string, string> }
+  options: { method: string; path: string; headers?: Record<string, string>; body?: string }
 ): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
     const request = http.request(
@@ -62,7 +62,7 @@ function req(
       }
     );
     request.on('error', reject);
-    request.end();
+    request.end(options.body);
   });
 }
 
@@ -137,9 +137,35 @@ describe('management-api router (integration, via real http server)', () => {
       expect((res.json() as any).error.code).toBe('method_not_allowed');
     });
 
-    it('405s a non-GET on /api/v1/changes', async () => {
+    it('405s a non-GET, non-POST on /api/v1/changes', async () => {
       const h = await startServer();
       const res = await req(h.port, { method: 'DELETE', path: '/api/v1/changes', headers: authed() });
+      expect(res.status).toBe(405);
+    });
+
+    it('405s PUT on /api/v1/changes', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'PUT', path: '/api/v1/changes', headers: authed() });
+      expect(res.status).toBe(405);
+    });
+
+    it('405s PUT and DELETE on /api/v1/status', async () => {
+      const h = await startServer();
+      for (const method of ['PUT', 'DELETE']) {
+        const res = await req(h.port, { method, path: '/api/v1/status', headers: authed() });
+        expect(res.status, method).toBe(405);
+      }
+    });
+
+    it('405s POST on /api/v1/status', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'POST', path: '/api/v1/status', headers: authed() });
+      expect(res.status).toBe(405);
+    });
+
+    it('405s POST on /api/v1/runs', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'POST', path: '/api/v1/runs', headers: authed() });
       expect(res.status).toBe(405);
     });
 
@@ -147,6 +173,101 @@ describe('management-api router (integration, via real http server)', () => {
       const h = await startServer();
       const res = await req(h.port, { method: 'PUT', path: '/api/v1/runs', headers: authed() });
       expect(res.status).toBe(405);
+    });
+  });
+
+  describe('POST /api/v1/changes (change-submission)', () => {
+    it('401s an unauthenticated POST without spawning', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        body: JSON.stringify({ name: 'unauth-change', description: 'desc' }),
+      });
+      expect(res.status).toBe(401);
+      expect(fs.existsSync(path.join(projectRoot, 'rasen', 'changes', 'unauth-change'))).toBe(false);
+    });
+
+    it('creates a real change via the CLI subprocess and responds 201', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'router-submitted-change', description: 'Submitted from a test' }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = res.json() as any;
+      expect(body.change.id).toBe('router-submitted-change');
+
+      const proposalPath = path.join(projectRoot, 'rasen', 'changes', 'router-submitted-change', 'proposal.md');
+      expect(fs.existsSync(proposalPath)).toBe(true);
+
+      // Fresh-read requirement: a follow-up GET /api/v1/changes lists it.
+      const listRes = await req(h.port, { method: 'GET', path: '/api/v1/changes', headers: authed() });
+      const names = (listRes.json() as any).changes.map((c: any) => c.name);
+      expect(names).toContain('router-submitted-change');
+    });
+
+    it('responds 400 for an invalid name without creating anything', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Not Valid', description: 'desc' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('responds 409 no_project when launched outside a project', async () => {
+      const h = await startServer({ launchProjectRoot: null, launchProjectRef: null });
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: authed(),
+        body: JSON.stringify({ name: 'no-project-change', description: 'desc' }),
+      });
+      expect(res.status).toBe(409);
+      expect((res.json() as any).error.code).toBe('no_project');
+    });
+
+    it('carries no Access-Control-Allow-Origin header on a POST response', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: authed(),
+        body: JSON.stringify({ name: 'cors-check-change', description: 'desc' }),
+      });
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    });
+
+    it('still carries the identity headers on a POST response', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: authed(),
+        body: JSON.stringify({ name: 'identity-check-change', description: 'desc' }),
+      });
+      expect(res.headers['x-rasen-daemon']).toBe('0.0.0-test');
+      expect(res.headers['x-rasen-pid']).toBe(String(process.pid));
+    });
+
+    it('does not widen getActiveChangeIds scope: a planning-only dir without proposal.md stays invisible', async () => {
+      const h = await startServer();
+      // A change directory with tasks.md but no proposal.md — the two SHALL
+      // NOT clauses (management-http-api, board-ui) forbid a wider scan even
+      // now that a write endpoint exists.
+      const planningOnlyDir = path.join(projectRoot, 'rasen', 'changes', 'planning-only-no-proposal');
+      fs.mkdirSync(planningOnlyDir, { recursive: true });
+      fs.writeFileSync(path.join(planningOnlyDir, 'tasks.md'), '- [ ] 1.1 A task\n');
+
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/changes', headers: authed() });
+      const names = (res.json() as any).changes.map((c: any) => c.name);
+      expect(names).not.toContain('planning-only-no-proposal');
     });
   });
 

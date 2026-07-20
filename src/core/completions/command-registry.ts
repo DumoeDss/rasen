@@ -263,6 +263,11 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           {
+            name: 'proposal',
+            description: 'Seed proposal.md with this text, making the change active immediately',
+            takesValue: true,
+          },
+          {
             name: 'goal',
             description: 'Optional goal metadata to store with the change',
             takesValue: true,

@@ -4,6 +4,7 @@ import { ApiError } from '../api/client.js';
 import type { ChangeLoadError, ChangeRunEntry, ChangeSummary } from '../api/types.js';
 import { BOARD_COLUMNS, deriveColumn, type BoardColumn as BoardColumnId } from '../board/columns.js';
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
+import { NewChangeDialog } from './NewChangeDialog.js';
 
 /**
  * The board page (design.md D7/D8 of `rasen-ui-slice1-readonly-api`): one
@@ -19,6 +20,8 @@ export function BoardPage() {
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [highlightedName, setHighlightedName] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +56,13 @@ export function BoardPage() {
   }, [refreshNonce]);
 
   function refresh() {
+    setHighlightedName(null);
+    setRefreshNonce((n) => n + 1);
+  }
+
+  function handleChangeCreated(changeId: string) {
+    setDialogOpen(false);
+    setHighlightedName(changeId);
     setRefreshNonce((n) => n + 1);
   }
 
@@ -93,9 +103,17 @@ export function BoardPage() {
     return (
       <div class="board-page__empty">
         <p>No active changes.</p>
-        <button type="button" onClick={refresh}>
-          Refresh
-        </button>
+        <div class="board-page__toolbar">
+          <button type="button" onClick={() => setDialogOpen(true)}>
+            New change
+          </button>
+          <button type="button" onClick={refresh}>
+            Refresh
+          </button>
+        </div>
+        {dialogOpen && (
+          <NewChangeDialog onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
+        )}
       </div>
     );
   }
@@ -104,12 +122,15 @@ export function BoardPage() {
   const grouped = new Map<BoardColumnId, BoardColumnEntry[]>(BOARD_COLUMNS.map((c) => [c.id, []]));
   for (const change of changes) {
     const { column, escalated } = deriveColumn(change, runsByName.get(change.name));
-    grouped.get(column)!.push({ change, escalated });
+    grouped.get(column)!.push({ change, escalated, highlighted: change.name === highlightedName });
   }
 
   return (
     <div class="board-page">
       <div class="board-page__toolbar">
+        <button type="button" onClick={() => setDialogOpen(true)}>
+          New change
+        </button>
         <button type="button" onClick={refresh}>
           Refresh
         </button>
@@ -121,6 +142,9 @@ export function BoardPage() {
             <BoardColumn key={col.id} label={col.label} entries={grouped.get(col.id) ?? []} />
           ))}
         </div>
+      )}
+      {dialogOpen && (
+        <NewChangeDialog onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
       )}
     </div>
   );

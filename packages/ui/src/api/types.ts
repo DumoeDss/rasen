@@ -59,9 +59,14 @@ export interface WireConfigEntry {
   warnings?: string[];
 }
 
-/** Uniform non-2xx error envelope. */
+/**
+ * Uniform non-2xx error envelope. `cliExitCode`/`stderr` are populated only
+ * for the change-submission endpoint's `cli_error` code (design D3 of
+ * `platform-slice2-task-submission`): the CLI's own exit code and captured
+ * stderr, passed through verbatim.
+ */
 export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string };
+  error: { code: string; message: string; fix?: string; cliExitCode?: number; stderr?: string };
 }
 
 // ---- Response envelopes (router.ts handlers) ----
@@ -204,4 +209,21 @@ export type ChangeRunEntry =
 
 export interface RunsResponse {
   runs: ChangeRunEntry[];
+}
+
+// ---- Change submission (platform-slice2-task-submission design D1) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package (`SubmitChangeRequest`/`SubmitChangeResponse`).
+
+export interface SubmitChangeRequest {
+  name: string;
+  description: string;
+}
+
+export interface SubmitChangeResponse {
+  change: {
+    id: string;
+    path: string;
+    schema: string;
+  };
 }

@@ -15,9 +15,29 @@ export interface ProjectRef {
   root: string;
 }
 
-/** Uniform non-2xx error envelope, matching the config API's vocabulary. */
+/**
+ * Uniform non-2xx error envelope, matching the config API's vocabulary.
+ * `cliExitCode`/`stderr` are populated only for `cli_error` (change-submission
+ * design D3): the CLI's own exit code and captured stderr, passed through
+ * verbatim rather than paraphrased.
+ */
 export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string };
+  error: { code: string; message: string; fix?: string; cliExitCode?: number; stderr?: string };
+}
+
+/** `POST /api/v1/changes` request body (change-submission design D1). */
+export interface SubmitChangeRequest {
+  name: string;
+  description: string;
+}
+
+/** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
+export interface SubmitChangeResponse {
+  change: {
+    id: string;
+    path: string;
+    schema: string;
+  };
 }
 
 export interface StatusResponse {

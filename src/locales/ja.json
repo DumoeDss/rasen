@@ -529,6 +529,7 @@
     "Schema override": "スキーマを上書きします",
     "Schema to use": "使用するスキーマです",
     "Scope to one active or archived change": "1件の進行中またはアーカイブ済み変更だけを対象にします",
+    "Seed proposal.md with this text, making the change active immediately": "このテキストでproposal.mdを種付けし、changeを即座にアクティブにします",
     "Set a value (auto-coerce types)": "値を設定します（型を自動変換）",
     "Set as project default schema": "プロジェクトの既定スキーマに設定します",
     "Set fixer runtime: claude or codex": "fixerのruntimeを設定します: claude または codex",

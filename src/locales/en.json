@@ -529,6 +529,7 @@
     "Schema override": "Schema override",
     "Schema to use": "Schema to use",
     "Scope to one active or archived change": "Scope to one active or archived change",
+    "Seed proposal.md with this text, making the change active immediately": "Seed proposal.md with this text, making the change active immediately",
     "Set a value (auto-coerce types)": "Set a value (auto-coerce types)",
     "Set as project default schema": "Set as project default schema",
     "Set fixer runtime: claude or codex": "Set fixer runtime: claude or codex",

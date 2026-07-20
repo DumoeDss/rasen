@@ -29,6 +29,7 @@ import { printJson, statusFromError, validateSchemaExists } from './shared.js';
 
 export interface NewChangeOptions {
   description?: string;
+  proposal?: string;
   goal?: string;
   schema?: string;
   store?: string;
@@ -135,6 +136,21 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       const { promises: fs } = await import('fs');
       const readmePath = path.join(result.changeDir, 'README.md');
       await fs.writeFile(readmePath, `# ${name}\n\n${options.description}\n`, 'utf-8');
+    }
+
+    // If proposal text provided, seed proposal.md so the change is immediately
+    // active (getActiveChangeIds requires proposal.md). Independent of
+    // --description, which only seeds README.md.
+    if (options.proposal) {
+      const { promises: fs } = await import('fs');
+      const proposalPath = path.join(result.changeDir, 'proposal.md');
+      await fs.writeFile(
+        proposalPath,
+        `# ${name}\n\n` +
+          `_Submission seed — created via \`--proposal\`; develop this into a full proposal._\n\n` +
+          `## Why\n\n${options.proposal}\n`,
+        'utf-8'
+      );
     }
 
     const payload: NewChangeOutput = {

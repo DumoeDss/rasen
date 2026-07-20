@@ -289,6 +289,7 @@ describe('command completion registry', () => {
     const newChange = command('new')?.subcommands?.find((entry) => entry.name === 'change');
     expect(newChange?.flags.map((flag) => flag.name)).toEqual([
       'description',
+      'proposal',
       'goal',
       'schema',
       'json',

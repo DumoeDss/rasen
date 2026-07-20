@@ -12,15 +12,68 @@ import type { ConfigApiContext } from '../config-api/router.js';
 import type { ProjectHome } from '../project-home.js';
 import { handleChanges } from './changes.js';
 import { handleRuns } from './runs.js';
-import type { StatusResponse } from './wire-types.js';
+import { createChangeSubmitter } from './submit.js';
+import type { StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
 /** Same shape as the config API's context — one token, one launch project, one server. */
 export type ManagementApiContext = ConfigApiContext;
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+const MAX_BODY_BYTES = 64 * 1024;
 
 /** The three management endpoints, canonical (no trailing slash) form. */
 const MANAGEMENT_PATHS = new Set(['/api/v1/status', '/api/v1/changes', '/api/v1/runs']);
+
+/** Methods admitted per management path (design D1): everywhere GETs, `/changes` also POSTs. */
+function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (method === 'GET') return true;
+  return pathname === '/api/v1/changes' && method === 'POST';
+}
+
+type BodyReadResult =
+  | { ok: true; value: unknown }
+  | { ok: false; status: number; code: string; message: string };
+
+/** Reads and JSON-parses the request body, capped like the config API's own reader. */
+function readJsonBody(req: http.IncomingMessage): Promise<BodyReadResult> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+    const finish = (result: BodyReadResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    req.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      total += chunk.length;
+      if (total > MAX_BODY_BYTES) {
+        finish({
+          ok: false,
+          status: 413,
+          code: 'payload_too_large',
+          message: `Request body exceeds ${MAX_BODY_BYTES} bytes.`,
+        });
+      } else {
+        chunks.push(chunk);
+      }
+    });
+    req.on('end', () => {
+      if (settled) return;
+      const raw = Buffer.concat(chunks).toString('utf-8');
+      try {
+        finish({ ok: true, value: raw.trim() === '' ? undefined : JSON.parse(raw) });
+      } catch {
+        finish({ ok: false, status: 400, code: 'bad_request', message: 'Request body is not valid JSON.' });
+      }
+    });
+    req.on('error', () => {
+      finish({ ok: false, status: 400, code: 'bad_request', message: 'Failed to read the request body.' });
+    });
+  });
+}
 
 /**
  * Normalizes exactly one trailing slash (design D6): `/api/v1/status/` is
@@ -64,6 +117,10 @@ export function createManagementRouter(
   context: ManagementApiContext,
   resolveHome: () => Promise<ProjectHome | null>
 ): (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void> {
+  // One submitter per server instance (design D3's cap-1 concurrency is
+  // per-server state, closed over here rather than module-scoped).
+  const submitChange = createChangeSubmitter(context);
+
   return async (req, res, rawPathname) => {
     const pathname = stripOneTrailingSlash(rawPathname);
 
@@ -72,8 +129,34 @@ export function createManagementRouter(
       return;
     }
 
-    if (req.method !== 'GET') {
+    if (!isMethodAdmitted(pathname, req.method)) {
       sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on ${pathname}.`);
+      return;
+    }
+
+    if (pathname === '/api/v1/changes' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        return;
+      }
+      const request = (body.value ?? {}) as Partial<SubmitChangeRequest>;
+      const result = await submitChange(request.name, request.description);
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
       return;
     }
 
