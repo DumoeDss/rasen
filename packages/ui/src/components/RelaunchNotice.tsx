@@ -4,7 +4,7 @@ export function RelaunchNotice() {
     <main class="relaunch-notice">
       <h1>Session expired</h1>
       <p>
-        This tab's session is no longer valid — most likely the config server was restarted.
+        This tab's session is no longer valid — most likely the management server was restarted.
       </p>
       <p>
         Re-launch the platform by running <code>rasen ui</code> again.

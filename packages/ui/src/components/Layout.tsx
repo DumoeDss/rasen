@@ -9,10 +9,15 @@ import { ProjectSwitcher } from './ProjectSwitcher.js';
  * view indicated; the board is also reachable at `/board` but the nav link
  * points at `/` so the active check treats both routes as "Board".
  */
+/** Exact match or a `/`-bounded prefix — `/config` is active but a future `/configx` would not be. */
+function isActivePath(url: string, base: string): boolean {
+  return url === base || url.startsWith(`${base}/`);
+}
+
 export function Layout({ children }: { children: ComponentChildren }) {
   const { url } = useLocation();
-  const isBoard = url === '/' || url.startsWith('/board');
-  const isConfig = url.startsWith('/config');
+  const isBoard = url === '/' || isActivePath(url, '/board');
+  const isConfig = isActivePath(url, '/config');
 
   return (
     <div class="app-shell">

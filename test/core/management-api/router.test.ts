@@ -270,6 +270,41 @@ describe('management-api router (integration, via real http server)', () => {
 
       expect(resolveProjectHomeSpy).toHaveBeenCalledTimes(2);
     });
+
+    it('picks up a project registered mid-session on the next request, without a restart', async () => {
+      const changeDir = path.join(projectRoot, 'rasen', 'changes', 'mid-session-change');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'proposal.md'), '# Proposal\n');
+
+      const h = await startServer();
+
+      // First request: the project is not yet registered, so the home
+      // resolves to null and there is no workDir to check — the changeDir
+      // has no auto-run.json either, so the run state is absent.
+      const first = await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+      const firstEntry = (first.json() as any).runs.find((r: any) => r.name === 'mid-session-change');
+      expect(firstEntry.autoRun).toEqual({ kind: 'absent' });
+
+      // Register the project mid-session (mints identity + a registry
+      // entry) and write auto-run.json only into the now-resolvable
+      // workDir — the changeDir copy stays absent, so a response can only
+      // report `ok` here by actually resolving (not reusing a stale null)
+      // and reading from the workDir.
+      const home = await resolveProjectHome(projectRoot);
+      const workDir = home!.workDir('mid-session-change');
+      fs.mkdirSync(workDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'full-feature', stages: {} })
+      );
+
+      const second = await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+      const secondEntry = (second.json() as any).runs.find((r: any) => r.name === 'mid-session-change');
+      expect(secondEntry.autoRun.kind).toBe('ok');
+      if (secondEntry.autoRun.kind === 'ok') {
+        expect(secondEntry.autoRun.state.pipeline).toBe('full-feature');
+      }
+    });
   });
 
   describe('freshness (design: no cache, per-request filesystem read)', () => {
