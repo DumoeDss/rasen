@@ -322,6 +322,56 @@ describe('skill-generation', () => {
       expect(content).toContain('Test instructions');
     });
 
+    it('preserves arbitrary metadata and reserves generatedBy for the Rasen version', () => {
+      const baseTemplate = {
+        name: 'metadata-skill',
+        description: 'Metadata preservation',
+        instructions: 'Body',
+      };
+      const content = generateSkillContent({
+        ...baseTemplate,
+        metadata: {
+          zeta: 'last',
+          generatedBy: 'authored-source',
+          author: 'test-author',
+          'release:channel': 'stable',
+          alpha: 'first',
+          version: '2.0',
+        },
+      }, '0.23.0', undefined, true);
+      const reorderedContent = generateSkillContent({
+        ...baseTemplate,
+        metadata: {
+          version: '2.0',
+          alpha: 'first',
+          'release:channel': 'stable',
+          author: 'test-author',
+          generatedBy: 'different-authored-source',
+          zeta: 'last',
+        },
+      }, '0.23.0', undefined, true);
+      const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+
+      expect(parseYaml(frontmatter)).toMatchObject({
+        metadata: {
+          author: 'test-author',
+          version: '2.0',
+          alpha: 'first',
+          'release:channel': 'stable',
+          zeta: 'last',
+          generatedBy: '0.23.0',
+        },
+      });
+      expect(frontmatter.match(/^  generatedBy:/gm)).toHaveLength(1);
+      expect(frontmatter.indexOf('  "alpha":')).toBeLessThan(
+        frontmatter.indexOf('  "release:channel":')
+      );
+      expect(frontmatter.indexOf('  "release:channel":')).toBeLessThan(
+        frontmatter.indexOf('  "zeta":')
+      );
+      expect(reorderedContent).toBe(content);
+    });
+
     it('should use default values for optional fields', () => {
       const template = {
         name: 'minimal-skill',

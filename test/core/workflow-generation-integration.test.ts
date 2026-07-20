@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { InitCommand } from '../../src/core/init.js';
@@ -59,10 +60,20 @@ describe('user workflow generation integration', () => {
     const skillPath = path.join(draft, 'SKILL.md');
     fs.writeFileSync(
       skillPath,
-      fs.readFileSync(skillPath, 'utf8').replace(
-        'description: Describe when to use the team-delivery workflow.',
-        'description: "true"'
-      )
+      fs.readFileSync(skillPath, 'utf8')
+        .replace(
+          'description: Describe when to use the team-delivery workflow.',
+          'description: "true"'
+        )
+        .replace(
+          '  version: "1.0"',
+          [
+            '  version: "1.0"',
+            '  audience: platform-engineering',
+            '  "release:channel": stable',
+            '  generatedBy: authored-source',
+          ].join('\n')
+        )
     );
     fs.mkdirSync(path.join(draft, 'references'), { recursive: true });
     fs.writeFileSync(path.join(draft, 'references', 'checklist.md'), 'checklist v1\n');
@@ -85,7 +96,18 @@ describe('user workflow generation integration', () => {
     const sidecarPath = path.join(skillDir, 'references', 'checklist.md');
     const commandPath = path.join(project, '.claude', 'commands', 'rasen', 'team-delivery.md');
     expect(fs.existsSync(skillPath)).toBe(true);
-    expect(fs.readFileSync(skillPath, 'utf8')).toContain('description: "true"');
+    const initializedSkill = fs.readFileSync(skillPath, 'utf8');
+    const initializedFrontmatter = parseYaml(
+      initializedSkill.slice(4, initializedSkill.indexOf('\n---\n', 4))
+    ) as { metadata: Record<string, string> };
+    expect(initializedSkill).toContain('description: "true"');
+    expect(initializedFrontmatter.metadata).toMatchObject({
+      author: 'user',
+      version: '1.0',
+      audience: 'platform-engineering',
+      'release:channel': 'stable',
+    });
+    expect(initializedFrontmatter.metadata.generatedBy).not.toBe('authored-source');
     expect(fs.readFileSync(sidecarPath, 'utf8')).toBe('checklist v1\n');
     expect(fs.existsSync(commandPath)).toBe(true);
     expect(fs.readFileSync(commandPath, 'utf8')).toContain('description: "true"');
@@ -95,7 +117,12 @@ describe('user workflow generation integration', () => {
     fs.appendFileSync(installedSkill, '\nUpdated source instructions.\n');
     const changedDigest = loadWorkflowCatalog().get('team-delivery')!.digest;
     await new UpdateCommand().execute(project);
-    expect(fs.readFileSync(skillPath, 'utf8')).toContain('Updated source instructions.');
+    const updatedSkill = fs.readFileSync(skillPath, 'utf8');
+    const updatedFrontmatter = parseYaml(
+      updatedSkill.slice(4, updatedSkill.indexOf('\n---\n', 4))
+    ) as { metadata: Record<string, string> };
+    expect(updatedSkill).toContain('Updated source instructions.');
+    expect(updatedFrontmatter.metadata).toEqual(initializedFrontmatter.metadata);
     expect(
       readWorkflowArtifactLedger(project)?.tools.claude.workflows['team-delivery'].digest
     ).toBe(changedDigest);

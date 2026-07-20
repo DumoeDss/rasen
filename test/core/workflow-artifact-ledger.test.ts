@@ -109,6 +109,58 @@ describe('workflow artifact ledger', () => {
     expect(fs.existsSync(getWorkflowArtifactLedgerPath(project))).toBe(false);
   });
 
+  it('retains cleanup evidence while an installed workflow source is missing', async () => {
+    await installWorkflow('team-missing');
+    const artifacts = materialize('team-missing');
+    syncWorkflowArtifactLedger(project, 'claude', ['team-missing'], 'skills');
+    const previous = readWorkflowArtifactLedger(project)!.tools.claude.workflows['team-missing'];
+    const parkedSource = path.join(home, 'parked-workflows', 'team-missing');
+    fs.mkdirSync(path.dirname(parkedSource), { recursive: true });
+    fs.renameSync(previous.source, parkedSource);
+
+    const deferred = syncWorkflowArtifactLedger(project, 'claude', [], 'skills');
+
+    expect(deferred.removedFiles).toBe(0);
+    expect(fs.existsSync(artifacts.skill)).toBe(true);
+    expect(fs.existsSync(artifacts.sidecar)).toBe(true);
+    expect(readWorkflowArtifactLedger(project)!.tools.claude.workflows['team-missing']).toEqual(previous);
+    expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], [], 'skills')).toBe(true);
+
+    fs.renameSync(parkedSource, previous.source);
+    const cleanup = syncWorkflowArtifactLedger(project, 'claude', [], 'skills');
+
+    expect(cleanup.removedFiles).toBe(2);
+    expect(fs.existsSync(artifacts.skill)).toBe(false);
+    expect(fs.existsSync(artifacts.sidecar)).toBe(false);
+    expect(fs.existsSync(getWorkflowArtifactLedgerPath(project))).toBe(false);
+  });
+
+  it('retains cleanup evidence while an installed workflow source is invalid', async () => {
+    await installWorkflow('team-invalid');
+    const artifacts = materialize('team-invalid');
+    syncWorkflowArtifactLedger(project, 'claude', ['team-invalid'], 'skills');
+    const previous = readWorkflowArtifactLedger(project)!.tools.claude.workflows['team-invalid'];
+    const manifestPath = path.join(previous.source, 'workflow.yaml');
+    const manifest = fs.readFileSync(manifestPath, 'utf8');
+    fs.writeFileSync(manifestPath, 'version: [\n');
+
+    const deferred = syncWorkflowArtifactLedger(project, 'claude', [], 'skills');
+
+    expect(deferred.removedFiles).toBe(0);
+    expect(fs.existsSync(artifacts.skill)).toBe(true);
+    expect(fs.existsSync(artifacts.sidecar)).toBe(true);
+    expect(readWorkflowArtifactLedger(project)!.tools.claude.workflows['team-invalid']).toEqual(previous);
+    expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], [], 'skills')).toBe(true);
+
+    fs.writeFileSync(manifestPath, manifest);
+    const cleanup = syncWorkflowArtifactLedger(project, 'claude', [], 'skills');
+
+    expect(cleanup.removedFiles).toBe(2);
+    expect(fs.existsSync(artifacts.skill)).toBe(false);
+    expect(fs.existsSync(artifacts.sidecar)).toBe(false);
+    expect(fs.existsSync(getWorkflowArtifactLedgerPath(project))).toBe(false);
+  });
+
   it('preserves a managed path after the user changes its content', async () => {
     await installWorkflow('team-modified');
     const artifacts = materialize('team-modified');

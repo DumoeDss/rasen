@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { Command } from 'commander';
 
 import {
+  createWorkflowUsageContext,
   deleteWorkflow,
   exportWorkflow,
   importWorkflow,
@@ -73,9 +74,13 @@ export function registerWorkflowLibraryCommand(program: Command): void {
       await runWorkflowAction(options, { workflows: [], diagnostics: [] }, () => {
         const messages = getWorkflowUiMessages();
         const catalog = loadWorkflowCatalog();
+        const usageContext = createWorkflowUsageContext(catalog);
         const workflows = catalog.definitions
           .map((definition) => {
-            const usage = definition.source === 'user' ? scanWorkflowUsage(definition.id) : [];
+            const usage =
+              definition.source === 'user'
+                ? scanWorkflowUsage(definition.id, {}, usageContext)
+                : [];
             return {
               id: definition.id,
               source: definition.source,
@@ -122,7 +127,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
         const catalog = loadWorkflowCatalog();
         const definition = catalog.get(id);
         if (!definition) throw new WorkflowLibraryError(`Workflow "${id}" was not found`, 'workflow_not_found');
-        const usage = scanWorkflowUsage(id);
+        const usageContext = createWorkflowUsageContext(catalog);
+        const usage = scanWorkflowUsage(id, {}, usageContext);
         const payload = { workflow: workflowDefinitionForJson(definition), usage, status: [] };
         if (options.json) {
           printJson(payload);

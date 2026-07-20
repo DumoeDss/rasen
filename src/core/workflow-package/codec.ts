@@ -150,13 +150,24 @@ export function createProfilePackage(
   }) as ProfilePackage;
 }
 
-export function encodePackage(packageValue: RasenPackage): Buffer {
-  validatePackageDomain(packageValue);
-  return canonicalBytes(packageValue);
-}
-
 function failPreflight(code: string, message: string, details?: Record<string, string | number | JsonPreflightIssue[]>): never {
   throw new WorkflowPackageError(message, code, details);
+}
+
+function assertPackageByteLimit(bytes: Uint8Array): void {
+  if (bytes.byteLength > WORKFLOW_PACKAGE_LIMITS.maxPackageBytes) {
+    failPreflight('package_too_large', 'Package exceeds byte limit', {
+      actual: bytes.byteLength,
+      limit: WORKFLOW_PACKAGE_LIMITS.maxPackageBytes,
+    });
+  }
+}
+
+export function encodePackage(packageValue: RasenPackage): Buffer {
+  validatePackageDomain(packageValue);
+  const bytes = canonicalBytes(packageValue);
+  assertPackageByteLimit(bytes);
+  return bytes;
 }
 
 function assertNormalizedArray(
@@ -422,12 +433,7 @@ export function decodePackage(
   bytes: Uint8Array,
   expectedKind?: RasenPackageKind
 ): RasenPackage {
-  if (bytes.byteLength > WORKFLOW_PACKAGE_LIMITS.maxPackageBytes) {
-    failPreflight('package_too_large', 'Package exceeds byte limit', {
-      actual: bytes.byteLength,
-      limit: WORKFLOW_PACKAGE_LIMITS.maxPackageBytes,
-    });
-  }
+  assertPackageByteLimit(bytes);
   if (bytes.byteLength === 0) failPreflight('package_empty', 'Package is empty');
   if (bytes.byteLength >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     failPreflight('package_bom_forbidden', 'Package must not contain a UTF-8 BOM');

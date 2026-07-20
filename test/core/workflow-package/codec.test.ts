@@ -68,14 +68,31 @@ function definition(id: string, dependencies: string[] = []): WorkflowDefinition
   };
 }
 
-function expectPackageError(fn: () => unknown, code: string): void {
+function expectPackageError(fn: () => unknown, code: string): WorkflowPackageError {
   try {
     fn();
-    throw new Error('Expected WorkflowPackageError');
   } catch (error) {
     expect(error).toBeInstanceOf(WorkflowPackageError);
     expect((error as WorkflowPackageError).code).toBe(code);
+    return error as WorkflowPackageError;
   }
+  throw new Error('Expected WorkflowPackageError');
+}
+
+function escapedContentDefinition(id: string): WorkflowDefinition {
+  const base = definition(id);
+  const escapedContent = '\n'.repeat(WORKFLOW_PACKAGE_LIMITS.maxFileBytes);
+  return {
+    ...base,
+    files: [
+      ...base.files,
+      ...Array.from({ length: 8 }, (_, index) => ({
+        path: `escaped-${index}.txt`,
+        content: escapedContent,
+        sha256: 'ignored',
+      })),
+    ],
+  };
 }
 
 function recomputePackageDigests<T extends RasenPackage>(packageValue: T): T {
@@ -133,6 +150,41 @@ describe('.rasenpkg codec', () => {
 
     expect(decodePackage(encodePackage(packageValue), 'profile')).toEqual(packageValue);
     expect(packageValue.profile.workflows).toEqual(['apply', 'team-release']);
+  });
+
+  it.each([
+    {
+      kind: 'workflow',
+      create: () => createWorkflowPackage(
+        ['escaped'],
+        [escapedContentDefinition('escaped')]
+      ),
+    },
+    {
+      kind: 'profile',
+      create: () => createProfilePackage(
+        'escaped',
+        { version: 1, delivery: 'both', workflows: ['escaped'] },
+        ['escaped'],
+        [escapedContentDefinition('escaped')]
+      ),
+    },
+  ])('rejects a canonical $kind package expanded past the byte limit by escaping', ({ create }) => {
+    const packageValue = create();
+    const decodedContentBytes = packageValue.workflows
+      .flatMap((workflow) => workflow.files)
+      .reduce((total, file) => total + Buffer.byteLength(file.content, 'utf8'), 0);
+
+    expect(decodedContentBytes).toBeLessThanOrEqual(
+      WORKFLOW_PACKAGE_LIMITS.maxTotalContentBytes
+    );
+    const error = expectPackageError(() => encodePackage(packageValue), 'package_too_large');
+    expect(error.message).toBe('Package exceeds byte limit');
+    expect(error.details).toEqual({
+      actual: expect.any(Number),
+      limit: WORKFLOW_PACKAGE_LIMITS.maxPackageBytes,
+    });
+    expect(error.details?.actual).toBeGreaterThan(WORKFLOW_PACKAGE_LIMITS.maxPackageBytes);
   });
 
   it('rejects invalid profile package names and duplicate profile workflow IDs', () => {

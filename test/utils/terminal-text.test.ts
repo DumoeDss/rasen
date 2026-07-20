@@ -1,11 +1,58 @@
 import { Writable } from 'node:stream';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   formatPickerDescription,
   resolveTerminalColumns,
 } from '../../src/utils/terminal-text.js';
+
+const NEAR_LIMIT_DESCRIPTION_CODE_UNITS = 1024 * 1024 - 1;
+
+interface SegmentWork {
+  output: string;
+  segmentedInputCodeUnits: number;
+  segmentReads: number;
+}
+
+function formatWithSegmentWork(description: string, terminalColumns: number): SegmentWork {
+  const originalSegment = Intl.Segmenter.prototype.segment;
+  let segmentedInputCodeUnits = 0;
+  let segmentReads = 0;
+  const segmentSpy = vi.spyOn(Intl.Segmenter.prototype, 'segment').mockImplementation(function (
+    this: Intl.Segmenter,
+    input: string
+  ): Intl.Segments {
+    const segments = originalSegment.call(this, input);
+    segmentedInputCodeUnits = Math.max(segmentedInputCodeUnits, input.length);
+
+    return {
+      containing: (codeUnitIndex?: number) => segments.containing(codeUnitIndex),
+      [Symbol.iterator]() {
+        const iterator = segments[Symbol.iterator]();
+        return {
+          next() {
+            segmentReads++;
+            return iterator.next();
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
+        };
+      },
+    } as unknown as Intl.Segments;
+  });
+
+  try {
+    return {
+      output: formatPickerDescription(description, terminalColumns),
+      segmentedInputCodeUnits,
+      segmentReads,
+    };
+  } finally {
+    segmentSpy.mockRestore();
+  }
+}
 
 describe('formatPickerDescription', () => {
   it('limits an overflowing description to two visual lines', () => {
@@ -35,6 +82,45 @@ describe('formatPickerDescription', () => {
   it('hard-wraps long tokens without wasting the preceding line', () => {
     expect(formatPickerDescription('abcdefghijk', 6)).toBe('abcde\nfg...');
     expect(formatPickerDescription('a bcdefg', 6)).toBe('a bcd\nefg');
+  });
+
+  it('segments only a bounded prefix of a near-limit ASCII description', () => {
+    const description = 'alpha '
+      .repeat(Math.ceil(NEAR_LIMIT_DESCRIPTION_CODE_UNITS / 6))
+      .slice(0, NEAR_LIMIT_DESCRIPTION_CODE_UNITS);
+    const work = formatWithSegmentWork(description, 20);
+
+    expect(work.output).toBe('alpha alpha alpha\nalpha alpha alph...');
+    expect(work.segmentedInputCodeUnits).toBeLessThan(16 * 1024);
+    expect(work.segmentReads).toBeLessThan(100);
+  });
+
+  it('bounds lookahead for a near-limit long token', () => {
+    const description =
+      'prefix ' + 'x'.repeat(NEAR_LIMIT_DESCRIPTION_CODE_UNITS - 'prefix '.length);
+    const work = formatWithSegmentWork(description, 20);
+
+    expect(work.output).toBe('prefix xxxxxxxxxxxx\nxxxxxxxxxxxxxxxx...');
+    expect(work.segmentedInputCodeUnits).toBeLessThan(16 * 1024);
+    expect(work.segmentReads).toBeLessThan(100);
+  });
+
+  it('bounds zero-width work and output without splitting a grapheme', () => {
+    const separateGraphemes = formatWithSegmentWork(
+      '\0'.repeat(NEAR_LIMIT_DESCRIPTION_CODE_UNITS),
+      80
+    );
+    const singleGrapheme = formatWithSegmentWork(
+      '\u0301'.repeat(NEAR_LIMIT_DESCRIPTION_CODE_UNITS),
+      80
+    );
+
+    expect(separateGraphemes.output.split('\n')).toHaveLength(2);
+    expect(separateGraphemes.output.endsWith('...')).toBe(true);
+    expect(separateGraphemes.output.length).toBeLessThanOrEqual(4096);
+    expect(separateGraphemes.segmentReads).toBeLessThan(4096);
+    expect(singleGrapheme.output).toBe('...');
+    expect(singleGrapheme.segmentedInputCodeUnits).toBeLessThan(16 * 1024);
   });
 
   it('uses narrow ambiguous-width characters and trims whitespace before the marker', () => {

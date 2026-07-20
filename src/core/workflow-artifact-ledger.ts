@@ -297,7 +297,10 @@ export function syncWorkflowArtifactLedger(
   let removedFiles = 0;
   for (const [workflowId, entry] of Object.entries(previous)) {
     const definition = catalog.get(workflowId);
-    if (!definition || definition.source !== 'user') continue;
+    if (!definition || definition.source !== 'user') {
+      next[workflowId] ??= entry;
+      continue;
+    }
     const keep = new Set((next[workflowId]?.files ?? []).map(artifactKey));
     const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
     if (!tool?.skillsDir) continue;

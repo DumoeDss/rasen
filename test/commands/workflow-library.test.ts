@@ -5,6 +5,22 @@ import * as path from 'node:path';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const fsMock = vi.hoisted(() => ({
+  beforeReaddir: null as ((directoryPath: fs.PathLike) => void) | null,
+}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const readdirSync = ((directoryPath: fs.PathLike, options?: unknown) => {
+    fsMock.beforeReaddir?.(directoryPath);
+    return Reflect.apply(
+      actual.readdirSync,
+      actual,
+      options === undefined ? [directoryPath] : [directoryPath, options]
+    );
+  }) as typeof actual.readdirSync;
+  return { ...actual, default: actual, readdirSync };
+});
+
 import { registerWorkflowLibraryCommand } from '../../src/commands/workflow-library.js';
 
 async function runWorkflowCommand(args: string[]): Promise<void> {
@@ -36,6 +52,7 @@ describe('workflow command', () => {
   });
 
   afterEach(() => {
+    fsMock.beforeReaddir = null;
     process.chdir(originalCwd);
     process.env = originalEnv;
     process.exitCode = originalExitCode;
@@ -61,6 +78,91 @@ describe('workflow command', () => {
         expect.objectContaining({ id: 'apply', source: 'built-in', commandId: 'apply' }),
       ])
     );
+  });
+
+  it('scans the catalog and usage sources once per list invocation', async () => {
+    const ids = [
+      'batch-config',
+      'batch-profile',
+      'batch-global-pipeline',
+      'batch-project-pipeline',
+      'batch-unused',
+    ];
+    for (const id of ids) {
+      const draft = path.join(home, 'drafts', id);
+      await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+      await runWorkflowCommand(['import', draft, '--json']);
+    }
+
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ workflows: ['batch-config'] }));
+    const profilesDir = path.join(home, 'profiles');
+    fs.mkdirSync(profilesDir);
+    fs.writeFileSync(
+      path.join(profilesDir, 'batch.yaml'),
+      'workflows:\n  - batch-profile\n'
+    );
+    const globalPipelinesDir = path.join(home, 'pipelines');
+    fs.mkdirSync(path.join(globalPipelinesDir, 'batch'), { recursive: true });
+    fs.writeFileSync(
+      path.join(globalPipelinesDir, 'batch', 'pipeline.yaml'),
+      'stages:\n  - id: batch\n    skill: rasen-batch-global-pipeline\n'
+    );
+    const project = path.join(home, 'project');
+    const projectPipelinesDir = path.join(project, 'rasen', 'pipelines');
+    fs.mkdirSync(path.join(projectPipelinesDir, 'batch'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectPipelinesDir, 'batch', 'pipeline.yaml'),
+      'stages:\n  - id: batch\n    skill: rasen-batch-project-pipeline\n'
+    );
+    process.chdir(project);
+
+    const reads = new Map<string, number>();
+    const trackedDirectories = [
+      path.join(home, 'workflows'),
+      profilesDir,
+      globalPipelinesDir,
+      projectPipelinesDir,
+    ].map((directory) => path.resolve(directory));
+    fsMock.beforeReaddir = (directoryPath) => {
+      const resolved = path.resolve(String(directoryPath));
+      if (trackedDirectories.includes(resolved)) {
+        reads.set(resolved, (reads.get(resolved) ?? 0) + 1);
+      }
+    };
+    const expectReadCount = (expected: number): void => {
+      for (const directory of trackedDirectories) {
+        expect(reads.get(directory)).toBe(expected);
+      }
+    };
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+
+    expect(lastJson().workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'batch-config', unused: false }),
+        expect.objectContaining({ id: 'batch-profile', unused: false }),
+        expect.objectContaining({ id: 'batch-global-pipeline', unused: false }),
+        expect.objectContaining({ id: 'batch-project-pipeline', unused: false }),
+        expect.objectContaining({ id: 'batch-unused', unused: true }),
+      ])
+    );
+    expectReadCount(1);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--unused', '--json']);
+
+    expect(lastJson().workflows).toEqual([
+      expect.objectContaining({ id: 'batch-unused', source: 'user', unused: true }),
+    ]);
+    expectReadCount(2);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--unused']);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith('batch-unused\tuser\trasen-batch-unused\tunused');
+    expectReadCount(3);
   });
 
   it('runs the draft, validate, import, show, which, export, and delete journey', async () => {

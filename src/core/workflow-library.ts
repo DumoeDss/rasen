@@ -32,6 +32,7 @@ import {
   loadWorkflowCatalog,
   resolveWorkflowSelection,
   validateWorkflowDirectory,
+  type WorkflowCatalog,
   type WorkflowDefinition,
   type WorkflowDiagnostic,
   type WorkflowRegistryOptions,
@@ -54,6 +55,10 @@ export interface WorkflowUsage {
   consumer: string;
   path?: string;
   hard: true;
+}
+
+export interface WorkflowUsageContext {
+  readonly byWorkflowId: ReadonlyMap<string, readonly WorkflowUsage[]>;
 }
 
 export interface WorkflowValidationSummary {
@@ -379,28 +384,47 @@ function workflowIdsFromYamlFile(filePath: string): string[] {
   return [];
 }
 
-function collectPipelineUsage(baseDir: string, skillName: string, kind: string): WorkflowUsage[] {
-  if (!fs.existsSync(baseDir)) return [];
-  const usage: WorkflowUsage[] = [];
+type WorkflowUsageOptions = WorkflowRegistryOptions & { projectRoot?: string };
+
+function addWorkflowUsage(
+  usageByWorkflowId: Map<string, WorkflowUsage[]>,
+  id: string,
+  usage: WorkflowUsage
+): void {
+  usageByWorkflowId.get(id)?.push(usage);
+}
+
+function collectPipelineUsage(
+  baseDir: string,
+  kind: 'user' | 'project',
+  workflowIdBySkillName: ReadonlyMap<string, string>,
+  usageByWorkflowId: Map<string, WorkflowUsage[]>
+): void {
+  if (!fs.existsSync(baseDir)) return;
   for (const entry of fs.readdirSync(baseDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const pipelinePath = path.join(baseDir, entry.name, 'pipeline.yaml');
     if (!fs.existsSync(pipelinePath)) continue;
-    if (workflowIdsFromYamlFile(pipelinePath).includes(skillName)) {
-      usage.push({ kind: 'pipeline', consumer: `${kind}:${entry.name}`, path: pipelinePath, hard: true });
+    for (const skillName of new Set(workflowIdsFromYamlFile(pipelinePath))) {
+      const id = workflowIdBySkillName.get(skillName);
+      if (!id) continue;
+      addWorkflowUsage(usageByWorkflowId, id, {
+        kind: 'pipeline',
+        consumer: `${kind}:${entry.name}`,
+        path: pipelinePath,
+        hard: true,
+      });
     }
   }
-  return usage;
 }
 
-export function scanWorkflowUsage(
-  id: string,
-  options: WorkflowRegistryOptions & { projectRoot?: string } = {}
-): WorkflowUsage[] {
-  const catalog = loadWorkflowCatalog(options);
-  const definition = catalog.get(id);
-  if (!definition) return [];
-  const usage: WorkflowUsage[] = [];
+export function createWorkflowUsageContext(
+  catalog: WorkflowCatalog,
+  options: WorkflowUsageOptions = {}
+): WorkflowUsageContext {
+  const usageByWorkflowId = new Map<string, WorkflowUsage[]>(
+    catalog.definitions.map((definition) => [definition.id, []])
+  );
   const globalDataDir = options.globalDataDir ?? getGlobalDataDir();
   const globalConfigDir = process.env.RASEN_HOME
     ? path.resolve(process.env.RASEN_HOME)
@@ -408,13 +432,17 @@ export function scanWorkflowUsage(
   const globalConfigPath = path.join(globalConfigDir, 'config.json');
   try {
     const config = JSON.parse(fs.readFileSync(globalConfigPath, 'utf8')) as Record<string, unknown>;
-    if (Array.isArray(config.workflows) && config.workflows.includes(id)) {
-      usage.push({
-        kind: 'global-selection',
-        consumer: 'global configuration',
-        path: globalConfigPath,
-        hard: true,
-      });
+    if (Array.isArray(config.workflows)) {
+      for (const id of new Set(
+        config.workflows.filter((value): value is string => typeof value === 'string')
+      )) {
+        addWorkflowUsage(usageByWorkflowId, id, {
+          kind: 'global-selection',
+          consumer: 'global configuration',
+          path: globalConfigPath,
+          hard: true,
+        });
+      }
     }
   } catch {
     // Missing or invalid config is reported by its owning command, not usage scanning.
@@ -425,14 +453,21 @@ export function scanWorkflowUsage(
     for (const entry of fs.readdirSync(profilesDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith('.yaml')) continue;
       const profilePath = path.join(profilesDir, entry.name);
-      if (workflowIdsFromYamlFile(profilePath).includes(id)) {
-        usage.push({ kind: 'profile', consumer: entry.name.replace(/\.yaml$/, ''), path: profilePath, hard: true });
+      for (const id of new Set(workflowIdsFromYamlFile(profilePath))) {
+        addWorkflowUsage(usageByWorkflowId, id, {
+          kind: 'profile',
+          consumer: entry.name.replace(/\.yaml$/, ''),
+          path: profilePath,
+          hard: true,
+        });
       }
     }
   }
+
   for (const candidate of catalog.definitions) {
-    if (candidate.source === 'user' && candidate.requires.workflows.includes(id)) {
-      usage.push({
+    if (candidate.source !== 'user') continue;
+    for (const id of new Set(candidate.requires.workflows)) {
+      addWorkflowUsage(usageByWorkflowId, id, {
         kind: 'dependency',
         consumer: candidate.id,
         path: candidate.sourcePath,
@@ -440,21 +475,51 @@ export function scanWorkflowUsage(
       });
     }
   }
-  usage.push(...collectPipelineUsage(path.join(globalDataDir, 'pipelines'), definition.skill.template.name, 'user'));
+
+  const workflowIdBySkillName = new Map(
+    catalog.definitions.map((definition) => [definition.skill.template.name, definition.id])
+  );
+  collectPipelineUsage(
+    path.join(globalDataDir, 'pipelines'),
+    'user',
+    workflowIdBySkillName,
+    usageByWorkflowId
+  );
   const projectRoot =
     options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-  usage.push(...collectPipelineUsage(path.join(projectRoot, 'rasen', 'pipelines'), definition.skill.template.name, 'project'));
+  collectPipelineUsage(
+    path.join(projectRoot, 'rasen', 'pipelines'),
+    'project',
+    workflowIdBySkillName,
+    usageByWorkflowId
+  );
 
   const ledgerPath = path.join(projectRoot, 'rasen', '.workflow-artifacts.json');
   try {
     const ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) as { workflows?: string[] };
-    if (ledger.workflows?.includes(id)) {
-      usage.push({ kind: 'ledger', consumer: 'current project artifacts', path: ledgerPath, hard: true });
+    for (const id of new Set(ledger.workflows ?? [])) {
+      addWorkflowUsage(usageByWorkflowId, id, {
+        kind: 'ledger',
+        consumer: 'current project artifacts',
+        path: ledgerPath,
+        hard: true,
+      });
     }
   } catch {
     // The generation layer owns ledger diagnostics.
   }
-  return usage;
+
+  return { byWorkflowId: usageByWorkflowId };
+}
+
+export function scanWorkflowUsage(
+  id: string,
+  options: WorkflowUsageOptions = {},
+  context?: WorkflowUsageContext
+): WorkflowUsage[] {
+  const resolvedContext =
+    context ?? createWorkflowUsageContext(loadWorkflowCatalog(options), options);
+  return [...(resolvedContext.byWorkflowId.get(id) ?? [])];
 }
 
 export async function deleteWorkflow(
@@ -468,7 +533,8 @@ export async function deleteWorkflow(
     if (definition.source === 'built-in') {
       throw new WorkflowLibraryError('Built-in workflows cannot be deleted', 'builtin_delete_forbidden');
     }
-    const usage = scanWorkflowUsage(id, options);
+    const usageContext = createWorkflowUsageContext(catalog, options);
+    const usage = scanWorkflowUsage(id, options, usageContext);
     if (usage.length > 0) {
       throw new WorkflowLibraryError(
         `Workflow "${id}" is still referenced`,

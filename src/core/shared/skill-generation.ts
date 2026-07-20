@@ -199,7 +199,7 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
  * Generates skill file content with YAML frontmatter.
  *
  * @param template - The skill template
- * @param generatedByVersion - The Rasen version to embed in the file
+ * @param generatedByVersion - The Rasen version to embed in the file; this overrides any authored metadata.generatedBy value
  * @param transformInstructions - Optional callback to transform the instructions content
  * @param escapeFrontmatter - Quote user-authored frontmatter scalars when true
  */
@@ -218,6 +218,20 @@ export function generateSkillContent(
     : '';
   const scalar = (value: string): string => escapeFrontmatter ? quoteYamlValue(value) : value;
   const version = template.metadata?.version || '1.0';
+  const customMetadataLines = Object.entries(template.metadata ?? {})
+    .filter(([key]) => key !== 'author' && key !== 'version' && key !== 'generatedBy')
+    .sort(([left], [right]) => {
+      if (left < right) return -1;
+      if (left > right) return 1;
+      return 0;
+    })
+    .map(([key, value]) => {
+      const renderedKey = escapeFrontmatter ? quoteYamlValue(key) : key;
+      return `  ${renderedKey}: ${scalar(value)}`;
+    });
+  const customMetadataBlock = customMetadataLines.length > 0
+    ? `${customMetadataLines.join('\n')}\n`
+    : '';
 
   return `---
 name: ${scalar(template.name)}
@@ -227,7 +241,7 @@ compatibility: ${scalar(template.compatibility || 'Requires rasen CLI.')}
 metadata:
   author: ${scalar(template.metadata?.author || 'rasen')}
   version: ${escapeFrontmatter ? quoteYamlValue(version) : `"${version}"`}
-  generatedBy: ${escapeFrontmatter ? quoteYamlValue(generatedByVersion) : `"${generatedByVersion}"`}
+${customMetadataBlock}  generatedBy: ${escapeFrontmatter ? quoteYamlValue(generatedByVersion) : `"${generatedByVersion}"`}
 ---
 
 ${instructions}
