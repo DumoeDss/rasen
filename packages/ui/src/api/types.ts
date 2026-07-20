@@ -227,3 +227,74 @@ export interface SubmitChangeResponse {
     schema: string;
   };
 }
+
+// ---- Sessions (slice3-sessions-ui design D6) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package (the "Sessions" section, settled by `slice3-session-runtime`,
+// child 1 of this portfolio). Same hand-maintained-mirror discipline as the
+// rest of this file: copied field-for-field, kept in sync by hand, pinned
+// by `satisfies <ResponseType>` fixtures.
+
+/** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
+export interface SessionRecordWire {
+  id: string;
+  kind: 'auto' | 'goal';
+  task: string;
+  cwd: string;
+  pid?: number;
+  agentSessionId?: string;
+  state: 'starting' | 'running' | 'exiting' | 'exited';
+  startedAt: number;
+  lastOutputAt: number;
+  endedAt?: number;
+  exitCode?: number | null;
+  exitSignal?: string | null;
+  terminationReason?:
+    | 'exit'
+    | 'signal'
+    | 'overall-timeout'
+    | 'no-output-timeout'
+    | 'killed'
+    | 'server-shutdown'
+    | 'spawn-error';
+  changeName?: string;
+}
+
+/** `POST /api/v1/sessions` request body. */
+export interface LaunchSessionRequest {
+  kind: string;
+  task: string;
+  changeName?: string;
+  timeoutMs?: number;
+  noOutputTimeoutMs?: number;
+}
+
+/**
+ * The read-only run-state join for one session: the change's on-disk
+ * run-state when the session carries a `changeName`, or `absent` when it
+ * does not (an `auto` run that will create its own change is invisible to
+ * this join until the change appears — the board's `/runs` polling covers
+ * it once it exists).
+ */
+export type SessionRunStateJoin = ChangeRunEntry | { kind: 'absent' };
+
+export interface SessionListEntry {
+  session: SessionRecordWire;
+  runState: SessionRunStateJoin;
+}
+
+/** `GET /api/v1/sessions` response. */
+export interface SessionsResponse {
+  sessions: SessionListEntry[];
+}
+
+/** `GET /api/v1/sessions/:id` response: the record plus bounded output tails. */
+export interface SessionDetailResponse {
+  session: SessionRecordWire;
+  tails: { stdout: string; stderr: string };
+}
+
+/** `POST /api/v1/sessions` and `DELETE /api/v1/sessions/:id` response shape. */
+export interface SessionActionResponse {
+  session: SessionRecordWire;
+}

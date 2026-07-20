@@ -14,6 +14,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     ...actual,
     listChanges: vi.fn(),
     listRuns: vi.fn(),
+    listSessions: vi.fn(),
     // createChange is intentionally left as the real implementation (it goes
     // through the single `request()` seam over `fetch`) so the 401 test
     // below exercises the actual markUnauthorized() wiring rather than a
@@ -69,6 +70,10 @@ describe('BoardPage', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    // The live-sessions indicator (design D3.3 of `slice3-sessions-ui`)
+    // fetches on every board mount — default to "no live sessions" unless a
+    // test overrides it.
+    (client.listSessions as any).mockResolvedValue({ sessions: [] });
   });
 
   afterEach(() => {
@@ -342,6 +347,54 @@ describe('BoardPage', () => {
         );
         await flushMicrotasks();
       });
+    });
+  });
+
+  describe('Live sessions indicator (design D3.3 of slice3-sessions-ui)', () => {
+    it('renders nothing prominent when there are zero live sessions', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSessions as any).mockResolvedValue({ sessions: [] });
+
+      await mount(container);
+
+      expect(container.querySelector('[data-testid="board-sessions-indicator"]')).toBeNull();
+    });
+
+    it('shows a live-session count linking to /sessions when sessions are live', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          { session: { id: 'a', kind: 'auto', task: 't', cwd: '/p', state: 'running', startedAt: 1, lastOutputAt: 1 }, runState: { kind: 'absent' } },
+          { session: { id: 'b', kind: 'auto', task: 't', cwd: '/p', state: 'exited', startedAt: 1, lastOutputAt: 1 }, runState: { kind: 'absent' } },
+        ],
+      });
+
+      await mount(container);
+
+      const indicator = container.querySelector('[data-testid="board-sessions-indicator"]');
+      expect(indicator).not.toBeNull();
+      expect(indicator!.textContent).toContain('1 live session');
+      expect(indicator!.getAttribute('href')).toBe('/sessions');
+    });
+
+    it('re-polls only while the last response had a live session', async () => {
+      vi.useFakeTimers();
+      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSessions as any).mockResolvedValue({ sessions: [] });
+
+      await mount(container);
+      expect(client.listSessions).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      // Idle board: no live session in the last response, so no re-poll.
+      expect(client.listSessions).toHaveBeenCalledTimes(1);
+
+      vi.useRealTimers();
     });
   });
 });

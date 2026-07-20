@@ -750,3 +750,328 @@ select:disabled {
   justify-content: flex-end;
   gap: var(--space-3);
 }
+
+/* ═══ 13. Board — live-sessions indicator (slice3-sessions-ui design D1) ═ */
+.board-page__sessions-indicator {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 88%);
+  border-radius: var(--radius-pill);
+  padding: 4px var(--space-3);
+  white-space: nowrap;
+}
+
+.board-page__sessions-indicator:hover {
+  color: var(--accent-hover);
+}
+
+/* ═══ 14. Sessions page (slice3-sessions-ui design D1–D3) ═══════════════ */
+.sessions-page__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.sessions-page__error,
+.sessions-page__empty,
+.sessions-page__loading {
+  color: var(--muted);
+}
+
+.sessions-page__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.session-row {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-ring);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.session-row__header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.session-row__toggle {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--fg);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.session-row__toggle:hover {
+  background: none;
+  color: var(--accent);
+}
+
+.session-row__kind {
+  text-transform: capitalize;
+}
+
+.session-row__task {
+  margin: 0;
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+  flex: 1 1 100%;
+}
+
+.session-row__state {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-2);
+  background: var(--surface-warm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.session-row__state--running {
+  color: var(--success);
+  background: color-mix(in oklab, var(--success), transparent 86%);
+}
+
+.session-row__state--starting {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn), transparent 82%);
+}
+
+.session-row__state--exiting {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 86%);
+}
+
+.session-row__state--exited {
+  color: var(--muted);
+  background: var(--surface-warm);
+}
+
+.session-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--meta);
+}
+
+.session-row__change {
+  font-family: var(--font-mono);
+}
+
+.session-row__reason {
+  font-weight: 600;
+}
+
+.session-row__reason--killed,
+.session-row__reason--overall-timeout,
+.session-row__reason--no-output-timeout,
+.session-row__reason--spawn-error {
+  color: var(--danger);
+}
+
+.session-row__reason--exit {
+  color: var(--success);
+}
+
+.session-row__reason--signal,
+.session-row__reason--server-shutdown {
+  color: var(--warn);
+}
+
+.session-row__run-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--meta);
+  font-style: italic;
+}
+
+.session-row__run-note--error {
+  color: var(--danger);
+  font-style: normal;
+}
+
+.session-row__stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+}
+
+.session-row__stage {
+  color: var(--muted);
+}
+
+.session-row__stage--done {
+  color: var(--success);
+}
+
+.session-row__stage--in_progress {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.session-row__stage--escalated {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.session-row__kill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.session-row__kill-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--danger);
+  flex-wrap: wrap;
+}
+
+.session-row__kill-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.session-row__detail {
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.session-row__tail {
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-ring);
+  padding: var(--space-3);
+  font-size: var(--text-xs);
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.session-row__tail--stderr {
+  color: var(--danger);
+}
+
+.session-row__tail-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* ═══ 15. Launch session dialog (slice3-sessions-ui design D4) ══════════ */
+.launch-session-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  background: color-mix(in oklab, var(--fg), transparent 55%);
+}
+
+.launch-session-dialog {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-ring), var(--elev-raised);
+  padding: var(--space-6);
+  width: min(480px, calc(100vw - var(--space-8)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.launch-session-dialog__title {
+  font-size: var(--text-lg);
+}
+
+.launch-session-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.launch-session-dialog__field input,
+.launch-session-dialog__field textarea {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
+  resize: vertical;
+}
+
+.launch-session-dialog__kind {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.launch-session-dialog__kind legend {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  padding: 0;
+}
+
+.launch-session-dialog__kind label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fg-2);
+  text-transform: capitalize;
+}
+
+.launch-session-dialog__hint {
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.launch-session-dialog__error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.launch-session-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

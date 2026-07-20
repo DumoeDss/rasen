@@ -10,10 +10,14 @@ import type {
   ConfigScope,
   GetConfigKeyResponse,
   HealthResponse,
+  LaunchSessionRequest,
   ListConfigResponse,
   ListPipelinesResponse,
   ListProjectsResponse,
   RunsResponse,
+  SessionActionResponse,
+  SessionDetailResponse,
+  SessionsResponse,
   StatusResponse,
   SubmitChangeRequest,
   SubmitChangeResponse,
@@ -163,6 +167,33 @@ export function deleteKey(
   const query = new URLSearchParams({ scope });
   if (project) query.set('project', project);
   return request<WriteConfigKeyResponse>(`/api/v1/config/${encodeURIComponent(key)}?${query}`, {
+    method: 'DELETE',
+    json: true,
+  });
+}
+
+// ---- Sessions (slice3-sessions-ui design D6) ----
+// All four calls route through the single `request()` seam, same as every
+// other call in this file — auth headers and ApiError narrowing untouched.
+
+export function listSessions(): Promise<SessionsResponse> {
+  return request<SessionsResponse>('/api/v1/sessions');
+}
+
+export function getSession(id: string): Promise<SessionDetailResponse> {
+  return request<SessionDetailResponse>(`/api/v1/sessions/${encodeURIComponent(id)}`);
+}
+
+export function launchSession(body: LaunchSessionRequest): Promise<SessionActionResponse> {
+  return request<SessionActionResponse>('/api/v1/sessions', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+export function killSession(id: string): Promise<SessionActionResponse> {
+  return request<SessionActionResponse>(`/api/v1/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     json: true,
   });
