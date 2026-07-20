@@ -87,3 +87,86 @@ export interface GetConfigKeyResponse {
 
 /** PUT and DELETE both respond with the re-resolved entry. */
 export type WriteConfigKeyResponse = GetConfigKeyResponse;
+
+// ---- Management API mirror (rasen-ui-slice1-readonly-api design.md D7) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package. Same hand-maintained-mirror discipline as the config types above:
+// kept in sync by hand, pinned by `satisfies <ResponseType>` fixtures.
+// `WireRunState`/`WirePortfolioState` are deliberately a narrow subset of the
+// CLI's full (zod, `passthrough()`) run-state shapes — only the fields the
+// board actually renders (pipeline name, stage statuses for the escalation
+// badge, portfolio children) are mirrored here.
+
+export interface StatusResponse {
+  version: string;
+  pid: number;
+  project: ProjectRef | null;
+}
+
+export interface ChangeArtifactStatus {
+  id: string;
+  status: 'done' | 'ready' | 'blocked';
+}
+
+export interface ChangeTaskProgress {
+  total: number;
+  completed: number;
+}
+
+export interface ChangeSummary {
+  name: string;
+  schemaName: string;
+  artifacts: ChangeArtifactStatus[];
+  applyReady: boolean;
+  isComplete: boolean;
+  taskProgress: ChangeTaskProgress;
+  hasRunFiles: boolean;
+}
+
+export interface ChangesResponse {
+  changes: ChangeSummary[];
+}
+
+export type StageStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'escalated';
+
+export interface WireRunStage {
+  status: StageStatus;
+}
+
+export interface WireRunState {
+  pipeline: string;
+  stages?: Record<string, WireRunStage>;
+}
+
+export interface WirePortfolioChild {
+  id: string;
+  status: StageStatus;
+}
+
+export interface WirePortfolioState {
+  parent: string;
+  children: WirePortfolioChild[];
+}
+
+export interface GoalRunRaw {
+  raw: unknown;
+}
+
+export type RunFileResult<T> =
+  | { kind: 'ok'; state: T }
+  | { kind: 'invalid'; reason: string }
+  | { kind: 'absent' };
+
+export type ChangeRunEntry =
+  | {
+      name: string;
+      kind: 'ok';
+      autoRun: RunFileResult<WireRunState>;
+      portfolio: RunFileResult<WirePortfolioState>;
+      goalRun: RunFileResult<GoalRunRaw>;
+    }
+  | { name: string; kind: 'error'; message: string };
+
+export interface RunsResponse {
+  runs: ChangeRunEntry[];
+}

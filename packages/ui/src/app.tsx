@@ -3,6 +3,7 @@ import { LocationProvider, Router, Route } from 'preact-iso';
 import { hasToken, isUnauthorized, onUnauthorized } from './api/token.js';
 import { Layout } from './components/Layout.js';
 import { ConfigPage } from './components/ConfigPage.js';
+import { BoardPage } from './components/BoardPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 
 /**
@@ -26,6 +27,7 @@ export function App() {
         <Router>
           <Route path="/" component={ConfigPage} />
           <Route path="/config" component={ConfigPage} />
+          <Route path="/board" component={BoardPage} />
           <Route default component={ConfigPage} />
         </Router>
       </Layout>

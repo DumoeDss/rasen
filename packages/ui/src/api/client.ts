@@ -6,11 +6,14 @@
 import { getToken, markUnauthorized } from './token.js';
 import type {
   ApiErrorBody,
+  ChangesResponse,
   ConfigScope,
   GetConfigKeyResponse,
   HealthResponse,
   ListConfigResponse,
   ListProjectsResponse,
+  RunsResponse,
+  StatusResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -114,6 +117,20 @@ export function putKey(
       body: JSON.stringify(body),
     }
   );
+}
+
+// ---- Management API (board) ----
+
+export function getStatus(): Promise<StatusResponse> {
+  return request<StatusResponse>('/api/v1/status');
+}
+
+export function listChanges(): Promise<ChangesResponse> {
+  return request<ChangesResponse>('/api/v1/changes');
+}
+
+export function listRuns(): Promise<RunsResponse> {
+  return request<RunsResponse>('/api/v1/runs');
 }
 
 export function deleteKey(
