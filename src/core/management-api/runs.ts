@@ -68,26 +68,35 @@ function readGoalRunDetailed(changeDir: string, workDir: string | null): RunFile
  * Reports run state for every active change in `root`. Never throws for a
  * single change's failure — that change degrades to a `kind: 'error'` entry
  * so the rest of the listing still answers.
+ *
+ * @param home Pre-resolved project home (design D5/m4). Pass `undefined` to
+ * have this handler resolve it itself (read-only, `ensure: false`) — the
+ * server-driven path always passes its cached resolution instead, so a
+ * board load resolves the home once, not once per endpoint.
  */
-export async function handleRuns(root: string): Promise<RunsResponse> {
+export async function handleRuns(root: string, home?: ProjectHome | null): Promise<RunsResponse> {
   const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
   const changeIds = await getActiveChangeIds(root);
 
-  // Resolved once for the whole project — `ensure: false` is documented
-  // non-mutating (design D5): a project with no identity/registry entry
-  // yet simply resolves to null, and every change falls back to its
-  // changeDir's legacy location.
-  let home: ProjectHome | null = null;
-  try {
-    home = await resolveProjectHome(root, { ensure: false });
-  } catch {
-    home = null;
+  let resolvedHome: ProjectHome | null;
+  if (home !== undefined) {
+    resolvedHome = home;
+  } else {
+    // Resolved once for the whole project — `ensure: false` is documented
+    // non-mutating (design D5): a project with no identity/registry entry
+    // yet simply resolves to null, and every change falls back to its
+    // changeDir's legacy location.
+    try {
+      resolvedHome = await resolveProjectHome(root, { ensure: false });
+    } catch {
+      resolvedHome = null;
+    }
   }
 
   const runs: ChangeRunEntry[] = changeIds.map((name) => {
     try {
       const changeDir = path.join(changesDir, name);
-      const workDir = home ? home.workDir(name) : null;
+      const workDir = resolvedHome ? resolvedHome.workDir(name) : null;
 
       const autoLocation = resolveRunStateLocation(changeDir, workDir);
       const autoRun: RunFileResult<RunState> = autoLocation

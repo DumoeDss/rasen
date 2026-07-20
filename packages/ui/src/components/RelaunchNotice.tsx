@@ -7,7 +7,7 @@ export function RelaunchNotice() {
         This tab's session is no longer valid — most likely the config server was restarted.
       </p>
       <p>
-        Re-launch the editor by running <code>rasen config ui</code> again.
+        Re-launch the platform by running <code>rasen ui</code> again.
       </p>
     </main>
   );

@@ -1,16 +1,22 @@
 /**
- * `http.createServer` lifecycle for the management server (design.md D2/D3
- * of `rasen-ui-slice1-readonly-api`) — a straight copy of config-api's
+ * `http.createServer` lifecycle for the management server. Also the seam
+ * design D2 of `rasen-ui-unify-management-surface` names as the composition
+ * point for the two route groups: the management group (`createManagementRouter`)
+ * and the config group (`createRouter` from `config-api/router.js`, unmodified) —
+ * dispatch by path (`isManagementPath`) lives here now, not privately inside
+ * the management router. Otherwise a straight copy of config-api's
  * loopback-bind / socket-tracking / 2s-shutdown-guard pattern (that file is
  * import-only, never modified), plus the `x-rasen-daemon` / `x-rasen-pid`
- * identity-header stamp (design D3) applied to every response BEFORE
- * routing, so it covers management-handled, delegated, static, and 401
- * responses alike.
+ * identity-header stamp (design D3 of the prior batch) applied to every
+ * response BEFORE routing, so it covers management-handled, delegated,
+ * static, and 401 responses alike.
  */
 import * as http from 'node:http';
 import type { Socket } from 'node:net';
 
-import { createRouter, type ManagementApiContext } from './router.js';
+import { createRouter as createConfigRouter } from '../config-api/router.js';
+import { resolveProjectHome, type ProjectHome } from '../project-home.js';
+import { createManagementRouter, isManagementPath, type ManagementApiContext } from './router.js';
 
 export interface StartManagementServerOptions {
   context: ManagementApiContext;
@@ -33,14 +39,49 @@ const LOOPBACK_HOST = '127.0.0.1';
 export function startManagementServer(
   options: StartManagementServerOptions
 ): Promise<ManagementServerHandle> {
-  const handler = createRouter(options.context);
-  const daemonHeader = options.context.version;
+  const context = options.context;
+
+  // Server-lifetime project-home cache (design D5, m4): resolved lazily on
+  // first need, cached once found, re-probed on every call while still null
+  // — a registry-mapping lookup (root -> machine-home dir) that cannot
+  // un-register mid-session in any supported flow, so caching a hit never
+  // goes stale; the null case covers the one real transition (unregistered
+  // -> registered mid-session).
+  let cachedHome: ProjectHome | null = null;
+  const resolveHome = async (): Promise<ProjectHome | null> => {
+    if (cachedHome) return cachedHome;
+    if (!context.launchProjectRoot) return null;
+    try {
+      const home = await resolveProjectHome(context.launchProjectRoot, { ensure: false });
+      if (home) cachedHome = home;
+      return home;
+    } catch {
+      return null;
+    }
+  };
+
+  // Two route groups (design D2): the config group is the existing,
+  // unmodified `config-api/router.ts` delegate; the management group
+  // handles only its own three paths. The server owns the dispatch.
+  const configHandler = createConfigRouter(context);
+  const managementHandler = createManagementRouter(context, resolveHome);
+
+  const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+    const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    if (isManagementPath(pathname)) {
+      await managementHandler(req, res, pathname);
+      return;
+    }
+    await configHandler(req, res);
+  };
+
+  const daemonHeader = context.version;
   const pidHeader = String(process.pid);
 
   const server = http.createServer((req, res) => {
-    // Unconditional (design D3): set before any routing so even a 401 or a
-    // static-asset response carries both headers — a prober hitting any
-    // path can classify what answered.
+    // Unconditional (design D3 of the prior batch): set before any routing
+    // so even a 401 or a static-asset response carries both headers — a
+    // prober hitting any path can classify what answered.
     res.setHeader('x-rasen-daemon', daemonHeader);
     res.setHeader('x-rasen-pid', pidHeader);
 

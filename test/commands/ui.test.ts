@@ -74,24 +74,25 @@ describe('ui command', () => {
     vi.resetModules();
   });
 
-  it('is hidden from help output', async () => {
+  it('is listed in --help as the management platform entry point (management-ui-command spec)', async () => {
     const { registerUiCommand } = await import('../../src/commands/ui.js');
     const program = new Command();
     registerUiCommand(program);
     const uiCommand = program.commands.find((c) => c.name() === 'ui');
     expect(uiCommand).toBeDefined();
-    expect(uiCommand!.helpInformation()).toBeDefined(); // sanity: command itself is reachable
-    expect(program.helpInformation()).not.toContain(' ui ');
-    // Commander's own hidden flag, the mechanism `--help` respects.
-    expect((uiCommand as unknown as { _hidden?: boolean })._hidden).toBe(true);
+    // Commander's own hidden flag, the mechanism `--help` respects — must
+    // be unset now that `rasen ui` is public.
+    expect((uiCommand as unknown as { _hidden?: boolean })._hidden).toBeFalsy();
+    expect(program.helpInformation()).toContain(' ui ');
+    expect(uiCommand!.description()).toMatch(/management platform/i);
   });
 
-  it('starts the management server, prints the /board URL with the token fragment, and opens the browser by default', async () => {
+  it('starts the management server, prints the root URL with the token fragment, and opens the browser by default', async () => {
     await runUiCommand([]);
 
     expect(startManagementServerMock).toHaveBeenCalledTimes(1);
     const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/board#token=[0-9a-f]{64}$/m);
+    expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/#token=[0-9a-f]{64}$/m);
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
