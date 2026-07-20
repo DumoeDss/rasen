@@ -93,24 +93,31 @@ export async function handleRuns(root: string, home?: ProjectHome | null): Promi
     }
   }
 
-  const runs: ChangeRunEntry[] = changeIds.map((name) => {
-    try {
-      const changeDir = path.join(changesDir, name);
-      const workDir = resolvedHome ? resolvedHome.workDir(name) : null;
-
-      const autoLocation = resolveRunStateLocation(changeDir, workDir);
-      const autoRun: RunFileResult<RunState> = autoLocation
-        ? readRunStateDetailed(autoLocation.dir)
-        : { kind: 'absent' };
-
-      const portfolio = readPortfolioDetailed(changeDir, workDir);
-      const goalRun = readGoalRunDetailed(changeDir, workDir);
-
-      return { name, kind: 'ok', autoRun, portfolio, goalRun };
-    } catch (err) {
-      return { name, kind: 'error', message: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  const runs: ChangeRunEntry[] = changeIds.map((name) =>
+    buildChangeRunEntry(name, path.join(changesDir, name), resolvedHome ? resolvedHome.workDir(name) : null)
+  );
 
   return { runs };
+}
+
+/**
+ * Builds one change's run-state entry (the same per-change read `handleRuns`
+ * performs), exposed standalone so the sessions listing (session-supervision
+ * design D4) can join a single targeted change's run-state without
+ * re-enumerating every active change via `getActiveChangeIds`.
+ */
+export function buildChangeRunEntry(name: string, changeDir: string, workDir: string | null): ChangeRunEntry {
+  try {
+    const autoLocation = resolveRunStateLocation(changeDir, workDir);
+    const autoRun: RunFileResult<RunState> = autoLocation
+      ? readRunStateDetailed(autoLocation.dir)
+      : { kind: 'absent' };
+
+    const portfolio = readPortfolioDetailed(changeDir, workDir);
+    const goalRun = readGoalRunDetailed(changeDir, workDir);
+
+    return { name, kind: 'ok', autoRun, portfolio, goalRun };
+  } catch (err) {
+    return { name, kind: 'error', message: err instanceof Error ? err.message : String(err) };
+  }
 }

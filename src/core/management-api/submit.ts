@@ -36,7 +36,7 @@ const DEFAULT_KILL_GRACE_MS = 2_000;
  * `--proposal=<text>` argv token either way, so the injection posture is
  * unaffected (review M2).
  */
-const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0b-\x1f\x7f]/;
+export const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0b-\x1f\x7f]/;
 
 export type SubmitResult =
   | { ok: true; status: 201; response: SubmitChangeResponse }

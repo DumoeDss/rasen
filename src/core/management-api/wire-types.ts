@@ -118,3 +118,72 @@ export type ChangeRunEntry =
 export interface RunsResponse {
   runs: ChangeRunEntry[];
 }
+
+// -----------------------------------------------------------------------
+// Sessions (session-supervision design D2/D4) — sibling-stable wire shapes
+// for the sessions UI child.
+// -----------------------------------------------------------------------
+
+/** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
+export interface SessionRecordWire {
+  id: string;
+  kind: 'auto' | 'goal';
+  task: string;
+  cwd: string;
+  pid?: number;
+  agentSessionId?: string;
+  state: 'starting' | 'running' | 'exiting' | 'exited';
+  startedAt: number;
+  lastOutputAt: number;
+  endedAt?: number;
+  exitCode?: number | null;
+  exitSignal?: string | null;
+  terminationReason?:
+    | 'exit'
+    | 'signal'
+    | 'overall-timeout'
+    | 'no-output-timeout'
+    | 'killed'
+    | 'server-shutdown'
+    | 'spawn-error';
+  changeName?: string;
+}
+
+/** `POST /api/v1/sessions` request body (design D1/D4). */
+export interface LaunchSessionRequest {
+  kind: string;
+  task: string;
+  changeName?: string;
+  timeoutMs?: number;
+  noOutputTimeoutMs?: number;
+}
+
+/**
+ * The read-only run-state join for one session (design D4): the change's
+ * on-disk run-state when the session carries a `changeName`, or `absent`
+ * when it does not (an `auto` run that will create its own change is
+ * invisible to this join until the change appears — the board's existing
+ * `/runs` polling covers it once it exists).
+ */
+export type SessionRunStateJoin = ChangeRunEntry | { kind: 'absent' };
+
+export interface SessionListEntry {
+  session: SessionRecordWire;
+  runState: SessionRunStateJoin;
+}
+
+/** `GET /api/v1/sessions` response. */
+export interface SessionsResponse {
+  sessions: SessionListEntry[];
+}
+
+/** `GET /api/v1/sessions/:id` response: the record plus bounded output tails. */
+export interface SessionDetailResponse {
+  session: SessionRecordWire;
+  tails: { stdout: string; stderr: string };
+}
+
+/** `POST /api/v1/sessions` and `DELETE /api/v1/sessions/:id` response shape: the record, wrapped like every other sessions response. */
+export interface SessionActionResponse {
+  session: SessionRecordWire;
+}

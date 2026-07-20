@@ -12,20 +12,61 @@ import type { ConfigApiContext } from '../config-api/router.js';
 import type { ProjectHome } from '../project-home.js';
 import { handleChanges } from './changes.js';
 import { handleRuns } from './runs.js';
+import {
+  handleGetSession,
+  handleKillSession,
+  handleLaunchSession,
+  handleListSessions,
+} from './sessions.js';
+import { createSessionRegistry } from './session-registry.js';
+import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
 import { createChangeSubmitter } from './submit.js';
-import type { StatusResponse, SubmitChangeRequest } from './wire-types.js';
+import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
 /** Same shape as the config API's context — one token, one launch project, one server. */
 export type ManagementApiContext = ConfigApiContext;
 
+/** Test/daemon-only overrides for the sessions supervisor this router constructs (design D1's injectable resolver). */
+export interface ManagementRouterOptions {
+  resolveAgentCliOverride?: () => Promise<string | null>;
+  maxConcurrentSessions?: number;
+  sessionKillGraceMs?: number;
+}
+
+export interface ManagementRouterHandle {
+  handle: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void>;
+  supervisor: SessionSupervisor;
+}
+
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 const MAX_BODY_BYTES = 64 * 1024;
 
-/** The three management endpoints, canonical (no trailing slash) form. */
-const MANAGEMENT_PATHS = new Set(['/api/v1/status', '/api/v1/changes', '/api/v1/runs']);
+/** The management endpoints with no path parameter, canonical (no trailing slash) form. */
+const MANAGEMENT_PATHS = new Set(['/api/v1/status', '/api/v1/changes', '/api/v1/runs', '/api/v1/sessions']);
 
-/** Methods admitted per management path (design D1): everywhere GETs, `/changes` also POSTs. */
+const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
+
+/**
+ * Matches `/api/v1/sessions/<id>` exactly one segment deep (design D4/D6:
+ * "SHALL match exactly one additional path segment"); a deeper suffix
+ * (`/api/v1/sessions/<id>/extra`) returns null and falls through to the
+ * rest of the server's routing, same as any other unmatched path.
+ */
+function matchSessionIdPath(pathname: string): string | null {
+  if (!pathname.startsWith(SESSION_ID_PATH_PREFIX)) return null;
+  const rest = pathname.slice(SESSION_ID_PATH_PREFIX.length);
+  if (rest.length === 0 || rest.includes('/')) return null;
+  return rest;
+}
+
+/** Methods admitted per management path (design D1/D4): everywhere GETs, `/changes` and `/sessions` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (matchSessionIdPath(pathname) !== null) {
+    return method === 'GET' || method === 'DELETE';
+  }
+  if (pathname === '/api/v1/sessions') {
+    return method === 'GET' || method === 'POST';
+  }
   if (method === 'GET') return true;
   return pathname === '/api/v1/changes' && method === 'POST';
 }
@@ -87,7 +128,8 @@ function stripOneTrailingSlash(pathname: string): string {
 
 /** Whether `pathname` (raw, as received) addresses a management endpoint (t1: tolerant of one trailing slash). */
 export function isManagementPath(pathname: string): boolean {
-  return MANAGEMENT_PATHS.has(stripOneTrailingSlash(pathname));
+  const stripped = stripOneTrailingSlash(pathname);
+  return MANAGEMENT_PATHS.has(stripped) || matchSessionIdPath(stripped) !== null;
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -115,13 +157,25 @@ function isAuthorized(req: http.IncomingMessage, token: string): boolean {
  */
 export function createManagementRouter(
   context: ManagementApiContext,
-  resolveHome: () => Promise<ProjectHome | null>
-): (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void> {
+  resolveHome: () => Promise<ProjectHome | null>,
+  options: ManagementRouterOptions = {}
+): ManagementRouterHandle {
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
 
-  return async (req, res, rawPathname) => {
+  // One supervisor per server instance (design D4/task 2.4): its own
+  // registry, its own concurrency cap, its own agent-CLI resolution cache.
+  // `server.ts` reaches into the returned handle to call `shutdownAll` on
+  // clean exit (design D6).
+  const supervisor = createSessionSupervisor({
+    registry: createSessionRegistry(),
+    resolveAgentCli: options.resolveAgentCliOverride ?? createAgentCliResolver(),
+    maxConcurrent: options.maxConcurrentSessions,
+    killGraceMs: options.sessionKillGraceMs,
+  });
+
+  const handle = async (req: http.IncomingMessage, res: http.ServerResponse, rawPathname: string): Promise<void> => {
     const pathname = stripOneTrailingSlash(rawPathname);
 
     if (!isAuthorized(req, context.token)) {
@@ -187,15 +241,65 @@ export function createManagementRouter(
       return;
     }
 
-    // pathname === '/api/v1/runs': no launch project means no changes could
-    // exist to report runs for — an empty listing, not an error (unlike
-    // `/changes`, which requires a resolvable project to enumerate at all).
-    if (!context.launchProjectRoot) {
-      sendJson(res, 200, { runs: [] });
+    if (pathname === '/api/v1/sessions' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const request = (body.value ?? {}) as Partial<LaunchSessionRequest>;
+      const result = await handleLaunchSession(supervisor, context.launchProjectRoot ?? null, request);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, result.status, result.response);
       return;
     }
-    const home = await resolveHome();
-    const runsResponse = await handleRuns(context.launchProjectRoot, home);
-    sendJson(res, 200, runsResponse);
+
+    if (pathname === '/api/v1/sessions' && req.method === 'GET') {
+      const home = await resolveHome();
+      const response = handleListSessions(supervisor, context.launchProjectRoot ?? null, home);
+      sendJson(res, 200, response);
+      return;
+    }
+
+    const sessionId = matchSessionIdPath(pathname);
+    if (sessionId !== null && req.method === 'GET') {
+      const result = handleGetSession(supervisor, sessionId);
+      if (!result.ok) {
+        sendError(res, 404, 'not_found', `No session with id ${sessionId}.`);
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (sessionId !== null && req.method === 'DELETE') {
+      const result = handleKillSession(supervisor, sessionId);
+      if (!result.ok) {
+        sendError(res, 404, 'not_found', `No session with id ${sessionId}.`);
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/runs') {
+      // No launch project means no changes could exist to report runs for —
+      // an empty listing, not an error (unlike `/changes`, which requires a
+      // resolvable project to enumerate at all).
+      if (!context.launchProjectRoot) {
+        sendJson(res, 200, { runs: [] });
+        return;
+      }
+      const home = await resolveHome();
+      const runsResponse = await handleRuns(context.launchProjectRoot, home);
+      sendJson(res, 200, runsResponse);
+      return;
+    }
   };
+
+  return { handle, supervisor };
 }
