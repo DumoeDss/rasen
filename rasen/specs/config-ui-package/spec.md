@@ -37,15 +37,19 @@ The UI package SHALL build, with a plain `pnpm build` run inside the package dir
 - **THEN** they behave the same as on macOS and Linux
 
 ### Requirement: The package stays independent of the root package
-The UI package SHALL be self-contained under `packages/ui` with its own manifest and its own lockfile, leaving the root package's workflows untouched: root install, build, test, and packaging SHALL behave exactly as before, the CLI's published tarball SHALL NOT include any UI package files, and the root lockfile SHALL NOT change. The package SHALL remain unpublished (marked private) until the user decides to publish it, and nothing in this change SHALL assert or embed a release version.
+The UI package SHALL be self-contained under `packages/ui` with its own manifest and its own lockfile, leaving the root package's workflows untouched: root install, build, test, and packaging SHALL behave exactly as before, the CLI's published tarball SHALL NOT include any UI package files, and the root lockfile SHALL NOT change. The package SHALL carry its own version line, released independently of the CLI: no code SHALL hard-code or compare the UI package's version, the CLI SHALL locate an installed package by resolving its `dist/` rather than by matching a version, and bumping or publishing that version SHALL remain the user's decision.
 
 #### Scenario: Root workflows unaffected
 - **WHEN** root `pnpm run build` and the root pack checks run after the UI package is added
 - **THEN** they pass with no change in behavior or tarball contents, and the root lockfile is unchanged
 
-#### Scenario: Publishing remains the user's decision
-- **WHEN** the change is implemented and merged
-- **THEN** no publish of the UI package has occurred and no version number has been bumped or hard-coded anywhere in the change
+#### Scenario: Version lines stay decoupled
+- **WHEN** an installed UI package's version differs from the CLI's version
+- **THEN** the CLI serves that package's assets normally, having resolved it by location rather than by version, and nothing warns or fails on the mismatch
+
+#### Scenario: Releasing the package remains the user's decision
+- **WHEN** a change modifies the UI package
+- **THEN** it does not bump the package version or publish it as a side effect; the release is a separate, explicit user decision
 
 ### Requirement: The app authenticates with the session token from the URL fragment
 On load, the app SHALL take the session token from the URL fragment, keep it only in memory, and immediately remove it from the address bar; it SHALL never store the token persistently. Every config API request SHALL carry the token as a bearer authorization header. When no token is present or the API answers unauthorized (a stale tab after a server restart), the app SHALL show a clear notice telling the user to re-launch via `rasen config ui` rather than failing silently or retrying.
