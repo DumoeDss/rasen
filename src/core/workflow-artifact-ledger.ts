@@ -211,6 +211,21 @@ function writeLedger(projectRoot: string, ledger: WorkflowArtifactLedger): void 
   }
 }
 
+function containsSymlinkInChain(boundary: string, candidate: string): boolean {
+  const resolvedBoundary = path.resolve(boundary);
+  let current = path.resolve(candidate);
+  if (!isWithin(resolvedBoundary, current)) return true;
+  while (true) {
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) return true;
+    } catch {
+      return true;
+    }
+    if (current === resolvedBoundary) return false;
+    current = path.dirname(current);
+  }
+}
+
 function isAllowedManagedPath(
   projectRoot: string,
   toolId: string,
@@ -219,8 +234,16 @@ function isAllowedManagedPath(
 ): boolean {
   const tool = AI_TOOLS.find((item) => item.value === toolId);
   if (!tool?.skillsDir) return false;
-  const skillDir = path.join(resolveToolSkillsRoot(tool, projectRoot), definition.skill.dirName);
-  if (isWithin(skillDir, candidate)) return true;
+  const skillsRoot = path.resolve(resolveToolSkillsRoot(tool, projectRoot));
+  const skillDir = path.join(skillsRoot, definition.skill.dirName);
+  const expectedSkillPaths = new Set(
+    expectedArtifactPaths(projectRoot, toolId, definition, 'skills').map((item) => path.resolve(item))
+  );
+  const resolvedCandidate = path.resolve(candidate);
+  if (expectedSkillPaths.has(resolvedCandidate)) {
+    const boundary = isWithin(projectRoot, resolvedCandidate) ? projectRoot : skillsRoot;
+    return !containsSymlinkInChain(boundary, resolvedCandidate);
+  }
   if (!definition.command) return false;
   const adapter = CommandAdapterRegistry.get(toolId);
   if (!adapter) return false;
@@ -228,7 +251,11 @@ function isAllowedManagedPath(
   const absoluteCommandPath = path.isAbsolute(commandPath)
     ? path.resolve(commandPath)
     : path.resolve(projectRoot, commandPath);
-  return path.resolve(candidate) === absoluteCommandPath;
+  if (resolvedCandidate !== absoluteCommandPath) return false;
+  const boundary = isWithin(projectRoot, resolvedCandidate)
+    ? projectRoot
+    : path.dirname(path.dirname(absoluteCommandPath));
+  return !containsSymlinkInChain(boundary, resolvedCandidate);
 }
 
 function removeEmptyParents(start: string, stop: string): void {
@@ -280,6 +307,7 @@ export function syncWorkflowArtifactLedger(
       const candidate = resolveArtifactFile(resolvedProject, file);
       if (!candidate || !isAllowedManagedPath(resolvedProject, toolId, definition, candidate)) continue;
       if (sha256File(candidate) !== file.sha256) continue;
+      if (!isAllowedManagedPath(resolvedProject, toolId, definition, candidate)) continue;
       fs.rmSync(candidate, { force: true });
       removedFiles += 1;
       if (isWithin(skillDir, candidate)) removeEmptyParents(path.dirname(candidate), skillDir);

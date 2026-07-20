@@ -15,6 +15,7 @@ The rasen CLI (`rasen`) provides terminal commands for project setup, validation
 | **Validation** | `validate` | Check changes and specs for issues |
 | **Lifecycle** | `archive` | Finalize completed changes |
 | **Workflow** | `new change`, `status`, `instructions`, `templates`, `schemas` | Artifact-driven workflow support |
+| **Workflow library** | `workflow list/show/which/init/validate/import/export/delete` | Manage user-wide installable workflows |
 | **Schemas** | `schema init`, `schema fork`, `schema validate`, `schema which` | Create and manage custom workflows |
 | **Config** | `profile`, `config` | Manage workflow profiles and other settings |
 | **Utility** | `feedback`, `completion` | Feedback and shell integration |
@@ -1002,8 +1003,8 @@ rasen profile new [name]
 rasen profile use [name]
 rasen profile list [--json]
 rasen profile delete [name] [--yes]
-rasen profile import <path> [--force]
-rasen profile export <path> [--profile <name>] [--force]
+rasen profile import <path> [--as <name>] [--force]
+rasen profile export <path> [--profile <name>] [--thin] [--force]
 ```
 
 | Subcommand | Description |
@@ -1013,10 +1014,12 @@ rasen profile export <path> [--profile <name>] [--force]
 | `use [name]` | Use a built-in or saved profile; opens a picker when omitted |
 | `list` | List built-in and saved profiles; add `--json` for structured output |
 | `delete [name]` | Delete a saved profile; add `--yes` to skip confirmation |
-| `import <path>` | Import a YAML or JSON profile; add `--force` to replace the same name |
-| `export <path>` | Export current settings or the profile selected by `--profile`; add `--force` to overwrite |
+| `import <path>` | Import a self-contained `.rasenpkg`, YAML, or JSON profile; package `name` is authoritative unless `--as` is supplied, and `--force` replaces only the profile snapshot |
+| `export <path>` | Export current settings or the profile selected by `--profile`; profiles with user workflows default to self-contained `.rasenpkg`, while YAML/JSON requires explicit `--thin` |
 
 Named profiles are saved snapshots. Using one copies its delivery and workflows into global configuration, where `profile` remains the effective classification (`full`, `core`, or `custom`) rather than the saved profile name. The saved name is retained by its file in the machine-global profiles directory.
+
+Self-contained profile packages embed selected user workflows and their user-workflow dependency closure. Built-in workflows remain references. Import reuses an installed workflow only when its digest is identical; a different digest is an error even with `--force`. Thin YAML/JSON import requires every referenced user workflow to be installed already and writes nothing when membership validation fails.
 
 When `new` prompts for a name, invalid, reserved, and existing names show an inline error so another name can be entered. An invalid name supplied directly as `new <name>` fails without opening the remaining prompts.
 
@@ -1031,6 +1034,50 @@ With `language: "auto"` (the default), Unix-like systems check `LC_ALL`, `LC_MES
 Translation catalogs are maintained as `src/locales/en.json` and `src/locales/ja.json`. The build copies them to `dist/locales/`, which is included in the published package. Both catalogs use the same keys and placeholders.
 
 `rasen config profile [full|core]` remains available as a compatibility entry point, but `rasen profile` is the canonical command.
+
+### `rasen workflow`
+
+Manage installable workflows in the machine-wide user library. These commands operate on workflow definitions, not artifact schemas or orchestration pipelines.
+
+```text
+rasen workflow list [--unused] [--json]
+rasen workflow show <id> [--json]
+rasen workflow which <id> [--json]
+rasen workflow init <id> --output <path> [--json]
+rasen workflow validate <id-or-path> [--json]
+rasen workflow import <path> [--json]
+rasen workflow export <id> <path> [--force] [--json]
+rasen workflow delete <id> [--yes] [--json]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List valid built-in/user definitions plus invalid user entries; `--unused` is advisory and only considers detectable consumers |
+| `show <id>` | Show identity, skill/command metadata, dependencies, files, digest, and known usage |
+| `which <id>` | Show whether an ID resolves from the built-in catalog or a user directory |
+| `init <id>` | Create a minimal draft in the required empty `--output` directory without installing it |
+| `validate <id-or-path>` | Statically validate an installed ID, unpacked draft, or strict `.rasenpkg` without executing scripts or writing the registry |
+| `import <path>` | Validate, stage, revalidate, and atomically install an unpacked workflow or `kind: workflow` package |
+| `export <id> <path>` | Export a user workflow and its required user-workflow closure as deterministic `.rasenpkg`; built-ins cannot be exported |
+| `delete <id>` | Delete an unreferenced user workflow after usage preflight and confirmation; built-ins cannot be deleted |
+
+Every JSON success payload includes `status: []`. Failures emit one JSON document whose `status` entries carry stable `severity`, `code`, and `message` fields. For example:
+
+```json
+{
+  "workflow": null,
+  "usage": [],
+  "status": [
+    {
+      "severity": "error",
+      "code": "workflow_not_found",
+      "message": "Workflow \"missing\" was not found"
+    }
+  ]
+}
+```
+
+`delete` scans global selection, saved profiles, reverse dependencies, user/current-project pipelines, and the current project's managed-artifact ledger. It cannot prove that no unknown project elsewhere references the workflow, so successful deletion still prints that limitation. See [Installable workflows and `.rasenpkg`](workflow-packages.md) for the manifest, package, digest, path, and resource-limit contracts.
 
 ### `rasen config`
 

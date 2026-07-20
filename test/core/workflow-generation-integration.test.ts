@@ -56,6 +56,14 @@ describe('user workflow generation integration', () => {
       )
       .replace('  sidecars: []', '  sidecars: ["references/checklist.md"]');
     fs.writeFileSync(manifestPath, manifest);
+    const skillPath = path.join(draft, 'SKILL.md');
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        'description: Describe when to use the team-delivery workflow.',
+        'description: "true"'
+      )
+    );
     fs.mkdirSync(path.join(draft, 'references'), { recursive: true });
     fs.writeFileSync(path.join(draft, 'references', 'checklist.md'), 'checklist v1\n');
     await importWorkflow(draft);
@@ -77,8 +85,10 @@ describe('user workflow generation integration', () => {
     const sidecarPath = path.join(skillDir, 'references', 'checklist.md');
     const commandPath = path.join(project, '.claude', 'commands', 'rasen', 'team-delivery.md');
     expect(fs.existsSync(skillPath)).toBe(true);
+    expect(fs.readFileSync(skillPath, 'utf8')).toContain('description: "true"');
     expect(fs.readFileSync(sidecarPath, 'utf8')).toBe('checklist v1\n');
     expect(fs.existsSync(commandPath)).toBe(true);
+    expect(fs.readFileSync(commandPath, 'utf8')).toContain('description: "true"');
     expect(readWorkflowArtifactLedger(project)?.workflows).toEqual(['team-delivery']);
 
     const installedSkill = path.join(getUserWorkflowsDir(), 'team-delivery', 'SKILL.md');

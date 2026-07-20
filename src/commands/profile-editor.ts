@@ -154,7 +154,7 @@ function workflowChoices(
       ? messages.workflows[workflow as keyof typeof messages.workflows]
       : {
           name: definition.skill.template.name,
-          description: `${definition.skill.template.description} [user]`,
+          description: `${definition.skill.template.description} [${messages.sourceUser}]`,
         };
     const displayId = displayIds.get(workflow) ?? workflow;
     const dependencyOwner = requiredBy.get(workflow);
@@ -164,7 +164,7 @@ function workflowChoices(
       description: metadata.description,
       short: metadata.name,
       checked: currentState.workflows.includes(workflow),
-      disabled: dependencyOwner ? `required by ${dependencyOwner}` : undefined,
+      disabled: dependencyOwner ? messages.requiredBy(dependencyOwner) : undefined,
     };
   });
 }

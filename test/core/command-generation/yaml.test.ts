@@ -53,6 +53,25 @@ describe('command-generation/yaml escapeYamlValue', () => {
     expect(escapeYamlValue('trailing ')).toBe('"trailing "');
   });
 
+  it.each([
+    'true',
+    'null',
+    '123',
+    '01',
+    '0x10',
+    '0o10',
+    '.5',
+    '-.5',
+    '- item',
+    '? item',
+  ])(
+    'quotes plain scalars that YAML would retype or reinterpret: %s',
+    (value) => {
+      expect(escapeYamlValue(value)).toBe(`"${value}"`);
+      expect(roundTrip(value)).toBe(value);
+    }
+  );
+
   describe('round-trips through a real YAML parser', () => {
     const cases: Array<[string, string]> = [
       ['plain', 'Enter explore mode'],

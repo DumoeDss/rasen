@@ -15,6 +15,7 @@ import {
 import { loadWorkflowCatalog } from '../core/workflow-registry/index.js';
 import { isInteractive } from '../utils/interactive.js';
 import { isPromptCancellationError, printJson } from './shared-output.js';
+import { getWorkflowUiMessages } from './workflow-messages.js';
 
 interface JsonOption {
   json?: boolean;
@@ -37,6 +38,7 @@ async function runWorkflowAction(
   emptyPayload: Record<string, unknown>,
   action: () => void | Promise<void>
 ): Promise<void> {
+  const messages = getWorkflowUiMessages();
   try {
     await action();
   } catch (error) {
@@ -44,14 +46,14 @@ async function runWorkflowAction(
       if (options.json) {
         printJson({ ...emptyPayload, status: [{ severity: 'error', code: 'cancelled', message: 'Cancelled.' }] });
       } else {
-        console.error('Cancelled.');
+        console.error(messages.cancelled);
       }
       process.exitCode = 130;
       return;
     }
     const status = { severity: 'error', code: errorCode(error), message: errorMessage(error) };
     if (options.json) printJson({ ...emptyPayload, status: [status] });
-    else console.error(`Error: ${status.message}`);
+    else console.error(`${messages.errorPrefix} ${messages.error(status.code, status.message)}`);
     process.exitCode = 1;
   }
 }
@@ -68,6 +70,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (options: { unused?: boolean; json?: boolean }) => {
       await runWorkflowAction(options, { workflows: [], diagnostics: [] }, () => {
+        const messages = getWorkflowUiMessages();
         const catalog = loadWorkflowCatalog();
         const workflows = catalog.definitions
           .map((definition) => {
@@ -95,10 +98,16 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           return;
         }
         for (const entry of workflows) {
-          console.log(`${entry.id}\t${entry.source}\t${entry.skillName}${entry.unused ? '\tunused' : ''}`);
+          console.log(`${entry.id}\t${messages.source(entry.source)}\t${entry.skillName}${entry.unused ? `\t${messages.unused}` : ''}`);
         }
-        for (const entry of invalid) console.log(`${entry.id}\tuser\tinvalid`);
-        for (const diagnostic of catalog.diagnostics) console.warn(`Warning: ${diagnostic.message}`);
+        for (const entry of invalid) console.log(`${entry.id}\t${messages.source('user')}\t${messages.invalid}`);
+        for (const diagnostic of catalog.diagnostics) {
+          console.warn(`${messages.warningPrefix} ${messages.diagnostic(
+            diagnostic.severity,
+            diagnostic.code,
+            diagnostic.path
+          )}`);
+        }
       });
     });
 
@@ -108,6 +117,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (id: string, options: JsonOption) => {
       await runWorkflowAction(options, { workflow: null, usage: [] }, () => {
+        const messages = getWorkflowUiMessages();
         const catalog = loadWorkflowCatalog();
         const definition = catalog.get(id);
         if (!definition) throw new WorkflowLibraryError(`Workflow "${id}" was not found`, 'workflow_not_found');
@@ -117,13 +127,13 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           printJson(payload);
           return;
         }
-        console.log(`${definition.id} (${definition.source})`);
-        console.log(`Skill: ${definition.skill.template.name}`);
-        console.log(`Command: ${definition.command?.content.id ?? 'none'}`);
-        console.log(`Digest: ${definition.digest}`);
-        console.log(`Requires workflows: ${definition.requires.workflows.join(', ') || 'none'}`);
-        console.log(`Requires skills: ${definition.requires.skills.join(', ') || 'none'}`);
-        console.log(`Known usage: ${usage.map((item) => `${item.kind}:${item.consumer}`).join(', ') || 'none'}`);
+        console.log(`${definition.id} (${messages.source(definition.source)})`);
+        console.log(`${messages.skillLabel}: ${definition.skill.template.name}`);
+        console.log(`${messages.commandLabel}: ${definition.command?.content.id ?? messages.none}`);
+        console.log(`${messages.digestLabel}: ${definition.digest}`);
+        console.log(`${messages.requiresWorkflowsLabel}: ${definition.requires.workflows.join(', ') || messages.none}`);
+        console.log(`${messages.requiresSkillsLabel}: ${definition.requires.skills.join(', ') || messages.none}`);
+        console.log(`${messages.knownUsageLabel}: ${usage.map((item) => `${item.kind}:${item.consumer}`).join(', ') || messages.none}`);
       });
     });
 
@@ -156,6 +166,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (id: string, options: JsonOption & { output: string }) => {
       await runWorkflowAction(options, { workflow: null }, () => {
+        const messages = getWorkflowUiMessages();
         const catalog = loadWorkflowCatalog();
         if (catalog.has(id) || catalog.invalid.some((record) => record.id === id)) {
           throw new WorkflowLibraryError(`Workflow ID "${id}" already exists`, 'workflow_id_collision');
@@ -163,7 +174,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
         const output = scaffoldWorkflow(id, options.output);
         const payload = { workflow: { id, output }, status: [] };
         if (options.json) printJson(payload);
-        else console.log(`Created workflow draft at ${output}`);
+        else console.log(messages.createdDraft(output));
       });
     });
 
@@ -173,12 +184,17 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (idOrPath: string, options: JsonOption) => {
       await runWorkflowAction(options, { validation: null }, () => {
+        const messages = getWorkflowUiMessages();
         const validation = validateWorkflowInput(idOrPath);
         if (options.json) printJson({ validation, status: [] });
         else {
-          console.log(validation.valid ? 'Workflow is valid.' : 'Workflow is invalid.');
+          console.log(validation.valid ? messages.workflowValid : messages.workflowInvalid);
           for (const diagnostic of validation.diagnostics) {
-            console.log(`${diagnostic.severity}: ${diagnostic.code}: ${diagnostic.message}`);
+            console.log(messages.diagnostic(
+              diagnostic.severity,
+              diagnostic.code,
+              diagnostic.path
+            ));
           }
         }
         if (!validation.valid) process.exitCode = 1;
@@ -191,11 +207,12 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (sourcePath: string, options: JsonOption) => {
       await runWorkflowAction(options, { imported: [], reused: [], roots: [] }, async () => {
+        const messages = getWorkflowUiMessages();
         const result = await importWorkflow(sourcePath);
         if (options.json) printJson({ ...result, status: [] });
         else {
-          if (result.imported.length > 0) console.log(`Imported: ${result.imported.join(', ')}`);
-          if (result.reused.length > 0) console.log(`Already installed: ${result.reused.join(', ')}`);
+          if (result.imported.length > 0) console.log(messages.imported(result.imported.join(', ')));
+          if (result.reused.length > 0) console.log(messages.alreadyInstalled(result.reused.join(', ')));
         }
       });
     });
@@ -207,19 +224,20 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (id: string, destination: string, options: JsonOption & { force?: boolean }) => {
       await runWorkflowAction(options, { workflow: null }, async () => {
+        const messages = getWorkflowUiMessages();
         let overwrite = options.force === true;
         if (fs.existsSync(destination) && !overwrite) {
           if (!isInteractive()) {
             throw new WorkflowLibraryError('Export destination already exists; use --force', 'destination_exists');
           }
           const { confirm } = await import('@inquirer/prompts');
-          overwrite = await confirm({ message: `Replace ${destination}?`, default: false });
+          overwrite = await confirm({ message: messages.replaceDestination(destination), default: false });
           if (!overwrite) throw new WorkflowLibraryError('Export cancelled', 'cancelled');
         }
         const exportedPath = exportWorkflow(id, destination, { overwrite });
         const payload = { workflow: { id, path: exportedPath }, status: [] };
         if (options.json) printJson(payload);
-        else console.log(`Exported ${id} to ${exportedPath}`);
+        else console.log(messages.exported(id, exportedPath));
       });
     });
 
@@ -230,19 +248,19 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (id: string, options: JsonOption & { yes?: boolean }) => {
       await runWorkflowAction(options, { deleted: null }, async () => {
+        const messages = getWorkflowUiMessages();
         if (!options.yes) {
           if (!isInteractive()) {
             throw new WorkflowLibraryError('Deletion requires --yes in non-interactive mode', 'confirmation_required');
           }
           const { confirm } = await import('@inquirer/prompts');
-          const confirmed = await confirm({ message: `Delete workflow ${id}?`, default: false });
+          const confirmed = await confirm({ message: messages.deleteWorkflow(id), default: false });
           if (!confirmed) throw new WorkflowLibraryError('Deletion cancelled', 'cancelled');
         }
         await deleteWorkflow(id);
         if (options.json) printJson({ deleted: id, status: [] });
-        else console.log(`Deleted workflow ${id}`);
-        console.warn('Warning: project-local consumers outside the current project may still exist.');
+        else console.log(messages.deleted(id));
+        console.warn(messages.projectConsumerWarning);
       });
     });
 }
-

@@ -1,10 +1,15 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { importWorkflow, scaffoldWorkflow } from '../../src/core/workflow-library.js';
+import {
+  importWorkflow,
+  scaffoldWorkflow,
+  scanWorkflowUsage,
+} from '../../src/core/workflow-library.js';
 import {
   getWorkflowArtifactLedgerPath,
   hasWorkflowArtifactLedgerDrift,
@@ -71,6 +76,9 @@ describe('workflow artifact ledger', () => {
       digest: expect.stringMatching(/^sha256:/),
     });
     expect(ledger.tools.claude.workflows['team-ledger'].files).toHaveLength(2);
+    expect(scanWorkflowUsage('team-ledger', { projectRoot: project })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'ledger' })])
+    );
     expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], ['team-ledger'], 'skills')).toBe(false);
 
     fs.writeFileSync(artifacts.skill, 'locally changed\n');
@@ -103,5 +111,44 @@ describe('workflow artifact ledger', () => {
 
     expect(fs.existsSync(artifacts.skill)).toBe(false);
     expect(fs.readFileSync(artifacts.sidecar, 'utf8')).toBe('user-owned replacement\n');
+  });
+
+  it('does not trust a tampered ledger to delete an unmanaged file', async () => {
+    await installWorkflow('team-tampered');
+    const artifacts = materialize('team-tampered');
+    const unmanaged = path.join(artifacts.directory, 'notes.md');
+    fs.writeFileSync(unmanaged, 'keep me\n');
+    syncWorkflowArtifactLedger(project, 'claude', ['team-tampered'], 'skills');
+
+    const ledgerPath = getWorkflowArtifactLedgerPath(project);
+    const ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) as {
+      tools: { claude: { workflows: Record<string, { files: unknown[] }> } };
+    };
+    ledger.tools.claude.workflows['team-tampered'].files.push({
+      scope: 'project',
+      path: path.relative(project, unmanaged).split(path.sep).join('/'),
+      sha256: `sha256:${createHash('sha256').update(fs.readFileSync(unmanaged)).digest('hex')}`,
+    });
+    fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+
+    const result = syncWorkflowArtifactLedger(project, 'claude', [], 'skills');
+
+    expect(result.removedFiles).toBe(2);
+    expect(fs.readFileSync(unmanaged, 'utf8')).toBe('keep me\n');
+  });
+
+  it.runIf(process.platform !== 'win32')('refuses cleanup through a symlinked parent', async () => {
+    await installWorkflow('team-symlink');
+    const artifacts = materialize('team-symlink');
+    syncWorkflowArtifactLedger(project, 'claude', ['team-symlink'], 'skills');
+    const relocated = path.join(home, 'relocated-skill');
+    fs.renameSync(artifacts.directory, relocated);
+    fs.symlinkSync(relocated, artifacts.directory, 'dir');
+
+    const result = syncWorkflowArtifactLedger(project, 'claude', [], 'skills');
+
+    expect(result.removedFiles).toBe(0);
+    expect(fs.existsSync(path.join(relocated, 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(relocated, 'references', 'checklist.md'))).toBe(true);
   });
 });

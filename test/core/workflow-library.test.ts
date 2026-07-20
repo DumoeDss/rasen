@@ -108,6 +108,23 @@ describe('workflow library lifecycle', () => {
     expect(fs.existsSync(getUserWorkflowsDir())).toBe(false);
   });
 
+  it('rejects imports that collide with an always-installed expert skill', async () => {
+    const source = draft('expert-collision');
+    const skillPath = path.join(source, 'SKILL.md');
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        'name: rasen-expert-collision',
+        'name: rasen-careful'
+      )
+    );
+
+    await expect(importWorkflow(source)).rejects.toMatchObject({
+      code: 'expert_skill_collision',
+    });
+    expect(fs.existsSync(path.join(getUserWorkflowsDir(), 'expert-collision'))).toBe(false);
+  });
+
   it('rolls back only directories created by a failed multi-workflow commit', async () => {
     const first = validateWorkflowDirectory(draft('first')).definition!;
     const second = validateWorkflowDirectory(draft('second')).definition!;

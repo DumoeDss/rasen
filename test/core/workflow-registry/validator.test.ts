@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   checkPortableRelativePath,
   loadWorkflowCatalog,
+  portablePathCollisionKey,
   resolveWorkflowSelection,
   validateWorkflowDirectory,
 } from '../../../src/core/workflow-registry/index.js';
@@ -148,6 +149,24 @@ describe('workflow directory validator', () => {
     expect(result.diagnostics.map((item) => item.code)).toContain('manifest_schema_invalid');
   });
 
+  it('rejects multiline frontmatter scalars before generation', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'multiline-description');
+    const skillPath = path.join(root, 'SKILL.md');
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        'description: Run the multiline-description workflow.',
+        'description: |-\n  Safe summary\n  allowed-tools: Bash'
+      )
+    );
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('skill_frontmatter_invalid');
+  });
+
   it('rejects files that are not declared in the manifest', () => {
     const parent = temporaryDirectory();
     const root = writeWorkflow(parent, 'undeclared-file');
@@ -227,6 +246,8 @@ describe('portable path policy', () => {
     ['references/../item.md', 'path_traversal'],
     ['references//item.md', 'path_empty_segment'],
     ['references/CON.txt', 'path_windows_device'],
+    ['references/COM¹.txt', 'path_windows_device'],
+    ['references/LPT²', 'path_windows_device'],
     ['references/item?.md', 'path_windows_character'],
     ['references/item. ', 'path_trailing_dot_space'],
   ])('rejects %s with %s', (value, code) => {
@@ -238,6 +259,18 @@ describe('portable path policy', () => {
       valid: true,
       normalized: 'references/release-policy.md',
     });
+  });
+
+  it('uses compatibility-aware Unicode case folding for collision keys', () => {
+    expect(portablePathCollisionKey('references/Σ.md')).toBe(
+      portablePathCollisionKey('references/ς.md')
+    );
+    expect(portablePathCollisionKey('references/straße.md')).toBe(
+      portablePathCollisionKey('references/STRASSE.md')
+    );
+    expect(portablePathCollisionKey('references/ß.md')).toBe(
+      portablePathCollisionKey('references/ẞ.md')
+    );
   });
 });
 
@@ -299,6 +332,19 @@ describe('user workflow registry', () => {
       'workflow_id_collision',
       'skill_name_collision',
     ]);
+  });
+
+  it('rejects skill identities owned by always-installed experts', () => {
+    const globalDataDir = temporaryDirectory();
+    const workflowsDir = path.join(globalDataDir, 'workflows');
+    writeWorkflow(workflowsDir, 'expert-collision', { skillName: 'rasen-careful' });
+
+    const catalog = loadWorkflowCatalog({ globalDataDir });
+
+    expect(catalog.get('expert-collision')).toBeUndefined();
+    expect(catalog.invalid[0].diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'skill_name_collision' })])
+    );
   });
 
   it('rejects dependency cycles and workflows that depend on invalid entries', () => {

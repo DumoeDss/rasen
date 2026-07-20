@@ -83,8 +83,7 @@ rasen installs workflow artifacts based on selected workflows:
 
 - **Full profile (default):** every workflow ID
 - **Core profile:** `propose`, `explore`, `apply`, `sync`, `archive`
-- **Custom selection:** any subset of all workflow IDs:
-  `propose`, `explore`, `new`, `continue`, `apply`, `ff`, `sync`, `archive`, `bulk-archive`, `verify`, `onboard`
+- **Custom selection:** any subset of built-in workflow IDs plus valid workflows installed in the user-wide library. Required workflow dependencies are selected automatically.
 
 In other words, skill count is profile-dependent (not fixed); command count additionally depends both on delivery (commands are only generated when delivery is `both`) and on whether the tool has a command adapter at all (ForgeCode, Kimi CLI, Mistral Vibe, and Trae are skill-only — see the table above).
 
@@ -105,6 +104,11 @@ When selected by profile/workflow config, rasen generates these skills:
 - `rasen-onboard`
 
 See [Commands](commands.md) for command behavior and [CLI](cli.md) for `init`/`update` options.
+
+User workflows generate the same tool-specific skill and optional command
+formats as built-ins. Validated nested sidecars are copied beside the skill,
+and `update` uses the managed-artifact ledger to detect source digest changes
+and clean up only files Rasen generated.
 
 ## Related
 

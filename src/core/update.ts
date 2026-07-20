@@ -216,7 +216,7 @@ export class UpdateCommand {
         const skillsDir = resolveToolSkillsRoot(tool, resolvedProjectPath);
 
         // Generate skill files (always installed regardless of delivery)
-        for (const { template, dirName, workflowId } of skillTemplates) {
+        for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
@@ -229,7 +229,12 @@ export class UpdateCommand {
           const transformer = toolTransform
             ? (text: string) => toolTransform(configTransform(text))
             : configTransform;
-          const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
+          const skillContent = generateSkillContent(
+            template,
+            OPENSPEC_VERSION,
+            transformer,
+            escapeFrontmatter
+          );
           await FileSystemUtils.writeFile(skillFile, skillContent);
 
           // Copy the skill's sidecar reference files so its relative-path

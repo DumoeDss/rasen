@@ -9,6 +9,7 @@ import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
+import { quoteYamlValue } from '../command-generation/yaml.js';
 import {
   getExpertSkillDefinitions,
   loadWorkflowCatalog,
@@ -22,6 +23,8 @@ export interface SkillTemplateEntry {
   template: SkillTemplate;
   dirName: string;
   workflowId: string;
+  /** User-authored frontmatter must be emitted as quoted YAML scalars. */
+  escapeFrontmatter: boolean;
 }
 
 /**
@@ -129,6 +132,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
       template: definition.skill.template,
       dirName: definition.skill.dirName,
       workflowId: definition.id,
+      escapeFrontmatter: definition.source === 'user',
     })
   );
 
@@ -138,6 +142,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
       template: definition.template,
       dirName: definition.dirName,
       workflowId: definition.id,
+      escapeFrontmatter: false,
     })
   );
 
@@ -196,11 +201,13 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
  * @param template - The skill template
  * @param generatedByVersion - The Rasen version to embed in the file
  * @param transformInstructions - Optional callback to transform the instructions content
+ * @param escapeFrontmatter - Quote user-authored frontmatter scalars when true
  */
 export function generateSkillContent(
   template: SkillTemplate,
   generatedByVersion: string,
-  transformInstructions?: (instructions: string) => string
+  transformInstructions?: (instructions: string) => string,
+  escapeFrontmatter = false
 ): string {
   const instructions = transformInstructions
     ? transformInstructions(template.instructions)
@@ -209,16 +216,18 @@ export function generateSkillContent(
   const disableModelInvocationLine = template.disableModelInvocation
     ? 'disable-model-invocation: true\n'
     : '';
+  const scalar = (value: string): string => escapeFrontmatter ? quoteYamlValue(value) : value;
+  const version = template.metadata?.version || '1.0';
 
   return `---
-name: ${template.name}
-description: ${template.description}
-${disableModelInvocationLine}license: ${template.license || 'MIT'}
-compatibility: ${template.compatibility || 'Requires rasen CLI.'}
+name: ${scalar(template.name)}
+description: ${scalar(template.description)}
+${disableModelInvocationLine}license: ${scalar(template.license || 'MIT')}
+compatibility: ${scalar(template.compatibility || 'Requires rasen CLI.')}
 metadata:
-  author: ${template.metadata?.author || 'rasen'}
-  version: "${template.metadata?.version || '1.0'}"
-  generatedBy: "${generatedByVersion}"
+  author: ${scalar(template.metadata?.author || 'rasen')}
+  version: ${escapeFrontmatter ? quoteYamlValue(version) : `"${version}"`}
+  generatedBy: ${escapeFrontmatter ? quoteYamlValue(generatedByVersion) : `"${generatedByVersion}"`}
 ---
 
 ${instructions}

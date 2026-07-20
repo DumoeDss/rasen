@@ -30,7 +30,7 @@ const canonicalVector = JSON.parse(
   packageDigest: string;
 };
 
-function definition(id: string): WorkflowDefinition {
+function definition(id: string, dependencies: string[] = []): WorkflowDefinition {
   return {
     id,
     source: 'user',
@@ -44,12 +44,14 @@ function definition(id: string): WorkflowDefinition {
         instructions: `Complete ${id}.\n`,
       },
     },
-    requires: { workflows: [], skills: [] },
+    requires: { workflows: dependencies, skills: [] },
     recommends: { workflows: [] },
     files: [
       {
         path: 'workflow.yaml',
-        content: `version: 1\nid: ${id}\n`,
+        content: dependencies.length === 0
+          ? `version: 1\nid: ${id}\n`
+          : `version: 1\nid: ${id}\nrequires:\n  workflows: ${JSON.stringify(dependencies)}\n  skills: []\n`,
         sha256: 'ignored',
       },
       {
@@ -87,7 +89,7 @@ describe('.rasenpkg codec', () => {
   it('round-trips deterministic canonical workflow package bytes', () => {
     const packageValue = createWorkflowPackage(
       ['team-release'],
-      [definition('team-release'), definition('dependency')]
+      [definition('team-release', ['dependency']), definition('dependency')]
     );
     const bytes = encodePackage(packageValue);
     const decoded = decodePackage(bytes, 'workflow');
@@ -115,6 +117,30 @@ describe('.rasenpkg codec', () => {
 
     expect(decodePackage(encodePackage(packageValue), 'profile')).toEqual(packageValue);
     expect(packageValue.profile.workflows).toEqual(['apply', 'team-release']);
+  });
+
+  it('rejects invalid profile package names and duplicate profile workflow IDs', () => {
+    const invalidName = createProfilePackage(
+      '../team',
+      { version: 1, delivery: 'both', workflows: ['team-release'] },
+      ['team-release'],
+      [definition('team-release')]
+    );
+    expectPackageError(
+      () => decodePackage(canonicalBytes(invalidName), 'profile'),
+      'package_schema_invalid'
+    );
+
+    const duplicate = createProfilePackage(
+      'team',
+      { version: 1, delivery: 'both', workflows: ['team-release', 'team-release'] },
+      ['team-release'],
+      [definition('team-release')]
+    );
+    expectPackageError(
+      () => decodePackage(canonicalBytes(duplicate), 'profile'),
+      'profile_workflow_duplicate'
+    );
   });
 
   it('rejects non-canonical whitespace and key ordering', () => {
@@ -212,6 +238,30 @@ describe('.rasenpkg codec', () => {
     expectPackageError(
       () => decodePackage(canonicalBytes(duplicate)),
       'package_root_duplicate'
+    );
+  });
+
+  it('rejects embedded workflows outside the root dependency closure', () => {
+    const packageValue = createWorkflowPackage(
+      ['alpha'],
+      [definition('alpha'), definition('hidden')]
+    );
+
+    expectPackageError(
+      () => encodePackage(packageValue),
+      'package_workflow_unreachable'
+    );
+  });
+
+  it('rejects required user dependencies that are not embedded', () => {
+    const packageValue = createWorkflowPackage(
+      ['alpha'],
+      [definition('alpha', ['missing-user'])]
+    );
+
+    expectPackageError(
+      () => encodePackage(packageValue),
+      'package_dependency_missing'
     );
   });
 });

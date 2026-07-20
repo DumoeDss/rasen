@@ -37,7 +37,7 @@ export const WorkflowPackageSchema = z.strictObject({
 export const ProfilePackageSchema = z.strictObject({
   ...PackageFields,
   kind: z.literal('profile'),
-  name: z.string(),
+  name: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
   profile: PackagedProfileSchema,
 });
 
@@ -57,4 +57,3 @@ export type RasenPackageKind = RasenPackage['kind'];
 export type PackageWithoutDigest =
   | Omit<WorkflowPackage, 'packageDigest'>
   | Omit<ProfilePackage, 'packageDigest'>;
-

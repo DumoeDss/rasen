@@ -4,6 +4,10 @@ import { z } from 'zod';
 import type { WorkflowDiagnostic } from './types.js';
 
 const PortableStringArraySchema = z.array(z.string()).default([]);
+const FrontmatterScalarSchema = z.string().min(1).refine(
+  (value) => !/[\u0000-\u001f\u007f]/.test(value),
+  'Frontmatter scalar values must be single-line text without control characters'
+);
 
 const DisabledCommandSchema = z.strictObject({
   enabled: z.literal(false),
@@ -11,9 +15,9 @@ const DisabledCommandSchema = z.strictObject({
 
 const EnabledCommandSchema = z.strictObject({
   enabled: z.literal(true),
-  name: z.string().min(1),
-  category: z.string().min(1),
-  tags: z.array(z.string().min(1)).min(1),
+  name: FrontmatterScalarSchema,
+  category: FrontmatterScalarSchema,
+  tags: z.array(FrontmatterScalarSchema).min(1),
 });
 
 const WorkflowManifestSchema = z.strictObject({
@@ -41,10 +45,10 @@ const WorkflowManifestSchema = z.strictObject({
 
 const SkillFrontmatterSchema = z.strictObject({
   name: z.string(),
-  description: z.string().min(1),
-  license: z.string().min(1).optional(),
-  compatibility: z.string().min(1).optional(),
-  metadata: z.record(z.string(), z.string()).optional(),
+  description: FrontmatterScalarSchema,
+  license: FrontmatterScalarSchema.optional(),
+  compatibility: FrontmatterScalarSchema.optional(),
+  metadata: z.record(z.string(), FrontmatterScalarSchema).optional(),
 });
 
 export type WorkflowManifest = z.infer<typeof WorkflowManifestSchema>;

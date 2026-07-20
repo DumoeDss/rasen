@@ -5,6 +5,7 @@ import { getGlobalDataDir } from '../global-config.js';
 import { getBuiltInWorkflowDefinitions } from './builtins.js';
 import { WorkflowCatalog } from './catalog.js';
 import { getExpertSkillDefinitions } from './experts.js';
+import { portablePathCollisionKey } from './path-policy.js';
 import type {
   InvalidWorkflowRecord,
   WorkflowDefinition,
@@ -108,9 +109,17 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
 
   const accepted: WorkflowDefinition[] = [...builtIns];
   const byId = new Map(builtIns.map((definition) => [definition.id, definition]));
-  const bySkill = new Map(
-    builtIns.map((definition) => [definition.skill.template.name, definition])
-  );
+  const bySkill = new Map<string, { id: string; kind: 'workflow' | 'expert' }>();
+  for (const definition of builtIns) {
+    for (const name of new Set([definition.skill.template.name, definition.skill.dirName])) {
+      bySkill.set(portablePathCollisionKey(name), { id: definition.id, kind: 'workflow' });
+    }
+  }
+  for (const definition of getExpertSkillDefinitions()) {
+    for (const name of new Set([definition.template.name, definition.dirName])) {
+      bySkill.set(portablePathCollisionKey(name), { id: definition.id, kind: 'expert' });
+    }
+  }
   const byCommand = new Map(
     builtIns
       .filter((definition) => definition.command)
@@ -129,12 +138,14 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
         sourcePath: candidate.sourcePath,
       });
     }
-    const skillCollision = bySkill.get(candidate.skill.template.name);
+    const skillCollision = [candidate.skill.template.name, candidate.skill.dirName]
+      .map((name) => bySkill.get(portablePathCollisionKey(name)))
+      .find((collision) => collision !== undefined);
     if (skillCollision) {
       collisionDiagnostics.push({
         code: 'skill_name_collision',
         severity: 'error',
-        message: `Skill name "${candidate.skill.template.name}" collides with workflow "${skillCollision.id}"`,
+        message: `Skill identity "${candidate.skill.template.name}" collides with ${skillCollision.kind} "${skillCollision.id}"`,
         path: 'SKILL.md.name',
         sourcePath: candidate.sourcePath,
       });
@@ -157,7 +168,9 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
 
     accepted.push(candidate);
     byId.set(candidate.id, candidate);
-    bySkill.set(candidate.skill.template.name, candidate);
+    for (const name of new Set([candidate.skill.template.name, candidate.skill.dirName])) {
+      bySkill.set(portablePathCollisionKey(name), { id: candidate.id, kind: 'workflow' });
+    }
     if (commandId) byCommand.set(commandId, candidate);
   }
 

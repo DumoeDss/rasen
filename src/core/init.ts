@@ -670,7 +670,7 @@ export class InitCommand {
         await pruneRetiredExpertSkillDirs(skillsDir);
 
         // Create skill directories and SKILL.md files
-        for (const { template, dirName, workflowId } of skillTemplates) {
+        for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
@@ -684,7 +684,12 @@ export class InitCommand {
           const transformer = toolTransform
             ? (text: string) => toolTransform(configTransform(text))
             : configTransform;
-          const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
+          const skillContent = generateSkillContent(
+            template,
+            OPENSPEC_VERSION,
+            transformer,
+            escapeFrontmatter
+          );
 
           // Write the skill file
           await FileSystemUtils.writeFile(skillFile, skillContent);

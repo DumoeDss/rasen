@@ -3,6 +3,7 @@ import type {
   WorkflowDefinition,
   WorkflowDiagnostic,
 } from './types.js';
+import { portablePathCollisionKey } from './path-policy.js';
 
 export class WorkflowCatalogError extends Error {
   constructor(
@@ -41,15 +42,20 @@ export class WorkflowCatalog {
       }
       this.byId.set(definition.id, definition);
 
-      const skillName = definition.skill.template.name;
-      const existingSkill = this.bySkillName.get(skillName);
-      if (existingSkill) {
-        throw new WorkflowCatalogError(
-          `Skill name "${skillName}" is used by workflows "${existingSkill.id}" and "${definition.id}"`,
-          'duplicate_skill'
-        );
+      for (const skillName of new Set([
+        definition.skill.template.name,
+        definition.skill.dirName,
+      ])) {
+        const key = portablePathCollisionKey(skillName);
+        const existingSkill = this.bySkillName.get(key);
+        if (existingSkill && existingSkill !== definition) {
+          throw new WorkflowCatalogError(
+            `Skill identity "${skillName}" is used by workflows "${existingSkill.id}" and "${definition.id}"`,
+            'duplicate_skill'
+          );
+        }
+        this.bySkillName.set(key, definition);
       }
-      this.bySkillName.set(skillName, definition);
 
       const commandId = definition.command?.content.id;
       if (commandId) {
@@ -70,7 +76,7 @@ export class WorkflowCatalog {
   }
 
   getBySkillName(name: string): WorkflowDefinition | undefined {
-    return this.bySkillName.get(name);
+    return this.bySkillName.get(portablePathCollisionKey(name));
   }
 
   getByCommandId(id: string): WorkflowDefinition | undefined {

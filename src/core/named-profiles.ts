@@ -84,7 +84,11 @@ export type NamedProfileErrorMessageKey =
   | 'unsupportedFormat'
   | 'destinationNotFile'
   | 'destinationExists'
-  | 'profileNotFound';
+  | 'profileNotFound'
+  | 'profilePackageChanged'
+  | 'profilePackageIncomplete'
+  | 'selfContainedRequired'
+  | 'profileRegistryBusy';
 
 export interface NamedProfileMessageDescriptor {
   key: NamedProfileErrorMessageKey;
@@ -498,7 +502,11 @@ function readProfilePackageFile(filePath: string): ProfilePackage {
     after.size !== bytes.length ||
     before.mtimeMs !== after.mtimeMs
   ) {
-    throw new NamedProfileError('Profile package changed while it was being read.', 'invalid_file');
+    throw new NamedProfileError(
+      'Profile package changed while it was being read.',
+      'invalid_file',
+      { key: 'profilePackageChanged' }
+    );
   }
   return decodePackage(bytes, 'profile') as ProfilePackage;
 }
@@ -542,7 +550,8 @@ export async function importProfilePackage(
       if (workflow.source === 'user' && !incomingIds.has(workflowId)) {
         throw new NamedProfileError(
           `Profile package is not self-contained: workflow "${workflowId}" is not embedded.`,
-          'invalid_file'
+          'invalid_file',
+          { key: 'profilePackageIncomplete', values: { workflow: workflowId } }
         );
       }
     }
@@ -555,7 +564,11 @@ export async function importProfilePackage(
         const profileLockPath = path.join(getGlobalConfigDir(), '.profiles.lock');
         const profileLock = await acquireFileLock({
           lockPath: profileLockPath,
-          errorFor: () => new NamedProfileError('Profile registry is busy.', 'invalid_file'),
+          errorFor: () => new NamedProfileError(
+            'Profile registry is busy.',
+            'invalid_file',
+            { key: 'profileRegistryBusy' }
+          ),
         });
         try {
           savedPath = saveNamedProfile(name, definition, { overwrite: options.overwrite });
@@ -609,7 +622,8 @@ export function exportProfile(
   if (!packageRequested) {
     throw new NamedProfileError(
       'Profiles containing user workflows must be exported to a .rasenpkg file, or use --thin explicitly.',
-      'unsupported_format'
+      'unsupported_format',
+      { key: 'selfContainedRequired' }
     );
   }
 

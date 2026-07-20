@@ -26,6 +26,7 @@ describe('workflow command', () => {
     originalEnv = { ...process.env };
     originalExitCode = process.exitCode;
     process.env.RASEN_HOME = home;
+    process.env.RASEN_LANG = 'en';
     process.env.OPEN_SPEC_INTERACTIVE = '0';
     process.exitCode = undefined;
     log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -133,5 +134,27 @@ describe('workflow command', () => {
     });
     expect(process.exitCode).toBe(1);
   });
-});
 
+  it('localizes human output while preserving machine IDs and diagnostic codes', async () => {
+    process.env.RASEN_LANG = 'ja';
+    await runWorkflowCommand(['list']);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^apply\t組み込み\trasen-apply-change/));
+
+    log.mockClear();
+    const draft = path.join(home, 'drafts', 'localized');
+    await runWorkflowCommand(['init', 'localized', '--output', draft]);
+    expect(log).toHaveBeenCalledWith(`ワークフロードラフトを${draft}に作成しました`);
+
+    error.mockClear();
+    await runWorkflowCommand(['show', 'missing']);
+    expect(error).toHaveBeenCalledWith('エラー: ワークフローが見つかりません。');
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    log.mockClear();
+    await runWorkflowCommand(['show', 'missing', '--json']);
+    expect(lastJson()).toMatchObject({
+      status: [expect.objectContaining({ code: 'workflow_not_found' })],
+    });
+  });
+});

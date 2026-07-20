@@ -1,5 +1,7 @@
 import { TextDecoder } from 'node:util';
 
+import { BUILT_IN_WORKFLOW_IDS } from '../workflow-registry/builtins.js';
+import { parseWorkflowManifest } from '../workflow-registry/manifest.js';
 import type { WorkflowDefinition } from '../workflow-registry/types.js';
 import {
   checkPortableRelativePath,
@@ -120,6 +122,62 @@ function failPreflight(code: string, message: string, details?: Record<string, s
   throw new WorkflowPackageError(message, code, details);
 }
 
+function validateEmbeddedWorkflowClosure(
+  packageValue: RasenPackage,
+  workflowDependencies: ReadonlyMap<string, readonly string[]>
+): void {
+  const embedded = new Set(packageValue.workflows.map((workflow) => workflow.id));
+  const builtIns = new Set<string>(BUILT_IN_WORKFLOW_IDS);
+  const entrypoints = packageValue.kind === 'workflow'
+    ? new Set(packageValue.roots)
+    : new Set(packageValue.profile.workflows.filter((id) => embedded.has(id)));
+
+  if (packageValue.kind === 'profile') {
+    for (const workflowId of packageValue.profile.workflows) {
+      if (!embedded.has(workflowId) && !builtIns.has(workflowId)) {
+        failPreflight(
+          'profile_workflow_missing',
+          `Profile workflow "${workflowId}" is neither built-in nor embedded`
+        );
+      }
+    }
+    const roots = new Set(packageValue.roots);
+    if (
+      roots.size !== entrypoints.size ||
+      [...entrypoints].some((workflowId) => !roots.has(workflowId))
+    ) {
+      failPreflight(
+        'profile_roots_mismatch',
+        'Profile package roots must exactly match its embedded selected workflows'
+      );
+    }
+  }
+
+  const reachable = new Set<string>();
+  const visit = (workflowId: string): void => {
+    if (reachable.has(workflowId)) return;
+    reachable.add(workflowId);
+    for (const dependency of workflowDependencies.get(workflowId) ?? []) {
+      if (embedded.has(dependency)) visit(dependency);
+      else if (!builtIns.has(dependency)) {
+        failPreflight(
+          'package_dependency_missing',
+          `Required user workflow "${dependency}" is not embedded`
+        );
+      }
+    }
+  };
+  for (const entrypoint of entrypoints) visit(entrypoint);
+
+  const unreachable = [...embedded].filter((workflowId) => !reachable.has(workflowId)).sort();
+  if (unreachable.length > 0) {
+    failPreflight(
+      'package_workflow_unreachable',
+      `Embedded workflows are outside the root dependency closure: ${unreachable.join(', ')}`
+    );
+  }
+}
+
 function validatePackageDomain(packageValue: RasenPackage): void {
   if (packageValue.workflows.length > WORKFLOW_PACKAGE_LIMITS.maxWorkflows) {
     failPreflight('workflow_limit_exceeded', 'Workflow count exceeds package limit', {
@@ -132,6 +190,7 @@ function validatePackageDomain(packageValue: RasenPackage): void {
   }
 
   const workflowIds = new Set<string>();
+  const workflowDependencies = new Map<string, readonly string[]>();
   let entryCount = 0;
   let totalContentBytes = 0;
   for (const workflow of packageValue.workflows) {
@@ -194,6 +253,21 @@ function validatePackageDomain(packageValue: RasenPackage): void {
         `Workflow "${workflow.id}" must contain workflow.yaml and SKILL.md`
       );
     }
+    const manifestFile = workflow.files.find((file) => file.path === 'workflow.yaml')!;
+    const manifest = parseWorkflowManifest(manifestFile.content);
+    if (!manifest.manifest || manifest.diagnostics.some((item) => item.severity === 'error')) {
+      failPreflight(
+        'packaged_manifest_invalid',
+        `Workflow "${workflow.id}" contains an invalid workflow.yaml`
+      );
+    }
+    if (manifest.manifest.id !== workflow.id) {
+      failPreflight(
+        'packaged_manifest_id_mismatch',
+        `Workflow "${workflow.id}" contains manifest ID "${manifest.manifest.id}"`
+      );
+    }
+    workflowDependencies.set(workflow.id, manifest.manifest.requires.workflows);
     const expectedWorkflowDigest = computePackagedWorkflowDigest(workflow.id, workflow.files);
     if (workflow.digest !== expectedWorkflowDigest) {
       failPreflight('workflow_digest_mismatch', `Digest mismatch for workflow "${workflow.id}"`);
@@ -209,6 +283,22 @@ function validatePackageDomain(packageValue: RasenPackage): void {
     }
   }
   if (packageValue.kind === 'profile') {
+    const profileWorkflowIds = new Set<string>();
+    for (const workflowId of packageValue.profile.workflows) {
+      if (!isPortableWorkflowId(workflowId)) {
+        failPreflight(
+          'profile_workflow_id_invalid',
+          `Profile workflow ID "${workflowId}" is not portable`
+        );
+      }
+      if (profileWorkflowIds.has(workflowId)) {
+        failPreflight(
+          'profile_workflow_duplicate',
+          `Duplicate profile workflow ID "${workflowId}"`
+        );
+      }
+      profileWorkflowIds.add(workflowId);
+    }
     const selected = new Set(packageValue.profile.workflows);
     for (const root of packageValue.roots) {
       if (!selected.has(root)) {
@@ -216,6 +306,7 @@ function validatePackageDomain(packageValue: RasenPackage): void {
       }
     }
   }
+  validateEmbeddedWorkflowClosure(packageValue, workflowDependencies);
 
   const { packageDigest, ...packageWithoutDigest } = packageValue;
   const expectedPackageDigest = computePackageDigest(
@@ -287,4 +378,3 @@ export function decodePackage(
   validatePackageDomain(packageValue);
   return packageValue;
 }
-

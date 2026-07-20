@@ -7,6 +7,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 
 import path from 'path';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { escapeYamlValue } from '../yaml.js';
 
 /**
  * Auggie adapter for command generation.
@@ -22,7 +23,7 @@ export const auggieAdapter: ToolCommandAdapter = {
 
   formatFile(content: CommandContent): string {
     return `---
-description: ${content.description}
+description: ${escapeYamlValue(content.description)}
 argument-hint: command arguments
 ---
 

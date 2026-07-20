@@ -9,6 +9,7 @@ import {
   type FileLockErrorKind,
 } from '../file-state.js';
 import {
+  BUILT_IN_WORKFLOW_IDS,
   getExpertSkillDefinitions,
   getUserWorkflowsDir,
   loadWorkflowCatalog,
@@ -18,6 +19,7 @@ import {
   type WorkflowDefinition,
   type WorkflowRegistryOptions,
 } from '../workflow-registry/index.js';
+import { portablePathCollisionKey } from '../workflow-registry/path-policy.js';
 import type { RasenPackage } from './schema.js';
 
 export class WorkflowTransactionError extends Error {
@@ -85,9 +87,14 @@ function assertInstallableSet(
   options: WorkflowRegistryOptions
 ): { install: WorkflowDefinition[]; reused: string[] } {
   const current = loadWorkflowCatalog(options);
-  const expertNames = new Set(
-    getExpertSkillDefinitions().map((definition) => definition.template.name)
-  );
+  const expertDefinitions = getExpertSkillDefinitions();
+  const expertNames = new Set(expertDefinitions.map((definition) => definition.template.name));
+  const expertSkillIdentities = new Map<string, string>();
+  for (const expert of expertDefinitions) {
+    for (const name of new Set([expert.template.name, expert.dirName])) {
+      expertSkillIdentities.set(portablePathCollisionKey(name), expert.id);
+    }
+  }
   const install: WorkflowDefinition[] = [];
   const reused: string[] = [];
   const incomingById = new Map<string, WorkflowDefinition>();
@@ -116,6 +123,15 @@ function assertInstallableSet(
       );
     }
     const skillName = definition.skill.template.name;
+    const expertCollision = [skillName, definition.skill.dirName]
+      .map((name) => expertSkillIdentities.get(portablePathCollisionKey(name)))
+      .find((id) => id !== undefined);
+    if (expertCollision) {
+      throw new WorkflowTransactionError(
+        `Skill identity "${skillName}" conflicts with always-installed expert "${expertCollision}"`,
+        'expert_skill_collision'
+      );
+    }
     const skillCollision = current.getBySkillName(skillName);
     if (skillCollision) {
       throw new WorkflowTransactionError(
@@ -178,6 +194,65 @@ function assertInstallableSet(
   const combinedCatalog = new WorkflowCatalog(combined);
   for (const root of roots) resolveWorkflowSelection(combinedCatalog, [root]);
   return { install, reused };
+}
+
+function assertPackagedClosure(
+  packageValue: RasenPackage,
+  definitions: readonly WorkflowDefinition[]
+): void {
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+  const builtIns = new Set<string>(BUILT_IN_WORKFLOW_IDS);
+  const entrypoints = packageValue.kind === 'workflow'
+    ? new Set(packageValue.roots)
+    : new Set(packageValue.profile.workflows.filter((id) => byId.has(id)));
+
+  if (packageValue.kind === 'profile') {
+    for (const workflowId of packageValue.profile.workflows) {
+      if (!byId.has(workflowId) && !builtIns.has(workflowId)) {
+        throw new WorkflowTransactionError(
+          `Profile workflow "${workflowId}" is neither built-in nor embedded`,
+          'profile_workflow_missing'
+        );
+      }
+    }
+    const roots = new Set(packageValue.roots);
+    if (
+      roots.size !== entrypoints.size ||
+      [...entrypoints].some((workflowId) => !roots.has(workflowId))
+    ) {
+      throw new WorkflowTransactionError(
+        'Profile package roots do not match embedded selected workflows',
+        'profile_roots_mismatch'
+      );
+    }
+  }
+
+  const reachable = new Set<string>();
+  const visit = (workflowId: string): void => {
+    if (reachable.has(workflowId)) return;
+    const definition = byId.get(workflowId);
+    if (!definition) return;
+    reachable.add(workflowId);
+    for (const dependency of definition.requires.workflows) {
+      if (byId.has(dependency)) visit(dependency);
+      else if (!builtIns.has(dependency)) {
+        throw new WorkflowTransactionError(
+          `Required user workflow "${dependency}" is not embedded`,
+          'package_dependency_missing'
+        );
+      }
+    }
+  };
+  for (const entrypoint of entrypoints) visit(entrypoint);
+  const unreachable = definitions
+    .map((definition) => definition.id)
+    .filter((workflowId) => !reachable.has(workflowId));
+  if (unreachable.length > 0) {
+    throw new WorkflowTransactionError(
+      `Embedded workflows are outside the root dependency closure: ${unreachable.join(', ')}`,
+      'package_workflow_unreachable'
+    );
+  }
 }
 
 export function stageWorkflowDefinitions(
@@ -260,6 +335,7 @@ export function stagePackageWorkflows(
       }
       definitions.push(validation.definition);
     }
+    assertPackagedClosure(packageValue, definitions);
     assertInstallableSet(definitions, packageValue.roots, options);
     return { definitions, roots: [...packageValue.roots], stageRoot };
   } catch (error) {

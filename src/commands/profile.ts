@@ -83,6 +83,11 @@ function printProfileError(error: unknown): void {
   const messages = getProfileUiMessages();
   const detail = error instanceof NamedProfileError
     ? formatNamedProfileError(error)
+    : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? messages.externalError(
+          error.code,
+          error instanceof Error ? error.message : String(error)
+        )
     : error instanceof Error
       ? error.message
       : String(error);

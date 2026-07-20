@@ -4,12 +4,62 @@
     "workflowAuthor": "Author installable workflows safely through staging, static validation, independent review, and user-approved import",
     "workflowReview": "Review installable workflows independently for semantic quality, security boundaries, portability, dependencies, and completion"
   },
+  "workflowLibrary": {
+    "ui": {
+      "errorPrefix": "Error:",
+      "cancelled": "Cancelled.",
+      "sourceBuiltIn": "built-in",
+      "sourceUser": "user",
+      "unused": "unused",
+      "invalid": "invalid",
+      "warningPrefix": "Warning:",
+      "skillLabel": "Skill",
+      "commandLabel": "Command",
+      "digestLabel": "Digest",
+      "requiresWorkflowsLabel": "Requires workflows",
+      "requiresSkillsLabel": "Requires skills",
+      "knownUsageLabel": "Known usage",
+      "none": "none",
+      "createdDraft": "Created workflow draft at {path}",
+      "workflowValid": "Workflow is valid.",
+      "workflowInvalid": "Workflow is invalid.",
+      "severityError": "error",
+      "severityWarning": "warning",
+      "diagnostic": "{severity}: {code} [{path}]",
+      "imported": "Imported: {items}",
+      "alreadyInstalled": "Already installed: {items}",
+      "replaceDestination": "Replace {path}?",
+      "exported": "Exported {id} to {path}",
+      "deletionRequiresYes": "Deletion requires --yes in non-interactive mode",
+      "deleteWorkflow": "Delete workflow {id}?",
+      "deleted": "Deleted workflow {id}",
+      "projectConsumerWarning": "Warning: project-local consumers outside the current project may still exist."
+    },
+    "errors": {
+      "workflow_not_found": "The workflow was not found.",
+      "workflow_id_collision": "The workflow ID already exists or collides with another workflow.",
+      "builtin_export_forbidden": "Built-in workflows cannot be exported.",
+      "builtin_delete_forbidden": "Built-in workflows cannot be deleted.",
+      "workflow_in_use": "The workflow is still referenced by a known consumer.",
+      "destination_exists": "The destination already exists; use --force to replace it.",
+      "confirmation_required": "Deletion requires --yes in non-interactive mode.",
+      "cancelled": "The operation was cancelled.",
+      "package_kind_mismatch": "The package kind is not valid for this command.",
+      "workflow_digest_conflict": "The installed workflow has the same ID but different content.",
+      "workflow_invalid": "The workflow failed static validation.",
+      "import_source_not_found": "The import source was not found.",
+      "import_source_invalid": "The import source must be a workflow directory or package.",
+      "workflow_command_error": "Workflow operation failed ({code})."
+    }
+  },
   "profile": {
     "prompt": {
       "deliveryPickerMessage": "Delivery mode (how workflows are installed):",
       "workflowPickerMessage": "Select workflows to make available:",
       "workflowPickerInstructions": "Space to toggle, A to select/clear all, Enter to confirm",
       "currentSuffix": " [current]",
+      "sourceUser": "user",
+      "requiredBy": "required by {workflow}",
       "delivery": {
         "both": {
           "name": "Both (skills + commands)",
@@ -205,7 +255,11 @@
       "unsupportedFormat": "Unsupported profile format \"{extension}\". Use .yaml, .yml, or .json.",
       "destinationNotFile": "Destination is not a file: {path}",
       "destinationExists": "Destination already exists: {path}",
-      "profileNotFound": "Profile \"{name}\" was not found."
+      "profileNotFound": "Profile \"{name}\" was not found.",
+      "profilePackageChanged": "The profile package changed while it was being read.",
+      "profilePackageIncomplete": "The profile package is not self-contained: workflow \"{workflow}\" is not embedded.",
+      "selfContainedRequired": "Profiles containing user workflows must use a .rasenpkg destination, or --thin must be specified explicitly.",
+      "profileRegistryBusy": "The profile registry is busy."
     }
   },
   "config": {

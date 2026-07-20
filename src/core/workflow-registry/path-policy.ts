@@ -64,7 +64,9 @@ export function checkPortableRelativePath(value: string): PortablePathCheck {
         message: 'Path segment must not end in a dot or space',
       };
     }
-    if (WINDOWS_DEVICE_PATTERN.test(segment)) {
+    // Windows also reserves COM/LPT names written with superscript 1, 2, or 3.
+    // NFKC maps those compatibility digits to ASCII before the device check.
+    if (WINDOWS_DEVICE_PATTERN.test(segment.normalize('NFKC'))) {
       return {
         valid: false,
         code: 'path_windows_device',
@@ -84,5 +86,15 @@ export function checkPortableRelativePath(value: string): PortablePathCheck {
 }
 
 export function portablePathCollisionKey(value: string): string {
-  return value.normalize('NFC').toLowerCase();
+  // NFKC catches compatibility aliases (including ligatures), while the
+  // lower-upper-lower stabilization approximates Unicode full case folding for
+  // expanding and contextual mappings such as both sharp-s forms and Greek
+  // final sigma.
+  // The original spelling is still required to be NFC by the path validator.
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .toUpperCase()
+    .toLowerCase()
+    .normalize('NFC');
 }

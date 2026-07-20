@@ -19,20 +19,34 @@
  * @param value - The raw string to embed in YAML frontmatter.
  * @returns The value, double-quoted and escaped when necessary.
  */
+export function quoteYamlValue(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+  return `"${escaped}"`;
+}
+
 export function escapeYamlValue(value: string): string {
   // Check if value needs quoting (contains special YAML characters or starts/ends with whitespace)
-  const needsQuoting = /[:\n\r#{}[\],&*!|>'"%@`]|^\s|\s$/.test(value);
+  const implicitScalar = /^(?:~|null|true|false|yes|no|on|off|[-+]?(?:\.inf|\.nan))$/i;
+  // YAML core accepts decimal variants as well as base-prefixed forms. Quote
+  // any numeric-looking prefix conservatively so future parser expansions do
+  // not silently change external strings into numbers.
+  const numericPrefix = /^[-+]?(?:[0-9]|\.[0-9])/;
+  const indicatorPrefix = /^(?:-|\?|:)(?:\s|$)/;
+  const needsQuoting =
+    /[:\n\r#{}[\],&*!|>'"%@`]|^\s|\s$/.test(value) ||
+    implicitScalar.test(value) ||
+    numericPrefix.test(value) ||
+    indicatorPrefix.test(value);
   if (needsQuoting) {
     // Use double quotes and escape characters that are not safe to emit
     // verbatim inside a double-quoted YAML scalar. Carriage returns must be
     // escaped too: a literal CR inside double quotes is subject to YAML line
     // folding/normalization and would silently corrupt the round-tripped value.
-    const escaped = value
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r');
-    return `"${escaped}"`;
+    return quoteYamlValue(value);
   }
   return value;
 }

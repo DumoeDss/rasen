@@ -7,6 +7,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 
 import path from 'path';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { escapeYamlValue } from '../yaml.js';
 import { transformToHyphenCommands } from '../../../utils/command-references.js';
 
 /**
@@ -26,7 +27,7 @@ export const opencodeAdapter: ToolCommandAdapter = {
     const transformedBody = transformToHyphenCommands(content.body);
 
     return `---
-description: ${content.description}
+description: ${escapeYamlValue(content.description)}
 ---
 
 ${transformedBody}

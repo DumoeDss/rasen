@@ -4,12 +4,62 @@
     "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、独立レビュー、ユーザー承認後のimportで安全に作成します",
     "workflowReview": "インストール可能なワークフローの意味的品質、セキュリティ境界、移植性、依存関係、完了条件を独立してレビューします"
   },
+  "workflowLibrary": {
+    "ui": {
+      "errorPrefix": "エラー:",
+      "cancelled": "キャンセルしました。",
+      "sourceBuiltIn": "組み込み",
+      "sourceUser": "ユーザー",
+      "unused": "未使用",
+      "invalid": "無効",
+      "warningPrefix": "警告:",
+      "skillLabel": "スキル",
+      "commandLabel": "コマンド",
+      "digestLabel": "ダイジェスト",
+      "requiresWorkflowsLabel": "必須ワークフロー",
+      "requiresSkillsLabel": "必須スキル",
+      "knownUsageLabel": "既知の利用元",
+      "none": "なし",
+      "createdDraft": "ワークフロードラフトを{path}に作成しました",
+      "workflowValid": "ワークフローは有効です。",
+      "workflowInvalid": "ワークフローは無効です。",
+      "severityError": "エラー",
+      "severityWarning": "警告",
+      "diagnostic": "{severity}: {code} [{path}]",
+      "imported": "importしました: {items}",
+      "alreadyInstalled": "インストール済みです: {items}",
+      "replaceDestination": "{path}を置き換えますか?",
+      "exported": "{id}を{path}へexportしました",
+      "deletionRequiresYes": "非対話モードで削除するには--yesが必要です",
+      "deleteWorkflow": "ワークフロー{id}を削除しますか?",
+      "deleted": "ワークフロー{id}を削除しました",
+      "projectConsumerWarning": "警告: 現在のプロジェクト外に検出できないproject-localの利用元が残っている可能性があります。"
+    },
+    "errors": {
+      "workflow_not_found": "ワークフローが見つかりません。",
+      "workflow_id_collision": "ワークフローIDが既存の定義と衝突しています。",
+      "builtin_export_forbidden": "組み込みワークフローはexportできません。",
+      "builtin_delete_forbidden": "組み込みワークフローは削除できません。",
+      "workflow_in_use": "ワークフローは既知の利用元から参照されています。",
+      "destination_exists": "出力先が既に存在します。置き換えるには--forceを指定してください。",
+      "confirmation_required": "非対話モードで削除するには--yesが必要です。",
+      "cancelled": "操作をキャンセルしました。",
+      "package_kind_mismatch": "このコマンドでは指定されたpackage kindを使用できません。",
+      "workflow_digest_conflict": "同じIDのインストール済みワークフローと内容が異なります。",
+      "workflow_invalid": "ワークフローの静的検証に失敗しました。",
+      "import_source_not_found": "import元が見つかりません。",
+      "import_source_invalid": "import元にはワークフローディレクトリまたはpackageを指定してください。",
+      "workflow_command_error": "ワークフロー操作に失敗しました（{code}）。詳細は--jsonで確認してください。"
+    }
+  },
   "profile": {
     "prompt": {
       "deliveryPickerMessage": "配信方法（ワークフローのインストール形式）:",
       "workflowPickerMessage": "利用可能にするワークフローを選択:",
       "workflowPickerInstructions": "Spaceで切り替え、Aですべて選択・解除、Enterで確定",
       "currentSuffix": " [現在]",
+      "sourceUser": "ユーザー",
+      "requiredBy": "{workflow}が必要としています",
       "delivery": {
         "both": {
           "name": "両方（スキル + コマンド）",
@@ -205,7 +255,11 @@
       "unsupportedFormat": "プロファイル形式「{extension}」には対応していません。.yaml、.yml、または.jsonを使用してください。",
       "destinationNotFile": "出力先がファイルではありません: {path}",
       "destinationExists": "出力先が既に存在します: {path}",
-      "profileNotFound": "プロファイル「{name}」が見つかりません。"
+      "profileNotFound": "プロファイル「{name}」が見つかりません。",
+      "profilePackageChanged": "読み取り中にprofile packageが変更されました。",
+      "profilePackageIncomplete": "profile packageが自己完結していません: ワークフロー「{workflow}」が埋め込まれていません。",
+      "selfContainedRequired": "user workflowを含むプロファイルは.rasenpkgへ出力するか、--thinを明示してください。",
+      "profileRegistryBusy": "プロファイルレジストリが使用中です。"
     }
   },
   "config": {
