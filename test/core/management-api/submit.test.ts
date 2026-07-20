@@ -252,6 +252,14 @@ describe('createChangeSubmitter (change-submission design D2/D3)', () => {
       const third = await submit('third-after-kill', 'a description');
       expect(third.status).not.toBe(409);
       expect(third.code).not.toBe('busy');
+
+      // The third submission's own child is also SIGTERM-resistant and
+      // needs its own SIGKILL escalation — wait past its grace period
+      // before the test returns, so that process is confirmed reaped
+      // rather than left to be killed later (or orphaned if the vitest
+      // worker exits first): child processes are not killed on parent
+      // exit (review n1).
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }, 10_000);
   });
 });
