@@ -100,13 +100,20 @@ function RunProgress({ runState }: { runState: SessionListEntry['runState'] }) {
   );
 }
 
+/**
+ * The outcome of a confirmed kill: either the patched record from the
+ * 202/200 response, or `gone` when the DELETE 404s — the session vanished
+ * from the server's registry between poll and click (design D3: "treat as
+ * already-gone and refresh", never pin a phantom record locally).
+ */
+export type KillOutcome = { kind: 'patched'; session: SessionRecordWire } | { kind: 'gone' };
+
 export function SessionRow({
   entry,
   onKilled,
 }: {
   entry: SessionListEntry;
-  /** Called with the patched record from the 202/200 kill response. */
-  onKilled: (id: string, patched: SessionRecordWire) => void;
+  onKilled: (id: string, outcome: KillOutcome) => void;
 }) {
   const { session, runState } = entry;
   const [expanded, setExpanded] = useState(false);
@@ -147,13 +154,16 @@ export function SessionRow({
     setKillError(null);
     try {
       const result = await client.killSession(session.id);
-      onKilled(session.id, result.session);
+      onKilled(session.id, { kind: 'patched', session: result.session });
       setConfirmingKill(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
-        // Session ended between poll and click — resolve gracefully, no error noise.
+        // The session is no longer known to the server (pruned between poll
+        // and click) — resolve gracefully, no error noise, and let the
+        // parent drop any local override and refetch (never pin the
+        // now-stale live record as a "patch").
         setConfirmingKill(false);
-        onKilled(session.id, session);
+        onKilled(session.id, { kind: 'gone' });
         return;
       }
       setKillError(err instanceof ApiError ? err.message : 'Failed to kill the session.');

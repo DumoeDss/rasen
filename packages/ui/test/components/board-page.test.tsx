@@ -396,5 +396,42 @@ describe('BoardPage', () => {
 
       vi.useRealTimers();
     });
+
+    it('drops the indicator once a follow-up poll reports zero live sessions (review round 1 m1: the kill-reflected-on-board acceptance)', async () => {
+      vi.useFakeTimers();
+      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          {
+            session: { id: 'a', kind: 'auto', task: 't', cwd: '/p', state: 'running', startedAt: 1, lastOutputAt: 1 },
+            runState: { kind: 'absent' },
+          },
+        ],
+      });
+
+      await mount(container);
+      expect(container.querySelector('[data-testid="board-sessions-indicator"]')!.textContent).toContain(
+        '1 live session'
+      );
+
+      // The session reached a terminal state — the next poll reports none live.
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          {
+            session: { id: 'a', kind: 'auto', task: 't', cwd: '/p', state: 'exited', startedAt: 1, lastOutputAt: 1 },
+            runState: { kind: 'absent' },
+          },
+        ],
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      expect(container.querySelector('[data-testid="board-sessions-indicator"]')).toBeNull();
+
+      vi.useRealTimers();
+    });
   });
 });

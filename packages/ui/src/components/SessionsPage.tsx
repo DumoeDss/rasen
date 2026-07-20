@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { SessionListEntry, SessionRecordWire } from '../api/types.js';
-import { SessionRow } from './SessionRow.js';
+import { SessionRow, type KillOutcome } from './SessionRow.js';
 import { LaunchSessionDialog } from './LaunchSessionDialog.js';
 
 const POLL_INTERVAL_MS = 3000;
@@ -114,8 +114,23 @@ export function SessionsPage() {
     setRefreshNonce((n) => n + 1);
   }
 
-  function handleKilled(id: string, patched: SessionRecordWire) {
-    setKillPatches((prev) => new Map(prev).set(id, patched));
+  function handleKilled(id: string, outcome: KillOutcome) {
+    if (outcome.kind === 'gone') {
+      // The server no longer knows this session (review round 1 M1): drop
+      // any local override/pending entry rather than pinning the stale
+      // live record, and force a clean refetch so the list reflects reality
+      // (design D3: "treat as already-gone and refresh").
+      setKillPatches((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setPendingLaunches((prev) => prev.filter((p) => p.id !== id));
+      refresh();
+      return;
+    }
+    setKillPatches((prev) => new Map(prev).set(id, outcome.session));
   }
 
   function handleLaunched(session: SessionRecordWire) {
