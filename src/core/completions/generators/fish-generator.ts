@@ -172,6 +172,9 @@ ${commandCompletions}`;
       case 'saved-profile-name':
         lines.push(`complete -c rasen -n '${condition}' -a '(__fish_rasen_saved_profiles)' -f`);
         break;
+      case 'workflow-id':
+        lines.push(`complete -c rasen -n '${condition}' -a '(__fish_rasen_workflows)' -f`);
+        break;
       case 'shell':
         lines.push(`complete -c rasen -n '${condition}' -a 'zsh bash fish powershell' -f`);
         break;

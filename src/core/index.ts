@@ -22,3 +22,4 @@ export * from './workspace-root.js';
 export * from './codex/index.js';
 export * from './workflow-registry/index.js';
 export * from './workflow-package/index.js';
+export * from './workflow-library.js';

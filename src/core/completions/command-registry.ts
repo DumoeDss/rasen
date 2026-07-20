@@ -636,6 +636,86 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'workflow',
+    description: 'Manage installable workflows in the user-wide library',
+    flags: [],
+    subcommands: [
+      {
+        name: 'list',
+        description: 'List built-in and user workflows',
+        flags: [
+          { name: 'unused', description: 'Show only user workflows with no detected consumers' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'show',
+        description: 'Show an installable workflow definition and known usage',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'which',
+        description: 'Show where an installable workflow resolves from',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'init',
+        description: 'Create a minimal workflow draft without installing it',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          { name: 'output', description: 'Empty workflow draft directory to create', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'validate',
+        description: 'Validate an installed workflow, draft directory, or .rasenpkg',
+        acceptsPositional: true,
+        positionals: [{ name: 'id-or-path' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'import',
+        description: 'Validate and atomically install a workflow directory or package',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'export',
+        description: 'Export a user workflow and its user dependencies as .rasenpkg',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'id', type: 'workflow-id' },
+          { name: 'path', type: 'path' },
+        ],
+        flags: [
+          { name: 'force', description: 'Replace an existing destination file' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'delete',
+        description: 'Delete an unreferenced user workflow',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [
+          { name: 'yes', short: 'y', description: 'Skip confirmation' },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'config',
     description: 'View and modify global or project Rasen configuration',
     flags: [

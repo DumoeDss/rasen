@@ -30,4 +30,13 @@ export {
   type RasenPackageKind,
   type WorkflowPackage,
 } from './schema.js';
-
+export {
+  commitWorkflowInstall,
+  discardWorkflowInstall,
+  stagePackageWorkflows,
+  stageWorkflowDefinitions,
+  WorkflowTransactionError,
+  type WorkflowInstallPlan,
+  type WorkflowInstallResult,
+  type WorkflowTransactionOptions,
+} from './transaction.js';
