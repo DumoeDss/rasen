@@ -41,4 +41,18 @@ describe('token → client integration', () => {
     await expect(client.health()).rejects.toMatchObject({ code: 'unauthorized' });
     expect(isUnauthorized()).toBe(true);
   });
+
+  it('board fetches (listChanges) go through the same seam: 401 triggers the re-launch notice path', async () => {
+    window.history.replaceState(null, '', '/#token=stale');
+    initTokenFromLocation();
+
+    const { status, body } = errorsFixture.unauthorized;
+    (fetch as any).mockResolvedValueOnce(jsonResponse(status, body));
+
+    await expect(client.listChanges()).rejects.toMatchObject({ code: 'unauthorized' });
+    // `markUnauthorized` is generic across every client function (design D9
+    // of `unified-config-ui-pkg`) — the board's fetches inherit it for free,
+    // which is exactly what board-ui's "shared API seam" requirement means.
+    expect(isUnauthorized()).toBe(true);
+  });
 });

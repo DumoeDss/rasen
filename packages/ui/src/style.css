@@ -541,3 +541,143 @@ select:disabled {
 .app-content > p:only-child {
   color: var(--meta);
 }
+
+/* ═══ 11. Board — kanban columns of change cards ═══════════════════════ */
+.board-page__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.board-page__error,
+.board-page__empty,
+.board-page__loading {
+  color: var(--muted);
+}
+
+.board-page__error,
+.board-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.board-page__broken {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.board-card--broken {
+  border: 1px solid var(--danger);
+}
+
+.board-card__error-message {
+  margin: var(--space-1) 0 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.board-column {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-ring);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.board-column__title {
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.board-column__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--surface-warm);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.board-column__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.board-column__empty {
+  color: var(--meta);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.board-card {
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-ring);
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+
+.board-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.board-card__name {
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+}
+
+.board-card__schema {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--meta);
+  font-size: var(--text-xs);
+}
+
+.board-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.board-card__badge,
+.board-card__run-indicator {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+.board-card__badge--escalated {
+  color: var(--accent-on);
+  background: var(--danger);
+}
+
+.board-card__run-indicator {
+  color: var(--muted);
+  background: var(--surface-warm);
+}
