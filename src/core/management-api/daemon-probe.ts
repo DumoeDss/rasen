@@ -103,3 +103,39 @@ export async function probeDaemon(
   const atDefault = await probeDaemonPort(defaultPort);
   return { port: defaultPort, result: atDefault };
 }
+
+/**
+ * Grace period for tree-killing a POSITIVELY-IDENTIFIED rasen daemon (`daemon
+ * stop`, and the stale-daemon replace path in both `daemon start` and
+ * `rasen ui`) — deliberately much longer than `kill-tree.ts`'s own 5s
+ * default. Two supervision layers nest here: the daemon's OWN clean
+ * shutdown (SIGTERM caught -> `stopServer` -> `supervisor.shutdownAll`,
+ * bounded worst-case by `SESSION_SHUTDOWN_GUARD_MS` (8s) + the daemon
+ * process's own `SHUTDOWN_GUARD_MS` (2s) in `server.ts`, so ~10s worst
+ * case) races this OUTER kill's escalation timer. Equal graces at both
+ * layers let the outer SIGKILL land first, destroying the daemon before
+ * its own internal session-SIGKILL timer ever fires — and a supervised
+ * session is its own POSIX process group, so it does NOT die with the
+ * daemon's group; it silently orphans. (A SIGTERM-resistant session that
+ * still produces output is accidentally reaped anyway, via EPIPE once its
+ * pipe reader — the daemon — vanishes; a silent-AND-resistant session has
+ * no such self-heal, so correctness must not lean on that accident.) This
+ * grace must stay strictly greater than the daemon's own worst-case clean
+ * shutdown — do not "simplify" it back to matching `kill-tree.ts`'s
+ * default.
+ */
+export const IDENTIFIED_DAEMON_KILL_GRACE_MS = 15_000;
+
+const PORT_FREE_POLL_INTERVAL_MS = 250;
+/** 80 * 250ms = 20s — comfortably exceeds `IDENTIFIED_DAEMON_KILL_GRACE_MS` so a wedged-but-eventually-SIGKILLed daemon's port is still observed freeing within the wait window. */
+const PORT_FREE_POLL_ATTEMPTS = 80;
+
+/** Polls until nothing answers on `port`, bounded to comfortably outlast `IDENTIFIED_DAEMON_KILL_GRACE_MS`. Shared by `daemon stop`/`daemon start`'s stale-replace and `rasen ui`'s stale-replace, so the two never drift out of sync with the grace above. */
+export async function waitForDaemonPortFree(port: number): Promise<boolean> {
+  for (let attempt = 0; attempt < PORT_FREE_POLL_ATTEMPTS; attempt++) {
+    const probe = await probeDaemonPort(port);
+    if (probe.kind === 'no-listener') return true;
+    await new Promise((resolve) => setTimeout(resolve, PORT_FREE_POLL_INTERVAL_MS));
+  }
+  return false;
+}

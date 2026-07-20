@@ -18,10 +18,9 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { resolveLaunchProjectRef } from '../core/config-api/project-addressing.js';
 import { resolveUiPackageDir, UI_PACKAGE_NAME } from '../core/config-api/ui-package.js';
 import { startManagementServer } from '../core/management-api/server.js';
-import { killProcessTree } from '../core/management-api/kill-tree.js';
 import { readDaemonState } from '../core/management-api/daemon-state.js';
-import { probeDaemon, probeDaemonPort, resolveDefaultDaemonPort } from '../core/management-api/daemon-probe.js';
-import { spawnDaemonDetached } from './daemon.js';
+import { probeDaemon, resolveDefaultDaemonPort } from '../core/management-api/daemon-probe.js';
+import { killIdentifiedDaemonAndWaitFree, spawnDaemonDetached } from './daemon.js';
 
 const require = createRequire(import.meta.url);
 
@@ -99,18 +98,6 @@ function printUrlAndOpen(url: string, config: UiLaunchConfig, uiAssetsDir: strin
   }
 }
 
-const PORT_FREE_POLL_ATTEMPTS = 20;
-const PORT_FREE_POLL_INTERVAL_MS = 250;
-
-async function waitForPortFree(port: number): Promise<boolean> {
-  for (let attempt = 0; attempt < PORT_FREE_POLL_ATTEMPTS; attempt++) {
-    const probe = await probeDaemonPort(port);
-    if (probe.kind === 'no-listener') return true;
-    await new Promise((resolve) => setTimeout(resolve, PORT_FREE_POLL_INTERVAL_MS));
-  }
-  return false;
-}
-
 /**
  * Runs the full launch flow. By default, adopts or spawns the resident
  * daemon and exits promptly once the URL is delivered (design D4 of
@@ -156,8 +143,13 @@ async function runAdoptOrSpawn(
   const probed = await probeDaemon(defaultPort, stateHint);
 
   if (probed.result.kind === 'foreign') {
+    // m3: `--port` is NOT read on this branch (design: it applies only to
+    // the self-hosted `--no-daemon` form) — naming it here would send a
+    // user who follows the advice with `rasen ui --port <n>` straight back
+    // into this same error. Only the escapes that actually change what
+    // this branch probes are named.
     console.error(
-      `Error: port ${probed.port} is held by a non-rasen process. Set RASEN_DAEMON_PORT/--port to reroute the daemon, or run with --no-daemon to use a self-hosted server instead.`
+      `Error: port ${probed.port} is held by a non-rasen process. Set RASEN_DAEMON_PORT to reroute the daemon, or run with --no-daemon to use a self-hosted server instead.`
     );
     process.exitCode = 1;
     return;
@@ -180,9 +172,12 @@ async function runAdoptOrSpawn(
     // Stale rasen daemon, identified by its own reported pid — terminate
     // and replace with a freshly spawned same-version daemon (design D3:
     // "never kill what you didn't spawn" forbids touching what we cannot
-    // *identify*; a version-mismatched rasen daemon IS identified).
-    killProcessTree(probed.result.pid);
-    const freed = await waitForPortFree(probed.port);
+    // *identify*; a version-mismatched rasen daemon IS identified). Uses
+    // the identified-daemon grace shared with `daemon stop` (review m1) —
+    // an equal, shorter grace here would let this outer kill's SIGKILL
+    // land before the stale daemon's own internal session reap finishes,
+    // orphaning a silent-and-SIGTERM-resistant session.
+    const freed = await killIdentifiedDaemonAndWaitFree(probed.result.pid, probed.port);
     if (!freed) {
       console.error(`Error: could not free port ${probed.port} from the stale daemon (pid ${probed.result.pid}) in time.`);
       process.exitCode = 1;
@@ -192,7 +187,7 @@ async function runAdoptOrSpawn(
 
   // No listener (or the stale daemon just freed its port) — spawn a fresh
   // daemon and wait for verified readiness.
-  const spawned = await spawnDaemonDetached(probed.port);
+  const spawned = await spawnDaemonDetached(probed.port, version);
   if (!spawned.ok) {
     console.error(`Error: ${spawned.message}`);
     process.exitCode = 1;

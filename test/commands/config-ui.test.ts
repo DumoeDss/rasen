@@ -49,8 +49,10 @@ vi.mock('../../src/core/management-api/daemon-state.js', () => ({
 }));
 
 const spawnDaemonDetachedMock = vi.fn();
+const killIdentifiedDaemonAndWaitFreeMock = vi.fn();
 vi.mock('../../src/commands/daemon.js', () => ({
   spawnDaemonDetached: (...args: unknown[]) => spawnDaemonDetachedMock(...args),
+  killIdentifiedDaemonAndWaitFree: (...args: unknown[]) => killIdentifiedDaemonAndWaitFreeMock(...args),
 }));
 
 async function runConfigCommand(args: string[]): Promise<void> {
@@ -84,6 +86,7 @@ describe('config ui command', () => {
     probeDaemonMock.mockReset();
     readDaemonStateMock.mockReset();
     spawnDaemonDetachedMock.mockReset();
+    killIdentifiedDaemonAndWaitFreeMock.mockReset();
 
     startManagementServerMock.mockResolvedValue({
       port: 4321,
@@ -141,7 +144,7 @@ describe('config ui command', () => {
 
     await runConfigCommand(['ui']);
 
-    expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791);
+    expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
     const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).toMatch(/^Config UI: http:\/\/127\.0\.0\.1:8791\/config#token=spawned-token$/m);
   });

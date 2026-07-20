@@ -35,8 +35,11 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 // The adopt-or-spawn seam this suite exercises at the `runUiLaunch` level
 // only — the daemon-probe/daemon-state/spawn mechanics themselves have
-// dedicated coverage (daemon.test.ts, ui-launch-adopt-or-spawn.test.ts with
-// real fixture loopback servers, per tasks 5.2-5.3).
+// dedicated coverage: daemon-probe.test.ts (probe classification), daemon-
+// state.test.ts (state file), daemon-lifecycle.test.ts and daemon-spawn-
+// convergence.test.ts (real subprocess/fixture-loopback), and
+// ui-launch-stale-replace.test.ts (fixture-loopback stale-daemon kill —
+// review round 1 M1).
 const probeDaemonMock = vi.fn();
 vi.mock('../../src/core/management-api/daemon-probe.js', () => ({
   probeDaemon: (...args: unknown[]) => probeDaemonMock(...args),
@@ -50,8 +53,10 @@ vi.mock('../../src/core/management-api/daemon-state.js', () => ({
 }));
 
 const spawnDaemonDetachedMock = vi.fn();
+const killIdentifiedDaemonAndWaitFreeMock = vi.fn();
 vi.mock('../../src/commands/daemon.js', () => ({
   spawnDaemonDetached: (...args: unknown[]) => spawnDaemonDetachedMock(...args),
+  killIdentifiedDaemonAndWaitFree: (...args: unknown[]) => killIdentifiedDaemonAndWaitFreeMock(...args),
 }));
 
 async function runUiCommand(args: string[]): Promise<Command> {
@@ -86,6 +91,7 @@ describe('ui command', () => {
     probeDaemonMock.mockReset();
     readDaemonStateMock.mockReset();
     spawnDaemonDetachedMock.mockReset();
+    killIdentifiedDaemonAndWaitFreeMock.mockReset();
 
     startManagementServerMock.mockResolvedValue({
       port: 4321,
@@ -135,9 +141,35 @@ describe('ui command', () => {
 
       await runUiCommand([]);
 
-      expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791);
+      expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
       expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=spawned-token$/m);
+    });
+
+    it('review round 1 M1: replaces a stale-version daemon — kills it by its reported pid, waits for the port to free, then spawns fresh', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: '0.0.1-stale', pid: 9999 } });
+      killIdentifiedDaemonAndWaitFreeMock.mockResolvedValue(true);
+      spawnDaemonDetachedMock.mockResolvedValue({ ok: true, port: 8791, version: OWN_VERSION, pid: 8888 });
+      readDaemonStateMock.mockReturnValue({ version: OWN_VERSION, pid: 8888, port: 8791, token: 'replaced-token', startedAt: Date.now() });
+
+      await runUiCommand([]);
+
+      expect(killIdentifiedDaemonAndWaitFreeMock).toHaveBeenCalledWith(9999, 8791);
+      expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=replaced-token$/m);
+    });
+
+    it('review round 1 M1: fails, without spawning, when the stale daemon\'s port cannot be freed in time', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: '0.0.1-stale', pid: 9999 } });
+      killIdentifiedDaemonAndWaitFreeMock.mockResolvedValue(false);
+
+      await runUiCommand([]);
+
+      expect(process.exitCode).toBe(1);
+      expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
+      const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toContain('9999');
     });
 
     it('fails without touching a foreign listener', async () => {

@@ -27,9 +27,11 @@ import {
   writeDaemonState,
 } from '../core/management-api/daemon-state.js';
 import {
+  IDENTIFIED_DAEMON_KILL_GRACE_MS,
   probeDaemon,
   probeDaemonPort,
   resolveDefaultDaemonPort,
+  waitForDaemonPortFree,
   type DaemonProbeResult,
 } from '../core/management-api/daemon-probe.js';
 
@@ -38,8 +40,6 @@ const IS_WINDOWS = process.platform === 'win32';
 
 const READINESS_POLL_ATTEMPTS = 20;
 const READINESS_POLL_INTERVAL_MS = 250;
-const STOP_POLL_ATTEMPTS = 20;
-const STOP_POLL_INTERVAL_MS = 250;
 
 export function ownVersion(): string {
   const { version } = require('../../package.json') as { version: string };
@@ -54,6 +54,21 @@ function resolveOwnCliEntry(): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Terminates a POSITIVELY-IDENTIFIED rasen daemon (by its reported pid —
+ * never a guess) and waits, bounded, for its port to free. Shared by
+ * `daemon stop`, `daemon start`'s stale-replace branch, and `rasen ui`'s
+ * stale-replace branch (`ui-launch.ts`) — one call site for the
+ * `IDENTIFIED_DAEMON_KILL_GRACE_MS` grace so the three can never drift out
+ * of sync with each other (review m1: an outer grace shorter than the
+ * daemon's own worst-case clean shutdown silently orphans a
+ * silent-and-SIGTERM-resistant session).
+ */
+export async function killIdentifiedDaemonAndWaitFree(pid: number, port: number): Promise<boolean> {
+  killProcessTree(pid, { graceMs: IDENTIFIED_DAEMON_KILL_GRACE_MS });
+  return waitForDaemonPortFree(port);
 }
 
 function parsePortOption(raw: string | undefined, fallback: number): number | { error: string } {
@@ -131,23 +146,30 @@ export interface SpawnDaemonResult {
 
 export interface SpawnDaemonFailure {
   ok: false;
-  reason: 'timeout' | 'foreign';
+  reason: 'timeout' | 'foreign' | 'version-mismatch';
   message: string;
 }
 
 /**
  * Spawns the daemon detached on `port` and waits, bounded, for it to answer
- * with matching rasen identity. Shared by the `daemon start` command and
- * `ui-launch.ts`'s no-listener spawn branch. On a `foreign` classification
- * appearing mid-wait, fails immediately (continuing to poll is pointless —
- * something else already owns the port and this call's own spawn will have
- * failed EADDRINUSE on its own). On timeout, tree-kills the half-started
- * child (ours to reap — it never reached adoptable state) and reports the
- * log path. If, mid-wait, a same-version rasen daemon answers (a concurrent
- * spawner won the race), that converges to success without treating it as
- * a failure — "task 3.3 concurrent-launch convergence".
+ * with MATCHING rasen identity (`expectedVersion` — always this
+ * installation's own version; a required parameter, not defaulted, so a
+ * caller can never silently skip the check that closed review finding m2).
+ * Shared by the `daemon start` command and `ui-launch.ts`'s spawn branches.
+ * On a `foreign` classification appearing mid-wait, fails immediately
+ * (continuing to poll is pointless — something else already owns the port
+ * and this call's own spawn will have failed EADDRINUSE on its own). On a
+ * DIFFERENT-version rasen daemon appearing mid-wait (m2: this must not
+ * green-exit as if it were "our" fresh spawn — it is stale code, and the
+ * D1 contract is "answers with matching identity"), fails with a clear
+ * remediation rather than converging on it. On timeout, tree-kills the
+ * half-started child (ours to reap — it never reached adoptable state)
+ * and reports the log path. If, mid-wait, a SAME-version rasen daemon
+ * answers (a concurrent spawner won the race), that converges to success
+ * without treating it as a failure — "task 3.3 concurrent-launch
+ * convergence".
  */
-export async function spawnDaemonDetached(port: number): Promise<SpawnDaemonResult | SpawnDaemonFailure> {
+export async function spawnDaemonDetached(port: number, expectedVersion: string): Promise<SpawnDaemonResult | SpawnDaemonFailure> {
   const cliEntry = resolveOwnCliEntry();
   const logPath = getDaemonLogPath();
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
@@ -167,14 +189,22 @@ export async function spawnDaemonDetached(port: number): Promise<SpawnDaemonResu
     await sleep(READINESS_POLL_INTERVAL_MS);
     const probe: DaemonProbeResult = await probeDaemonPort(port);
     if (probe.kind === 'rasen-daemon') {
-      return { ok: true, port, version: probe.version, pid: probe.pid };
+      if (probe.version === expectedVersion) {
+        return { ok: true, port, version: probe.version, pid: probe.pid };
+      }
+      if (typeof child.pid === 'number') killProcessTree(child.pid);
+      return {
+        ok: false,
+        reason: 'version-mismatch',
+        message: `A rasen daemon of a different version (${probe.version}, pid ${probe.pid}) is already on port ${port}. Run 'rasen daemon stop' then retry, or 'rasen ui' to replace it automatically.`,
+      };
     }
     if (probe.kind === 'foreign') {
       if (typeof child.pid === 'number') killProcessTree(child.pid);
       return {
         ok: false,
         reason: 'foreign',
-        message: `Port ${port} is held by a non-rasen process. Set RASEN_DAEMON_PORT/--port to a free port, or use --no-daemon.`,
+        message: `Port ${port} is held by a non-rasen process. Set RASEN_DAEMON_PORT to a free port, or use --no-daemon.`,
       };
     }
   }
@@ -187,27 +217,54 @@ export async function spawnDaemonDetached(port: number): Promise<SpawnDaemonResu
   };
 }
 
+/**
+ * `daemon start` (task 2.4 + review m2/m4 fixes): routed through the same
+ * hint-first `classify()` stop/status use (m4 — skipping the state-file
+ * hint let `start` spawn a SECOND daemon on the default port while an
+ * existing one sat on a previously-hinted non-default port, stranding the
+ * first from `stop`'s own discovery). A same-version daemon at the found
+ * port is reported and left alone; a DIFFERENT-version one is replaced in
+ * place (m2 — `daemon start` must not green-exit leaving the platform on
+ * stale code; D1 pins success on "answer[ing] with matching identity", and
+ * the daemon-residency classification requirement already makes stale
+ * daemons replaceable, so `start` now does what `rasen ui` does); a
+ * foreign listener refuses; no-listener spawns fresh.
+ */
 async function runDaemonStart(options: { port?: string }): Promise<void> {
   const defaultPort = resolveDefaultDaemonPort();
-  const port = parsePortOption(options.port, defaultPort);
-  if (typeof port === 'object') {
-    console.error(`Error: ${port.error}`);
+  const requestedPort = parsePortOption(options.port, defaultPort);
+  if (typeof requestedPort === 'object') {
+    console.error(`Error: ${requestedPort.error}`);
     process.exitCode = 1;
     return;
   }
 
-  const existing = await probeDaemonPort(port);
-  if (existing.kind === 'rasen-daemon') {
-    console.log(`Rasen daemon already running on http://127.0.0.1:${port} (version ${existing.version}, pid ${existing.pid}).`);
-    return;
-  }
+  const { port: foundPort, result: existing } = await classify(requestedPort);
+
   if (existing.kind === 'foreign') {
-    console.error(`Error: port ${port} is held by a non-rasen process. Set RASEN_DAEMON_PORT/--port to a free port.`);
+    console.error(`Error: port ${foundPort} is held by a non-rasen process. Set RASEN_DAEMON_PORT/--port to a free port.`);
     process.exitCode = 1;
     return;
   }
 
-  const result = await spawnDaemonDetached(port);
+  if (existing.kind === 'rasen-daemon' && existing.version === ownVersion()) {
+    console.log(`Rasen daemon already running on http://127.0.0.1:${foundPort} (version ${existing.version}, pid ${existing.pid}).`);
+    return;
+  }
+
+  if (existing.kind === 'rasen-daemon') {
+    // Different version — replace in place (m2): never leave a stale
+    // daemon behind with a green exit.
+    console.log(`Replacing stale rasen daemon (version ${existing.version}, pid ${existing.pid}) on port ${foundPort}...`);
+    const freed = await killIdentifiedDaemonAndWaitFree(existing.pid, foundPort);
+    if (!freed) {
+      console.error(`Error: could not free port ${foundPort} from the stale daemon (pid ${existing.pid}) in time.`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  const result = await spawnDaemonDetached(foundPort, ownVersion());
   if (!result.ok) {
     console.error(`Error: ${result.message}`);
     process.exitCode = 1;
@@ -220,10 +277,11 @@ async function runDaemonStart(options: { port?: string }): Promise<void> {
 // `daemon status` / `daemon stop` (task 2.5)
 // ---------------------------------------------------------------------------
 
-async function classify(): Promise<{ port: number; result: DaemonProbeResult }> {
-  const defaultPort = resolveDefaultDaemonPort();
+/** Hint-first probe (design D2/D3): the state file's port hint, then `preferredPort` (an explicit target, e.g. `daemon start --port`) or else the env/default port. Shared by `status`, `stop`, and `start` (m4) so none of the three can strand another via a missed hint. */
+async function classify(preferredPort?: number): Promise<{ port: number; result: DaemonProbeResult }> {
+  const targetPort = preferredPort ?? resolveDefaultDaemonPort();
   const state = readDaemonState();
-  return probeDaemon(defaultPort, state?.port);
+  return probeDaemon(targetPort, state?.port);
 }
 
 async function runDaemonStatus(): Promise<void> {
@@ -235,15 +293,6 @@ async function runDaemonStatus(): Promise<void> {
   } else {
     console.log(`No daemon running (checked port ${port}).`);
   }
-}
-
-async function waitForPortFree(port: number): Promise<boolean> {
-  for (let attempt = 0; attempt < STOP_POLL_ATTEMPTS; attempt++) {
-    const probe = await probeDaemonPort(port);
-    if (probe.kind === 'no-listener') return true;
-    await sleep(STOP_POLL_INTERVAL_MS);
-  }
-  return false;
 }
 
 async function runDaemonStop(): Promise<void> {
@@ -260,12 +309,15 @@ async function runDaemonStop(): Promise<void> {
   }
 
   // Positively identified (any version) — terminate by its reported pid,
-  // via SIGTERM-then-SIGKILL tree termination (kill-tree.ts). Its own
-  // SIGTERM handler runs `stopServer` -> `shutdownAll('server-shutdown')`
-  // when it can catch the signal; the forced escalation is the honest
-  // fallback for a wedged process.
-  killProcessTree(result.pid);
-  const freed = await waitForPortFree(port);
+  // via SIGTERM-then-SIGKILL tree termination with the identified-daemon
+  // grace (kill-tree.ts, daemon-probe.ts's IDENTIFIED_DAEMON_KILL_GRACE_MS;
+  // review m1 — this must exceed the daemon's own worst-case clean
+  // shutdown or a silent-and-SIGTERM-resistant session's process group
+  // survives the daemon's SIGKILL and orphans). Its own SIGTERM handler
+  // runs `stopServer` -> `shutdownAll('server-shutdown')` when it can
+  // catch the signal; the forced escalation is the honest fallback for a
+  // wedged process.
+  const freed = await killIdentifiedDaemonAndWaitFree(result.pid, port);
   if (!freed && isProcessAlive(result.pid)) {
     console.error(`Error: daemon (pid ${result.pid}) did not stop within the wait window.`);
     process.exitCode = 1;

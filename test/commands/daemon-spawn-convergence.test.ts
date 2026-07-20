@@ -56,7 +56,7 @@ describe('spawnDaemonDetached convergence (task 3.3)', () => {
     });
   }
 
-  it('adopts a concurrent winner that starts answering mid-wait, without treating it as a failure', async () => {
+  it('adopts a concurrent SAME-version winner that starts answering mid-wait, without treating it as a failure', async () => {
     const port = await freePort();
     const { spawnDaemonDetached } = await import('../../src/commands/daemon.js');
 
@@ -72,8 +72,31 @@ describe('spawnDaemonDetached convergence (task 3.3)', () => {
     }, 400);
 
     try {
-      const result = await spawnDaemonDetached(port);
+      const result = await spawnDaemonDetached(port, '0.1.5');
       expect(result).toEqual({ ok: true, port, version: '0.1.5', pid: 424242 });
+    } finally {
+      clearTimeout(winnerTimer);
+    }
+  }, 10_000);
+
+  it('review m2: a DIFFERENT-version rasen daemon appearing mid-wait fails as version-mismatch, never converges', async () => {
+    const port = await freePort();
+    const { spawnDaemonDetached } = await import('../../src/commands/daemon.js');
+
+    const winnerTimer = setTimeout(() => {
+      winner = http.createServer((_req, res) => {
+        res.writeHead(200, { 'x-rasen-daemon': '0.0.1-stale', 'x-rasen-pid': '13579' });
+        res.end('{}');
+      });
+      winner.listen(port, '127.0.0.1');
+    }, 400);
+
+    try {
+      const result = await spawnDaemonDetached(port, '0.1.5');
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('version-mismatch');
+      expect(result.message).toContain('0.0.1-stale');
     } finally {
       clearTimeout(winnerTimer);
     }

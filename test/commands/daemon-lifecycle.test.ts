@@ -9,7 +9,7 @@
  * refusal for both `stop` and `status`.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -99,7 +99,6 @@ describe('daemon lifecycle (real subprocess, tasks 5.3/5.4/6.3)', () => {
   let daemonPort: number;
   let baseEnv: NodeJS.ProcessEnv;
   let foreignServer: http.Server | undefined;
-  let strayDaemon: ChildProcessWithoutNullStreams | undefined;
 
   beforeEach(async () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-daemon-home-'));
@@ -121,13 +120,6 @@ describe('daemon lifecycle (real subprocess, tasks 5.3/5.4/6.3)', () => {
   afterEach(async () => {
     // Best-effort cleanup even on assertion failure mid-test.
     await runCli(['daemon', 'stop'], baseEnv, projectRoot).catch(() => undefined);
-    if (strayDaemon?.pid) {
-      try {
-        process.kill(strayDaemon.pid, 'SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    }
     if (foreignServer) await new Promise<void>((resolve) => foreignServer!.close(() => resolve()));
     fs.rmSync(tempHome, { recursive: true, force: true });
     fs.rmSync(projectRoot, { recursive: true, force: true });
