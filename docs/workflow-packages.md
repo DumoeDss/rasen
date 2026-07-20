@@ -17,8 +17,10 @@ name or command ID owned by a built-in or another user workflow. Re-importing
 the same ID and digest is a no-op. Reusing an ID with a different digest is an
 error in format version 1.
 
-Portable workflow IDs, skill names, and command IDs must match
-`^[a-z0-9][a-z0-9-]{0,63}$`. File paths are NFC-normalized relative POSIX paths.
+Portable workflow IDs, user skill names, and command IDs must match
+`^[a-z0-9][a-z0-9-]{0,63}$`. References to always-installed expert skills use
+their catalog names, including the existing `rasen:<name>` namespace. File paths
+are NFC-normalized relative POSIX paths.
 They must not contain backslashes, empty segments, `.` or `..`, NUL, Windows
 device names, or segments ending in a dot or space. Case-fold and NFC aliases
 within one workflow are rejected.
@@ -43,7 +45,7 @@ files:
     - scripts/check-release.sh
 requires:
   workflows: [apply]
-  skills: [rasen-review]
+  skills: [rasen:review]
 recommends:
   workflows: [verify-enhanced-command]
 ```
@@ -139,4 +141,3 @@ object keys, lone surrogates, and numbers outside JavaScript's safe integer
 range. Import materializes regular files in a private same-filesystem staging
 directory, validates the staged tree again, then atomically renames new
 workflow directories. A transaction rolls back only paths it created.
-

@@ -1,6 +1,7 @@
 import type {
   InvalidWorkflowRecord,
   WorkflowDefinition,
+  WorkflowDiagnostic,
 } from './types.js';
 
 export class WorkflowCatalogError extends Error {
@@ -16,16 +17,19 @@ export class WorkflowCatalogError extends Error {
 export class WorkflowCatalog {
   readonly definitions: readonly WorkflowDefinition[];
   readonly invalid: readonly InvalidWorkflowRecord[];
+  readonly diagnostics: readonly WorkflowDiagnostic[];
   private readonly byId = new Map<string, WorkflowDefinition>();
   private readonly bySkillName = new Map<string, WorkflowDefinition>();
   private readonly byCommandId = new Map<string, WorkflowDefinition>();
 
   constructor(
     definitions: readonly WorkflowDefinition[],
-    invalid: readonly InvalidWorkflowRecord[] = []
+    invalid: readonly InvalidWorkflowRecord[] = [],
+    diagnostics: readonly WorkflowDiagnostic[] = []
   ) {
     this.definitions = [...definitions];
     this.invalid = [...invalid];
+    this.diagnostics = [...diagnostics];
 
     for (const definition of definitions) {
       const existingId = this.byId.get(definition.id);
@@ -77,4 +81,3 @@ export class WorkflowCatalog {
     return this.byId.has(id);
   }
 }
-
