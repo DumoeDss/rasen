@@ -33,7 +33,11 @@
       "deletionRequiresYes": "Deletion requires --yes in non-interactive mode",
       "deleteWorkflow": "Delete workflow {id}?",
       "deleted": "Deleted workflow {id}",
-      "projectConsumerWarning": "Warning: project-local consumers outside the current project may still exist."
+      "projectConsumerWarning": "Warning: project-local consumers outside the current project may still exist.",
+      "taskGroupHeading": "Tasks",
+      "driverGroupHeading": "Drivers",
+      "internalGroupHeading": "Internal",
+      "kindLabel": "Kind"
     },
     "errors": {
       "workflow_not_found": "The workflow was not found.",
@@ -547,6 +551,7 @@
     "Manage installable workflows in the user-wide library": "Manage installable workflows in the user-wide library",
     "List built-in and user workflows": "List built-in and user workflows",
     "Show only user workflows with no detected consumers": "Show only user workflows with no detected consumers",
+    "Also reveal internal workflows in the human table": "Also reveal internal workflows in the human table",
     "Show an installable workflow definition and known usage": "Show an installable workflow definition and known usage",
     "Show where an installable workflow resolves from": "Show where an installable workflow resolves from",
     "Create a minimal workflow draft without installing it": "Create a minimal workflow draft without installing it",

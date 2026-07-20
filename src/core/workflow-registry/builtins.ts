@@ -44,7 +44,7 @@ import {
   getAutoCommandSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { CommandTemplate, SkillTemplate } from '../templates/types.js';
-import type { WorkflowDefinition } from './types.js';
+import type { WorkflowDefinition, WorkflowKind } from './types.js';
 
 export const CORE_WORKFLOW_IDS = [
   'propose',
@@ -88,6 +88,7 @@ interface BuiltInWorkflowAdapter {
   dirName: string;
   skill: () => SkillTemplate;
   command?: () => CommandTemplate;
+  kind?: WorkflowKind;
 }
 
 const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
@@ -106,13 +107,13 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
   { id: 'verify-enhanced-command', dirName: 'rasen-verify-enhanced', skill: getVerifyEnhancedSkillTemplate, command: getOpsxVerifyEnhancedCommandTemplate },
   { id: 'ship-command', dirName: 'rasen-ship', skill: getShipCommandSkillTemplate, command: getOpsxShipCommandTemplate },
   { id: 'retro-command', dirName: 'rasen-retro', skill: getRetroCommandSkillTemplate, command: getOpsxRetroCommandTemplate },
-  { id: 'auto-command', dirName: 'rasen-auto', skill: getAutoCommandSkillTemplate, command: getOpsxAutoCommandTemplate },
+  { id: 'auto-command', dirName: 'rasen-auto', skill: getAutoCommandSkillTemplate, command: getOpsxAutoCommandTemplate, kind: 'driver' },
   { id: 'review-cycle', dirName: 'rasen-review-cycle', skill: getReviewCycleSkillTemplate, command: getOpsxReviewCycleCommandTemplate },
   { id: 'handoff', dirName: 'rasen-handoff', skill: getHandoffSkillTemplate, command: getOpsxHandoffCommandTemplate },
-  { id: 'goal-plan', dirName: 'rasen-goal-plan', skill: getGoalPlanSkillTemplate },
-  { id: 'goal-iterate', dirName: 'rasen-goal-iterate', skill: getGoalIterateSkillTemplate },
-  { id: 'goal-report', dirName: 'rasen-goal-report', skill: getGoalReportSkillTemplate },
-  { id: 'goal-command', dirName: 'rasen-goal', skill: getGoalCommandSkillTemplate, command: getOpsxGoalCommandTemplate },
+  { id: 'goal-plan', dirName: 'rasen-goal-plan', skill: getGoalPlanSkillTemplate, kind: 'internal' },
+  { id: 'goal-iterate', dirName: 'rasen-goal-iterate', skill: getGoalIterateSkillTemplate, kind: 'internal' },
+  { id: 'goal-report', dirName: 'rasen-goal-report', skill: getGoalReportSkillTemplate, kind: 'internal' },
+  { id: 'goal-command', dirName: 'rasen-goal', skill: getGoalCommandSkillTemplate, command: getOpsxGoalCommandTemplate, kind: 'driver' },
 ];
 
 function digestBuiltIn(adapter: BuiltInWorkflowAdapter, skill: SkillTemplate, command?: CommandTemplate): string {
@@ -135,6 +136,7 @@ export function getBuiltInWorkflowDefinitions(): WorkflowDefinition[] {
       id: adapter.id,
       source: 'built-in',
       manifestVersion: 1,
+      kind: adapter.kind ?? 'task',
       skill: { dirName: adapter.dirName, template: skill },
       command: command
         ? {

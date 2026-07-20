@@ -60,6 +60,14 @@ The exact fields are:
 
 - `version`: the integer `1`.
 - `id`: the portable workflow ID, equal to the containing directory name.
+- `kind`: optional, defaults to `task`. May also be `internal` (a sub-unit
+  meant to be invoked by another workflow rather than picked directly by a
+  user). `driver` is reserved for built-in outer-loop engines and is not a
+  valid value here; an out-of-range value fails strict validation. `kind` is
+  catalog/presentation metadata only — it is not part of the workflow digest,
+  so declaring or changing it never triggers drift-healing of an installed
+  copy. See [`rasen workflow`](cli.md#rasen-workflow) for how `list` groups
+  and hides by kind.
 - `command`: optional. `{ enabled: false }` disables command delivery. When
   enabled, `name`, `category`, and a non-empty unique `tags` array are required.
   The command ID is the workflow ID, its description comes from `SKILL.md`, and

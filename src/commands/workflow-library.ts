@@ -69,8 +69,9 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .command('list')
     .description('List built-in and user workflows')
     .option('--unused', 'Show only user workflows with no detected consumers')
+    .option('--all', 'Also reveal internal workflows in the human table')
     .option('--json', 'Output as JSON')
-    .action(async (options: { unused?: boolean; json?: boolean }) => {
+    .action(async (options: { unused?: boolean; all?: boolean; json?: boolean }) => {
       await runWorkflowAction(options, { workflows: [], diagnostics: [] }, () => {
         const messages = getWorkflowUiMessages();
         const catalog = loadWorkflowCatalog();
@@ -86,6 +87,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
               source: definition.source,
               sourcePath: definition.sourcePath ?? null,
               digest: definition.digest,
+              kind: definition.kind,
               skillName: definition.skill.template.name,
               commandId: definition.command?.content.id ?? null,
               unused: definition.source === 'user' && usage.length === 0,
@@ -103,8 +105,18 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           printJson({ workflows, invalid, diagnostics: catalog.diagnostics, status: [] });
           return;
         }
-        for (const entry of workflows) {
-          console.log(`${entry.id}\t${messages.source(entry.source)}\t${entry.skillName}${entry.unused ? `\t${messages.unused}` : ''}`);
+        const groupOrder: Array<{ kind: 'task' | 'driver' | 'internal'; heading: string }> = [
+          { kind: 'task', heading: messages.taskGroupHeading },
+          { kind: 'driver', heading: messages.driverGroupHeading },
+          ...(options.all ? [{ kind: 'internal' as const, heading: messages.internalGroupHeading }] : []),
+        ];
+        for (const group of groupOrder) {
+          const entries = workflows.filter((entry) => entry.kind === group.kind);
+          if (entries.length === 0) continue;
+          console.log(`${group.heading}:`);
+          for (const entry of entries) {
+            console.log(`${entry.id}\t${messages.source(entry.source)}\t${entry.skillName}${entry.unused ? `\t${messages.unused}` : ''}`);
+          }
         }
         for (const entry of invalid) console.log(`${entry.id}\t${messages.source('user')}\t${messages.invalid}`);
         for (const diagnostic of catalog.diagnostics) {
@@ -135,6 +147,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           return;
         }
         console.log(`${definition.id} (${messages.source(definition.source)})`);
+        console.log(`${messages.kindLabel}: ${definition.kind}`);
         console.log(`${messages.skillLabel}: ${definition.skill.template.name}`);
         console.log(`${messages.commandLabel}: ${definition.command?.content.id ?? messages.none}`);
         console.log(`${messages.digestLabel}: ${definition.digest}`);

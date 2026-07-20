@@ -40,6 +40,7 @@ function definition(id: string, dependencies: string[] = []): WorkflowDefinition
     source: 'user',
     sourcePath: `/staging/${id}`,
     manifestVersion: 1,
+    kind: 'task',
     skill: {
       dirName: `rasen-${id}`,
       template: {

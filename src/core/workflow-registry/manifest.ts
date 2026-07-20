@@ -23,6 +23,7 @@ const EnabledCommandSchema = z.strictObject({
 const WorkflowManifestSchema = z.strictObject({
   version: z.literal(1),
   id: z.string(),
+  kind: z.enum(['task', 'internal']).default('task'),
   command: z.discriminatedUnion('enabled', [DisabledCommandSchema, EnabledCommandSchema]).optional(),
   files: z
     .strictObject({

@@ -28,6 +28,10 @@ export interface WorkflowUiMessages {
   deleteWorkflow: (id: string) => string;
   deleted: (id: string) => string;
   projectConsumerWarning: string;
+  taskGroupHeading: string;
+  driverGroupHeading: string;
+  internalGroupHeading: string;
+  kindLabel: string;
   error: (code: string, fallback: string) => string;
 }
 

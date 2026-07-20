@@ -56,5 +56,31 @@ describe('built-in workflow catalog', () => {
     const [first] = getBuiltInWorkflowDefinitions();
     expect(() => new WorkflowCatalog([first, { ...first }])).toThrow(/Workflow ID/);
   });
+
+  it('assigns driver/internal/task kinds per portfolio decision #1', () => {
+    const byId = new Map(getBuiltInWorkflowDefinitions().map((definition) => [definition.id, definition.kind]));
+
+    expect(byId.get('auto-command')).toBe('driver');
+    expect(byId.get('goal-command')).toBe('driver');
+    expect(byId.get('goal-plan')).toBe('internal');
+    expect(byId.get('goal-iterate')).toBe('internal');
+    expect(byId.get('goal-report')).toBe('internal');
+    expect(byId.get('propose')).toBe('task');
+    expect(byId.get('apply')).toBe('task');
+  });
+
+  it('does not change the digest when kind is added or changed', () => {
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    const actual = getBuiltInWorkflowDefinitions().map((definition) => ({
+      id: definition.id,
+      skillName: definition.skill.template.name,
+      dirName: definition.skill.dirName,
+      commandId: definition.command?.content.id ?? null,
+    }));
+
+    // kind is catalog metadata and is deliberately excluded from digestBuiltIn's
+    // preimage, so the golden fixture (which does not project kind) stays exact.
+    expect(actual).toEqual(fixture);
+  });
 });
 

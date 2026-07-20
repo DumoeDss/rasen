@@ -1040,7 +1040,7 @@ Translation catalogs are maintained as `src/locales/en.json` and `src/locales/ja
 Manage installable workflows in the machine-wide user library. These commands operate on workflow definitions, not artifact schemas or orchestration pipelines.
 
 ```text
-rasen workflow list [--unused] [--json]
+rasen workflow list [--unused] [--all] [--json]
 rasen workflow show <id> [--json]
 rasen workflow which <id> [--json]
 rasen workflow init <id> --output <path> [--json]
@@ -1052,7 +1052,7 @@ rasen workflow delete <id> [--yes] [--json]
 
 | Subcommand | Description |
 |------------|-------------|
-| `list` | List valid built-in/user definitions plus invalid user entries; `--unused` is advisory and only considers detectable consumers |
+| `list` | List valid built-in/user definitions plus invalid user entries, grouped by kind; `--unused` is advisory and only considers detectable consumers; `--all` also reveals the internal group |
 | `show <id>` | Show identity, skill/command metadata, dependencies, files, digest, and known usage |
 | `which <id>` | Show whether an ID resolves from the built-in catalog or a user directory |
 | `init <id>` | Create a minimal draft in the required empty `--output` directory without installing it |
@@ -1078,6 +1078,8 @@ Every JSON success payload includes `status: []`. Failures emit one JSON documen
 ```
 
 `delete` scans global selection, saved profiles, reverse dependencies, user/current-project pipelines, and the current project's managed-artifact ledger. It cannot prove that no unknown project elsewhere references the workflow, so successful deletion still prints that limitation. See [Installable workflows and `.rasenpkg`](workflow-packages.md) for the manifest, package, digest, path, and resource-limit contracts.
+
+**Kind classification**: every workflow definition carries a `kind` — `task` (an inner-loop operation invoked directly), `driver` (an outer-loop engine that consumes pipelines, e.g. `auto-command`/`goal-command`), or `internal` (a sub-unit invoked only by a driver, e.g. the `goal-plan`/`goal-iterate`/`goal-report` trio). The human `list` table groups entries into `task` and `driver` sections and hides `internal` unless `--all` is passed. `--json` always lists every workflow, ungrouped, with its `kind` — machine consumers see the full catalog regardless of `--all`. A user workflow's `workflow.yaml` defaults to `kind: task` and may optionally declare `kind: internal`; `driver` is reserved for built-in engines. `kind` is presentation metadata only — it never enters a workflow's digest, so classifying or reclassifying a workflow never triggers drift-healing.
 
 ### `rasen config`
 

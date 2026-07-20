@@ -332,6 +332,7 @@ export function validateWorkflowDirectory(sourcePath: string): WorkflowValidatio
     source: 'user',
     sourcePath: path.resolve(sourcePath),
     manifestVersion: manifest.version,
+    kind: manifest.kind,
     skill: {
       dirName: parsedSkill.frontmatter.name,
       template: {

@@ -654,6 +654,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'List built-in and user workflows',
         flags: [
           { name: 'unused', description: 'Show only user workflows with no detected consumers' },
+          { name: 'all', description: 'Also reveal internal workflows in the human table' },
           COMMON_FLAGS.json,
         ],
       },

@@ -107,6 +107,7 @@ describe('workflow directory validator', () => {
       id: 'team-release',
       source: 'user',
       manifestVersion: 1,
+      kind: 'task',
       skill: { dirName: 'rasen-team-release' },
       requires: { workflows: [], skills: [] },
     });
@@ -142,6 +143,26 @@ describe('workflow directory validator', () => {
   it('rejects unknown manifest fields', () => {
     const parent = temporaryDirectory();
     const root = writeWorkflow(parent, 'invalid-manifest', { extraManifest: 'unknown: true' });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('manifest_schema_invalid');
+  });
+
+  it('loads a manifest that declares kind: internal', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'internal-subunit', { extraManifest: 'kind: internal' });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.definition?.kind).toBe('internal');
+  });
+
+  it('rejects a manifest declaring a disallowed kind', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'driver-claim', { extraManifest: 'kind: driver' });
 
     const result = validateWorkflowDirectory(root);
 
