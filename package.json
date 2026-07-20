@@ -73,11 +73,14 @@
     "@inquirer/prompts": "^7.10.1",
     "canonicalize": "^3.0.0",
     "chalk": "^5.5.0",
+    "cli-width": "^4.1.0",
     "commander": "^14.0.0",
     "cross-spawn": "7.0.6",
     "fast-glob": "^3.3.3",
     "jsonc-parser": "^3.3.1",
     "ora": "^8.2.0",
+    "string-width": "^8.2.2",
+    "string-width-legacy": "npm:string-width@4.2.3",
     "yaml": "^2.9.0",
     "zod": "^4.0.17"
   }

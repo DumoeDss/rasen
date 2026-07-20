@@ -17,6 +17,10 @@ import {
 } from './profile-messages.js';
 import { isPromptCancellationError } from './shared-output.js';
 import type { CliLocale } from '../utils/locale.js';
+import {
+  formatPickerDescription,
+  resolveTerminalColumns,
+} from '../utils/terminal-text.js';
 
 type ProfileAction = 'both' | 'delivery' | 'workflows' | 'keep';
 
@@ -143,6 +147,7 @@ function workflowChoices(
   );
   const columnWidth = Math.max(...[...displayIds.values()].map((workflow) => workflow.length));
   const requiredBy = new Map<string, string>();
+  const terminalColumns = resolveTerminalColumns();
   for (const definition of catalog.definitions) {
     if (!currentState.workflows.includes(definition.id)) continue;
     for (const dependency of definition.requires.workflows) requiredBy.set(dependency, definition.id);
@@ -154,14 +159,14 @@ function workflowChoices(
       ? messages.workflows[workflow as keyof typeof messages.workflows]
       : {
           name: definition.skill.template.name,
-          description: `${definition.skill.template.description} [${messages.sourceUser}]`,
+          description: `[${messages.sourceUser}] ${definition.skill.template.description}`,
         };
     const displayId = displayIds.get(workflow) ?? workflow;
     const dependencyOwner = requiredBy.get(workflow);
     return {
       value: workflow,
       name: `${displayId.padEnd(columnWidth)} - ${metadata.name}`,
-      description: metadata.description,
+      description: formatPickerDescription(metadata.description, terminalColumns),
       short: metadata.name,
       checked: currentState.workflows.includes(workflow),
       disabled: dependencyOwner ? messages.requiredBy(dependencyOwner) : undefined,

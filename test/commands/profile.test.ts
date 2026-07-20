@@ -11,8 +11,15 @@ import {
   readNamedProfile,
   saveNamedProfile,
 } from '../../src/core/named-profiles.js';
-import { importWorkflow, scaffoldWorkflow } from '../../src/core/workflow-library.js';
-import { getUserWorkflowsDir } from '../../src/core/workflow-registry/index.js';
+import {
+  importWorkflow,
+  scaffoldWorkflow,
+  workflowDefinitionForJson,
+} from '../../src/core/workflow-library.js';
+import {
+  getUserWorkflowsDir,
+  loadWorkflowCatalog,
+} from '../../src/core/workflow-registry/index.js';
 
 vi.mock('@inquirer/prompts', () => ({
   input: vi.fn(),
@@ -194,6 +201,48 @@ describe('profile command', () => {
     expect(validate('team')).toBe('Profile "team" already exists.');
     expect(validate('available')).toBe(true);
     expect(namedProfileExists('fresh')).toBe(true);
+  });
+
+  it('bounds long user workflow descriptions without hiding the localized source label', async () => {
+    process.env.RASEN_LANG = 'ja';
+    const draft = scaffoldWorkflow('picker-long', path.join(tempDir, 'draft', 'picker-long'));
+    const skillPath = path.join(draft, 'SKILL.md');
+    const longDescription = 'long description '.repeat(1000).trim();
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        'description: Describe when to use the picker-long workflow.',
+        `description: ${longDescription}`
+      )
+    );
+    await importWorkflow(draft);
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      delivery: 'both',
+      workflows: ['picker-long'],
+    });
+    const { select, checkbox, confirm } = await promptMocks();
+    select.mockResolvedValueOnce('both');
+    checkbox.mockResolvedValueOnce(['picker-long']);
+    confirm.mockResolvedValueOnce(false);
+
+    await runProfileCommand(['new', 'picker-long-profile']);
+
+    const choices = checkbox.mock.calls[0][0].choices as Array<{
+      value: string;
+      description: string;
+    }>;
+    const description = choices.find((choice) => choice.value === 'picker-long')?.description;
+    expect(description?.startsWith('[ユーザー] ')).toBe(true);
+    expect(description?.split('\n')).toHaveLength(2);
+    expect(description?.endsWith('...')).toBe(true);
+
+    const definition = loadWorkflowCatalog().get('picker-long');
+    expect(definition).toBeDefined();
+    expect(workflowDefinitionForJson(definition!)).toMatchObject({
+      skill: { description: longDescription },
+    });
   });
 
   it('labels user workflows and prevents deselecting a required dependency', async () => {

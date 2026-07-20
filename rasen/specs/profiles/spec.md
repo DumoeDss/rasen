@@ -103,14 +103,27 @@ The system SHALL provide an interactive picker for configuring profiles.
 
 #### Scenario: Localized workflow picker
 - **WHEN** the user's resolved CLI locale is Japanese
-- **THEN** delivery choices, workflow names, workflow descriptions, picker prompts, and picker instructions SHALL be displayed in Japanese
+- **THEN** delivery choices, built-in workflow names and descriptions, picker prompts, and picker instructions SHALL be displayed in Japanese
 - **AND** every workflow in `ALL_WORKFLOWS` SHALL have a specific name and description rather than a workflow-ID fallback
 - **AND** each workflow row SHALL show its stable public workflow id before the localized name
 - **AND** the separator between id and localized name SHALL be aligned using the longest public workflow id
 - **AND** internal `-command` suffixes SHALL be removed from the displayed id while the stored workflow value remains unchanged
+- **AND** user-workflow source labels and dependency messages SHALL be displayed in Japanese
+- **AND** the localized user-workflow source label SHALL remain visible when the resolved width can contain the complete label
+- **AND** user-authored workflow names and descriptions SHALL remain in their original language
 - **WHEN** the resolved locale is English or unsupported
-- **THEN** those picker elements SHALL be displayed in English
+- **THEN** Rasen-owned picker elements SHALL be displayed in English
+- **AND** user-authored workflow names and descriptions SHALL remain in their original language
 - **AND** every other interactive profile prompt, result, and command description SHALL use the same resolved locale
+
+#### Scenario: Long workflow descriptions are bounded in the picker
+- **WHEN** the picker opens and an active built-in or user-authored workflow description would occupy more than two lines at the resolved output-terminal width
+- **THEN** the picker SHALL render at most two visual lines for the description at that width snapshot
+- **AND** the second line SHALL end with ASCII `...` when at least three display columns are available and content is omitted
+- **AND** a narrower terminal SHALL use as many `.` characters as can fit
+- **AND** wrapping and truncation SHALL use terminal display columns rather than UTF-16 code units or UTF-8 bytes
+- **AND** fullwidth CJK characters, emoji sequences, and combining sequences SHALL NOT be split in the middle of a grapheme cluster
+- **AND** the persisted workflow definition, package content, JSON output, and generated skill or command content SHALL remain unmodified
 
 #### Scenario: Persisted CLI language
 - **WHEN** the user sets global config `language` to `en` or `ja`
