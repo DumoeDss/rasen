@@ -240,7 +240,7 @@ describe('workflow command', () => {
 
     log.mockClear();
     await runWorkflowCommand(['delete', 'team-release', '--yes', '--json']);
-    expect(lastJson()).toEqual({ deleted: 'team-release', status: [] });
+    expect(lastJson()).toEqual({ deleted: 'team-release', forcedReferrers: [], status: [] });
     expect(warn).toHaveBeenCalledWith(
       'Warning: project-local consumers outside the current project may still exist.'
     );
@@ -312,6 +312,34 @@ describe('workflow command', () => {
       expect(process.exitCode).toBe(1);
     }
   );
+
+  it('deletes a referenced workflow with --force and reports the dangling referrers', async () => {
+    const id = 'force-delete-target';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    await runWorkflowCommand(['import', draft, '--json']);
+    fs.writeFileSync(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'both', workflows: [id] })
+    );
+
+    log.mockClear();
+    await runWorkflowCommand(['delete', id, '--yes', '--json']);
+    expect(lastJson()).toMatchObject({
+      deleted: null,
+      status: [expect.objectContaining({ code: 'workflow_in_use' })],
+    });
+
+    log.mockClear();
+    warn.mockClear();
+    await runWorkflowCommand(['delete', id, '--yes', '--force', '--json']);
+    expect(lastJson()).toMatchObject({
+      deleted: id,
+      forcedReferrers: [expect.stringContaining('global-selection')],
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(id));
+    expect(fs.existsSync(path.join(home, 'workflows', id))).toBe(false);
+  });
 
   it('localizes human output while preserving machine IDs and diagnostic codes', async () => {
     process.env.RASEN_LANG = 'ja';

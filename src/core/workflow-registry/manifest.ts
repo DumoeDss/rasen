@@ -35,8 +35,10 @@ const WorkflowManifestSchema = z.strictObject({
     .strictObject({
       workflows: PortableStringArraySchema,
       skills: PortableStringArraySchema,
+      pipelines: PortableStringArraySchema,
+      schemas: PortableStringArraySchema,
     })
-    .default({ workflows: [], skills: [] }),
+    .default({ workflows: [], skills: [], pipelines: [], schemas: [] }),
   recommends: z
     .strictObject({
       workflows: PortableStringArraySchema,

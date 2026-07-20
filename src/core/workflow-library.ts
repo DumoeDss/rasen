@@ -203,6 +203,8 @@ export function scaffoldWorkflow(id: string, outputPath: string): string {
     'requires:',
     '  workflows: []',
     '  skills: []',
+    '  pipelines: []',
+    '  schemas: []',
     'recommends:',
     '  workflows: []',
     '',
@@ -522,11 +524,15 @@ export function scanWorkflowUsage(
   return [...(resolvedContext.byWorkflowId.get(id) ?? [])];
 }
 
+export interface DeleteWorkflowResult {
+  forcedReferrers: string[];
+}
+
 export async function deleteWorkflow(
   id: string,
-  options: WorkflowRegistryOptions & { projectRoot?: string } = {}
-): Promise<void> {
-  await withWorkflowRegistryLock(options, async () => {
+  options: WorkflowRegistryOptions & { projectRoot?: string; force?: boolean } = {}
+): Promise<DeleteWorkflowResult> {
+  return withWorkflowRegistryLock(options, async () => {
     const catalog = loadWorkflowCatalog(options);
     const definition = catalog.get(id);
     if (!definition) throw new WorkflowLibraryError(`Workflow "${id}" was not found`, 'workflow_not_found');
@@ -535,11 +541,12 @@ export async function deleteWorkflow(
     }
     const usageContext = createWorkflowUsageContext(catalog, options);
     const usage = scanWorkflowUsage(id, options, usageContext);
-    if (usage.length > 0) {
+    const forcedReferrers = usage.map((item) => `${item.kind}:${item.consumer}`);
+    if (usage.length > 0 && !options.force) {
       throw new WorkflowLibraryError(
         `Workflow "${id}" is still referenced`,
         'workflow_in_use',
-        { consumers: usage.map((item) => `${item.kind}:${item.consumer}`) }
+        { consumers: forcedReferrers }
       );
     }
 
@@ -552,6 +559,8 @@ export async function deleteWorkflow(
       fs.renameSync(tombstone, target);
       throw error;
     }
+
+    return { forcedReferrers: usage.length > 0 ? forcedReferrers : [] };
   });
 }
 

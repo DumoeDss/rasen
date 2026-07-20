@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { resolvePipelinePath } from '../../../src/core/pipeline-registry/resolver.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../../src/core/profiles.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
@@ -81,6 +82,60 @@ describe('built-in workflow catalog', () => {
     // kind is catalog metadata and is deliberately excluded from digestBuiltIn's
     // preimage, so the golden fixture (which does not project kind) stays exact.
     expect(actual).toEqual(fixture);
+  });
+
+  it('populates the audited requires edges and keeps them resolvable', () => {
+    const definitions = getBuiltInWorkflowDefinitions();
+    const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+    const knownSkillIdentities = new Set(
+      getExpertSkillDefinitions().flatMap((expert) => [expert.template.name, expert.dirName])
+    );
+    for (const definition of definitions) {
+      knownSkillIdentities.add(definition.skill.template.name);
+      knownSkillIdentities.add(definition.skill.dirName);
+    }
+
+    expect(byId.get('review-cycle')?.requires).toEqual({
+      workflows: [],
+      skills: ['rasen-review'],
+      pipelines: [],
+      schemas: [],
+    });
+    expect(byId.get('verify-enhanced-command')?.requires).toEqual({
+      workflows: [],
+      skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
+      pipelines: [],
+      schemas: [],
+    });
+    expect(byId.get('auto-command')?.requires).toEqual({
+      workflows: [],
+      skills: ['rasen-review'],
+      pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
+      schemas: [],
+    });
+    expect(byId.get('goal-command')?.requires).toEqual({
+      workflows: [],
+      skills: [],
+      pipelines: ['goal-loop-measure', 'goal-loop-evaluate', 'goal-loop-research'],
+      schemas: [],
+    });
+
+    for (const definition of definitions) {
+      for (const skill of definition.requires.skills) {
+        expect(
+          knownSkillIdentities.has(skill),
+          `${definition.id} requires.skills "${skill}" should resolve to a real skill`
+        ).toBe(true);
+      }
+      for (const pipeline of definition.requires.pipelines) {
+        expect(
+          resolvePipelinePath(pipeline),
+          `${definition.id} requires.pipelines "${pipeline}" should resolve to a real pipeline`
+        ).not.toBeNull();
+      }
+      expect(definition.requires.workflows).toEqual([]);
+      expect(definition.requires.schemas).toEqual([]);
+    }
   });
 });
 

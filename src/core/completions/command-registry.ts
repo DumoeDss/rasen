@@ -720,6 +720,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         positionals: [{ name: 'id', type: 'workflow-id' }],
         flags: [
           { name: 'yes', short: 'y', description: 'Skip confirmation' },
+          { name: 'force', description: 'Bypass the referrer guard, deleting even a still-referenced workflow' },
           COMMON_FLAGS.json,
         ],
       },

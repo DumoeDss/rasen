@@ -27,6 +27,8 @@ interface WorkflowFixtureOptions {
   scripts?: Record<string, string | Buffer>;
   requiresWorkflows?: string[];
   requiresSkills?: string[];
+  requiresPipelines?: string[];
+  requiresSchemas?: string[];
   recommends?: string[];
   extraManifest?: string;
 }
@@ -54,6 +56,8 @@ function writeWorkflow(parent: string, id: string, options: WorkflowFixtureOptio
     'requires:',
     `  workflows: ${JSON.stringify(options.requiresWorkflows ?? [])}`,
     `  skills: ${JSON.stringify(options.requiresSkills ?? [])}`,
+    `  pipelines: ${JSON.stringify(options.requiresPipelines ?? [])}`,
+    `  schemas: ${JSON.stringify(options.requiresSchemas ?? [])}`,
     'recommends:',
     `  workflows: ${JSON.stringify(options.recommends ?? [])}`,
     ...(options.extraManifest ? [options.extraManifest] : []),
@@ -109,7 +113,7 @@ describe('workflow directory validator', () => {
       manifestVersion: 1,
       kind: 'task',
       skill: { dirName: 'rasen-team-release' },
-      requires: { workflows: [], skills: [] },
+      requires: { workflows: [], skills: [], pipelines: [], schemas: [] },
     });
     expect(result.definition?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
@@ -281,6 +285,39 @@ describe('workflow directory validator', () => {
 
     expect(result.valid).toBe(false);
     expect(result.diagnostics.map((item) => item.code)).toContain('workflow_id_mismatch');
+  });
+
+  it('resolves declared requires.pipelines and requires.schemas that exist', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'pipeline-schema-consumer', {
+      requiresPipelines: ['small-feature'],
+      requiresSchemas: ['spec-driven'],
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.definition?.requires).toEqual({
+      workflows: [],
+      skills: [],
+      pipelines: ['small-feature'],
+      schemas: ['spec-driven'],
+    });
+  });
+
+  it('rejects requires.pipelines and requires.schemas that do not resolve', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'missing-pipeline-schema', {
+      requiresPipelines: ['not-a-real-pipeline'],
+      requiresSchemas: ['not-a-real-schema'],
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining(['pipeline_dependency_missing', 'schema_dependency_missing'])
+    );
   });
 });
 

@@ -1,5 +1,7 @@
 import * as path from 'node:path';
 
+import { listSchemas } from '../artifact-graph/resolver.js';
+import { resolvePipelinePath } from '../pipeline-registry/resolver.js';
 import { computeWorkflowDigest, sha256 } from './digest.js';
 import { loadWorkflowSourceTree } from './loader.js';
 import { parseSkillDocument, parseWorkflowManifest } from './manifest.js';
@@ -184,6 +186,8 @@ export function validateWorkflowDirectory(sourcePath: string): WorkflowValidatio
     ...duplicateDiagnostics(declaredScripts, 'files.scripts'),
     ...duplicateDiagnostics(manifest.requires.workflows, 'requires.workflows'),
     ...duplicateDiagnostics(manifest.requires.skills, 'requires.skills'),
+    ...duplicateDiagnostics(manifest.requires.pipelines, 'requires.pipelines'),
+    ...duplicateDiagnostics(manifest.requires.schemas, 'requires.schemas'),
     ...duplicateDiagnostics(manifest.recommends.workflows, 'recommends.workflows')
   );
 
@@ -314,6 +318,51 @@ export function validateWorkflowDirectory(sourcePath: string): WorkflowValidatio
       });
     }
   }
+  for (const pipeline of manifest.requires.pipelines) {
+    if (!isPortableWorkflowId(pipeline)) {
+      diagnostics.push({
+        code: 'pipeline_dependency_invalid',
+        severity: 'error',
+        message: `Pipeline dependency "${pipeline}" is not portable`,
+        path: 'requires.pipelines',
+        sourcePath,
+      });
+      continue;
+    }
+    if (!resolvePipelinePath(pipeline)) {
+      diagnostics.push({
+        code: 'pipeline_dependency_missing',
+        severity: 'error',
+        message: `Required pipeline "${pipeline}" was not found`,
+        path: 'requires.pipelines',
+        sourcePath,
+        details: { dependency: pipeline },
+      });
+    }
+  }
+  const knownSchemas = new Set(listSchemas());
+  for (const schema of manifest.requires.schemas) {
+    if (!isPortableWorkflowId(schema)) {
+      diagnostics.push({
+        code: 'schema_dependency_invalid',
+        severity: 'error',
+        message: `Schema dependency "${schema}" is not portable`,
+        path: 'requires.schemas',
+        sourcePath,
+      });
+      continue;
+    }
+    if (!knownSchemas.has(schema)) {
+      diagnostics.push({
+        code: 'schema_dependency_missing',
+        severity: 'error',
+        message: `Required schema "${schema}" was not found`,
+        path: 'requires.schemas',
+        sourcePath,
+        details: { dependency: schema },
+      });
+    }
+  }
   if (manifest.command?.enabled) {
     diagnostics.push(...duplicateDiagnostics(manifest.command.tags, 'command.tags'));
   }
@@ -359,6 +408,8 @@ export function validateWorkflowDirectory(sourcePath: string): WorkflowValidatio
     requires: {
       workflows: [...manifest.requires.workflows],
       skills: [...manifest.requires.skills],
+      pipelines: [...manifest.requires.pipelines],
+      schemas: [...manifest.requires.schemas],
     },
     recommends: { workflows: [...manifest.recommends.workflows] },
     files,

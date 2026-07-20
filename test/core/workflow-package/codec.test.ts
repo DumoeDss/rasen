@@ -49,7 +49,7 @@ function definition(id: string, dependencies: string[] = []): WorkflowDefinition
         instructions: `Complete ${id}.\n`,
       },
     },
-    requires: { workflows: dependencies, skills: [] },
+    requires: { workflows: dependencies, skills: [], pipelines: [], schemas: [] },
     recommends: { workflows: [] },
     files: [
       {

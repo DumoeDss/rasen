@@ -44,7 +44,7 @@ import {
   getAutoCommandSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { CommandTemplate, SkillTemplate } from '../templates/types.js';
-import type { WorkflowDefinition, WorkflowKind } from './types.js';
+import type { WorkflowDefinition, WorkflowDependencySet, WorkflowKind } from './types.js';
 
 export const CORE_WORKFLOW_IDS = [
   'propose',
@@ -89,6 +89,7 @@ interface BuiltInWorkflowAdapter {
   skill: () => SkillTemplate;
   command?: () => CommandTemplate;
   kind?: WorkflowKind;
+  requires?: Partial<WorkflowDependencySet>;
 }
 
 const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
@@ -104,16 +105,49 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
   { id: 'onboard', dirName: 'rasen-onboard', skill: getOnboardSkillTemplate, command: getOpsxOnboardCommandTemplate },
   { id: 'help', dirName: 'rasen-help', skill: getHelpSkillTemplate, command: getOpsxHelpCommandTemplate },
   { id: 'office-hours-command', dirName: 'rasen-office-hours-command', skill: getOfficeHoursCommandSkillTemplate, command: getOpsxOfficeHoursCommandTemplate },
-  { id: 'verify-enhanced-command', dirName: 'rasen-verify-enhanced', skill: getVerifyEnhancedSkillTemplate, command: getOpsxVerifyEnhancedCommandTemplate },
+  {
+    id: 'verify-enhanced-command',
+    dirName: 'rasen-verify-enhanced',
+    skill: getVerifyEnhancedSkillTemplate,
+    command: getOpsxVerifyEnhancedCommandTemplate,
+    requires: {
+      skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
+    },
+  },
   { id: 'ship-command', dirName: 'rasen-ship', skill: getShipCommandSkillTemplate, command: getOpsxShipCommandTemplate },
   { id: 'retro-command', dirName: 'rasen-retro', skill: getRetroCommandSkillTemplate, command: getOpsxRetroCommandTemplate },
-  { id: 'auto-command', dirName: 'rasen-auto', skill: getAutoCommandSkillTemplate, command: getOpsxAutoCommandTemplate, kind: 'driver' },
-  { id: 'review-cycle', dirName: 'rasen-review-cycle', skill: getReviewCycleSkillTemplate, command: getOpsxReviewCycleCommandTemplate },
+  {
+    id: 'auto-command',
+    dirName: 'rasen-auto',
+    skill: getAutoCommandSkillTemplate,
+    command: getOpsxAutoCommandTemplate,
+    kind: 'driver',
+    requires: {
+      skills: ['rasen-review'],
+      pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
+    },
+  },
+  {
+    id: 'review-cycle',
+    dirName: 'rasen-review-cycle',
+    skill: getReviewCycleSkillTemplate,
+    command: getOpsxReviewCycleCommandTemplate,
+    requires: { skills: ['rasen-review'] },
+  },
   { id: 'handoff', dirName: 'rasen-handoff', skill: getHandoffSkillTemplate, command: getOpsxHandoffCommandTemplate },
   { id: 'goal-plan', dirName: 'rasen-goal-plan', skill: getGoalPlanSkillTemplate, kind: 'internal' },
   { id: 'goal-iterate', dirName: 'rasen-goal-iterate', skill: getGoalIterateSkillTemplate, kind: 'internal' },
   { id: 'goal-report', dirName: 'rasen-goal-report', skill: getGoalReportSkillTemplate, kind: 'internal' },
-  { id: 'goal-command', dirName: 'rasen-goal', skill: getGoalCommandSkillTemplate, command: getOpsxGoalCommandTemplate, kind: 'driver' },
+  {
+    id: 'goal-command',
+    dirName: 'rasen-goal',
+    skill: getGoalCommandSkillTemplate,
+    command: getOpsxGoalCommandTemplate,
+    kind: 'driver',
+    requires: {
+      pipelines: ['goal-loop-measure', 'goal-loop-evaluate', 'goal-loop-research'],
+    },
+  },
 ];
 
 function digestBuiltIn(adapter: BuiltInWorkflowAdapter, skill: SkillTemplate, command?: CommandTemplate): string {
@@ -150,7 +184,12 @@ export function getBuiltInWorkflowDefinitions(): WorkflowDefinition[] {
             },
           }
         : undefined,
-      requires: { workflows: [], skills: [] },
+      requires: {
+        workflows: adapter.requires?.workflows ?? [],
+        skills: adapter.requires?.skills ?? [],
+        pipelines: adapter.requires?.pipelines ?? [],
+        schemas: adapter.requires?.schemas ?? [],
+      },
       recommends: { workflows: [] },
       files: [],
       digest: digestBuiltIn(adapter, skill, command),

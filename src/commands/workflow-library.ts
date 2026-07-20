@@ -265,9 +265,10 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .command('delete <id>')
     .description('Delete an unreferenced user workflow')
     .option('-y, --yes', 'Skip confirmation')
+    .option('--force', 'Bypass the referrer guard, deleting even a still-referenced workflow')
     .option('--json', 'Output as JSON')
-    .action(async (id: string, options: JsonOption & { yes?: boolean }) => {
-      await runWorkflowAction(options, { deleted: null }, async () => {
+    .action(async (id: string, options: JsonOption & { yes?: boolean; force?: boolean }) => {
+      await runWorkflowAction(options, { deleted: null, forcedReferrers: [] }, async () => {
         const messages = getWorkflowUiMessages();
         if (!options.yes) {
           if (!isInteractive()) {
@@ -278,9 +279,12 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           if (!confirmed) throw new WorkflowLibraryError('Deletion cancelled', 'cancelled');
         }
         const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-        await deleteWorkflow(id, { projectRoot });
-        if (options.json) printJson({ deleted: id, status: [] });
+        const result = await deleteWorkflow(id, { projectRoot, force: options.force === true });
+        if (options.json) printJson({ deleted: id, forcedReferrers: result.forcedReferrers, status: [] });
         else console.log(messages.deleted(id));
+        if (result.forcedReferrers.length > 0) {
+          console.warn(messages.forcedDeleteWarning(id, result.forcedReferrers));
+        }
         console.warn(messages.projectConsumerWarning);
       });
     });

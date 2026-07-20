@@ -15,6 +15,8 @@ export type WorkflowKind = 'task' | 'driver' | 'internal';
 export interface WorkflowDependencySet {
   workflows: string[];
   skills: string[];
+  pipelines: string[];
+  schemas: string[];
 }
 
 export interface WorkflowRecommendations {

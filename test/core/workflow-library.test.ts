@@ -299,6 +299,29 @@ describe('workflow library lifecycle', () => {
     expect(loadWorkflowCatalog().get('referenced')).toBeUndefined();
   });
 
+  it('force-deletes a referenced workflow and reports the dangling referrers', async () => {
+    await importWorkflow(draft('force-referenced'));
+    fs.writeFileSync(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'both', workflows: ['force-referenced'] })
+    );
+
+    await expect(deleteWorkflow('force-referenced')).rejects.toMatchObject({
+      code: 'workflow_in_use',
+    });
+    const result = await deleteWorkflow('force-referenced', { force: true });
+    expect(result.forcedReferrers).toEqual([
+      expect.stringContaining('global-selection'),
+    ]);
+    expect(loadWorkflowCatalog().get('force-referenced')).toBeUndefined();
+  });
+
+  it('never lets --force delete a built-in workflow', async () => {
+    await expect(deleteWorkflow('apply', { force: true })).rejects.toMatchObject({
+      code: 'builtin_delete_forbidden',
+    });
+  });
+
   it('finds project pipeline usage when deletion starts from a nested directory', async () => {
     await importWorkflow(draft('nested-pipeline'));
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workflow-project-'));
