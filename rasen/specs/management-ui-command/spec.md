@@ -1,23 +1,19 @@
 # management-ui-command Specification
 
 ## Purpose
-Provide a hidden `rasen ui` CLI command that launches a combined management API + config API + UI-asset server on loopback with a per-session bearer token, and shuts down cleanly.
+Provide the public `rasen ui` CLI command — the sole management platform entry point — that launches a combined management API + config API + UI-asset server on loopback with a per-session bearer token, and shuts down cleanly.
 
 ## Requirements
-### Requirement: Hidden experimental launch command starts the management server
-The CLI SHALL provide a hidden top-level `rasen ui` command (absent from help output) that starts the management server on 127.0.0.1, mints a per-session bearer token, prints a URL of the form `http://127.0.0.1:<port>/board#token=<token>`, and opens it in the default browser unless `--no-open` is given. The command SHALL support `--port <n>` to pin the listen port (ephemeral by default) and SHALL leave the existing `rasen config ui` command and its behavior unchanged.
+### Requirement: Public management platform launch command
+The CLI SHALL provide a public top-level `rasen ui` command, listed in `rasen --help`, that starts the management server on 127.0.0.1, mints a per-session bearer token, prints a URL of the form `http://127.0.0.1:<port>/#token=<token>` landing on the board (the platform home), and opens it in the default browser unless `--no-open` is given. The command SHALL support `--port <n>` to pin the listen port (ephemeral by default).
 
-#### Scenario: Launch and open board
+#### Scenario: Launch and land on the board
 - **WHEN** a user runs `rasen ui` inside a Rasen project
-- **THEN** the management server starts on a loopback ephemeral port, the board URL with the token fragment is printed, and the default browser opens it
+- **THEN** the management server starts on a loopback ephemeral port, the platform URL with the token fragment is printed, and the default browser opens on the board view
 
-#### Scenario: Hidden from help
+#### Scenario: Listed in help
 - **WHEN** a user runs `rasen --help`
-- **THEN** the `ui` command is not listed
-
-#### Scenario: Existing config command untouched
-- **WHEN** a user runs `rasen config ui`
-- **THEN** it behaves exactly as before this change, serving only the config API route group without management endpoints
+- **THEN** the `ui` command is listed with a description identifying it as the management platform entry point
 
 #### Scenario: Invalid port rejected
 - **WHEN** a user runs `rasen ui --port abc` or a port outside 0-65535

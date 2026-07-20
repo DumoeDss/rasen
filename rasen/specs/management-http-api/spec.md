@@ -5,7 +5,7 @@ Provide a read-only, loopback-bound, bearer-secured HTTP API exposing project st
 
 ## Requirements
 ### Requirement: Read-only management API with loopback and bearer security
-The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, and `GET /api/v1/runs` bound to 127.0.0.1 only, requiring a per-session bearer token minted at server startup, and SHALL expose no endpoint that mutates project state. Every response SHALL be computed from a fresh filesystem read at request time.
+The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, and `GET /api/v1/runs` bound to 127.0.0.1 only, requiring a per-session bearer token minted at server startup, and SHALL expose no endpoint that mutates project state. Every response SHALL be computed from a fresh filesystem read at request time. Each management path SHALL also answer when addressed with a single trailing slash (e.g. `/api/v1/status/`), identically to its canonical form; deeper suffixes are not management paths and fall through to the rest of the server's routing.
 
 #### Scenario: Authorized status request
 - **WHEN** a client sends `GET /api/v1/status` with the session bearer token
@@ -22,6 +22,10 @@ The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, and 
 #### Scenario: Fresh read on every request
 - **WHEN** a change's on-disk state is modified between two identical requests
 - **THEN** the second response reflects the new on-disk state without any server restart
+
+#### Scenario: Trailing slash tolerated on management paths
+- **WHEN** a client sends `GET /api/v1/status/` (one trailing slash) with the session bearer token
+- **THEN** the response is identical to `GET /api/v1/status`, not a 404 from another route group
 
 ### Requirement: Daemon identity headers on every management-server response
 Every response from the management server SHALL carry the headers `x-rasen-daemon: <version>` and `x-rasen-pid: <pid>`, including error responses, static asset responses, and responses delegated to the config API route group, so a consumer can classify what is listening on a port by probing any path.
