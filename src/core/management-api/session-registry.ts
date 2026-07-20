@@ -53,13 +53,21 @@ export interface SessionRegistry {
   list(): SessionRecord[];
   updateState(id: string, state: SessionState, patch?: Partial<SessionRecord>): void;
   touchOutput(id: string): void;
-  /** Marks the record `exited`, sets `endedAt`, and prunes the oldest exited record past the cap. */
+  /**
+   * Marks the record `exited`, sets `endedAt`, and prunes the oldest exited
+   * record(s) past the retention cap. Returns the ids of any records pruned
+   * by this call (review m2) — the registry itself holds no per-session
+   * side-resources, but a caller (the supervisor's output tails) that keys
+   * its own external map off session id needs to know which ids just
+   * stopped existing, or that map grows unbounded even though the registry
+   * stays capped.
+   */
   finalize(
     id: string,
     reason: TerminationReason,
     exitCode?: number | null,
     exitSignal?: string | null
-  ): void;
+  ): string[];
 }
 
 function copy(record: SessionRecord): SessionRecord {
@@ -69,18 +77,21 @@ function copy(record: SessionRecord): SessionRecord {
 export function createSessionRegistry(): SessionRegistry {
   const records = new Map<string, SessionRecord>();
 
-  function pruneExited(): void {
+  function pruneExited(): string[] {
     const exited: SessionRecord[] = [];
     for (const record of records.values()) {
       if (record.state === 'exited') exited.push(record);
     }
-    if (exited.length <= MAX_EXITED_RECORDS) return;
+    if (exited.length <= MAX_EXITED_RECORDS) return [];
 
     exited.sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
     const toRemove = exited.length - MAX_EXITED_RECORDS;
+    const prunedIds: string[] = [];
     for (let i = 0; i < toRemove; i++) {
       records.delete(exited[i].id);
+      prunedIds.push(exited[i].id);
     }
+    return prunedIds;
   }
 
   return {
@@ -130,7 +141,7 @@ export function createSessionRegistry(): SessionRegistry {
 
     finalize(id, reason, exitCode, exitSignal) {
       const record = records.get(id);
-      if (!record) return;
+      if (!record) return [];
       record.state = 'exited';
       record.endedAt = Date.now();
       // First-set termination reason wins (mirrors omnicross run-registry):
@@ -143,7 +154,7 @@ export function createSessionRegistry(): SessionRegistry {
       }
       if (exitCode !== undefined) record.exitCode = exitCode;
       if (exitSignal !== undefined) record.exitSignal = exitSignal;
-      pruneExited();
+      return pruneExited();
     },
   };
 }

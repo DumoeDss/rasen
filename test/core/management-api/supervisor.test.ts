@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createSessionSupervisor, type SessionSupervisor } from '../../../src/core/management-api/supervisor.js';
 import { createSessionRegistry } from '../../../src/core/management-api/session-registry.js';
+import * as killTreeModule from '../../../src/core/management-api/kill-tree.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fakeClaudeBin = path.resolve(__dirname, '..', '..', 'fixtures', 'management-api', 'session-fake-cli.mjs');
@@ -301,6 +302,87 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     }
   }, 10_000);
 
+  it('review M1 regression: concurrent launches at the cap admit exactly maxConcurrent, never more (TOCTOU repro)', async () => {
+    // Sequential cap tests (above) cannot catch a race between the cap
+    // check and the slot reservation — the fix moved the reservation
+    // before the only `await` in `launch`, so this fires every launch
+    // "simultaneously" via Promise.all, the way concurrent HTTP POSTs
+    // would actually interleave.
+    const maxConcurrent = 2;
+    const supervisor = makeSupervisor({ maxConcurrent, killGraceMs: 150 });
+
+    const attempts = 5;
+    const results = await Promise.all(
+      Array.from({ length: attempts }, (_, i) =>
+        supervisor.launch({
+          kind: 'auto',
+          skill: '/rasen:auto',
+          task: `MODE=idle-after-init concurrent-${i}`,
+          cwd,
+          timeoutMs: 60_000,
+          noOutputTimeoutMs: 60_000,
+        })
+      )
+    );
+
+    const succeeded = results.filter((r) => r.ok);
+    const busy = results.filter((r) => !r.ok && r.status === 409 && r.code === 'busy');
+    expect(succeeded).toHaveLength(maxConcurrent);
+    expect(busy).toHaveLength(attempts - maxConcurrent);
+
+    // Clean up every session that actually launched.
+    for (const r of succeeded) {
+      if (r.ok) supervisor.kill(r.record.id);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }, 10_000);
+
+  it('review M2 regression: a repeated triggerKill (double DELETE) dispatches only one SIGKILL escalation, and it is fully cancelled on close', async () => {
+    const killProcessTreeSpy = vi.spyOn(killTreeModule, 'killProcessTree');
+    killProcessTreeSpy.mockClear();
+
+    const supervisor = makeSupervisor({ killGraceMs: 150 });
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen:auto',
+      task: 'MODE=sigterm-resistant x',
+      cwd,
+      timeoutMs: 60_000,
+      noOutputTimeoutMs: 60_000,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const id = result.record.id;
+
+    // Let it actually start (init line) before killing.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Double DELETE while still 'exiting' (SIGTERM-resistant, so the first
+    // kill hasn't settled yet) — this is exactly the reachable path M2
+    // fixed: without idempotency, this second call would arm a SECOND
+    // escalation timer that the eventual `close` handler's single
+    // `pendingKillCancel?.()` would never reach.
+    supervisor.kill(id);
+    supervisor.kill(id);
+    // A watchdog-style trigger during the same grace window is the other
+    // reachable path — exercise it too via a third external trigger.
+    supervisor.kill(id);
+
+    expect(killProcessTreeSpy).toHaveBeenCalledTimes(1);
+
+    // Past the SIGKILL grace period, the process is dead (proves the one
+    // escalation that did fire still worked end to end).
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const finalRecord = supervisor.getRecord(id)!;
+    expect(finalRecord.state).toBe('exited');
+    expect(finalRecord.terminationReason).toBe('killed');
+
+    // No further killProcessTree calls happened after close either (e.g.
+    // from a timer that fired late) — still exactly one.
+    expect(killProcessTreeSpy).toHaveBeenCalledTimes(1);
+    killProcessTreeSpy.mockRestore();
+  }, 10_000);
+
   it('the concurrency slot releases only once the child has actually closed, not merely once kill() was called', async () => {
     const supervisor = makeSupervisor({ maxConcurrent: 1, killGraceMs: 300 });
     const first = await supervisor.launch({
@@ -396,5 +478,72 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(supervisor.getRecord(a.record.id)!.terminationReason).toBe('server-shutdown');
     expect(supervisor.getRecord(b.record.id)!.state).toBe('exited');
     expect(supervisor.getRecord(b.record.id)!.terminationReason).toBe('server-shutdown');
+  }, 10_000);
+
+  it('review m1 regression: shutdownAll sets draining synchronously, so a launch racing it is rejected rather than orphaned', async () => {
+    const supervisor = makeSupervisor();
+
+    // `shutdownAll`'s first statement (before any `await`) flips `draining`
+    // — by the time this call returns a pending promise, the flag is
+    // already true, closing the window where `stopServer` reaped a
+    // snapshot of live sessions before the listener stopped accepting
+    // requests (a `POST` landing in that window used to spawn a session
+    // nobody would ever reap).
+    const shutdownPromise = supervisor.shutdownAll('server-shutdown');
+
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen:auto',
+      task: 'MODE=fast-exit racing-shutdown',
+      cwd,
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(503);
+      expect(result.code).toBe('shutting_down');
+    }
+
+    await shutdownPromise;
+  });
+
+  it('review m2 regression: a pruned exited record\'s output tail is freed, not retained for the server\'s lifetime', async () => {
+    // Isolates the wiring (finalize's pruned-ids return value -> tails.delete)
+    // from the registry's own real 50-record cap (session-registry.test.ts
+    // already covers that cap directly) — a stub registry reports an
+    // arbitrary "pruned" id on the launched session's own finalize call, and
+    // this proves the supervisor actually deletes that id's tail in response.
+    const prunedId = 'stub-pruned-id-from-a-much-older-session';
+    const registry = createSessionRegistry();
+    const realFinalize = registry.finalize.bind(registry);
+    registry.finalize = (id, reason, exitCode, exitSignal) => {
+      realFinalize(id, reason, exitCode, exitSignal);
+      return [prunedId];
+    };
+
+    const supervisor = createSessionSupervisor({
+      registry,
+      resolveAgentCli: async () => fakeClaudeBin,
+      killGraceMs: 200,
+    });
+
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen:auto',
+      task: 'MODE=fast-exit x',
+      cwd,
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // The stub-reported pruned id's tail is gone — freed as part of this
+    // session's own finalize, exactly like a real registry would report a
+    // genuinely-older record pushed out past the retention cap.
+    expect(supervisor.getTails(prunedId)).toBeUndefined();
   }, 10_000);
 });

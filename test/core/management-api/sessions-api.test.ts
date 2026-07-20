@@ -371,5 +371,31 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       expect(res.headers['x-rasen-daemon']).toBe('0.0.0-test');
       expect(res.headers['x-rasen-pid']).toBeDefined();
     });
+
+    it('review m3 regression: a non-UUID single-segment id falls through to config routing (404), rather than being claimed by the sessions group', async () => {
+      const h = await startServer();
+      // Design D4: "validated as UUID format before lookup" — a junk
+      // segment must not even be treated as a sessions path (it's not the
+      // registry-miss 404 the sessions handler would itself produce; it's
+      // the config route group's fallthrough 404, same as any other
+      // unmatched /api/ path).
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/sessions/not-a-uuid',
+        headers: authed(),
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it('a UUID-shaped but unknown id is still handled by the sessions group (404 with the sessions not_found code)', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/sessions/00000000-0000-0000-0000-000000000000',
+        headers: authed(),
+      });
+      expect(res.status).toBe(404);
+      expect((res.json() as any).error.code).toBe('not_found');
+    });
   });
 });

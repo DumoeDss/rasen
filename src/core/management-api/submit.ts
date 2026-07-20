@@ -5,9 +5,10 @@
  * logic: it validates input, then spawns the CLI's own `dist/cli/index.js`
  * entry (never PATH) as `new change <name> --proposal=<description> --json`,
  * with `shell: false` and an argv array, and passes the CLI's exit code and
- * output through verbatim. The whitelist (design D2) is data — one entry,
- * create-change — so a future slice extends this table rather than
- * rewriting the bridge.
+ * output through verbatim. The whitelist (design D2/D7) is the shared
+ * tiered table in `whitelist.ts` — this bridge admits only the bounded-cli
+ * tier's one entry, create-change (checked via `getBoundedCliEntry`); the
+ * supervised long-runner tier is served exclusively by `sessions.ts`.
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -15,6 +16,7 @@ import * as path from 'node:path';
 
 import { validateChangeName } from '../../utils/change-utils.js';
 import type { ManagementApiContext } from './router.js';
+import { getBoundedCliEntry } from './whitelist.js';
 import type { SubmitChangeResponse } from './wire-types.js';
 
 const require = createRequire(import.meta.url);
@@ -128,6 +130,22 @@ export function createChangeSubmitter(
   let inFlight = false;
 
   return async (name, description) => {
+    // Admission gate through the shared whitelist table (design D7, review
+    // m4): this endpoint serves only the bounded-cli tier's one entry.
+    // `create-change` is a fixed constant here — there is no `kind`/`op`
+    // field on this request to smuggle a different tier's entry through —
+    // so this can only fail if the table itself is edited to drop the
+    // entry, which is exactly the "single admission source" contract D7
+    // promises: the table is load-bearing, not vestigial documentation.
+    if (!getBoundedCliEntry('create-change')) {
+      return {
+        ok: false,
+        status: 500,
+        code: 'internal_error',
+        message: 'create-change is not present in the admission whitelist.',
+      };
+    }
+
     if (inFlight) {
       return { ok: false, status: 409, code: 'busy', message: 'Another submission is already in flight.' };
     }

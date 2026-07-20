@@ -70,7 +70,13 @@ describe('foreground server shutdown reaps live sessions (design D6, task 3.4)',
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  it('clean shutdown tree-kills every live session before the server closes, finalized with server-shutdown', async () => {
+  // (review t2: the termination *reason* itself is asserted at the
+  // supervisor level — supervisor.test.ts's "shutdownAll() tree-kills every
+  // live session with the given reason" — since the registry is
+  // unobservable once this HTTP-level server has actually closed; this
+  // test's job is proving the process is actually dead, not re-asserting
+  // the reason string.)
+  it('clean shutdown tree-kills every live session before the server closes (process death, HTTP-level)', async () => {
     const context: ManagementApiContext = {
       token: TOKEN,
       launchProjectRoot: projectRoot,

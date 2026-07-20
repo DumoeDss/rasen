@@ -46,16 +46,23 @@ const MANAGEMENT_PATHS = new Set(['/api/v1/status', '/api/v1/changes', '/api/v1/
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
 
+/** Session ids are server-minted `randomUUID()` values (design D2) — any RFC 4122 textual form is accepted, not just v4, since the format check exists to reject junk, not to pin a version. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Matches `/api/v1/sessions/<id>` exactly one segment deep (design D4/D6:
- * "SHALL match exactly one additional path segment"); a deeper suffix
- * (`/api/v1/sessions/<id>/extra`) returns null and falls through to the
- * rest of the server's routing, same as any other unmatched path.
+ * Matches `/api/v1/sessions/<id>` exactly one segment deep, where `<id>` is
+ * UUID-shaped (design D4: "validated as UUID format before lookup" —
+ * review m3). A deeper suffix (`/api/v1/sessions/<id>/extra`) or a
+ * non-UUID single segment both return null and fall through to the rest of
+ * the server's routing, same as any other unmatched path — a junk segment
+ * was never a "sessions path" to begin with, not a 404 produced by this
+ * route group.
  */
 function matchSessionIdPath(pathname: string): string | null {
   if (!pathname.startsWith(SESSION_ID_PATH_PREFIX)) return null;
   const rest = pathname.slice(SESSION_ID_PATH_PREFIX.length);
   if (rest.length === 0 || rest.includes('/')) return null;
+  if (!UUID_PATTERN.test(rest)) return null;
   return rest;
 }
 

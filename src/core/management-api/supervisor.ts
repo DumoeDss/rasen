@@ -46,7 +46,8 @@ export interface LaunchInput {
 export type LaunchResult =
   | { ok: true; record: SessionRecord }
   | { ok: false; status: 409; code: 'busy'; message: string }
-  | { ok: false; status: 503; code: 'agent_cli_unavailable'; message: string };
+  | { ok: false; status: 503; code: 'agent_cli_unavailable'; message: string }
+  | { ok: false; status: 503; code: 'shutting_down'; message: string };
 
 export type KillResult =
   | { ok: true; status: 202; record: SessionRecord }
@@ -72,6 +73,8 @@ interface ActiveEntry {
   pid: number;
   closed: boolean;
   terminationReason: TerminationReason | null;
+  /** Set once `killProcessTree` has actually been dispatched (review M2) — guards against a second escalation timer being armed. */
+  killInitiated: boolean;
   triggerKill(reason: TerminationReason): void;
   onClosed: Promise<void>;
 }
@@ -122,18 +125,42 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   const active = new Map<string, ActiveEntry>();
   const tails = new Map<string, SessionTails>();
   let liveCount = 0;
-
-  function isLive(id: string): boolean {
-    return active.has(id);
-  }
+  // Set synchronously as `shutdownAll`'s first statement (review m1) — closes
+  // the window where `stopServer` reaps its snapshot of live sessions before
+  // the listener stops accepting requests: without this, a `POST` landing in
+  // that window spawns a session `shutdownAll` never observed, orphaning it
+  // even on a *clean* exit.
+  let draining = false;
 
   async function launch(input: LaunchInput): Promise<LaunchResult> {
+    if (draining) {
+      return {
+        ok: false,
+        status: 503,
+        code: 'shutting_down',
+        message: 'The server is shutting down and is not admitting new sessions.',
+      };
+    }
+
     if (liveCount >= maxConcurrent) {
       return { ok: false, status: 409, code: 'busy', message: `Maximum concurrent sessions (${maxConcurrent}) already live.` };
     }
 
+    // Reserved BEFORE the `await` below (review M1): `launch` is async, and
+    // everything up to the first `await` runs as one synchronous turn, so
+    // two concurrent callers cannot both observe the pre-increment
+    // `liveCount` — the second caller's cap check only runs once the first
+    // has already reserved. Reserving after the `await resolveAgentCli()`
+    // call (even though that resolver is cached) reopens exactly that
+    // TOCTOU window: a proven repro got two live sessions past
+    // `maxConcurrent: 1`. Decremented on every path below that ends
+    // without a live entry in `active` — the 503 just below, and the
+    // spawn-catch further down.
+    liveCount += 1;
+
     const claudeBin = await resolveAgentCli();
     if (!claudeBin) {
+      liveCount -= 1;
       return {
         ok: false,
         status: 503,
@@ -141,10 +168,6 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
         message: 'No agent CLI binary could be resolved on this machine.',
       };
     }
-
-    // Reserved before spawn so a burst of concurrent POSTs cannot all pass
-    // the cap check before any of them registers as live.
-    liveCount += 1;
 
     const record = registry.create({
       kind: input.kind,
@@ -188,11 +211,22 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       pid: child.pid ?? -1,
       closed: false,
       terminationReason: null,
+      killInitiated: false,
       onClosed,
       triggerKill(reason) {
         if (entry.closed) return;
         if (!entry.terminationReason) entry.terminationReason = reason;
         registry.updateState(record.id, 'exiting', { terminationReason: entry.terminationReason });
+        // Idempotent past the first dispatch (review M2): a second DELETE
+        // on an already-'exiting' session, or a watchdog/overall timer
+        // firing inside a DELETE's grace window, must not arm a second
+        // escalation timer — `pendingKillCancel` would then only ever
+        // point at the LATEST one, and the `close` handler's single
+        // `pendingKillCancel?.()` call would leave the earlier timer
+        // armed to fire a stale SIGKILL at `-pid` after the child (and
+        // possibly its pgid) is already gone.
+        if (entry.killInitiated) return;
+        entry.killInitiated = true;
         if (typeof child.pid === 'number') {
           const handle = killProcessTree(child.pid, { graceMs: killGraceMs });
           pendingKillCancel = handle.cancel;
@@ -242,13 +276,19 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     child.on('error', () => {
       // Spawn-time or runtime dispatch error with no live process ever
       // confirmed — safe to release the slot immediately (mirrors submit.ts).
+      // (review t1: this assumption holds for every realistic emitter of
+      // Node's child_process 'error' — a failed spawn or a stream error
+      // before any process existed; it would NOT hold for a hypothetical
+      // 'error' fired on an already-running child, which 'close' still
+      // handles separately and which this early release does not race.)
       if (entry.closed) return;
       entry.closed = true;
       clearTimers();
       pendingKillCancel?.();
       liveCount -= 1;
       active.delete(record.id);
-      registry.finalize(record.id, entry.terminationReason ?? 'spawn-error', null, null);
+      const prunedIds = registry.finalize(record.id, entry.terminationReason ?? 'spawn-error', null, null);
+      for (const prunedId of prunedIds) tails.delete(prunedId);
       resolveClosed();
     });
 
@@ -264,7 +304,12 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       active.delete(record.id);
 
       const reason: TerminationReason = entry.terminationReason ?? (signal ? 'signal' : 'exit');
-      registry.finalize(record.id, reason, code, signal);
+      // `finalize` returns any OTHER records pruned past the retention cap
+      // by this call (review m2) — their tails must be freed too, or the
+      // tails map grows unbounded even though the registry stays capped at
+      // MAX_EXITED_RECORDS.
+      const prunedIds = registry.finalize(record.id, reason, code, signal);
+      for (const prunedId of prunedIds) tails.delete(prunedId);
       resolveClosed();
     });
 
@@ -300,6 +345,10 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   }
 
   async function shutdownAll(reason: TerminationReason): Promise<void> {
+    // First statement, synchronous, before any `await` (review m1): stops
+    // admitting new launches immediately, closing the reap-then-close-
+    // listener race — see the `draining` declaration above.
+    draining = true;
     const waits: Promise<void>[] = [];
     for (const [id, entry] of active) {
       entry.triggerKill(reason);
@@ -337,11 +386,18 @@ async function resolveAgentCliBin(): Promise<string | null> {
     for (const name of candidateNames()) {
       const candidate = path.join(dir, name);
       try {
-        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-          return candidate;
-        }
+        if (!fs.statSync(candidate).isFile()) continue;
+        // review t3: a PATH hit that isn't actually executable (wrong
+        // permissions, a stray non-executable file named `claude`) would
+        // otherwise resolve here, spawn, and only fail later as a
+        // same-session `spawn-error` — an up-front 503 is the honest
+        // signal. `accessSync` throws (caught below) when the bit is
+        // unset; on win32 X_OK degrades to an existence check, which is
+        // already covered by `statSync` above, so this is a no-op there.
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
       } catch {
-        // Unreadable directory entry — keep scanning.
+        // Missing, unreadable, or not executable — keep scanning.
       }
     }
   }
