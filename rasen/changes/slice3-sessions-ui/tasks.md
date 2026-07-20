@@ -22,9 +22,9 @@
 
 ## 5. Tests and verification
 
-- [ ] 5.1 Client tests: the four session calls hit the right method/path/body with auth headers, and shape-check fixture responses matching the settled contract (fixtures copied from wire-types shapes — loud failure on mirror drift)
-- [ ] 5.2 Component tests: list renders live/exited/absent-join/invalid-join fixtures correctly; kill requires confirmation and patches to exiting from the 202 body; 404-on-kill refreshes without error noise; launch success prepends without duplication when the next poll includes it; launch error shows the server message
-- [ ] 5.3 Polling tests: interval starts on mount and is cleared on unmount; detail polling only while expanded; board indicator polls only while a session is live
-- [ ] 5.4 Footprint check: `git status`/diff shows every modified path under `packages/ui/` (the parallel-safety guarantee with the daemon sibling)
-- [ ] 5.5 UI package suite green (`pnpm test` in `packages/ui`) and `rasen validate slice3-sessions-ui --json` passes
-- [ ] 5.6 Live acceptance rehearsal against a real server (never port 8890; the sibling symlink/port note from the parent planning-context applies): launch an auto session from the UI, watch it live, kill it from the UI, confirm the entry reaches exited/killed and the board indicator drops — the roadmap's kill-reflected-on-board rule, end to end
+- [x] 5.1 Client tests: the four session calls hit the right method/path/body with auth headers, and shape-check fixture responses matching the settled contract (fixtures copied from wire-types shapes — loud failure on mirror drift)
+- [x] 5.2 Component tests: list renders live/exited/absent-join/invalid-join fixtures correctly; kill requires confirmation and patches to exiting from the 202 body; 404-on-kill refreshes without error noise; launch success prepends without duplication when the next poll includes it; launch error shows the server message
+- [x] 5.3 Polling tests: interval starts on mount and is cleared on unmount; detail polling only while expanded; board indicator polls only while a session is live
+- [x] 5.4 Footprint check: `git status`/diff shows every modified path under `packages/ui/` (the parallel-safety guarantee with the daemon sibling)
+- [x] 5.5 UI package suite green (`pnpm test` in `packages/ui`) and `rasen validate slice3-sessions-ui --json` passes
+- [x] 5.6 Live acceptance rehearsal against a real server (never port 8890; the sibling symlink/port note from the parent planning-context applies): launch an auto session from the UI, watch it live, kill it from the UI, confirm the entry reaches exited/killed and the board indicator drops — the roadmap's kill-reflected-on-board rule, end to end
