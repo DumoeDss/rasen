@@ -4,6 +4,26 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Passthrough by default; task 1.2's synchronous-spawn-throw test (child 2
+// hand-off N1) flips `mockSpawnShouldThrowSync` to force the one path a
+// real `spawn()` call cannot be reliably coaxed into taking (a bad cwd or
+// bad binary path fails asynchronously via the `error` event on this
+// platform, never synchronously) — every other test in this file passes
+// through to the real `child_process.spawn` untouched.
+let mockSpawnShouldThrowSync = false;
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawn: (...args: Parameters<typeof actual.spawn>) => {
+      if (mockSpawnShouldThrowSync) {
+        throw Object.assign(new Error('ENOENT (simulated synchronous spawn failure)'), { code: 'ENOENT' });
+      }
+      return actual.spawn(...args);
+    },
+  };
+});
+
 import { createSessionSupervisor, type SessionSupervisor } from '../../../src/core/management-api/supervisor.js';
 import { createSessionRegistry } from '../../../src/core/management-api/session-registry.js';
 import * as killTreeModule from '../../../src/core/management-api/kill-tree.js';
@@ -545,5 +565,109 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     // session's own finalize, exactly like a real registry would report a
     // genuinely-older record pushed out past the retention cap.
     expect(supervisor.getTails(prunedId)).toBeUndefined();
+  }, 10_000);
+
+  it('N2 (child 2 hand-off): re-checks draining after the async resolveAgentCli await, releasing the slot and spawning nothing', async () => {
+    let releaseResolver: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseResolver = resolve;
+    });
+    let resolverCalls = 0;
+    const supervisor = createSessionSupervisor({
+      registry: createSessionRegistry(),
+      // A genuinely-async resolver (unlike the cached production one) —
+      // exactly the shape the hand-off flagged as the case that widens the
+      // race window.
+      resolveAgentCli: async () => {
+        resolverCalls += 1;
+        await gate;
+        return fakeClaudeBin;
+      },
+      maxConcurrent: 1,
+      killGraceMs: 200,
+    });
+
+    const launchPromise = supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen:auto',
+      task: 'MODE=fast-exit should never actually spawn',
+      cwd,
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+
+    // `shutdownAll` starts (and its synchronous `draining = true` takes
+    // effect) while the launch above is still parked at `await gate` inside
+    // the resolver — nothing has spawned yet, so this resolves immediately.
+    await supervisor.shutdownAll('server-shutdown');
+
+    // Only now does the resolver's await settle, letting `launch` resume
+    // past its `await resolveAgentCli()` point.
+    releaseResolver!();
+    const result = await launchPromise;
+
+    expect(resolverCalls).toBe(1);
+    expect(result).toEqual({
+      ok: false,
+      status: 503,
+      code: 'shutting_down',
+      message: expect.stringContaining('shutting down'),
+    });
+    // No record was ever created for the rejected launch, and the
+    // concurrency slot was released — a fresh launch (post-shutdown
+    // draining notwithstanding) proves the slot returned to zero rather
+    // than leaking. Since this supervisor is now permanently draining,
+    // assert via the absence of any record instead of a second launch.
+    expect(supervisor.list()).toEqual([]);
+  }, 10_000);
+
+  it('N1 (child 2 hand-off): a synchronous spawn throw consumes finalize\'s pruned-ids return value, symmetrically with the close/error paths', async () => {
+    // Mirrors "review m2 regression" above, isolating the same wiring
+    // (finalize's pruned-ids return -> tails.delete) on the synchronous-
+    // spawn-throw path specifically: before this fix, that path called
+    // `registry.finalize(...)` and discarded its return value entirely,
+    // so any id it reported evicted past the retention cap leaked its tail
+    // forever (bounded — one 64 KiB entry per synchronous spawn failure —
+    // but real, per the child-1 hand-off's N1 item).
+    const prunedId = 'stub-pruned-id-from-a-much-older-session';
+    const registry = createSessionRegistry();
+    const realFinalize = registry.finalize.bind(registry);
+    let finalizeCalls: Array<{ id: string; reason: string }> = [];
+    registry.finalize = (id, reason, exitCode, exitSignal) => {
+      finalizeCalls.push({ id, reason });
+      realFinalize(id, reason, exitCode, exitSignal);
+      return [prunedId];
+    };
+
+    mockSpawnShouldThrowSync = true;
+    try {
+      const supervisor = createSessionSupervisor({
+        registry,
+        resolveAgentCli: async () => fakeClaudeBin,
+        killGraceMs: 200,
+      });
+
+      const result = await supervisor.launch({
+        kind: 'auto',
+        skill: '/rasen:auto',
+        task: 'MODE=fast-exit x',
+        cwd,
+        timeoutMs: 5000,
+        noOutputTimeoutMs: 5000,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.status).toBe(503);
+      expect(result.code).toBe('agent_cli_unavailable');
+      expect(finalizeCalls).toEqual([{ id: expect.any(String), reason: 'spawn-error' }]);
+
+      // The stub-reported pruned id's tail is gone — this call not
+      // throwing while consuming the pruned-ids array (rather than
+      // discarding it) is exactly what N1 fixed.
+      expect(supervisor.getTails(prunedId)).toBeUndefined();
+    } finally {
+      mockSpawnShouldThrowSync = false;
+    }
   }, 10_000);
 });

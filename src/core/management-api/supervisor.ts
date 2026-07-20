@@ -159,6 +159,24 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     liveCount += 1;
 
     const claudeBin = await resolveAgentCli();
+
+    // N2 (child 1 hand-off): `draining` is only checked once, above, before
+    // this `await`. A `shutdownAll` that starts while the resolver is
+    // in-flight would otherwise let this launch proceed to spawn after the
+    // drain snapshot — orphaning a session no shutdown will ever observe.
+    // The injected cached `createAgentCliResolver()` yields for about one
+    // microtask, but a daemon-supplied resolver may genuinely await I/O, so
+    // this second check is unconditional rather than assumed-cheap-away.
+    if (draining) {
+      liveCount -= 1;
+      return {
+        ok: false,
+        status: 503,
+        code: 'shutting_down',
+        message: 'The server is shutting down and is not admitting new sessions.',
+      };
+    }
+
     if (!claudeBin) {
       liveCount -= 1;
       return {
@@ -192,7 +210,13 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       });
     } catch (err) {
       liveCount -= 1;
-      registry.finalize(record.id, 'spawn-error', null, null);
+      // N1 (child 1 hand-off): the `close`/`error` handlers below both
+      // prune tails for every id `finalize` reports evicted past the
+      // retention cap; this synchronous spawn-throw path (e.g. ENOENT on a
+      // bad binary path) must do the same, symmetrically, or the tails map
+      // leaks one entry per occurrence.
+      const prunedIds = registry.finalize(record.id, 'spawn-error', null, null);
+      for (const prunedId of prunedIds) tails.delete(prunedId);
       return { ok: false, status: 503, code: 'agent_cli_unavailable', message: err instanceof Error ? err.message : String(err) };
     }
 

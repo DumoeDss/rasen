@@ -1,12 +1,14 @@
 /**
- * Shared launch flow for the management server (design.md D3 of
- * `rasen-ui-unify-management-surface`): port validation, launch-project +
- * UI-package resolution, token mint, `startManagementServer` with
- * EADDRINUSE/invalid-port handling, URL print (parameterized entry path and
- * label), install hint, `openInBrowser`, and SIGINT/SIGTERM shutdown. Both
- * `rasen ui` (`src/commands/ui.ts`) and the `rasen config ui` alias
- * (`src/commands/config.ts`) are thin wrappers over this module —
- * `openInBrowser` lives only here now.
+ * Shared launch flow for the management platform (design.md D3/D4 of
+ * `slice3-daemon-residency`, superseding the child-1/prior-batch
+ * self-hosted-only flow): by default, `rasen ui` (and the `rasen config ui`
+ * alias) is an adopt-or-spawn CONSUMER of the resident daemon — it probes
+ * the daemon port, classifies what answers via the rasen identity headers,
+ * adopts a same-version daemon, replaces a stale one, spawns a fresh one
+ * when nothing listens, and fails (touching nothing) on a foreign listener.
+ * `--no-daemon` preserves the pre-residency self-hosted foreground form
+ * verbatim: this process itself starts the management server, owns the
+ * supervisor, and reaps its sessions on SIGINT/SIGTERM.
  */
 import { spawn } from 'node:child_process';
 import * as crypto from 'node:crypto';
@@ -16,12 +18,23 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { resolveLaunchProjectRef } from '../core/config-api/project-addressing.js';
 import { resolveUiPackageDir, UI_PACKAGE_NAME } from '../core/config-api/ui-package.js';
 import { startManagementServer } from '../core/management-api/server.js';
+import { killProcessTree } from '../core/management-api/kill-tree.js';
+import { readDaemonState } from '../core/management-api/daemon-state.js';
+import { probeDaemon, probeDaemonPort, resolveDefaultDaemonPort } from '../core/management-api/daemon-probe.js';
+import { spawnDaemonDetached } from './daemon.js';
 
 const require = createRequire(import.meta.url);
 
 export interface UiLaunchOptions {
   open?: boolean;
   port?: string;
+  /**
+   * Commander's `--no-daemon` negatable-flag mapping: `true` (the default,
+   * whether or not the caller sets it explicitly) unless `--no-daemon` was
+   * passed, in which case `false`. `false` selects the pre-residency
+   * self-hosted foreground form; anything else selects adopt-or-spawn.
+   */
+  daemon?: boolean;
 }
 
 export interface UiLaunchConfig {
@@ -64,29 +77,148 @@ function openInBrowser(url: string): void {
   }
 }
 
+function validatePort(rawPort: string | undefined): number | undefined | { error: string } {
+  if (rawPort === undefined) return undefined;
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    return { error: `--port must be an integer between 0 and 65535 (got "${rawPort}").` };
+  }
+  return port;
+}
+
+function printUrlAndOpen(url: string, config: UiLaunchConfig, uiAssetsDir: string | null, open: boolean | undefined): void {
+  if (config.notice) {
+    console.log(config.notice);
+  }
+  console.log(`${config.label}: ${url}`);
+  if (!uiAssetsDir) {
+    console.log(`UI package not installed. Run: npm install -g ${UI_PACKAGE_NAME}`);
+  }
+  if (open !== false) {
+    openInBrowser(url);
+  }
+}
+
+const PORT_FREE_POLL_ATTEMPTS = 20;
+const PORT_FREE_POLL_INTERVAL_MS = 250;
+
+async function waitForPortFree(port: number): Promise<boolean> {
+  for (let attempt = 0; attempt < PORT_FREE_POLL_ATTEMPTS; attempt++) {
+    const probe = await probeDaemonPort(port);
+    if (probe.kind === 'no-listener') return true;
+    await new Promise((resolve) => setTimeout(resolve, PORT_FREE_POLL_INTERVAL_MS));
+  }
+  return false;
+}
+
 /**
- * Runs the full launch flow: validates `--port`, starts the unified
- * management server, prints the URL (with the deprecation notice when
- * given), opens the browser unless `--no-open`, and wires SIGINT/SIGTERM to
- * a clean shutdown. Sets `process.exitCode = 1` and returns without starting
- * a server on a validation or startup failure.
+ * Runs the full launch flow. By default, adopts or spawns the resident
+ * daemon and exits promptly once the URL is delivered (design D4 of
+ * `slice3-daemon-residency`: exiting `rasen ui` never reaps the daemon or
+ * its sessions — there is nothing here for this process to shut down).
+ * `options.noDaemon` runs the pre-residency self-hosted foreground form
+ * verbatim, including its SIGINT/SIGTERM shutdown-and-reap posture. Sets
+ * `process.exitCode = 1` and returns without starting anything on a
+ * validation or startup failure.
  */
 export async function runUiLaunch(options: UiLaunchOptions, config: UiLaunchConfig): Promise<void> {
-  let port: number | undefined;
-  if (options.port !== undefined) {
-    port = Number(options.port);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-      console.error(`Error: --port must be an integer between 0 and 65535 (got "${options.port}").`);
+  const port = validatePort(options.port);
+  if (port !== undefined && typeof port === 'object') {
+    console.error(`Error: ${port.error}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const { version } = require('../../package.json') as { version: string };
+  const uiAssetsDir = resolveUiPackageDir();
+
+  if (options.daemon === false) {
+    await runSelfHosted(options, config, port, version, uiAssetsDir);
+    return;
+  }
+
+  await runAdoptOrSpawn(options, config, version, uiAssetsDir);
+}
+
+/**
+ * Adopt-or-spawn consumer path (design D3): probe -> classify -> adopt /
+ * replace-stale / spawn / fail-on-foreign. Prints the URL and returns; no
+ * server is started or owned by this process on the adopt/spawn paths.
+ */
+async function runAdoptOrSpawn(
+  options: UiLaunchOptions,
+  config: UiLaunchConfig,
+  version: string,
+  uiAssetsDir: string | null
+): Promise<void> {
+  const defaultPort = resolveDefaultDaemonPort();
+  const stateHint = readDaemonState()?.port;
+  const probed = await probeDaemon(defaultPort, stateHint);
+
+  if (probed.result.kind === 'foreign') {
+    console.error(
+      `Error: port ${probed.port} is held by a non-rasen process. Set RASEN_DAEMON_PORT/--port to reroute the daemon, or run with --no-daemon to use a self-hosted server instead.`
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (probed.result.kind === 'rasen-daemon' && probed.result.version === version) {
+    // Same-version daemon — adopt without spawning.
+    const state = readDaemonState();
+    if (!state?.token) {
+      console.error(`Error: a running rasen daemon was found but its runtime state (token) could not be read. Run 'rasen daemon stop' then retry.`);
+      process.exitCode = 1;
+      return;
+    }
+    const url = `http://127.0.0.1:${probed.port}${config.entryPath}#token=${state.token}`;
+    printUrlAndOpen(url, config, uiAssetsDir, options.open);
+    return;
+  }
+
+  if (probed.result.kind === 'rasen-daemon') {
+    // Stale rasen daemon, identified by its own reported pid — terminate
+    // and replace with a freshly spawned same-version daemon (design D3:
+    // "never kill what you didn't spawn" forbids touching what we cannot
+    // *identify*; a version-mismatched rasen daemon IS identified).
+    killProcessTree(probed.result.pid);
+    const freed = await waitForPortFree(probed.port);
+    if (!freed) {
+      console.error(`Error: could not free port ${probed.port} from the stale daemon (pid ${probed.result.pid}) in time.`);
       process.exitCode = 1;
       return;
     }
   }
 
+  // No listener (or the stale daemon just freed its port) — spawn a fresh
+  // daemon and wait for verified readiness.
+  const spawned = await spawnDaemonDetached(probed.port);
+  if (!spawned.ok) {
+    console.error(`Error: ${spawned.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  const state = readDaemonState();
+  if (!state?.token) {
+    console.error(`Error: the daemon started but its runtime state (token) could not be read. Run 'rasen daemon stop' then retry.`);
+    process.exitCode = 1;
+    return;
+  }
+  const url = `http://127.0.0.1:${spawned.port}${config.entryPath}#token=${state.token}`;
+  printUrlAndOpen(url, config, uiAssetsDir, options.open);
+}
+
+/** Pre-residency self-hosted foreground form, preserved verbatim under `--no-daemon` (design D4). */
+async function runSelfHosted(
+  options: UiLaunchOptions,
+  config: UiLaunchConfig,
+  port: number | undefined,
+  version: string,
+  uiAssetsDir: string | null
+): Promise<void> {
   const launchProjectRoot = findRepoPlanningRootSync(process.cwd());
   const launchProjectRef = await resolveLaunchProjectRef(launchProjectRoot);
-  const uiAssetsDir = resolveUiPackageDir();
   const token = crypto.randomBytes(32).toString('hex');
-  const { version } = require('../../package.json') as { version: string };
 
   let handle: Awaited<ReturnType<typeof startManagementServer>>;
   try {
@@ -106,17 +238,7 @@ export async function runUiLaunch(options: UiLaunchOptions, config: UiLaunchConf
   }
 
   const url = `http://127.0.0.1:${handle.port}${config.entryPath}#token=${token}`;
-  if (config.notice) {
-    console.log(config.notice);
-  }
-  console.log(`${config.label}: ${url}`);
-  if (!uiAssetsDir) {
-    console.log(`UI package not installed. Run: npm install -g ${UI_PACKAGE_NAME}`);
-  }
-
-  if (options.open !== false) {
-    openInBrowser(url);
-  }
+  printUrlAndOpen(url, config, uiAssetsDir, options.open);
 
   let shuttingDown = false;
   const shutdown = async () => {
