@@ -17,16 +17,21 @@ export const changesListFixture = {
       hasRunFiles: false,
     },
     {
+      // apply-required artifacts (proposal/design/specs) are done, but the
+      // schema's `tasks` artifact — outside `apply.requires` — is not yet
+      // written: applyReady but not isComplete, with zero tasks counted.
+      // Distinct from `done-change`/the m1 zero-task-Done case below, which
+      // requires isComplete: true.
       name: 'ready-change',
       schemaName: 'spec-driven',
       artifacts: [
         { id: 'proposal', status: 'done' },
         { id: 'design', status: 'done' },
         { id: 'specs', status: 'done' },
-        { id: 'tasks', status: 'done' },
+        { id: 'tasks', status: 'ready' },
       ],
       applyReady: true,
-      isComplete: true,
+      isComplete: false,
       taskProgress: { total: 0, completed: 0 },
       hasRunFiles: false,
     },
@@ -59,4 +64,5 @@ export const changesListFixture = {
       hasRunFiles: true,
     },
   ],
+  errors: [],
 } satisfies ChangesResponse;

@@ -76,7 +76,7 @@ describe('BoardPage', () => {
   });
 
   it('shows an explicit empty state, not a blank page, when there are no active changes', async () => {
-    (client.listChanges as any).mockResolvedValue({ changes: [] });
+    (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
     (client.listRuns as any).mockResolvedValue({ runs: [] });
 
     await mount(container);
@@ -84,6 +84,40 @@ describe('BoardPage', () => {
     expect(container.querySelector('.board-page__empty')).not.toBeNull();
     expect(container.querySelector('.board')).toBeNull();
     expect(container.textContent).toContain('No active changes');
+  });
+
+  it('renders a visibly broken card for a change the server could not read, instead of dropping it silently (review round 1 M2)', async () => {
+    (client.listChanges as any).mockResolvedValue({
+      changes: [changesListFixture.changes[1]!], // ready-change, still renders normally
+      errors: [{ name: 'broken-change', message: "Schema 'does-not-exist' not found." }],
+    });
+    (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+    await mount(container);
+
+    // Not the empty state — there is something to show, even though it's broken.
+    expect(container.querySelector('.board-page__empty')).toBeNull();
+    const broken = container.querySelector('.board-card--broken');
+    expect(broken).not.toBeNull();
+    expect(broken!.textContent).toContain('broken-change');
+    expect(broken!.textContent).toContain('does-not-exist');
+    // The healthy change still renders in its column alongside the broken card.
+    expect(container.querySelector('.board')).not.toBeNull();
+    expect(container.textContent).toContain('ready-change');
+  });
+
+  it('shows the broken-card list even when it is the only content (no successful changes at all)', async () => {
+    (client.listChanges as any).mockResolvedValue({
+      changes: [],
+      errors: [{ name: 'broken-change', message: 'boom' }],
+    });
+    (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+    await mount(container);
+
+    expect(container.querySelector('.board-page__empty')).toBeNull();
+    expect(container.querySelector('.board-card--broken')).not.toBeNull();
+    expect(container.querySelector('.board')).toBeNull(); // no columns to show
   });
 
   it('shows an error state (not partial/stale content) on a non-auth fetch failure', async () => {

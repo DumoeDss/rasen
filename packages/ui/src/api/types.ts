@@ -123,8 +123,20 @@ export interface ChangeSummary {
   hasRunFiles: boolean;
 }
 
+/**
+ * A change with a valid `proposal.md` (so the server counts it active) but
+ * whose schema/metadata could not be loaded — reported explicitly rather
+ * than dropped from `changes` (review round 1 M2), so the board can render
+ * a visibly broken card instead of a silent gap.
+ */
+export interface ChangeLoadError {
+  name: string;
+  message: string;
+}
+
 export interface ChangesResponse {
   changes: ChangeSummary[];
+  errors: ChangeLoadError[];
 }
 
 export type StageStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'escalated';

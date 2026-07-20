@@ -45,9 +45,16 @@ export function startManagementServer(
     res.setHeader('x-rasen-pid', pidHeader);
 
     handler(req, res).catch((error) => {
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+      if (res.headersSent) {
+        // A response (almost certainly a static asset) is already
+        // streaming — writing a JSON envelope now would concatenate onto
+        // an in-flight body and hand the client a corrupt response
+        // instead of a clean failure (review round 1 m3). Destroying the
+        // socket is the honest failure mode here.
+        res.destroy();
+        return;
       }
+      res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
           error: {

@@ -123,4 +123,34 @@ describe('management-api changes handler (design D4)', () => {
     const change = result.response.changes.find((c) => c.name === 'no-run-change');
     expect(change!.hasRunFiles).toBe(false);
   });
+
+  it('reports no errors when every active change loads cleanly', async () => {
+    writeChange(projectRoot, 'clean-change', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+    const result = await handleChanges(projectRoot);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.errors).toEqual([]);
+  });
+
+  it('degrades a change with an unresolvable schema to an error entry instead of dropping it silently (review round 1 M2)', async () => {
+    // A valid proposal.md makes `getActiveChangeIds` count this change
+    // active, but the declared schema does not exist — `loadChangeContext`
+    // throws when `formatChangeStatus` resolves it.
+    writeChange(projectRoot, 'broken-change', {
+      'proposal.md': PROPOSAL_TEMPLATE,
+      '.openspec.yaml': 'schema: does-not-exist\n',
+    });
+    writeChange(projectRoot, 'healthy-change', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+    const result = await handleChanges(projectRoot);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The broken change is reported, not dropped — and not mixed into `changes`.
+    expect(result.response.changes.map((c) => c.name)).toEqual(['healthy-change']);
+    expect(result.response.errors).toHaveLength(1);
+    expect(result.response.errors[0]!.name).toBe('broken-change');
+    expect(result.response.errors[0]!.message).toContain('does-not-exist');
+  });
 });

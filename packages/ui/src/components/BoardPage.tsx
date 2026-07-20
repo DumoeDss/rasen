@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { ChangeRunEntry, ChangeSummary } from '../api/types.js';
+import type { ChangeLoadError, ChangeRunEntry, ChangeSummary } from '../api/types.js';
 import { BOARD_COLUMNS, deriveColumn, type BoardColumn as BoardColumnId } from '../board/columns.js';
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
 
@@ -14,6 +14,7 @@ import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
  */
 export function BoardPage() {
   const [changes, setChanges] = useState<ChangeSummary[] | null>(null);
+  const [loadErrors, setLoadErrors] = useState<ChangeLoadError[]>([]);
   const [runs, setRuns] = useState<ChangeRunEntry[]>([]);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,6 +28,7 @@ export function BoardPage() {
       .then(([changesRes, runsRes]) => {
         if (cancelled) return;
         setChanges(changesRes.changes);
+        setLoadErrors(changesRes.errors);
         setRuns(runsRes.runs);
       })
       .catch((err) => {
@@ -50,7 +52,7 @@ export function BoardPage() {
   }
 
   if (loading) {
-    return <p>Loading board…</p>;
+    return <p class="board-page__loading">Loading board…</p>;
   }
 
   if (pageError) {
@@ -67,7 +69,22 @@ export function BoardPage() {
     );
   }
 
-  if (!changes || changes.length === 0) {
+  // A change the server could enumerate but not read (review round 1 M2) is
+  // something to show, not nothing — the empty state below is reserved for
+  // "zero active changes AND zero load errors".
+  const brokenChanges =
+    loadErrors.length > 0 ? (
+      <section class="board-page__broken" aria-label="Changes that failed to load">
+        {loadErrors.map((e) => (
+          <article key={e.name} class="board-card board-card--broken" data-testid="board-card-broken">
+            <h3 class="board-card__name">{e.name}</h3>
+            <p class="board-card__error-message">{e.message}</p>
+          </article>
+        ))}
+      </section>
+    ) : null;
+
+  if (!changes || (changes.length === 0 && loadErrors.length === 0)) {
     return (
       <div class="board-page__empty">
         <p>No active changes.</p>
@@ -92,11 +109,14 @@ export function BoardPage() {
           Refresh
         </button>
       </div>
-      <div class="board">
-        {BOARD_COLUMNS.map((col) => (
-          <BoardColumn key={col.id} label={col.label} entries={grouped.get(col.id) ?? []} />
-        ))}
-      </div>
+      {brokenChanges}
+      {changes.length > 0 && (
+        <div class="board">
+          {BOARD_COLUMNS.map((col) => (
+            <BoardColumn key={col.id} label={col.label} entries={grouped.get(col.id) ?? []} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

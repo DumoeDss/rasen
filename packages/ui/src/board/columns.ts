@@ -40,6 +40,16 @@ function isEscalated(run: ChangeRunEntry | undefined): boolean {
  * reports an in-progress/escalated stage → In Progress; all tasks completed
  * → Done. Escalation is reported as a badge flag alongside the column, not a
  * fifth column.
+ *
+ * Zero-task case (design D8 addendum, review round 1 m1): a change with
+ * `applyReady: true` but no `tasks.md` at all (`taskProgress.total === 0`)
+ * has nothing left for a task-based Done check to confirm, so it would be
+ * stranded in Ready forever under a naive `total > 0 && completed === total`
+ * test. Explicit decision: an apply-ready, task-less change with
+ * `isComplete: true` (every schema artifact done — the strongest completion
+ * signal the API reports) counts as Done. A task-less change that is
+ * apply-ready but NOT `isComplete` (e.g. a schema with post-apply artifacts
+ * still open) stays in Ready, which is still correct — there is more to do.
  */
 export function deriveColumn(change: ChangeSummary, run?: ChangeRunEntry): DerivedColumn {
   const escalated = isEscalated(run);
@@ -49,7 +59,8 @@ export function deriveColumn(change: ChangeSummary, run?: ChangeRunEntry): Deriv
   }
 
   const { total, completed } = change.taskProgress;
-  if (total > 0 && completed === total) {
+  const isDone = total > 0 ? completed === total : change.isComplete;
+  if (isDone) {
     return { column: 'done', escalated };
   }
 

@@ -22,9 +22,18 @@ describe('deriveColumn', () => {
     expect(result.escalated).toBe(false);
   });
 
-  it('places an apply-ready change with no tasks done and no run in Ready', () => {
-    const result = deriveColumn(change({ applyReady: true, taskProgress: { total: 0, completed: 0 } }));
+  it('places an apply-ready, incomplete change with no tasks done and no run in Ready', () => {
+    const result = deriveColumn(
+      change({ applyReady: true, isComplete: false, taskProgress: { total: 0, completed: 0 } })
+    );
     expect(result.column).toBe('ready');
+  });
+
+  it('places a task-less but fully-artifact-complete change in Done (review round 1 m1)', () => {
+    const result = deriveColumn(
+      change({ applyReady: true, isComplete: true, taskProgress: { total: 0, completed: 0 } })
+    );
+    expect(result.column).toBe('done');
   });
 
   it('places a change with some tasks completed in In Progress', () => {

@@ -16,7 +16,7 @@ import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { resolveRunStateLocation } from '../pipeline-registry/run-state.js';
 import { resolvePortfolioStateLocation } from '../pipeline-registry/portfolio-state.js';
 import { resolveGoalRunPath } from './runs.js';
-import type { ChangeSummary, ChangesResponse } from './wire-types.js';
+import type { ChangeLoadError, ChangeSummary, ChangesResponse } from './wire-types.js';
 
 export type ChangesResult =
   | { ok: true; response: ChangesResponse }
@@ -54,36 +54,40 @@ export async function handleChanges(root: string | undefined): Promise<ChangesRe
   }
 
   const changes: ChangeSummary[] = [];
+  const errors: ChangeLoadError[] = [];
+
   for (const name of changeIds) {
-    const changeDir = path.join(changesDir, name);
-    let status;
     try {
+      const changeDir = path.join(changesDir, name);
       const context = loadChangeContext(root, name);
-      status = formatChangeStatus(context);
-    } catch {
-      // A single change with unresolvable schema/metadata must not fail the
-      // whole listing (same degrade-per-item spirit as the runs handler);
-      // it is simply omitted rather than crashing the board.
-      continue;
+      const status = formatChangeStatus(context);
+
+      const taskProgress = await getTaskProgressForChange(changesDir, name, root);
+      const workDir = home ? home.workDir(name) : null;
+      const hasRunFiles =
+        resolveRunStateLocation(changeDir, workDir) !== null ||
+        resolvePortfolioStateLocation(changeDir, workDir) !== null ||
+        resolveGoalRunPath(changeDir, workDir) !== null;
+
+      changes.push({
+        name,
+        schemaName: status.schemaName,
+        artifacts: status.artifacts.map((a) => ({ id: a.id, status: a.status })),
+        applyReady: isApplyReady(status.applyRequires, status.artifacts),
+        isComplete: status.isComplete,
+        taskProgress,
+        hasRunFiles,
+      });
+    } catch (err) {
+      // A change with a valid `proposal.md` (so `getActiveChangeIds` counts
+      // it active) but an unresolvable schema or corrupt metadata must not
+      // fail the whole listing — but silently dropping the row is worse
+      // than degrading it: the user cannot tell "does not exist" from
+      // "could not be read" (review round 1 M2). Mirrors `runs.ts`'s
+      // per-change `{ kind: 'error' }` degradation.
+      errors.push({ name, message: err instanceof Error ? err.message : String(err) });
     }
-
-    const taskProgress = await getTaskProgressForChange(changesDir, name, root);
-    const workDir = home ? home.workDir(name) : null;
-    const hasRunFiles =
-      resolveRunStateLocation(changeDir, workDir) !== null ||
-      resolvePortfolioStateLocation(changeDir, workDir) !== null ||
-      resolveGoalRunPath(changeDir, workDir) !== null;
-
-    changes.push({
-      name,
-      schemaName: status.schemaName,
-      artifacts: status.artifacts.map((a) => ({ id: a.id, status: a.status })),
-      applyReady: isApplyReady(status.applyRequires, status.artifacts),
-      isComplete: status.isComplete,
-      taskProgress,
-      hasRunFiles,
-    });
   }
 
-  return { ok: true, response: { changes } };
+  return { ok: true, response: { changes, errors } };
 }

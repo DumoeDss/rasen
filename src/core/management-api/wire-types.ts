@@ -54,8 +54,20 @@ export interface ChangeSummary {
   hasRunFiles: boolean;
 }
 
+/**
+ * A change whose `proposal.md` exists (so `getActiveChangeIds` counts it as
+ * active) but whose schema/metadata could not be loaded — reported
+ * explicitly rather than silently dropped from `changes` (review round 1
+ * M2), mirroring the `ok | error` degradation `ChangeRunEntry` already uses.
+ */
+export interface ChangeLoadError {
+  name: string;
+  message: string;
+}
+
 export interface ChangesResponse {
   changes: ChangeSummary[];
+  errors: ChangeLoadError[];
 }
 
 /**
