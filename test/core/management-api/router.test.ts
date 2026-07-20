@@ -1,11 +1,28 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
+// Wraps the real `resolveProjectHome` with a call-counting spy (design D5,
+// m4: the server must resolve the project home at most once per server —
+// cached once found, re-probed only while still null) — passthrough to the
+// actual implementation so behavior is unaffected.
+const resolveProjectHomeSpy = vi.fn();
+vi.mock('../../../src/core/project-home.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/core/project-home.js')>();
+  return {
+    ...actual,
+    resolveProjectHome: (...args: Parameters<typeof actual.resolveProjectHome>) => {
+      resolveProjectHomeSpy(...args);
+      return actual.resolveProjectHome(...args);
+    },
+  };
+});
+
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
+import { resolveProjectHome } from '../../../src/core/project-home.js';
 
 const TOKEN = 'test-token-mgmt-abc123';
 
@@ -82,6 +99,8 @@ describe('management-api router (integration, via real http server)', () => {
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempConfigHome;
     process.env.XDG_DATA_HOME = tempConfigHome;
+
+    resolveProjectHomeSpy.mockClear();
   });
 
   afterEach(async () => {
@@ -205,6 +224,86 @@ describe('management-api router (integration, via real http server)', () => {
       const res = await req(h.port, { method: 'GET', path: '/api/v1/changes', headers: authed() });
       expect(res.status).toBe(400);
       expect((res.json() as any).error.code).toBe('project_required');
+    });
+  });
+
+  describe('trailing-slash tolerance (design D6, t1)', () => {
+    it('answers /api/v1/status/ (one trailing slash) identically to /api/v1/status', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/status/', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.version).toBe('0.0.0-test');
+    });
+
+    it('does not treat a deeper suffix as a management path (falls through to config 404)', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/status/extra', headers: authed() });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('server-lifetime project-home caching (design D5, m4)', () => {
+    it('resolves the project home once for a registered project across multiple board-load request pairs', async () => {
+      // ensure: true (default) mints identity + registers, so the server's
+      // read-only (`ensure: false`) probe resolves to a non-null home.
+      await resolveProjectHome(projectRoot);
+      resolveProjectHomeSpy.mockClear();
+
+      const h = await startServer();
+
+      await req(h.port, { method: 'GET', path: '/api/v1/changes', headers: authed() });
+      await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+      await req(h.port, { method: 'GET', path: '/api/v1/changes', headers: authed() });
+      await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+
+      // One successful resolution total — every request after the first hit
+      // reuses the cached home instead of re-probing the filesystem.
+      expect(resolveProjectHomeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-probes on every request while the project is unregistered (null result never cached)', async () => {
+      const h = await startServer();
+
+      await req(h.port, { method: 'GET', path: '/api/v1/changes', headers: authed() });
+      await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+
+      expect(resolveProjectHomeSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('picks up a project registered mid-session on the next request, without a restart', async () => {
+      const changeDir = path.join(projectRoot, 'rasen', 'changes', 'mid-session-change');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'proposal.md'), '# Proposal\n');
+
+      const h = await startServer();
+
+      // First request: the project is not yet registered, so the home
+      // resolves to null and there is no workDir to check — the changeDir
+      // has no auto-run.json either, so the run state is absent.
+      const first = await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+      const firstEntry = (first.json() as any).runs.find((r: any) => r.name === 'mid-session-change');
+      expect(firstEntry.autoRun).toEqual({ kind: 'absent' });
+
+      // Register the project mid-session (mints identity + a registry
+      // entry) and write auto-run.json only into the now-resolvable
+      // workDir — the changeDir copy stays absent, so a response can only
+      // report `ok` here by actually resolving (not reusing a stale null)
+      // and reading from the workDir.
+      const home = await resolveProjectHome(projectRoot);
+      const workDir = home!.workDir('mid-session-change');
+      fs.mkdirSync(workDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'full-feature', stages: {} })
+      );
+
+      const second = await req(h.port, { method: 'GET', path: '/api/v1/runs', headers: authed() });
+      const secondEntry = (second.json() as any).runs.find((r: any) => r.name === 'mid-session-change');
+      expect(secondEntry.autoRun.kind).toBe('ok');
+      if (secondEntry.autoRun.kind === 'ok') {
+        expect(secondEntry.autoRun.state.pipeline).toBe('full-feature');
+      }
     });
   });
 

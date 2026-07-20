@@ -641,7 +641,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'ui',
-        description: 'Start the localhost config API + optional web UI',
+        description: '[Deprecated: use `rasen ui`] Start the localhost management server and open the config view',
         flags: [
           {
             name: 'no-open',
@@ -653,6 +653,21 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
         ],
+      },
+    ],
+  },
+  {
+    name: 'ui',
+    description: 'Start the Rasen management platform (board + config) on a localhost server',
+    flags: [
+      {
+        name: 'no-open',
+        description: 'Do not open the default browser',
+      },
+      {
+        name: 'port',
+        description: 'Pin the listen port (default: ephemeral)',
+        takesValue: true,
       },
     ],
   },

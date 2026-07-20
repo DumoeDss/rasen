@@ -31,7 +31,16 @@ function isApplyReady(applyRequires: string[], artifacts: { id: string; status: 
   return applyRequires.every((id) => artifacts.find((a) => a.id === id)?.status === 'done');
 }
 
-export async function handleChanges(root: string | undefined): Promise<ChangesResult> {
+/**
+ * @param home Pre-resolved project home (design D5/m4). Pass `undefined` to
+ * have this handler resolve it itself (read-only, `ensure: false`) — the
+ * server-driven path always passes its cached resolution instead, so a
+ * board load resolves the home once, not once per endpoint.
+ */
+export async function handleChanges(
+  root: string | undefined,
+  home?: ProjectHome | null
+): Promise<ChangesResult> {
   if (!root) {
     return {
       ok: false,
@@ -44,13 +53,17 @@ export async function handleChanges(root: string | undefined): Promise<ChangesRe
   const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
   const changeIds = await getActiveChangeIds(root);
 
-  // Read-only probe (design D5's `ensure: false` contract, reused here for
-  // `hasRunFiles`): never mints identity or creates directories.
-  let home: ProjectHome | null = null;
-  try {
-    home = await resolveProjectHome(root, { ensure: false });
-  } catch {
-    home = null;
+  let resolvedHome: ProjectHome | null;
+  if (home !== undefined) {
+    resolvedHome = home;
+  } else {
+    // Read-only probe (design D5's `ensure: false` contract, reused here for
+    // `hasRunFiles`): never mints identity or creates directories.
+    try {
+      resolvedHome = await resolveProjectHome(root, { ensure: false });
+    } catch {
+      resolvedHome = null;
+    }
   }
 
   const changes: ChangeSummary[] = [];
@@ -63,7 +76,7 @@ export async function handleChanges(root: string | undefined): Promise<ChangesRe
       const status = formatChangeStatus(context);
 
       const taskProgress = await getTaskProgressForChange(changesDir, name, root);
-      const workDir = home ? home.workDir(name) : null;
+      const workDir = resolvedHome ? resolvedHome.workDir(name) : null;
       const hasRunFiles =
         resolveRunStateLocation(changeDir, workDir) !== null ||
         resolvePortfolioStateLocation(changeDir, workDir) !== null ||
