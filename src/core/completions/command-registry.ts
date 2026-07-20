@@ -604,11 +604,16 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'import',
-        description: 'Import a YAML or JSON profile',
+        description: 'Import a profile package, YAML, or JSON profile',
         acceptsPositional: true,
         positionalType: 'path',
         positionals: [{ name: 'path', type: 'path' }],
         flags: [
+          {
+            name: 'as',
+            description: 'Save the imported profile under a different name',
+            takesValue: true,
+          },
           {
             name: 'force',
             description: 'Replace an existing profile with the same name',
@@ -626,6 +631,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             name: 'profile',
             description: 'Export a built-in or saved profile instead of current settings',
             takesValue: true,
+          },
+          {
+            name: 'thin',
+            description: 'Export YAML or JSON without embedding user workflows',
           },
           {
             name: 'force',

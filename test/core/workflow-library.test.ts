@@ -127,6 +127,20 @@ describe('workflow library lifecycle', () => {
     expect(fs.existsSync(path.join(getUserWorkflowsDir(), 'second'))).toBe(false);
   });
 
+  it('rolls back newly installed workflows when a dependent commit fails', async () => {
+    const definition = validateWorkflowDirectory(draft('dependent-commit')).definition!;
+    const plan = stageWorkflowDefinitions([definition], ['dependent-commit']);
+
+    await expect(
+      commitWorkflowInstall(plan, {
+        afterInstall: () => {
+          throw new Error('injected dependent commit failure');
+        },
+      })
+    ).rejects.toThrow('injected dependent commit failure');
+    expect(fs.existsSync(path.join(getUserWorkflowsDir(), 'dependent-commit'))).toBe(false);
+  });
+
   it('blocks deletion while a known consumer references the workflow', async () => {
     await importWorkflow(draft('referenced'));
     fs.writeFileSync(
@@ -153,4 +167,3 @@ describe('workflow library lifecycle', () => {
     });
   });
 });
-

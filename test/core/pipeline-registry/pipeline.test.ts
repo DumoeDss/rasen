@@ -633,6 +633,23 @@ stages:
       expect(() => validatePipelineSkills(pipeline, new Set())).toThrow(PipelineValidationError);
     });
 
+    it('distinguishes a known but disabled skill from an unknown skill', () => {
+      const pipeline = parsePipeline(yaml);
+      const known = new Set(['rasen-propose', 'rasen:review']);
+      const enabled = new Set(['rasen-propose']);
+
+      try {
+        validatePipelineSkills(pipeline, known, enabled);
+        throw new Error('expected disabled skill validation to fail');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PipelineValidationError);
+        expect(error).toMatchObject({ code: 'pipeline_skill_disabled' });
+        expect((error as Error).message).toMatch(
+          /Stage 'b' references known but disabled skill: 'rasen:review'/
+        );
+      }
+    });
+
     it('should skip decompose stages (they carry no leaf skill)', () => {
       const pipeline = parsePipeline(`
 name: dec

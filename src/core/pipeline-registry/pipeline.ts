@@ -3,7 +3,7 @@ import { parse as parseYaml } from 'yaml';
 import { PipelineYamlSchema, type PipelineYaml, type Stage } from './types.js';
 
 export class PipelineValidationError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly code = 'pipeline_invalid') {
     super(message);
     this.name = 'PipelineValidationError';
   }
@@ -225,13 +225,14 @@ function validateParallelGroups(stages: Stage[]): void {
  * Validates that every stage's `skill` exists in the provided set of known
  * skill names. Kept as a SEPARATE function that accepts an injected set so it
  * is unit-testable without the skill registry; the CLI/validate layer wires
- * `new Set(getSkillTemplates().map(t => t.template.name))`.
+ * the full catalog separately from the active profile's effective selection.
  *
  * @throws PipelineValidationError if any stage references an unknown skill.
  */
 export function validatePipelineSkills(
   pipeline: PipelineYaml,
-  knownSkillNames: Set<string>
+  knownSkillNames: Set<string>,
+  enabledSkillNames: Set<string> = knownSkillNames
 ): void {
   for (const stage of pipeline.stages) {
     // decompose stages are LEAD-interpreted fan-out points, not leaf skill
@@ -239,7 +240,14 @@ export function validatePipelineSkills(
     if (stage.kind === 'decompose') continue;
     if (!stage.skill || !knownSkillNames.has(stage.skill)) {
       throw new PipelineValidationError(
-        `Stage '${stage.id}' references unknown skill: '${stage.skill ?? '(missing)'}'`
+        `Stage '${stage.id}' references unknown skill: '${stage.skill ?? '(missing)'}'`,
+        'pipeline_skill_unknown'
+      );
+    }
+    if (!enabledSkillNames.has(stage.skill)) {
+      throw new PipelineValidationError(
+        `Stage '${stage.id}' references known but disabled skill: '${stage.skill}'`,
+        'pipeline_skill_disabled'
       );
     }
   }

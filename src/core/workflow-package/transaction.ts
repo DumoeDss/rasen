@@ -46,6 +46,11 @@ export interface WorkflowInstallResult {
 export interface WorkflowTransactionOptions extends WorkflowRegistryOptions {
   rename?: (oldPath: fs.PathLike, newPath: fs.PathLike) => void;
   remove?: (targetPath: fs.PathLike) => void;
+  /**
+   * Commits a dependent artifact while the workflow registry lock is held.
+   * Throwing rolls back only workflow directories created by this transaction.
+   */
+  afterInstall?: (result: WorkflowInstallResult) => void | Promise<void>;
 }
 
 function lockError(kind: FileLockErrorKind, info: FileLockErrorInfo): WorkflowTransactionError {
@@ -286,11 +291,13 @@ export async function commitWorkflowInstall(
       rename(stagedPath, finalPath);
       created.push(finalPath);
     }
-    return {
+    const result = {
       imported: checked.install.map((definition) => definition.id),
       reused: checked.reused,
       roots: [...plan.roots],
     };
+    await options.afterInstall?.(result);
+    return result;
   } catch (error) {
     const rollbackFailures: string[] = [];
     for (const createdPath of created.reverse()) {

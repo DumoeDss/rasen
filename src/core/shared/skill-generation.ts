@@ -4,14 +4,15 @@
  * Shared utilities for generating skill and command files.
  */
 
-import { readdirSync, existsSync, mkdirSync, copyFileSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
 import {
-  getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
 } from '../workflow-registry/index.js';
 
 /**
@@ -93,6 +94,17 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  * which points at `templates/` and `references/` beside the SKILL.md).
  */
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
+  const userDefinition = loadWorkflowCatalog().get(workflowId);
+  if (userDefinition?.source === 'user') {
+    for (const file of userDefinition.files) {
+      if (file.path === 'SKILL.md' || file.path === 'workflow.yaml') continue;
+      const target = join(targetSkillDir, ...file.path.split('/'));
+      mkdirSync(dirname(target), { recursive: true });
+      const executable = /^(?:scripts|bin)\//.test(file.path) || /\.(?:sh|mjs|js)$/.test(file.path);
+      writeFileSync(target, file.content, { encoding: 'utf8', mode: executable ? 0o700 : 0o600 });
+    }
+    return;
+  }
   const sourceId =
     getExpertSkillDefinitions().find((definition) => definition.id === workflowId)
       ?.sidecarSourceId ?? workflowId;
@@ -108,7 +120,11 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
  * @param workflowFilter - If provided, only return templates whose workflowId is in this array
  */
 export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemplateEntry[] {
-  const workflowSkills: SkillTemplateEntry[] = getBuiltInWorkflowDefinitions().map(
+  const catalog = loadWorkflowCatalog();
+  const definitions = workflowFilter
+    ? resolveWorkflowSelection(catalog, workflowFilter.filter((workflow) => catalog.has(workflow)))
+    : catalog.definitions;
+  const workflowSkills: SkillTemplateEntry[] = definitions.map(
     (definition) => ({
       template: definition.skill.template,
       dirName: definition.skill.dirName,
@@ -125,12 +141,7 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     })
   );
 
-  if (!workflowFilter) return [...workflowSkills, ...expertSkills];
-
-  // Only filter workflow skills; expert skills are always included
-  const filterSet = new Set(workflowFilter);
-  const filteredWorkflows = workflowSkills.filter(entry => filterSet.has(entry.workflowId));
-  return [...filteredWorkflows, ...expertSkills];
+  return [...workflowSkills, ...expertSkills];
 }
 
 /**
@@ -139,7 +150,11 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
  * @param workflowFilter - If provided, only return templates whose id is in this array
  */
 export function getCommandTemplates(workflowFilter?: readonly string[]): CommandTemplateEntry[] {
-  const all: CommandTemplateEntry[] = getBuiltInWorkflowDefinitions()
+  const catalog = loadWorkflowCatalog();
+  const definitions = workflowFilter
+    ? resolveWorkflowSelection(catalog, workflowFilter.filter((workflow) => catalog.has(workflow)))
+    : catalog.definitions;
+  const all: CommandTemplateEntry[] = definitions
     .filter((definition) => definition.command)
     .map((definition) => {
       const command = definition.command!.content;
@@ -155,10 +170,7 @@ export function getCommandTemplates(workflowFilter?: readonly string[]): Command
       };
     });
 
-  if (!workflowFilter) return all;
-
-  const filterSet = new Set(workflowFilter);
-  return all.filter(entry => filterSet.has(entry.id));
+  return all;
 }
 
 /**

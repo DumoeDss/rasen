@@ -19,11 +19,22 @@ import {
   PipelineValidationError,
 } from '../core/pipeline-registry/index.js';
 import { PipelineLoadError } from '../core/pipeline-registry/index.js';
-import { getSkillTemplates } from '../core/shared/skill-generation.js';
+import { getGlobalConfig } from '../core/global-config.js';
+import { getProfileWorkflows } from '../core/profiles.js';
+import {
+  getExpertSkillDefinitions,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+} from '../core/workflow-registry/index.js';
 
 type ItemType = 'change' | 'spec' | 'pipeline';
 
-type ValidationIssue = { level: 'ERROR' | 'WARNING' | 'INFO'; path: string; message: string };
+type ValidationIssue = {
+  level: 'ERROR' | 'WARNING' | 'INFO';
+  path: string;
+  message: string;
+  code?: string;
+};
 
 /**
  * Validates a single pipeline (by name) for structural integrity: parse + Zod
@@ -41,8 +52,24 @@ function validatePipelineByName(
     // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
     // skill-existence check against the known skill-template set.
-    const knownSkillNames = new Set(getSkillTemplates().map((t) => t.template.name));
-    validatePipelineSkills(pipeline, knownSkillNames);
+    const catalog = loadWorkflowCatalog();
+    const expertSkillNames = getExpertSkillDefinitions().map(
+      (definition) => definition.template.name
+    );
+    const knownSkillNames = new Set([
+      ...catalog.definitions.map((definition) => definition.skill.template.name),
+      ...expertSkillNames,
+    ]);
+    const config = getGlobalConfig();
+    const selected = resolveWorkflowSelection(
+      catalog,
+      getProfileWorkflows(config.profile ?? 'full', config.workflows)
+    );
+    const enabledSkillNames = new Set([
+      ...selected.map((definition) => definition.skill.template.name),
+      ...expertSkillNames,
+    ]);
+    validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
     // decompose childPipeline must resolve and be decompose-free (recursion guard).
     validateDecomposeChildPipelines(pipeline, projectRoot);
   } catch (error) {
@@ -52,7 +79,12 @@ function validatePipelineByName(
         : error instanceof Error
           ? error.message
           : String(error);
-    issues.push({ level: 'ERROR', path: 'pipeline', message });
+    issues.push({
+      level: 'ERROR',
+      path: 'pipeline',
+      message,
+      ...(error instanceof PipelineValidationError ? { code: error.code } : {}),
+    });
   }
   return { valid: issues.length === 0, issues };
 }

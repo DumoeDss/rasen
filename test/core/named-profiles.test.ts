@@ -5,17 +5,22 @@ import * as path from 'node:path';
 
 import {
   deleteNamedProfile,
+  exportProfile,
   exportProfileDefinition,
   getNamedProfilePath,
   getNamedProfilesDir,
   importNamedProfile,
+  importProfilePackage,
   listAvailableProfiles,
   listUserProfiles,
+  namedProfileExists,
   parseProfileDefinition,
   readNamedProfile,
   saveNamedProfile,
   validateUserProfileName,
 } from '../../src/core/named-profiles.js';
+import { importWorkflow, scaffoldWorkflow } from '../../src/core/workflow-library.js';
+import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 
 describe('named profiles', () => {
   let tempDir: string;
@@ -154,5 +159,89 @@ describe('named profiles', () => {
     ]);
     deleteNamedProfile('broken');
     expect(listUserProfiles()).toEqual([]);
+  });
+
+  it('round-trips a user-workflow profile as a deterministic self-contained package', async () => {
+    const draftRoot = path.join(tempDir, 'drafts', 'team-release');
+    scaffoldWorkflow('team-release', draftRoot);
+    await importWorkflow(draftRoot);
+    const definition = {
+      version: 1 as const,
+      delivery: 'both' as const,
+      workflows: ['propose', 'team-release'],
+    };
+    const packagePath = path.join(tempDir, 'team.rasenpkg');
+
+    expect(exportProfile(packagePath, 'team', definition)).toMatchObject({ kind: 'package' });
+    const firstBytes = fs.readFileSync(packagePath);
+    exportProfile(packagePath, 'team', definition, { overwrite: true });
+    expect(fs.readFileSync(packagePath)).toEqual(firstBytes);
+
+    const cleanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-profile-clean-'));
+    process.env.RASEN_HOME = cleanHome;
+    try {
+      const imported = await importProfilePackage(packagePath, { name: 'renamed' });
+      expect(imported.name).toBe('renamed');
+      expect(imported.workflows.imported).toEqual(['team-release']);
+      expect(readNamedProfile('renamed').workflows).toEqual(['propose', 'team-release']);
+      expect(loadWorkflowCatalog().get('team-release')?.source).toBe('user');
+    } finally {
+      fs.rmSync(cleanHome, { recursive: true, force: true });
+      process.env.RASEN_HOME = tempDir;
+    }
+  });
+
+  it('requires --thin semantics for user-workflow YAML and validates membership', async () => {
+    const draftRoot = path.join(tempDir, 'drafts', 'portable-profile');
+    scaffoldWorkflow('portable-profile', draftRoot);
+    await importWorkflow(draftRoot);
+    const definition = {
+      version: 1 as const,
+      delivery: 'skills' as const,
+      workflows: ['portable-profile'],
+    };
+    const yamlPath = path.join(tempDir, 'portable-profile.yaml');
+
+    expect(() => exportProfile(yamlPath, 'portable-profile', definition)).toThrow('.rasenpkg');
+    expect(exportProfile(yamlPath, 'portable-profile', definition, { thin: true })).toMatchObject({
+      kind: 'thin',
+    });
+
+    const cleanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-profile-thin-'));
+    process.env.RASEN_HOME = cleanHome;
+    try {
+      expect(() => importNamedProfile(yamlPath)).toThrow('Unknown workflow ID');
+      expect(namedProfileExists('portable-profile')).toBe(false);
+    } finally {
+      fs.rmSync(cleanHome, { recursive: true, force: true });
+      process.env.RASEN_HOME = tempDir;
+    }
+  });
+
+  it('rolls back embedded workflows when the profile commit fails', async () => {
+    const draftRoot = path.join(tempDir, 'drafts', 'rollback-profile');
+    scaffoldWorkflow('rollback-profile', draftRoot);
+    await importWorkflow(draftRoot);
+    const packagePath = path.join(tempDir, 'rollback.rasenpkg');
+    exportProfile(packagePath, 'rollback-target', {
+      version: 1,
+      delivery: 'both',
+      workflows: ['rollback-profile'],
+    });
+
+    const cleanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-profile-rollback-'));
+    process.env.RASEN_HOME = cleanHome;
+    const blockedProfilePath = path.join(cleanHome, 'profiles', 'rollback-target.yaml');
+    fs.mkdirSync(blockedProfilePath, { recursive: true });
+    try {
+      await expect(importProfilePackage(packagePath, { overwrite: true })).rejects.toThrow(
+        'Destination is not a file'
+      );
+      expect(loadWorkflowCatalog().get('rollback-profile')).toBeUndefined();
+      expect(fs.statSync(blockedProfilePath).isDirectory()).toBe(true);
+    } finally {
+      fs.rmSync(cleanHome, { recursive: true, force: true });
+      process.env.RASEN_HOME = tempDir;
+    }
   });
 });

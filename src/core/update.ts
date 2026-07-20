@@ -38,10 +38,15 @@ import {
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
-import { getProfileWorkflows, ALL_WORKFLOWS } from './profiles.js';
+import { getProfileWorkflows } from './profiles.js';
+import {
+  getBuiltInWorkflowDefinitions,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+} from './workflow-registry/index.js';
+import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import {
-  WORKFLOW_TO_SKILL_DIR,
   getCommandConfiguredTools,
   getConfiguredToolsForProfileSync,
   getToolsNeedingProfileSync,
@@ -110,9 +115,10 @@ export class UpdateCommand {
     const profile = globalConfig.profile ?? 'full';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
     const profileWorkflows = getProfileWorkflows(profile, globalConfig.workflows);
-    const desiredWorkflows = profileWorkflows.filter((workflow): workflow is (typeof ALL_WORKFLOWS)[number] =>
-      (ALL_WORKFLOWS as readonly string[]).includes(workflow)
-    );
+    const desiredWorkflows = resolveWorkflowSelection(
+      loadWorkflowCatalog(),
+      profileWorkflows
+    ).map((workflow) => workflow.id);
     const shouldGenerateCommands = delivery === 'both';
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
@@ -256,6 +262,8 @@ export class UpdateCommand {
         if (!shouldGenerateCommands) {
           removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
         }
+
+        syncWorkflowArtifactLedger(resolvedProjectPath, toolId, desiredWorkflows, delivery);
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -412,14 +420,14 @@ export class UpdateCommand {
    */
   private async removeUnselectedSkillDirs(
     skillsDir: string,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][]
+    desiredWorkflows: readonly string[]
   ): Promise<number> {
     const desiredSet = new Set(desiredWorkflows);
     let removed = 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredSet.has(workflow)) continue;
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    for (const definition of getBuiltInWorkflowDefinitions()) {
+      if (desiredSet.has(definition.id)) continue;
+      const dirName = definition.skill.dirName;
       if (!dirName) continue;
 
       const skillDir = path.join(skillsDir, dirName);
@@ -449,8 +457,9 @@ export class UpdateCommand {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (!adapter) return 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+    for (const definition of getBuiltInWorkflowDefinitions()) {
+      if (!definition.command) continue;
+      for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
         try {
@@ -475,7 +484,7 @@ export class UpdateCommand {
   private async removeUnselectedCommandFiles(
     projectPath: string,
     toolId: string,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][]
+    desiredWorkflows: readonly string[]
   ): Promise<number> {
     let removed = 0;
 
@@ -484,9 +493,10 @@ export class UpdateCommand {
 
     const desiredSet = new Set(desiredWorkflows);
 
-    for (const workflow of ALL_WORKFLOWS) {
+    for (const definition of getBuiltInWorkflowDefinitions()) {
+      const workflow = definition.id;
       const stalePaths: string[] = [];
-      if (!desiredSet.has(workflow)) {
+      if (definition.command && !desiredSet.has(workflow)) {
         stalePaths.push(adapter.getFilePath(getCommandFileId(workflow)));
       }
       // Legacy suffixed filenames are stale even for selected workflows —

@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import { Command } from 'commander';
 
@@ -9,7 +10,8 @@ import {
   NamedProfileError,
   assertValidUserProfileName,
   deleteNamedProfile,
-  exportProfileDefinition,
+  exportProfile,
+  importProfilePackage,
   importNamedProfile,
   listAvailableProfiles,
   listUserProfiles,
@@ -319,9 +321,14 @@ async function deleteProfileCommand(
   console.log(messages.profileDeleted(name));
 }
 
-function importProfileCommand(sourcePath: string, options: { force?: boolean }): void {
+async function importProfileCommand(
+  sourcePath: string,
+  options: { force?: boolean; as?: string }
+): Promise<void> {
   const messages = getProfileUiMessages();
-  const imported = importNamedProfile(sourcePath, { overwrite: options.force });
+  const imported = path.extname(sourcePath).toLowerCase() === '.rasenpkg'
+    ? await importProfilePackage(sourcePath, { overwrite: options.force, name: options.as })
+    : importNamedProfile(sourcePath, { overwrite: options.force, name: options.as });
   console.log(messages.profileImported(
     imported.name,
     imported.definition.delivery,
@@ -332,7 +339,7 @@ function importProfileCommand(sourcePath: string, options: { force?: boolean }):
 
 async function exportProfileCommand(
   destinationPath: string,
-  options: { profile?: string; force?: boolean }
+  options: { profile?: string; force?: boolean; thin?: boolean }
 ): Promise<void> {
   const messages = getProfileUiMessages();
   const config = getGlobalConfig();
@@ -359,11 +366,21 @@ async function exportProfileCommand(
     }
   }
 
-  const exportedPath = exportProfileDefinition(destinationPath, definition, { overwrite });
+  const packageName = options.profile && !BUILTIN_PROFILE_NAMES.includes(
+    options.profile as (typeof BUILTIN_PROFILE_NAMES)[number]
+  )
+    ? options.profile
+    : options.profile
+      ? `${options.profile}-profile`
+      : 'current-profile';
+  const exported = exportProfile(destinationPath, packageName, definition, {
+    overwrite,
+    thin: options.thin,
+  });
   const subject = options.profile
     ? messages.namedProfileSettings(options.profile)
     : messages.currentProfileSettings;
-  console.log(messages.profileExported(subject, exportedPath));
+  console.log(messages.profileExported(subject, exported.path));
 }
 
 export function registerProfileCommand(program: Command): void {
@@ -406,9 +423,10 @@ export function registerProfileCommand(program: Command): void {
 
   profileCommand
     .command('import <path>')
-    .description('Import a YAML or JSON profile')
+    .description('Import a profile package, YAML, or JSON profile')
+    .option('--as <name>', 'Save the imported profile under a different name')
     .option('--force', 'Replace an existing profile with the same name')
-    .action(async (sourcePath: string, options: { force?: boolean }) => {
+    .action(async (sourcePath: string, options: { force?: boolean; as?: string }) => {
       await runProfileAction(() => importProfileCommand(sourcePath, options));
     });
 
@@ -416,8 +434,9 @@ export function registerProfileCommand(program: Command): void {
     .command('export <path>')
     .description('Export current settings or a named profile')
     .option('--profile <name>', 'Export a built-in or saved profile instead of current settings')
+    .option('--thin', 'Export YAML or JSON without embedding user workflows')
     .option('--force', 'Overwrite an existing destination')
-    .action(async (destinationPath: string, options: { profile?: string; force?: boolean }) => {
+    .action(async (destinationPath: string, options: { profile?: string; force?: boolean; thin?: boolean }) => {
       await runProfileAction(() => exportProfileCommand(destinationPath, options));
     });
 }

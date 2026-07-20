@@ -56,7 +56,13 @@ import {
   type ToolSkillStatus,
 } from './shared/index.js';
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
-import { getProfileWorkflows, CORE_WORKFLOWS, ALL_WORKFLOWS } from './profiles.js';
+import { getProfileWorkflows, CORE_WORKFLOWS } from './profiles.js';
+import {
+  getBuiltInWorkflowDefinitions,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+} from './workflow-registry/index.js';
+import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
 import { migrateIfNeeded } from './migration.js';
@@ -171,6 +177,16 @@ export class InitCommand {
 
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
+
+    // Resolve the complete catalog selection before creating project files.
+    // Missing or invalid selected user workflows therefore fail without a
+    // partially generated tool configuration.
+    const effectiveConfig = getGlobalConfig();
+    const effectiveProfile = this.resolveProfileOverride() ?? effectiveConfig.profile ?? 'full';
+    resolveWorkflowSelection(
+      loadWorkflowCatalog(),
+      getProfileWorkflows(effectiveProfile, effectiveConfig.workflows)
+    );
 
     // Create directory structure and config
     await this.createDirectoryStructure(openspecPath, extendMode);
@@ -624,7 +640,10 @@ export class InitCommand {
     const globalConfig = getGlobalConfig();
     const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'full';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
-    const workflows = getProfileWorkflows(profile, globalConfig.workflows);
+    const workflows = resolveWorkflowSelection(
+      loadWorkflowCatalog(),
+      getProfileWorkflows(profile, globalConfig.workflows)
+    ).map((definition) => definition.id);
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
@@ -706,6 +725,8 @@ export class InitCommand {
         if (!shouldGenerateCommands) {
           removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
         }
+
+        syncWorkflowArtifactLedger(projectPath, tool.value, workflows, delivery);
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -907,8 +928,9 @@ export class InitCommand {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (!adapter) return 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+    for (const definition of getBuiltInWorkflowDefinitions()) {
+      if (!definition.command) continue;
+      for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
         try {
