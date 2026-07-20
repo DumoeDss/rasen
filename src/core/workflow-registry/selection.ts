@@ -44,3 +44,27 @@ export function resolveWorkflowSelection(
   return catalog.definitions.filter((definition) => selected.has(definition.id));
 }
 
+/**
+ * Splits a stored workflow-root list into ids the catalog still recognizes
+ * and ids it does not (e.g. a retired built-in like `ff` left over in a
+ * persisted `custom` profile). Intended for the boundary that reads
+ * persisted, possibly-outdated config — callers should warn on `unknown`
+ * and pass `known` on to {@link resolveWorkflowSelection}, which stays
+ * strict for freshly authored input.
+ */
+export function filterKnownWorkflowRoots(
+  catalog: WorkflowCatalog,
+  roots: readonly string[]
+): { known: string[]; unknown: string[] } {
+  const known: string[] = [];
+  const unknown: string[] = [];
+  for (const root of roots) {
+    if (catalog.has(root)) {
+      known.push(root);
+    } else {
+      unknown.push(root);
+    }
+  }
+  return { known, unknown };
+}
+

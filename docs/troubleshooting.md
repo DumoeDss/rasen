@@ -99,7 +99,7 @@ The AI didn't have enough context. A few levers help:
 - Add project context in `rasen/config.yaml` so your stack and conventions are injected into every request. See [Customization](customization.md#project-configuration).
 - Add per-artifact `rules:` for guidance that only applies to, say, specs.
 - Give a more detailed description when you propose.
-- Use the expanded `/rasen:continue` to create one artifact at a time and review each, instead of `/rasen:ff` doing them all at once.
+- Use the expanded `/rasen:continue` to create one artifact at a time and review each, instead of generating them all at once.
 
 ### Archive won't finish, or warns about incomplete tasks
 

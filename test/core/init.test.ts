@@ -124,7 +124,6 @@ describe('InitCommand', () => {
         'rasen-archive-change',
         'rasen-new-change',
         'rasen-continue-change',
-        'rasen-ff-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
       ];
@@ -154,7 +153,6 @@ describe('InitCommand', () => {
         'rasen/archive.md',
         'rasen/new.md',
         'rasen/continue.md',
-        'rasen/ff.md',
         'rasen/bulk-archive.md',
         'rasen/verify.md',
       ];
@@ -186,7 +184,6 @@ describe('InitCommand', () => {
       const nonCoreSkillNames = [
         'rasen-new-change',
         'rasen-continue-change',
-        'rasen-ff-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
       ];
@@ -576,6 +573,49 @@ describe('InitCommand - profile and detection features', () => {
     // Non-core skills (from the custom profile) should NOT be created
     const newChangeSkill = path.join(testDir, '.claude', 'skills', 'rasen-new-change', 'SKILL.md');
     expect(await fileExists(newChangeSkill)).toBe(false);
+  });
+
+  it('should drop a retired workflow id (ff) from a stored custom profile with a warning, and still succeed', async () => {
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      delivery: 'both',
+      workflows: ['explore', 'ff', 'apply'],
+    });
+
+    const initCommand = new InitCommand({ tools: 'claude', force: true });
+    await expect(initCommand.execute(testDir)).resolves.not.toThrow();
+
+    const logCalls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.flat().map(String);
+    expect(logCalls.some((entry) => entry.includes('ff'))).toBe(true);
+
+    const exploreSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
+    const applySkill = path.join(testDir, '.claude', 'skills', 'rasen-apply-change', 'SKILL.md');
+    expect(await fileExists(exploreSkill)).toBe(true);
+    expect(await fileExists(applySkill)).toBe(true);
+  });
+
+  it('should heal a retired ff install (skill dir + command file) on init, and no-op when absent', async () => {
+    // Simulate a machine that already has the retired rasen-ff-change skill
+    // dir and ff command file from a prior install.
+    const skillsDir = path.join(testDir, '.claude', 'skills');
+    const retiredSkillDir = path.join(skillsDir, 'rasen-ff-change');
+    await fs.mkdir(retiredSkillDir, { recursive: true });
+    await fs.writeFile(path.join(retiredSkillDir, 'SKILL.md'), 'stale ff skill');
+
+    const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'ff.md'), 'stale ff command');
+
+    const initCommand = new InitCommand({ tools: 'claude', force: true });
+    await initCommand.execute(testDir);
+
+    expect(await fileExists(retiredSkillDir)).toBe(false);
+    expect(await fileExists(path.join(commandsDir, 'ff.md'))).toBe(false);
+
+    // Running again with nothing retired left is a no-op (no error).
+    const secondRun = new InitCommand({ tools: 'claude', force: true });
+    await expect(secondRun.execute(testDir)).resolves.not.toThrow();
   });
 
   it('should reject invalid --profile values', async () => {

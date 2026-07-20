@@ -59,7 +59,6 @@ A change moves: **propose → apply → verify → sync → archive**.
 **Choosing a variant** — route by situation:
 - Idea still fuzzy → \`/rasen:office-hours <topic>\` (structured design Q&A) or \`/rasen:explore\` (investigate, no code changes).
 - Want artifacts one at a time with review between → \`/rasen:new <name>\`, then \`/rasen:continue <name>\`.
-- Want everything scaffolded at once → \`/rasen:ff <name>\`.
 - Several finished changes piled up → \`/rasen:bulk-archive\`.
 - Session running out of context mid-change → \`/rasen:handoff\` (writes a handoff document a fresh session resumes from).
 

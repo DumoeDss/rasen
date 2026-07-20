@@ -13,9 +13,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (23 workflow + 21 expert)', () => {
+    it('should return all skill templates (22 workflow + 21 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(44);
+      expect(templates).toHaveLength(43);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -41,7 +41,6 @@ describe('skill-generation', () => {
       expect(dirNames).toContain('rasen-new-change');
       expect(dirNames).toContain('rasen-continue-change');
       expect(dirNames).toContain('rasen-apply-change');
-      expect(dirNames).toContain('rasen-ff-change');
       expect(dirNames).toContain('rasen-sync-specs');
       expect(dirNames).toContain('rasen-archive-change');
       expect(dirNames).toContain('rasen-bulk-archive-change');
@@ -83,7 +82,6 @@ describe('skill-generation', () => {
       expect(ids).toContain('apply');
       expect(ids).toContain('archive');
       expect(ids).not.toContain('new');
-      expect(ids).not.toContain('ff');
     });
 
     it('should return all templates when filter is undefined', () => {
@@ -109,9 +107,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandTemplates', () => {
-    it('should return all 20 command templates', () => {
+    it('should return all 19 command templates', () => {
       const templates = getCommandTemplates();
-      expect(templates).toHaveLength(20);
+      expect(templates).toHaveLength(19);
     });
 
     it('should include the review-cycle command with a clean (no -command suffix) id', () => {
@@ -137,7 +135,6 @@ describe('skill-generation', () => {
       expect(ids).toContain('new');
       expect(ids).toContain('continue');
       expect(ids).toContain('apply');
-      expect(ids).toContain('ff');
       expect(ids).toContain('sync');
       expect(ids).toContain('archive');
       expect(ids).toContain('bulk-archive');
@@ -156,7 +153,6 @@ describe('skill-generation', () => {
       expect(ids).toContain('apply');
       expect(ids).toContain('archive');
       expect(ids).not.toContain('new');
-      expect(ids).not.toContain('ff');
     });
 
     it('should return all templates when filter is undefined', () => {
@@ -172,9 +168,9 @@ describe('skill-generation', () => {
   });
 
   describe('getCommandContents', () => {
-    it('should return all 20 command contents', () => {
+    it('should return all 19 command contents', () => {
       const contents = getCommandContents();
-      expect(contents).toHaveLength(20);
+      expect(contents).toHaveLength(19);
     });
 
     it('should have valid content structure', () => {

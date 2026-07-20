@@ -74,7 +74,7 @@ Explore creates no artifacts and writes no code. It's a free, no-stakes conversa
 
 ### Expanded/Full Workflow (custom selection)
 
-The explicit scaffold-and-build commands (`/rasen:new`, `/rasen:continue`, `/rasen:ff`, `/rasen:verify`, `/rasen:bulk-archive`, `/rasen:onboard`) are already installed by default, since new installs default to the `full` profile. If you'd rather slim down to just the `core` set, switch with:
+The explicit scaffold-and-build commands (`/rasen:new`, `/rasen:continue`, `/rasen:verify`, `/rasen:bulk-archive`, `/rasen:onboard`) are already installed by default, since new installs default to the `full` profile. If you'd rather slim down to just the `core` set, switch with:
 
 ```bash
 rasen config profile core
@@ -88,20 +88,16 @@ rasen update
 When you know what you want to build and just need to execute:
 
 ```text
-/rasen:new ──► /rasen:ff ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
+/rasen:propose ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
 ```
 
 **Example conversation:**
 
 ```text
-You: /rasen:new add-logout-button
+You: /rasen:propose add-logout-button
 
 AI:  Created rasen/changes/add-logout-button/
-     Ready to create: proposal
-
-You: /rasen:ff
-
-AI:  Creating all planning artifacts...
+     Creating all planning artifacts...
      ✓ proposal.md
      ✓ specs/
      ✓ design.md
@@ -179,11 +175,11 @@ AI:  Creating specs...
 Work on multiple changes at once:
 
 ```text
-Change A: /rasen:new ──► /rasen:ff ──► /rasen:apply (in progress)
-                                         │
-                                    context switch
-                                         │
-Change B: /rasen:new ──► /rasen:ff ──────► /rasen:apply
+Change A: /rasen:propose ──► /rasen:apply (in progress)
+                               │
+                          context switch
+                               │
+Change B: /rasen:propose ──────► /rasen:apply
 ```
 
 **Example conversation:**
@@ -191,13 +187,10 @@ Change B: /rasen:new ──► /rasen:ff ──────► /rasen:apply
 ```text
 You: I'm working on add-dark-mode but got pulled into a bug fix
 
-You: /rasen:new fix-login-redirect
+You: /rasen:propose fix-login-redirect
 
 AI:  Created rasen/changes/fix-login-redirect/
-
-You: /rasen:ff
-
-AI:  ✓ Created planning artifacts
+     ✓ Created planning artifacts
 
 You: /rasen:apply
 
@@ -350,17 +343,17 @@ Archive will prompt if specs aren't synced. It won't block on incomplete tasks, 
 
 ## When to Use What
 
-### `/rasen:ff` vs `/rasen:continue`
+### `/rasen:propose` vs `/rasen:continue`
 
 | Situation | Use |
 |-----------|-----|
-| Clear requirements, ready to build | `/rasen:ff` |
-| Exploring, want to review each step | `/rasen:continue` |
-| Want to iterate on proposal before specs | `/rasen:continue` |
-| Time pressure, need to move fast | `/rasen:ff` |
-| Complex change, want control | `/rasen:continue` |
+| Clear requirements, ready to build | `/rasen:propose` |
+| Exploring, want to review each step | `/rasen:new` then `/rasen:continue` |
+| Want to iterate on proposal before specs | `/rasen:new` then `/rasen:continue` |
+| Time pressure, need to move fast | `/rasen:propose` |
+| Complex change, want control | `/rasen:new` then `/rasen:continue` |
 
-**Rule of thumb:** If you can describe the full scope upfront, use `/rasen:ff`. If you're figuring it out as you go, use `/rasen:continue`.
+**Rule of thumb:** If you can describe the full scope upfront, use `/rasen:propose`. If you're figuring it out as you go, use `/rasen:new` then `/rasen:continue`.
 
 ### When to Update vs Start Fresh
 
@@ -482,7 +475,6 @@ For full command details and options, see [Commands](commands.md).
 | `/rasen:explore` | Think through ideas with the AI | Start here when unsure: unclear requirements, investigation, comparing options |
 | `/rasen:new` | Start a change scaffold | Expanded mode, explicit artifact control |
 | `/rasen:continue` | Create next artifact | Expanded mode, step-by-step artifact creation |
-| `/rasen:ff` | Create all planning artifacts | Expanded mode, clear scope |
 | `/rasen:apply` | Implement tasks | Ready to write code |
 | `/rasen:verify` | Validate implementation | Expanded mode, before archiving |
 | `/rasen:sync` | Merge delta specs | Expanded mode, optional |

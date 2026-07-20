@@ -91,10 +91,6 @@
           "name": "Apply tasks",
           "description": "Implement and track the tasks defined by a change"
         },
-        "ff": {
-          "name": "Fast-forward",
-          "description": "Create every planning artifact needed for implementation in one pass"
-        },
         "sync": {
           "name": "Sync specs",
           "description": "Merge a change's delta specs into the main specs without archiving it"

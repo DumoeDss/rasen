@@ -295,7 +295,6 @@ Command availability is profile-dependent:
 |---------|---------|
 | `/rasen:new` | Start a new change scaffold |
 | `/rasen:continue` | Create the next artifact (one at a time) |
-| `/rasen:ff` | Fast-forward—create planning artifacts at once |
 | `/rasen:verify` | Validate implementation matches specs |
 | `/rasen:sync` | Merge delta specs into main specs |
 | `/rasen:bulk-archive` | Archive multiple changes at once |
@@ -307,7 +306,7 @@ The default `full` profile already includes these; switch to `core` if you want 
 
 | Legacy | OPSX Equivalent |
 |--------|-----------------|
-| `/openspec:proposal` | `/rasen:propose` (default) or `/rasen:new` then `/rasen:ff` (expanded) |
+| `/openspec:proposal` | `/rasen:propose` (default) or `/rasen:new` then `/rasen:continue` (expanded) |
 | `/openspec:apply` | `/rasen:apply` |
 | `/openspec:archive` | `/rasen:archive` |
 
@@ -562,7 +561,7 @@ project/
 │       ├── rasen-explore/
 │       ├── rasen-apply-change/
 │       ├── rasen-sync-specs/
-│       └── ...                   # full profile adds new/continue/ff/etc. too
+│       └── ...                   # full profile adds new/continue/etc. too
 ├── CLAUDE.md                     # rasen markers removed, your content preserved
 └── AGENTS.md                     # rasen markers removed, your content preserved
 ```
@@ -584,7 +583,6 @@ project/
 # Expanded workflow (if enabled):
 /rasen:new          Scaffold a change
 /rasen:continue     Create next artifact
-/rasen:ff           Create planning artifacts
 ```
 
 ---

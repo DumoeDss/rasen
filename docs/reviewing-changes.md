@@ -13,7 +13,7 @@ There are exactly two:
                   (before any code)                    (/rasen:verify)
 ```
 
-1. **After `/rasen:propose`** (or `/rasen:ff`), before `/rasen:apply` — read the plan while it's still just words.
+1. **After `/rasen:propose`**, before `/rasen:apply` — read the plan while it's still just words.
 2. **After building**, with `/rasen:verify` — check that the code actually did what the plan said.
 
 The first review is the one that saves you the most, and the one people skip. This page spends most of its time there.

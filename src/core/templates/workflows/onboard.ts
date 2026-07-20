@@ -491,7 +491,6 @@ This same rhythm works for any size change—a small fix or a major feature.
  |--------------------|----------------------------------------------------------|
  | \`/rasen:new\`      | Start a new change, step through artifacts one at a time |
  | \`/rasen:continue\` | Continue working on an existing change                   |
- | \`/rasen:ff\`       | Fast-forward: create all artifacts at once               |
  | \`/rasen:verify\`   | Verify implementation matches artifacts                  |
 
 ---
@@ -543,7 +542,6 @@ If the user says they just want to see the commands or skip the tutorial:
  |---------------------------|-------------------------------------|
  | \`/rasen:new <name>\`      | Start a new change, step by step    |
  | \`/rasen:continue <name>\` | Continue an existing change         |
- | \`/rasen:ff <name>\`       | Fast-forward: all artifacts at once |
  | \`/rasen:verify <name>\`   | Verify implementation               |
 
 Try \`/rasen:propose\` to start your first change.

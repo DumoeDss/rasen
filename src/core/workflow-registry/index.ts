@@ -11,7 +11,7 @@ export {
   getExpertSkillNames,
   type ExpertSkillDefinition,
 } from './experts.js';
-export { resolveWorkflowSelection, WorkflowSelectionError } from './selection.js';
+export { filterKnownWorkflowRoots, resolveWorkflowSelection, WorkflowSelectionError } from './selection.js';
 export { WORKFLOW_LIMITS } from './limits.js';
 export { loadWorkflowSourceTree, type LoadedWorkflowFile, type LoadedWorkflowTree } from './loader.js';
 export {

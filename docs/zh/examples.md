@@ -175,7 +175,7 @@ You: /rasen:continue
 AI:  Created specs/auth/spec.md. Now available: design.
 ```
 
-在每个产物落地时审查它，自由编辑，满意了再继续。当你想让剩余部分一次性起草时，`/rasen:ff` 会快进穿过剩余的规划产物。在归档之前，`/rasen:verify` 检查实现是否确实匹配规格。参见[工作流](workflows.md#opsxff-与-opsxcontinue-的对比)。
+在每个产物落地时审查它，自由编辑，满意了再继续。如果你想一次性起草全部内容，`/rasen:propose` 涵盖了与「`/rasen:new` 加上其余所有产物」相同的范围。在归档之前，`/rasen:verify` 检查实现是否确实匹配规格。参见[工作流](workflows.md#rasenpropose-与-rasencontinue-的对比)。
 
 ## 配方 7：亲手学习整个循环
 

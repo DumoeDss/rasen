@@ -4,7 +4,6 @@
   { "id": "new", "skillName": "rasen-new-change", "dirName": "rasen-new-change", "commandId": "new" },
   { "id": "continue", "skillName": "rasen-continue-change", "dirName": "rasen-continue-change", "commandId": "continue" },
   { "id": "apply", "skillName": "rasen-apply-change", "dirName": "rasen-apply-change", "commandId": "apply" },
-  { "id": "ff", "skillName": "rasen-ff-change", "dirName": "rasen-ff-change", "commandId": "ff" },
   { "id": "sync", "skillName": "rasen-sync-specs", "dirName": "rasen-sync-specs", "commandId": "sync" },
   { "id": "archive", "skillName": "rasen-archive-change", "dirName": "rasen-archive-change", "commandId": "archive" },
   { "id": "bulk-archive", "skillName": "rasen-bulk-archive-change", "dirName": "rasen-bulk-archive-change", "commandId": "bulk-archive" },

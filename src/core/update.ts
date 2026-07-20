@@ -35,11 +35,14 @@ import {
   detectLegacyArtifacts,
   formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredWorkflowSkillDirs,
+  RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
 import { getProfileWorkflows } from './profiles.js';
 import {
+  filterKnownWorkflowRoots,
   getBuiltInWorkflowDefinitions,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
@@ -115,9 +118,19 @@ export class UpdateCommand {
     const profile = globalConfig.profile ?? 'full';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
     const profileWorkflows = getProfileWorkflows(profile, globalConfig.workflows);
+    const catalog = loadWorkflowCatalog();
+    const { known: knownProfileWorkflows, unknown: unknownProfileWorkflows } =
+      filterKnownWorkflowRoots(catalog, profileWorkflows);
+    if (unknownProfileWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
+        )
+      );
+    }
     const desiredWorkflows = resolveWorkflowSelection(
-      loadWorkflowCatalog(),
-      profileWorkflows
+      catalog,
+      knownProfileWorkflows
     ).map((workflow) => workflow.id);
     const shouldGenerateCommands = delivery === 'both';
     const proactive = globalConfig.proactive ?? true;
@@ -166,13 +179,17 @@ export class UpdateCommand {
     const toolsUpToDate = toolStatuses.filter((s) => !toolsToUpdateSet.has(s.toolId));
 
     // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
-    // openspec-*) for every configured tool, before the up-to-date short-circuit.
-    // Installed dirs are not renamed in place, and the retired dirs are always
-    // stale, so this must run even when no tool otherwise needs an update.
+    // openspec-*) and skill/command artifacts left behind by retired built-in
+    // workflows (e.g. `ff` → `rasen-ff-change`) for every configured tool,
+    // before the up-to-date short-circuit. Installed artifacts are not
+    // renamed or removed in place, and retired artifacts are always stale, so
+    // this must run even when no tool otherwise needs an update.
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
       if (!tool?.skillsDir) continue;
       await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      await pruneRetiredWorkflowSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      await this.pruneRetiredWorkflowCommandFiles(resolvedProjectPath, toolId);
     }
 
     if (!this.force && toolsToUpdateSet.size === 0) {
@@ -443,6 +460,41 @@ export class UpdateCommand {
         }
       } catch {
         // Ignore errors
+      }
+    }
+
+    return removed;
+  }
+
+  /**
+   * Removes command files left behind by retired built-in workflows (e.g.
+   * `ff`), by resolving candidate paths via the tool's command adapter for
+   * each id in `RETIRED_WORKFLOW_COMMAND_IDS`. The registry-derived
+   * `removeUnselectedCommandFiles` cannot reach these once the id leaves the
+   * registry, so this is a narrow, exact-id retired-artifact prune. Scoped to
+   * exactly those ids; idempotent (a no-op when no such file exists).
+   */
+  private async pruneRetiredWorkflowCommandFiles(
+    projectPath: string,
+    toolId: string,
+  ): Promise<number> {
+    let removed = 0;
+
+    const adapter = CommandAdapterRegistry.get(toolId);
+    if (!adapter) return 0;
+
+    for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
+      for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+            removed++;
+          }
+        } catch {
+          // Ignore errors
+        }
       }
     }
 

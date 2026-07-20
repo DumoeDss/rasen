@@ -568,7 +568,7 @@ rasen/
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  2. CREATE     │  /rasen:ff or /rasen:continue (expanded workflow)         │
+│   │  2. CREATE     │  /rasen:continue (expanded workflow)                     │
 │   │     ARTIFACTS  │  Creates proposal → specs → design → tasks              │
 │   │                │  (based on schema dependencies)                         │
 │   └───────┬────────┘                                                         │

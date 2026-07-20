@@ -16,7 +16,7 @@ OpenSpec 兼容多种 AI 编程助手。当你运行 `rasen init` 时，OpenSpec
 - `sync`
 - `archive`
 
-你可以通过 `rasen config profile` 启用扩展工作流（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），然后运行 `rasen update`。
+你可以通过 `rasen config profile` 启用扩展工作流（`new`、`continue`、`verify`、`bulk-archive`、`onboard`），然后运行 `rasen update`。
 
 ## 工具目录参考
 
@@ -83,7 +83,7 @@ OpenSpec 根据选定的工作流安装工作流产物：
 
 - **Core profile（默认）：** `propose`、`explore`、`apply`、`sync`、`archive`
 - **自定义选择：** 所有工作流 ID 的任意子集：
-  `propose`、`explore`、`new`、`continue`、`apply`、`ff`、`sync`、`archive`、`bulk-archive`、`verify`、`onboard`
+  `propose`、`explore`、`new`、`continue`、`apply`、`sync`、`archive`、`bulk-archive`、`verify`、`onboard`
 
 换句话说，skill/command 的数量取决于 profile 和交付模式，并非固定不变。
 
@@ -96,7 +96,6 @@ OpenSpec 根据选定的工作流安装工作流产物：
 - `openspec-new-change`
 - `openspec-continue-change`
 - `openspec-apply-change`
-- `openspec-ff-change`
 - `openspec-sync-specs`
 - `openspec-archive-change`
 - `openspec-bulk-archive-change`

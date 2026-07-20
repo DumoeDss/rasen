@@ -150,7 +150,7 @@ For fine-grained control, invoke them manually one at a time. The table below is
 | Explore | `/rasen:explore [topic]` | Think things through unstructured, browse code, compare options | (none; can transition to propose/new) |
 | Need validation | `/rasen:office-hours` | YC-style need validation (Startup six questions / Builder brainstorm) | `office-hours-design.md` |
 | Kickoff | `/rasen:propose [name-or-desc]` | Create a change in one step + generate all planning artifacts | proposal/design/specs/tasks |
-| Kickoff (fine-grained) | `/rasen:new` → `/rasen:continue` → `/rasen:ff` | One artifact at a time / generate the next by dependency / generate all at once | Same as above, in steps |
+| Kickoff (fine-grained) | `/rasen:new` → `/rasen:continue` (repeat) | One artifact at a time, generating the next by dependency | Same as above, in steps |
 | Implement | `/rasen:apply` | Implement per `tasks.md`, checking off items | Code + checked-off tasks |
 | Verify | `/rasen:verify` | Check that the implementation matches the artifacts (spec scenarios) | Verification conclusion |
 | Deep verify | `/rasen:verify-enhanced` | Artifact checks + code review + security audit + browser QA + visual audit (auto-scales by change size) | Various reports |
@@ -277,7 +277,7 @@ Slash commands are the "conductors"; the `openspec` CLI is what actually reads /
 
 - **Profile = which workflow commands to install**:
   - `core` (default) = `propose` / `explore` / `apply` / `archive`.
-  - `custom` (expanded) = a set you select, which can include `new` `continue` `ff` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` plus the fusion commands `auto` `ship` `verify-enhanced` `office-hours` `retro`.
+  - `custom` (expanded) = a set you select, which can include `new` `continue` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` plus the fusion commands `auto` `ship` `verify-enhanced` `office-hours` `retro`.
   - **Expert skills are profile-independent and always installed**.
 - **Enable expanded / fusion commands**:
   ```bash
@@ -365,7 +365,7 @@ rasen archive add-jwt-auth
 | See which pipelines exist | `rasen pipeline list` |
 | Think it through before acting | `/rasen:explore` |
 | Validate whether the need is worth doing | `/rasen:office-hours` |
-| Kickoff + generate a plan | `/rasen:propose` (fine-grained: `/rasen:new` + `/rasen:continue` + `/rasen:ff`) |
+| Kickoff + generate a plan | `/rasen:propose` (fine-grained: `/rasen:new` + `/rasen:continue`) |
 | Implement | `/rasen:apply` |
 | Review → fix → re-review (until clean) | `/rasen:review-cycle` |
 | Deep verify (code / security / QA / visual) | `/rasen:verify-enhanced` (or `/rasen:verify`) |

@@ -96,7 +96,6 @@ When selected by profile/workflow config, rasen generates these skills:
 - `rasen-new-change`
 - `rasen-continue-change`
 - `rasen-apply-change`
-- `rasen-ff-change`
 - `rasen-sync-specs`
 - `rasen-archive-change`
 - `rasen-bulk-archive-change`

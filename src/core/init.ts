@@ -41,6 +41,8 @@ import {
   cleanupMarkerBlocks,
   formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredWorkflowSkillDirs,
+  RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import {
   SKILL_NAMES,
@@ -58,6 +60,7 @@ import {
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
 import { getProfileWorkflows, CORE_WORKFLOWS } from './profiles.js';
 import {
+  filterKnownWorkflowRoots,
   getBuiltInWorkflowDefinitions,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
@@ -183,10 +186,19 @@ export class InitCommand {
     // partially generated tool configuration.
     const effectiveConfig = getGlobalConfig();
     const effectiveProfile = this.resolveProfileOverride() ?? effectiveConfig.profile ?? 'full';
-    resolveWorkflowSelection(
-      loadWorkflowCatalog(),
-      getProfileWorkflows(effectiveProfile, effectiveConfig.workflows)
-    );
+    const { known: knownEffectiveWorkflows, unknown: unknownEffectiveWorkflows } =
+      filterKnownWorkflowRoots(
+        loadWorkflowCatalog(),
+        getProfileWorkflows(effectiveProfile, effectiveConfig.workflows)
+      );
+    if (unknownEffectiveWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownEffectiveWorkflows.join(', ')}`
+        )
+      );
+    }
+    resolveWorkflowSelection(loadWorkflowCatalog(), knownEffectiveWorkflows);
 
     // Create directory structure and config
     await this.createDirectoryStructure(openspecPath, extendMode);
@@ -620,6 +632,33 @@ export class InitCommand {
   // SKILL & COMMAND GENERATION
   // ═══════════════════════════════════════════════════════════
 
+  /**
+   * Removes command files left behind by retired built-in workflows (e.g.
+   * `ff`), resolving candidate paths via the tool's command adapter for each
+   * id in `RETIRED_WORKFLOW_COMMAND_IDS`. Scoped to exactly those ids;
+   * idempotent (a no-op when no such file exists).
+   */
+  private async pruneRetiredWorkflowCommandFiles(
+    projectPath: string,
+    toolId: string,
+  ): Promise<void> {
+    const adapter = CommandAdapterRegistry.get(toolId);
+    if (!adapter) return;
+
+    for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
+      for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+          }
+        } catch {
+          // Ignore errors
+        }
+      }
+    }
+  }
+
   private async generateSkillsAndCommands(
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
@@ -640,9 +679,21 @@ export class InitCommand {
     const globalConfig = getGlobalConfig();
     const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'full';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
+    const { known: knownProfileWorkflows, unknown: unknownProfileWorkflows } =
+      filterKnownWorkflowRoots(
+        loadWorkflowCatalog(),
+        getProfileWorkflows(profile, globalConfig.workflows)
+      );
+    if (unknownProfileWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
+        )
+      );
+    }
     const workflows = resolveWorkflowSelection(
       loadWorkflowCatalog(),
-      getProfileWorkflows(profile, globalConfig.workflows)
+      knownProfileWorkflows
     ).map((definition) => definition.id);
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
@@ -668,6 +719,12 @@ export class InitCommand {
         // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
         // openspec-*); installed dirs are not renamed in place.
         await pruneRetiredExpertSkillDirs(skillsDir);
+
+        // Prune skill/command artifacts left behind by retired built-in
+        // workflows (e.g. `ff` → `rasen-ff-change`); the registry-derived
+        // cleanup below can no longer reach a retired id.
+        await pruneRetiredWorkflowSkillDirs(skillsDir);
+        await this.pruneRetiredWorkflowCommandFiles(projectPath, tool.value);
 
         // Create skill directories and SKILL.md files
         for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {

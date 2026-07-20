@@ -188,7 +188,6 @@ Old instructions content
       const nonCoreSkillNames = [
         'rasen-new-change',
         'rasen-continue-change',
-        'rasen-ff-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
       ];
@@ -252,7 +251,7 @@ Old instructions content
       }
 
       // Verify non-core commands are NOT created
-      const nonCoreCommandIds = ['new', 'continue', 'ff', 'bulk-archive', 'verify'];
+      const nonCoreCommandIds = ['new', 'continue', 'bulk-archive', 'verify'];
       for (const cmdId of nonCoreCommandIds) {
         const cmdFile = path.join(commandsDir, `${cmdId}.md`);
         const exists = await FileSystemUtils.fileExists(cmdFile);
@@ -1315,6 +1314,69 @@ content
         }
         await fs.rm(configTempDir, { recursive: true, force: true });
       }
+    });
+
+    it('should drop a retired workflow id (ff) from a stored custom profile with a warning, and still succeed', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        delivery: 'both',
+        workflows: ['explore', 'ff', 'apply'],
+      });
+
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      const consoleSpy = vi.spyOn(console, 'log');
+
+      await expect(updateCommand.execute(testDir)).resolves.not.toThrow();
+
+      const calls = consoleSpy.mock.calls.map(call =>
+        call.map(arg => String(arg)).join(' ')
+      );
+      expect(calls.some((call) => call.includes('ff'))).toBe(true);
+
+      // The remaining known workflows are still updated normally.
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-explore', 'SKILL.md')
+      )).toBe(true);
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-apply-change', 'SKILL.md')
+      )).toBe(true);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should heal a retired ff install (skill dir + command file) on update, and no-op when absent', async () => {
+      // Simulate a machine that still has the retired rasen-ff-change skill
+      // dir and ff command file from a prior install.
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      const retiredSkillDir = path.join(skillsDir, 'rasen-ff-change');
+      await fs.mkdir(retiredSkillDir, { recursive: true });
+      await fs.writeFile(path.join(retiredSkillDir, 'SKILL.md'), 'stale ff skill');
+
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
+      await fs.mkdir(commandsDir, { recursive: true });
+      await fs.writeFile(path.join(commandsDir, 'ff.md'), 'stale ff command');
+
+      await updateCommand.execute(testDir);
+
+      expect(await FileSystemUtils.fileExists(retiredSkillDir)).toBe(false);
+      expect(await FileSystemUtils.fileExists(
+        path.join(commandsDir, 'ff.md')
+      )).toBe(false);
+
+      // Current artifacts are left intact.
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-explore', 'SKILL.md')
+      )).toBe(true);
+
+      // Running again with nothing retired left is a no-op (no error).
+      await expect(updateCommand.execute(testDir)).resolves.not.toThrow();
     });
   });
 
