@@ -110,4 +110,35 @@ describe('api client', () => {
     (fetch as any).mockResolvedValueOnce(new Response('not json', { status: 500 }));
     await expect(client.health()).rejects.toMatchObject({ code: 'unknown_error', status: 500 });
   });
+
+  it('createChange POSTs json to /api/v1/changes and returns the created change', async () => {
+    (fetch as any).mockResolvedValueOnce(
+      jsonResponse(201, { change: { id: 'my-change', path: '/proj/rasen/changes/my-change', schema: 'spec-driven' } })
+    );
+    const result = await client.createChange({ name: 'my-change', description: 'A description' });
+
+    const [url, init] = (fetch as any).mock.calls[0];
+    expect(url).toBe('/api/v1/changes');
+    expect(init.method).toBe('POST');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(init.body)).toEqual({ name: 'my-change', description: 'A description' });
+    expect(result.change.id).toBe('my-change');
+  });
+
+  it('createChange surfaces the CLI error verbatim, with cliExitCode/stderr, on a cli_error response', async () => {
+    (fetch as any).mockResolvedValueOnce(
+      jsonResponse(422, {
+        error: {
+          code: 'cli_error',
+          message: "Change 'my-change' already exists at /proj/rasen/changes/my-change",
+          cliExitCode: 1,
+          stderr: '',
+        },
+      })
+    );
+    await expect(client.createChange({ name: 'my-change', description: 'desc' })).rejects.toMatchObject({
+      code: 'cli_error',
+      message: "Change 'my-change' already exists at /proj/rasen/changes/my-change",
+    });
+  });
 });

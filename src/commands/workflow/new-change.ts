@@ -29,6 +29,7 @@ import { printJson, statusFromError, validateSchemaExists } from './shared.js';
 
 export interface NewChangeOptions {
   description?: string;
+  proposal?: string;
   goal?: string;
   schema?: string;
   store?: string;
@@ -101,6 +102,14 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
 
     assertRemovedOptionsAbsent(options);
 
+    // An explicit but empty/whitespace-only --proposal is a user mistake,
+    // not "no proposal requested" (that's simply omitting the flag) — fail
+    // loudly rather than silently skipping proposal.md seeding, consistent
+    // with the server bridge's 400 on an empty description (review m2).
+    if (options.proposal !== undefined && options.proposal.trim().length === 0) {
+      throw new Error('--proposal must not be empty or whitespace-only.');
+    }
+
     const root = await resolveRootForCommand(options, {
       json: options.json,
       failurePayload: { change: null },
@@ -135,6 +144,21 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       const { promises: fs } = await import('fs');
       const readmePath = path.join(result.changeDir, 'README.md');
       await fs.writeFile(readmePath, `# ${name}\n\n${options.description}\n`, 'utf-8');
+    }
+
+    // If proposal text provided, seed proposal.md so the change is immediately
+    // active (getActiveChangeIds requires proposal.md). Independent of
+    // --description, which only seeds README.md.
+    if (options.proposal) {
+      const { promises: fs } = await import('fs');
+      const proposalPath = path.join(result.changeDir, 'proposal.md');
+      await fs.writeFile(
+        proposalPath,
+        `# ${name}\n\n` +
+          `_Submission seed — created via \`--proposal\`; develop this into a full proposal._\n\n` +
+          `## Why\n\n${options.proposal}\n`,
+        'utf-8'
+      );
     }
 
     const payload: NewChangeOutput = {

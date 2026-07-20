@@ -397,6 +397,48 @@ describe('artifact-workflow CLI commands', () => {
       expect(content).toContain('This is a test feature');
     });
 
+    it('creates proposal.md when --proposal is provided, making the change active', async () => {
+      const result = await runCLI(
+        ['new', 'change', 'submitted-feature', '--proposal', 'Add feature Y'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+
+      const proposalPath = path.join(changesDir, 'submitted-feature', 'proposal.md');
+      const content = await fs.readFile(proposalPath, 'utf-8');
+      expect(content).toContain('submitted-feature');
+      expect(content).toContain('Add feature Y');
+
+      const { getActiveChangeIds } = await import('../../src/utils/item-discovery.js');
+      const activeIds = await getActiveChangeIds(tempDir);
+      expect(activeIds).toContain('submitted-feature');
+    });
+
+    it('creates no proposal.md without --proposal (unchanged behavior)', async () => {
+      const result = await runCLI(['new', 'change', 'unsubmitted-feature'], { cwd: tempDir });
+      expect(result.exitCode).toBe(0);
+
+      const proposalPath = path.join(changesDir, 'unsubmitted-feature', 'proposal.md');
+      expect(existsSync(proposalPath)).toBe(false);
+    });
+
+    it('errors on an empty or whitespace-only --proposal instead of silently skipping it (review m2)', async () => {
+      const emptyResult = await runCLI(
+        ['new', 'change', 'empty-proposal-feature', '--proposal', ''],
+        { cwd: tempDir }
+      );
+      expect(emptyResult.exitCode).toBe(1);
+      expect(getOutput(emptyResult)).toContain('--proposal must not be empty');
+      expect(existsSync(path.join(changesDir, 'empty-proposal-feature'))).toBe(false);
+
+      const whitespaceResult = await runCLI(
+        ['new', 'change', 'whitespace-proposal-feature', '--proposal', '   '],
+        { cwd: tempDir }
+      );
+      expect(whitespaceResult.exitCode).toBe(1);
+      expect(existsSync(path.join(changesDir, 'whitespace-proposal-feature'))).toBe(false);
+    });
+
     it('errors for invalid change name with spaces', async () => {
       const result = await runCLI(['new', 'change', 'invalid name'], { cwd: tempDir });
       expect(result.exitCode).toBe(1);

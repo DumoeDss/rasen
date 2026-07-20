@@ -681,3 +681,72 @@ select:disabled {
   color: var(--muted);
   background: var(--surface-warm);
 }
+
+.board-card--highlighted {
+  box-shadow: var(--elev-ring), 0 0 0 2px var(--accent);
+}
+
+/* ═══ 12. New change dialog (platform-slice2-task-submission design D4) ═ */
+.new-change-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  background: color-mix(in oklab, var(--fg), transparent 55%);
+}
+
+.new-change-dialog {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-ring), var(--elev-raised);
+  padding: var(--space-6);
+  width: min(480px, calc(100vw - var(--space-8)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.new-change-dialog__title {
+  font-size: var(--text-lg);
+}
+
+.new-change-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.new-change-dialog__field input,
+.new-change-dialog__field textarea {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
+  resize: vertical;
+}
+
+.new-change-dialog__field input:disabled,
+.new-change-dialog__field textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.new-change-dialog__error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.new-change-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

@@ -4,6 +4,7 @@ import { BoardCard } from './BoardCard.js';
 export interface BoardColumnEntry {
   change: ChangeSummary;
   escalated: boolean;
+  highlighted?: boolean;
 }
 
 /** One lifecycle column of the board (design.md D7/D8): a header + its cards. */
@@ -18,8 +19,8 @@ export function BoardColumn({ label, entries }: { label: string; entries: BoardC
         {entries.length === 0 ? (
           <p class="board-column__empty">—</p>
         ) : (
-          entries.map(({ change, escalated }) => (
-            <BoardCard key={change.name} change={change} escalated={escalated} />
+          entries.map(({ change, escalated, highlighted }) => (
+            <BoardCard key={change.name} change={change} escalated={escalated} highlighted={highlighted} />
           ))
         )}
       </div>

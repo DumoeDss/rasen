@@ -1,11 +1,11 @@
 # management-http-api Specification
 
 ## Purpose
-Provide a read-only, loopback-bound, bearer-secured HTTP API exposing project status, active changes, and run state for the management UI, always computed fresh from disk.
+Provide a loopback-bound, bearer-secured HTTP API exposing project status, active changes, and run state for the management UI, always computed fresh from disk — read-mostly, with exactly one CLI-backed write endpoint (`POST /api/v1/changes`) for change submission.
 
 ## Requirements
-### Requirement: Read-only management API with loopback and bearer security
-The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, and `GET /api/v1/runs` bound to 127.0.0.1 only, requiring a per-session bearer token minted at server startup, and SHALL expose no endpoint that mutates project state. Every response SHALL be computed from a fresh filesystem read at request time. Each management path SHALL also answer when addressed with a single trailing slash (e.g. `/api/v1/status/`), identically to its canonical form; deeper suffixes are not management paths and fall through to the rest of the server's routing.
+### Requirement: Loopback and bearer security with a single CLI-backed write endpoint
+The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, `GET /api/v1/runs`, and `POST /api/v1/changes`, bound to 127.0.0.1 only, requiring a per-session bearer token minted at server startup. `POST /api/v1/changes` SHALL be the only mutating endpoint, and it SHALL mutate exclusively by spawning the existing CLI as a subprocess (per the change-submission capability) — the server itself never writes workspace files. Any other method on a management path SHALL be rejected with 405 `method_not_allowed` without modifying any file. Every read response SHALL be computed from a fresh filesystem read at request time. Each management path SHALL also answer when addressed with a single trailing slash (e.g. `/api/v1/status/`), identically to its canonical form; deeper suffixes are not management paths and fall through to the rest of the server's routing.
 
 #### Scenario: Authorized status request
 - **WHEN** a client sends `GET /api/v1/status` with the session bearer token
@@ -15,9 +15,13 @@ The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, and 
 - **WHEN** a client sends any `/api/v1/*` request without a valid bearer token
 - **THEN** the server responds 401 with the error envelope `{ error: { code: "unauthorized" } }`
 
-#### Scenario: Write methods rejected
-- **WHEN** a client sends a non-GET method (POST, PUT, DELETE) to a management endpoint
+#### Scenario: Unadmitted write methods rejected
+- **WHEN** a client sends PUT or DELETE to any management endpoint, or POST to `/api/v1/status` or `/api/v1/runs`
 - **THEN** the server responds 405 with error code `method_not_allowed` and does not modify any file
+
+#### Scenario: Admitted write endpoint routes to the submission bridge
+- **WHEN** a client sends an authorized `POST /api/v1/changes`
+- **THEN** the request is handled by the CLI-backed submission bridge rather than rejected with 405
 
 #### Scenario: Fresh read on every request
 - **WHEN** a change's on-disk state is modified between two identical requests
