@@ -3,6 +3,10 @@ import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { version: OWN_VERSION } = require('../../package.json') as { version: string };
 
 // Mocked so this suite never opens a real socket, spawns a real browser
 // process, or leaves a live server/SIGINT handler dangling after the test —
@@ -28,6 +32,32 @@ vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return { ...actual, spawn: (...args: unknown[]) => spawnMock(...args) };
 });
+
+// The adopt-or-spawn seam this suite exercises at the `runUiLaunch` level
+// only — the daemon-probe/daemon-state/spawn mechanics themselves have
+// dedicated coverage: daemon-probe.test.ts (probe classification), daemon-
+// state.test.ts (state file), daemon-lifecycle.test.ts and daemon-spawn-
+// convergence.test.ts (real subprocess/fixture-loopback), and
+// ui-launch-stale-replace.test.ts (fixture-loopback stale-daemon kill —
+// review round 1 M1).
+const probeDaemonMock = vi.fn();
+vi.mock('../../src/core/management-api/daemon-probe.js', () => ({
+  probeDaemon: (...args: unknown[]) => probeDaemonMock(...args),
+  probeDaemonPort: vi.fn().mockResolvedValue({ kind: 'no-listener' }),
+  resolveDefaultDaemonPort: () => 8791,
+}));
+
+const readDaemonStateMock = vi.fn();
+vi.mock('../../src/core/management-api/daemon-state.js', () => ({
+  readDaemonState: () => readDaemonStateMock(),
+}));
+
+const spawnDaemonDetachedMock = vi.fn();
+const killIdentifiedDaemonAndWaitFreeMock = vi.fn();
+vi.mock('../../src/commands/daemon.js', () => ({
+  spawnDaemonDetached: (...args: unknown[]) => spawnDaemonDetachedMock(...args),
+  killIdentifiedDaemonAndWaitFree: (...args: unknown[]) => killIdentifiedDaemonAndWaitFreeMock(...args),
+}));
 
 async function runUiCommand(args: string[]): Promise<Command> {
   const { registerUiCommand } = await import('../../src/commands/ui.js');
@@ -58,6 +88,10 @@ describe('ui command', () => {
     stopServerMock.mockClear();
     resolveUiPackageDirMock.mockReset().mockReturnValue(null);
     spawnMock.mockClear();
+    probeDaemonMock.mockReset();
+    readDaemonStateMock.mockReset();
+    spawnDaemonDetachedMock.mockReset();
+    killIdentifiedDaemonAndWaitFreeMock.mockReset();
 
     startManagementServerMock.mockResolvedValue({
       port: 4321,
@@ -87,52 +121,131 @@ describe('ui command', () => {
     expect(uiCommand!.description()).toMatch(/management platform/i);
   });
 
-  it('starts the management server, prints the root URL with the token fragment, and opens the browser by default', async () => {
-    await runUiCommand([]);
+  describe('default (adopt-or-spawn) form', () => {
+    it('adopts a running same-version daemon without spawning', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: OWN_VERSION, pid: 4242 } });
+      readDaemonStateMock.mockReturnValue({ version: OWN_VERSION, pid: 4242, port: 8791, token: 'adopted-token', startedAt: Date.now() });
 
-    expect(startManagementServerMock).toHaveBeenCalledTimes(1);
-    const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/#token=[0-9a-f]{64}$/m);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+      await runUiCommand([]);
+
+      expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
+      expect(startManagementServerMock).not.toHaveBeenCalled();
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=adopted-token$/m);
+    });
+
+    it('spawns a daemon when nothing listens and prints its URL', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'no-listener' } });
+      spawnDaemonDetachedMock.mockResolvedValue({ ok: true, port: 8791, version: OWN_VERSION, pid: 5555 });
+      readDaemonStateMock.mockReturnValue({ version: OWN_VERSION, pid: 5555, port: 8791, token: 'spawned-token', startedAt: Date.now() });
+
+      await runUiCommand([]);
+
+      expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=spawned-token$/m);
+    });
+
+    it('review round 1 M1: replaces a stale-version daemon — kills it by its reported pid, waits for the port to free, then spawns fresh', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: '0.0.1-stale', pid: 9999 } });
+      killIdentifiedDaemonAndWaitFreeMock.mockResolvedValue(true);
+      spawnDaemonDetachedMock.mockResolvedValue({ ok: true, port: 8791, version: OWN_VERSION, pid: 8888 });
+      readDaemonStateMock.mockReturnValue({ version: OWN_VERSION, pid: 8888, port: 8791, token: 'replaced-token', startedAt: Date.now() });
+
+      await runUiCommand([]);
+
+      expect(killIdentifiedDaemonAndWaitFreeMock).toHaveBeenCalledWith(9999, 8791);
+      expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=replaced-token$/m);
+    });
+
+    it('review round 1 M1: fails, without spawning, when the stale daemon\'s port cannot be freed in time', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: '0.0.1-stale', pid: 9999 } });
+      killIdentifiedDaemonAndWaitFreeMock.mockResolvedValue(false);
+
+      await runUiCommand([]);
+
+      expect(process.exitCode).toBe(1);
+      expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
+      const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toContain('9999');
+    });
+
+    it('fails without touching a foreign listener', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'foreign' } });
+
+      await runUiCommand([]);
+
+      expect(process.exitCode).toBe(1);
+      expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
+      const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toContain('8791');
+      expect(printed).toContain('--no-daemon');
+    });
+
+    it('fails with remediation, no kill, when the adopted daemon token is unreadable', async () => {
+      probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: OWN_VERSION, pid: 4242 } });
+      readDaemonStateMock.mockReturnValue(null);
+
+      await runUiCommand([]);
+
+      expect(process.exitCode).toBe(1);
+      const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toContain('rasen daemon stop');
+    });
   });
 
-  it('prints the install hint when the UI package is not resolved', async () => {
-    await runUiCommand([]);
-    const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toContain('UI package not installed. Run: npm install -g @atelierai/rasen-ui');
+  describe('--no-daemon (self-hosted foreground form)', () => {
+    it('starts the management server, prints the root URL with the token fragment, and opens the browser by default', async () => {
+      await runUiCommand(['--no-daemon']);
+
+      expect(startManagementServerMock).toHaveBeenCalledTimes(1);
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/#token=[0-9a-f]{64}$/m);
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('prints the install hint when the UI package is not resolved', async () => {
+      await runUiCommand(['--no-daemon']);
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toContain('UI package not installed. Run: npm install -g @atelierai/rasen-ui');
+    });
+
+    it('--no-open suppresses the browser', async () => {
+      await runUiCommand(['--no-daemon', '--no-open']);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('passes --port through to the server start call', async () => {
+      await runUiCommand(['--no-daemon', '--port', '5555']);
+      expect(startManagementServerMock).toHaveBeenCalledWith(expect.objectContaining({ port: 5555 }));
+    });
+
+    it('reports a clear error on port collision (EADDRINUSE) and exits non-zero', async () => {
+      const err = Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' });
+      startManagementServerMock.mockRejectedValueOnce(err);
+
+      await runUiCommand(['--no-daemon', '--port', '5555']);
+
+      expect(process.exitCode).toBe(1);
+      const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toContain('5555');
+      expect(printed).toContain('already in use');
+    });
   });
 
-  it('--no-open suppresses the browser', async () => {
-    await runUiCommand(['--no-open']);
-    expect(spawnMock).not.toHaveBeenCalled();
-  });
-
-  it('passes --port through to the server start call', async () => {
-    await runUiCommand(['--port', '5555']);
-    expect(startManagementServerMock).toHaveBeenCalledWith(expect.objectContaining({ port: 5555 }));
-  });
-
-  it('rejects a non-numeric --port without starting the server', async () => {
+  it('rejects a non-numeric --port without starting anything', async () => {
     await runUiCommand(['--port', 'not-a-number']);
     expect(process.exitCode).toBe(1);
     expect(startManagementServerMock).not.toHaveBeenCalled();
+    expect(probeDaemonMock).not.toHaveBeenCalled();
   });
 
-  it('rejects an out-of-range --port without starting the server', async () => {
+  it('rejects an out-of-range --port without starting anything', async () => {
     await runUiCommand(['--port', '99999']);
     expect(process.exitCode).toBe(1);
     expect(startManagementServerMock).not.toHaveBeenCalled();
-  });
-
-  it('reports a clear error on port collision (EADDRINUSE) and exits non-zero', async () => {
-    const err = Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' });
-    startManagementServerMock.mockRejectedValueOnce(err);
-
-    await runUiCommand(['--port', '5555']);
-
-    expect(process.exitCode).toBe(1);
-    const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toContain('5555');
-    expect(printed).toContain('already in use');
+    expect(probeDaemonMock).not.toHaveBeenCalled();
   });
 });

@@ -832,8 +832,51 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'port',
-        description: 'Pin the listen port (default: ephemeral)',
+        description: 'Pin the listen port (default: ephemeral; --no-daemon only)',
         takesValue: true,
+      },
+      {
+        name: 'no-daemon',
+        description: 'Use a self-hosted foreground server instead of the resident daemon',
+      },
+    ],
+  },
+  {
+    name: 'daemon',
+    description: 'Manage the resident Rasen daemon (sessions survive terminal exits)',
+    flags: [],
+    subcommands: [
+      {
+        name: 'run',
+        description: 'Run the resident daemon in the foreground (debugging/advanced form)',
+        flags: [
+          {
+            name: 'port',
+            description: 'Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'start',
+        description: 'Start the resident daemon as a detached background process',
+        flags: [
+          {
+            name: 'port',
+            description: 'Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'stop',
+        description: 'Stop the resident daemon, reaping its live sessions',
+        flags: [],
+      },
+      {
+        name: 'status',
+        description: 'Report whether the resident daemon is running',
+        flags: [],
       },
     ],
   },

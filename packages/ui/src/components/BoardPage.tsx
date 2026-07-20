@@ -1,10 +1,60 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { ChangeLoadError, ChangeRunEntry, ChangeSummary } from '../api/types.js';
+import type { ChangeLoadError, ChangeRunEntry, ChangeSummary, SessionRecordWire } from '../api/types.js';
 import { BOARD_COLUMNS, deriveColumn, type BoardColumn as BoardColumnId } from '../board/columns.js';
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
+
+const SESSION_POLL_INTERVAL_MS = 3000;
+const LIVE_SESSION_STATES: SessionRecordWire['state'][] = ['starting', 'running', 'exiting'];
+
+/**
+ * Compact running-sessions indicator (design.md D1/D3.3 of
+ * `slice3-sessions-ui`): the board's reflection of the sessions surface —
+ * a live count linking to `/sessions`, fed by the same list call the
+ * Sessions page uses, re-polled only while at least one session was live
+ * in the last response so idle boards skip the extra request.
+ */
+function LiveSessionsIndicator() {
+  const [liveCount, setLiveCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    function poll() {
+      client
+        .listSessions()
+        .then((res) => {
+          if (cancelled) return;
+          const count = res.sessions.filter((e) => LIVE_SESSION_STATES.includes(e.session.state)).length;
+          setLiveCount(count);
+          if (count > 0) {
+            timer = setTimeout(poll, SESSION_POLL_INTERVAL_MS);
+          }
+        })
+        .catch(() => {
+          // The board's primary content doesn't depend on this indicator —
+          // a failed sessions fetch just means nothing is shown, silently.
+        });
+    }
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  if (!liveCount) return null;
+
+  return (
+    <a class="board-page__sessions-indicator" href="/sessions" data-testid="board-sessions-indicator">
+      {liveCount} live session{liveCount === 1 ? '' : 's'}
+    </a>
+  );
+}
 
 /**
  * The board page (design.md D7/D8 of `rasen-ui-slice1-readonly-api`): one
@@ -110,6 +160,7 @@ export function BoardPage() {
           <button type="button" onClick={refresh}>
             Refresh
           </button>
+          <LiveSessionsIndicator />
         </div>
         {dialogOpen && (
           <NewChangeDialog onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
@@ -134,6 +185,7 @@ export function BoardPage() {
         <button type="button" onClick={refresh}>
           Refresh
         </button>
+        <LiveSessionsIndicator />
       </div>
       {brokenChanges}
       {changes.length > 0 && (

@@ -14,8 +14,10 @@ import { configListFixture } from '../fixtures/config-list.js';
 import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
+import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
 
 export { configListFixture, projectsListFixture, healthFixture, errorsFixture };
+export { sessionDetailFixture, sessionsListFixture };
 
 describe('fixture ↔ mirror-type drift tripwire', () => {
   it('config-list fixture has plausible entries', () => {
@@ -55,5 +57,35 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
         expect(recorded.body.error.fix).toBeDefined();
       }
     }
+  });
+
+  it('sessions-list fixture covers live/exited/absent-join/invalid-join shapes (slice3-sessions-ui mirror drift alarm)', () => {
+    expect(sessionsListFixture.sessions.length).toBeGreaterThan(0);
+    for (const entry of sessionsListFixture.sessions) {
+      expect(['auto', 'goal']).toContain(entry.session.kind);
+      expect(['starting', 'running', 'exiting', 'exited']).toContain(entry.session.state);
+      expect(['ok', 'error', 'absent']).toContain(
+        entry.runState.kind === 'absent' ? 'absent' : entry.runState.kind
+      );
+    }
+
+    const live = sessionsListFixture.sessions.find((e) => e.session.id === 'sess-live-with-progress')!;
+    expect(live.runState.kind).toBe('ok');
+
+    const exited = sessionsListFixture.sessions.find((e) => e.session.id === 'sess-exited-killed')!;
+    expect(exited.session.terminationReason).toBe('killed');
+    expect(exited.session.exitSignal).toBe('SIGTERM');
+
+    const absentJoin = sessionsListFixture.sessions.find((e) => e.session.id === 'sess-no-change')!;
+    expect(absentJoin.runState.kind).toBe('absent');
+
+    const invalidJoin = sessionsListFixture.sessions.find((e) => e.session.id === 'sess-invalid-run-state')!;
+    expect(invalidJoin.runState.kind === 'ok' && invalidJoin.runState.autoRun.kind).toBe('invalid');
+  });
+
+  it('session-detail fixture carries the record plus stdout/stderr tails', () => {
+    expect(sessionDetailFixture.session.id).toBe('sess-live-with-progress');
+    expect(typeof sessionDetailFixture.tails.stdout).toBe('string');
+    expect(typeof sessionDetailFixture.tails.stderr).toBe('string');
   });
 });

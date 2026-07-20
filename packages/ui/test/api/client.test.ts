@@ -6,6 +6,7 @@ import { configListFixture } from '../fixtures/config-list.js';
 import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
+import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -139,6 +140,70 @@ describe('api client', () => {
     await expect(client.createChange({ name: 'my-change', description: 'desc' })).rejects.toMatchObject({
       code: 'cli_error',
       message: "Change 'my-change' already exists at /proj/rasen/changes/my-change",
+    });
+  });
+
+  describe('sessions (slice3-sessions-ui design D6)', () => {
+    it('listSessions GETs /api/v1/sessions with auth and returns the shape-checked fixture', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, sessionsListFixture));
+      const result = await client.listSessions();
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions');
+      expect(init.method).toBeUndefined(); // default GET
+      expect(result.sessions).toHaveLength(sessionsListFixture.sessions.length);
+      expect(result.sessions[0]!.session.id).toBe('sess-live-with-progress');
+    });
+
+    it('getSession GETs /api/v1/sessions/:id and returns record + tails', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, sessionDetailFixture));
+      const result = await client.getSession('sess-live-with-progress');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions/sess-live-with-progress');
+      expect(result.tails.stdout).toContain('building');
+    });
+
+    it('launchSession POSTs json to /api/v1/sessions with the request body', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, { session: sessionsListFixture.sessions[2]!.session })
+      );
+      const result = await client.launchSession({ kind: 'auto', task: 'do a thing' });
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions');
+      expect(init.method).toBe('POST');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(init.body)).toEqual({ kind: 'auto', task: 'do a thing' });
+      expect(result.session.id).toBe('sess-no-change');
+    });
+
+    it('killSession DELETEs /api/v1/sessions/:id and returns the patched record', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(202, {
+          session: { ...sessionsListFixture.sessions[0]!.session, state: 'exiting' },
+        })
+      );
+      const result = await client.killSession('sess-live-with-progress');
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions/sess-live-with-progress');
+      expect(init.method).toBe('DELETE');
+      expect(result.session.state).toBe('exiting');
+    });
+
+    it('surfaces a 404 kill (session already gone) as an ApiError', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(404, { error: { code: 'not_found', message: 'Session not found.' } })
+      );
+      await expect(client.killSession('gone')).rejects.toMatchObject({ code: 'not_found', status: 404 });
+    });
+
+    it('surfaces server rejection envelopes verbatim on launch (agent_cli_unavailable)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(503, {
+          error: { code: 'agent_cli_unavailable', message: 'No agent CLI could be resolved on this machine.' },
+        })
+      );
+      await expect(client.launchSession({ kind: 'auto', task: 'x' })).rejects.toMatchObject({
+        code: 'agent_cli_unavailable',
+      });
     });
   });
 });

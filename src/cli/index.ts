@@ -17,6 +17,7 @@ import { CompletionCommand } from '../commands/completion.js';
 import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
 import { registerUiCommand } from '../commands/ui.js';
+import { registerDaemonCommand } from '../commands/daemon.js';
 import { registerProfileCommand } from '../commands/profile.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
@@ -355,6 +356,7 @@ program
 
 registerConfigCommand(program);
 registerUiCommand(program);
+registerDaemonCommand(program);
 registerProfileCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);

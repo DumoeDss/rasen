@@ -16,12 +16,19 @@ import type { Socket } from 'node:net';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
-import { createManagementRouter, isManagementPath, type ManagementApiContext } from './router.js';
+import {
+  createManagementRouter,
+  isManagementPath,
+  type ManagementApiContext,
+  type ManagementRouterOptions,
+} from './router.js';
 
 export interface StartManagementServerOptions {
   context: ManagementApiContext;
   /** Ephemeral (OS-assigned) when omitted or 0. */
   port?: number;
+  /** Test/daemon-only overrides for the sessions supervisor (design D1's injectable resolver, task 3.3's fixture CLI override). */
+  sessions?: ManagementRouterOptions;
 }
 
 export interface ManagementServerHandle {
@@ -33,6 +40,9 @@ export interface ManagementServerHandle {
 
 /** Backstop so shutdown can never hang past this, even if `server.close()`'s callback never fires. */
 const SHUTDOWN_GUARD_MS = 2000;
+
+/** Backstop on reaping live sessions (design D6) — bounds the wait past the supervisor's own SIGTERM-then-SIGKILL grace period. */
+const SESSION_SHUTDOWN_GUARD_MS = 8000;
 
 const LOOPBACK_HOST = '127.0.0.1';
 
@@ -62,9 +72,10 @@ export function startManagementServer(
 
   // Two route groups (design D2): the config group is the existing,
   // unmodified `config-api/router.ts` delegate; the management group
-  // handles only its own three paths. The server owns the dispatch.
+  // handles its own paths, now including the sessions route group. The
+  // server owns the dispatch.
   const configHandler = createConfigRouter(context);
-  const managementHandler = createManagementRouter(context, resolveHome);
+  const { handle: managementHandler, supervisor } = createManagementRouter(context, resolveHome, options.sessions);
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
@@ -117,21 +128,38 @@ export function startManagementServer(
   const stopServer = (): Promise<void> => {
     if (stopped) return Promise.resolve();
     stopped = true;
-    return new Promise<void>((resolve) => {
-      const guard = setTimeout(resolve, SHUTDOWN_GUARD_MS);
-      guard.unref?.();
-      server.close(() => {
-        clearTimeout(guard);
-        resolve();
+    return (async () => {
+      // Reap every live supervised session before the process actually
+      // exits (design D6): the in-memory registry has no adopter in this
+      // child-1 world, so anything still running past this point would be
+      // an orphaned agent process with no observer and no kill switch.
+      // Covers both a clean `server.close()` and the SIGINT/SIGTERM path
+      // (`ui-launch.ts` calls this same `stopServer`), bounded so a
+      // SIGTERM-resistant session can never hang shutdown indefinitely.
+      await Promise.race([
+        supervisor.shutdownAll('server-shutdown'),
+        new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, SESSION_SHUTDOWN_GUARD_MS);
+          t.unref?.();
+        }),
+      ]);
+
+      return new Promise<void>((resolve) => {
+        const guard = setTimeout(resolve, SHUTDOWN_GUARD_MS);
+        guard.unref?.();
+        server.close(() => {
+          clearTimeout(guard);
+          resolve();
+        });
+        // Force-destroy every tracked socket immediately — `server.close()`
+        // alone only stops accepting new connections and waits for existing
+        // (including idle keep-alive) ones to end on their own, which is
+        // exactly the open-socket exit hang this repo has been bitten by.
+        for (const socket of sockets) {
+          socket.destroy();
+        }
       });
-      // Force-destroy every tracked socket immediately — `server.close()`
-      // alone only stops accepting new connections and waits for existing
-      // (including idle keep-alive) ones to end on their own, which is
-      // exactly the open-socket exit hang this repo has been bitten by.
-      for (const socket of sockets) {
-        socket.destroy();
-      }
-    });
+    })();
   };
 
   return new Promise((resolve, reject) => {
