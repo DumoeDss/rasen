@@ -422,6 +422,23 @@ describe('artifact-workflow CLI commands', () => {
       expect(existsSync(proposalPath)).toBe(false);
     });
 
+    it('errors on an empty or whitespace-only --proposal instead of silently skipping it (review m2)', async () => {
+      const emptyResult = await runCLI(
+        ['new', 'change', 'empty-proposal-feature', '--proposal', ''],
+        { cwd: tempDir }
+      );
+      expect(emptyResult.exitCode).toBe(1);
+      expect(getOutput(emptyResult)).toContain('--proposal must not be empty');
+      expect(existsSync(path.join(changesDir, 'empty-proposal-feature'))).toBe(false);
+
+      const whitespaceResult = await runCLI(
+        ['new', 'change', 'whitespace-proposal-feature', '--proposal', '   '],
+        { cwd: tempDir }
+      );
+      expect(whitespaceResult.exitCode).toBe(1);
+      expect(existsSync(path.join(changesDir, 'whitespace-proposal-feature'))).toBe(false);
+    });
+
     it('errors for invalid change name with spaces', async () => {
       const result = await runCLI(['new', 'change', 'invalid name'], { cwd: tempDir });
       expect(result.exitCode).toBe(1);

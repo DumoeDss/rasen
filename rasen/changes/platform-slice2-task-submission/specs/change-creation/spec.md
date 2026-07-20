@@ -13,6 +13,10 @@
 - **WHEN** `rasen new change my-feature` is run without `--proposal`
 - **THEN** no `proposal.md` is created, matching existing behavior
 
+#### Scenario: Empty proposal text rejected
+- **WHEN** `rasen new change my-feature --proposal ""` (or whitespace-only) is run
+- **THEN** the command fails with an explicit error and no change is left in a silently-inactive state
+
 #### Scenario: Flag is discoverable and localized
 - **WHEN** the completions command registry and locale catalogs are checked
 - **THEN** the `--proposal` flag has a registry entry under `new change` and description strings in both `en` and `ja` catalogs

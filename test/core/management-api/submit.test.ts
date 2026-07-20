@@ -9,6 +9,14 @@ import { createChangeSubmitter } from '../../../src/core/management-api/submit.j
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const realCliEntry = path.resolve(__dirname, '..', '..', '..', 'dist', 'cli', 'index.js');
 const fakeCliEntry = path.resolve(__dirname, '..', '..', 'fixtures', 'management-api', 'fake-cli.mjs');
+const sigtermResistantCliEntry = path.resolve(
+  __dirname,
+  '..',
+  '..',
+  'fixtures',
+  'management-api',
+  'sigterm-resistant-cli.mjs'
+);
 
 describe('createChangeSubmitter (change-submission design D2/D3)', () => {
   let projectRoot: string;
@@ -124,6 +132,30 @@ describe('createChangeSubmitter (change-submission design D2/D3)', () => {
       const withControlChar = await submit('desc-control-char', 'bad\x00text');
       expect(withControlChar.ok).toBe(false);
       expect(withControlChar.status).toBe(400);
+
+      // Carriage return is still a rejected control character — only \t and
+      // \n are permitted (review M2).
+      const withCarriageReturn = await submit('desc-carriage-return', 'bad\rtext');
+      expect(withCarriageReturn.ok).toBe(false);
+      expect(withCarriageReturn.status).toBe(400);
+    });
+
+    it('accepts a multi-line description (tab/newline permitted) and preserves it verbatim in proposal.md (review M2)', async () => {
+      const submit = submitter();
+      const multiline = 'Line one.\nLine two, indented:\n\tLine three.';
+      const result = await submit('multiline-description-change', multiline);
+
+      expect(result.ok).toBe(true);
+      expect(result.status).toBe(201);
+      const proposalPath = path.join(
+        projectRoot,
+        'rasen',
+        'changes',
+        'multiline-description-change',
+        'proposal.md'
+      );
+      const content = fs.readFileSync(proposalPath, 'utf-8');
+      expect(content).toContain(multiline);
     });
   });
 
@@ -183,5 +215,43 @@ describe('createChangeSubmitter (change-submission design D2/D3)', () => {
       expect(result.message).toContain('fake failure');
       expect(result.cliExitCode).toBe(1);
     });
+
+    it('escalates to SIGKILL a SIGTERM-resistant child, and releases the concurrency slot only once it actually closes, not at 504-response time (review M1)', async () => {
+      const submit = createChangeSubmitter(
+        { launchProjectRoot: projectRoot },
+        { cliEntryOverride: sigtermResistantCliEntry, timeoutMs: 150, killGraceMs: 150 }
+      );
+
+      const first = submit('sigterm-resistant-change', 'a description');
+      const firstResult = await first;
+
+      // The 504 comes back promptly at the timeout, well before the
+      // SIGKILL grace period has elapsed.
+      expect(firstResult.ok).toBe(false);
+      expect(firstResult.status).toBe(504);
+      expect(firstResult.code).toBe('cli_timeout');
+
+      // Immediately after the 504, the SIGTERM-resistant child is still
+      // alive (it ignores SIGTERM; SIGKILL is not due for another
+      // ~150ms) — a second submission must see busy, not spawn a second
+      // subprocess. This is the concurrency-cap bug from M1: without the
+      // fix, `inFlight` was already released at 504-response time.
+      const second = await submit('should-be-rejected-busy', 'a description');
+      expect(second.ok).toBe(false);
+      expect(second.status).toBe(409);
+      expect(second.code).toBe('busy');
+
+      // Wait past the SIGKILL grace period so the uncatchable signal
+      // actually terminates the child and the concurrency slot releases.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // The slot is now free: a third submission is admitted (spawned),
+      // not rejected as busy. It uses the same slow fixture, so it will
+      // itself eventually time out too — the only thing under test here
+      // is that it was NOT rejected with 409 busy.
+      const third = await submit('third-after-kill', 'a description');
+      expect(third.status).not.toBe(409);
+      expect(third.code).not.toBe('busy');
+    }, 10_000);
   });
 });

@@ -22,7 +22,7 @@ The submission bridge SHALL admit only operations from a data-driven whitelist. 
 - **THEN** it contains exactly the create-change operation and no operation that spawns an agent session
 
 ### Requirement: Pre-spawn input validation and injection posture
-The server SHALL validate submission input before spawning: the change name MUST satisfy the same kebab-case rule the CLI's change-name validation enforces, and the description MUST be non-empty, length-capped, and free of control characters. Invalid input SHALL be rejected with 400 and no subprocess. All values SHALL be passed as discrete argv elements (the description as a single `--proposal=<text>` token) so no client input is ever interpreted by a shell or parsed as an additional CLI option.
+The server SHALL validate submission input before spawning: the change name MUST satisfy the same kebab-case rule the CLI's change-name validation enforces, and the description MUST be non-empty, length-capped, and free of control characters other than tab (`\t`) and newline (`\n`), which are permitted since the description is natural multi-line proposal text. Invalid input SHALL be rejected with 400 and no subprocess. All values SHALL be passed as discrete argv elements (the description as a single `--proposal=<text>` token) so no client input is ever interpreted by a shell or parsed as an additional CLI option, regardless of embedded newlines.
 
 #### Scenario: Shell metacharacters are inert
 - **WHEN** a client submits a description containing shell metacharacters (quotes, semicolons, `$()`, backticks)
@@ -31,6 +31,10 @@ The server SHALL validate submission input before spawning: the change name MUST
 #### Scenario: Option-like input cannot inject flags
 - **WHEN** a client submits a name or description crafted to look like a CLI option (e.g. leading `--store`)
 - **THEN** the name fails kebab-case validation with 400, and a description is bound into the single `--proposal=<text>` token, so no additional CLI option is parsed
+
+#### Scenario: Multi-line description is accepted
+- **WHEN** a client submits a description containing tab or newline characters
+- **THEN** validation accepts it, the subprocess is spawned with the description bound verbatim (newlines included) into the single `--proposal=<text>` token, and the resulting `proposal.md` contains those newlines
 
 #### Scenario: Invalid name rejected without subprocess
 - **WHEN** a client submits a name with uppercase, spaces, or a leading hyphen

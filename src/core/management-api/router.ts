@@ -138,6 +138,12 @@ export function createManagementRouter(
       const body = await readJsonBody(req);
       if (!body.ok) {
         sendError(res, body.status, body.code, body.message);
+        // Only after the response is already sent: on 413 in particular, a
+        // client may still be mid-upload past our cap, and the response is
+        // fully written by now so tearing down the request side no longer
+        // risks dropping it (review t2). Harmless no-op if the client
+        // already finished sending.
+        req.destroy();
         return;
       }
       const request = (body.value ?? {}) as Partial<SubmitChangeRequest>;

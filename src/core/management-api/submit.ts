@@ -28,8 +28,15 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 /** Grace period between SIGTERM and SIGKILL on timeout (design D3). */
 const DEFAULT_KILL_GRACE_MS = 2_000;
 
-/** Matches any C0 control character or DEL — rejected in the submitted description. */
-const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f]/;
+/**
+ * Matches any C0 control character or DEL — rejected in the submitted
+ * description — EXCEPT `\t` (tab) and `\n` (newline), which are permitted:
+ * the board's textarea naturally produces multi-line text destined for a
+ * `## Why` section, and the value is still bound into exactly one
+ * `--proposal=<text>` argv token either way, so the injection posture is
+ * unaffected (review M2).
+ */
+const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0b-\x1f\x7f]/;
 
 export type SubmitResult =
   | { ok: true; status: 201; response: SubmitChangeResponse }
@@ -61,7 +68,15 @@ function validateDescription(description: unknown): string | null {
   return null;
 }
 
-/** Parses the CLI's `--json` stdout for `newChangeCommand`'s success shape. */
+/**
+ * Parses the CLI's `--json` stdout for `newChangeCommand`'s success shape.
+ * Known, accepted limitation (review t3): requires the stdout to be pure
+ * JSON — any future stdout pollution ahead of the JSON payload (an update
+ * notice, a stray warning) would turn a successful creation into a 500
+ * `cli_protocol_error`. Not hardened against on purpose: the contract is
+ * honest and tested today, and a more lenient parse (e.g. "last JSON line")
+ * risks silently accepting output that was never meant to be machine-read.
+ */
 function parseSuccessPayload(stdout: string): SubmitChangeResponse | null {
   try {
     const parsed = JSON.parse(stdout) as { change?: { id?: unknown; path?: unknown; schema?: unknown } };
@@ -140,18 +155,25 @@ export function createChangeSubmitter(
     }
 
     inFlight = true;
-    try {
-      return await runSubmission(
-        cliEntry,
-        context.launchProjectRoot,
-        name,
-        description as string,
-        timeoutMs,
-        killGraceMs
-      );
-    } finally {
-      inFlight = false;
-    }
+    // The slot is released by `runSubmission` itself, from the child's own
+    // 'close' (or spawn 'error') event — NOT here, and NOT tied to when the
+    // returned promise resolves. On the timeout path those two moments
+    // diverge: the promise resolves immediately with 504 so the caller gets
+    // a fast answer, but the subprocess may still be alive (ignoring
+    // SIGTERM) for up to `killGraceMs` longer. Releasing at response time
+    // would let a second POST spawn a concurrent subprocess while the first
+    // is still running, breaking the cap-1 guarantee (review M1).
+    return runSubmission(
+      cliEntry,
+      context.launchProjectRoot,
+      name,
+      description as string,
+      timeoutMs,
+      killGraceMs,
+      () => {
+        inFlight = false;
+      }
+    );
   };
 }
 
@@ -161,7 +183,8 @@ function runSubmission(
   name: string,
   description: string,
   timeoutMs: number,
-  killGraceMs: number
+  killGraceMs: number,
+  onChildClosed: () => void
 ): Promise<SubmitResult> {
   return new Promise((resolve) => {
     // A single `--proposal=<text>` token (rather than two argv elements) so
@@ -173,18 +196,35 @@ function runSubmission(
 
     let stdout = '';
     let stderr = '';
-    let settled = false;
+    let responded = false; // guards the response promise only; independent of child lifecycle
+    let childClosed = false; // set exactly once the child process has actually exited
     let killTimer: NodeJS.Timeout | undefined;
 
+    const respond = (result: SubmitResult) => {
+      if (responded) return;
+      responded = true;
+      resolve(result);
+    };
+
+    // Releases the cap-1 concurrency slot exactly once, only once the child
+    // is confirmed gone (or never actually started) — never on a timeout's
+    // early 504 response.
+    const releaseSlot = () => {
+      if (childClosed) return;
+      childClosed = true;
+      onChildClosed();
+    };
+
     const timeoutTimer = setTimeout(() => {
-      if (settled) return;
       child.kill('SIGTERM');
+      // Escalation is keyed off child state (`childClosed`), not response
+      // state — the response already settled with 504 above, but the child
+      // may still be alive and ignoring SIGTERM (review M1).
       killTimer = setTimeout(() => {
-        if (!settled) child.kill('SIGKILL');
+        if (!childClosed) child.kill('SIGKILL');
       }, killGraceMs);
       killTimer.unref?.();
-      settled = true;
-      resolve({ ok: false, status: 504, code: 'cli_timeout', message: 'The CLI subprocess timed out.' });
+      respond({ ok: false, status: 504, code: 'cli_timeout', message: 'The CLI subprocess timed out.' });
     }, timeoutMs);
     timeoutTimer.unref?.();
 
@@ -196,47 +236,47 @@ function runSubmission(
     });
 
     child.on('error', (error) => {
-      if (settled) return;
-      settled = true;
       clearTimeout(timeoutTimer);
       if (killTimer) clearTimeout(killTimer);
-      resolve({
+      respond({
         ok: false,
         status: 500,
         code: 'cli_protocol_error',
         message: `Failed to spawn the CLI subprocess: ${error.message}`,
       });
+      // 'error' at spawn time means no live process was ever created (or it
+      // is already gone) — safe to release immediately.
+      releaseSlot();
     });
 
     child.on('close', (code) => {
-      if (settled) return;
-      settled = true;
       clearTimeout(timeoutTimer);
       if (killTimer) clearTimeout(killTimer);
 
       if (code === 0) {
         const parsed = parseSuccessPayload(stdout);
         if (!parsed) {
-          resolve({
+          respond({
             ok: false,
             status: 500,
             code: 'cli_protocol_error',
             message: `The CLI exited successfully but its output could not be parsed: ${stdout || '(empty)'}`,
           });
-          return;
+        } else {
+          respond({ ok: true, status: 201, response: parsed });
         }
-        resolve({ ok: true, status: 201, response: parsed });
-        return;
+      } else {
+        respond({
+          ok: false,
+          status: 422,
+          code: 'cli_error',
+          message: parseErrorMessage(stdout, stderr),
+          cliExitCode: code ?? undefined,
+          stderr,
+        });
       }
 
-      resolve({
-        ok: false,
-        status: 422,
-        code: 'cli_error',
-        message: parseErrorMessage(stdout, stderr),
-        cliExitCode: code ?? undefined,
-        stderr,
-      });
+      releaseSlot();
     });
   });
 }

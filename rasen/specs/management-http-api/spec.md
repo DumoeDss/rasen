@@ -1,7 +1,7 @@
 # management-http-api Specification
 
 ## Purpose
-Provide a read-only, loopback-bound, bearer-secured HTTP API exposing project status, active changes, and run state for the management UI, always computed fresh from disk.
+Provide a loopback-bound, bearer-secured HTTP API exposing project status, active changes, and run state for the management UI, always computed fresh from disk — read-mostly, with exactly one CLI-backed write endpoint (`POST /api/v1/changes`) for change submission.
 
 ## Requirements
 ### Requirement: Loopback and bearer security with a single CLI-backed write endpoint

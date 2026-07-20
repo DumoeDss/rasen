@@ -102,6 +102,14 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
 
     assertRemovedOptionsAbsent(options);
 
+    // An explicit but empty/whitespace-only --proposal is a user mistake,
+    // not "no proposal requested" (that's simply omitting the flag) — fail
+    // loudly rather than silently skipping proposal.md seeding, consistent
+    // with the server bridge's 400 on an empty description (review m2).
+    if (options.proposal !== undefined && options.proposal.trim().length === 0) {
+      throw new Error('--proposal must not be empty or whitespace-only.');
+    }
+
     const root = await resolveRootForCommand(options, {
       json: options.json,
       failurePayload: { change: null },
