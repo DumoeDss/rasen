@@ -9,6 +9,11 @@ import { z } from 'zod';
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
 import { isKebabId } from './id.js';
 import { thresholdSchema } from './pipeline-registry/types.js';
+import {
+  reportConfigDiagnostic,
+  type ConfigDiagnostic,
+  type ConfigDiagnosticReporter,
+} from './config-diagnostics.js';
 
 /**
  * Zod schema for project configuration.
@@ -162,13 +167,29 @@ export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
  * (unlike a bare id, which is grammar-checked downstream at assembly time).
  * Returns undefined when the field is absent or normalizes to empty.
  */
-function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
+function warnConfig(
+  diagnostic: Omit<ConfigDiagnostic, 'output'>,
+  reporter?: ConfigDiagnosticReporter
+): void {
+  reportConfigDiagnostic({ ...diagnostic, output: 'warn' }, reporter);
+}
+
+function parseDeclarationList(
+  raw: unknown,
+  reporter?: ConfigDiagnosticReporter
+): DeclarationEntry[] | undefined {
   const fieldName = 'references';
   if (raw === undefined) {
     return undefined;
   }
   if (!Array.isArray(raw)) {
-    console.warn(`Invalid '${fieldName}' field in config (must be an array of store ids)`);
+    warnConfig(
+      {
+        key: 'invalidReferences',
+        fallback: `Invalid '${fieldName}' field in config (must be an array of store ids)`,
+      },
+      reporter
+    );
     return undefined;
   }
 
@@ -218,11 +239,21 @@ function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
   }
 
   if (droppedEntries) {
-    console.warn(`Some '${fieldName}' entries are invalid, ignoring them`);
+    warnConfig(
+      {
+        key: 'invalidReferenceEntries',
+        fallback: `Some '${fieldName}' entries are invalid, ignoring them`,
+      },
+      reporter
+    );
   }
   if (droppedRemotes) {
-    console.warn(
-      `Some '${fieldName}' remotes are not non-empty strings; the ids are kept without a clone source`
+    warnConfig(
+      {
+        key: 'invalidReferenceRemotes',
+        fallback: `Some '${fieldName}' remotes are not non-empty strings; the ids are kept without a clone source`,
+      },
+      reporter
     );
   }
   return byId.size > 0 ? [...byId.values()] : undefined;
@@ -249,7 +280,10 @@ export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the r
  * @param projectRoot - The root directory of the project (where `openspec/` lives)
  * @returns Parsed config or null if file doesn't exist
  */
-export function readProjectConfig(projectRoot: string): ProjectConfig | null {
+export function readProjectConfig(
+  projectRoot: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfig | null {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
     return null; // No config is OK
@@ -257,10 +291,17 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
 
   try {
     const content = readFileSync(configPath, 'utf-8');
-    return parseProjectConfigContent(content, projectRoot);
+    return parseProjectConfigContent(content, projectRoot, options.reporter);
   } catch (error) {
-    console.warn(
-      `Warning: could not parse ${configPathForWarnings(projectRoot)} (${error instanceof Error ? error.message.split('\n')[0] : String(error)}); ignoring it.`
+    const configPath = configPathForWarnings(projectRoot);
+    const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    warnConfig(
+      {
+        key: 'projectParseFailed',
+        values: { path: configPath, detail },
+        fallback: `Warning: could not parse ${configPath} (${detail}); ignoring it.`,
+      },
+      options.reporter
     );
     return null;
   }
@@ -274,11 +315,21 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
  * YAML content passed in as a string — that only happens via
  * `readProjectConfig`'s own try/catch, since `parseYaml` can throw.
  */
-function parseProjectConfigContent(content: string, projectRoot: string): ProjectConfig | null {
+function parseProjectConfigContent(
+  content: string,
+  projectRoot: string,
+  reporter?: ConfigDiagnosticReporter
+): ProjectConfig | null {
   const raw = parseYaml(content);
 
   if (!raw || typeof raw !== 'object') {
-    console.warn(`openspec/config.yaml is not a valid YAML object`);
+    warnConfig(
+      {
+        key: 'projectNotObject',
+        fallback: 'openspec/config.yaml is not a valid YAML object',
+      },
+      reporter
+    );
     return null;
   }
 
@@ -290,7 +341,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
     if (schemaResult.success) {
       config.schema = schemaResult.data;
     } else if (raw.schema !== undefined) {
-      console.warn(`Invalid 'schema' field in config (must be non-empty string)`);
+      warnConfig(
+        {
+          key: 'invalidSchema',
+          fallback: `Invalid 'schema' field in config (must be non-empty string)`,
+        },
+        reporter
+      );
     }
 
     // Parse context field with size limit
@@ -301,15 +358,34 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
       if (contextResult.success) {
         const contextSize = Buffer.byteLength(contextResult.data, 'utf-8');
         if (contextSize > MAX_CONTEXT_SIZE) {
-          console.warn(
-            `Context too large (${(contextSize / 1024).toFixed(1)}KB, limit: ${MAX_CONTEXT_SIZE / 1024}KB)`
+          const size = (contextSize / 1024).toFixed(1);
+          const maximum = MAX_CONTEXT_SIZE / 1024;
+          warnConfig(
+            {
+              key: 'contextTooLarge',
+              values: { size, maximum },
+              fallback: `Context too large (${size}KB, limit: ${maximum}KB)`,
+            },
+            reporter
           );
-          console.warn(`Ignoring context field`);
+          warnConfig(
+            {
+              key: 'ignoringContext',
+              fallback: 'Ignoring context field',
+            },
+            reporter
+          );
         } else {
           config.context = contextResult.data;
         }
       } else {
-        console.warn(`Invalid 'context' field in config (must be string)`);
+        warnConfig(
+          {
+            key: 'invalidContext',
+            fallback: `Invalid 'context' field in config (must be string)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -333,13 +409,23 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
               hasValidRules = true;
             }
             if (validRules.length < rulesArrayResult.data.length) {
-              console.warn(
-                `Some rules for '${artifactId}' are empty strings, ignoring them`
+              warnConfig(
+                {
+                  key: 'emptyArtifactRules',
+                  values: { artifactId },
+                  fallback: `Some rules for '${artifactId}' are empty strings, ignoring them`,
+                },
+                reporter
               );
             }
           } else {
-            console.warn(
-              `Rules for '${artifactId}' must be an array of strings, ignoring this artifact's rules`
+            warnConfig(
+              {
+                key: 'invalidArtifactRules',
+                values: { artifactId },
+                fallback: `Rules for '${artifactId}' must be an array of strings, ignoring this artifact's rules`,
+              },
+              reporter
             );
           }
         }
@@ -348,7 +434,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           config.rules = parsedRules;
         }
       } else {
-        console.warn(`Invalid 'rules' field in config (must be object)`);
+        warnConfig(
+          {
+            key: 'invalidRules',
+            fallback: `Invalid 'rules' field in config (must be object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -364,14 +456,26 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           config['quality-rules'] = validRules;
         }
         if (validRules.length < qualityRulesResult.data.length) {
-          console.warn(`Some quality-rules are empty strings, ignoring them`);
+          warnConfig(
+            {
+              key: 'emptyQualityRules',
+              fallback: 'Some quality-rules are empty strings, ignoring them',
+            },
+            reporter
+          );
         }
       } else {
-        console.warn(`Invalid 'quality-rules' field in config (must be array of strings)`);
+        warnConfig(
+          {
+            key: 'invalidQualityRules',
+            fallback: `Invalid 'quality-rules' field in config (must be array of strings)`,
+          },
+          reporter
+        );
       }
     }
 
-    const references = parseDeclarationList(raw.references);
+    const references = parseDeclarationList(raw.references, reporter);
     if (references) {
       config.references = references;
     }
@@ -383,8 +487,14 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
       if (typeof raw.store === 'string') {
         config.store = raw.store;
       } else {
-        console.warn(
-          `Warning: ignoring invalid store: field in ${configPathForWarnings(projectRoot)} (must be a single store id string).`
+        const configPath = configPathForWarnings(projectRoot);
+        warnConfig(
+          {
+            key: 'invalidStore',
+            values: { path: configPath },
+            fallback: `Warning: ignoring invalid store: field in ${configPath} (must be a single store id string).`,
+          },
+          reporter
         );
       }
     }
@@ -395,7 +505,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
       if (typeof raw.projectId === 'string') {
         config.projectId = raw.projectId;
       } else {
-        console.warn(`Invalid 'projectId' field in config (must be string)`);
+        warnConfig(
+          {
+            key: 'invalidProjectId',
+            fallback: `Invalid 'projectId' field in config (must be string)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -411,7 +527,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           if (archiveRaw.timing === 'on-merge' || archiveRaw.timing === 'in-ship') {
             archive.timing = archiveRaw.timing;
           } else {
-            console.warn(`Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')`);
+            warnConfig(
+              {
+                key: 'invalidArchiveTiming',
+                fallback: `Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')`,
+              },
+              reporter
+            );
           }
         }
         if (archiveRaw.destination !== undefined) {
@@ -422,14 +544,24 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           ) {
             archive.destination = archiveRaw.destination;
           } else {
-            console.warn(
-              `Invalid 'archive.destination' field in config (must be 'in-repo', 'external', or 'prune')`
+            warnConfig(
+              {
+                key: 'invalidArchiveDestination',
+                fallback: `Invalid 'archive.destination' field in config (must be 'in-repo', 'external', or 'prune')`,
+              },
+              reporter
             );
           }
         }
         config.archive = archive;
       } else {
-        console.warn(`Invalid 'archive' field in config (must be an object)`);
+        warnConfig(
+          {
+            key: 'invalidArchive',
+            fallback: `Invalid 'archive' field in config (must be an object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -445,7 +577,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           if (autopilotRaw.gates === 'on' || autopilotRaw.gates === 'off') {
             autopilot.gates = autopilotRaw.gates;
           } else {
-            console.warn(`Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`);
+            warnConfig(
+              {
+                key: 'invalidAutopilotGates',
+                fallback: `Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`,
+              },
+              reporter
+            );
           }
         }
         if (autopilotRaw.selection !== undefined) {
@@ -456,14 +594,24 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           ) {
             autopilot.selection = autopilotRaw.selection;
           } else {
-            console.warn(
-              `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`
+            warnConfig(
+              {
+                key: 'invalidAutopilotSelection',
+                fallback: `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`,
+              },
+              reporter
             );
           }
         }
         config.autopilot = autopilot;
       } else {
-        console.warn(`Invalid 'autopilot' field in config (must be an object)`);
+        warnConfig(
+          {
+            key: 'invalidAutopilot',
+            fallback: `Invalid 'autopilot' field in config (must be an object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -481,14 +629,24 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           if (parsedThreshold.success) {
             handoff.threshold = parsedThreshold.data;
           } else {
-            console.warn(
-              `Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            warnConfig(
+              {
+                key: 'invalidHandoffThreshold',
+                fallback: `Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`,
+              },
+              reporter
             );
           }
         }
         config.handoff = handoff;
       } else {
-        console.warn(`Invalid 'handoff' field in config (must be an object)`);
+        warnConfig(
+          {
+            key: 'invalidHandoff',
+            fallback: `Invalid 'handoff' field in config (must be an object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -910,7 +1068,8 @@ export interface UpdateProjectConfigKeyResult {
 export function updateProjectConfigKey(
   projectRoot: string,
   keyPath: string,
-  value: unknown
+  value: unknown,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
 ): UpdateProjectConfigKeyResult {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
@@ -951,7 +1110,7 @@ export function updateProjectConfigKey(
 
   // Post-write sanity check via the resilient reader (warnings, if any, are
   // real signal at this point — the registry validated the value already).
-  parseProjectConfigContent(nextContent, projectRoot);
+  parseProjectConfigContent(nextContent, projectRoot, options.reporter);
 
   return { configPath, existed };
 }

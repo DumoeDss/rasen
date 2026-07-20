@@ -45,6 +45,64 @@ describe('openspec CLI e2e basics', () => {
 
   });
 
+  it('shows Japanese help when requested through the language override', async () => {
+    const result = await runCLI(['profile', '--help'], { env: { RASEN_LANG: 'ja' } });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('使用法: rasen profile');
+    expect(result.stdout).toContain('再利用可能なワークフロープロファイルを管理します');
+    expect(result.stdout).toContain('オプション:');
+    expect(result.stdout).toContain('コマンド:');
+    expect(result.stderr).toBe('');
+  });
+
+  it('uses the language persisted in the machine-global JSON config', async () => {
+    const home = await fs.mkdtemp(path.join(tmpdir(), 'rasen-language-e2e-'));
+    tempRoots.push(home);
+
+    const setResult = await runCLI(['config', 'set', 'language', 'ja'], {
+      env: { RASEN_HOME: home },
+    });
+    expect(setResult.exitCode).toBe(0);
+
+    const saved = JSON.parse(await fs.readFile(path.join(home, 'config.json'), 'utf-8')) as {
+      language?: string;
+    };
+    expect(saved.language).toBe('ja');
+
+    const helpResult = await runCLI(['profile', '--help'], {
+      env: { RASEN_HOME: home, RASEN_LANG: '' },
+    });
+    expect(helpResult.exitCode).toBe(0);
+    expect(helpResult.stdout).toContain('使用法: rasen profile');
+
+    const setConfigResult = await runCLI(['config', 'set', 'proactive', 'false'], {
+      env: { RASEN_HOME: home, RASEN_LANG: '' },
+    });
+    expect(setConfigResult.exitCode).toBe(0);
+    expect(setConfigResult.stdout).toContain('proactive = false に設定しました');
+
+    const listConfigResult = await runCLI(['config', 'list'], {
+      env: { RASEN_HOME: home, RASEN_LANG: '' },
+    });
+    expect(listConfigResult.exitCode).toBe(0);
+    expect(listConfigResult.stdout).toContain('プロファイル設定:');
+
+    const unsetConfigResult = await runCLI(['config', 'unset', 'proactive'], {
+      env: { RASEN_HOME: home, RASEN_LANG: '' },
+    });
+    expect(unsetConfigResult.exitCode).toBe(0);
+    expect(unsetConfigResult.stdout).toContain('proactiveの設定を解除しました');
+  });
+
+  it('localizes every visible root option in Japanese help', async () => {
+    const result = await runCLI(['--help'], { env: { RASEN_LANG: 'ja' } });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('--no-color');
+    expect(result.stdout).toContain('カラー出力を無効にします');
+    expect(result.stdout).not.toContain('Disable color output');
+  });
+
   it('shows dynamic tool ids in init help', async () => {
     const result = await runCLI(['init', '--help']);
     expect(result.exitCode).toBe(0);

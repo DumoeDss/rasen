@@ -96,7 +96,7 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 
 **Work across repositories.** Register other Rasen repos as stores (\`rasen store register <path>\`) or projects (\`rasen store add-project\`), then target them with \`--store <id>\` / \`--project <id>\` on workspace commands. \`rasen store list --json\` shows what's registered.
 
-**Adjust what's installed.** Profile (\`full\` / \`core\` / \`custom\` with an explicit workflow list) controls WHICH workflows install; delivery (\`both\` / \`skills\`) controls HOW. Change via \`rasen config\` or re-running \`rasen init\`, then \`rasen update\` regenerates.
+**Adjust what's installed.** Profile controls WHICH workflows install; delivery (\`both\` / \`skills\`) controls HOW. Use \`rasen profile\` to edit the current selection, or \`rasen profile new/use/list\` to reuse named selections, then run \`rasen update\` to regenerate.
 
 ## CLI quick reference
 
@@ -109,6 +109,7 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 | \`rasen show\` / \`rasen view\` | Inspect a change or spec |
 | \`rasen validate\` | Check specs/changes for structural problems |
 | \`rasen pipeline …\` | list / show / classify / resume / agents (see Level 3) |
+| \`rasen profile …\` | Edit, save, select, import, or export workflow profiles |
 | \`rasen store …\` | Register stores/projects for cross-repo work |
 | \`rasen doctor\` | Diagnose install/workspace state |
 | \`rasen feedback <message>\` | File feedback as a GitHub issue on the Rasen repo |

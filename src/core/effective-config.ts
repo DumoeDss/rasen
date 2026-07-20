@@ -17,6 +17,8 @@ import { getGlobalConfig, getGlobalConfigPath } from './global-config.js';
 import { readProjectConfig, type ProjectConfig } from './project-config.js';
 import { isTelemetryEnvDisabled } from '../telemetry/index.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
+import { parseCliLocale } from '../utils/locale.js';
+import type { ConfigDiagnosticReporter } from './config-diagnostics.js';
 
 export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
 
@@ -33,6 +35,8 @@ export interface EffectiveConfigEntry {
 export interface ResolveEffectiveConfigOptions {
   /** Explicit project root; when omitted, only environment/global/default layers contribute. */
   projectRoot?: string;
+  /** Optional locale-aware diagnostic sink supplied by a presentation layer. */
+  reporter?: ConfigDiagnosticReporter;
 }
 
 /**
@@ -44,6 +48,10 @@ export interface ResolveEffectiveConfigOptions {
  * never disagree.
  */
 function resolveEnvOverride(definition: ConfigKeyDefinition): { value: unknown } | undefined {
+  if (definition.key === 'language') {
+    const language = parseCliLocale(process.env.RASEN_LANG);
+    if (language) return { value: language };
+  }
   if (definition.key === 'telemetry.enabled' && isTelemetryEnvDisabled()) {
     return { value: false };
   }
@@ -54,8 +62,8 @@ function resolveEnvOverride(definition: ConfigKeyDefinition): { value: unknown }
  * Reads the global config file exactly as written (no default-injection),
  * so `resolveEffectiveConfig` can tell "the user set this" apart from
  * "`getGlobalConfig()` filled in its own built-in default" — `getGlobalConfig()`
- * bakes defaults for a few fields (`profile`, `delivery`, `proactive`,
- * `repoMode`) directly into its return value, which would otherwise make
+ * bakes defaults for a few fields (`profile`, `delivery`, `language`,
+ * `proactive`, `repoMode`) directly into its return value, which would otherwise make
  * those keys report source `global` even when never explicitly set. Missing
  * or unparseable files resolve to `{}` (same as "nothing set").
  */
@@ -80,10 +88,10 @@ function readRawGlobalConfig(): Record<string, unknown> {
 export function resolveEffectiveConfig(
   options: ResolveEffectiveConfigOptions = {}
 ): EffectiveConfigEntry[] {
-  const globalConfig = getGlobalConfig() as unknown as Record<string, unknown>;
+  const globalConfig = getGlobalConfig({ reporter: options.reporter }) as unknown as Record<string, unknown>;
   const rawGlobalConfig = readRawGlobalConfig();
   const projectConfig: ProjectConfig | null = options.projectRoot
-    ? readProjectConfig(options.projectRoot)
+    ? readProjectConfig(options.projectRoot, { reporter: options.reporter })
     : null;
   const projectConfigRecord = projectConfig as unknown as Record<string, unknown> | null;
 

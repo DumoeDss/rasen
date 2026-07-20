@@ -81,6 +81,7 @@ describe('telemetry/index', () => {
     delete process.env.RASEN_TELEMETRY;
     delete process.env.DO_NOT_TRACK;
     delete process.env.CI;
+    process.env.RASEN_LANG = 'en';
 
     vi.resetModules();
     vi.clearAllMocks();
@@ -315,6 +316,20 @@ describe('telemetry/index', () => {
       expect(message).toContain('RASEN_TELEMETRY=0');
       expect(message.toLowerCase()).not.toContain('posthog');
       expect(message).not.toContain('edge.openspec.dev');
+    });
+
+    it('shows the notice in Japanese when the CLI locale is Japanese', async () => {
+      process.env.RASEN_LANG = 'ja';
+      const { maybeShowTelemetryNotice } = await loadTelemetry();
+
+      await maybeShowTelemetryNotice();
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Rasenは匿名の利用統計')
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('RASEN_TELEMETRY=0')
+      );
     });
 
     it('does not itself send any telemetry (notice precedes any send)', async () => {

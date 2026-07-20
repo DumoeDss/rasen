@@ -36,7 +36,9 @@ export type PositionalType =
   | 'change-or-spec-id'
   | 'path'
   | 'shell'
-  | 'schema-name';
+  | 'schema-name'
+  | 'profile-name'
+  | 'saved-profile-name';
 
 /**
  * Definition of a positional argument.
@@ -95,6 +97,8 @@ export interface CommandDefinition {
    * - 'path': Complete with file paths
    * - 'shell': Complete with supported shell names
    * - 'schema-name': Complete with available schema names
+   * - 'profile-name': Complete with built-in and saved profile names
+   * - 'saved-profile-name': Complete with deletable saved profile names
    * - undefined: No specific completion
    */
   positionalType?: PositionalType;

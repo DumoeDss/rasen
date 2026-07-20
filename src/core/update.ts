@@ -380,7 +380,7 @@ export class UpdateCommand {
     const extraWorkflows = installedWorkflows.filter((w) => !profileSet.has(w));
 
     if (extraWorkflows.length > 0) {
-      console.log(chalk.dim(`Note: ${extraWorkflows.length} extra workflows not in profile (use \`rasen config profile\` to manage)`));
+      console.log(chalk.dim(`Note: ${extraWorkflows.length} extra workflows not in profile (use \`rasen profile\` to manage)`));
     }
   }
 
@@ -403,7 +403,7 @@ export class UpdateCommand {
     }
 
     console.log(chalk.dim('Note: The core profile now includes sync. Your custom profile is preserving the old core workflow set.'));
-    console.log(chalk.dim('Run `rasen config profile core` and then `rasen update` to add sync.'));
+    console.log(chalk.dim('Run `rasen profile use core` and then `rasen update` to add sync.'));
   }
 
   /**

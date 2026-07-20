@@ -71,7 +71,7 @@ If you'd rather watch the whole loop happen on your own code with narration, the
 Turn on the expanded commands first:
 
 ```bash
-$ rasen config profile      # select the expanded workflows
+$ rasen profile             # select the expanded workflows
 $ rasen update              # apply them to this project
 ```
 

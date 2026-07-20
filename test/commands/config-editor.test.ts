@@ -74,6 +74,7 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     delete process.env.RASEN_TELEMETRY;
     delete process.env.DO_NOT_TRACK;
     delete process.env.CI;
+    process.env.RASEN_LANG = 'en';
     process.chdir(tempDir); // outside any Rasen project by default
     (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
@@ -122,7 +123,28 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(process.exitCode).not.toBe(130);
   });
 
-  it('the workflows row is a disabled pointer to `rasen config profile`', async () => {
+  it('localizes config groups and descriptions in Japanese', async () => {
+    const { select } = await getPromptMocks();
+    process.env.RASEN_LANG = 'ja';
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const languageRow = choices.find((choice) => choice.value === 'language')!;
+    expect(languageRow.name).toContain('表示 / language = ja');
+    expect(languageRow.name).toContain('環境変数による上書き');
+    expect(languageRow.name).toContain('環境変数の値が優先されます');
+    expect(languageRow.description).toContain('対話プロンプトとCLIヘルプの言語');
+    expect(choices.find((choice) => choice.value === '__exit__')?.name).toBe('終了');
+    expect(select.mock.calls[0][0].message).toBe('編集する項目を選択:');
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Rasen設定'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Rasenプロジェクト外のため')
+    );
+  });
+
+  it('the workflows row is a disabled pointer to `rasen profile`', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
@@ -131,7 +153,7 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     const choices = await choicesFromCall(0);
     const workflowsRow = choices.find((c) => c.value === '__workflows__')!;
     expect(workflowsRow.disabled).toBeTruthy();
-    expect(String(workflowsRow.disabled)).toContain('rasen config profile');
+    expect(String(workflowsRow.disabled)).toContain('rasen profile');
   });
 
   it('project-only keys are disabled outside a Rasen project', async () => {

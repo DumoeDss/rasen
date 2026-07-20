@@ -207,7 +207,7 @@ describe('global-config', () => {
 
       const config = getGlobalConfig();
 
-      expect(config).toEqual({ featureFlags: {}, profile: 'full', delivery: 'both', proactive: true, repoMode: 'collaborative' });
+      expect(config).toEqual({ featureFlags: {}, profile: 'full', delivery: 'both', language: 'auto', proactive: true, repoMode: 'collaborative' });
     });
 
     it('should not create directory when reading non-existent config', () => {
@@ -244,7 +244,7 @@ describe('global-config', () => {
 
       const config = getGlobalConfig();
 
-      expect(config).toEqual({ featureFlags: {}, profile: 'full', delivery: 'both', proactive: true, repoMode: 'collaborative' });
+      expect(config).toEqual({ featureFlags: {}, profile: 'full', delivery: 'both', language: 'auto', proactive: true, repoMode: 'collaborative' });
     });
 
     it('should log warning for invalid JSON', () => {
@@ -313,6 +313,7 @@ describe('global-config', () => {
 
         expect(config.profile).toBe('full');
         expect(config.delivery).toBe('both');
+        expect(config.language).toBe('auto');
         expect(config.workflows).toBeUndefined();
         expect(config.featureFlags?.existingFlag).toBe(true);
       });
@@ -343,6 +344,7 @@ describe('global-config', () => {
           featureFlags: { flag1: true },
           profile: 'custom' as Profile,
           delivery: 'skills' as Delivery,
+          language: 'ja' as const,
           workflows: ['propose']
         };
 
@@ -351,7 +353,20 @@ describe('global-config', () => {
 
         expect(loadedConfig.profile).toBe('custom');
         expect(loadedConfig.delivery).toBe('skills');
+        expect(loadedConfig.language).toBe('ja');
         expect(loadedConfig.workflows).toEqual(['propose']);
+      });
+
+      it('falls back to auto for an unsupported hand-edited language', () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        const configDir = path.join(tempDir, 'rasen');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(configDir, 'config.json'),
+          JSON.stringify({ language: 'fr' })
+        );
+
+        expect(getGlobalConfig().language).toBe('auto');
       });
 
       it('should default workflows to undefined when not in config', () => {
