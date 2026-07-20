@@ -7,6 +7,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 
 import path from 'path';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { escapeYamlValue } from '../yaml.js';
 
 /**
  * Continue adapter for command generation.
@@ -22,8 +23,8 @@ export const continueAdapter: ToolCommandAdapter = {
 
   formatFile(content: CommandContent): string {
     return `---
-name: ${COMMAND_PREFIX}-${content.id}
-description: ${content.description}
+name: ${escapeYamlValue(`${COMMAND_PREFIX}-${content.id}`)}
+description: ${escapeYamlValue(content.description)}
 invokable: true
 ---
 

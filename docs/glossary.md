@@ -58,6 +58,16 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Delivery.** Whether rasen also installs command files alongside skills (`both`, the default) or skills only (`skills`). Skills are always installed. Configured globally and applied with `rasen update`.
 
+**Installable workflow.** A user-wide, profile-selectable skill with an optional command, declared dependencies, and UTF-8 sidecars. It is distinct from an artifact schema and orchestration pipeline. Manage it with `rasen workflow`; see [Installable workflows and `.rasenpkg`](workflow-packages.md).
+
+**Workflow catalog.** The common indexed view of built-in and valid user workflows. A profile selects catalog IDs; required workflow dependencies expand into the effective selection.
+
+**`.rasenpkg`.** Rasen's strict canonical JSON envelope for a workflow or self-contained profile. It is deterministic and digest-checked but is not signed and does not prove trust or review.
+
+**Thin profile.** A YAML/JSON profile containing workflow IDs but no user-workflow source. It is portable only when every referenced user workflow is already installed; export requires explicit `--thin` when user workflows are selected.
+
+**Managed-artifact ledger.** The project file that records generated user-workflow files and source digests. It lets `update` detect drift and remove only unchanged files that Rasen previously generated.
+
 ## Customization
 
 **Schema.** The definition of which artifacts a workflow has and how they depend on one another. The built-in default is `spec-driven` (proposal → specs → design → tasks). You can fork it or write your own. See [Customization](customization.md#custom-schemas).

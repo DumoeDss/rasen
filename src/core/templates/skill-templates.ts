@@ -54,4 +54,6 @@ export {
   getReviewSkillTemplate,
   getTddSkillTemplate,
   getUnfreezeSkillTemplate,
+  getWorkflowAuthorSkillTemplate,
+  getWorkflowReviewSkillTemplate,
 } from './experts/index.js';

@@ -6,8 +6,26 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 
 import { getGlobalConfigDir, type Delivery } from './global-config.js';
+import { acquireFileLock, releaseFileLock } from './file-state.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS } from './profiles.js';
+import {
+  WORKFLOW_PACKAGE_LIMITS,
+  commitWorkflowInstall,
+  createProfilePackage,
+  decodePackage,
+  discardWorkflowInstall,
+  encodePackage,
+  stagePackageWorkflows,
+  type ProfilePackage,
+  type WorkflowInstallResult,
+} from './workflow-package/index.js';
 import { formatZodIssues } from './zod-issues.js';
+import {
+  WorkflowCatalog,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+  type WorkflowRegistryOptions,
+} from './workflow-registry/index.js';
 
 export const PROFILE_DEFINITION_VERSION = 1 as const;
 export const PROFILE_DIR_NAME = 'profiles';
@@ -24,27 +42,22 @@ const ProfileDefinitionSchema = z
     delivery: z.enum(['both', 'skills']),
     workflows: z.array(z.string()),
   })
-  .strict()
-  .superRefine((definition, context) => {
-    const seen = new Set<string>();
-    for (const [index, workflow] of definition.workflows.entries()) {
-      if (!ALL_WORKFLOWS.includes(workflow as (typeof ALL_WORKFLOWS)[number])) {
-        context.addIssue({
-          code: 'custom',
-          path: ['workflows', index],
-          message: `Unknown workflow ID "${workflow}"`,
-        });
-      }
-      if (seen.has(workflow)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['workflows', index],
-          message: `Duplicate workflow ID "${workflow}"`,
-        });
-      }
-      seen.add(workflow);
+  .strict();
+
+function validateProfileMembership(
+  definition: z.infer<typeof ProfileDefinitionSchema>,
+  catalog: WorkflowCatalog
+): string | null {
+  const seen = new Set<string>();
+  for (const workflow of definition.workflows) {
+    if (!catalog.has(workflow)) return `Unknown workflow ID "${workflow}"`;
+    if (seen.has(workflow)) {
+      return `Duplicate workflow ID "${workflow}"`;
     }
-  });
+    seen.add(workflow);
+  }
+  return null;
+}
 
 export interface ProfileDefinition {
   version: typeof PROFILE_DEFINITION_VERSION;
@@ -71,7 +84,11 @@ export type NamedProfileErrorMessageKey =
   | 'unsupportedFormat'
   | 'destinationNotFile'
   | 'destinationExists'
-  | 'profileNotFound';
+  | 'profileNotFound'
+  | 'profilePackageChanged'
+  | 'profilePackageIncomplete'
+  | 'selfContainedRequired'
+  | 'profileRegistryBusy';
 
 export interface NamedProfileMessageDescriptor {
   key: NamedProfileErrorMessageKey;
@@ -126,16 +143,23 @@ export function getNamedProfilePath(name: string): string {
   return path.join(getNamedProfilesDir(), `${name}.yaml`);
 }
 
-export function normalizeProfileDefinition(definition: ProfileDefinition): ProfileDefinition {
-  const selected = new Set(definition.workflows);
+export function normalizeProfileDefinition(
+  definition: ProfileDefinition,
+  catalog: WorkflowCatalog = loadWorkflowCatalog()
+): ProfileDefinition {
+  const expanded = resolveWorkflowSelection(catalog, definition.workflows);
   return {
     version: PROFILE_DEFINITION_VERSION,
     delivery: definition.delivery,
-    workflows: ALL_WORKFLOWS.filter((workflow) => selected.has(workflow)),
+    workflows: expanded.map((workflow) => workflow.id),
   };
 }
 
-export function parseProfileDefinition(raw: unknown, source = 'profile definition'): ProfileDefinition {
+export function parseProfileDefinition(
+  raw: unknown,
+  source = 'profile definition',
+  catalog: WorkflowCatalog = loadWorkflowCatalog()
+): ProfileDefinition {
   const result = ProfileDefinitionSchema.safeParse(raw);
   if (!result.success) {
     throw new NamedProfileError(
@@ -147,7 +171,15 @@ export function parseProfileDefinition(raw: unknown, source = 'profile definitio
       }
     );
   }
-  return normalizeProfileDefinition(result.data);
+  const membershipError = validateProfileMembership(result.data, catalog);
+  if (membershipError) {
+    throw new NamedProfileError(
+      `Invalid ${source}: ${membershipError}`,
+      'invalid_file',
+      { key: 'invalidSource', values: { source, detail: membershipError } }
+    );
+  }
+  return normalizeProfileDefinition(result.data, catalog);
 }
 
 function parseProfileContent(content: string, extension: string, source: string): ProfileDefinition {
@@ -220,7 +252,11 @@ export function serializeProfileDefinition(
   return stringifyYaml(normalized, { lineWidth: 0 });
 }
 
-function writeFileSafely(targetPath: string, content: string, overwrite: boolean): void {
+function writeFileSafely(
+  targetPath: string,
+  content: string | Uint8Array,
+  overwrite: boolean
+): void {
   const targetDir = path.dirname(targetPath);
   fs.mkdirSync(targetDir, { recursive: true });
 
@@ -250,7 +286,7 @@ function writeFileSafely(targetPath: string, content: string, overwrite: boolean
   const temporaryPath = path.join(targetDir, `.${path.basename(targetPath)}.${suffix}.tmp`);
   const backupPath = path.join(targetDir, `.${path.basename(targetPath)}.${suffix}.bak`);
 
-  fs.writeFileSync(temporaryPath, content, { encoding: 'utf-8', flag: 'wx' });
+  fs.writeFileSync(temporaryPath, content, { flag: 'wx', mode: 0o600 });
   try {
     if (!targetStat) {
       fs.renameSync(temporaryPath, targetPath);
@@ -386,7 +422,7 @@ export function resolveProfileDefinition(name: string, delivery: Delivery): Prof
 
 export function importNamedProfile(
   sourcePath: string,
-  options: { overwrite?: boolean } = {}
+  options: { overwrite?: boolean; name?: string } = {}
 ): { name: string; path: string; definition: ProfileDefinition } {
   const resolvedSource = path.resolve(sourcePath);
   const extension = path.extname(resolvedSource).toLowerCase();
@@ -397,7 +433,7 @@ export function importNamedProfile(
       { key: 'unsupportedFormat', values: { extension: extension || '(none)' } }
     );
   }
-  const name = userProfileNameFromPath(resolvedSource);
+  const name = options.name ?? userProfileNameFromPath(resolvedSource);
   assertValidUserProfileName(name);
   const definition = readProfileDefinitionFile(resolvedSource);
   const savedPath = saveNamedProfile(name, definition, options);
@@ -417,4 +453,183 @@ export function exportProfileDefinition(
     options.overwrite === true
   );
   return resolvedDestination;
+}
+
+export interface ProfilePackageImportResult {
+  name: string;
+  path: string;
+  definition: ProfileDefinition;
+  workflows: WorkflowInstallResult;
+}
+
+export interface ProfileExportResult {
+  path: string;
+  kind: 'thin' | 'package';
+}
+
+function readProfilePackageFile(filePath: string): ProfilePackage {
+  const resolved = path.resolve(filePath);
+  let before: fs.Stats;
+  try {
+    before = fs.statSync(resolved);
+  } catch (error) {
+    throw new NamedProfileError(
+      error instanceof Error ? error.message : String(error),
+      'not_found',
+      { key: 'fileNotFound', values: { path: resolved } }
+    );
+  }
+  if (!before.isFile()) {
+    throw new NamedProfileError(`Profile path is not a file: ${resolved}`, 'invalid_file', {
+      key: 'pathNotFile',
+      values: { path: resolved },
+    });
+  }
+  if (before.size > WORKFLOW_PACKAGE_LIMITS.maxPackageBytes) {
+    throw new NamedProfileError(
+      `Profile package is too large (${before.size} bytes; maximum ${WORKFLOW_PACKAGE_LIMITS.maxPackageBytes}).`,
+      'invalid_file',
+      {
+        key: 'fileTooLarge',
+        values: { size: before.size, maximum: WORKFLOW_PACKAGE_LIMITS.maxPackageBytes },
+      }
+    );
+  }
+  const bytes = fs.readFileSync(resolved);
+  const after = fs.statSync(resolved);
+  if (
+    before.size !== bytes.length ||
+    after.size !== bytes.length ||
+    before.mtimeMs !== after.mtimeMs
+  ) {
+    throw new NamedProfileError(
+      'Profile package changed while it was being read.',
+      'invalid_file',
+      { key: 'profilePackageChanged' }
+    );
+  }
+  return decodePackage(bytes, 'profile') as ProfilePackage;
+}
+
+/**
+ * Imports a self-contained profile package. Workflow installation and the
+ * profile write form one logical transaction: a profile write failure removes
+ * only workflow directories created by this import.
+ */
+export async function importProfilePackage(
+  sourcePath: string,
+  options: WorkflowRegistryOptions & { overwrite?: boolean; name?: string } = {}
+): Promise<ProfilePackageImportResult> {
+  const packageValue = readProfilePackageFile(sourcePath);
+  const name = options.name ?? packageValue.name;
+  assertValidUserProfileName(name);
+  if (namedProfileExists(name) && options.overwrite !== true) {
+    const targetPath = getNamedProfilePath(name);
+    throw new NamedProfileError(`Destination already exists: ${targetPath}`, 'already_exists', {
+      key: 'destinationExists',
+      values: { path: targetPath },
+    });
+  }
+
+  const plan = stagePackageWorkflows(packageValue, options);
+  let commitStarted = false;
+  try {
+    const currentCatalog = loadWorkflowCatalog(options);
+    const incomingIds = new Set(plan.definitions.map((definition) => definition.id));
+    const combinedCatalog = new WorkflowCatalog([
+      ...currentCatalog.definitions,
+      ...plan.definitions.filter((definition) => !currentCatalog.has(definition.id)),
+    ]);
+    const definition = parseProfileDefinition(
+      packageValue.profile,
+      `profile package ${path.resolve(sourcePath)}`,
+      combinedCatalog
+    );
+    for (const workflowId of definition.workflows) {
+      const workflow = combinedCatalog.get(workflowId)!;
+      if (workflow.source === 'user' && !incomingIds.has(workflowId)) {
+        throw new NamedProfileError(
+          `Profile package is not self-contained: workflow "${workflowId}" is not embedded.`,
+          'invalid_file',
+          { key: 'profilePackageIncomplete', values: { workflow: workflowId } }
+        );
+      }
+    }
+
+    let savedPath = '';
+    commitStarted = true;
+    const workflows = await commitWorkflowInstall(plan, {
+      ...options,
+      afterInstall: async () => {
+        const profileLockPath = path.join(getGlobalConfigDir(), '.profiles.lock');
+        const profileLock = await acquireFileLock({
+          lockPath: profileLockPath,
+          errorFor: () => new NamedProfileError(
+            'Profile registry is busy.',
+            'invalid_file',
+            { key: 'profileRegistryBusy' }
+          ),
+        });
+        try {
+          savedPath = saveNamedProfile(name, definition, { overwrite: options.overwrite });
+        } finally {
+          await releaseFileLock(profileLock, profileLockPath);
+        }
+      },
+    });
+    return { name, path: savedPath, definition, workflows };
+  } catch (error) {
+    if (!commitStarted) discardWorkflowInstall(plan);
+    throw error;
+  }
+}
+
+/** Exports a thin YAML/JSON profile or a self-contained profile package. */
+export function exportProfile(
+  destinationPath: string,
+  name: string,
+  definition: ProfileDefinition,
+  options: WorkflowRegistryOptions & { overwrite?: boolean; thin?: boolean } = {}
+): ProfileExportResult {
+  const resolvedDestination = path.resolve(destinationPath);
+  const catalog = loadWorkflowCatalog(options);
+  const normalized = parseProfileDefinition(definition, 'profile definition', catalog);
+  const selected = resolveWorkflowSelection(catalog, normalized.workflows);
+  const userDefinitions = selected.filter((workflow) => workflow.source === 'user');
+  const extension = path.extname(resolvedDestination).toLowerCase();
+  const packageRequested = extension === '.rasenpkg';
+
+  if (options.thin) {
+    if (!SUPPORTED_IMPORT_EXTENSIONS.has(extension)) {
+      throw new NamedProfileError(
+        `Thin profile export requires .yaml, .yml, or .json, not "${extension || '(none)'}".`,
+        'unsupported_format',
+        { key: 'unsupportedFormat', values: { extension: extension || '(none)' } }
+      );
+    }
+    return {
+      path: exportProfileDefinition(resolvedDestination, normalized, options),
+      kind: 'thin',
+    };
+  }
+
+  if (userDefinitions.length === 0 && !packageRequested) {
+    return {
+      path: exportProfileDefinition(resolvedDestination, normalized, options),
+      kind: 'thin',
+    };
+  }
+  if (!packageRequested) {
+    throw new NamedProfileError(
+      'Profiles containing user workflows must be exported to a .rasenpkg file, or use --thin explicitly.',
+      'unsupported_format',
+      { key: 'selfContainedRequired' }
+    );
+  }
+
+  assertValidUserProfileName(name);
+  const roots = userDefinitions.map((workflow) => workflow.id);
+  const packageValue = createProfilePackage(name, normalized, roots, userDefinitions);
+  writeFileSafely(resolvedDestination, encodePackage(packageValue), options.overwrite === true);
+  return { path: resolvedDestination, kind: 'package' };
 }

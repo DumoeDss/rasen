@@ -5,6 +5,7 @@
   "description": "Documentation site for OpenSpec, built with Fumadocs and deployable to Cloudflare Pages.",
   "scripts": {
     "sync:docs": "node scripts/sync-docs.mjs",
+    "test": "node --test scripts/*.test.mjs",
     "build": "pnpm run sync:docs && fumadocs-mdx && next build",
     "dev": "pnpm run sync:docs && next dev",
     "start": "serve out",

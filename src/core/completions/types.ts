@@ -38,7 +38,8 @@ export type PositionalType =
   | 'shell'
   | 'schema-name'
   | 'profile-name'
-  | 'saved-profile-name';
+  | 'saved-profile-name'
+  | 'workflow-id';
 
 /**
  * Definition of a positional argument.

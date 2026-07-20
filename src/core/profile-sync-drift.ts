@@ -2,55 +2,32 @@ import path from 'path';
 import * as fs from 'fs';
 import { AI_TOOLS } from './config.js';
 import type { Delivery } from './global-config.js';
-import { ALL_WORKFLOWS } from './profiles.js';
 import {
   CommandAdapterRegistry,
   getCommandFileId,
   getLegacyCommandFilePath,
   getCommandFilePathCandidates,
 } from './command-generation/index.js';
-import { COMMAND_IDS, getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
+import { getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
+import { getBuiltInWorkflowDefinitions } from './workflow-registry/index.js';
+import { loadWorkflowCatalog } from './workflow-registry/index.js';
+import {
+  hasWorkflowArtifactLedgerDrift,
+  readWorkflowArtifactLedger,
+} from './workflow-artifact-ledger.js';
 
-type WorkflowId = (typeof ALL_WORKFLOWS)[number];
+type WorkflowId = string;
 
 /**
  * Maps workflow IDs to their skill directory names.
  */
-export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
-  'explore': 'rasen-explore',
-  'new': 'rasen-new-change',
-  'continue': 'rasen-continue-change',
-  'apply': 'rasen-apply-change',
-  'ff': 'rasen-ff-change',
-  'sync': 'rasen-sync-specs',
-  'archive': 'rasen-archive-change',
-  'bulk-archive': 'rasen-bulk-archive-change',
-  'verify': 'rasen-verify-change',
-  'onboard': 'rasen-onboard',
-  'help': 'rasen-help',
-  'propose': 'rasen-propose',
-  // Rasen fusion workflow commands
-  'office-hours-command': 'rasen-office-hours-command',
-  'verify-enhanced-command': 'rasen-verify-enhanced',
-  'ship-command': 'rasen-ship',
-  'retro-command': 'rasen-retro',
-  'auto-command': 'rasen-auto',
-  // Iterative review loop (opt-in)
-  'review-cycle': 'rasen-review-cycle',
-  // Context handoff (opt-in)
-  'handoff': 'rasen-handoff',
-  // Goal-loop workflow family (opt-in)
-  'goal-plan': 'rasen-goal-plan',
-  'goal-iterate': 'rasen-goal-iterate',
-  'goal-report': 'rasen-goal-report',
-  'goal-command': 'rasen-goal',
-};
+export const WORKFLOW_TO_SKILL_DIR = Object.fromEntries(
+  getBuiltInWorkflowDefinitions().map((definition) => [definition.id, definition.skill.dirName])
+) as Record<WorkflowId, string>;
 
 function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {
-  return workflows.filter(
-    (workflow): workflow is WorkflowId =>
-      (ALL_WORKFLOWS as readonly string[]).includes(workflow)
-  );
+  const catalog = loadWorkflowCatalog();
+  return workflows.filter((workflow) => catalog.has(workflow));
 }
 
 /**
@@ -60,7 +37,8 @@ export function toolHasAnyConfiguredCommand(projectPath: string, toolId: string)
   const adapter = CommandAdapterRegistry.get(toolId);
   if (!adapter) return false;
 
-  for (const commandId of COMMAND_IDS) {
+  for (const commandId of getBuiltInWorkflowDefinitions()
+    .flatMap((definition) => definition.command ? [definition.command.content.id] : [])) {
     for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
       if (fs.existsSync(fullPath)) {
@@ -96,7 +74,13 @@ export function getCommandConfiguredTools(projectPath: string): string[] {
 export function getConfiguredToolsForProfileSync(projectPath: string): string[] {
   const skillConfigured = getConfiguredTools(projectPath);
   const commandConfigured = getCommandConfiguredTools(projectPath);
-  return [...new Set([...skillConfigured, ...commandConfigured])];
+  let ledgerConfigured: string[] = [];
+  try {
+    ledgerConfigured = Object.keys(readWorkflowArtifactLedger(projectPath)?.tools ?? {});
+  } catch {
+    // An invalid ledger is reported as drift by the generation layer.
+  }
+  return [...new Set([...skillConfigured, ...commandConfigured, ...ledgerConfigured])];
 }
 
 /**
@@ -118,6 +102,8 @@ export function hasToolProfileOrDeliveryDrift(
 
   const knownDesiredWorkflows = toKnownWorkflows(desiredWorkflows);
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
+  const definitions = loadWorkflowCatalog().definitions;
+  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
   const skillsDir = resolveToolSkillsRoot(tool, projectPath);
   const adapter = CommandAdapterRegistry.get(toolId);
   // Skills are always installed; only commands are gated on delivery.
@@ -125,7 +111,7 @@ export function hasToolProfileOrDeliveryDrift(
 
   // Skills are forward-required for every selected workflow regardless of delivery.
   for (const workflow of knownDesiredWorkflows) {
-    const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    const dirName = definitionById.get(workflow)!.skill.dirName;
     const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
     if (!fs.existsSync(skillFile)) {
       return true;
@@ -133,9 +119,9 @@ export function hasToolProfileOrDeliveryDrift(
   }
 
   // Deselecting workflows in a profile should trigger sync.
-  for (const workflow of ALL_WORKFLOWS) {
-    if (desiredWorkflowSet.has(workflow)) continue;
-    const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+  for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+    if (desiredWorkflowSet.has(definition.id)) continue;
+    const dirName = definition.skill.dirName;
     const skillDir = path.join(skillsDir, dirName);
     if (fs.existsSync(skillDir)) {
       return true;
@@ -148,17 +134,19 @@ export function hasToolProfileOrDeliveryDrift(
     // goal-loop's internal stage skills) have no command counterpart, so
     // requiring one here would report drift forever.
     for (const workflow of knownDesiredWorkflows) {
-      if (!(COMMAND_IDS as readonly string[]).includes(workflow)) continue;
-      const cmdPath = adapter.getFilePath(getCommandFileId(workflow));
+      const definition = definitionById.get(workflow)!;
+      if (!definition.command) continue;
+      const cmdPath = adapter.getFilePath(getCommandFileId(definition.command.content.id));
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
       if (!fs.existsSync(fullPath)) {
         return true;
       }
     }
 
-    for (const workflow of ALL_WORKFLOWS) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+      const workflow = definition.id;
       // Deselecting workflows in a profile should trigger sync.
-      if (!desiredWorkflowSet.has(workflow)) {
+      if (definition.command && !desiredWorkflowSet.has(workflow)) {
         const cmdPath = adapter.getFilePath(getCommandFileId(workflow));
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
         if (fs.existsSync(fullPath)) {
@@ -175,8 +163,9 @@ export function hasToolProfileOrDeliveryDrift(
       }
     }
   } else if (!shouldGenerateCommands && adapter) {
-    for (const workflow of ALL_WORKFLOWS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+      if (!definition.command) continue;
+      for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
         if (fs.existsSync(fullPath)) {
           return true;
@@ -199,7 +188,8 @@ export function getToolsNeedingProfileSync(
 ): string[] {
   const tools = configuredTools ? [...new Set(configuredTools)] : getConfiguredToolsForProfileSync(projectPath);
   return tools.filter((toolId) =>
-    hasToolProfileOrDeliveryDrift(projectPath, toolId, desiredWorkflows, delivery)
+    hasToolProfileOrDeliveryDrift(projectPath, toolId, desiredWorkflows, delivery) ||
+    hasWorkflowArtifactLedgerDrift(projectPath, [toolId], desiredWorkflows, delivery)
   );
 }
 
@@ -213,10 +203,12 @@ function getInstalledWorkflowsForTool(
 
   const installed = new Set<WorkflowId>();
   const skillsDir = resolveToolSkillsRoot(tool, projectPath);
+  const definitions = loadWorkflowCatalog().definitions;
 
   if (options.includeSkills) {
-    for (const workflow of ALL_WORKFLOWS) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+      const workflow = definition.id;
+      const dirName = definition.skill.dirName;
       const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
       if (fs.existsSync(skillFile)) {
         installed.add(workflow);
@@ -227,8 +219,10 @@ function getInstalledWorkflowsForTool(
   if (options.includeCommands) {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (adapter) {
-      for (const workflow of ALL_WORKFLOWS) {
-        for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+      for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+        if (!definition.command) continue;
+        const workflow = definition.id;
+        for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
           const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
           if (fs.existsSync(fullPath)) {
             installed.add(workflow);
@@ -251,6 +245,9 @@ export function hasProjectConfigDrift(
   delivery: Delivery
 ): boolean {
   const configuredTools = getConfiguredToolsForProfileSync(projectPath);
+  if (hasWorkflowArtifactLedgerDrift(projectPath, configuredTools, desiredWorkflows, delivery)) {
+    return true;
+  }
   if (getToolsNeedingProfileSync(projectPath, desiredWorkflows, delivery, configuredTools).length > 0) {
     return true;
   }

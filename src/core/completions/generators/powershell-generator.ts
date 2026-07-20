@@ -293,6 +293,11 @@ Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
         lines.push(`${indent}    [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", "Saved profile: $_")`);
         lines.push(`${indent}}`);
         break;
+      case 'workflow-id':
+        lines.push(`${indent}Get-RasenWorkflows | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {`);
+        lines.push(`${indent}    [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", "Workflow: $_")`);
+        lines.push(`${indent}}`);
+        break;
       case 'shell':
         lines.push(`${indent}$shells = @("zsh", "bash", "fish", "powershell")`);
         lines.push(`${indent}$shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {`);

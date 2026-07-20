@@ -39,4 +39,10 @@ _rasen_complete_saved_profiles() {
   local profiles
   profiles=$(rasen __complete saved-profiles 2>/dev/null | cut -f1)
   COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
+}
+
+_rasen_complete_workflows() {
+  local workflows
+  workflows=$(rasen __complete workflows 2>/dev/null | cut -f1)
+  COMPREPLY=($(compgen -W "$workflows" -- "$cur"))
 }`;

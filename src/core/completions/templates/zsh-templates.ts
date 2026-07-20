@@ -60,4 +60,13 @@ _rasen_complete_saved_profiles() {
     profiles+=("$id:$desc")
   done < <(rasen __complete saved-profiles 2>/dev/null)
   _describe "saved profile" profiles
+}
+
+# Use rasen __complete to get installable workflows
+_rasen_complete_workflows() {
+  local -a workflows
+  while IFS=$'\\t' read -r id desc; do
+    workflows+=("$id:$desc")
+  done < <(rasen __complete workflows 2>/dev/null)
+  _describe "installable workflow" workflows
 }`;

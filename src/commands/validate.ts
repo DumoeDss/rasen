@@ -14,16 +14,19 @@ import { nearestMatches } from '../utils/match.js';
 import {
   loadPipelineByName,
   listPipelines,
-  validatePipelineSkills,
-  validateDecomposeChildPipelines,
+  validatePipelineForExecution,
   PipelineValidationError,
 } from '../core/pipeline-registry/index.js';
 import { PipelineLoadError } from '../core/pipeline-registry/index.js';
-import { getSkillTemplates } from '../core/shared/skill-generation.js';
 
 type ItemType = 'change' | 'spec' | 'pipeline';
 
-type ValidationIssue = { level: 'ERROR' | 'WARNING' | 'INFO'; path: string; message: string };
+type ValidationIssue = {
+  level: 'ERROR' | 'WARNING' | 'INFO';
+  path: string;
+  message: string;
+  code?: string;
+};
 
 /**
  * Validates a single pipeline (by name) for structural integrity: parse + Zod
@@ -40,11 +43,7 @@ function validatePipelineByName(
     // parse + Zod + structural validators (duplicate ids, requires refs,
     // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
-    // skill-existence check against the known skill-template set.
-    const knownSkillNames = new Set(getSkillTemplates().map((t) => t.template.name));
-    validatePipelineSkills(pipeline, knownSkillNames);
-    // decompose childPipeline must resolve and be decompose-free (recursion guard).
-    validateDecomposeChildPipelines(pipeline, projectRoot);
+    validatePipelineForExecution(pipeline, projectRoot);
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause
@@ -52,7 +51,12 @@ function validatePipelineByName(
         : error instanceof Error
           ? error.message
           : String(error);
-    issues.push({ level: 'ERROR', path: 'pipeline', message });
+    issues.push({
+      level: 'ERROR',
+      path: 'pipeline',
+      message,
+      ...(error instanceof PipelineValidationError ? { code: error.code } : {}),
+    });
   }
   return { valid: issues.length === 0, issues };
 }

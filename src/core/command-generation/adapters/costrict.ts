@@ -7,6 +7,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 
 import path from 'path';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { quoteYamlValue } from '../yaml.js';
 
 /**
  * CoStrict adapter for command generation.
@@ -22,7 +23,7 @@ export const costrictAdapter: ToolCommandAdapter = {
 
   formatFile(content: CommandContent): string {
     return `---
-description: "${content.description}"
+description: ${quoteYamlValue(content.description)}
 argument-hint: command arguments
 ---
 

@@ -8,6 +8,7 @@ import { CompletionProvider } from '../core/completions/completion-provider.js';
 import { getArchivedChangeIds } from '../utils/item-discovery.js';
 import { getGlobalConfig } from '../core/global-config.js';
 import { listAvailableProfiles } from '../core/named-profiles.js';
+import { loadWorkflowCatalog } from '../core/workflow-registry/index.js';
 import { getLocaleCatalog } from '../locales/index.js';
 import {
   formatInstallerMessage,
@@ -338,6 +339,12 @@ export class CompletionCommand {
           for (const profile of listAvailableProfiles(delivery)) {
             if (profile.builtIn || !profile.definition) continue;
             console.log(`${profile.name}\t${labels.savedProfile}`);
+          }
+          break;
+        }
+        case 'workflows': {
+          for (const workflow of loadWorkflowCatalog().definitions) {
+            console.log(`${workflow.id}\t${labels.workflow}`);
           }
           break;
         }

@@ -19,6 +19,16 @@ describe('pipeline command', () => {
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
+  async function createIsolatedProposeOnlyHome(name: string): Promise<string> {
+    const home = path.join(testDir, name);
+    await fs.mkdir(home, { recursive: true });
+    await fs.writeFile(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'both', workflows: ['propose'] })
+    );
+    return home;
+  }
+
   describe('list', () => {
     it('returns the built-in pipelines with source via --json', async () => {
       const result = await runCLI(['pipeline', 'list', '--json'], { cwd: testDir });
@@ -48,6 +58,41 @@ describe('pipeline command', () => {
   });
 
   describe('show', () => {
+    it('keeps the display JSON contract unchanged after a successful execution preflight', async () => {
+      const displayOnly = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+      });
+      const executable = await runCLI(
+        ['pipeline', 'show', 'bug-fix', '--for-execution', '--json'],
+        { cwd: testDir }
+      );
+
+      expect(displayOnly.exitCode).toBe(0);
+      expect(executable.exitCode).toBe(0);
+      expect(JSON.parse(executable.stdout.trim())).toEqual(
+        JSON.parse(displayOnly.stdout.trim())
+      );
+    });
+
+    it('blocks a fresh executable DAG when the active profile disables a known skill', async () => {
+      const home = await createIsolatedProposeOnlyHome('.fresh-execution-home');
+
+      const displayOnly = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(displayOnly.exitCode).toBe(0);
+
+      const executable = await runCLI(
+        ['pipeline', 'show', 'bug-fix', '--for-execution', '--json'],
+        { cwd: testDir, env: { RASEN_HOME: home } }
+      );
+      expect(executable.exitCode).toBe(1);
+      expect(executable.stderr).toMatch(/known but disabled skill/);
+      expect(executable.stderr).not.toMatch(/unknown skill/);
+      expect(executable.stdout).not.toMatch(/"buildOrder"/);
+    });
+
     it('returns the DAG, buildOrder, and full stage fields via --json', async () => {
       const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
@@ -606,6 +651,26 @@ stages:
   });
 
   describe('resume', () => {
+    it('blocks a resumed executable frontier when the active profile disables a known skill', async () => {
+      const home = await createIsolatedProposeOnlyHome('.resume-execution-home');
+      const changeDir = path.join(changesDir, 'disabled-resume');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'disabled-resume', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/known but disabled skill/);
+      expect(result.stderr).not.toMatch(/unknown skill/);
+      expect(result.stdout).not.toMatch(/"ready"/);
+    });
+
     it('reports hasRunState:false when no auto-run.json exists', async () => {
       await fs.mkdir(path.join(changesDir, 'my-change'), { recursive: true });
       const result = await runCLI(['pipeline', 'resume', 'my-change', '--json'], { cwd: testDir });

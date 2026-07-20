@@ -7,6 +7,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 
 import path from 'path';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { escapeYamlValue } from '../yaml.js';
 
 /**
  * iFlow adapter for command generation.
@@ -22,10 +23,10 @@ export const iflowAdapter: ToolCommandAdapter = {
 
   formatFile(content: CommandContent): string {
     return `---
-name: /${COMMAND_PREFIX}-${content.id}
-id: ${COMMAND_PREFIX}-${content.id}
-category: ${content.category}
-description: ${content.description}
+name: ${escapeYamlValue(`/${COMMAND_PREFIX}-${content.id}`)}
+id: ${escapeYamlValue(`${COMMAND_PREFIX}-${content.id}`)}
+category: ${escapeYamlValue(content.category)}
+description: ${escapeYamlValue(content.description)}
 ---
 
 ${content.body}

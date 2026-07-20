@@ -49,4 +49,13 @@ function Get-RasenSavedProfiles {
         }
     }
 }
+
+function Get-RasenWorkflows {
+    $output = rasen __complete workflows 2>$null
+    if ($output) {
+        $output | ForEach-Object {
+            ($_ -split "\\t")[0]
+        }
+    }
+}
 `;

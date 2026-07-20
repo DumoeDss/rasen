@@ -57,6 +57,7 @@ export const sections = [
     pages: [
       { source: 'commands.md', slug: 'reference/slash-commands', icon: 'SquareSlash' },
       { source: 'cli.md', slug: 'reference/cli', icon: 'SquareTerminal' },
+      { source: 'workflow-packages.md', slug: 'reference/workflow-packages', icon: 'PackageOpen' },
       { source: 'supported-tools.md', slug: 'reference/supported-tools', icon: 'Wrench' },
       { source: 'agent-contract.md', slug: 'reference/agents', icon: 'Bot' },
     ],

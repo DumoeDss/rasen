@@ -11,6 +11,15 @@ import {
   readNamedProfile,
   saveNamedProfile,
 } from '../../src/core/named-profiles.js';
+import {
+  importWorkflow,
+  scaffoldWorkflow,
+  workflowDefinitionForJson,
+} from '../../src/core/workflow-library.js';
+import {
+  getUserWorkflowsDir,
+  loadWorkflowCatalog,
+} from '../../src/core/workflow-registry/index.js';
 
 vi.mock('@inquirer/prompts', () => ({
   input: vi.fn(),
@@ -194,6 +203,85 @@ describe('profile command', () => {
     expect(namedProfileExists('fresh')).toBe(true);
   });
 
+  it('bounds long user workflow descriptions without hiding the localized source label', async () => {
+    process.env.RASEN_LANG = 'ja';
+    const draft = scaffoldWorkflow('picker-long', path.join(tempDir, 'draft', 'picker-long'));
+    const skillPath = path.join(draft, 'SKILL.md');
+    const longDescription = 'long description '.repeat(1000).trim();
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        'description: Describe when to use the picker-long workflow.',
+        `description: ${longDescription}`
+      )
+    );
+    await importWorkflow(draft);
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      delivery: 'both',
+      workflows: ['picker-long'],
+    });
+    const { select, checkbox, confirm } = await promptMocks();
+    select.mockResolvedValueOnce('both');
+    checkbox.mockResolvedValueOnce(['picker-long']);
+    confirm.mockResolvedValueOnce(false);
+
+    await runProfileCommand(['new', 'picker-long-profile']);
+
+    const choices = checkbox.mock.calls[0][0].choices as Array<{
+      value: string;
+      description: string;
+    }>;
+    const description = choices.find((choice) => choice.value === 'picker-long')?.description;
+    expect(description?.startsWith('[ユーザー] ')).toBe(true);
+    expect(description?.split('\n')).toHaveLength(2);
+    expect(description?.endsWith('...')).toBe(true);
+
+    const definition = loadWorkflowCatalog().get('picker-long');
+    expect(definition).toBeDefined();
+    expect(workflowDefinitionForJson(definition!)).toMatchObject({
+      skill: { description: longDescription },
+    });
+  });
+
+  it('labels user workflows and prevents deselecting a required dependency', async () => {
+    const baseDraft = scaffoldWorkflow('picker-base', path.join(tempDir, 'draft', 'picker-base'));
+    await importWorkflow(baseDraft);
+    const rootDraft = scaffoldWorkflow('picker-root', path.join(tempDir, 'draft', 'picker-root'));
+    const rootManifest = path.join(rootDraft, 'workflow.yaml');
+    fs.writeFileSync(
+      rootManifest,
+      fs.readFileSync(rootManifest, 'utf8').replace(
+        '  workflows: []',
+        '  workflows: [picker-base]'
+      )
+    );
+    await importWorkflow(rootDraft);
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      delivery: 'both',
+      workflows: ['picker-base', 'picker-root'],
+    });
+    const { select, checkbox, confirm } = await promptMocks();
+    select.mockResolvedValueOnce('both');
+    checkbox.mockResolvedValueOnce(['picker-root']);
+    confirm.mockResolvedValueOnce(false);
+
+    await runProfileCommand(['new', 'picker-profile']);
+
+    const choices = checkbox.mock.calls[0][0].choices as Array<{
+      value: string;
+      description: string;
+      disabled?: string;
+    }>;
+    expect(choices.find((choice) => choice.value === 'picker-root')?.description).toContain('[user]');
+    expect(choices.find((choice) => choice.value === 'picker-base')?.disabled).toBe(
+      'required by picker-root'
+    );
+  });
+
   it('fails clearly for an explicit existing profile name', async () => {
     saveNamedProfile('team', {
       version: 1,
@@ -341,6 +429,53 @@ describe('profile command', () => {
     expect(process.exitCode).toBe(1);
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Pass --force'));
     expect(fs.readFileSync(destinationPath, 'utf-8')).toBe('keep\n');
+  });
+
+  it('exports a self-contained package and imports its embedded workflow with --as', async () => {
+    const draft = scaffoldWorkflow('profile-command-user', path.join(tempDir, 'draft', 'profile-command-user'));
+    await importWorkflow(draft);
+    saveNamedProfile('portable', {
+      version: 1,
+      delivery: 'both',
+      workflows: ['profile-command-user'],
+    });
+    const packagePath = path.join(tempDir, 'portable.rasenpkg');
+    await runProfileCommand(['export', packagePath, '--profile', 'portable']);
+
+    const cleanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-profile-command-clean-'));
+    process.env.RASEN_HOME = cleanHome;
+    try {
+      await runProfileCommand(['import', packagePath, '--as', 'renamed']);
+      expect(readNamedProfile('renamed').workflows).toEqual(['profile-command-user']);
+      expect(fs.existsSync(path.join(getUserWorkflowsDir(), 'profile-command-user'))).toBe(true);
+    } finally {
+      fs.rmSync(cleanHome, { recursive: true, force: true });
+      process.env.RASEN_HOME = tempDir;
+    }
+  });
+
+  it('does not let --force replace a conflicting workflow digest', async () => {
+    const draft = scaffoldWorkflow('immutable-profile-user', path.join(tempDir, 'draft', 'immutable-profile-user'));
+    await importWorkflow(draft);
+    saveNamedProfile('immutable-profile', {
+      version: 1,
+      delivery: 'skills',
+      workflows: ['immutable-profile-user'],
+    });
+    const packagePath = path.join(tempDir, 'immutable-profile.rasenpkg');
+    await runProfileCommand(['export', packagePath, '--profile', 'immutable-profile']);
+    fs.appendFileSync(
+      path.join(getUserWorkflowsDir(), 'immutable-profile-user', 'SKILL.md'),
+      '\nChanged installed content.\n'
+    );
+
+    await runProfileCommand(['import', packagePath, '--force']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('conflicts with installed user content')
+    );
+    expect(readNamedProfile('immutable-profile').delivery).toBe('skills');
   });
 
   it('deletes a saved profile without changing current settings', async () => {

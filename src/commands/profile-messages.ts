@@ -23,6 +23,8 @@ export interface ProfilePromptMessages {
   workflowPickerMessage: string;
   workflowPickerInstructions: string;
   currentSuffix: string;
+  sourceUser: string;
+  requiredBy: (workflow: string) => string;
   delivery: Record<Delivery, DeliveryPromptMeta>;
   workflows: Record<WorkflowId, WorkflowPromptMeta>;
 }
@@ -85,12 +87,17 @@ export interface ProfileUiMessages {
   diffDelivery: (before: Delivery, after: Delivery) => string;
   diffProfile: (before: string, after: string) => string;
   diffWorkflows: (added: string[], removed: string[]) => string;
+  externalError: (code: string, fallback: string) => string;
 }
 
 export function getProfilePromptMessages(
   locale: CliLocale = getCliLocale()
 ): ProfilePromptMessages {
-  return getLocaleCatalog(locale).profile.prompt;
+  const raw = getLocaleCatalog(locale).profile.prompt;
+  return {
+    ...raw,
+    requiredBy: (workflow) => formatLocaleMessage(raw.requiredBy, { workflow }),
+  };
 }
 
 export function getProfileUiMessages(locale: CliLocale = getCliLocale()): ProfileUiMessages {
@@ -138,6 +145,11 @@ export function getProfileUiMessages(locale: CliLocale = getCliLocale()): Profil
         return format(raw.diffWorkflowsRemoved, { items: removed.join(', ') });
       }
       return raw.diffWorkflowsEmpty;
+    },
+    externalError: (code, fallback) => {
+      if (locale === 'en') return fallback;
+      const errors = getLocaleCatalog(locale).workflowLibrary.errors as Record<string, string>;
+      return format(errors[code] ?? errors.workflow_command_error, { code });
     },
   };
 }

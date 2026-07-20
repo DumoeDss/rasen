@@ -23,3 +23,5 @@ export { getQaSkillTemplate } from './qa.js';
 export { getReviewSkillTemplate } from './review.js';
 export { getTddSkillTemplate } from './tdd.js';
 export { getUnfreezeSkillTemplate } from './unfreeze.js';
+export { getWorkflowAuthorSkillTemplate } from './workflow-author.js';
+export { getWorkflowReviewSkillTemplate } from './workflow-review.js';

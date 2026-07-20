@@ -604,11 +604,16 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'import',
-        description: 'Import a YAML or JSON profile',
+        description: 'Import a profile package, YAML, or JSON profile',
         acceptsPositional: true,
         positionalType: 'path',
         positionals: [{ name: 'path', type: 'path' }],
         flags: [
+          {
+            name: 'as',
+            description: 'Save the imported profile under a different name',
+            takesValue: true,
+          },
           {
             name: 'force',
             description: 'Replace an existing profile with the same name',
@@ -628,9 +633,93 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           {
+            name: 'thin',
+            description: 'Export YAML or JSON without embedding user workflows',
+          },
+          {
             name: 'force',
             description: 'Overwrite an existing destination',
           },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'workflow',
+    description: 'Manage installable workflows in the user-wide library',
+    flags: [],
+    subcommands: [
+      {
+        name: 'list',
+        description: 'List built-in and user workflows',
+        flags: [
+          { name: 'unused', description: 'Show only user workflows with no detected consumers' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'show',
+        description: 'Show an installable workflow definition and known usage',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'which',
+        description: 'Show where an installable workflow resolves from',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'init',
+        description: 'Create a minimal workflow draft without installing it',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          { name: 'output', description: 'Empty workflow draft directory to create', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'validate',
+        description: 'Validate an installed workflow, draft directory, or .rasenpkg',
+        acceptsPositional: true,
+        positionals: [{ name: 'id-or-path' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'import',
+        description: 'Validate and atomically install a workflow directory or package',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'export',
+        description: 'Export a user workflow and its user dependencies as .rasenpkg',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'id', type: 'workflow-id' },
+          { name: 'path', type: 'path' },
+        ],
+        flags: [
+          { name: 'force', description: 'Replace an existing destination file' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'delete',
+        description: 'Delete an unreferenced user workflow',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [
+          { name: 'yes', short: 'y', description: 'Skip confirmation' },
+          COMMON_FLAGS.json,
         ],
       },
     ],
@@ -846,7 +935,15 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Show a pipeline stage DAG and build order',
         acceptsPositional: true,
         positionals: [{ name: 'name' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          {
+            name: 'for-execution',
+            description: 'Validate active-profile skills before returning the executable DAG',
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
       },
       {
         name: 'agents',

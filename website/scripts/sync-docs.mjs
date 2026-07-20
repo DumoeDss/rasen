@@ -25,7 +25,7 @@ const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const docsRoot = resolve(websiteRoot, docsDir);
 const outRoot = join(websiteRoot, 'content', 'docs');
 const gitBranch = 'main';
-const gitBlobBase = 'https://github.com/Fission-AI/OpenSpec/blob';
+const gitBlobBase = 'https://github.com/DumoeDss/rasen/blob';
 
 // Map every source path (relative to docs/, normalized) -> its /docs route,
 // so cross-doc `.md` links resolve to on-site pages.

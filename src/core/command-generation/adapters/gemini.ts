@@ -7,6 +7,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 
 import path from 'path';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { quoteTomlString } from '../toml.js';
 
 /**
  * Gemini adapter for command generation.
@@ -21,11 +22,9 @@ export const geminiAdapter: ToolCommandAdapter = {
   },
 
   formatFile(content: CommandContent): string {
-    return `description = "${content.description}"
+    return `description = ${quoteTomlString(content.description)}
 
-prompt = """
-${content.body}
-"""
+prompt = ${quoteTomlString(content.body)}
 `;
   },
 };

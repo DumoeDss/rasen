@@ -6,6 +6,8 @@ import type { GlobalConfig, Profile, Delivery } from '../core/global-config.js';
 import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import { OPENSPEC_DIR_NAME } from '../core/config.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS, getProfileWorkflows } from '../core/profiles.js';
+import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
+import { loadWorkflowCatalog } from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/command-generation/command-file-id.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
 import {
@@ -15,6 +17,10 @@ import {
 } from './profile-messages.js';
 import { isPromptCancellationError } from './shared-output.js';
 import type { CliLocale } from '../utils/locale.js';
+import {
+  formatPickerDescription,
+  resolveTerminalColumns,
+} from '../utils/terminal-text.js';
 
 type ProfileAction = 'both' | 'delivery' | 'workflows' | 'keep';
 
@@ -30,12 +36,13 @@ export interface ProfileStateDiff {
 }
 
 const WORKFLOW_PICKER_SHORTCUTS = { all: 'a' } as const;
-const WORKFLOW_DISPLAY_IDS = new Map(
-  ALL_WORKFLOWS.map((workflow) => [workflow, getCommandFileId(workflow)])
-);
-const WORKFLOW_ID_COLUMN_WIDTH = Math.max(
-  ...[...WORKFLOW_DISPLAY_IDS.values()].map((workflow) => workflow.length)
-);
+function normalizedSelectedWorkflows(workflows: readonly string[], delivery: Delivery): string[] {
+  return normalizeProfileDefinition({
+    version: PROFILE_DEFINITION_VERSION,
+    delivery,
+    workflows: [...workflows],
+  }).workflows;
+}
 
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
   const profile = config.profile || 'full';
@@ -129,16 +136,40 @@ function workflowChoices(
   description: string;
   short: string;
   checked: boolean;
+  disabled?: string;
 }> {
-  return ALL_WORKFLOWS.map((workflow) => {
-    const metadata = messages.workflows[workflow];
-    const displayId = WORKFLOW_DISPLAY_IDS.get(workflow) ?? workflow;
+  const catalog = loadWorkflowCatalog();
+  const displayIds = new Map(
+    catalog.definitions.map((definition) => [
+      definition.id,
+      definition.command ? getCommandFileId(definition.id) : definition.id,
+    ])
+  );
+  const columnWidth = Math.max(...[...displayIds.values()].map((workflow) => workflow.length));
+  const requiredBy = new Map<string, string>();
+  const terminalColumns = resolveTerminalColumns();
+  for (const definition of catalog.definitions) {
+    if (!currentState.workflows.includes(definition.id)) continue;
+    for (const dependency of definition.requires.workflows) requiredBy.set(dependency, definition.id);
+  }
+
+  return catalog.definitions.map((definition) => {
+    const workflow = definition.id;
+    const metadata = definition.source === 'built-in'
+      ? messages.workflows[workflow as keyof typeof messages.workflows]
+      : {
+          name: definition.skill.template.name,
+          description: `[${messages.sourceUser}] ${definition.skill.template.description}`,
+        };
+    const displayId = displayIds.get(workflow) ?? workflow;
+    const dependencyOwner = requiredBy.get(workflow);
     return {
       value: workflow,
-      name: `${displayId.padEnd(WORKFLOW_ID_COLUMN_WIDTH)} - ${metadata.name}`,
-      description: metadata.description,
+      name: `${displayId.padEnd(columnWidth)} - ${metadata.name}`,
+      description: formatPickerDescription(metadata.description, terminalColumns),
       short: metadata.name,
       checked: currentState.workflows.includes(workflow),
+      disabled: dependencyOwner ? messages.requiredBy(dependencyOwner) : undefined,
     };
   });
 }
@@ -179,14 +210,14 @@ export async function promptForNewProfileState(currentState: ProfileState): Prom
     message: messages.workflowPickerMessage,
     instructions: messages.workflowPickerInstructions,
     shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-    pageSize: ALL_WORKFLOWS.length,
+    pageSize: loadWorkflowCatalog().definitions.length,
     theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
     choices: workflowChoices(currentState, messages),
   });
   return {
     profile: deriveProfileFromWorkflowSelection(workflows),
     delivery,
-    workflows,
+    workflows: normalizedSelectedWorkflows(workflows, delivery),
   };
 }
 
@@ -283,11 +314,11 @@ export async function runInteractiveProfileEditor(): Promise<void> {
         message: messages.workflowPickerMessage,
         instructions: messages.workflowPickerInstructions,
         shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-        pageSize: ALL_WORKFLOWS.length,
+        pageSize: loadWorkflowCatalog().definitions.length,
         theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
         choices: workflowChoices(currentState, messages),
       });
-      nextState.workflows = selectedWorkflows;
+      nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows, nextState.delivery);
       nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
     }
 

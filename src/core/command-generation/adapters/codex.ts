@@ -11,6 +11,7 @@ import { COMMAND_PREFIX } from '../../config.js';
 import path from 'path';
 import { resolveCodexHome as getCodexHome } from '../../codex/codex-home.js';
 import type { CommandContent, ToolCommandAdapter } from '../types.js';
+import { escapeYamlValue } from '../yaml.js';
 
 /**
  * Codex adapter for command generation.
@@ -26,7 +27,7 @@ export const codexAdapter: ToolCommandAdapter = {
 
   formatFile(content: CommandContent): string {
     return `---
-description: ${content.description}
+description: ${escapeYamlValue(content.description)}
 argument-hint: command arguments
 ---
 
