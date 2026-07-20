@@ -646,6 +646,7 @@
     "Update Rasen instruction files": "Update Rasen instruction files",
     "Use a built-in or saved profile": "Use a built-in or saved profile",
     "Use the newest main-session transcript for the current directory": "Use the newest main-session transcript for the current directory",
+    "Validate active-profile skills before returning the executable DAG": "Validate active-profile skills before returning the executable DAG",
     "Validate a schema structure and templates": "Validate a schema structure and templates",
     "Validate all changes": "Validate all changes",
     "Validate all changes and specs": "Validate all changes and specs",

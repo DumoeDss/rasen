@@ -12,6 +12,7 @@ import {
   type FileLockErrorKind,
 } from './file-state.js';
 import { getGlobalConfigDir, getGlobalDataDir } from './global-config.js';
+import { findRepoPlanningRootSync } from './planning-home.js';
 import {
   createWorkflowPackage,
   decodePackage,
@@ -440,7 +441,8 @@ export function scanWorkflowUsage(
     }
   }
   usage.push(...collectPipelineUsage(path.join(globalDataDir, 'pipelines'), definition.skill.template.name, 'user'));
-  const projectRoot = options.projectRoot ?? process.cwd();
+  const projectRoot =
+    options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
   usage.push(...collectPipelineUsage(path.join(projectRoot, 'rasen', 'pipelines'), definition.skill.template.name, 'project'));
 
   const ledgerPath = path.join(projectRoot, 'rasen', '.workflow-artifacts.json');

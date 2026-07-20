@@ -43,6 +43,42 @@ function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+const builtInWorkflowOrder = new Map<string, number>(
+  BUILT_IN_WORKFLOW_IDS.map((id, index) => [id, index])
+);
+
+function compareProfileWorkflowIds(left: string, right: string): number {
+  const leftIndex = builtInWorkflowOrder.get(left);
+  const rightIndex = builtInWorkflowOrder.get(right);
+  if (leftIndex !== undefined && rightIndex !== undefined) return leftIndex - rightIndex;
+  if (leftIndex !== undefined) return -1;
+  if (rightIndex !== undefined) return 1;
+  return compareStrings(left, right);
+}
+
+function normalizeProfileWorkflowIds(workflows: readonly string[]): string[] {
+  return [...workflows].sort(compareProfileWorkflowIds);
+}
+
+function normalizeRoots(
+  roots: readonly string[],
+  profileWorkflows?: readonly string[]
+): string[] {
+  if (!profileWorkflows) return [...roots].sort(compareStrings);
+
+  const order = new Map(
+    normalizeProfileWorkflowIds(profileWorkflows).map((id, index) => [id, index])
+  );
+  return [...roots].sort((left, right) => {
+    const leftIndex = order.get(left);
+    const rightIndex = order.get(right);
+    if (leftIndex !== undefined && rightIndex !== undefined) return leftIndex - rightIndex;
+    if (leftIndex !== undefined) return -1;
+    if (rightIndex !== undefined) return 1;
+    return compareStrings(left, right);
+  });
+}
+
 function normalizePackagedWorkflows(
   definitions: readonly WorkflowDefinition[]
 ): PackagedWorkflow[] {
@@ -87,7 +123,7 @@ export function createWorkflowPackage(
     format: 'rasen-package',
     formatVersion: 1,
     kind: 'workflow',
-    roots: [...roots],
+    roots: normalizeRoots(roots),
     workflows: normalizePackagedWorkflows(definitions),
   }) as WorkflowPackage;
 }
@@ -98,6 +134,7 @@ export function createProfilePackage(
   roots: readonly string[],
   definitions: readonly WorkflowDefinition[]
 ): ProfilePackage {
+  const profileWorkflows = normalizeProfileWorkflowIds(profile.workflows);
   return finishPackage({
     format: 'rasen-package',
     formatVersion: 1,
@@ -106,9 +143,9 @@ export function createProfilePackage(
     profile: {
       version: profile.version,
       delivery: profile.delivery,
-      workflows: [...profile.workflows],
+      workflows: profileWorkflows,
     },
-    roots: [...roots],
+    roots: normalizeRoots(roots, profileWorkflows),
     workflows: normalizePackagedWorkflows(definitions),
   }) as ProfilePackage;
 }
@@ -120,6 +157,68 @@ export function encodePackage(packageValue: RasenPackage): Buffer {
 
 function failPreflight(code: string, message: string, details?: Record<string, string | number | JsonPreflightIssue[]>): never {
   throw new WorkflowPackageError(message, code, details);
+}
+
+function assertNormalizedArray(
+  actual: readonly string[],
+  expected: readonly string[],
+  code: string,
+  label: string
+): void {
+  if (
+    actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index])
+  ) {
+    return;
+  }
+  failPreflight(
+    code,
+    `${label} must use normalized order; expected: ${expected.join(', ')}`,
+    { actual: actual.join(', '), expected: expected.join(', ') }
+  );
+}
+
+function validateNormalizedArrayOrder(packageValue: RasenPackage): void {
+  assertNormalizedArray(
+    packageValue.workflows.map((workflow) => workflow.id),
+    packageValue.workflows.map((workflow) => workflow.id).sort(compareStrings),
+    'package_workflows_not_normalized',
+    'Package workflows'
+  );
+  for (const workflow of packageValue.workflows) {
+    assertNormalizedArray(
+      workflow.files.map((file) => file.path),
+      workflow.files.map((file) => file.path).sort(compareStrings),
+      'package_files_not_normalized',
+      `Files for workflow "${workflow.id}"`
+    );
+  }
+
+  if (packageValue.kind === 'profile') {
+    const normalizedProfileWorkflows = normalizeProfileWorkflowIds(
+      packageValue.profile.workflows
+    );
+    assertNormalizedArray(
+      packageValue.profile.workflows,
+      normalizedProfileWorkflows,
+      'profile_workflows_not_normalized',
+      'Profile workflows'
+    );
+    assertNormalizedArray(
+      packageValue.roots,
+      normalizeRoots(packageValue.roots, normalizedProfileWorkflows),
+      'package_roots_not_normalized',
+      'Package roots'
+    );
+    return;
+  }
+
+  assertNormalizedArray(
+    packageValue.roots,
+    normalizeRoots(packageValue.roots),
+    'package_roots_not_normalized',
+    'Package roots'
+  );
 }
 
 function validateEmbeddedWorkflowClosure(
@@ -307,6 +406,7 @@ function validatePackageDomain(packageValue: RasenPackage): void {
     }
   }
   validateEmbeddedWorkflowClosure(packageValue, workflowDependencies);
+  validateNormalizedArrayOrder(packageValue);
 
   const { packageDigest, ...packageWithoutDigest } = packageValue;
   const expectedPackageDigest = computePackageDigest(

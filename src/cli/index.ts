@@ -625,11 +625,12 @@ pipelineCmd
 pipelineCmd
   .command('show <name>')
   .description('Show a pipeline stage DAG and build order')
+  .option('--for-execution', 'Validate active-profile skills before returning the executable DAG')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options?: { json?: boolean; forExecution?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);

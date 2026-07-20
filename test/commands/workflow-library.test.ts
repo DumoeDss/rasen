@@ -17,6 +17,7 @@ describe('workflow command', () => {
   let home: string;
   let originalEnv: NodeJS.ProcessEnv;
   let originalExitCode: number | undefined;
+  const originalCwd = process.cwd();
   let log: ReturnType<typeof vi.spyOn>;
   let error: ReturnType<typeof vi.spyOn>;
   let warn: ReturnType<typeof vi.spyOn>;
@@ -35,6 +36,7 @@ describe('workflow command', () => {
   });
 
   afterEach(() => {
+    process.chdir(originalCwd);
     process.env = originalEnv;
     process.exitCode = originalExitCode;
     log.mockRestore();
@@ -134,6 +136,45 @@ describe('workflow command', () => {
     });
     expect(process.exitCode).toBe(1);
   });
+
+  it.each(['pipeline', 'ledger'] as const)(
+    'blocks deletion from a nested project directory with a %s reference',
+    async (referenceKind) => {
+      const id = `nested-${referenceKind}`;
+      const draft = path.join(home, 'drafts', id);
+      await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+      await runWorkflowCommand(['import', draft, '--json']);
+
+      const project = path.join(home, `project-${referenceKind}`);
+      fs.mkdirSync(path.join(project, 'rasen'), { recursive: true });
+      if (referenceKind === 'pipeline') {
+        const pipelineDirectory = path.join(project, 'rasen', 'pipelines', 'uses-workflow');
+        fs.mkdirSync(pipelineDirectory, { recursive: true });
+        fs.writeFileSync(
+          path.join(pipelineDirectory, 'pipeline.yaml'),
+          `stages:\n  - id: check\n    skill: rasen-${id}\n`
+        );
+      } else {
+        fs.writeFileSync(
+          path.join(project, 'rasen', '.workflow-artifacts.json'),
+          JSON.stringify({ workflows: [id] })
+        );
+      }
+      const nested = path.join(project, 'src', 'nested');
+      fs.mkdirSync(nested, { recursive: true });
+      process.chdir(nested);
+      log.mockClear();
+
+      await runWorkflowCommand(['delete', id, '--yes', '--json']);
+
+      expect(lastJson()).toMatchObject({
+        deleted: null,
+        status: [expect.objectContaining({ code: 'workflow_in_use' })],
+      });
+      expect(fs.existsSync(path.join(home, 'workflows', id))).toBe(true);
+      expect(process.exitCode).toBe(1);
+    }
+  );
 
   it('localizes human output while preserving machine IDs and diagnostic codes', async () => {
     process.env.RASEN_LANG = 'ja';

@@ -109,8 +109,8 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getOpsxShipCommandTemplate: 'e86a6bf999bc2fd1f844c894dc5d67db5d844b534233f25ee4a6c0083fb205db',
   getRetroCommandSkillTemplate: '2292ca3e5d65f75d868efdfeca8bb2fe74c71385cb70c238b1afbdc5bb7e1f7d',
   getOpsxRetroCommandTemplate: '9426c0176d7bbf3b201f7cfd8622af3d1c20c80111fd63803afb9c821e5d8cf2',
-  getAutoCommandSkillTemplate: 'e68874c9c21c68e1ef3fcef4ecb75ea6b40fac6c125cad5489964f63dcf4e95a',
-  getOpsxAutoCommandTemplate: 'cb5fe5ac63060e9fc256349f24ba7981018c03dae22158669dcdff16d5e7da5f',
+  getAutoCommandSkillTemplate: '7f7707f222301ae830d0de737c9928471a2ba2df928e7fab9dd1e72e6d610d51',
+  getOpsxAutoCommandTemplate: '8d4275c3a367681455847f27ff233a3d401bb6664a0b028194e579c44b63e81c',
   getReviewCycleSkillTemplate: 'c2814cbaed6a4608f7b4635f098f9355d92500afed99ca360adc498bd6112da5',
   getOpsxReviewCycleCommandTemplate: '74354060da2e23d05eb530b26cf52933e5a4ac15522e27dae3bb98905c35241e',
   getHandoffSkillTemplate: '778ee83fbac47335377e836ec1bca918f1f32c38edc17ae59f6179d0deb67583',
@@ -161,7 +161,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-verify-enhanced': '0aacd7dd21872f52942d2cecb033ae2d101012e3c3143effc31c579d45eb2db5',
   'rasen-ship': '06d57a946cb0e1c8891918e8c77acb51f5ce8305f694bb8df8d564b4070599e3',
   'rasen-retro': '4974bdfab1c8393f173a9abec30d984763b99815fc92e590a4cbab4beacb79b5',
-  'rasen-auto': '88f3bb503f062b4ab2dc3e1a278c2787da2e83dad89e9495277a11c0114fe33a',
+  'rasen-auto': '61543730aefa8f50748339a1dbf403dee04e5a9cc4d5b4089c8b0ce064556d36',
   'rasen-review-cycle': 'fa8e2497a76ef26847c9979db1b36f176f16e57f8e6d23d439be8755f46cf541',
   'rasen-handoff': '2c42e7b01a531c0dc5e0ccf8202b335c767dfe7a4d397cc66516718499440640',
   'rasen-goal-plan': '8e88a7ca5dd5cf866a154da94688f108b45614e6e8efcef9cd160352560d7d21',
@@ -401,5 +401,9 @@ describe('skill templates split parity', () => {
     // Resume must thread --store in a store-scoped run so it resolves the store
     // root instead of the cwd (the headline break this change fixes).
     expect(content).toContain('rasen pipeline resume <change> --store <id> --json');
+
+    // Fresh auto must request the execution-preflight view instead of
+    // dispatching a merely structural pipeline show result.
+    expect(content).toContain('rasen pipeline show <name> --for-execution --json');
   });
 });

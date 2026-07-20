@@ -12,6 +12,7 @@ import {
   workflowDefinitionForJson,
   WorkflowLibraryError,
 } from '../core/workflow-library.js';
+import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { loadWorkflowCatalog } from '../core/workflow-registry/index.js';
 import { isInteractive } from '../utils/interactive.js';
 import { isPromptCancellationError, printJson } from './shared-output.js';
@@ -257,7 +258,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           const confirmed = await confirm({ message: messages.deleteWorkflow(id), default: false });
           if (!confirmed) throw new WorkflowLibraryError('Deletion cancelled', 'cancelled');
         }
-        await deleteWorkflow(id);
+        const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+        await deleteWorkflow(id, { projectRoot });
         if (options.json) printJson({ deleted: id, status: [] });
         else console.log(messages.deleted(id));
         console.warn(messages.projectConsumerWarning);

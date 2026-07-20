@@ -195,6 +195,31 @@ describe('workflow directory validator', () => {
     ).toContain('sidecar_reference_unresolved');
   });
 
+  it('resolves Markdown destinations separately from optional link titles', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'markdown-links', {
+      sidecars: {
+        'references/policy.md': 'policy',
+        'references/policy(v2).md': 'policy v2',
+        'references/policy(draft).md': 'draft policy',
+      },
+    });
+    fs.appendFileSync(
+      path.join(root, 'SKILL.md'),
+      [
+        '[Policy](references/policy.md "Details")',
+        '[Policy v2](<references/policy(v2).md> \'Version 2\')',
+        '[Draft](references/policy\\(draft\\).md "Draft")',
+        '',
+      ].join('\n')
+    );
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it('rejects invalid UTF-8 before parsing', () => {
     const parent = temporaryDirectory();
     const root = writeWorkflow(parent, 'invalid-utf8');

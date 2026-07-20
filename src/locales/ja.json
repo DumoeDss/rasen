@@ -646,6 +646,7 @@
     "Update Rasen instruction files": "Rasenの指示ファイルを更新します",
     "Use a built-in or saved profile": "組み込みまたは保存済みプロファイルを使用します",
     "Use the newest main-session transcript for the current directory": "現在のディレクトリに対応する最新main-session transcriptを使用します",
+    "Validate active-profile skills before returning the executable DAG": "実行可能なDAGを返す前に有効なプロファイルのスキルを検証します",
     "Validate a schema structure and templates": "スキーマ構造とテンプレートを検証します",
     "Validate all changes": "すべての変更を検証します",
     "Validate all changes and specs": "すべての変更と仕様を検証します",

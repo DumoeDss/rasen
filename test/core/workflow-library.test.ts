@@ -2,7 +2,28 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const fsMock = vi.hoisted(() => ({
+  beforeOpen: null as ((filePath: fs.PathLike) => void) | null,
+  beforeReaddir: null as ((directoryPath: fs.PathLike) => void) | null,
+}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const openSync: typeof actual.openSync = (filePath, flags, mode) => {
+    fsMock.beforeOpen?.(filePath);
+    return actual.openSync(filePath, flags, mode);
+  };
+  const readdirSync = ((directoryPath: fs.PathLike, options?: unknown) => {
+    fsMock.beforeReaddir?.(directoryPath);
+    return Reflect.apply(
+      actual.readdirSync,
+      actual,
+      options === undefined ? [directoryPath] : [directoryPath, options]
+    );
+  }) as typeof actual.readdirSync;
+  return { ...actual, default: actual, openSync, readdirSync };
+});
 
 import {
   deleteWorkflow,
@@ -26,6 +47,7 @@ import {
 describe('workflow library lifecycle', () => {
   let home: string;
   let originalHome: string | undefined;
+  const originalCwd = process.cwd();
   const cleanup: string[] = [];
 
   beforeEach(() => {
@@ -36,6 +58,9 @@ describe('workflow library lifecycle', () => {
   });
 
   afterEach(() => {
+    fsMock.beforeOpen = null;
+    fsMock.beforeReaddir = null;
+    process.chdir(originalCwd);
     if (originalHome === undefined) delete process.env.RASEN_HOME;
     else process.env.RASEN_HOME = originalHome;
     for (const directory of cleanup.splice(0)) {
@@ -108,6 +133,105 @@ describe('workflow library lifecycle', () => {
     expect(fs.existsSync(getUserWorkflowsDir())).toBe(false);
   });
 
+  it.runIf(process.platform !== 'win32')(
+    'rejects a source entry swapped to an external symlink before descriptor open',
+    async () => {
+      const source = draft('swapped-entry');
+      const skillPath = path.join(source, 'SKILL.md');
+      const originalSkillPath = path.join(source, 'SKILL.original.md');
+      const externalPath = path.join(home, 'external-secret.md');
+      const externalBytes = 'external bytes must never be staged\n';
+      fs.writeFileSync(externalPath, externalBytes);
+      let swapped = false;
+      fsMock.beforeOpen = (filePath) => {
+        if (!swapped && path.resolve(String(filePath)) === skillPath) {
+          swapped = true;
+          fs.renameSync(skillPath, originalSkillPath);
+          fs.symlinkSync(externalPath, skillPath);
+        }
+      };
+
+      await expect(importWorkflow(source)).rejects.toMatchObject({ code: 'workflow_invalid' });
+
+      expect(swapped).toBe(true);
+      const installedPath = path.join(getUserWorkflowsDir(), 'swapped-entry');
+      expect(fs.existsSync(installedPath)).toBe(false);
+      expect(fs.readFileSync(externalPath, 'utf8')).toBe(externalBytes);
+    }
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'rejects a source root swapped to an external directory during enumeration',
+    async () => {
+      const source = draft('swapped-root');
+      const originalSource = `${source}.original`;
+      const externalSource = path.join(home, 'external-swapped-root');
+      const externalBytes = 'external root bytes must never be staged\n';
+      fs.cpSync(source, externalSource, { recursive: true });
+      fs.appendFileSync(path.join(externalSource, 'SKILL.md'), externalBytes);
+      let swapped = false;
+      fsMock.beforeReaddir = (directoryPath) => {
+        if (!swapped && path.resolve(String(directoryPath)) === source) {
+          swapped = true;
+          fs.renameSync(source, originalSource);
+          fs.symlinkSync(externalSource, source, 'dir');
+        }
+      };
+
+      await expect(importWorkflow(source)).rejects.toMatchObject({
+        code: 'workflow_invalid',
+        details: { diagnostics: expect.arrayContaining(['directory_changed']) },
+      });
+
+      expect(swapped).toBe(true);
+      expect(fs.existsSync(path.join(getUserWorkflowsDir(), 'swapped-root'))).toBe(false);
+      expect(fs.readFileSync(path.join(externalSource, 'SKILL.md'), 'utf8')).toContain(
+        externalBytes
+      );
+    }
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'rejects a nested directory swapped after parent enumeration and child validation',
+    async () => {
+      const source = draft('swapped-directory');
+      const nestedDirectory = path.join(source, 'references');
+      const originalNestedDirectory = path.join(source, 'references.original');
+      const externalDirectory = path.join(home, 'external-references');
+      const externalBytes = 'external nested bytes must never be staged\n';
+      fs.mkdirSync(nestedDirectory);
+      fs.writeFileSync(path.join(nestedDirectory, 'policy.md'), 'original policy\n');
+      fs.writeFileSync(
+        path.join(source, 'workflow.yaml'),
+        fs.readFileSync(path.join(source, 'workflow.yaml'), 'utf8').replace(
+          '  sidecars: []',
+          '  sidecars:\n    - references/policy.md'
+        )
+      );
+      fs.mkdirSync(externalDirectory);
+      fs.writeFileSync(path.join(externalDirectory, 'policy.md'), externalBytes);
+      let swapped = false;
+      fsMock.beforeReaddir = (directoryPath) => {
+        if (!swapped && path.resolve(String(directoryPath)) === nestedDirectory) {
+          swapped = true;
+          fs.renameSync(nestedDirectory, originalNestedDirectory);
+          fs.symlinkSync(externalDirectory, nestedDirectory, 'dir');
+        }
+      };
+
+      await expect(importWorkflow(source)).rejects.toMatchObject({
+        code: 'workflow_invalid',
+        details: { diagnostics: expect.arrayContaining(['directory_changed']) },
+      });
+
+      expect(swapped).toBe(true);
+      expect(fs.existsSync(path.join(getUserWorkflowsDir(), 'swapped-directory'))).toBe(false);
+      expect(fs.readFileSync(path.join(externalDirectory, 'policy.md'), 'utf8')).toBe(
+        externalBytes
+      );
+    }
+  );
+
   it('rejects imports that collide with an always-installed expert skill', async () => {
     const source = draft('expert-collision');
     const skillPath = path.join(source, 'SKILL.md');
@@ -173,6 +297,28 @@ describe('workflow library lifecycle', () => {
     fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ workflows: [] }));
     await deleteWorkflow('referenced');
     expect(loadWorkflowCatalog().get('referenced')).toBeUndefined();
+  });
+
+  it('finds project pipeline usage when deletion starts from a nested directory', async () => {
+    await importWorkflow(draft('nested-pipeline'));
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workflow-project-'));
+    cleanup.push(project);
+    const pipelineDirectory = path.join(project, 'rasen', 'pipelines', 'uses-workflow');
+    fs.mkdirSync(pipelineDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(pipelineDirectory, 'pipeline.yaml'),
+      'stages:\n  - id: check\n    skill: rasen-nested-pipeline\n'
+    );
+    const nested = path.join(project, 'src', 'nested');
+    fs.mkdirSync(nested, { recursive: true });
+    process.chdir(nested);
+
+    expect(scanWorkflowUsage('nested-pipeline')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'pipeline' })])
+    );
+    await expect(deleteWorkflow('nested-pipeline')).rejects.toMatchObject({
+      code: 'workflow_in_use',
+    });
   });
 
   it('refuses built-in export and deletion', async () => {

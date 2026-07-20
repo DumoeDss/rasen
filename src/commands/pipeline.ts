@@ -45,6 +45,7 @@ import {
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
   normalizeAgentRuntimeConfig,
+  validatePipelineForExecution,
   type AgentRuntime,
   type PipelineInfo,
   type PipelineYaml,
@@ -69,6 +70,7 @@ import {
 
 interface PipelineCommandOptions {
   json?: boolean;
+  forExecution?: boolean;
   store?: string;
   project?: string;
   storePath?: string;
@@ -204,6 +206,9 @@ export class PipelineCommand {
       const available = listPipelines(projectRoot);
       const list = available.length > 0 ? available.join('\n  ') : '(none)';
       throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
+    }
+    if (options.forExecution) {
+      validatePipelineForExecution(pipeline, projectRoot);
     }
 
     const graph = PipelineGraph.fromPipeline(pipeline);
@@ -347,6 +352,17 @@ export class PipelineCommand {
     const portfolio = portfolioLocation ? readPortfolioState(portfolioLocation.dir) : null;
     if (portfolio && portfolioLocation) {
       const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
+      const remainingPipelineNames = new Set(
+        portfolio.children
+          .filter((child) => !isSatisfied(child.status))
+          .map((child) => child.pipeline)
+      );
+      for (const pipelineName of remainingPipelineNames) {
+        validatePipelineForExecution(
+          loadPipelineByName(pipelineName, projectRoot),
+          projectRoot
+        );
+      }
       const runnable = runnableChildren(portfolio);
       // Interrupted (in_progress) and escalated children are NOT runnable, but
       // must be surfaced so resume never silently strands them: interrupted →
@@ -455,6 +471,7 @@ export class PipelineCommand {
     }
 
     const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
+    validatePipelineForExecution(pipeline, projectRoot);
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const completed = completedStages(runState);
@@ -854,4 +871,3 @@ export class PipelineCommand {
     }
   }
 }
-

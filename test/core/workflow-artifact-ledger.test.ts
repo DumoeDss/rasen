@@ -22,6 +22,7 @@ describe('workflow artifact ledger', () => {
   let home: string;
   let project: string;
   let originalEnv: NodeJS.ProcessEnv;
+  const originalCwd = process.cwd();
 
   beforeEach(() => {
     originalEnv = { ...process.env };
@@ -32,6 +33,7 @@ describe('workflow artifact ledger', () => {
   });
 
   afterEach(() => {
+    process.chdir(originalCwd);
     process.env = originalEnv;
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(project, { recursive: true, force: true });
@@ -77,6 +79,12 @@ describe('workflow artifact ledger', () => {
     });
     expect(ledger.tools.claude.workflows['team-ledger'].files).toHaveLength(2);
     expect(scanWorkflowUsage('team-ledger', { projectRoot: project })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'ledger' })])
+    );
+    const nested = path.join(project, 'src', 'nested');
+    fs.mkdirSync(nested, { recursive: true });
+    process.chdir(nested);
+    expect(scanWorkflowUsage('team-ledger')).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: 'ledger' })])
     );
     expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], ['team-ledger'], 'skills')).toBe(false);

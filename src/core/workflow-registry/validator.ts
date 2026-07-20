@@ -36,13 +36,75 @@ function duplicateDiagnostics(
   return diagnostics;
 }
 
+function unescapeMarkdownDestination(value: string): string {
+  return value.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, '$1');
+}
+
+function inlineMarkdownDestinations(instructions: string): string[] {
+  const destinations: string[] = [];
+  let searchFrom = 0;
+
+  while (true) {
+    const linkStart = instructions.indexOf('](', searchFrom);
+    if (linkStart < 0) break;
+    let cursor = linkStart + 2;
+    while (/\s/.test(instructions[cursor] ?? '')) cursor += 1;
+
+    if (instructions[cursor] === '<') {
+      cursor += 1;
+      const start = cursor;
+      let escaped = false;
+      while (cursor < instructions.length) {
+        const character = instructions[cursor];
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '>') break;
+        cursor += 1;
+      }
+      if (instructions[cursor] === '>') {
+        destinations.push(unescapeMarkdownDestination(instructions.slice(start, cursor)));
+      }
+      searchFrom = cursor + 1;
+      continue;
+    }
+
+    const start = cursor;
+    let depth = 0;
+    let escaped = false;
+    while (cursor < instructions.length) {
+      const character = instructions[cursor];
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '(') {
+        depth += 1;
+      } else if (character === ')') {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (/\s/.test(character) && depth === 0) {
+        break;
+      }
+      cursor += 1;
+    }
+    if (cursor > start) {
+      destinations.push(unescapeMarkdownDestination(instructions.slice(start, cursor)));
+    }
+    searchFrom = cursor + 1;
+  }
+
+  return destinations;
+}
+
 function referencedSidecarPaths(instructions: string): string[] {
   const references = new Set<string>();
   const addIfRelativeSidecar = (value: string): void => {
     const normalized = value.replace(/^\.\//, '').split('#', 1)[0];
     if (/^(references|scripts|templates|bin)\//.test(normalized)) references.add(normalized);
   };
-  for (const match of instructions.matchAll(/\]\(([^)]+)\)/g)) addIfRelativeSidecar(match[1]);
+  for (const destination of inlineMarkdownDestinations(instructions)) {
+    addIfRelativeSidecar(destination);
+  }
   for (const match of instructions.matchAll(/`((?:\.\/)?(?:references|scripts|templates|bin)\/[^`]+)`/g)) {
     addIfRelativeSidecar(match[1]);
   }

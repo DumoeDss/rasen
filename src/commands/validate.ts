@@ -14,18 +14,10 @@ import { nearestMatches } from '../utils/match.js';
 import {
   loadPipelineByName,
   listPipelines,
-  validatePipelineSkills,
-  validateDecomposeChildPipelines,
+  validatePipelineForExecution,
   PipelineValidationError,
 } from '../core/pipeline-registry/index.js';
 import { PipelineLoadError } from '../core/pipeline-registry/index.js';
-import { getGlobalConfig } from '../core/global-config.js';
-import { getProfileWorkflows } from '../core/profiles.js';
-import {
-  getExpertSkillDefinitions,
-  loadWorkflowCatalog,
-  resolveWorkflowSelection,
-} from '../core/workflow-registry/index.js';
 
 type ItemType = 'change' | 'spec' | 'pipeline';
 
@@ -51,27 +43,7 @@ function validatePipelineByName(
     // parse + Zod + structural validators (duplicate ids, requires refs,
     // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
-    // skill-existence check against the known skill-template set.
-    const catalog = loadWorkflowCatalog();
-    const expertSkillNames = getExpertSkillDefinitions().map(
-      (definition) => definition.template.name
-    );
-    const knownSkillNames = new Set([
-      ...catalog.definitions.map((definition) => definition.skill.template.name),
-      ...expertSkillNames,
-    ]);
-    const config = getGlobalConfig();
-    const selected = resolveWorkflowSelection(
-      catalog,
-      getProfileWorkflows(config.profile ?? 'full', config.workflows)
-    );
-    const enabledSkillNames = new Set([
-      ...selected.map((definition) => definition.skill.template.name),
-      ...expertSkillNames,
-    ]);
-    validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
-    // decompose childPipeline must resolve and be decompose-free (recursion guard).
-    validateDecomposeChildPipelines(pipeline, projectRoot);
+    validatePipelineForExecution(pipeline, projectRoot);
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause

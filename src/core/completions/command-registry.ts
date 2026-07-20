@@ -935,7 +935,15 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Show a pipeline stage DAG and build order',
         acceptsPositional: true,
         positionals: [{ name: 'name' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          {
+            name: 'for-execution',
+            description: 'Validate active-profile skills before returning the executable DAG',
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
       },
       {
         name: 'agents',

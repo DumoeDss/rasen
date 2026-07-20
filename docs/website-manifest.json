@@ -39,6 +39,7 @@
       "pages": [
         { "title": "Commands", "slug": "reference/slash-commands", "source": "commands.md" },
         { "title": "CLI", "slug": "reference/cli", "source": "cli.md" },
+        { "title": "Installable Workflows", "slug": "reference/workflow-packages", "source": "workflow-packages.md" },
         { "title": "Supported Tools", "slug": "reference/supported-tools", "source": "supported-tools.md" },
         { "title": "Agent Contract", "slug": "reference/agents", "source": "agent-contract.md" }
       ]

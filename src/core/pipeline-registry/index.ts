@@ -54,6 +54,11 @@ export {
   validatePipelineSkills,
   PipelineValidationError,
 } from './pipeline.js';
+export {
+  resolvePipelineExecutionSkillSets,
+  validatePipelineForExecution,
+  type PipelineExecutionSkillSets,
+} from './execution-validation.js';
 
 // Graph operations
 export { PipelineGraph } from './graph.js';

@@ -7,6 +7,8 @@ import type { WorkflowDefinition } from '../../../src/core/workflow-registry/typ
 import {
   canonicalBytes,
   canonicalJson,
+  computePackageDigest,
+  computePackagedWorkflowDigest,
   createProfilePackage,
   createWorkflowPackage,
   decodePackage,
@@ -14,6 +16,8 @@ import {
   preflightJson,
   WorkflowPackageError,
   WORKFLOW_PACKAGE_LIMITS,
+  type PackageWithoutDigest,
+  type RasenPackage,
 } from '../../../src/core/workflow-package/index.js';
 
 const canonicalVector = JSON.parse(
@@ -72,6 +76,18 @@ function expectPackageError(fn: () => unknown, code: string): void {
     expect(error).toBeInstanceOf(WorkflowPackageError);
     expect((error as WorkflowPackageError).code).toBe(code);
   }
+}
+
+function recomputePackageDigests<T extends RasenPackage>(packageValue: T): T {
+  for (const workflow of packageValue.workflows) {
+    workflow.digest = computePackagedWorkflowDigest(workflow.id, workflow.files);
+  }
+  const { packageDigest: _previousDigest, ...packageWithoutDigest } = packageValue;
+  packageValue.packageDigest = computePackageDigest(
+    packageValue.kind,
+    packageWithoutDigest as PackageWithoutDigest
+  );
+  return packageValue;
 }
 
 describe('.rasenpkg codec', () => {
@@ -148,6 +164,81 @@ describe('.rasenpkg codec', () => {
     const nonCanonical = Buffer.from(JSON.stringify(value, null, 2), 'utf8');
 
     expectPackageError(() => decodePackage(nonCanonical), 'package_non_canonical');
+  });
+
+  it('rejects a non-normalized workflow array even when all digests match it', () => {
+    const value = createWorkflowPackage(
+      ['alpha', 'zeta'],
+      [definition('alpha'), definition('zeta')]
+    );
+    const reordered = structuredClone(value);
+    reordered.workflows.reverse();
+    recomputePackageDigests(reordered);
+
+    expectPackageError(
+      () => decodePackage(canonicalBytes(reordered)),
+      'package_workflows_not_normalized'
+    );
+  });
+
+  it('rejects a non-normalized file array even when all digests match it', () => {
+    const reordered = structuredClone(
+      createWorkflowPackage(['alpha'], [definition('alpha')])
+    );
+    reordered.workflows[0].files.reverse();
+    recomputePackageDigests(reordered);
+
+    expectPackageError(
+      () => decodePackage(canonicalBytes(reordered)),
+      'package_files_not_normalized'
+    );
+  });
+
+  it('rejects a non-normalized workflow-package root array with a matching digest', () => {
+    const reordered = structuredClone(
+      createWorkflowPackage(
+        ['zeta', 'alpha'],
+        [definition('zeta'), definition('alpha')]
+      )
+    );
+    reordered.roots.reverse();
+    recomputePackageDigests(reordered);
+
+    expectPackageError(
+      () => decodePackage(canonicalBytes(reordered)),
+      'package_roots_not_normalized'
+    );
+  });
+
+  it('rejects non-normalized profile selections and dependency-expanded roots', () => {
+    const value = createProfilePackage(
+      'team',
+      {
+        version: 1,
+        delivery: 'both',
+        workflows: ['team-release', 'base', 'apply'],
+      },
+      ['team-release', 'base'],
+      [definition('team-release', ['base']), definition('base')]
+    );
+    expect(value.profile.workflows).toEqual(['apply', 'base', 'team-release']);
+    expect(value.roots).toEqual(['base', 'team-release']);
+
+    const selectionReordered = structuredClone(value);
+    selectionReordered.profile.workflows.reverse();
+    recomputePackageDigests(selectionReordered);
+    expectPackageError(
+      () => decodePackage(canonicalBytes(selectionReordered)),
+      'profile_workflows_not_normalized'
+    );
+
+    const rootsReordered = structuredClone(value);
+    rootsReordered.roots.reverse();
+    recomputePackageDigests(rootsReordered);
+    expectPackageError(
+      () => decodePackage(canonicalBytes(rootsReordered)),
+      'package_roots_not_normalized'
+    );
   });
 
   it('rejects file, workflow, and package digest tampering', () => {
