@@ -499,6 +499,46 @@ artifacts:
 
 See [Customization](customization.md) for full details on creating and using custom schemas.
 
+## The Execution Model: Inner and Outer Loops
+
+Schema answers *what* gets produced. This section answers *how* it gets run — and why rasen talks about `workflow` and `pipeline` as if they were two different things, when both are just "steps that run."
+
+**Content layer.** Schema (above) defines which artifacts a methodology produces and how they depend on each other. It never runs anything by itself — it's the map, not the trip.
+
+**Execution layer.** Everything that actually runs work is split into two loops, nested inside each other:
+
+- **Workflow — the inner loop.** A workflow is one task unit that runs inside one session: an AI code agent plans and executes it, possibly dispatching subagents along the way, and comes back with a result. `rasen:propose`, `rasen:apply`, `rasen:review-cycle` — each is a single inner-loop task. `rasen workflow list` shows the catalog of these installable units.
+- **Pipeline — the outer loop.** A pipeline is how a harness (`/rasen:auto`, the autopilot driver) chains multiple inner-loop tasks together in sequence — propose, then apply, then archive, each a separate workflow, run one after another with gates and review cycles in between. `rasen pipeline list` shows the built-in and custom pipelines available to the harness.
+
+Put another way: a workflow is what happens in *one* AI session; a pipeline is the sequence of sessions a harness drives to get a whole change shipped.
+
+### Kind: how the CLI labels this at a glance
+
+Every workflow definition carries a `kind`, visible in `rasen workflow list`:
+
+- **`task`** — an ordinary inner-loop unit you invoke directly (`propose`, `apply`, `archive`, and the rest of the default catalog).
+- **`driver`** — an outer-loop engine that consumes pipelines rather than belonging to one. `auto-command` and `goal-command` are the built-in drivers: they read a pipeline definition and run its stages in order. A driver isn't "part of" the pipeline it runs, the same way a test runner isn't part of the test suite it executes.
+- **`internal`** — a sub-unit invoked only by a driver, never picked directly by a user. The `goal-plan` / `goal-iterate` / `goal-report` trio behind `/rasen:goal` are internal; `rasen workflow list` hides them unless you pass `--all`.
+
+`kind` is presentation metadata, not a structural move: drivers and internal workflows still live in the same installable-workflow library as everything else, because that library is the only mechanism with install/update/digest machinery. Splitting them into a separate registry would mean building a second installer for no gain.
+
+### Why the names stay
+
+`workflow` reads "small" from inside a single session and "large" from the outer-loop view where a pipeline chains several of them — that tension is real, and it's tempting to rename one of the three terms to relieve it. Rasen doesn't, for three reasons: `workflow` is upstream OpenSpec heritage, and diverging from it costs more than it buys; GitHub Actions already sets precedent for "workflow" naming a single chainable unit inside a larger run, so the word isn't doing anything unusual; and a rename touches every skill, command, doc, and locale string that says `workflow` today, for a purely cosmetic win. The fix is writing the model down — this section — not inventing new vocabulary.
+
+### Scope and position
+
+A few boundaries are worth stating plainly, because they're easy to assume otherwise:
+
+- **Schema stays three-layer.** Schema resolution (project → user → package) is unchanged by this model. A later step reserves a `schemas` slot in a workflow's `requires` field for existence checks only — it does not fold schema into the workflow/pipeline installable-package mechanism.
+- **The `-command` suffix stays for now.** Some driver IDs end in `-command` (`auto-command`, `goal-command`) for historical reasons distinct from the `kind` field. Renaming them (e.g. `auto-command` → `auto`) is a deferred, separately-scoped cleanup, not part of this model.
+- **Sharing is files, not a marketplace.** Installable workflows and pipelines are shared as `.rasenpkg` files distributed by hand, git, or pull request — there is no hosted registry or marketplace, and none is planned by this model.
+- **Trust boundary.** A shared workflow or pipeline is an executable prompt: importing one means an AI agent will read and act on its contents. Rasen doesn't solve this with signatures. It mitigates it with a transactional install (nothing is written until validation passes), a content digest (so a reinstall or update can prove nothing changed underneath you), static `validate` (checked before anything is installed), and the `workflow-author` / `workflow-review` experts for authoring and reviewing packages before they're trusted. Review the source before you import it — the same way you'd review a dependency before adding it to a project.
+
+### Where this is heading
+
+Three follow-on changes are direction, not shipped behavior: an explicit dependency graph so a workflow's `requires` can express real edges (workflow → workflow, workflow → pipeline, driver → pipeline) instead of relying on "install everything" as a stand-in for missing dependency data; pipelines becoming installable and exportable through the same `.rasenpkg` mechanism as workflows, with the CLI verb set (`init`/`validate`/`import`/`export`/`delete`) growing to match; and the 21 built-in experts (`rasen:review`, `rasen:qa`, and friends) joining the same registry under `kind: 'expert'`, so their install/digest/dependency story is no longer a special case. None of this is available yet — `rasen workflow requires` fields are still empty on every built-in, and there is no `rasen pipeline import`.
+
 ## Archive
 
 Archiving completes a change by merging its delta specs into the main specs and preserving the change for history.
@@ -614,6 +654,11 @@ rasen/
 | **Change** | A proposed modification to the system, packaged as a folder with artifacts |
 | **Delta spec** | A spec that describes changes (ADDED/MODIFIED/REMOVED) relative to current specs |
 | **Domain** | A logical grouping for specs (e.g., `auth/`, `payments/`) |
+| **Driver** | A `kind` of workflow that runs the outer loop by consuming a pipeline (e.g. `auto-command`, `goal-command`); not "part of" the pipeline it runs |
+| **Inner loop** | How one workflow runs: a single task unit executed inside one AI session, possibly dispatching subagents |
+| **Installable workflow** | A user-wide, profile-selectable inner-loop task unit managed with `rasen workflow`; see [The Execution Model](#the-execution-model-inner-and-outer-loops) |
+| **Outer loop** | How a pipeline runs: a harness (e.g. `/rasen:auto`) chaining multiple inner-loop workflows in sequence |
+| **Pipeline** | A sequence of workflows chained by a harness to advance a change, e.g. propose → apply → archive; managed with `rasen pipeline` |
 | **Requirement** | A specific behavior the system must have |
 | **Scenario** | A concrete example of a requirement, typically in Given/When/Then format |
 | **Schema** | A definition of artifact types and their dependencies |
