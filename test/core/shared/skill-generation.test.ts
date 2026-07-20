@@ -12,9 +12,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (23 workflow + 19 expert)', () => {
+    it('should return all skill templates (23 workflow + 21 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(42);
+      expect(templates).toHaveLength(44);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -74,8 +74,8 @@ describe('skill-generation', () => {
 
     it('should filter workflow skills by IDs (expert skills always included)', () => {
       const filtered = getSkillTemplates(['propose', 'explore', 'apply', 'archive']);
-      // 4 workflow + 19 expert skills
-      expect(filtered).toHaveLength(23);
+      // 4 workflow + 21 expert skills
+      expect(filtered).toHaveLength(25);
       const ids = filtered.map(t => t.workflowId);
       expect(ids).toContain('propose');
       expect(ids).toContain('explore');
@@ -93,14 +93,14 @@ describe('skill-generation', () => {
 
     it('should return only expert skills when filter matches no workflows', () => {
       const filtered = getSkillTemplates(['nonexistent']);
-      // 0 workflow + 19 expert skills
-      expect(filtered).toHaveLength(19);
+      // 0 workflow + 21 expert skills
+      expect(filtered).toHaveLength(21);
     });
 
     it('should return single workflow template plus expert skills when filter has one workflow', () => {
       const filtered = getSkillTemplates(['propose']);
-      // 1 workflow + 19 expert skills
-      expect(filtered).toHaveLength(20);
+      // 1 workflow + 21 expert skills
+      expect(filtered).toHaveLength(22);
       const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
       expect(workflowTemplates).toHaveLength(1);
       expect(workflowTemplates[0].dirName).toBe('rasen-propose');

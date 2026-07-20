@@ -1,5 +1,9 @@
 {
   "locale": "en",
+  "expertSkills": {
+    "workflowAuthor": "Author installable workflows safely through staging, static validation, independent review, and user-approved import",
+    "workflowReview": "Review installable workflows independently for semantic quality, security boundaries, portability, dependencies, and completion"
+  },
   "profile": {
     "prompt": {
       "deliveryPickerMessage": "Delivery mode (how workflows are installed):",

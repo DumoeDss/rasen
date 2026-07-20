@@ -18,6 +18,8 @@ import {
   getReviewSkillTemplate,
   getTddSkillTemplate,
   getUnfreezeSkillTemplate,
+  getWorkflowAuthorSkillTemplate,
+  getWorkflowReviewSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { SkillTemplate } from '../templates/types.js';
 
@@ -49,10 +51,11 @@ export function getExpertSkillDefinitions(): ExpertSkillDefinition[] {
     { id: 'review', dirName: 'rasen-review', template: getReviewSkillTemplate() },
     { id: 'tdd', dirName: 'rasen-tdd', template: getTddSkillTemplate() },
     { id: 'unfreeze', dirName: 'rasen-unfreeze', template: getUnfreezeSkillTemplate() },
+    { id: 'workflow-author', dirName: 'rasen-workflow-author', template: getWorkflowAuthorSkillTemplate() },
+    { id: 'workflow-review', dirName: 'rasen-workflow-review', template: getWorkflowReviewSkillTemplate() },
   ];
 }
 
 export function getExpertSkillNames(): ReadonlySet<string> {
   return new Set(getExpertSkillDefinitions().map((definition) => definition.template.name));
 }
-

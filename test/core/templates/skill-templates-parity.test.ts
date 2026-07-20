@@ -66,6 +66,8 @@ import {
   getReviewSkillTemplate,
   getTddSkillTemplate,
   getUnfreezeSkillTemplate,
+  getWorkflowAuthorSkillTemplate,
+  getWorkflowReviewSkillTemplate,
 } from '../../../src/core/templates/skill-templates.js';
 import {
   generateSkillContent,
@@ -138,6 +140,8 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getReviewSkillTemplate: '208332231bceafa883316cc4f787edb4a93857f391f1829efd7c2f08a0e01fe1',
   getTddSkillTemplate: '5c4149303ad3b322d0500431b67d7a4c35af2e4071c56d2499ae8f511de989e1',
   getUnfreezeSkillTemplate: '6bedb3316477b441b7da2f82ee465ca0233a36cd46cbf2434a8f185b14126f87',
+  getWorkflowAuthorSkillTemplate: '2070707436aeb7ec120719334aab6e7663410072303cfa0f484691ddb451dd88',
+  getWorkflowReviewSkillTemplate: '341e9e8cba72fe0e4c5f24a3858977db102bdaa8079251e19bf846ab1016c891',
 };
 
 const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
@@ -184,6 +188,8 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-review': '085ffaa479d47fd331845b6092daec476be379639b655b8b539a4bc27b733dd5',
   'rasen-tdd': '8d953757ae31296a628010b07d1f229d4c3d983e44836e3b70031aafcbb9a463',
   'rasen-unfreeze': 'ca727311494108d775f3f34f7c21ea104943e2e12f17f5c1051e3952cd5486e2',
+  'rasen-workflow-author': '6c220e31a5604ec19b2a52bc3b355e71fb115535e147c0864c0aecac02cdb451',
+  'rasen-workflow-review': '4bb0575ef4a1d6e6b3156e17229c8358a1fb82c499c1489489b053464c8264e6',
 };
 
 // Intentionally excludes getFeedbackSkillTemplate: this list only models templates
@@ -231,6 +237,8 @@ const GENERATED_SKILL_FACTORIES: Array<[string, () => SkillTemplate]> = [
   ['rasen-review', getReviewSkillTemplate],
   ['rasen-tdd', getTddSkillTemplate],
   ['rasen-unfreeze', getUnfreezeSkillTemplate],
+  ['rasen-workflow-author', getWorkflowAuthorSkillTemplate],
+  ['rasen-workflow-review', getWorkflowReviewSkillTemplate],
 ];
 
 function stableStringify(value: unknown): string {
@@ -318,6 +326,8 @@ describe('skill templates split parity', () => {
       getReviewSkillTemplate,
       getTddSkillTemplate,
       getUnfreezeSkillTemplate,
+      getWorkflowAuthorSkillTemplate,
+      getWorkflowReviewSkillTemplate,
     };
 
     const actualHashes = Object.fromEntries(

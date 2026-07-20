@@ -1,5 +1,9 @@
 {
   "locale": "ja",
+  "expertSkills": {
+    "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、独立レビュー、ユーザー承認後のimportで安全に作成します",
+    "workflowReview": "インストール可能なワークフローの意味的品質、セキュリティ境界、移植性、依存関係、完了条件を独立してレビューします"
+  },
   "profile": {
     "prompt": {
       "deliveryPickerMessage": "配信方法（ワークフローのインストール形式）:",
