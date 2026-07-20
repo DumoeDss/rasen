@@ -285,6 +285,23 @@ describe('ZshGenerator', () => {
       expect(script).toContain('_rasen_complete_schemas()');
     });
 
+    it('should handle positional arguments for profile names', () => {
+      const commands: CommandDefinition[] = [
+        {
+          name: 'profile-use',
+          description: 'Use a profile',
+          acceptsPositional: true,
+          positionalType: 'profile-name',
+          flags: [],
+        },
+      ];
+
+      const script = generator.generate(commands);
+
+      expect(script).toContain("'*: :_rasen_complete_profiles'");
+      expect(script).toContain('rasen __complete profiles 2>/dev/null');
+    });
+
     it('should emit optional indexed positional arguments with double-colon syntax', () => {
       const commands: CommandDefinition[] = [
         {

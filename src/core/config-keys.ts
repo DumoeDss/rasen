@@ -123,8 +123,17 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     scopes: ['global'],
     type: 'array',
     defaultValue: [],
-    description: 'Explicit workflow selection (edit via `rasen config profile`)',
+    description: 'Explicit workflow selection (edit via `rasen profile`)',
     group: 'Profile',
+  },
+  {
+    key: 'language',
+    scopes: ['global'],
+    type: 'enum',
+    enumValues: ['auto', 'en', 'ja'],
+    defaultValue: 'auto',
+    description: 'Language for interactive prompts and CLI help (`auto` detects the system locale)',
+    group: 'Appearance',
   },
   {
     key: 'featureFlags',

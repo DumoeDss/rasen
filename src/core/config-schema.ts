@@ -32,6 +32,7 @@ export const GlobalConfigSchema = z
     workflows: z
       .array(z.string())
       .optional(),
+    language: z.enum(['auto', 'en', 'ja']).optional().default('auto'),
     proactive: z.boolean().optional(),
     repoMode: z.enum(['solo', 'collaborative']).optional(),
     telemetry: z
@@ -86,6 +87,7 @@ export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
   profile: 'full',
   delivery: 'both',
+  language: 'auto',
 };
 
 /**

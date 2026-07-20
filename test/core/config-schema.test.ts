@@ -357,12 +357,21 @@ describe('config-schema', () => {
     it('should provide defaults for missing featureFlags', () => {
       const result = GlobalConfigSchema.parse({});
       expect(result.featureFlags).toEqual({});
+      expect(result.language).toBe('auto');
+    });
+
+    it('should accept supported language settings and reject others', () => {
+      expect(GlobalConfigSchema.safeParse({ language: 'auto' }).success).toBe(true);
+      expect(GlobalConfigSchema.safeParse({ language: 'en' }).success).toBe(true);
+      expect(GlobalConfigSchema.safeParse({ language: 'ja' }).success).toBe(true);
+      expect(GlobalConfigSchema.safeParse({ language: 'fr' }).success).toBe(false);
     });
   });
 
   describe('DEFAULT_CONFIG', () => {
     it('should have empty featureFlags', () => {
       expect(DEFAULT_CONFIG.featureFlags).toEqual({});
+      expect(DEFAULT_CONFIG.language).toBe('auto');
     });
   });
 });

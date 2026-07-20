@@ -15,6 +15,7 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('profile', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('delivery', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('workflows', 'global').valid).toBe(true);
+      expect(validateConfigKeyPath('language', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('proactive', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('repoMode', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('telemetry.enabled', 'global').valid).toBe(true);
@@ -85,6 +86,14 @@ describe('config-keys registry', () => {
       const error = validateConfigValue(def, 'banana');
       expect(error).toMatch(/solo/);
       expect(error).toMatch(/collaborative/);
+    });
+
+    it('limits language to auto, English, or Japanese', () => {
+      const def = findConfigKeyDefinition('language', 'global')!;
+      expect(validateConfigValue(def, 'auto')).toBeNull();
+      expect(validateConfigValue(def, 'en')).toBeNull();
+      expect(validateConfigValue(def, 'ja')).toBeNull();
+      expect(validateConfigValue(def, 'fr')).toMatch(/auto/);
     });
 
     it('names the allowed range for an out-of-range threshold', () => {

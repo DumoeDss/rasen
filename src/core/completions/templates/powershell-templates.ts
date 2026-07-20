@@ -31,4 +31,22 @@ function Get-OpenSpecSchemas {
         }
     }
 }
+
+function Get-RasenProfiles {
+    $output = rasen __complete profiles 2>$null
+    if ($output) {
+        $output | ForEach-Object {
+            ($_ -split "\\t")[0]
+        }
+    }
+}
+
+function Get-RasenSavedProfiles {
+    $output = rasen __complete saved-profiles 2>$null
+    if ($output) {
+        $output | ForEach-Object {
+            ($_ -split "\\t")[0]
+        }
+    }
+}
 `;

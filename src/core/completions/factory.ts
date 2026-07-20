@@ -19,6 +19,9 @@ export interface InstallationResult {
   message: string;
   instructions?: string[];
   warnings?: string[];
+  messageDescriptor?: InstallerMessageDescriptor;
+  instructionDescriptors?: Array<InstallerMessageDescriptor | null>;
+  warningDescriptors?: Array<InstallerMessageDescriptor | null>;
   // Shell-specific optional fields
   isOhMyZsh?: boolean;
   zshrcConfigured?: boolean;
@@ -26,12 +29,87 @@ export interface InstallationResult {
   profileConfigured?: boolean;
 }
 
+export interface InstallerMessageDescriptor {
+  key: InstallerMessageKey;
+  values?: Record<string, string | number>;
+}
+
+export const INSTALLER_MESSAGE_KEYS = [
+  'alreadyInstalled',
+  'alreadyInstalledDetail',
+  'tryExecBash',
+  'tryExecZsh',
+  'fishAlreadyAvailable',
+  'tryPowerShellReload',
+  'updated',
+  'updatedWithBackup',
+  'installedForBash',
+  'installedForFish',
+  'installedForPowerShell',
+  'installedForZsh',
+  'installedForOhMyZsh',
+  'installedAndConfiguredBashrc',
+  'installedAndConfiguredZshrc',
+  'installedAndConfiguredPowerShell',
+  'installFailed',
+  'notInstalled',
+  'uninstalled',
+  'uninstallFailed',
+  'installedSuccessfully',
+  'enableBashrc',
+  'restartBash',
+  'bashCompletionWarning',
+  'bashCompletionRequired',
+  'installItWith',
+  'addToBashProfile',
+  'fishLoadsFrom',
+  'fishAvailableImmediately',
+  'enablePowerShellProfile',
+  'restartPowerShell',
+  'installedOhMyZshDirectory',
+  'restartZsh',
+  'completionsActivateAutomatically',
+  'ohMyZshAutoLoadNote',
+  'verifyFpath',
+  'ohMyZshFpathMissing',
+  'installedZshDirectory',
+  'enableZshrc',
+  'checkExistingLines',
+  'removedFrom',
+  'removedZshrc',
+  'removedFromAndZshrc',
+  'unableConfigureBashrc',
+  'unableRemoveBashrc',
+  'unableConfigureZshrc',
+  'unableRemoveZshrc',
+  'skipPowerShellProfile',
+  'unableConfigurePowerShellProfile',
+  'unableReadPowerShellProfile',
+  'unableCleanPowerShellProfile',
+  'unableReadCompletionFile',
+] as const;
+
+export type InstallerMessageKey = (typeof INSTALLER_MESSAGE_KEYS)[number];
+
+export interface UninstallationResult {
+  success: boolean;
+  message: string;
+  messageDescriptor?: InstallerMessageDescriptor;
+  warnings?: string[];
+  warningDescriptors?: InstallerMessageDescriptor[];
+}
+
+export type InstallerMessageReporter = (
+  message: string,
+  descriptor: InstallerMessageDescriptor
+) => void;
+
 /**
  * Interface for completion installers
  */
 export interface CompletionInstaller {
   install(script: string): Promise<InstallationResult>;
-  uninstall(): Promise<{ success: boolean; message: string }>;
+  uninstall(): Promise<UninstallationResult>;
 }
 
 /**

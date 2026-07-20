@@ -155,7 +155,7 @@ The same flag is handy for tooling, CI, and docs-only changes. The principle: sp
 The core `/rasen:propose` drafts everything at once. When you'd rather go one step at a time, turn on the expanded commands:
 
 ```bash
-$ rasen config profile      # select the expanded workflows
+$ rasen profile             # select the expanded workflows
 $ rasen update              # apply them to this project
 ```
 

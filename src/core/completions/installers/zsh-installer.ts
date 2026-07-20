@@ -2,7 +2,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { FileSystemUtils } from '../../../utils/file-system.js';
-import { InstallationResult } from '../factory.js';
+import {
+  InstallationResult,
+  type InstallerMessageDescriptor,
+  type InstallerMessageReporter,
+  type UninstallationResult,
+} from '../factory.js';
 
 /**
  * Installer for Zsh completion scripts.
@@ -128,7 +133,10 @@ export class ZshInstaller {
    * @param completionsDir - Directory containing completion scripts
    * @returns true if configured successfully, false otherwise
    */
-  async configureZshrc(completionsDir: string): Promise<boolean> {
+  async configureZshrc(
+    completionsDir: string,
+    reporter?: InstallerMessageReporter
+  ): Promise<boolean> {
     // Check if auto-configuration is disabled
     if (process.env.RASEN_NO_AUTO_CONFIG === '1') {
       return false;
@@ -139,7 +147,9 @@ export class ZshInstaller {
       const config = this.generateZshrcConfig(completionsDir);
 
       // Check write permissions
-      const canWrite = await FileSystemUtils.canWriteFile(zshrcPath);
+      const canWrite = await FileSystemUtils.canWriteFile(zshrcPath, {
+        onDiagnostic: false,
+      });
       if (!canWrite) {
         return false;
       }
@@ -156,7 +166,10 @@ export class ZshInstaller {
       return true;
     } catch (error: any) {
       // Fail gracefully - don't break installation
-      console.debug(`Unable to configure .zshrc for completions: ${error.message}`);
+      reporter?.(
+        `Warning: Could not configure .zshrc for completions: ${error.message}`,
+        { key: 'unableConfigureZshrc', values: { detail: error.message } }
+      );
       return false;
     }
   }
@@ -200,7 +213,7 @@ export class ZshInstaller {
    *
    * @returns true if removed successfully, false otherwise
    */
-  async removeZshrcConfig(): Promise<boolean> {
+  async removeZshrcConfig(reporter?: InstallerMessageReporter): Promise<boolean> {
     try {
       const zshrcPath = this.getZshrcPath();
 
@@ -258,7 +271,10 @@ export class ZshInstaller {
       return true;
     } catch (error: any) {
       // Fail gracefully
-      console.debug(`Unable to remove .zshrc configuration: ${error.message}`);
+      reporter?.(
+        `Warning: Could not remove .zshrc completion configuration: ${error.message}`,
+        { key: 'unableRemoveZshrc', values: { detail: error.message } }
+      );
       return false;
     }
   }
@@ -272,6 +288,12 @@ export class ZshInstaller {
   async install(completionScript: string): Promise<InstallationResult> {
     try {
       const { path: targetPath, isOhMyZsh } = await this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: Array<InstallerMessageDescriptor | null> = [];
+      const reportWarning: InstallerMessageReporter = (message, descriptor) => {
+        warnings.push(message);
+        warningDescriptors.push(descriptor);
+      };
 
       // Check if already installed with same content
       let isUpdate = false;
@@ -284,9 +306,14 @@ export class ZshInstaller {
             installedPath: targetPath,
             isOhMyZsh,
             message: 'Completion script is already installed (up to date)',
+            messageDescriptor: { key: 'alreadyInstalled' },
             instructions: [
               'The completion script is already installed and up to date.',
               'If completions are not working, try: exec zsh',
+            ],
+            instructionDescriptors: [
+              { key: 'alreadyInstalledDetail' },
+              { key: 'tryExecZsh' },
             ],
           };
         }
@@ -294,10 +321,18 @@ export class ZshInstaller {
         isUpdate = true;
       } catch (error: any) {
         // File doesn't exist or can't be read, proceed with installation
-        console.debug(`Unable to read existing completion file at ${targetPath}: ${error.message}`);
+        if (error?.code !== 'ENOENT') {
+          reportWarning(
+            `Warning: Could not read existing completion file at ${targetPath}: ${error.message}`,
+            {
+              key: 'unableReadCompletionFile',
+              values: { path: targetPath, detail: error.message },
+            }
+          );
+        }
       }
 
-      if (!(await FileSystemUtils.canWriteFile(targetPath))) {
+      if (!(await FileSystemUtils.canWriteFile(targetPath, { onDiagnostic: false }))) {
         throw new Error(`Path is not writable: ${targetPath}`);
       }
 
@@ -315,32 +350,48 @@ export class ZshInstaller {
       // Oh My Zsh loads custom/completions and runs compinit itself.
       let zshrcConfigured = false;
       if (!isOhMyZsh) {
-        zshrcConfigured = await this.configureZshrc(targetDir);
+        zshrcConfigured = await this.configureZshrc(targetDir, reportWarning);
       }
 
       // Generate instructions (only if .zshrc wasn't auto-configured)
       let instructions = zshrcConfigured ? undefined : this.generateInstructions(isOhMyZsh, targetPath);
+      let instructionDescriptors = zshrcConfigured
+        ? undefined
+        : this.generateInstructionDescriptors(isOhMyZsh, targetPath);
 
       // Add fpath guidance for Oh My Zsh installations
       if (isOhMyZsh) {
         const fpathGuidance = this.generateOhMyZshFpathGuidance(targetDir);
         if (fpathGuidance) {
           instructions = instructions ? [...instructions, '', ...fpathGuidance] : fpathGuidance;
+          const fpathDescriptors = this.generateOhMyZshFpathDescriptors(targetDir);
+          instructionDescriptors = instructionDescriptors
+            ? [...instructionDescriptors, null, ...fpathDescriptors]
+            : fpathDescriptors;
         }
       }
 
       // Determine appropriate message based on update status
       let message: string;
+      let messageDescriptor: InstallerMessageDescriptor;
       if (isUpdate) {
         message = backupPath
           ? 'Completion script updated successfully (previous version backed up)'
           : 'Completion script updated successfully';
+        messageDescriptor = { key: backupPath ? 'updatedWithBackup' : 'updated' };
       } else {
         message = isOhMyZsh
           ? 'Completion script installed successfully for Oh My Zsh'
           : zshrcConfigured
             ? 'Completion script installed and .zshrc configured successfully'
             : 'Completion script installed successfully for Zsh';
+        messageDescriptor = {
+          key: isOhMyZsh
+            ? 'installedForOhMyZsh'
+            : zshrcConfigured
+              ? 'installedAndConfiguredZshrc'
+              : 'installedForZsh',
+        };
       }
 
       return {
@@ -350,13 +401,21 @@ export class ZshInstaller {
         isOhMyZsh,
         zshrcConfigured,
         message,
+        messageDescriptor,
         instructions,
+        instructionDescriptors,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         isOhMyZsh: false,
         message: `Failed to install completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'installFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }
@@ -374,6 +433,18 @@ export class ZshInstaller {
       '  echo $fpath | grep "custom/completions"',
       '',
       'If not found, completions may not work. Restart your shell to ensure changes take effect.',
+    ];
+  }
+
+  private generateOhMyZshFpathDescriptors(
+    completionsDir: string
+  ): Array<InstallerMessageDescriptor | null> {
+    return [
+      { key: 'ohMyZshAutoLoadNote' },
+      { key: 'verifyFpath', values: { path: completionsDir } },
+      null,
+      null,
+      { key: 'ohMyZshFpathMissing' },
     ];
   }
 
@@ -414,14 +485,50 @@ export class ZshInstaller {
     }
   }
 
+  private generateInstructionDescriptors(
+    isOhMyZsh: boolean,
+    installedPath: string
+  ): Array<InstallerMessageDescriptor | null> {
+    if (isOhMyZsh) {
+      return [
+        { key: 'installedOhMyZshDirectory' },
+        { key: 'restartZsh' },
+        { key: 'completionsActivateAutomatically' },
+      ];
+    }
+    const zshrcPath = path.join(this.homeDir, '.zshrc');
+    return [
+      { key: 'installedZshDirectory' },
+      null,
+      { key: 'enableZshrc' },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { key: 'restartZsh' },
+      null,
+      { key: 'checkExistingLines', values: { path: zshrcPath } },
+    ];
+  }
+
   /**
    * Uninstall the completion script
    *
    * @returns true if uninstalled successfully, false otherwise
    */
-  async uninstall(): Promise<{ success: boolean; message: string }> {
+  async uninstall(): Promise<UninstallationResult> {
     try {
       const { path: targetPath, isOhMyZsh } = await this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: InstallerMessageDescriptor[] = [];
+      const reportWarning: InstallerMessageReporter = (message, descriptor) => {
+        warnings.push(message);
+        warningDescriptors.push(descriptor);
+      };
 
       // Try to remove completion script
       let scriptRemoved = false;
@@ -439,7 +546,7 @@ export class ZshInstaller {
       if (!isOhMyZsh) {
         zshrcWasPresent = await this.hasZshrcConfig();
         if (zshrcWasPresent) {
-          zshrcCleaned = await this.removeZshrcConfig();
+          zshrcCleaned = await this.removeZshrcConfig(reportWarning);
         }
       }
 
@@ -447,6 +554,7 @@ export class ZshInstaller {
         return {
           success: false,
           message: 'Completion script is not installed',
+          messageDescriptor: { key: 'notInstalled' },
         };
       }
 
@@ -461,11 +569,22 @@ export class ZshInstaller {
       return {
         success: true,
         message: messages.join('. '),
+        messageDescriptor: scriptRemoved && zshrcCleaned && !isOhMyZsh
+          ? { key: 'removedFromAndZshrc', values: { path: targetPath } }
+          : scriptRemoved
+            ? { key: 'removedFrom', values: { path: targetPath } }
+            : { key: 'removedZshrc' },
+        warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to uninstall completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'uninstallFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }

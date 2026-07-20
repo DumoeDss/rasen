@@ -27,4 +27,16 @@ _rasen_complete_schemas() {
   local schemas
   schemas=$(rasen __complete schemas 2>/dev/null | cut -f1)
   COMPREPLY=($(compgen -W "$schemas" -- "$cur"))
+}
+
+_rasen_complete_profiles() {
+  local profiles
+  profiles=$(rasen __complete profiles 2>/dev/null | cut -f1)
+  COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
+}
+
+_rasen_complete_saved_profiles() {
+  local profiles
+  profiles=$(rasen __complete saved-profiles 2>/dev/null | cut -f1)
+  COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
 }`;

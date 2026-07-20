@@ -1,9 +1,18 @@
 import ora from 'ora';
 import { CompletionFactory } from '../core/completions/factory.js';
 import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
+import { localizeCommandRegistry } from '../core/completions/description-localization.js';
+import { getCliLocale } from '../core/cli-locale.js';
 import { detectShell, SupportedShell } from '../utils/shell-detection.js';
 import { CompletionProvider } from '../core/completions/completion-provider.js';
 import { getArchivedChangeIds } from '../utils/item-discovery.js';
+import { getGlobalConfig } from '../core/global-config.js';
+import { listAvailableProfiles } from '../core/named-profiles.js';
+import { getLocaleCatalog } from '../locales/index.js';
+import {
+  formatInstallerMessage,
+  getCompletionUiMessages,
+} from './completion-messages.js';
 
 interface GenerateOptions {
   shell?: string;
@@ -40,6 +49,8 @@ export class CompletionCommand {
    * @returns Resolved shell or null if should exit
    */
   private resolveShellOrExit(shell: string | undefined, operationName: string): SupportedShell | null {
+    const ui = getCompletionUiMessages();
+    const supported = CompletionFactory.getSupportedShells().join(', ');
     const normalizedShell = this.normalizeShell(shell);
 
     if (!normalizedShell) {
@@ -51,21 +62,21 @@ export class CompletionCommand {
 
       // Shell was detected but not supported
       if (detectionResult.detected && !detectionResult.shell) {
-        console.error(`Error: Shell '${detectionResult.detected}' is not supported yet. Currently supported: ${CompletionFactory.getSupportedShells().join(', ')}`);
+        console.error(ui.unsupportedShell(detectionResult.detected, supported));
         process.exitCode = 1;
         return null;
       }
 
       // No shell specified and cannot auto-detect
-      console.error('Error: Could not auto-detect shell. Please specify shell explicitly.');
-      console.error(`Usage: rasen completion ${operationName} [shell]`);
-      console.error(`Currently supported: ${CompletionFactory.getSupportedShells().join(', ')}`);
+      console.error(ui.autoDetectFailed);
+      console.error(ui.usage(operationName));
+      console.error(ui.currentlySupported(supported));
       process.exitCode = 1;
       return null;
     }
 
     if (!CompletionFactory.isSupported(normalizedShell)) {
-      console.error(`Error: Shell '${normalizedShell}' is not supported yet. Currently supported: ${CompletionFactory.getSupportedShells().join(', ')}`);
+      console.error(ui.unsupportedShell(normalizedShell, supported));
       process.exitCode = 1;
       return null;
     }
@@ -114,7 +125,7 @@ export class CompletionCommand {
    */
   private async generateForShell(shell: SupportedShell): Promise<void> {
     const generator = CompletionFactory.createGenerator(shell);
-    const script = generator.generate(COMMAND_REGISTRY);
+    const script = generator.generate(localizeCommandRegistry(COMMAND_REGISTRY, getCliLocale()));
     console.log(script);
   }
 
@@ -122,14 +133,16 @@ export class CompletionCommand {
    * Install completion script for a specific shell
    */
   private async installForShell(shell: SupportedShell, verbose: boolean): Promise<void> {
+    const locale = getCliLocale();
+    const ui = getCompletionUiMessages(locale);
     const generator = CompletionFactory.createGenerator(shell);
     const installer = CompletionFactory.createInstaller(shell);
 
-    const spinner = ora(`Installing ${shell} completion script...`).start();
+    const spinner = ora(ui.installing(shell)).start();
 
     try {
       // Generate the completion script
-      const script = generator.generate(COMMAND_REGISTRY);
+      const script = generator.generate(localizeCommandRegistry(COMMAND_REGISTRY, getCliLocale()));
 
       // Install it
       const result = await installer.install(script);
@@ -137,12 +150,12 @@ export class CompletionCommand {
       spinner.stop();
 
       if (result.success) {
-        console.log(`✓ ${result.message}`);
+        console.log(`✓ ${formatInstallerMessage(result.messageDescriptor, result.message, locale)}`);
 
         if (verbose && result.installedPath) {
-          console.log(`  Installed to: ${result.installedPath}`);
+          console.log(ui.installedTo(result.installedPath));
           if (result.backupPath) {
-            console.log(`  Backup created: ${result.backupPath}`);
+            console.log(ui.backupCreated(result.backupPath));
           }
 
           // Check if any shell config was updated
@@ -156,23 +169,31 @@ export class CompletionCommand {
               powershell: '$PROFILE',
             };
             const configPath = configPaths[shell] || 'config file';
-            console.log(`  ${configPath} configured automatically`);
+            console.log(ui.configuredAutomatically(configPath));
           }
         }
 
         // Display warnings if present
         if (result.warnings && result.warnings.length > 0) {
           console.log('');
-          for (const warning of result.warnings) {
-            console.log(warning);
+          for (const [index, warning] of result.warnings.entries()) {
+            console.log(
+              formatInstallerMessage(result.warningDescriptors?.[index] ?? undefined, warning, locale)
+            );
           }
         }
 
         // Print instructions (only shown if .zshrc wasn't auto-configured)
         if (result.instructions && result.instructions.length > 0) {
           console.log('');
-          for (const instruction of result.instructions) {
-            console.log(instruction);
+          for (const [index, instruction] of result.instructions.entries()) {
+            console.log(
+              formatInstallerMessage(
+                result.instructionDescriptors?.[index] ?? undefined,
+                instruction,
+                locale
+              )
+            );
           }
         } else {
           // Check if any shell config was updated (InstallationResult has: zshrcConfigured, bashrcConfigured, profileConfigured)
@@ -190,16 +211,16 @@ export class CompletionCommand {
             };
             const reloadCmd = reloadCommands[shell] || `restart your ${shell} shell`;
 
-            console.log(`Restart your shell or run: ${reloadCmd}`);
+            console.log(ui.restartShell(reloadCmd));
           }
         }
       } else {
-        console.error(`✗ ${result.message}`);
+        console.error(`✗ ${formatInstallerMessage(result.messageDescriptor, result.message, locale)}`);
         process.exitCode = 1;
       }
     } catch (error) {
       spinner.stop();
-      console.error(`✗ Failed to install completion script: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(ui.installFailed(error instanceof Error ? error.message : String(error)));
       process.exitCode = 1;
     }
   }
@@ -208,6 +229,8 @@ export class CompletionCommand {
    * Uninstall completion script for a specific shell
    */
   private async uninstallForShell(shell: SupportedShell, skipConfirmation: boolean): Promise<void> {
+    const locale = getCliLocale();
+    const ui = getCompletionUiMessages(locale);
     const installer = CompletionFactory.createInstaller(shell);
 
     // Prompt for confirmation unless --yes flag is provided
@@ -218,23 +241,23 @@ export class CompletionCommand {
       const configPaths: Record<string, string> = {
         zsh: '~/.zshrc',
         bash: '~/.bashrc',
-        fish: 'Fish configuration',  // Fish doesn't modify profile, just removes script file
+        fish: ui.fishConfiguration, // Fish doesn't modify profile, just removes script file
         powershell: '$PROFILE',
       };
-      const configPath = configPaths[shell] || `${shell} configuration`;
+      const configPath = configPaths[shell] || ui.shellConfiguration(shell);
 
       const confirmed = await confirm({
-        message: `Remove Rasen configuration from ${configPath}?`,
+        message: ui.removeConfiguration(configPath),
         default: false,
       });
 
       if (!confirmed) {
-        console.log('Uninstall cancelled.');
+        console.log(ui.uninstallCancelled);
         return;
       }
     }
 
-    const spinner = ora(`Uninstalling ${shell} completion script...`).start();
+    const spinner = ora(ui.uninstalling(shell)).start();
 
     try {
       const result = await installer.uninstall();
@@ -242,14 +265,23 @@ export class CompletionCommand {
       spinner.stop();
 
       if (result.success) {
-        console.log(`✓ ${result.message}`);
+        console.log(`✓ ${formatInstallerMessage(result.messageDescriptor, result.message, locale)}`);
       } else {
-        console.error(`✗ ${result.message}`);
+        console.error(`✗ ${formatInstallerMessage(result.messageDescriptor, result.message, locale)}`);
         process.exitCode = 1;
+      }
+
+      if (result.warnings && result.warnings.length > 0) {
+        console.log('');
+        for (const [index, warning] of result.warnings.entries()) {
+          console.log(
+            formatInstallerMessage(result.warningDescriptors?.[index], warning, locale)
+          );
+        }
       }
     } catch (error) {
       spinner.stop();
-      console.error(`✗ Failed to uninstall completion script: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(ui.uninstallFailed(error instanceof Error ? error.message : String(error)));
       process.exitCode = 1;
     }
   }
@@ -262,34 +294,57 @@ export class CompletionCommand {
    */
   async complete(options: CompleteOptions): Promise<void> {
     const type = options.type.toLowerCase();
+    const locale = getCliLocale();
+    const labels = getLocaleCatalog(locale).completion.dynamic;
 
     try {
       switch (type) {
         case 'changes': {
           const changeIds = await this.completionProvider.getChangeIds();
           for (const id of changeIds) {
-            console.log(`${id}\tactive change`);
+            console.log(`${id}\t${labels.activeChange}`);
           }
           break;
         }
         case 'specs': {
           const specIds = await this.completionProvider.getSpecIds();
           for (const id of specIds) {
-            console.log(`${id}\tspecification`);
+            console.log(`${id}\t${labels.specification}`);
           }
           break;
         }
         case 'schemas': {
           const schemaNames = await this.completionProvider.getSchemaNames();
           for (const name of schemaNames) {
-            console.log(`${name}\tschema`);
+            console.log(`${name}\t${labels.schema}`);
+          }
+          break;
+        }
+        case 'profiles': {
+          const delivery = getGlobalConfig().delivery ?? 'both';
+          for (const profile of listAvailableProfiles(delivery)) {
+            if (!profile.definition) continue;
+            const source = profile.builtIn
+              ? labels.builtIn
+              : labels.saved;
+            console.log(
+              `${profile.name}\t${source}${labels.profileSeparator}${labels.profile}`
+            );
+          }
+          break;
+        }
+        case 'saved-profiles': {
+          const delivery = getGlobalConfig().delivery ?? 'both';
+          for (const profile of listAvailableProfiles(delivery)) {
+            if (profile.builtIn || !profile.definition) continue;
+            console.log(`${profile.name}\t${labels.savedProfile}`);
           }
           break;
         }
         case 'archived-changes': {
           const archivedIds = await getArchivedChangeIds();
           for (const id of archivedIds) {
-            console.log(`${id}\tarchived change`);
+            console.log(`${id}\t${labels.archivedChange}`);
           }
           break;
         }
