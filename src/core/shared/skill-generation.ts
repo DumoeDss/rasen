@@ -7,75 +7,12 @@
 import { readdirSync, existsSync, mkdirSync, copyFileSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import {
-  getExploreSkillTemplate,
-  getNewChangeSkillTemplate,
-  getContinueChangeSkillTemplate,
-  getApplyChangeSkillTemplate,
-  getFfChangeSkillTemplate,
-  getSyncSpecsSkillTemplate,
-  getArchiveChangeSkillTemplate,
-  getBulkArchiveChangeSkillTemplate,
-  getVerifyChangeSkillTemplate,
-  getOnboardSkillTemplate,
-  getHelpSkillTemplate,
-  getOpsxHelpCommandTemplate,
-  getOpsxProposeSkillTemplate,
-  getOpsxExploreCommandTemplate,
-  getOpsxNewCommandTemplate,
-  getOpsxContinueCommandTemplate,
-  getOpsxApplyCommandTemplate,
-  getOpsxFfCommandTemplate,
-  getOpsxSyncCommandTemplate,
-  getOpsxArchiveCommandTemplate,
-  getOpsxBulkArchiveCommandTemplate,
-  getOpsxVerifyCommandTemplate,
-  getOpsxOnboardCommandTemplate,
-  getOpsxProposeCommandTemplate,
-  // Rasen fusion workflow commands
-  getOfficeHoursCommandSkillTemplate,
-  getOpsxOfficeHoursCommandTemplate,
-  getVerifyEnhancedSkillTemplate,
-  getOpsxVerifyEnhancedCommandTemplate,
-  getShipCommandSkillTemplate,
-  getOpsxShipCommandTemplate,
-  getRetroCommandSkillTemplate,
-  getOpsxRetroCommandTemplate,
-  getAutoCommandSkillTemplate,
-  getOpsxAutoCommandTemplate,
-  getReviewCycleSkillTemplate,
-  getOpsxReviewCycleCommandTemplate,
-  getHandoffSkillTemplate,
-  getOpsxHandoffCommandTemplate,
-  // Goal-loop workflow skills + command
-  getGoalPlanSkillTemplate,
-  getGoalIterateSkillTemplate,
-  getGoalReportSkillTemplate,
-  getGoalCommandSkillTemplate,
-  getOpsxGoalCommandTemplate,
-  // Expert skill templates
-  getBenchmarkSkillTemplate,
-  getCarefulSkillTemplate,
-  getChromeUseSkillTemplate,
-  getCodebaseDesignSkillTemplate,
-  getCodexSkillTemplate,
-  getCsoSkillTemplate,
-  getDesignConsultationSkillTemplate,
-  getDesignReviewSkillTemplate,
-  getFreezeSkillTemplate,
-  getGuardSkillTemplate,
-  getInvestigateSkillTemplate,
-  getNavigatorSkillTemplate,
-  getOfficeHoursSkillTemplate,
-  getPrototypeSkillTemplate,
-  getQaOnlySkillTemplate,
-  getQaSkillTemplate,
-  getReviewSkillTemplate,
-  getTddSkillTemplate,
-  getUnfreezeSkillTemplate,
-  type SkillTemplate,
-} from '../templates/skill-templates.js';
+import type { SkillTemplate } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
+import {
+  getBuiltInWorkflowDefinitions,
+  getExpertSkillDefinitions,
+} from '../workflow-registry/index.js';
 
 /**
  * Skill template with directory name and workflow ID mapping.
@@ -90,7 +27,13 @@ export interface SkillTemplateEntry {
  * Command template with ID mapping.
  */
 export interface CommandTemplateEntry {
-  template: ReturnType<typeof getOpsxExploreCommandTemplate>;
+  template: {
+    name: string;
+    description: string;
+    category: string;
+    tags: string[];
+    content: string;
+  };
   id: string;
 }
 
@@ -149,12 +92,10 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  * another skill's sidecars (qa-only shares the QA_METHODOLOGY block with qa,
  * which points at `templates/` and `references/` beside the SKILL.md).
  */
-const SIDECAR_SOURCE_ALIASES: Record<string, string> = {
-  'qa-only': 'qa',
-};
-
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
-  const sourceId = SIDECAR_SOURCE_ALIASES[workflowId] ?? workflowId;
+  const sourceId =
+    getExpertSkillDefinitions().find((definition) => definition.id === workflowId)
+      ?.sidecarSourceId ?? workflowId;
   const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
   if (!existsSync(sourceDir)) return;
 
@@ -167,56 +108,22 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
  * @param workflowFilter - If provided, only return templates whose workflowId is in this array
  */
 export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemplateEntry[] {
-  const workflowSkills: SkillTemplateEntry[] = [
-    { template: getExploreSkillTemplate(), dirName: 'rasen-explore', workflowId: 'explore' },
-    { template: getNewChangeSkillTemplate(), dirName: 'rasen-new-change', workflowId: 'new' },
-    { template: getContinueChangeSkillTemplate(), dirName: 'rasen-continue-change', workflowId: 'continue' },
-    { template: getApplyChangeSkillTemplate(), dirName: 'rasen-apply-change', workflowId: 'apply' },
-    { template: getFfChangeSkillTemplate(), dirName: 'rasen-ff-change', workflowId: 'ff' },
-    { template: getSyncSpecsSkillTemplate(), dirName: 'rasen-sync-specs', workflowId: 'sync' },
-    { template: getArchiveChangeSkillTemplate(), dirName: 'rasen-archive-change', workflowId: 'archive' },
-    { template: getBulkArchiveChangeSkillTemplate(), dirName: 'rasen-bulk-archive-change', workflowId: 'bulk-archive' },
-    { template: getVerifyChangeSkillTemplate(), dirName: 'rasen-verify-change', workflowId: 'verify' },
-    { template: getOnboardSkillTemplate(), dirName: 'rasen-onboard', workflowId: 'onboard' },
-    { template: getHelpSkillTemplate(), dirName: 'rasen-help', workflowId: 'help' },
-    { template: getOpsxProposeSkillTemplate(), dirName: 'rasen-propose', workflowId: 'propose' },
-    // Rasen fusion workflow commands
-    { template: getOfficeHoursCommandSkillTemplate(), dirName: 'rasen-office-hours-command', workflowId: 'office-hours-command' },
-    { template: getVerifyEnhancedSkillTemplate(), dirName: 'rasen-verify-enhanced', workflowId: 'verify-enhanced-command' },
-    { template: getShipCommandSkillTemplate(), dirName: 'rasen-ship', workflowId: 'ship-command' },
-    { template: getRetroCommandSkillTemplate(), dirName: 'rasen-retro', workflowId: 'retro-command' },
-    { template: getAutoCommandSkillTemplate(), dirName: 'rasen-auto', workflowId: 'auto-command' },
-    { template: getReviewCycleSkillTemplate(), dirName: 'rasen-review-cycle', workflowId: 'review-cycle' },
-    { template: getHandoffSkillTemplate(), dirName: 'rasen-handoff', workflowId: 'handoff' },
-    // Goal-loop workflow skills (stage skills + entry command)
-    { template: getGoalPlanSkillTemplate(), dirName: 'rasen-goal-plan', workflowId: 'goal-plan' },
-    { template: getGoalIterateSkillTemplate(), dirName: 'rasen-goal-iterate', workflowId: 'goal-iterate' },
-    { template: getGoalReportSkillTemplate(), dirName: 'rasen-goal-report', workflowId: 'goal-report' },
-    { template: getGoalCommandSkillTemplate(), dirName: 'rasen-goal', workflowId: 'goal-command' },
-  ];
+  const workflowSkills: SkillTemplateEntry[] = getBuiltInWorkflowDefinitions().map(
+    (definition) => ({
+      template: definition.skill.template,
+      dirName: definition.skill.dirName,
+      workflowId: definition.id,
+    })
+  );
 
   // Expert skills are always installed regardless of workflowFilter
-  const expertSkills: SkillTemplateEntry[] = [
-    { template: getBenchmarkSkillTemplate(), dirName: 'rasen-benchmark', workflowId: 'benchmark' },
-    { template: getCarefulSkillTemplate(), dirName: 'rasen-careful', workflowId: 'careful' },
-    { template: getChromeUseSkillTemplate(), dirName: 'rasen-chrome-use', workflowId: 'chrome-use' },
-    { template: getCodebaseDesignSkillTemplate(), dirName: 'rasen-codebase-design', workflowId: 'codebase-design' },
-    { template: getCodexSkillTemplate(), dirName: 'rasen-codex', workflowId: 'codex' },
-    { template: getCsoSkillTemplate(), dirName: 'rasen-cso', workflowId: 'cso' },
-    { template: getDesignConsultationSkillTemplate(), dirName: 'rasen-design-consultation', workflowId: 'design-consultation' },
-    { template: getDesignReviewSkillTemplate(), dirName: 'rasen-design-review', workflowId: 'design-review' },
-    { template: getFreezeSkillTemplate(), dirName: 'rasen-freeze', workflowId: 'freeze' },
-    { template: getGuardSkillTemplate(), dirName: 'rasen-guard', workflowId: 'guard' },
-    { template: getInvestigateSkillTemplate(), dirName: 'rasen-investigate', workflowId: 'investigate' },
-    { template: getNavigatorSkillTemplate(), dirName: 'rasen-navigator', workflowId: 'navigator' },
-    { template: getOfficeHoursSkillTemplate(), dirName: 'rasen-office-hours', workflowId: 'office-hours' },
-    { template: getPrototypeSkillTemplate(), dirName: 'rasen-prototype', workflowId: 'prototype' },
-    { template: getQaSkillTemplate(), dirName: 'rasen-qa', workflowId: 'qa' },
-    { template: getQaOnlySkillTemplate(), dirName: 'rasen-qa-only', workflowId: 'qa-only' },
-    { template: getReviewSkillTemplate(), dirName: 'rasen-review', workflowId: 'review' },
-    { template: getTddSkillTemplate(), dirName: 'rasen-tdd', workflowId: 'tdd' },
-    { template: getUnfreezeSkillTemplate(), dirName: 'rasen-unfreeze', workflowId: 'unfreeze' },
-  ];
+  const expertSkills: SkillTemplateEntry[] = getExpertSkillDefinitions().map(
+    (definition) => ({
+      template: definition.template,
+      dirName: definition.dirName,
+      workflowId: definition.id,
+    })
+  );
 
   if (!workflowFilter) return [...workflowSkills, ...expertSkills];
 
@@ -232,29 +139,21 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
  * @param workflowFilter - If provided, only return templates whose id is in this array
  */
 export function getCommandTemplates(workflowFilter?: readonly string[]): CommandTemplateEntry[] {
-  const all: CommandTemplateEntry[] = [
-    { template: getOpsxExploreCommandTemplate(), id: 'explore' },
-    { template: getOpsxNewCommandTemplate(), id: 'new' },
-    { template: getOpsxContinueCommandTemplate(), id: 'continue' },
-    { template: getOpsxApplyCommandTemplate(), id: 'apply' },
-    { template: getOpsxFfCommandTemplate(), id: 'ff' },
-    { template: getOpsxSyncCommandTemplate(), id: 'sync' },
-    { template: getOpsxArchiveCommandTemplate(), id: 'archive' },
-    { template: getOpsxBulkArchiveCommandTemplate(), id: 'bulk-archive' },
-    { template: getOpsxVerifyCommandTemplate(), id: 'verify' },
-    { template: getOpsxOnboardCommandTemplate(), id: 'onboard' },
-    { template: getOpsxHelpCommandTemplate(), id: 'help' },
-    { template: getOpsxProposeCommandTemplate(), id: 'propose' },
-    // Rasen fusion workflow commands
-    { template: getOpsxOfficeHoursCommandTemplate(), id: 'office-hours-command' },
-    { template: getOpsxVerifyEnhancedCommandTemplate(), id: 'verify-enhanced-command' },
-    { template: getOpsxShipCommandTemplate(), id: 'ship-command' },
-    { template: getOpsxRetroCommandTemplate(), id: 'retro-command' },
-    { template: getOpsxAutoCommandTemplate(), id: 'auto-command' },
-    { template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' },
-    { template: getOpsxHandoffCommandTemplate(), id: 'handoff' },
-    { template: getOpsxGoalCommandTemplate(), id: 'goal-command' },
-  ];
+  const all: CommandTemplateEntry[] = getBuiltInWorkflowDefinitions()
+    .filter((definition) => definition.command)
+    .map((definition) => {
+      const command = definition.command!.content;
+      return {
+        id: definition.id,
+        template: {
+          name: command.name,
+          description: command.description,
+          category: command.category,
+          tags: [...command.tags],
+          content: command.body,
+        },
+      };
+    });
 
   if (!workflowFilter) return all;
 

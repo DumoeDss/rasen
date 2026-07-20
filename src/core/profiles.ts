@@ -6,45 +6,24 @@
  */
 
 import type { Profile } from './global-config.js';
+import {
+  BUILT_IN_WORKFLOW_IDS,
+  CORE_WORKFLOW_IDS,
+  type BuiltInWorkflowId,
+} from './workflow-registry/index.js';
 
 /**
  * Core workflows included in the 'core' profile.
  * These provide the streamlined experience for new users.
  */
-export const CORE_WORKFLOWS = ['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help'] as const;
+export const CORE_WORKFLOWS = CORE_WORKFLOW_IDS;
 
 /**
  * All available workflows in the system.
  */
-export const ALL_WORKFLOWS = [
-  'propose',
-  'explore',
-  'new',
-  'continue',
-  'apply',
-  'ff',
-  'sync',
-  'archive',
-  'bulk-archive',
-  'verify',
-  'onboard',
-  'help',
-  // Rasen fusion workflow commands
-  'office-hours-command',
-  'verify-enhanced-command',
-  'ship-command',
-  'retro-command',
-  'auto-command',
-  'review-cycle',
-  'handoff',
-  // Goal-loop workflow family (opt-in)
-  'goal-plan',
-  'goal-iterate',
-  'goal-report',
-  'goal-command',
-] as const;
+export const ALL_WORKFLOWS = BUILT_IN_WORKFLOW_IDS;
 
-export type WorkflowId = (typeof ALL_WORKFLOWS)[number];
+export type WorkflowId = BuiltInWorkflowId;
 export type CoreWorkflowId = (typeof CORE_WORKFLOWS)[number];
 
 /**

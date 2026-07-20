@@ -10,41 +10,16 @@ import {
   getCommandFilePathCandidates,
 } from './command-generation/index.js';
 import { COMMAND_IDS, getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
+import { getBuiltInWorkflowDefinitions } from './workflow-registry/index.js';
 
 type WorkflowId = (typeof ALL_WORKFLOWS)[number];
 
 /**
  * Maps workflow IDs to their skill directory names.
  */
-export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
-  'explore': 'rasen-explore',
-  'new': 'rasen-new-change',
-  'continue': 'rasen-continue-change',
-  'apply': 'rasen-apply-change',
-  'ff': 'rasen-ff-change',
-  'sync': 'rasen-sync-specs',
-  'archive': 'rasen-archive-change',
-  'bulk-archive': 'rasen-bulk-archive-change',
-  'verify': 'rasen-verify-change',
-  'onboard': 'rasen-onboard',
-  'help': 'rasen-help',
-  'propose': 'rasen-propose',
-  // Rasen fusion workflow commands
-  'office-hours-command': 'rasen-office-hours-command',
-  'verify-enhanced-command': 'rasen-verify-enhanced',
-  'ship-command': 'rasen-ship',
-  'retro-command': 'rasen-retro',
-  'auto-command': 'rasen-auto',
-  // Iterative review loop (opt-in)
-  'review-cycle': 'rasen-review-cycle',
-  // Context handoff (opt-in)
-  'handoff': 'rasen-handoff',
-  // Goal-loop workflow family (opt-in)
-  'goal-plan': 'rasen-goal-plan',
-  'goal-iterate': 'rasen-goal-iterate',
-  'goal-report': 'rasen-goal-report',
-  'goal-command': 'rasen-goal',
-};
+export const WORKFLOW_TO_SKILL_DIR = Object.fromEntries(
+  getBuiltInWorkflowDefinitions().map((definition) => [definition.id, definition.skill.dirName])
+) as Record<WorkflowId, string>;
 
 function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {
   return workflows.filter(
