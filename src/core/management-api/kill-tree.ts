@@ -75,38 +75,78 @@ function killTreeUnix(pid: number, graceMs: number): { cancel: () => void } {
   return { cancel: () => clearTimeout(timer) };
 }
 
-/**
- * Exported (rather than kept private) so the Windows branch can be unit-
- * tested via `taskkill` injection (task 3.5: "no real taskkill in CI") —
- * this repo's CI does not necessarily run on win32, and `killProcessTree`
- * itself only dispatches here when `process.platform === 'win32'`.
- */
-export function killTreeWindows(pid: number, graceMs: number): { cancel: () => void } {
+function forceKillWindows(pid: number): void {
+  if (!isProcessAlive(pid)) return;
   try {
-    spawnProcess('taskkill', ['/T', '/PID', String(pid)], {
+    spawnProcess('taskkill', ['/F', '/T', '/PID', String(pid)], {
       detached: true,
       windowsHide: true,
       stdio: 'ignore',
       shell: false,
     }).unref();
   } catch {
+    // Nothing further we can do from here.
+  }
+}
+
+/**
+ * Exported (rather than kept private) so the Windows branch can be unit-
+ * tested via `taskkill` injection (task 3.5: "no real taskkill in CI") —
+ * this repo's CI does not necessarily run on win32, and `killProcessTree`
+ * itself only dispatches here when `process.platform === 'win32'`.
+ *
+ * Design D5 (evidence-gated): a graceful `taskkill /T` (no `/F`) against a
+ * headless, non-interactive process (no console/message-loop for it to
+ * reach) reliably exits non-zero near-instantly on Windows — confirmed by a
+ * local timing probe during this change's diagnosis — never actually
+ * terminating the target. Waiting out the rest of `graceMs` in that case
+ * buys nothing; this listens for that failure and escalates to the forced
+ * kill immediately rather than blindly waiting the full window (this also
+ * improves real `rasen daemon stop` latency on Windows, per the design's
+ * "only if it also benefits real daemon stop" bar for tightening the
+ * grace). If the graceful attempt DOES report success (exit 0 — e.g. a
+ * console app that does have a handler to catch), behavior is unchanged:
+ * the normal grace-period timer still governs the forced fallback.
+ */
+export function killTreeWindows(pid: number, graceMs: number): { cancel: () => void } {
+  let cancelled = false;
+  let timer: NodeJS.Timeout | undefined;
+
+  const armTimer = (): void => {
+    timer = setTimeout(() => {
+      if (!cancelled) forceKillWindows(pid);
+    }, graceMs);
+    timer.unref?.();
+  };
+
+  try {
+    const graceful = spawnProcess('taskkill', ['/T', '/PID', String(pid)], {
+      detached: true,
+      windowsHide: true,
+      stdio: 'ignore',
+      shell: false,
+    });
+    graceful.on('close', (code) => {
+      if (cancelled) return;
+      if (code !== 0) {
+        // The graceful attempt itself reports it could not terminate the
+        // target — escalate now instead of waiting out the rest of the
+        // grace period.
+        if (timer) clearTimeout(timer);
+        forceKillWindows(pid);
+      }
+    });
+    graceful.unref();
+  } catch {
     // Best-effort graceful attempt; the forced escalation below still fires.
   }
 
-  const timer = setTimeout(() => {
-    if (!isProcessAlive(pid)) return;
-    try {
-      spawnProcess('taskkill', ['/F', '/T', '/PID', String(pid)], {
-        detached: true,
-        windowsHide: true,
-        stdio: 'ignore',
-        shell: false,
-      }).unref();
-    } catch {
-      // Nothing further we can do from here.
-    }
-  }, graceMs);
-  timer.unref?.();
+  armTimer();
 
-  return { cancel: () => clearTimeout(timer) };
+  return {
+    cancel: () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
 }

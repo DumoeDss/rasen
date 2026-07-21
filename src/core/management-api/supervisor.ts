@@ -15,8 +15,9 @@
  * SIGTERM-resistant fixture to prove the escalation actually fires
  * (test/core/management-api/supervisor.test.ts).
  */
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { killProcessTree } from './kill-tree.js';
@@ -117,6 +118,86 @@ function tryParseAgentSessionId(stdoutSoFar: string): string | undefined {
   return undefined;
 }
 
+/**
+ * cross-spawn's `cmd.exe`-aware escaper (CJS, no bundled types). Loaded lazily
+ * via `createRequire` — the same pattern `commands/workset.ts` uses — so the
+ * POSIX and native-`.exe` spawn paths never touch its module graph. cross-spawn
+ * is an exact-pinned direct dependency; only its two pure string helpers are
+ * used here, no spawning.
+ */
+interface CmdEscape {
+  /** Caret-escape a bare command (the shim path) for `cmd.exe`. */
+  command(arg: string): string;
+  /** Quote + caret-escape one argument for `cmd.exe`; `doubleEscapeMetaChars` applies the escape twice. */
+  argument(arg: string, doubleEscapeMetaChars?: boolean): string;
+}
+let cachedCmdEscape: CmdEscape | undefined;
+function cmdEscape(): CmdEscape {
+  if (cachedCmdEscape === undefined) {
+    const require = createRequire(import.meta.url);
+    cachedCmdEscape = require('cross-spawn/lib/util/escape') as CmdEscape;
+  }
+  return cachedCmdEscape;
+}
+
+/**
+ * Windows-aware agent-CLI spawn (design D1). `.cmd`/`.bat` shims cannot be
+ * spawned directly with `shell:false` on modern Node (post-CVE-2024-27980
+ * hardening throws synchronously — `EINVAL`); `.mjs`/extensionless POSIX
+ * binaries throw synchronously too (`EFTYPE`) since they are not directly
+ * executable images on Windows. Route `.cmd`/`.bat` targets through the
+ * command interpreter (`cmd.exe /d /s /c`).
+ *
+ * SECURITY (command injection): `cmd.exe /S /C` re-parses its trailing command
+ * line as shell grammar, so Node's default per-arg quoting (CRT-style `\"`)
+ * does NOT protect the task/prompt text — a literal `"` in it toggles cmd's
+ * own quote state and lets `&`/`|`-chained commands run (reproduced PoC).
+ * Instead, build the command line with cross-spawn's vetted `cmd.exe` escaper
+ * and pass it verbatim (`windowsVerbatimArguments: true`) so Node does not
+ * re-quote what is already escaped. Meta chars are DOUBLE-escaped because an
+ * npm-generated `.cmd`/`.bat` shim re-expands `%*` through a SECOND `cmd.exe`
+ * parse (it proxies to `node <cli> %*`); a single `^`-layer is consumed by the
+ * first parse and the metachar would reach the shell live on the second.
+ * Verified: this delivers arbitrary metacharacter-bearing task text to the
+ * agent CLI as one inert literal argument, with no side-effect command run
+ * (test/core/management-api/supervisor-injection.test.ts). Native `.exe` and
+ * all of POSIX spawn the binary directly, exactly as before this change.
+ *
+ * NEWLINE LIMITATION (Windows shim only): a raw `\n`/`\r` cannot be represented
+ * as argument data through `cmd.exe /C` — cmd truncates the entire command line
+ * at the first newline, silently dropping the rest of the prompt AND the
+ * trailing flags (no escaping survives it; cross-spawn does not escape newlines
+ * either). Rather than silently mangle the launch, the Windows `.cmd`/`.bat`
+ * branch REJECTS a newline-bearing argv up front by throwing — the supervisor's
+ * spawn-`catch` turns it into a clear `503 agent_cli_unavailable`. This guard is
+ * deliberately scoped to the Windows shim transport, NOT `validateTask`: a
+ * newline in an argv element is passed literally and is a perfectly valid
+ * multi-line prompt on POSIX (and for a native `.exe`), so a global validation
+ * change would regress that legitimate feature.
+ */
+const WINDOWS_SHIM_NEWLINE = /[\r\n]/;
+
+function spawnAgentCli(bin: string, argv: string[], options: SpawnOptions): ChildProcess {
+  if (IS_WINDOWS && ['.cmd', '.bat'].includes(path.extname(bin).toLowerCase())) {
+    const comSpec = process.env.ComSpec || 'cmd.exe';
+    if (argv.some((arg) => WINDOWS_SHIM_NEWLINE.test(arg))) {
+      throw new Error(
+        'Multi-line task text (containing a newline or carriage return) is not supported when the agent CLI is a Windows .cmd/.bat shim: cmd.exe truncates its command line at the first newline. Provide the task as a single line.'
+      );
+    }
+    const escape = cmdEscape();
+    const escapedBin = escape.command(path.normalize(bin));
+    const escapedArgs = argv.map((arg) => escape.argument(arg, true));
+    const commandLine = [escapedBin, ...escapedArgs].join(' ');
+    return spawn(comSpec, ['/d', '/s', '/c', `"${commandLine}"`], {
+      ...options,
+      shell: false,
+      windowsVerbatimArguments: true,
+    });
+  }
+  return spawn(bin, argv, { ...options, shell: false });
+}
+
 export function createSessionSupervisor(options: CreateSessionSupervisorOptions): SessionSupervisor {
   const { registry, resolveAgentCli } = options;
   const maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
@@ -200,11 +281,10 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
 
     let child;
     try {
-      child = spawn(claudeBin, argv, {
+      child = spawnAgentCli(claudeBin, argv, {
         cwd: input.cwd,
         env: process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
         detached: !IS_WINDOWS,
         windowsHide: IS_WINDOWS,
       });

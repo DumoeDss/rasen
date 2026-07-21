@@ -18,11 +18,12 @@ import { fileURLToPath } from 'node:url';
 
 import { probeDaemonPort } from '../../src/core/management-api/daemon-probe.js';
 import { readDaemonState } from '../../src/core/management-api/daemon-state.js';
+import { fakeClaudeBin } from '../helpers/fake-claude-bin.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
 const cliEntry = path.join(repoRoot, 'dist', 'cli', 'index.js');
-const fakeClaudeBin = path.resolve(__dirname, '..', 'fixtures', 'management-api', 'session-fake-cli.mjs');
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -121,8 +122,8 @@ describe('daemon lifecycle (real subprocess, tasks 5.3/5.4/6.3)', () => {
     // Best-effort cleanup even on assertion failure mid-test.
     await runCli(['daemon', 'stop'], baseEnv, projectRoot).catch(() => undefined);
     if (foreignServer) await new Promise<void>((resolve) => foreignServer!.close(() => resolve()));
-    fs.rmSync(tempHome, { recursive: true, force: true });
-    fs.rmSync(projectRoot, { recursive: true, force: true });
+    await cleanupTempPathAsync(tempHome);
+    await cleanupTempPathAsync(projectRoot);
   });
 
   it(

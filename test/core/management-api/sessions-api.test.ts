@@ -3,15 +3,26 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { fileURLToPath } from 'node:url';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
-import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fakeClaudeBin = path.resolve(__dirname, '..', '..', 'fixtures', 'management-api', 'session-fake-cli.mjs');
+import type { ManagementApiContext, ManagementRouterOptions } from '../../../src/core/management-api/router.js';
+import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 const TOKEN = 'test-token-sessions-abc123';
+
+const IS_WINDOWS = process.platform === 'win32';
+/**
+ * Windows-only evidence-gated buffer (design D5, mirrors
+ * supervisor.test.ts's `KILL_SETTLE_BUFFER_MS`): a local timing probe
+ * measured a single `taskkill /F /T` invocation at roughly 550-650ms
+ * end-to-end on this machine, and Windows' graceful (non-`/F`) `taskkill`
+ * phase is a documented near-no-op against a plain console process — every
+ * Windows kill effectively waits out the full grace window before the
+ * forced escalation actually lands. POSIX keeps every wait exactly as
+ * tuned (buffer is 0).
+ */
+const KILL_SETTLE_BUFFER_MS = IS_WINDOWS ? 1800 : 0;
 
 interface HttpResult {
   status: number;
@@ -47,7 +58,10 @@ describe('sessions API (session-supervision design D1/D4)', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let handle: ManagementServerHandle;
 
-  async function startServer(overrides: Partial<ManagementApiContext> = {}): Promise<ManagementServerHandle> {
+  async function startServer(
+    overrides: Partial<ManagementApiContext> = {},
+    sessions?: ManagementRouterOptions
+  ): Promise<ManagementServerHandle> {
     const context: ManagementApiContext = {
       token: TOKEN,
       launchProjectRoot: projectRoot,
@@ -56,7 +70,7 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       uiAssetsDir: null,
       ...overrides,
     };
-    handle = await startManagementServer({ context });
+    handle = await startManagementServer({ context, sessions });
     return handle;
   }
 
@@ -80,8 +94,8 @@ describe('sessions API (session-supervision design D1/D4)', () => {
   afterEach(async () => {
     await handle?.stopServer();
     process.env = originalEnv;
-    fs.rmSync(tempConfigHome, { recursive: true, force: true });
-    fs.rmSync(projectRoot, { recursive: true, force: true });
+    await cleanupTempPathAsync(tempConfigHome);
+    await cleanupTempPathAsync(projectRoot);
   });
 
   describe('POST /api/v1/sessions', () => {
@@ -309,7 +323,11 @@ describe('sessions API (session-supervision design D1/D4)', () => {
     });
 
     it('202s a live session, then the listing shows it exited/killed', async () => {
-      const h = await startServer();
+      // A short sessionKillGraceMs (the router's test/daemon-only override
+      // point) rather than the 5s production default — otherwise this
+      // test's own wait window below would need to outlast the default
+      // grace, not just the kill-settle buffer.
+      const h = await startServer({}, { sessionKillGraceMs: 100 });
       const launchRes = await req(h.port, {
         method: 'POST',
         path: '/api/v1/sessions',
@@ -322,7 +340,7 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       expect(delRes.status).toBe(202);
       expect((delRes.json() as any).session.state).toBe('exiting');
 
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400 + KILL_SETTLE_BUFFER_MS));
 
       const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
       const entry = (listRes.json() as any).sessions.find((e: any) => e.session.id === id);
