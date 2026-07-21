@@ -10,7 +10,11 @@ import {
 } from './command-generation/index.js';
 import { getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
 import { getBuiltInWorkflowDefinitions } from './workflow-registry/index.js';
-import { loadWorkflowCatalog } from './workflow-registry/index.js';
+import {
+  filterKnownWorkflowRoots,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+} from './workflow-registry/index.js';
 import {
   hasWorkflowArtifactLedgerDrift,
   readWorkflowArtifactLedger,
@@ -25,9 +29,23 @@ export const WORKFLOW_TO_SKILL_DIR = Object.fromEntries(
   getBuiltInWorkflowDefinitions().map((definition) => [definition.id, definition.skill.dirName])
 ) as Record<WorkflowId, string>;
 
-function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {
+/**
+ * Resolves a desired workflow selection (raw or already closure-resolved)
+ * to its full dependency closure — the selection plus every expert a
+ * selected workflow's skill-dependency closure requires. A stored profile
+ * is intentionally not closure-expanded (`profiles` spec), while installed
+ * experts ARE closure-governed, so drift detection must reconcile the two
+ * by closing over the selection itself, using the same primitive the
+ * install/removal seam uses (`resolveDesiredWorkflowSelection` in
+ * `profiles.ts`). Idempotent for callers that already pass a
+ * closure-resolved set.
+ */
+function resolveClosureDesiredWorkflows(workflows: readonly string[]): WorkflowId[] {
   const catalog = loadWorkflowCatalog();
-  return workflows.filter((workflow) => catalog.has(workflow));
+  const { known } = filterKnownWorkflowRoots(catalog, workflows);
+  return resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+    (definition) => definition.id
+  );
 }
 
 /**
@@ -92,11 +110,14 @@ export function getConfiguredToolsForProfileSync(projectPath: string): string[] 
  * - artifacts for workflows (or, since the expert install-semantics flip,
  *   experts) that were deselected from the current profile
  *
- * `desiredWorkflows` is expected to be the closure-included desired set
- * (workflows + profile-default/closure-required experts) computed by
- * `resolveDesiredWorkflowSelection` — the same array the install path
- * (`getSkillTemplates`) and the removal seam (`removeUnselectedSkillDirs`)
- * use, so drift, install, and removal never disagree about experts.
+ * `desiredWorkflows` is treated as a selection to be closed over
+ * internally: callers may pass either the raw stored selection (e.g. a
+ * profile's `state.workflows`) or an already closure-resolved set (e.g.
+ * `resolveDesiredWorkflowSelection`'s output, as `update.ts` passes) and
+ * get the same result — this function resolves the dependency closure
+ * itself via the same primitive the install path (`getSkillTemplates`) and
+ * the removal seam (`removeUnselectedSkillDirs`) use, so drift, install,
+ * and removal never disagree about experts.
  */
 export function hasToolProfileOrDeliveryDrift(
   projectPath: string,
@@ -107,7 +128,7 @@ export function hasToolProfileOrDeliveryDrift(
   const tool = AI_TOOLS.find((t) => t.value === toolId);
   if (!tool?.skillsDir) return false;
 
-  const knownDesiredWorkflows = toKnownWorkflows(desiredWorkflows);
+  const knownDesiredWorkflows = resolveClosureDesiredWorkflows(desiredWorkflows);
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
   const definitions = loadWorkflowCatalog().definitions;
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
@@ -259,7 +280,7 @@ export function hasProjectConfigDrift(
     return true;
   }
 
-  const desiredSet = new Set(toKnownWorkflows(desiredWorkflows));
+  const desiredSet = new Set(resolveClosureDesiredWorkflows(desiredWorkflows));
   const includeSkills = true;
   const includeCommands = delivery === 'both';
 
