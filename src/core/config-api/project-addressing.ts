@@ -11,12 +11,131 @@ import {
   findProjectRegistryEntry,
   readProjectRegistryState,
 } from '../project-registry.js';
+import { listRegisteredStores } from '../store/registry.js';
+import { inspectRegisteredStore, type RegisteredStoreInspection } from '../root-selection.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type { ProjectRef } from './wire-types.js';
 
 export interface ResolvedProject {
   root: string;
   ref: ProjectRef;
+}
+
+/**
+ * A planning space resolved from a `?space=` / body `space` selector
+ * (planning-space-addressing design D1/D2): a project space (machine project
+ * registry) or a store space (machine store registry, store namespace). The
+ * `root` is always canonical (`FileSystemUtils.canonicalizeExistingPath`), so
+ * downstream root-equality comparisons are Windows-safe.
+ */
+export interface ResolvedSpace {
+  type: 'project' | 'store';
+  id: string;
+  name: string;
+  root: string;
+}
+
+export type SpaceSelectorResult =
+  | { ok: true; space: ResolvedSpace }
+  | { ok: false; status: number; code: string; message: string };
+
+type ParsedSpaceSelector =
+  | { ok: true; namespace: 'project' | 'store'; selector: string }
+  | { ok: false; status: 400; code: 'invalid_space'; message: string };
+
+const PROJECT_SPACE_PREFIX = 'project:';
+const STORE_SPACE_PREFIX = 'store:';
+
+/**
+ * Splits a `space` selector into its namespace and bare selector (design D1).
+ * The prefix is MANDATORY — a bare value is rejected (`invalid_space`) rather
+ * than guessed into a namespace, because a project and a store may legitimately
+ * share an id and guessing could silently address the wrong space.
+ */
+export function parseSpaceSelector(raw: string): ParsedSpaceSelector {
+  if (raw.startsWith(PROJECT_SPACE_PREFIX)) {
+    return { ok: true, namespace: 'project', selector: raw.slice(PROJECT_SPACE_PREFIX.length) };
+  }
+  if (raw.startsWith(STORE_SPACE_PREFIX)) {
+    return { ok: true, namespace: 'store', selector: raw.slice(STORE_SPACE_PREFIX.length) };
+  }
+  return {
+    ok: false,
+    status: 400,
+    code: 'invalid_space',
+    message: `Space selector "${raw}" must be prefixed with "project:" or "store:".`,
+  };
+}
+
+/** Human-readable reason for a store that is registered but fails read-only health inspection (design D1: 409 `space_unavailable`). */
+function storeInspectionReason(inspection: Exclude<RegisteredStoreInspection, { kind: 'ok' }>): string {
+  switch (inspection.kind) {
+    case 'metadata_error':
+      return `store identity metadata could not be read: ${
+        inspection.error instanceof Error ? inspection.error.message : String(inspection.error)
+      }`;
+    case 'metadata_missing':
+      return `store identity metadata is missing at ${inspection.metadataPath}`;
+    case 'metadata_id_mismatch':
+      return `store metadata id "${inspection.actualId}" does not match its registered id`;
+    case 'unhealthy_root':
+      return `store planning root is unhealthy: ${inspection.problems}`;
+  }
+}
+
+/**
+ * Resolves a `space` selector to a `ResolvedSpace` (design D1/D2). The
+ * `project:` namespace reuses `resolveProjectSelector` verbatim (the machine
+ * project registry — NOT the store registry's `project:` reference
+ * namespace). The `store:` namespace resolves the store-namespace registry
+ * entry and runs `inspectRegisteredStore` read-only. Never mutates: no
+ * registration, identity minting, or directory creation.
+ */
+export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorResult> {
+  const parsed = parseSpaceSelector(raw);
+  if (!parsed.ok) return parsed;
+
+  if (parsed.namespace === 'project') {
+    const resolved = await resolveProjectSelector(parsed.selector);
+    if (!resolved) {
+      return {
+        ok: false,
+        status: 404,
+        code: 'space_not_found',
+        message: `No registered project matches "${parsed.selector}" in the project namespace.`,
+      };
+    }
+    return {
+      ok: true,
+      space: { type: 'project', id: resolved.ref.projectId, name: resolved.ref.name, root: resolved.root },
+    };
+  }
+
+  const stores = await listRegisteredStores();
+  const entry = stores.find((candidate) => candidate.type === 'store' && candidate.id === parsed.selector);
+  if (!entry) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'space_not_found',
+      message: `No registered store matches "${parsed.selector}" in the store namespace.`,
+    };
+  }
+
+  const inspection = await inspectRegisteredStore(entry.id, entry.storeRoot);
+  if (inspection.kind !== 'ok') {
+    return {
+      ok: false,
+      status: 409,
+      code: 'space_unavailable',
+      message: `Store "${entry.id}" is unavailable: ${storeInspectionReason(inspection)}.`,
+    };
+  }
+
+  return {
+    ok: true,
+    space: { type: 'store', id: entry.id, name: entry.id, root: inspection.canonicalRoot },
+  };
 }
 
 /**

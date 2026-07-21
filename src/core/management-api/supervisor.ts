@@ -21,7 +21,7 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { killProcessTree } from './kill-tree.js';
-import type { SessionKind, SessionRecord, SessionRegistry, TerminationReason } from './session-registry.js';
+import type { SessionKind, SessionRecord, SessionRegistry, SessionSpace, TerminationReason } from './session-registry.js';
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -40,6 +40,8 @@ export interface LaunchInput {
   task: string;
   cwd: string;
   changeName?: string;
+  /** Frozen planning-space attribution for this session (design D3). */
+  space?: SessionSpace;
   timeoutMs: number;
   noOutputTimeoutMs: number;
 }
@@ -273,6 +275,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       task: input.task,
       cwd: input.cwd,
       ...(input.changeName !== undefined ? { changeName: input.changeName } : {}),
+      ...(input.space !== undefined ? { space: input.space } : {}),
     });
     tails.set(record.id, { stdout: '', stderr: '' });
 

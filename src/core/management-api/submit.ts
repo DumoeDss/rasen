@@ -123,13 +123,19 @@ function parseErrorMessage(stdout: string, stderr: string): string {
 export function createChangeSubmitter(
   context: Pick<ManagementApiContext, 'launchProjectRoot'>,
   options: { timeoutMs?: number; killGraceMs?: number; cliEntryOverride?: string } = {}
-): (name: unknown, description: unknown) => Promise<SubmitResult> {
+): (name: unknown, description: unknown, spaceRoot?: string | undefined) => Promise<SubmitResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const cliEntry = options.cliEntryOverride ?? resolveCliEntry();
   let inFlight = false;
 
-  return async (name, description) => {
+  return async (name, description, spaceRoot) => {
+    // The subprocess cwd is the server-resolved space root when the request
+    // carried a `space` selector (resolved by the router before this call, so
+    // an unresolvable selector never reaches here), else the launch project
+    // (change-submission spec: cwd is never client free text). `spaceRoot` is
+    // always a registry-resolved absolute path or undefined.
+    const cwd = spaceRoot ?? context.launchProjectRoot;
     // Admission gate through the shared whitelist table (design D7, review
     // m4): this endpoint serves only the bounded-cli tier's one entry.
     // `create-change` is a fixed constant here — there is no `kind`/`op`
@@ -163,12 +169,12 @@ export function createChangeSubmitter(
       return { ok: false, status: 400, code: 'invalid_input', message: descriptionError };
     }
 
-    if (!context.launchProjectRoot) {
+    if (!cwd) {
       return {
         ok: false,
         status: 409,
         code: 'no_project',
-        message: 'No Rasen project is available for this server; launch `rasen ui` inside a project.',
+        message: 'No Rasen project is available for this server; select a space or launch `rasen ui` inside a project.',
       };
     }
 
@@ -183,7 +189,7 @@ export function createChangeSubmitter(
     // is still running, breaking the cap-1 guarantee (review M1).
     return runSubmission(
       cliEntry,
-      context.launchProjectRoot,
+      cwd,
       name,
       description as string,
       timeoutMs,

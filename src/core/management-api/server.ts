@@ -16,6 +16,7 @@ import type { Socket } from 'node:net';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
+import { FileSystemUtils } from '../../utils/file-system.js';
 import {
   createManagementRouter,
   isManagementPath,
@@ -51,19 +52,28 @@ export function startManagementServer(
 ): Promise<ManagementServerHandle> {
   const context = options.context;
 
-  // Server-lifetime project-home cache (design D5, m4): resolved lazily on
-  // first need, cached once found, re-probed on every call while still null
-  // — a registry-mapping lookup (root -> machine-home dir) that cannot
-  // un-register mid-session in any supported flow, so caching a hit never
-  // goes stale; the null case covers the one real transition (unregistered
-  // -> registered mid-session).
-  let cachedHome: ProjectHome | null = null;
-  const resolveHome = async (): Promise<ProjectHome | null> => {
-    if (cachedHome) return cachedHome;
-    if (!context.launchProjectRoot) return null;
+  // Per-space project-home cache (planning-space-addressing design D2,
+  // superseding the single launch-home cache): keyed by canonical space root
+  // so the daemon can serve any addressable space, not only the one it was
+  // launched in. Same null-retry semantics as before — a resolved home is a
+  // registry-mapping lookup (root -> machine-home dir) that cannot un-register
+  // mid-session, so caching a hit never goes stale; a null is never cached, so
+  // the one real transition (a root registered mid-session) is picked up on
+  // the next request.
+  const homeCache = new Map<string, ProjectHome>();
+  const resolveHomeForRoot = async (root: string | null): Promise<ProjectHome | null> => {
+    if (!root) return null;
+    let key: string;
     try {
-      const home = await resolveProjectHome(context.launchProjectRoot, { ensure: false });
-      if (home) cachedHome = home;
+      key = FileSystemUtils.canonicalizeExistingPath(root);
+    } catch {
+      key = root;
+    }
+    const cached = homeCache.get(key);
+    if (cached) return cached;
+    try {
+      const home = await resolveProjectHome(root, { ensure: false });
+      if (home) homeCache.set(key, home);
       return home;
     } catch {
       return null;
@@ -75,7 +85,7 @@ export function startManagementServer(
   // handles its own paths, now including the sessions route group. The
   // server owns the dispatch.
   const configHandler = createConfigRouter(context);
-  const { handle: managementHandler, supervisor } = createManagementRouter(context, resolveHome, options.sessions);
+  const { handle: managementHandler, supervisor } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;

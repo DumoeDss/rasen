@@ -565,6 +565,20 @@ describe('config-api router (integration, via real http server)', () => {
       expect(res.status).toBe(200);
       expect((res.json() as any).projects).toEqual([]);
     });
+
+    it('omits registry entries whose root no longer exists on disk', async () => {
+      await registerProject({ projectRoot: otherProjectRoot, projectId: 'live-proj', mode: 'in-repo' });
+
+      const deadRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-api-dead-proj-'));
+      await registerProject({ projectRoot: deadRoot, projectId: 'dead-proj', mode: 'in-repo' });
+      fs.rmSync(deadRoot, { recursive: true, force: true });
+
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/projects', headers: authed() });
+      expect(res.status).toBe(200);
+      const projects = (res.json() as any).projects as Array<{ projectId: string }>;
+      expect(projects.map((p) => p.projectId)).toEqual(['live-proj']);
+    });
   });
 
   describe('static fallback', () => {
