@@ -7,6 +7,7 @@
  * four lifecycle columns from those facts.
  */
 import type {
+  ArchivedChangeSummary,
   ChangeRunEntry,
   ChangeSummary,
   SessionListEntry,
@@ -229,6 +230,61 @@ export function groupIntoTasks(
 }
 
 /**
+ * An archived Task: a group of archived changes collapsed by the same
+ * portfolio rule the board uses (ui-space-redesign-archive-page design D4).
+ * Distinct from {@link Task} — it has no lifecycle column (archived ⇒ done),
+ * only a `name`-bearing child list (so {@link tasksForMember} can attribute it
+ * by session provenance) and the most-recent archive date for sort/display.
+ */
+export interface ArchivedTask {
+  /** The portfolio container name, or the bare change's own name. */
+  id: string;
+  /** Same as `id` (kept for parity with {@link Task}). */
+  label: string;
+  /** Same as `id`; the display name and the Task-detail route segment. */
+  name: string;
+  kind: 'portfolio' | 'single';
+  /** The Task's archived constituent changes: ≥1. */
+  children: ArchivedChangeSummary[];
+  /** The most recent archive date among the children (`YYYY-MM-DD`), for time-reverse sort + display. */
+  archivedAt: string;
+}
+
+/**
+ * Groups a space's archived changes into archived Tasks (design D4),
+ * preserving first-appearance order — the same collapse `groupIntoTasks` does
+ * for active changes: changes sharing a `portfolio` value fold into one
+ * portfolio Task (id = the container name), a change with no `portfolio`
+ * becomes its own single-item Task. Each Task carries the max archive date of
+ * its children so the page can sort time-reverse. Pure — no DOM, no fetch.
+ */
+export function groupArchivedTasks(changes: ArchivedChangeSummary[]): ArchivedTask[] {
+  const order: string[] = [];
+  const childrenById = new Map<string, ArchivedChangeSummary[]>();
+  for (const change of changes) {
+    const id = change.portfolio ?? change.name;
+    let group = childrenById.get(id);
+    if (!group) {
+      group = [];
+      childrenById.set(id, group);
+      order.push(id);
+    }
+    group.push(change);
+  }
+
+  return order.map((id) => {
+    const children = childrenById.get(id)!;
+    const kind: ArchivedTask['kind'] = children[0]!.portfolio ? 'portfolio' : 'single';
+    // Dates are `YYYY-MM-DD`, so lexicographic max is chronological max.
+    const archivedAt = children.reduce(
+      (max, c) => (c.archivedAt > max ? c.archivedAt : max),
+      children[0]!.archivedAt
+    );
+    return { id, label: id, name: id, kind, children, archivedAt };
+  });
+}
+
+/**
  * Splits a space's sessions into those belonging to a Task — whose linked
  * `changeName` is one of the Task's children — partitioned into `live` and
  * `ended`, with live ordered first (ui-space-redesign-task-detail design D4).
@@ -272,12 +328,18 @@ export function isUnderRoot(cwd: string, root: string): boolean {
  * (the "All" chip) returns every Task unchanged. A Task no session has ever
  * run for is attributed to no member and so appears only under "All" — the
  * documented ceiling, since the disk records no change→member link.
+ *
+ * Generic over the Task shape (runtime logic unchanged): it reads only each
+ * task's `children[].name`, so both a live {@link Task} and an
+ * {@link ArchivedTask} reuse it — the archive page attributes archived Tasks
+ * the same way the board attributes live ones (ui-space-redesign-archive-page
+ * design D4).
  */
-export function tasksForMember(
-  tasks: Task[],
+export function tasksForMember<T extends { children: { name: string }[] }>(
+  tasks: T[],
   sessions: SessionListEntry[],
   memberRoot: string | null
-): Task[] {
+): T[] {
   if (memberRoot === null) return tasks;
   return tasks.filter((task) => {
     const childNames = new Set(task.children.map((c) => c.name));

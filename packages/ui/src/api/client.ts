@@ -6,6 +6,7 @@
 import { getToken, markUnauthorized } from './token.js';
 import type {
   ApiErrorBody,
+  ArchiveResponse,
   ChangesResponse,
   ConfigScope,
   GetConfigKeyResponse,
@@ -157,6 +158,11 @@ export function listChanges(space?: string): Promise<ChangesResponse> {
 /** Per-change run state for the current planning space (design.md D6); no selector = launch-project fallback. */
 export function listRuns(space?: string): Promise<RunsResponse> {
   return request<RunsResponse>(`/api/v1/runs${spaceQuery(space)}`);
+}
+
+/** The archived changes for the current planning space (ui-space-redesign-archive-page design D1/D6); no selector = launch-project fallback. */
+export function listArchive(space?: string): Promise<ArchiveResponse> {
+  return request<ArchiveResponse>(`/api/v1/archive${spaceQuery(space)}`);
 }
 
 /** Every addressable planning space (planning-space-addressing design D6), for the space switcher. */

@@ -181,6 +181,35 @@ export interface TaskDetailResponse {
 }
 
 // -----------------------------------------------------------------------
+// Archive listing (ui-space-redesign-archive-page design D1) —
+// `GET /api/v1/archive`. The space-wide roster of archived changes, the
+// sticky-union of the in-repo archive and the machine-home archive that
+// `getArchivedChangeIds` reports. Complementary to `/api/v1/tasks/:id` (which
+// reports one Task's archived children): this reports the whole space's
+// archived changes with no Task id in hand.
+// -----------------------------------------------------------------------
+
+/** One archived change as reported by the archive listing (design D1). */
+export interface ArchivedChangeSummary {
+  /** The un-dated change name (the `YYYY-MM-DD-` prefix stripped). */
+  name: string;
+  /** The `YYYY-MM-DD` archive date. */
+  archivedAt: string;
+  /**
+   * Portfolio-container membership by the same longest-prefix rule the changes
+   * listing uses; absent when the archived change is under no container.
+   */
+  portfolio?: string;
+  /** Task-checkbox progress of the archived change, best-effort (never throws). */
+  taskProgress: ChangeTaskProgress;
+}
+
+/** `GET /api/v1/archive` response (design D1). */
+export interface ArchiveResponse {
+  changes: ArchivedChangeSummary[];
+}
+
+// -----------------------------------------------------------------------
 // Sessions (session-supervision design D2/D4) — sibling-stable wire shapes
 // for the sessions UI child.
 // -----------------------------------------------------------------------

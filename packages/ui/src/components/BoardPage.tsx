@@ -18,7 +18,15 @@ import {
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
 import { MemberChips } from './MemberChips.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
-import { useSpace } from '../store/use-space.js';
+import { spaceHref, useSpace } from '../store/use-space.js';
+
+/**
+ * The Done column shows only the most recent N done Tasks, overflowing the rest
+ * into the Archive page (ui-space-redesign-archive-page design D5 / archive-ui
+ * spec). N is a UI tuning knob, not a contract — the spec says "a bounded
+ * number", not a specific value.
+ */
+const DONE_COLUMN_LIMIT = 5;
 
 /**
  * The board page (ui-space-redesign-task-board design D6): three space-scoped
@@ -206,9 +214,35 @@ export function BoardPage() {
       {brokenChanges}
       {changes.length > 0 && (
         <div class="board">
-          {BOARD_COLUMNS.map((col) => (
-            <BoardColumn key={col.id} label={col.label} entries={grouped.get(col.id) ?? []} space={space} />
-          ))}
+          {BOARD_COLUMNS.map((col) => {
+            const colEntries = grouped.get(col.id) ?? [];
+            // The Done column is bounded (design D5): show only the most recent
+            // N (the tail of the existing entry order — no new sort of live
+            // data) with an overflow link into the Archive page. Other columns
+            // are unaffected.
+            if (col.id === 'done' && colEntries.length > DONE_COLUMN_LIMIT) {
+              return (
+                <BoardColumn
+                  key={col.id}
+                  label={col.label}
+                  entries={colEntries.slice(-DONE_COLUMN_LIMIT)}
+                  space={space}
+                  footer={
+                    space && (
+                      <a
+                        class="board-column__overflow"
+                        data-testid="done-overflow"
+                        href={spaceHref(space, 'archive')}
+                      >
+                        View all in Archive →
+                      </a>
+                    )
+                  }
+                />
+              );
+            }
+            return <BoardColumn key={col.id} label={col.label} entries={colEntries} space={space} />;
+          })}
         </div>
       )}
       {dialogOpen && (

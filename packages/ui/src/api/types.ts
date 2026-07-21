@@ -175,6 +175,32 @@ export interface ChangesResponse {
   errors: ChangeLoadError[];
 }
 
+// ---- Archive listing (ui-space-redesign-archive-page design D1/D6) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`ArchivedChangeSummary`/`ArchiveResponse`). Same hand-maintained-mirror
+// discipline as the rest of this file: copied field-for-field, pinned by the
+// `satisfies ArchiveResponse` fixture in `test/fixtures/archive.ts`.
+
+/** One archived change as reported by `GET /api/v1/archive`. */
+export interface ArchivedChangeSummary {
+  /** The un-dated change name (the `YYYY-MM-DD-` prefix stripped). */
+  name: string;
+  /** The `YYYY-MM-DD` archive date. */
+  archivedAt: string;
+  /**
+   * Portfolio-container membership by the same longest-prefix rule the changes
+   * listing uses; absent when the archived change is under no container.
+   */
+  portfolio?: string;
+  /** Task-checkbox progress of the archived change. */
+  taskProgress: ChangeTaskProgress;
+}
+
+/** `GET /api/v1/archive` response. */
+export interface ArchiveResponse {
+  changes: ArchivedChangeSummary[];
+}
+
 export type StageStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'escalated';
 
 export interface WireRunStage {

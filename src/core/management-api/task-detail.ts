@@ -13,7 +13,13 @@ import * as path from 'node:path';
 
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import { validateChangeName } from '../../utils/change-utils.js';
-import { getActiveChangeIds, getArchivedChangeIds } from '../../utils/item-discovery.js';
+import {
+  getActiveChangeIds,
+  getArchivedChangeIds,
+  parseArchivedRef,
+  resolveArchivedChangeDir,
+  type ArchivedRef,
+} from '../../utils/item-discovery.js';
 import {
   getTaskProgressForChange,
   listTaskItemsForChange,
@@ -34,24 +40,6 @@ import type {
 export type TaskDetailResult =
   | { ok: true; response: TaskDetailResponse }
   | { ok: false; status: number; code: string; message: string };
-
-/** `YYYY-MM-DD-<name>` archived-change directory name (item-discovery.ts). */
-const ARCHIVED_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
-
-interface ArchivedRef {
-  /** The dated directory name as `getArchivedChangeIds` returns it. */
-  dated: string;
-  /** The `YYYY-MM-DD` prefix. */
-  date: string;
-  /** The un-dated change name. */
-  name: string;
-}
-
-function parseArchivedRef(dated: string): ArchivedRef | null {
-  const match = ARCHIVED_NAME_PATTERN.exec(dated);
-  if (!match) return null;
-  return { dated, date: match[1]!, name: match[2]! };
-}
 
 /**
  * Assembles the full roster for one Task (design D1). Read-only: resolves kind
@@ -158,10 +146,7 @@ export async function handleTaskDetail(
   // (`getArchivedChangeIds` unions both without saying which holds each).
   for (const ref of archivedRefs) {
     if (!belongsToTask(ref.name)) continue;
-    let archiveChangesDir = archiveDir;
-    if (!fs.existsSync(path.join(archiveDir, ref.dated)) && home) {
-      archiveChangesDir = home.archiveDir;
-    }
+    const archiveChangesDir = resolveArchivedChangeDir(archiveDir, home, ref.dated);
     children.push({
       name: ref.name,
       archived: true,

@@ -80,6 +80,17 @@
 25. **route 只换组件**:`app.tsx` 两条 task 路由 `component=` 由 `TaskDetailPlaceholder`→`TaskDetailPage`(承 finding 9,不动路由表形状);`TaskDetailPlaceholder` 退役,`ArchivePlaceholder` 留给 child 5。`LaunchSessionDialog` 加 additive `space?`+prefill `changeName`(自 child 2 起 retained-but-unmounted,本 child 首次挂载,扩 props 安全);sessions 列直接复用 `SessionRow`(自带 tail+confirm-kill),session→Task 映射逻辑放 `columns.ts` 新 `sessionsForTask`(导出 `LIVE_SESSION_STATES`/`sessionStage`)。
 26. **给 child 5(Archive 页)的三条**:(a) 我已导出 `changes.ts` 的 `findPortfolioContainers`/`portfolioOf`——archive 页做 Task 分组可复用同一最长前缀规则;(b) archived 名带日期前缀 + 位置(in-repo vs home)解析见 finding 23,建议抽共享 helper;(c) portfolio Task 的 Launch-run 目标 change 悬而未决(容器非 change,prefill 留空)——若 archive/detail 要"重启某归档 Task 的某 child",需要一个 child 选择器 UI,列为 future。
 
+## Planner findings（child 5 archive-page propose,2026-07-21，**末子**）
+
+27. **archive 端点定形:新增只读 `GET /api/v1/archive?space=<selector>`,空间级全量归档表**。返回 `{ changes: ArchivedChangeSummary[] }`,每条 `{ name, archivedAt, portfolio?, taskProgress }`。空间解析**与 `/changes` 逐字一致**(显式 selector→registry,缺省→launch 兜底,**无 root→400 project_required**——刻意选 `/changes` 的 400 而非 `/runs` 的空表,因 archive 页永远在空间路由下打开、selector 必在,且对齐同类只读读端点)。枚举 `getArchivedChangeIds`→`parseArchivedRef`→`portfolioOf`(成员)+`resolveArchivedChangeDir`+`getTaskProgressForChange`(进度)。**分组仍 UI 侧**(承 child3 定式:server 报 `portfolio?` 事实,UI 收拢成归档 Task);排序=UI 时间倒序。与 child4 `/tasks/:id` **互补不冲突**(那个报单 Task 的归档 children,这个报空间全量归档 roster)。
+28. **共享 helper 抽到 `src/utils/item-discovery.ts`(承 finding 23/child4-finding2)**:导出 `ArchivedRef`/`parseArchivedRef`(剥 `YYYY-MM-DD-`)+`resolveArchivedChangeDir(inRepoArchiveDir, home, dated)`(先探 in-repo archive 目录、存在或无 home 则用它、否则 `home.archiveDir`)。`task-detail.ts` 改 import 这俩、删内联 `ARCHIVED_NAME_PATTERN`/`parseArchivedRef`/probe——**字节级行为不变**,child4 的 `task-detail(-api).test.ts` 须原样绿=抽取 parity 关卡。archive 端点两者都用(端点带 `taskProgress` 就是为让位置探测半边也被两方共享,兑现 LEAD "both use it")。`item-discovery.ts` 引 `ProjectHome` 不新增依赖边(它已 import `resolveProjectHome`)。
+29. **Done 列截断需求刻意进 `archive-ui` 而非 board-ui**:board-ui 已被 child2(MODIFY "platform home")+child3(MODIFY "submission"+ADDED)两未归档 delta 触碰;第四只手进 board-ui 有 spec-merge 撞车险(承 finding 4/13/18)。故 Done recent-N 截断+"View all in Archive →" footer 的**需求**归 `archive-ui` 新 capability(框成"board 把 Done 历史溢出到 Archive 页"),**代码**仍在 `BoardPage.tsx`。N=小常量(~5),非合约(spec 只说"a bounded number")。**child5 完全不碰 board-ui**,不新增 board-ui 撞面。
+30. **末子/portfolio wrap-up readiness**:
+    - **spec-delta 归档次序(补全全 portfolio 视图)**:先归档 slice2/slice3 遗留(承 finding 4/13),再按依赖序 **1→2→3→4→5** 归档本 portfolio——`management-http-api` 被 4 个 child 触碰但**互不重叠**(c1 MODIFY "Changes listing"、c3 ADDED "portfolio-container membership"、c4 ADDED "Task roster endpoint"、c5 ADDED "Archive listing endpoint"),然序敏(顺序应用 delta,每个 ADDED 须落在已含前序 ADD 的 spec 上)。`archive-ui`/`task-detail-ui` 是全新 capability(主 specs 无)=纯 ADDED 零冲突。`board-ui` 仅 c2/c3 触碰。
+    - **最后一个 placeholder 退役**:child5 删 `packages/ui/src/components/Placeholders.tsx`(child4 已退役 `TaskDetailPlaceholder`,本文件只剩 `ArchivePlaceholder`)+改 `app.tsx` import。**至此 shell 无任何 placeholder,redesign UI 全实体化**。
+    - **member chip 天花板复用(承 finding 17)**:archive 页 store 空间成员过滤复用 `tasksForMember`+live sessions;归档 Task 通常无 live session→多退化为 All=已文档化的数据层天花板,非 bug;search box 是主过滤器。
+    - **未决(承 finding 26c)**:重启某归档 Task 的某 child 仍无 UI=future;archive 行只链只读 Task detail。
+
 ## 约束
 
 - **工作树有未提交改动**(测试隔离修复+listProjects 过滤,属于本 portfolio 的先导修复):child 1 的 ship 把它们一并纳入或先行单独 commit,由 shipper 裁定,勿丢弃勿回退。

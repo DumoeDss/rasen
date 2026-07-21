@@ -14,6 +14,7 @@ import { deriveSpaceFromCwd } from '../root-selection.js';
 import type { ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
+import { handleArchive } from './archive.js';
 import { handleRuns } from './runs.js';
 import { handleTaskDetail } from './task-detail.js';
 import {
@@ -64,6 +65,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const MANAGEMENT_PATHS = new Set([
   '/api/v1/status',
   '/api/v1/changes',
+  '/api/v1/archive',
   '/api/v1/runs',
   '/api/v1/sessions',
   '/api/v1/spaces',
@@ -359,6 +361,24 @@ export function createManagementRouter(
       }
       const home = await resolveHomeForRoot(space.root ?? null);
       const result = await handleChanges(space.root, home);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/archive') {
+      // Space-resolved exactly like `/changes`: explicit selector through the
+      // registries, omitted → launch-project fallback, no root → 400.
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const home = await resolveHomeForRoot(space.root ?? null);
+      const result = await handleArchive(space.root, home);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;

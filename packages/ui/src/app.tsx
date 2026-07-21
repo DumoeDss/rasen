@@ -5,7 +5,7 @@ import { Layout } from './components/Layout.js';
 import { ConfigPage } from './components/ConfigPage.js';
 import { BoardPage } from './components/BoardPage.js';
 import { SpaceBootstrap } from './components/SpaceBootstrap.js';
-import { ArchivePlaceholder } from './components/Placeholders.js';
+import { ArchivePage } from './components/ArchivePage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
@@ -30,10 +30,10 @@ function SpaceRootRedirect() {
  * source of truth for the selected planning space (management-ui-shell design
  * D1): `/` bootstraps and redirects to a resolved space route; every
  * space-scoped view lives under a `/p/:projectId/…` or `/s/:storeId/…` prefix
- * so it always renders for a resolved space. Task detail (child 4) renders the
- * real page; Archive (child 5) is still placeholder-wired here. The former
- * `/sessions` top-level page is gone — live runs surface through the header
- * summary.
+ * so it always renders for a resolved space. Every section — Board, Config,
+ * Archive, Task detail — now renders its real page; the shell carries no
+ * placeholders. The former `/sessions` top-level page is gone — live runs
+ * surface through the header summary.
  */
 export function App() {
   const [unauthorized, setUnauthorized] = useState(!hasToken() || isUnauthorized());
@@ -53,8 +53,8 @@ export function App() {
           <Route path="/s/:storeId/board" component={BoardPage} />
           <Route path="/p/:projectId/config" component={ConfigPage} />
           <Route path="/s/:storeId/config" component={ConfigPage} />
-          <Route path="/p/:projectId/archive" component={ArchivePlaceholder} />
-          <Route path="/s/:storeId/archive" component={ArchivePlaceholder} />
+          <Route path="/p/:projectId/archive" component={ArchivePage} />
+          <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />
           <Route path="/s/:storeId/task/:changeName" component={TaskDetailPage} />
           <Route path="/p/:projectId" component={SpaceRootRedirect} />

@@ -1,11 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { deriveColumn, deriveTaskColumn, groupIntoTasks, sessionsForTask } from '../../src/board/columns.js';
+import {
+  deriveColumn,
+  deriveTaskColumn,
+  groupArchivedTasks,
+  groupIntoTasks,
+  sessionsForTask,
+} from '../../src/board/columns.js';
 import type {
+  ArchivedChangeSummary,
   ChangeRunEntry,
   ChangeSummary,
   SessionListEntry,
   SessionRecordWire,
 } from '../../src/api/types.js';
+
+function archived(overrides: Partial<ArchivedChangeSummary> = {}): ArchivedChangeSummary {
+  return {
+    name: 'archived-change',
+    archivedAt: '2026-01-01',
+    taskProgress: { total: 0, completed: 0 },
+    ...overrides,
+  };
+}
 
 function change(overrides: Partial<ChangeSummary> = {}): ChangeSummary {
   return {
@@ -282,5 +298,44 @@ describe('sessionsForTask', () => {
     const { live, ended } = sessionsForTask([liveSession('other')], new Set(['api']));
     expect(live).toEqual([]);
     expect(ended).toEqual([]);
+  });
+});
+
+describe('groupArchivedTasks', () => {
+  it('collapses changes sharing a portfolio into one archived Task', () => {
+    const tasks = groupArchivedTasks([
+      archived({ name: 'redesign-api', portfolio: 'redesign', archivedAt: '2026-01-01' }),
+      archived({ name: 'redesign-shell', portfolio: 'redesign', archivedAt: '2026-02-15' }),
+    ]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.id).toBe('redesign');
+    expect(tasks[0]!.kind).toBe('portfolio');
+    expect(tasks[0]!.children.map((c) => c.name)).toEqual(['redesign-api', 'redesign-shell']);
+  });
+
+  it('passes a container-less change through as its own single-item Task', () => {
+    const tasks = groupArchivedTasks([archived({ name: 'fix-login', archivedAt: '2026-03-03' })]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.id).toBe('fix-login');
+    expect(tasks[0]!.kind).toBe('single');
+    expect(tasks[0]!.children).toHaveLength(1);
+  });
+
+  it('carries the most recent child archive date as the Task date', () => {
+    const tasks = groupArchivedTasks([
+      archived({ name: 'redesign-api', portfolio: 'redesign', archivedAt: '2026-01-01' }),
+      archived({ name: 'redesign-shell', portfolio: 'redesign', archivedAt: '2026-02-15' }),
+      archived({ name: 'redesign-detail', portfolio: 'redesign', archivedAt: '2026-01-20' }),
+    ]);
+    expect(tasks[0]!.archivedAt).toBe('2026-02-15');
+  });
+
+  it('preserves first-appearance order of the Tasks', () => {
+    const tasks = groupArchivedTasks([
+      archived({ name: 'fix-login', archivedAt: '2026-01-20' }),
+      archived({ name: 'redesign-api', portfolio: 'redesign', archivedAt: '2026-01-01' }),
+      archived({ name: 'tidy-logs', archivedAt: '2026-03-10' }),
+    ]);
+    expect(tasks.map((t) => t.id)).toEqual(['fix-login', 'redesign', 'tidy-logs']);
   });
 });

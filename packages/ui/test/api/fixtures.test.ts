@@ -15,9 +15,11 @@ import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
+import { archiveFixture } from '../fixtures/archive.js';
 
 export { configListFixture, projectsListFixture, healthFixture, errorsFixture };
 export { sessionDetailFixture, sessionsListFixture };
+export { archiveFixture };
 
 describe('fixture ↔ mirror-type drift tripwire', () => {
   it('config-list fixture has plausible entries', () => {
@@ -87,5 +89,16 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     expect(sessionDetailFixture.session.id).toBe('sess-live-with-progress');
     expect(typeof sessionDetailFixture.tails.stdout).toBe('string');
     expect(typeof sessionDetailFixture.tails.stderr).toBe('string');
+  });
+
+  it('archive fixture covers portfolio-grouped and container-less archived changes with dates', () => {
+    expect(archiveFixture.changes.length).toBeGreaterThan(0);
+    for (const change of archiveFixture.changes) {
+      expect(typeof change.name).toBe('string');
+      expect(change.archivedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    // At least one change is under a portfolio container and at least one is not.
+    expect(archiveFixture.changes.some((c) => c.portfolio !== undefined)).toBe(true);
+    expect(archiveFixture.changes.some((c) => c.portfolio === undefined)).toBe(true);
   });
 });

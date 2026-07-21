@@ -646,4 +646,88 @@ describe('BoardPage', () => {
       expect(JSON.parse(init.body).space).toBeUndefined();
     });
   });
+
+  describe('Done-column truncation (archive-ui spec / design D5)', () => {
+    async function mountAtSpace(path: string) {
+      window.history.pushState({}, '', path);
+      await act(async () => {
+        render(
+          <LocationProvider>
+            <BoardPage />
+          </LocationProvider>,
+          container
+        );
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+    }
+
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    function doneChange(name: string) {
+      return {
+        name,
+        schemaName: 'spec-driven',
+        artifacts: [],
+        applyReady: true,
+        isComplete: true,
+        taskProgress: { total: 1, completed: 1 },
+        hasRunFiles: false,
+      };
+    }
+
+    const doneColumn = () => container.querySelectorAll('.board-column')[3]!;
+
+    it('caps the Done column at the bound and links the overflow into the Archive page', async () => {
+      // Six done Tasks exceed the bound of 5.
+      const names = ['d1', 'd2', 'd3', 'd4', 'd5', 'd6'];
+      (client.listChanges as any).mockResolvedValue({ changes: names.map(doneChange), errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      const cards = doneColumn().querySelectorAll('[data-testid="task-card"]');
+      expect(cards).toHaveLength(5); // most recent 5 (the tail of the entry order)
+      const shown = Array.from(doneColumn().querySelectorAll('.board-card__name')).map((n) => n.textContent);
+      // The head (d1) is dropped; the tail (through d6) is kept.
+      expect(shown).toEqual(['d2', 'd3', 'd4', 'd5', 'd6']);
+      const overflow = container.querySelector('[data-testid="done-overflow"]') as HTMLAnchorElement;
+      expect(overflow).not.toBeNull();
+      expect(overflow.getAttribute('href')).toBe('/p/proj_x/archive');
+    });
+
+    it('shows all done Tasks and no overflow footer when under the bound', async () => {
+      const names = ['d1', 'd2', 'd3'];
+      (client.listChanges as any).mockResolvedValue({ changes: names.map(doneChange), errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      expect(doneColumn().querySelectorAll('[data-testid="task-card"]')).toHaveLength(3);
+      expect(container.querySelector('[data-testid="done-overflow"]')).toBeNull();
+    });
+
+    it('does not truncate the other columns', async () => {
+      const changes = [
+        ...['d1', 'd2', 'd3', 'd4', 'd5', 'd6'].map(doneChange),
+        // Six planning Tasks (applyReady false) — must all still show.
+        ...['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((name) => ({
+          ...doneChange(name),
+          applyReady: false,
+          isComplete: false,
+        })),
+      ];
+      (client.listChanges as any).mockResolvedValue({ changes, errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      const planningColumn = container.querySelectorAll('.board-column')[0]!;
+      expect(planningColumn.querySelectorAll('[data-testid="task-card"]')).toHaveLength(6);
+      expect(doneColumn().querySelectorAll('[data-testid="task-card"]')).toHaveLength(5);
+    });
+  });
 });

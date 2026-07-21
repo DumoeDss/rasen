@@ -18,6 +18,9 @@ vi.mock('../src/components/BoardPage.js', () => ({
 vi.mock('../src/components/ConfigPage.js', () => ({
   ConfigPage: () => <div data-testid="config-page">config</div>,
 }));
+vi.mock('../src/components/ArchivePage.js', () => ({
+  ArchivePage: () => <div data-testid="archive-page">archive</div>,
+}));
 vi.mock('../src/components/TaskDetailPage.js', async () => {
   const { useRoute } = await import('preact-iso');
   return {
@@ -132,9 +135,10 @@ describe('App routing', () => {
     expect(container.querySelector('[data-testid="config-page"]')).toBeNull();
   });
 
-  it('renders the archive placeholder route', async () => {
+  it('renders the real Archive page at the archive route (placeholder retired)', async () => {
     await mountAt(container, '/p/proj_x/archive');
-    expect(container.querySelector('[data-testid="archive-placeholder"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="archive-page"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="archive-placeholder"]')).toBeNull();
   });
 
   it('renders the task-detail page route with the change-name param', async () => {
