@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { createChangeSubmitter } from '../../../src/core/management-api/submit.js';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const realCliEntry = path.resolve(__dirname, '..', '..', '..', 'dist', 'cli', 'index.js');
@@ -26,8 +27,8 @@ describe('createChangeSubmitter (change-submission design D2/D3)', () => {
     fs.mkdirSync(path.join(projectRoot, 'rasen', 'changes'), { recursive: true });
   });
 
-  afterEach(() => {
-    fs.rmSync(projectRoot, { recursive: true, force: true });
+  afterEach(async () => {
+    await cleanupTempPathAsync(projectRoot);
   });
 
   describe('against the real CLI (integration)', () => {

@@ -3,13 +3,11 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { fileURLToPath } from 'node:url';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fakeClaudeBin = path.resolve(__dirname, '..', '..', 'fixtures', 'management-api', 'session-fake-cli.mjs');
+import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 const TOKEN = 'test-token-shutdown-abc123';
 
@@ -66,8 +64,8 @@ describe('foreground server shutdown reaps live sessions (design D6, task 3.4)',
   afterEach(async () => {
     await handle?.stopServer();
     process.env = originalEnv;
-    fs.rmSync(tempConfigHome, { recursive: true, force: true });
-    fs.rmSync(projectRoot, { recursive: true, force: true });
+    await cleanupTempPathAsync(tempConfigHome);
+    await cleanupTempPathAsync(projectRoot);
   });
 
   // (review t2: the termination *reason* itself is asserted at the

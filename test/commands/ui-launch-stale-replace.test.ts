@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 import { probeDaemonPort } from '../../src/core/management-api/daemon-probe.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 const require = createRequire(import.meta.url);
 const { version: OWN_VERSION } = require('../../package.json') as { version: string };
@@ -105,8 +106,8 @@ describe('rasen ui stale-daemon replacement (review round 1 M1, fixture-loopback
         // Already gone.
       }
     }
-    fs.rmSync(tempHome, { recursive: true, force: true });
-    fs.rmSync(projectRoot, { recursive: true, force: true });
+    await cleanupTempPathAsync(tempHome);
+    await cleanupTempPathAsync(projectRoot);
   });
 
   it(

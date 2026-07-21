@@ -6,8 +6,13 @@
 // test control is the prompt/task text, so behavior is selected via a
 // `MODE=<name>` token embedded at the start of the task text.
 //
-// Must be directly executable (chmod +x, shebang) — the supervisor spawns
-// the resolved agent-CLI path as the command itself, not via `node <path>`.
+// On POSIX, spawned directly (chmod +x, shebang) as the resolved agent-CLI
+// path itself, not via `node <path>`. On Windows this file is not directly
+// executable, so tests resolve to the sibling `.cmd` wrapper
+// (`session-fake-cli.cmd`, `@node "%~dp0session-fake-cli.mjs" %*`) instead —
+// that wrapper is what actually gets spawned there, driving the real
+// `.cmd`-shim spawn codepath (design D1/D2, `supervisor.ts`'s
+// `spawnAgentCli`).
 const args = process.argv.slice(2);
 const promptIndex = args.indexOf('-p');
 const prompt = promptIndex >= 0 ? args[promptIndex + 1] : '';

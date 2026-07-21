@@ -16,7 +16,11 @@ describe('killTreeWindows (design D5, injected — no real taskkill)', () => {
 
   beforeEach(() => {
     spawnMock.mockReset();
-    spawnMock.mockReturnValue({ unref: vi.fn() });
+    // `.on('close', ...)` (design D5: the graceful attempt's own exit code
+    // now drives early escalation) — a no-op registration by default; tests
+    // that need to simulate the callback firing capture and invoke it
+    // themselves.
+    spawnMock.mockReturnValue({ unref: vi.fn(), on: vi.fn() });
     // Guards against the Windows branch ever falling back to a POSIX-style
     // negative-pid signal — it must go through `spawn('taskkill', ...)` only.
     killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true as never);
@@ -77,6 +81,71 @@ describe('killTreeWindows (design D5, injected — no real taskkill)', () => {
 
       // Only the initial graceful taskkill fired; the forced one never did.
       expect(spawnMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('design D5 (evidence-gated): escalates immediately when the graceful taskkill itself reports failure, rather than waiting out the grace period', async () => {
+    vi.useFakeTimers();
+    try {
+      let gracefulCloseHandler: ((code: number) => void) | undefined;
+      spawnMock.mockImplementationOnce(() => ({
+        unref: vi.fn(),
+        on: (event: string, handler: (code: number) => void) => {
+          if (event === 'close') gracefulCloseHandler = handler;
+        },
+      }));
+      spawnMock.mockReturnValueOnce({ unref: vi.fn(), on: vi.fn() }); // the forced call
+
+      const { killTreeWindows } = await import('../../../src/core/management-api/kill-tree.js');
+      killTreeWindows(4242, 15_000);
+
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+
+      // A non-zero exit is taskkill's own report that it could not
+      // terminate a headless target gracefully — empirically the common
+      // case on Windows against a plain console process.
+      gracefulCloseHandler?.(128);
+
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+      expect(spawnMock).toHaveBeenNthCalledWith(
+        2,
+        'taskkill',
+        ['/F', '/T', '/PID', '4242'],
+        expect.objectContaining({ shell: false, stdio: 'ignore' })
+      );
+
+      // The full 15s grace timer never fires a second forced attempt.
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('design D5: does not escalate early when the graceful taskkill reports success (exit 0) — the grace timer still governs the forced fallback', async () => {
+    vi.useFakeTimers();
+    try {
+      let gracefulCloseHandler: ((code: number) => void) | undefined;
+      spawnMock.mockImplementationOnce(() => ({
+        unref: vi.fn(),
+        on: (event: string, handler: (code: number) => void) => {
+          if (event === 'close') gracefulCloseHandler = handler;
+        },
+      }));
+
+      const { killTreeWindows } = await import('../../../src/core/management-api/kill-tree.js');
+      killTreeWindows(4242, 1_000);
+      gracefulCloseHandler?.(0);
+
+      // No immediate second call on success.
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      // The normal grace-period timer still governs the forced fallback
+      // (guarded by isProcessAlive in the real, unmocked path).
+      expect(spawnMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }

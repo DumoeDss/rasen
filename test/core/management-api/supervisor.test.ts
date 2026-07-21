@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // Passthrough by default; task 1.2's synchronous-spawn-throw test (child 2
 // hand-off N1) flips `mockSpawnShouldThrowSync` to force the one path a
@@ -27,9 +26,33 @@ vi.mock('node:child_process', async (importOriginal) => {
 import { createSessionSupervisor, type SessionSupervisor } from '../../../src/core/management-api/supervisor.js';
 import { createSessionRegistry } from '../../../src/core/management-api/session-registry.js';
 import * as killTreeModule from '../../../src/core/management-api/kill-tree.js';
+import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fakeClaudeBin = path.resolve(__dirname, '..', '..', 'fixtures', 'management-api', 'session-fake-cli.mjs');
+const IS_WINDOWS = process.platform === 'win32';
+/**
+ * Windows-only evidence-gated buffer (design D5): a local timing probe
+ * measured a single `taskkill /F /T` invocation (spawn, execute, target
+ * confirmed dead) at roughly 550-650ms end to end on this machine — far
+ * more than the near-instant POSIX SIGKILL these grace/wait windows were
+ * originally tuned for. The forced kill still fires exactly at
+ * `killGraceMs` (kill-tree.ts's escalation timer is unaffected), but a
+ * fixed-sleep-then-assert test needs its own wait window widened by this
+ * much extra to observe the process actually gone, not merely dispatched
+ * against. POSIX keeps every wait exactly as tuned (buffer is 0).
+ */
+const KILL_SETTLE_BUFFER_MS = IS_WINDOWS ? 1800 : 0;
+/**
+ * Windows-only evidence-gated buffer, second kind (design D5): spawning a
+ * session on win32 now hops through `cmd.exe /d /s /c` before `node.exe`
+ * itself starts (design D1) — that extra process-creation link can itself
+ * take longer than a no-output threshold tuned for POSIX's near-instant
+ * direct exec, so a streaming fixture's very first byte can arrive later
+ * than the timer expects. Widens only the no-output threshold/wait pairs
+ * that assert on a fixture emitting output shortly after launch, not the
+ * kill-escalation ones above (POSIX buffer is 0).
+ */
+const STARTUP_LATENCY_BUFFER_MS = IS_WINDOWS ? 400 : 0;
 
 function makeSupervisor(overrides: Partial<Parameters<typeof createSessionSupervisor>[0]> = {}): SessionSupervisor {
   return createSessionSupervisor({
@@ -47,8 +70,8 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-supervisor-'));
   });
 
-  afterEach(() => {
-    fs.rmSync(cwd, { recursive: true, force: true });
+  afterEach(async () => {
+    await cleanupTempPathAsync(cwd);
   });
 
   it('spawns, reaches running, and finalizes to exited/exit on a normal close', async () => {
@@ -67,7 +90,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.record.state === 'starting' || result.record.state === 'running').toBe(true);
     expect(typeof result.record.pid).toBe('number');
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
 
     const finalRecord = supervisor.getRecord(result.record.id)!;
     expect(finalRecord.state).toBe('exited');
@@ -88,7 +111,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
     expect(supervisor.getRecord(result.record.id)!.agentSessionId).toBe('fake-session-fast-exit');
   }, 10_000);
 
@@ -105,7 +128,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
     const record = supervisor.getRecord(result.record.id)!;
     expect(record.state).toBe('exited');
     expect(record.agentSessionId).toBeUndefined();
@@ -125,7 +148,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
     const record = supervisor.getRecord(result.record.id)!;
     expect(record.state).toBe('exited');
     expect(record.terminationReason).toBe('exit');
@@ -162,7 +185,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     // Wait past the SIGKILL grace period: only the forced signal actually
     // ends it.
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await new Promise((resolve) => setTimeout(resolve, 600 + KILL_SETTLE_BUFFER_MS));
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -183,7 +206,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
     expect(supervisor.getRecord(id)!.state).toBe('exited');
 
     const killResult = supervisor.kill(id);
@@ -212,7 +235,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const id = result.record.id;
 
     // Let the init line land, then wait past the no-output threshold + kill grace.
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => setTimeout(resolve, 700 + KILL_SETTLE_BUFFER_MS));
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -230,13 +253,13 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
       task: 'MODE=stream-then-exit x',
       cwd,
       timeoutMs: 60_000,
-      noOutputTimeoutMs: 150,
+      noOutputTimeoutMs: 150 + STARTUP_LATENCY_BUFFER_MS,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 400 + STARTUP_LATENCY_BUFFER_MS));
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -257,7 +280,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => setTimeout(resolve, 700 + KILL_SETTLE_BUFFER_MS));
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -278,7 +301,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
 
     const tails = supervisor.getTails(id);
     expect(tails).toBeDefined();
@@ -318,7 +341,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     // Clean up the still-live first session.
     if (first.ok) {
       supervisor.kill(first.record.id);
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400 + KILL_SETTLE_BUFFER_MS));
     }
   }, 10_000);
 
@@ -354,7 +377,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     for (const r of succeeded) {
       if (r.ok) supervisor.kill(r.record.id);
     }
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 400 + KILL_SETTLE_BUFFER_MS));
   }, 10_000);
 
   it('review M2 regression: a repeated triggerKill (double DELETE) dispatches only one SIGKILL escalation, and it is fully cancelled on close', async () => {
@@ -392,7 +415,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     // Past the SIGKILL grace period, the process is dead (proves the one
     // escalation that did fire still worked end to end).
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await new Promise((resolve) => setTimeout(resolve, 600 + KILL_SETTLE_BUFFER_MS));
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
     expect(finalRecord.terminationReason).toBe('killed');
@@ -433,7 +456,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!second.ok) expect(second.code).toBe('busy');
 
     // Wait past the SIGKILL grace period — the slot is now free.
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await new Promise((resolve) => setTimeout(resolve, 600 + KILL_SETTLE_BUFFER_MS));
 
     const third = await supervisor.launch({
       kind: 'auto',
@@ -444,7 +467,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
       noOutputTimeoutMs: 5000,
     });
     expect(third.ok).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
   }, 10_000);
 
   it('503s with agent_cli_unavailable when no agent CLI can be resolved, spawning nothing', async () => {
@@ -559,7 +582,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
 
     // The stub-reported pruned id's tail is gone — freed as part of this
     // session's own finalize, exactly like a real registry would report a
