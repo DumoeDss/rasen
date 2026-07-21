@@ -7,6 +7,7 @@ import { execSync } from 'node:child_process';
 
 import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
 import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
+import { setStdoutRows } from '../helpers/stdout.js';
 
 // The picker's choice list is workflows + experts + 2 group Separators
 // (design.md D6: experts are selectable alongside workflows, shown as a
@@ -31,34 +32,7 @@ vi.mock('@inquirer/prompts', async () => {
   };
 });
 
-function setStdoutRows(rows: number | undefined): () => void {
-  const originalRowsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'rows');
-  const originalWindowSizeDescriptor = Object.getOwnPropertyDescriptor(
-    process.stdout,
-    'getWindowSize'
-  );
-  Object.defineProperty(process.stdout, 'rows', {
-    configurable: true,
-    value: rows,
-  });
-  Object.defineProperty(process.stdout, 'getWindowSize', {
-    configurable: true,
-    value: undefined,
-  });
 
-  return () => {
-    if (originalRowsDescriptor) {
-      Object.defineProperty(process.stdout, 'rows', originalRowsDescriptor);
-    } else {
-      Reflect.deleteProperty(process.stdout, 'rows');
-    }
-    if (originalWindowSizeDescriptor) {
-      Object.defineProperty(process.stdout, 'getWindowSize', originalWindowSizeDescriptor);
-    } else {
-      Reflect.deleteProperty(process.stdout, 'getWindowSize');
-    }
-  };
-}
 
 async function runConfigCommand(args: string[]): Promise<void> {
   const { registerConfigCommand } = await import('../../src/commands/config.js');

@@ -271,7 +271,7 @@ export function resolveTerminalRows(
   try {
     rows = normalizeTerminalRows(output.rows);
   } catch {
-    return undefined;
+    rows = undefined;
   }
   if (rows !== undefined) return rows;
 

@@ -21,6 +21,7 @@ import {
   getUserWorkflowsDir,
   loadWorkflowCatalog,
 } from '../../src/core/workflow-registry/index.js';
+import { setStdoutRows } from '../helpers/stdout.js';
 
 const PICKER_CHOICE_COUNT = ALL_WORKFLOWS.length + ALL_EXPERTS.length + 2;
 
@@ -35,34 +36,7 @@ vi.mock('@inquirer/prompts', async () => {
   };
 });
 
-function setStdoutRows(rows: number | undefined): () => void {
-  const originalRowsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'rows');
-  const originalWindowSizeDescriptor = Object.getOwnPropertyDescriptor(
-    process.stdout,
-    'getWindowSize'
-  );
-  Object.defineProperty(process.stdout, 'rows', {
-    configurable: true,
-    value: rows,
-  });
-  Object.defineProperty(process.stdout, 'getWindowSize', {
-    configurable: true,
-    value: undefined,
-  });
 
-  return () => {
-    if (originalRowsDescriptor) {
-      Object.defineProperty(process.stdout, 'rows', originalRowsDescriptor);
-    } else {
-      Reflect.deleteProperty(process.stdout, 'rows');
-    }
-    if (originalWindowSizeDescriptor) {
-      Object.defineProperty(process.stdout, 'getWindowSize', originalWindowSizeDescriptor);
-    } else {
-      Reflect.deleteProperty(process.stdout, 'getWindowSize');
-    }
-  };
-}
 
 async function runProfileCommand(args: string[]): Promise<void> {
   const program = new Command();

@@ -159,14 +159,26 @@ describe('resolveTerminalRows', () => {
     }
   );
 
-  it('returns undefined when reading rows throws', () => {
-    const output = Object.create(null, {
-      rows: {
-        get: () => {
-          throw new Error('rows unavailable');
-        },
+  it('falls back to getWindowSize when reading rows throws', () => {
+    const output = {
+      get rows(): number {
+        throw new Error('rows unavailable');
       },
-    }) as { rows?: number };
+      getWindowSize: (): [number, number] => [80, 24],
+    };
+
+    expect(resolveTerminalRows(output)).toBe(24);
+  });
+
+  it('returns undefined when both terminal row sources throw', () => {
+    const output = {
+      get rows(): number {
+        throw new Error('rows unavailable');
+      },
+      getWindowSize: (): [number, number] => {
+        throw new Error('window size unavailable');
+      },
+    };
 
     expect(resolveTerminalRows(output)).toBeUndefined();
   });
