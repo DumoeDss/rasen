@@ -2,9 +2,7 @@
 
 ## Purpose
 Keep the curated, publication-facing `docs/` content accurate to the current rasen product: correct self-naming, commands that match the shipped CLI, and publication-ready landing pages.
-
 ## Requirements
-
 ### Requirement: Docs name the product rasen
 User-facing documentation under `docs/` SHALL refer to the product as **rasen** when describing itself: the docs home and guides introduce rasen, install instructions use `npm i -g @atelierai/rasen`, workspace paths shown are `rasen/` (specs, changes, config), terminal commands are `rasen …`, and slash commands are `/rasen:*`. References to upstream OpenSpec remain only where they genuinely refer to the upstream project — lineage, the coexistence/namespace table, `rasen migrate` from a legacy `openspec/` workspace, and license attribution — and are framed so a reader cannot mistake them for the product's own name.
 
@@ -37,3 +35,22 @@ The pages the website surfaces most prominently — `overview.md`, `getting-star
 #### Scenario: Cross-links resolve
 - **WHEN** relative links in the curated docs are followed
 - **THEN** each resolves to an existing file in the docs tree
+
+### Requirement: The conceptual model is documented
+
+The documentation SHALL present rasen's conceptual model in a reader-facing concept document: `schema` as the content layer (what artifacts a methodology produces and how they depend on each other), `workflow` as the execution inner loop (how one task unit runs in a single session), and `pipeline` as the execution outer loop (how a harness chains multiple inner-loop tasks). The document SHALL explain the workflow `kind` taxonomy (`task`, `driver`, `internal`) consistently with the shipped `kind` field, and SHALL state why the three concept names are retained.
+
+Any `rasen` CLI command or `/rasen:*` command the concept document presents as current behavior SHALL exist in the shipped CLI. Behavior that has not yet shipped SHALL be presented as design direction, not as current behavior.
+
+#### Scenario: Concept document presents the model
+
+- **WHEN** the concepts documentation is read
+- **THEN** it SHALL describe schema, workflow, and pipeline as the content layer plus the inner and outer execution loops
+- **AND** it SHALL describe the `task`, `driver`, and `internal` kinds consistently with the CLI's `kind` field
+
+#### Scenario: Referenced commands exist
+
+- **WHEN** the concept document names a `rasen` or `/rasen:*` command as current behavior
+- **THEN** that command SHALL exist in the shipped CLI
+- **AND** any not-yet-shipped capability the document mentions SHALL be marked as design direction rather than current behavior
+
