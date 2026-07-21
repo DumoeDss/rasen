@@ -40,7 +40,7 @@ function isApplyReady(applyRequires: string[], artifacts: { id: string; status: 
  * per change. A container holding only `planning-context.md` (no `proposal.md`)
  * is itself absent from the active-change listing but names its children.
  */
-function findPortfolioContainers(changesDir: string): string[] {
+export function findPortfolioContainers(changesDir: string): string[] {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(changesDir, { withFileTypes: true });
@@ -64,7 +64,7 @@ function findPortfolioContainers(changesDir: string): string[] {
  * groups under `ui-space-redesign`, not a shorter coincidental prefix.
  * Returns `undefined` when no container matches.
  */
-function portfolioOf(changeName: string, containers: string[]): string | undefined {
+export function portfolioOf(changeName: string, containers: string[]): string | undefined {
   let best: string | undefined;
   for (const container of containers) {
     if (changeName === container || changeName.startsWith(`${container}-`)) {
@@ -72,6 +72,45 @@ function portfolioOf(changeName: string, containers: string[]): string | undefin
     }
   }
   return best;
+}
+
+/**
+ * Builds one active change's `ChangeSummary` — the same facts `/changes`
+ * reports (`loadChangeContext` + `formatChangeStatus` + `getTaskProgressForChange`
+ * + the `hasRunFiles`/`portfolio` fields). Throws when the change's
+ * schema/metadata cannot be loaded, exactly like the inline path once did, so
+ * the caller degrades it to an error entry. Shared with the task-detail
+ * handler so a Task's active children carry byte-identical facts to the board.
+ */
+export async function buildChangeSummary(
+  root: string,
+  changesDir: string,
+  name: string,
+  portfolioContainers: string[],
+  home: ProjectHome | null
+): Promise<ChangeSummary> {
+  const changeDir = path.join(changesDir, name);
+  const context = loadChangeContext(root, name);
+  const status = formatChangeStatus(context);
+
+  const taskProgress = await getTaskProgressForChange(changesDir, name, root);
+  const workDir = home ? home.workDir(name) : null;
+  const hasRunFiles =
+    resolveRunStateLocation(changeDir, workDir) !== null ||
+    resolvePortfolioStateLocation(changeDir, workDir) !== null ||
+    resolveGoalRunPath(changeDir, workDir) !== null;
+
+  const portfolio = portfolioOf(name, portfolioContainers);
+  return {
+    name,
+    schemaName: status.schemaName,
+    artifacts: status.artifacts.map((a) => ({ id: a.id, status: a.status })),
+    applyReady: isApplyReady(status.applyRequires, status.artifacts),
+    isComplete: status.isComplete,
+    taskProgress,
+    hasRunFiles,
+    ...(portfolio !== undefined ? { portfolio } : {}),
+  };
 }
 
 /**
@@ -115,28 +154,7 @@ export async function handleChanges(
 
   for (const name of changeIds) {
     try {
-      const changeDir = path.join(changesDir, name);
-      const context = loadChangeContext(root, name);
-      const status = formatChangeStatus(context);
-
-      const taskProgress = await getTaskProgressForChange(changesDir, name, root);
-      const workDir = resolvedHome ? resolvedHome.workDir(name) : null;
-      const hasRunFiles =
-        resolveRunStateLocation(changeDir, workDir) !== null ||
-        resolvePortfolioStateLocation(changeDir, workDir) !== null ||
-        resolveGoalRunPath(changeDir, workDir) !== null;
-
-      const portfolio = portfolioOf(name, portfolioContainers);
-      changes.push({
-        name,
-        schemaName: status.schemaName,
-        artifacts: status.artifacts.map((a) => ({ id: a.id, status: a.status })),
-        applyReady: isApplyReady(status.applyRequires, status.artifacts),
-        isComplete: status.isComplete,
-        taskProgress,
-        hasRunFiles,
-        ...(portfolio !== undefined ? { portfolio } : {}),
-      });
+      changes.push(await buildChangeSummary(root, changesDir, name, portfolioContainers, resolvedHome));
     } catch (err) {
       // A change with a valid `proposal.md` (so `getActiveChangeIds` counts
       // it active) but an unresolvable schema or corrupt metadata must not

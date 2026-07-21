@@ -92,7 +92,7 @@ export const BOARD_COLUMNS: { id: BoardColumn; label: string }[] = [
 // membership — arrives on `ChangeSummary.portfolio` from the server.
 
 /** A live session is one still in flight (design D3) — the only signal that means "running now", unlike persisted run files. */
-const LIVE_SESSION_STATES: readonly SessionRecordWire['state'][] = ['starting', 'running', 'exiting'];
+export const LIVE_SESSION_STATES: readonly SessionRecordWire['state'][] = ['starting', 'running', 'exiting'];
 
 export interface Task {
   /** The portfolio container name, or the bare change's own name. */
@@ -146,7 +146,7 @@ export function deriveTaskColumn(
 }
 
 /** The current stage of a live session (design D3): its pipeline and in-progress stage from the joined run-state, or the raw task text when no run-state is available. */
-function sessionStage(entry: SessionListEntry): string {
+export function sessionStage(entry: SessionListEntry): string {
   const { runState } = entry;
   if (runState.kind === 'ok' && runState.autoRun.kind === 'ok') {
     const { pipeline, stages } = runState.autoRun.state;
@@ -226,6 +226,29 @@ export function groupIntoTasks(
       ...(liveStage !== undefined ? { liveStage } : {}),
     };
   });
+}
+
+/**
+ * Splits a space's sessions into those belonging to a Task — whose linked
+ * `changeName` is one of the Task's children — partitioned into `live` and
+ * `ended`, with live ordered first (ui-space-redesign-task-detail design D4).
+ * A session without a `changeName`, or one linked to a change outside this
+ * Task, is excluded. Pure — the session→Task mapping stays in this tested
+ * module rather than being reinvented in the detail component.
+ */
+export function sessionsForTask(
+  sessions: SessionListEntry[],
+  childNames: Set<string>
+): { live: SessionListEntry[]; ended: SessionListEntry[] } {
+  const live: SessionListEntry[] = [];
+  const ended: SessionListEntry[] = [];
+  for (const entry of sessions) {
+    const changeName = entry.session.changeName;
+    if (changeName === undefined || !childNames.has(changeName)) continue;
+    if (LIVE_SESSION_STATES.includes(entry.session.state)) live.push(entry);
+    else ended.push(entry);
+  }
+  return { live, ended };
 }
 
 /**

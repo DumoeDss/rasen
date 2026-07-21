@@ -22,6 +22,7 @@ import type {
   StatusResponse,
   SubmitChangeRequest,
   SubmitChangeResponse,
+  TaskDetailResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -161,6 +162,16 @@ export function listRuns(space?: string): Promise<RunsResponse> {
 /** Every addressable planning space (planning-space-addressing design D6), for the space switcher. */
 export function listSpaces(): Promise<SpacesResponse> {
   return request<SpacesResponse>('/api/v1/spaces');
+}
+
+/**
+ * One Task's full roster — active + archived children and portfolio dependency
+ * hints (ui-space-redesign-task-detail design D1). The `id` is the polymorphic
+ * Task id (a portfolio container OR a bare change), used verbatim (only
+ * percent-encoded); no selector = launch-project fallback.
+ */
+export function getTaskDetail(id: string, space?: string): Promise<TaskDetailResponse> {
+  return request<TaskDetailResponse>(`/api/v1/tasks/${encodeURIComponent(id)}${spaceQuery(space)}`);
 }
 
 /**

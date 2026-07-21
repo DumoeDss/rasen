@@ -15,6 +15,7 @@ import type { ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
 import { handleRuns } from './runs.js';
+import { handleTaskDetail } from './task-detail.js';
 import {
   handleGetSession,
   handleKillSession,
@@ -69,6 +70,26 @@ const MANAGEMENT_PATHS = new Set([
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
+const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
+
+/**
+ * Matches `/api/v1/tasks/<id>` exactly one segment deep (mirrors
+ * `matchSessionIdPath`), returning the percent-decoded id. Unlike a session
+ * id, the id is a change/portfolio NAME, not a UUID — no format constraint is
+ * applied here (the handler validates it via `validateChangeName`); the check
+ * only rejects a missing or multi-segment suffix, which was never a "tasks
+ * path" to begin with and falls through to the rest of the server's routing.
+ */
+function matchTaskIdPath(pathname: string): string | null {
+  if (!pathname.startsWith(TASK_ID_PATH_PREFIX)) return null;
+  const rest = pathname.slice(TASK_ID_PATH_PREFIX.length);
+  if (rest.length === 0 || rest.includes('/')) return null;
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return null;
+  }
+}
 
 /** Session ids are server-minted `randomUUID()` values (design D2) — any RFC 4122 textual form is accepted, not just v4, since the format check exists to reject junk, not to pin a version. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -94,6 +115,9 @@ function matchSessionIdPath(pathname: string): string | null {
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
+  }
+  if (matchTaskIdPath(pathname) !== null) {
+    return method === 'GET';
   }
   if (pathname === '/api/v1/sessions') {
     return method === 'GET' || method === 'POST';
@@ -160,7 +184,11 @@ function stripOneTrailingSlash(pathname: string): string {
 /** Whether `pathname` (raw, as received) addresses a management endpoint (t1: tolerant of one trailing slash). */
 export function isManagementPath(pathname: string): boolean {
   const stripped = stripOneTrailingSlash(pathname);
-  return MANAGEMENT_PATHS.has(stripped) || matchSessionIdPath(stripped) !== null;
+  return (
+    MANAGEMENT_PATHS.has(stripped) ||
+    matchSessionIdPath(stripped) !== null ||
+    matchTaskIdPath(stripped) !== null
+  );
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -341,6 +369,25 @@ export function createManagementRouter(
 
     if (pathname === '/api/v1/spaces') {
       sendJson(res, 200, await handleSpaces());
+      return;
+    }
+
+    const taskId = matchTaskIdPath(pathname);
+    if (taskId !== null && req.method === 'GET') {
+      // Space-resolved exactly like `/changes`: explicit selector through the
+      // registries, omitted → launch-project fallback, no root → 400.
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const home = await resolveHomeForRoot(space.root ?? null);
+      const result = await handleTaskDetail(space.root, home, taskId);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
       return;
     }
 

@@ -18,6 +18,15 @@ vi.mock('../src/components/BoardPage.js', () => ({
 vi.mock('../src/components/ConfigPage.js', () => ({
   ConfigPage: () => <div data-testid="config-page">config</div>,
 }));
+vi.mock('../src/components/TaskDetailPage.js', async () => {
+  const { useRoute } = await import('preact-iso');
+  return {
+    TaskDetailPage: () => {
+      const { params } = useRoute();
+      return <div data-testid="task-detail-page">{params.changeName}</div>;
+    },
+  };
+});
 vi.mock('../src/components/SpaceSwitcher.js', () => ({
   SpaceSwitcher: () => <div data-testid="space-switcher" />,
 }));
@@ -128,9 +137,9 @@ describe('App routing', () => {
     expect(container.querySelector('[data-testid="archive-placeholder"]')).not.toBeNull();
   });
 
-  it('renders the task-detail placeholder route', async () => {
+  it('renders the task-detail page route with the change-name param', async () => {
     await mountAt(container, '/p/proj_x/task/my-change');
-    expect(container.querySelector('[data-testid="task-detail-placeholder"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-detail-page"]')).not.toBeNull();
     expect(container.textContent).toContain('my-change');
   });
 

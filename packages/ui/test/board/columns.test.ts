@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveColumn, deriveTaskColumn, groupIntoTasks } from '../../src/board/columns.js';
+import { deriveColumn, deriveTaskColumn, groupIntoTasks, sessionsForTask } from '../../src/board/columns.js';
 import type {
   ChangeRunEntry,
   ChangeSummary,
@@ -260,5 +260,27 @@ describe('groupIntoTasks (design D1/D3)', () => {
     const exited = liveSession('solo', { state: 'exited' });
     const tasks = groupIntoTasks([change({ name: 'solo' })], NO_RUNS, [noChange, exited]);
     expect(tasks[0]!.liveStage).toBeUndefined();
+  });
+});
+
+describe('sessionsForTask', () => {
+  it('keeps only sessions whose changeName is a child, live ordered before ended', () => {
+    const childNames = new Set(['api', 'shell']);
+    const liveApi = liveSession('api');
+    const endedShell = liveSession('shell', { id: 'ended-shell', state: 'exited' });
+    const otherTask = liveSession('unrelated');
+    const noChange = liveSession('api', { id: 'no-change' });
+    delete noChange.session.changeName;
+
+    const { live, ended } = sessionsForTask([endedShell, liveApi, otherTask, noChange], childNames);
+
+    expect(live.map((e) => e.session.id)).toEqual(['sess-api']);
+    expect(ended.map((e) => e.session.id)).toEqual(['ended-shell']);
+  });
+
+  it('returns empty partitions when no session targets a child', () => {
+    const { live, ended } = sessionsForTask([liveSession('other')], new Set(['api']));
+    expect(live).toEqual([]);
+    expect(ended).toEqual([]);
   });
 });

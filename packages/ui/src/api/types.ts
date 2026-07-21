@@ -219,6 +219,44 @@ export interface RunsResponse {
   runs: ChangeRunEntry[];
 }
 
+// ---- Task detail (ui-space-redesign-task-detail design D2) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`TaskChildDetail`/`TaskDetailResponse`). Same hand-maintained-mirror
+// discipline as the rest of this file: copied field-for-field, kept in sync by
+// hand, pinned by the `satisfies TaskDetailResponse` fixture in
+// `test/fixtures/task-detail.ts`.
+
+/** One constituent change of a Task, active or archived. */
+export interface TaskChildDetail {
+  /** The un-dated change name (archived children have their `YYYY-MM-DD-` prefix stripped). */
+  name: string;
+  /** Whether this child has been archived (⇒ shipped ⇒ done). */
+  archived: boolean;
+  /** `'YYYY-MM-DD'` archive date, present only for an archived child. */
+  archivedAt?: string;
+  /** Task-checkbox counts at child level (archived children have no `summary` but still carry counts). */
+  taskProgress: ChangeTaskProgress;
+  /** Best-effort parsed checklist items — a checklist for a single Task, a bar for portfolio children. */
+  tasks: { text: string; done: boolean }[];
+  /** The active child's lifecycle facts; `null` for an archived child (column forced `done`). */
+  summary: ChangeSummary | null;
+  /** The active child's run-state join; `null` for an archived child. */
+  run: ChangeRunEntry | null;
+  /** Sibling dependencies declared in `portfolio-run.json`; empty when none is recorded. */
+  dependsOn: string[];
+  /** This child's `portfolio-run.json` status, when a run state is recorded. */
+  portfolioStatus?: StageStatus;
+  /** An active child whose context failed to load (mirrors `/changes`' per-change error degradation). */
+  loadError?: string;
+}
+
+/** `GET /api/v1/tasks/:id` response: the Task, its roster, and task-level load errors. */
+export interface TaskDetailResponse {
+  task: { id: string; kind: 'portfolio' | 'single'; label: string };
+  children: TaskChildDetail[];
+  errors: ChangeLoadError[];
+}
+
 // ---- Change submission (platform-slice2-task-submission design D1) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root
 // package (`SubmitChangeRequest`/`SubmitChangeResponse`).

@@ -5,7 +5,7 @@
  * imported — the two route groups stay independently deployable) but adds
  * nothing config-api does not already own.
  */
-import type { RunState } from '../pipeline-registry/run-state.js';
+import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
 
 /** A registered project, or the server's launch project. Mirrors config-api's `ProjectRef`. */
@@ -138,6 +138,46 @@ export type ChangeRunEntry =
 
 export interface RunsResponse {
   runs: ChangeRunEntry[];
+}
+
+// -----------------------------------------------------------------------
+// Task detail (ui-space-redesign-task-detail design D2) — `GET /api/v1/tasks/:id`.
+// A Task's full roster: every constituent change, active AND archived, each
+// with lifecycle facts + task progress, plus portfolio dependency hints. The
+// only endpoint that can see a portfolio's parent container (no `proposal.md`,
+// invisible to `/changes`), its archived children (gone from `/changes`), and
+// its `portfolio-run.json` deps (the container is not an active change).
+// -----------------------------------------------------------------------
+
+/** One constituent change of a Task (design D2), active or archived. */
+export interface TaskChildDetail {
+  /** The un-dated change name (archived children have their `YYYY-MM-DD-` prefix stripped). */
+  name: string;
+  /** Whether this child has been archived (⇒ shipped ⇒ done). */
+  archived: boolean;
+  /** `'YYYY-MM-DD'` archive date, present only for an archived child. */
+  archivedAt?: string;
+  /** Task-checkbox counts at child level (archived children have no `summary` but still carry counts). */
+  taskProgress: ChangeTaskProgress;
+  /** Best-effort parsed checklist items — rendered as a checklist for a single Task, a bar for portfolio children. */
+  tasks: { text: string; done: boolean }[];
+  /** The active child's lifecycle facts (same shape `/changes` reports); `null` for an archived child (column forced `done`). */
+  summary: ChangeSummary | null;
+  /** The active child's run-state join (same helper `/runs`/`sessions` use); `null` for an archived child. */
+  run: ChangeRunEntry | null;
+  /** Sibling dependencies declared in `portfolio-run.json`; empty when none is recorded. */
+  dependsOn: string[];
+  /** This child's `portfolio-run.json` status, when a run state is recorded. */
+  portfolioStatus?: StageStatus;
+  /** An active child whose context failed to load (mirrors `/changes`' per-change error degradation). */
+  loadError?: string;
+}
+
+/** `GET /api/v1/tasks/:id` response (design D2): the Task, its roster, and task-level load errors. */
+export interface TaskDetailResponse {
+  task: { id: string; kind: 'portfolio' | 'single'; label: string };
+  children: TaskChildDetail[];
+  errors: ChangeLoadError[];
 }
 
 // -----------------------------------------------------------------------
