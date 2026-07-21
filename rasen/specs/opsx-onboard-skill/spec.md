@@ -2,7 +2,6 @@
 
 ## Purpose
 Define `/rasen:onboard` behavior for guiding users through an end-to-end Rasen workflow on their real codebase.
-
 ## Requirements
 ### Requirement: Rasen Onboard Skill
 

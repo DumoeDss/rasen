@@ -2,7 +2,6 @@
 
 ## Purpose
 Provide a single `propose` workflow that creates a change and generates all its planning artifacts in one step.
-
 ## Requirements
 ### Requirement: Propose workflow creation
 The system SHALL provide a `propose` workflow that creates a change and generates all artifacts in one step.
@@ -33,9 +32,11 @@ The `propose` workflow SHALL include explanatory output to help new users unders
 - **THEN** the system SHALL show progress (e.g., "✓ Created proposal.md")
 
 ### Requirement: Propose workflow creates the change and all artifacts
+
 The `propose` workflow SHALL create the change and generate all artifacts required for implementation in one step, equivalent to creating the change (`new`) and then generating every remaining artifact in the schema's apply requirements.
 
 #### Scenario: Change and artifacts created in one step
+
 - **WHEN** user invokes `/rasen:propose "feature name"`
 - **THEN** the change directory SHALL be created
 - **AND** all artifacts required for implementation SHALL be generated

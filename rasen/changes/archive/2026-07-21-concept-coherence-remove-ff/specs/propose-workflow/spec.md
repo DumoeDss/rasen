@@ -1,12 +1,9 @@
-## REMOVED Requirements
-
-### Requirement: Propose workflow combines new and ff
-
-**Reason**: The `ff` workflow is being removed as a duplicate of `propose`. The requirement is replaced by an equivalent one that describes propose's own behavior without referencing `ff`.
-
-The `propose` workflow SHALL perform the same operations as running `new` followed by `ff`.
-
-## ADDED Requirements
+<!-- Reconciled at archive time: the implementation commit (0ddaa6d) applied this
+     rename directly to the main spec during apply, so the original REMOVED("Propose
+     workflow combines new and ff")+ADDED pair had already been absorbed into main and
+     the REMOVED header no longer exists to remove. Rewritten as an idempotent MODIFIED
+     over the current header so the archive sync is a no-op overwrite. -->
+## MODIFIED Requirements
 
 ### Requirement: Propose workflow creates the change and all artifacts
 
