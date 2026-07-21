@@ -149,6 +149,14 @@ export interface ChangeSummary {
   isComplete: boolean;
   taskProgress: ChangeTaskProgress;
   hasRunFiles: boolean;
+  /**
+   * Portfolio-container membership, filesystem-derived like `hasRunFiles`
+   * (ui-space-redesign-task-board spec): the longest sibling change directory
+   * `P` holding a `planning-context.md` such that this change's name equals
+   * `P` or begins with `P-`. Absent when the change is not part of any
+   * portfolio — the UI groups it as an implicit single-item Task.
+   */
+  portfolio?: string;
 }
 
 /**

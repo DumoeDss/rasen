@@ -85,6 +85,14 @@ export interface ChangeSummary {
   taskProgress: ChangeTaskProgress;
   /** Whether any of auto-run.json / goal-run.json / portfolio-run.json exists for this change. */
   hasRunFiles: boolean;
+  /**
+   * Portfolio-container membership, filesystem-derived like `hasRunFiles`
+   * (ui-space-redesign-task-board spec): the longest sibling change directory
+   * `P` holding a `planning-context.md` such that this change's name equals
+   * `P` or begins with `P-`. Absent when no such container matches — the
+   * change is not part of any portfolio.
+   */
+  portfolio?: string;
 }
 
 /**

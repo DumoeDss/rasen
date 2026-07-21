@@ -6,6 +6,7 @@
  * from `getTaskProgressForChange`, the same helper `rasen change list` calls.
  * Reports facts only — column derivation is UI-side (design D4/D8).
  */
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { WORKSPACE_DIR_NAME } from '../config.js';
@@ -32,6 +33,48 @@ function isApplyReady(applyRequires: string[], artifacts: { id: string; status: 
 }
 
 /**
+ * The portfolio *containers* under `changesDir`: sibling change directories
+ * that carry a `planning-context.md` (ui-space-redesign-task-board spec /
+ * design D1). Read-only enumeration — no directory or identity is created.
+ * Computed once per request and shared across every change, not re-scanned
+ * per change. A container holding only `planning-context.md` (no `proposal.md`)
+ * is itself absent from the active-change listing but names its children.
+ */
+function findPortfolioContainers(changesDir: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(changesDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const containers: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (fs.existsSync(path.join(changesDir, entry.name, 'planning-context.md'))) {
+      containers.push(entry.name);
+    }
+  }
+  return containers;
+}
+
+/**
+ * The longest container `P` in `containers` such that `changeName === P` or
+ * `changeName` starts with `P-` (design D1). Longest-prefix wins, so a nested
+ * portfolio resolves deterministically and `ui-space-redesign-task-board`
+ * groups under `ui-space-redesign`, not a shorter coincidental prefix.
+ * Returns `undefined` when no container matches.
+ */
+function portfolioOf(changeName: string, containers: string[]): string | undefined {
+  let best: string | undefined;
+  for (const container of containers) {
+    if (changeName === container || changeName.startsWith(`${container}-`)) {
+      if (best === undefined || container.length > best.length) best = container;
+    }
+  }
+  return best;
+}
+
+/**
  * @param home Pre-resolved project home (design D5/m4). Pass `undefined` to
  * have this handler resolve it itself (read-only, `ensure: false`) — the
  * server-driven path always passes its cached resolution instead, so a
@@ -52,6 +95,7 @@ export async function handleChanges(
 
   const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
   const changeIds = await getActiveChangeIds(root);
+  const portfolioContainers = findPortfolioContainers(changesDir);
 
   let resolvedHome: ProjectHome | null;
   if (home !== undefined) {
@@ -82,6 +126,7 @@ export async function handleChanges(
         resolvePortfolioStateLocation(changeDir, workDir) !== null ||
         resolveGoalRunPath(changeDir, workDir) !== null;
 
+      const portfolio = portfolioOf(name, portfolioContainers);
       changes.push({
         name,
         schemaName: status.schemaName,
@@ -90,6 +135,7 @@ export async function handleChanges(
         isComplete: status.isComplete,
         taskProgress,
         hasRunFiles,
+        ...(portfolio !== undefined ? { portfolio } : {}),
       });
     } catch (err) {
       // A change with a valid `proposal.md` (so `getActiveChangeIds` counts

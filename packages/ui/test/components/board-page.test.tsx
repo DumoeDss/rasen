@@ -14,6 +14,8 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     ...actual,
     listChanges: vi.fn(),
     listRuns: vi.fn(),
+    listSessions: vi.fn(),
+    listSpaces: vi.fn(),
     // createChange is intentionally left as the real implementation (it goes
     // through the single `request()` seam over `fetch`) so the 401 test
     // below exercises the actual markUnauthorized() wiring rather than a
@@ -26,7 +28,7 @@ import { BoardPage } from '../../src/components/BoardPage.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { onUnauthorized, resetTokenStateForTest } from '../../src/api/token.js';
-import { changesListFixture } from '../fixtures/changes-list.js';
+import { changesListFixture, portfolioChangesFixture } from '../fixtures/changes-list.js';
 import { runsListFixture } from '../fixtures/runs-list.js';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -70,6 +72,11 @@ describe('BoardPage', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    // Sessions and spaces are enrichment the board fetches on every load
+    // (design D6/D4). Default them to empty so existing tests exercise the
+    // change/run path unchanged; tests that care set their own values.
+    (client.listSessions as any).mockResolvedValue({ sessions: [] });
+    (client.listSpaces as any).mockResolvedValue({ spaces: [] });
   });
 
   afterEach(() => {
@@ -377,6 +384,266 @@ describe('BoardPage', () => {
       await mount(container); // bare, no LocationProvider → no space
 
       expect(client.listChanges).toHaveBeenCalledWith(undefined);
+    });
+
+    it('also fetches sessions scoped to the route space (design D6)', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      window.history.pushState({}, '', '/p/proj_x/board');
+      await act(async () => {
+        render(
+          <LocationProvider>
+            <BoardPage />
+          </LocationProvider>,
+          container
+        );
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      expect(client.listSessions).toHaveBeenCalledWith('project:proj_x');
+      window.history.pushState({}, '', '/');
+    });
+  });
+
+  describe('Task grouping and store member chips (design D1/D3/D4)', () => {
+    async function mountAtSpace(path: string) {
+      window.history.pushState({}, '', path);
+      await act(async () => {
+        render(
+          <LocationProvider>
+            <BoardPage />
+          </LocationProvider>,
+          container
+        );
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+    }
+
+    const columnNames = () => {
+      const columns = container.querySelectorAll('.board-column');
+      return Array.from(columns).map((col) =>
+        Array.from(col.querySelectorAll('.board-card__name')).map((n) => n.textContent)
+      );
+    };
+
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    it('groups a portfolio into one Task and a bare change into a single Task, in the right columns', async () => {
+      (client.listChanges as any).mockResolvedValue(portfolioChangesFixture);
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      // Portfolio `ui-redesign` (children span done/in-progress/planning) → In Progress;
+      // bare `fix-login` (apply-ready, no tasks done, no run) → Ready.
+      const [planning, ready, inProgress, done] = columnNames();
+      expect(planning).toEqual([]);
+      expect(ready).toEqual(['fix-login']);
+      expect(inProgress).toEqual(['ui-redesign']);
+      expect(done).toEqual([]);
+
+      // Portfolio progress counts done child changes (only ui-redesign-api is Done).
+      const portfolioCard = Array.from(container.querySelectorAll('[data-testid="task-card"]')).find((c) =>
+        c.textContent?.includes('ui-redesign')
+      )!;
+      expect(portfolioCard.querySelector('.board-card__progress')!.textContent).toBe('1/3 changes');
+    });
+
+    it('shows a live indicator on a Task with a live session and none otherwise', async () => {
+      (client.listChanges as any).mockResolvedValue(portfolioChangesFixture);
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          {
+            session: {
+              id: 's1',
+              kind: 'auto',
+              task: 'building',
+              cwd: '/proj',
+              state: 'running',
+              startedAt: 0,
+              lastOutputAt: 0,
+              changeName: 'fix-login',
+            },
+            runState: { kind: 'absent' },
+          },
+        ],
+      });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      const liveCards = container.querySelectorAll('[data-testid="task-card-live"]');
+      expect(liveCards).toHaveLength(1);
+      const fixLogin = Array.from(container.querySelectorAll('[data-testid="task-card"]')).find((c) =>
+        c.textContent?.includes('fix-login')
+      )!;
+      expect(fixLogin.querySelector('[data-testid="task-card-live"]')!.textContent).toContain('building');
+    });
+
+    it('renders no member chip row for a project space', async () => {
+      (client.listChanges as any).mockResolvedValue(portfolioChangesFixture);
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      expect(container.querySelector('[data-testid="member-chips"]')).toBeNull();
+      expect(client.listSpaces).not.toHaveBeenCalled();
+    });
+
+    it('renders All + a chip per member for a store space and filters by session provenance', async () => {
+      (client.listChanges as any).mockResolvedValue(portfolioChangesFixture);
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          {
+            session: {
+              id: 's1',
+              kind: 'auto',
+              task: 'work',
+              cwd: '/a/repo/sub',
+              state: 'running',
+              startedAt: 0,
+              lastOutputAt: 0,
+              changeName: 'ui-redesign-api', // a child of the ui-redesign portfolio
+            },
+            runState: { kind: 'absent' },
+          },
+        ],
+      });
+      (client.listSpaces as any).mockResolvedValue({
+        spaces: [
+          {
+            type: 'store',
+            id: 'store_x',
+            name: 'Store X',
+            root: '/x',
+            members: [
+              { projectId: 'proj_a', name: 'Repo A', root: '/a/repo' },
+              { projectId: 'proj_b', name: 'Repo B', root: '/b/repo' },
+            ],
+          },
+        ],
+      });
+
+      await mountAtSpace('/s/store_x/board');
+
+      const chips = Array.from(container.querySelectorAll('.member-chip'));
+      expect(chips.map((c) => c.textContent)).toEqual(['All', 'Repo A', 'Repo B']);
+
+      // Under "All", both the portfolio and the bare change show.
+      const allNames = columnNames().flat();
+      expect(allNames).toContain('ui-redesign');
+      expect(allNames).toContain('fix-login');
+
+      // Select Repo A: only the ui-redesign portfolio (session cwd under /a/repo) survives.
+      const repoA = chips.find((c) => c.textContent === 'Repo A') as HTMLButtonElement;
+      await act(async () => {
+        repoA.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicrotasks();
+      });
+
+      const filteredNames = columnNames().flat();
+      expect(filteredNames).toContain('ui-redesign');
+      expect(filteredNames).not.toContain('fix-login');
+    });
+  });
+
+  describe('space-scoped new-change submission (design D5 / carryover)', () => {
+    beforeEach(() => {
+      resetTokenStateForTest();
+      vi.stubGlobal('fetch', vi.fn());
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      window.history.pushState({}, '', '/');
+    });
+
+    it('carries the viewed space selector in the createChange request body', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      window.history.pushState({}, '', '/s/store_x/board');
+      await act(async () => {
+        render(
+          <LocationProvider>
+            <BoardPage />
+          </LocationProvider>,
+          container
+        );
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const openButton = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent === 'New change'
+      )!;
+      await act(async () => {
+        openButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, {
+          change: { id: 'scoped-change', path: '/x/rasen/changes/scoped-change', schema: 'spec-driven' },
+        })
+      );
+
+      // Fill the inputs and let their state settle, then submit — so the
+      // submit handler's closure sees the entered name, not the initial ''.
+      const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement;
+      const descriptionInput = container.querySelector('textarea[name="description"]') as HTMLTextAreaElement;
+      await act(async () => {
+        nameInput.value = 'scoped-change';
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        descriptionInput.value = 'A scoped submission';
+        descriptionInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        (container.querySelector('.new-change-dialog') as HTMLFormElement).dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true })
+        );
+        await flushMicrotasks();
+      });
+
+      const [, init] = (fetch as any).mock.calls[0];
+      expect(JSON.parse(init.body)).toMatchObject({ name: 'scoped-change', space: 'store:store_x' });
+    });
+
+    it('omits space entirely in the launch-project fallback (no space route)', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+
+      await mount(container); // bare, no space route
+
+      const openButton = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent === 'New change'
+      )!;
+      await act(async () => {
+        openButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, {
+          change: { id: 'fallback-change', path: '/proj/rasen/changes/fallback-change', schema: 'spec-driven' },
+        })
+      );
+
+      await act(async () => {
+        fillAndSubmitDialog(container, 'fallback-change', 'A fallback submission');
+        await flushMicrotasks();
+      });
+
+      const [, init] = (fetch as any).mock.calls[0];
+      expect(JSON.parse(init.body).space).toBeUndefined();
     });
   });
 });

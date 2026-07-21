@@ -133,6 +133,79 @@ describe('management-api changes handler (design D4)', () => {
     expect(result.response.errors).toEqual([]);
   });
 
+  describe('portfolio-container membership (ui-space-redesign-task-board spec)', () => {
+    it('reports the container on each child change and omits the container itself from the listing', async () => {
+      // A portfolio container holds only planning-context.md (no proposal.md),
+      // so `getActiveChangeIds` excludes it while its children carry it.
+      writeChange(projectRoot, 'redesign', { 'planning-context.md': '# Planning\n' });
+      writeChange(projectRoot, 'redesign-api', { 'proposal.md': PROPOSAL_TEMPLATE });
+      writeChange(projectRoot, 'redesign-shell', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+      const result = await handleChanges(projectRoot);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.response.changes.map((c) => c.name).sort()).toEqual([
+        'redesign-api',
+        'redesign-shell',
+      ]);
+      const api = result.response.changes.find((c) => c.name === 'redesign-api')!;
+      const shell = result.response.changes.find((c) => c.name === 'redesign-shell')!;
+      expect(api.portfolio).toBe('redesign');
+      expect(shell.portfolio).toBe('redesign');
+    });
+
+    it('reports the longest matching container when prefixes nest', async () => {
+      writeChange(projectRoot, 'redesign', { 'planning-context.md': '# Planning\n' });
+      writeChange(projectRoot, 'redesign-task', { 'planning-context.md': '# Planning\n' });
+      writeChange(projectRoot, 'redesign-task-board', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+      const result = await handleChanges(projectRoot);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const board = result.response.changes.find((c) => c.name === 'redesign-task-board')!;
+      expect(board.portfolio).toBe('redesign-task');
+    });
+
+    it('reports no membership for a bare change with no container', async () => {
+      writeChange(projectRoot, 'fix-login', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+      const result = await handleChanges(projectRoot);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const change = result.response.changes.find((c) => c.name === 'fix-login')!;
+      expect(change.portfolio).toBeUndefined();
+    });
+
+    it('does not fabricate membership from a coincidental name prefix with no planning-context.md container', async () => {
+      // Two changes share a leading segment but no `store/` container carrying
+      // planning-context.md exists — neither should report membership.
+      writeChange(projectRoot, 'store-add-project', { 'proposal.md': PROPOSAL_TEMPLATE });
+      writeChange(projectRoot, 'store-project-namespace', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+      const result = await handleChanges(projectRoot);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      for (const change of result.response.changes) {
+        expect(change.portfolio).toBeUndefined();
+      }
+    });
+
+    it('derives membership with no filesystem side effects (no directory or registry mutation)', async () => {
+      writeChange(projectRoot, 'redesign', { 'planning-context.md': '# Planning\n' });
+      writeChange(projectRoot, 'redesign-api', { 'proposal.md': PROPOSAL_TEMPLATE });
+
+      const changesDir = path.join(projectRoot, 'rasen', 'changes');
+      const before = fs.readdirSync(changesDir).sort();
+      await handleChanges(projectRoot);
+      const after = fs.readdirSync(changesDir).sort();
+      expect(after).toEqual(before);
+    });
+  });
+
   it('degrades a change with an unresolvable schema to an error entry instead of dropping it silently (review round 1 M2)', async () => {
     // A valid proposal.md makes `getActiveChangeIds` count this change
     // active, but the declared schema does not exist — `loadChangeContext`

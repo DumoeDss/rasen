@@ -71,3 +71,77 @@ export const changesListFixture = {
   ],
   errors: [],
 } satisfies ChangesResponse;
+
+/**
+ * A space whose changes carry the additive `portfolio` membership field
+ * (ui-space-redesign-task-board): three children of the `ui-redesign`
+ * container spanning done/in-progress/planning, plus a bare change with no
+ * portfolio. `satisfies ChangesResponse` keeps the `tsc` drift tripwire over
+ * the new field. Grouping/column-aggregation tests read this; the existing
+ * `changesListFixture` above stays portfolio-free so its four changes remain
+ * four single-item Tasks, one per column.
+ */
+export const portfolioChangesFixture = {
+  changes: [
+    {
+      name: 'ui-redesign-api',
+      schemaName: 'spec-driven',
+      artifacts: [
+        { id: 'proposal', status: 'done' },
+        { id: 'design', status: 'done' },
+        { id: 'specs', status: 'done' },
+        { id: 'tasks', status: 'done' },
+      ],
+      applyReady: true,
+      isComplete: true,
+      taskProgress: { total: 3, completed: 3 },
+      hasRunFiles: true,
+      portfolio: 'ui-redesign',
+    },
+    {
+      name: 'ui-redesign-shell',
+      schemaName: 'spec-driven',
+      artifacts: [
+        { id: 'proposal', status: 'done' },
+        { id: 'design', status: 'done' },
+        { id: 'specs', status: 'done' },
+        { id: 'tasks', status: 'done' },
+      ],
+      applyReady: true,
+      isComplete: true,
+      taskProgress: { total: 4, completed: 2 },
+      hasRunFiles: true,
+      portfolio: 'ui-redesign',
+    },
+    {
+      name: 'ui-redesign-board',
+      schemaName: 'spec-driven',
+      artifacts: [
+        { id: 'proposal', status: 'done' },
+        { id: 'design', status: 'ready' },
+        { id: 'specs', status: 'blocked' },
+        { id: 'tasks', status: 'blocked' },
+      ],
+      applyReady: false,
+      isComplete: false,
+      taskProgress: { total: 0, completed: 0 },
+      hasRunFiles: false,
+      portfolio: 'ui-redesign',
+    },
+    {
+      name: 'fix-login',
+      schemaName: 'spec-driven',
+      artifacts: [
+        { id: 'proposal', status: 'done' },
+        { id: 'design', status: 'done' },
+        { id: 'specs', status: 'done' },
+        { id: 'tasks', status: 'done' },
+      ],
+      applyReady: true,
+      isComplete: true,
+      taskProgress: { total: 3, completed: 0 },
+      hasRunFiles: false,
+    },
+  ],
+  errors: [],
+} satisfies ChangesResponse;
