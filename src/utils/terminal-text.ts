@@ -21,6 +21,11 @@ interface DisplaySegment {
   whitespace: boolean;
 }
 
+interface TerminalRowsOutput {
+  readonly rows?: number;
+  readonly getWindowSize?: () => readonly [number, number];
+}
+
 interface LineSlice {
   segments: DisplaySegment[];
   nextIndex: number;
@@ -33,6 +38,12 @@ function normalizeTerminalColumns(columns: number): number {
   return Number.isFinite(normalized) && normalized > 0
     ? normalized
     : DEFAULT_TERMINAL_COLUMNS;
+}
+
+function normalizeTerminalRows(rows: number | undefined): number | undefined {
+  return Number.isFinite(rows) && Number.isInteger(rows) && (rows ?? 0) > 0
+    ? rows
+    : undefined;
 }
 
 function measureDisplayWidth(text: string): number {
@@ -251,6 +262,24 @@ function truncateToWidth(
   }
   while (kept.at(-1)?.whitespace) kept.pop();
   return kept;
+}
+
+export function resolveTerminalRows(
+  output: TerminalRowsOutput = process.stdout
+): number | undefined {
+  let rows: number | undefined;
+  try {
+    rows = normalizeTerminalRows(output.rows);
+  } catch {
+    return undefined;
+  }
+  if (rows !== undefined) return rows;
+
+  try {
+    return normalizeTerminalRows(output.getWindowSize?.()[1]);
+  } catch {
+    return undefined;
+  }
 }
 
 export function resolveTerminalColumns(output: Stream = process.stdout): number {

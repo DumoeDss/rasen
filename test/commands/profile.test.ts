@@ -11,6 +11,7 @@ import {
   readNamedProfile,
   saveNamedProfile,
 } from '../../src/core/named-profiles.js';
+import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
 import {
   importWorkflow,
   scaffoldWorkflow,
@@ -20,6 +21,8 @@ import {
   getUserWorkflowsDir,
   loadWorkflowCatalog,
 } from '../../src/core/workflow-registry/index.js';
+
+const PICKER_CHOICE_COUNT = ALL_WORKFLOWS.length + ALL_EXPERTS.length + 2;
 
 vi.mock('@inquirer/prompts', async () => {
   const actual = await vi.importActual<typeof import('@inquirer/prompts')>('@inquirer/prompts');
@@ -31,6 +34,35 @@ vi.mock('@inquirer/prompts', async () => {
     confirm: vi.fn(),
   };
 });
+
+function setStdoutRows(rows: number | undefined): () => void {
+  const originalRowsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'rows');
+  const originalWindowSizeDescriptor = Object.getOwnPropertyDescriptor(
+    process.stdout,
+    'getWindowSize'
+  );
+  Object.defineProperty(process.stdout, 'rows', {
+    configurable: true,
+    value: rows,
+  });
+  Object.defineProperty(process.stdout, 'getWindowSize', {
+    configurable: true,
+    value: undefined,
+  });
+
+  return () => {
+    if (originalRowsDescriptor) {
+      Object.defineProperty(process.stdout, 'rows', originalRowsDescriptor);
+    } else {
+      Reflect.deleteProperty(process.stdout, 'rows');
+    }
+    if (originalWindowSizeDescriptor) {
+      Object.defineProperty(process.stdout, 'getWindowSize', originalWindowSizeDescriptor);
+    } else {
+      Reflect.deleteProperty(process.stdout, 'getWindowSize');
+    }
+  };
+}
 
 async function runProfileCommand(args: string[]): Promise<void> {
   const program = new Command();
@@ -52,6 +84,29 @@ async function promptMocks(): Promise<{
     confirm: prompts.confirm as unknown as ReturnType<typeof vi.fn>,
   };
 }
+
+describe('resolveWorkflowPickerPageSize', () => {
+  it.each<[string, number, number | undefined, number]>([
+    ['unavailable height', 45, undefined, 7],
+    ['NaN height', 45, NaN, 7],
+    ['zero height', 45, 0, 7],
+    ['negative height', 45, -1, 7],
+    ['fractional height', 45, 12.5, 7],
+    ['three-row terminal', 45, 3, 1],
+    ['five-row terminal', 45, 5, 1],
+    ['12-row terminal', 45, 12, 7],
+    ['24-row terminal', 45, 24, 19],
+    ['50-row terminal', 45, 50, 45],
+    ['100-row terminal', 45, 100, 45],
+    ['short choice list', 4, 24, 4],
+  ])('uses the contract page size for %s', async (_case, choiceCount, rows, expected) => {
+    const { resolveWorkflowPickerPageSize } = await import(
+      '../../src/commands/profile-editor.js'
+    );
+
+    expect(resolveWorkflowPickerPageSize(choiceCount, rows)).toBe(expected);
+  });
+});
 
 describe('profile command', () => {
   let tempDir: string;
@@ -123,30 +178,89 @@ describe('profile command', () => {
     expect(getGlobalConfig().profile).toBe('core');
   });
 
-  it('creates, saves, and selects a named profile interactively', async () => {
+  it('creates, saves, and selects a named profile within a short terminal', async () => {
     const { select, checkbox, confirm } = await promptMocks();
+    const restoreRows = setStdoutRows(12);
     select.mockResolvedValueOnce('skills');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
     confirm.mockResolvedValueOnce(true);
 
-    await runProfileCommand(['new', 'team']);
+    try {
+      await runProfileCommand(['new', 'team']);
 
-    expect(readNamedProfile('team')).toEqual({
-      version: 1,
-      delivery: 'skills',
-      workflows: ['propose', 'explore'],
-    });
-    expect(getGlobalConfig()).toMatchObject({
+      expect(readNamedProfile('team')).toEqual({
+        version: 1,
+        delivery: 'skills',
+        workflows: ['propose', 'explore'],
+      });
+      expect(getGlobalConfig()).toMatchObject({
+        profile: 'custom',
+        delivery: 'skills',
+        workflows: ['propose', 'explore'],
+      });
+      expect(checkbox).toHaveBeenCalledWith(
+        expect.objectContaining({
+          instructions: 'Space to toggle, A to select/clear all, Enter to confirm',
+          shortcuts: { all: 'a' },
+          pageSize: 7,
+          choices: expect.any(Array),
+        })
+      );
+      expect(checkbox.mock.calls[0][0].choices).toHaveLength(PICKER_CHOICE_COUNT);
+    } finally {
+      restoreRows();
+    }
+  });
+
+  it('uses the opening terminal height in the current-profile editor', async () => {
+    const { select, checkbox } = await promptMocks();
+    const restoreRows = setStdoutRows(24);
+    saveGlobalConfig({
+      featureFlags: {},
       profile: 'custom',
-      delivery: 'skills',
-      workflows: ['propose', 'explore'],
+      delivery: 'both',
+      workflows: ['propose'],
+      expertSelectionExplicit: true,
     });
-    expect(checkbox).toHaveBeenCalledWith(
-      expect.objectContaining({
-        instructions: 'Space to toggle, A to select/clear all, Enter to confirm',
-        shortcuts: { all: 'a' },
-      })
-    );
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockImplementationOnce(async (options: {
+      choices: Array<{ value?: string; checked?: boolean }>;
+    }) => options.choices.flatMap((choice) =>
+      typeof choice.value === 'string' && choice.checked === true ? [choice.value] : []
+    ));
+
+    try {
+      await runProfileCommand([]);
+
+      const checkboxCall = checkbox.mock.calls[0][0];
+      expect(checkboxCall.pageSize).toBe(19);
+      expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+    } finally {
+      restoreRows();
+    }
+  });
+
+  it('falls back safely and recaptures height when the picker opens again', async () => {
+    const { select, checkbox, confirm } = await promptMocks();
+    const restoreRows = setStdoutRows(undefined);
+    select.mockResolvedValue('skills');
+    checkbox.mockResolvedValue(['propose']);
+    confirm.mockResolvedValue(false);
+
+    try {
+      await runProfileCommand(['new', 'fallback']);
+      Object.defineProperty(process.stdout, 'rows', {
+        configurable: true,
+        value: 24,
+      });
+      await runProfileCommand(['new', 'resized']);
+
+      expect(checkbox.mock.calls.map(([options]) => options.pageSize)).toEqual([7, 19]);
+      expect(checkbox.mock.calls[0][0].choices).toHaveLength(PICKER_CHOICE_COUNT);
+      expect(checkbox.mock.calls[1][0].choices).toHaveLength(PICKER_CHOICE_COUNT);
+    } finally {
+      restoreRows();
+    }
   });
 
   it('uses Japanese delivery and workflow pickers when creating a profile', async () => {

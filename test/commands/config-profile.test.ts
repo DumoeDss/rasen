@@ -31,6 +31,35 @@ vi.mock('@inquirer/prompts', async () => {
   };
 });
 
+function setStdoutRows(rows: number | undefined): () => void {
+  const originalRowsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'rows');
+  const originalWindowSizeDescriptor = Object.getOwnPropertyDescriptor(
+    process.stdout,
+    'getWindowSize'
+  );
+  Object.defineProperty(process.stdout, 'rows', {
+    configurable: true,
+    value: rows,
+  });
+  Object.defineProperty(process.stdout, 'getWindowSize', {
+    configurable: true,
+    value: undefined,
+  });
+
+  return () => {
+    if (originalRowsDescriptor) {
+      Object.defineProperty(process.stdout, 'rows', originalRowsDescriptor);
+    } else {
+      Reflect.deleteProperty(process.stdout, 'rows');
+    }
+    if (originalWindowSizeDescriptor) {
+      Object.defineProperty(process.stdout, 'getWindowSize', originalWindowSizeDescriptor);
+    } else {
+      Reflect.deleteProperty(process.stdout, 'getWindowSize');
+    }
+  };
+}
+
 async function runConfigCommand(args: string[]): Promise<void> {
   const { registerConfigCommand } = await import('../../src/commands/config.js');
   const program = new Command();
@@ -246,30 +275,35 @@ describe('config profile interactive flow', () => {
 
   it('workflows-only action should not invoke delivery prompt', async () => {
     const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const { ALL_WORKFLOWS } = await import('../../src/core/profiles.js');
     const { select, checkbox } = await getPromptMocks();
+    const restoreRows = setStdoutRows(24);
 
     saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
 
-    await runConfigCommand(['profile']);
+    try {
+      await runConfigCommand(['profile']);
 
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(checkbox).toHaveBeenCalledTimes(1);
-    const checkboxCall = checkbox.mock.calls[0][0];
-    expect(checkboxCall.pageSize).toBe(PICKER_CHOICE_COUNT);
-    expect(checkboxCall.theme).toEqual({
-      icon: {
-        checked: '[x]',
-        unchecked: '[ ]',
-      },
-    });
-    const proposeChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'propose');
-    const onboardChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'onboard');
-    expect(proposeChoice.checked).toBe(true);
-    expect(onboardChoice.checked).toBe(false);
-    expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(checkbox).toHaveBeenCalledTimes(1);
+      const checkboxCall = checkbox.mock.calls[0][0];
+      expect(checkboxCall.pageSize).toBe(19);
+      expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+      expect(checkboxCall.theme).toEqual({
+        icon: {
+          checked: '[x]',
+          unchecked: '[ ]',
+        },
+      });
+      const proposeChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'propose');
+      const onboardChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'onboard');
+      expect(proposeChoice.checked).toBe(true);
+      expect(onboardChoice.checked).toBe(false);
+      expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
+    } finally {
+      restoreRows();
+    }
   });
 
   it('delivery picker should mark current option inline and offer only two choices', async () => {

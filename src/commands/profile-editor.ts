@@ -27,6 +27,7 @@ import type { CliLocale } from '../utils/locale.js';
 import {
   formatPickerDescription,
   resolveTerminalColumns,
+  resolveTerminalRows,
 } from '../utils/terminal-text.js';
 
 type InquirerPrompts = typeof import('@inquirer/prompts');
@@ -46,6 +47,29 @@ export interface ProfileStateDiff {
 }
 
 const WORKFLOW_PICKER_SHORTCUTS = { all: 'a' } as const;
+const DEFAULT_WORKFLOW_PICKER_PAGE_SIZE = 7;
+// Question, spacer, up to two description lines, and instructions.
+const WORKFLOW_PICKER_RESERVED_ROWS = 5;
+
+export function resolveWorkflowPickerPageSize(
+  choiceCount: number,
+  terminalRows: number | undefined
+): number {
+  if (
+    terminalRows === undefined ||
+    !Number.isFinite(terminalRows) ||
+    !Number.isInteger(terminalRows) ||
+    terminalRows <= 0
+  ) {
+    return Math.min(choiceCount, DEFAULT_WORKFLOW_PICKER_PAGE_SIZE);
+  }
+
+  return Math.min(
+    choiceCount,
+    Math.max(1, terminalRows - WORKFLOW_PICKER_RESERVED_ROWS)
+  );
+}
+
 function normalizedSelectedWorkflows(workflows: readonly string[], delivery: Delivery): string[] {
   return normalizeProfileDefinition({
     version: PROFILE_DEFINITION_VERSION,
@@ -245,6 +269,26 @@ function workflowChoices(
   ];
 }
 
+function workflowPickerOptions(
+  currentState: ProfileState,
+  messages: ProfilePromptMessages,
+  SeparatorCtor: InquirerPrompts['Separator']
+) {
+  const choices = workflowChoices(currentState, messages, SeparatorCtor);
+
+  return {
+    message: messages.workflowPickerMessage,
+    instructions: messages.workflowPickerInstructions,
+    shortcuts: WORKFLOW_PICKER_SHORTCUTS,
+    pageSize: resolveWorkflowPickerPageSize(
+      choices.length,
+      resolveTerminalRows(process.stdout)
+    ),
+    theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
+    choices,
+  };
+}
+
 function deliveryChoices(
   currentDelivery: Delivery | undefined,
   messages: ProfilePromptMessages
@@ -277,14 +321,9 @@ export async function promptForNewProfileState(currentState: ProfileState): Prom
     choices: deliveryChoices(currentState.delivery, messages),
     default: currentState.delivery,
   });
-  const workflows = await checkbox<string>({
-    message: messages.workflowPickerMessage,
-    instructions: messages.workflowPickerInstructions,
-    shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-    pageSize: workflowChoices(currentState, messages, Separator).length,
-    theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-    choices: workflowChoices(currentState, messages, Separator),
-  });
+  const workflows = await checkbox<string>(
+    workflowPickerOptions(currentState, messages, Separator)
+  );
   return {
     profile: deriveProfileFromWorkflowSelection(workflows),
     delivery,
@@ -394,14 +433,9 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     }
 
     if (action === 'both' || action === 'workflows') {
-      const selectedWorkflows = await checkbox<string>({
-        message: messages.workflowPickerMessage,
-        instructions: messages.workflowPickerInstructions,
-        shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-        pageSize: workflowChoices(currentState, messages, Separator).length,
-        theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-        choices: workflowChoices(currentState, messages, Separator),
-      });
+      const selectedWorkflows = await checkbox<string>(
+        workflowPickerOptions(currentState, messages, Separator)
+      );
       nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows, nextState.delivery);
       nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
     }
