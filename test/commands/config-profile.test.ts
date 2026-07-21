@@ -138,7 +138,7 @@ describe('config profile interactive flow', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let originalCwd: string;
   let originalTTY: boolean | undefined;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -201,7 +201,7 @@ describe('config profile interactive flow', () => {
 
     originalEnv = { ...process.env };
     originalCwd = process.cwd();
-    originalTTY = (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+    originalTTY = (process.stdout as unknown as { isTTY?: boolean }).isTTY;
     originalExitCode = process.exitCode;
 
     // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
@@ -211,7 +211,7 @@ describe('config profile interactive flow', () => {
     process.env.XDG_CONFIG_HOME = tempDir;
     process.env.RASEN_LANG = 'en';
     process.chdir(tempDir);
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -222,7 +222,7 @@ describe('config profile interactive flow', () => {
   afterEach(() => {
     process.env = originalEnv;
     process.chdir(originalCwd);
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = originalTTY;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = originalTTY;
     process.exitCode = originalExitCode;
     fs.rmSync(tempDir, { recursive: true, force: true });
 

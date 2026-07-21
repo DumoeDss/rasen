@@ -112,18 +112,18 @@ describe('profile command', () => {
   let tempDir: string;
   let originalEnv: NodeJS.ProcessEnv;
   let originalTTY: boolean | undefined;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-profile-command-'));
     originalEnv = { ...process.env };
-    originalTTY = (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+    originalTTY = (process.stdout as unknown as { isTTY?: boolean }).isTTY;
     originalExitCode = process.exitCode;
     process.env.RASEN_HOME = tempDir;
     process.env.RASEN_LANG = 'en';
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -131,7 +131,7 @@ describe('profile command', () => {
 
   afterEach(() => {
     process.env = originalEnv;
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = originalTTY;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = originalTTY;
     process.exitCode = originalExitCode;
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
