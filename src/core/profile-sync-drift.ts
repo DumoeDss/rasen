@@ -89,7 +89,14 @@ export function getConfiguredToolsForProfileSync(projectPath: string): string[] 
  * This function covers:
  * - required artifacts missing for selected workflows
  * - artifacts that should not exist for the selected delivery mode
- * - artifacts for workflows that were deselected from the current profile
+ * - artifacts for workflows (or, since the expert install-semantics flip,
+ *   experts) that were deselected from the current profile
+ *
+ * `desiredWorkflows` is expected to be the closure-included desired set
+ * (workflows + profile-default/closure-required experts) computed by
+ * `resolveDesiredWorkflowSelection` — the same array the install path
+ * (`getSkillTemplates`) and the removal seam (`removeUnselectedSkillDirs`)
+ * use, so drift, install, and removal never disagree about experts.
  */
 export function hasToolProfileOrDeliveryDrift(
   projectPath: string,
@@ -119,7 +126,7 @@ export function hasToolProfileOrDeliveryDrift(
   }
 
   // Deselecting workflows in a profile should trigger sync.
-  for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
+  for (const definition of definitions.filter((item) => item.source === 'built-in')) {
     if (desiredWorkflowSet.has(definition.id)) continue;
     const dirName = definition.skill.dirName;
     const skillDir = path.join(skillsDir, dirName);
@@ -143,7 +150,7 @@ export function hasToolProfileOrDeliveryDrift(
       }
     }
 
-    for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
       const workflow = definition.id;
       // Deselecting workflows in a profile should trigger sync.
       if (definition.command && !desiredWorkflowSet.has(workflow)) {
@@ -163,7 +170,7 @@ export function hasToolProfileOrDeliveryDrift(
       }
     }
   } else if (!shouldGenerateCommands && adapter) {
-    for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
       if (!definition.command) continue;
       for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
@@ -206,7 +213,7 @@ function getInstalledWorkflowsForTool(
   const definitions = loadWorkflowCatalog().definitions;
 
   if (options.includeSkills) {
-    for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
+    for (const definition of definitions.filter((item) => item.source === 'built-in')) {
       const workflow = definition.id;
       const dirName = definition.skill.dirName;
       const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
@@ -219,7 +226,7 @@ function getInstalledWorkflowsForTool(
   if (options.includeCommands) {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (adapter) {
-      for (const definition of definitions.filter((item) => item.source === 'built-in' && item.kind !== 'expert')) {
+      for (const definition of definitions.filter((item) => item.source === 'built-in')) {
         if (!definition.command) continue;
         const workflow = definition.id;
         for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {

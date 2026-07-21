@@ -21,12 +21,16 @@ import {
   loadWorkflowCatalog,
 } from '../../src/core/workflow-registry/index.js';
 
-vi.mock('@inquirer/prompts', () => ({
-  input: vi.fn(),
-  select: vi.fn(),
-  checkbox: vi.fn(),
-  confirm: vi.fn(),
-}));
+vi.mock('@inquirer/prompts', async () => {
+  const actual = await vi.importActual<typeof import('@inquirer/prompts')>('@inquirer/prompts');
+  return {
+    ...actual,
+    input: vi.fn(),
+    select: vi.fn(),
+    checkbox: vi.fn(),
+    confirm: vi.fn(),
+  };
+});
 
 async function runProfileCommand(args: string[]): Promise<void> {
   const program = new Command();

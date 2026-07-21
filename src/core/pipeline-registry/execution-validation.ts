@@ -2,12 +2,10 @@ import chalk from 'chalk';
 
 import { probeCodexAvailability } from '../codex/index.js';
 import { getGlobalConfig } from '../global-config.js';
-import { getProfileWorkflows } from '../profiles.js';
-import {
-  filterKnownWorkflowRoots,
-  loadWorkflowCatalog,
-  resolveWorkflowSelection,
-} from '../workflow-registry/index.js';
+import { resolveDesiredWorkflowSelection } from '../profiles.js';
+import { resolveProjectHome } from '../project-home.js';
+import { hasExpertSelectionAck } from '../expert-selection-state.js';
+import { loadWorkflowCatalog } from '../workflow-registry/index.js';
 import { PipelineValidationError, validatePipelineSkills } from './pipeline.js';
 import {
   loadPipelineByName,
@@ -48,22 +46,58 @@ export interface PipelineExecutionSkillSets {
   enabledSkillNames: Set<string>;
 }
 
-/** Resolve the machine's known skills and active-profile skills once per preflight. */
-export function resolvePipelineExecutionSkillSets(): PipelineExecutionSkillSets {
+/**
+ * Resolve the machine's known skills and active-profile-installed skills
+ * once per preflight. Uses the same `resolveDesiredWorkflowSelection`
+ * init/update call (workflow ids + profile-default/closure expert ids,
+ * `expertSelectionExplicit`-aware) so `enabledSkillNames` reflects experts
+ * that are actually part of the resolved install set, instead of treating
+ * every expert as unconditionally enabled (review-round Major fix: post-6b,
+ * "known expert, not installed" is a normal, intended state the preflight
+ * guard must cover — see `validatePipelineSkills`'s `pipeline_skill_disabled`
+ * check below). Called exactly once per `validatePipelineForExecution`
+ * invocation, preserving the single-call-site/probe-once property.
+ *
+ * The `expertSelectionExplicit` marker is machine-wide (review-round Blocker
+ * fix, `expert-selection-state.ts`) and can flip to `true` from an action
+ * against a completely different project than `projectRoot`. Mirroring
+ * `update.ts`'s gate exactly: the effective flag used here is
+ * `globalMarkerExplicit && projectAcknowledged`, so a project that has never
+ * been through its own transition still sees every expert enabled at
+ * preflight — consistent with what `update` actually keeps installed for it
+ * (a false `pipeline_skill_disabled` during that one-run delay window would
+ * be a regression the Blocker fix didn't intend to introduce here). When
+ * `projectRoot` is omitted or its machine home can't be resolved, this falls
+ * back to the raw global marker (the pre-fix behavior for that edge case),
+ * same as `update.ts`'s own best-effort fallback.
+ */
+export async function resolvePipelineExecutionSkillSets(
+  projectRoot?: string
+): Promise<PipelineExecutionSkillSets> {
   const catalog = loadWorkflowCatalog();
-  const expertSkillNames = catalog.definitions
-    .filter((definition) => definition.kind === 'expert')
-    .map((definition) => definition.skill.template.name);
-  const knownSkillNames = new Set([
-    ...catalog.definitions.map((definition) => definition.skill.template.name),
-    ...expertSkillNames,
-  ]);
+  const knownSkillNames = new Set(catalog.definitions.map((definition) => definition.skill.template.name));
   const config = getGlobalConfig();
-  const { known: knownProfileWorkflows, unknown: unknownProfileWorkflows } =
-    filterKnownWorkflowRoots(
-      catalog,
-      getProfileWorkflows(config.profile ?? 'full', config.workflows)
-    );
+  const globalMarkerExplicit = config.expertSelectionExplicit === true;
+
+  let projectAcknowledged = false;
+  if (globalMarkerExplicit && projectRoot) {
+    try {
+      const projectHome = await resolveProjectHome(projectRoot, { ensure: false });
+      projectAcknowledged = projectHome !== null && hasExpertSelectionAck(projectHome.homeDir);
+    } catch {
+      projectAcknowledged = false;
+    }
+  }
+  const expertSelectionExplicit = projectRoot
+    ? globalMarkerExplicit && projectAcknowledged
+    : globalMarkerExplicit;
+
+  const { ids: desiredIds, unknown: unknownProfileWorkflows } = resolveDesiredWorkflowSelection(
+    catalog,
+    config.profile ?? 'full',
+    config.workflows,
+    expertSelectionExplicit
+  );
   if (unknownProfileWorkflows.length > 0) {
     console.log(
       chalk.yellow(
@@ -71,11 +105,12 @@ export function resolvePipelineExecutionSkillSets(): PipelineExecutionSkillSets 
       )
     );
   }
-  const selected = resolveWorkflowSelection(catalog, knownProfileWorkflows);
-  const enabledSkillNames = new Set([
-    ...selected.map((definition) => definition.skill.template.name),
-    ...expertSkillNames,
-  ]);
+  const desiredSet = new Set(desiredIds);
+  const enabledSkillNames = new Set(
+    catalog.definitions
+      .filter((definition) => desiredSet.has(definition.id))
+      .map((definition) => definition.skill.template.name)
+  );
   return { knownSkillNames, enabledSkillNames };
 }
 
@@ -94,12 +129,12 @@ export function resolvePipelineExecutionSkillSets(): PipelineExecutionSkillSets 
  * throws before dispatch naming both remedies. A pipeline where no stage
  * resolves to `codex` never probes and never fails on runtime grounds.
  */
-export function validatePipelineForExecution(
+export async function validatePipelineForExecution(
   pipeline: PipelineYaml,
   projectRoot?: string,
   options?: PipelineExecutionOptions
-): void {
-  const { knownSkillNames, enabledSkillNames } = resolvePipelineExecutionSkillSets();
+): Promise<void> {
+  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(projectRoot);
   validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
   validateDecomposeChildPipelines(pipeline, projectRoot);
 

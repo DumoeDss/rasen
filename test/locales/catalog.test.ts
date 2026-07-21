@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALL_WORKFLOWS } from '../../src/core/profiles.js';
+import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../../src/locales/index.js';
 import { ROOT_OPTION_DESCRIPTIONS } from '../../src/cli/help-localization.js';
 import { INSTALLER_MESSAGE_KEYS } from '../../src/core/completions/factory.js';
@@ -47,6 +47,20 @@ describe('locale catalogs', () => {
       for (const workflow of ALL_WORKFLOWS) {
         expect(workflows[workflow].name).not.toBe('');
         expect(workflows[workflow].description).not.toBe('');
+      }
+    }
+  });
+
+  it('defines a name and description for every built-in expert in both languages (mirrors the workflow guard; ALL_WORKFLOWS/profile.prompt.workflows stay untouched — experts are a disjoint id space)', () => {
+    for (const locale of ['en', 'ja'] as const) {
+      const experts = getLocaleCatalog(locale).profile.prompt.experts as Record<
+        string,
+        { name: string; description: string }
+      >;
+      expect(Object.keys(experts).sort()).toEqual([...ALL_EXPERTS].sort());
+      for (const expert of ALL_EXPERTS) {
+        expect(experts[expert].name).not.toBe('');
+        expect(experts[expert].description).not.toBe('');
       }
     }
   });

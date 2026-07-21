@@ -208,7 +208,7 @@ export class PipelineCommand {
       throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
     }
     if (options.forExecution) {
-      validatePipelineForExecution(pipeline, projectRoot);
+      await validatePipelineForExecution(pipeline, projectRoot);
     }
 
     const graph = PipelineGraph.fromPipeline(pipeline);
@@ -358,7 +358,7 @@ export class PipelineCommand {
           .map((child) => child.pipeline)
       );
       for (const pipelineName of remainingPipelineNames) {
-        validatePipelineForExecution(
+        await validatePipelineForExecution(
           loadPipelineByName(pipelineName, projectRoot),
           projectRoot
         );
@@ -471,7 +471,7 @@ export class PipelineCommand {
     }
 
     const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
-    validatePipelineForExecution(pipeline, projectRoot);
+    await validatePipelineForExecution(pipeline, projectRoot);
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const completed = completedStages(runState);

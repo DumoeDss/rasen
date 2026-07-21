@@ -2,12 +2,19 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import type { Separator } from '@inquirer/prompts';
 import type { GlobalConfig, Profile, Delivery } from '../core/global-config.js';
 import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import { OPENSPEC_DIR_NAME } from '../core/config.js';
-import { ALL_WORKFLOWS, CORE_WORKFLOWS, getProfileWorkflows } from '../core/profiles.js';
+import {
+  ALL_EXPERTS,
+  ALL_WORKFLOWS,
+  CORE_WORKFLOWS,
+  QUALITY_FLOOR_EXPERTS,
+  getProfileWorkflows,
+} from '../core/profiles.js';
 import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
-import { loadWorkflowCatalog } from '../core/workflow-registry/index.js';
+import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/command-generation/command-file-id.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
 import {
@@ -48,20 +55,30 @@ export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
   const profile = config.profile || 'full';
   const delivery = config.delivery || 'both';
   const workflows = [
-    ...getProfileWorkflows(profile, config.workflows ? [...config.workflows] : undefined),
+    ...getProfileWorkflows(profile, config.workflows ? [...config.workflows] : undefined, {
+      expertSelectionExplicit: config.expertSelectionExplicit === true,
+    }),
   ];
   return { profile, delivery, workflows };
 }
 
+/**
+ * `full` = every workflow + every built-in expert; `core` = the CORE
+ * workflows + the quality-floor experts (design.md D6/D2). Anything else,
+ * including a `full`/`core`-shaped workflow set with a different expert
+ * selection, is `custom`.
+ */
 export function deriveProfileFromWorkflowSelection(selectedWorkflows: string[]): Profile {
+  const fullSet = [...ALL_WORKFLOWS, ...ALL_EXPERTS];
   const isFullMatch =
-    selectedWorkflows.length === ALL_WORKFLOWS.length &&
-    ALL_WORKFLOWS.every((workflow) => selectedWorkflows.includes(workflow));
+    selectedWorkflows.length === fullSet.length &&
+    fullSet.every((id) => selectedWorkflows.includes(id));
   if (isFullMatch) return 'full';
 
+  const coreSet = [...CORE_WORKFLOWS, ...QUALITY_FLOOR_EXPERTS];
   const isCoreMatch =
-    selectedWorkflows.length === CORE_WORKFLOWS.length &&
-    CORE_WORKFLOWS.every((workflow) => selectedWorkflows.includes(workflow));
+    selectedWorkflows.length === coreSet.length &&
+    coreSet.every((id) => selectedWorkflows.includes(id));
   return isCoreMatch ? 'core' : 'custom';
 }
 
@@ -77,16 +94,14 @@ function stableWorkflowOrder(workflows: readonly string[]): string[] {
   const seen = new Set<string>();
   const ordered: string[] = [];
 
-  for (const workflow of ALL_WORKFLOWS) {
-    if (workflows.includes(workflow) && !seen.has(workflow)) {
-      ordered.push(workflow);
-      seen.add(workflow);
+  for (const id of [...ALL_WORKFLOWS, ...ALL_EXPERTS]) {
+    if (workflows.includes(id) && !seen.has(id)) {
+      ordered.push(id);
+      seen.add(id);
     }
   }
 
-  const extras = workflows.filter(
-    (workflow) => !ALL_WORKFLOWS.includes(workflow as (typeof ALL_WORKFLOWS)[number])
-  );
+  const extras = workflows.filter((id) => !seen.has(id));
   extras.sort();
   for (const extra of extras) {
     if (!seen.has(extra)) {
@@ -127,55 +142,104 @@ export function diffProfileState(
   return { hasChanges: lines.length > 0, lines };
 }
 
-function workflowChoices(
-  currentState: ProfileState,
-  messages: ProfilePromptMessages
-): Array<{
+interface WorkflowChoice {
   value: string;
   name: string;
   description: string;
   short: string;
   checked: boolean;
   disabled?: string;
-}> {
+}
+
+/**
+ * Builds the profile picker's checkbox choices: built-in experts are
+ * selectable catalog units alongside workflows (the 6b install flip), shown
+ * as a separate labeled group after the workflow group. A closure-required
+ * expert (a selected workflow's `requires.skills`, resolved through either
+ * skill-identity form via `portablePathCollisionKey`) renders checked and
+ * disabled — the user cannot uncheck it while the requiring workflow stays
+ * selected (matrix row 8).
+ */
+function workflowChoices(
+  currentState: ProfileState,
+  messages: ProfilePromptMessages,
+  SeparatorCtor: typeof Separator
+): Array<WorkflowChoice | Separator> {
   const catalog = loadWorkflowCatalog();
-  // Experts (kind:'expert') are always-installed catalog members, not
-  // user-selectable profile entries this round (the install flip is 6b) —
-  // exclude them from the picker so they never surface as a checkbox choice.
-  const selectableDefinitions = catalog.definitions.filter((definition) => definition.kind !== 'expert');
+  const definitions = catalog.definitions;
   const displayIds = new Map(
-    selectableDefinitions.map((definition) => [
+    definitions.map((definition) => [
       definition.id,
       definition.command ? getCommandFileId(definition.id) : definition.id,
     ])
   );
-  const columnWidth = Math.max(...[...displayIds.values()].map((workflow) => workflow.length));
-  const requiredBy = new Map<string, string>();
+  // Column width is computed per group (workflows vs. experts), not across
+  // the combined set: expert ids run longer (e.g. `design-consultation`)
+  // than any workflow id, and the two are rendered as separate labeled
+  // sections, so aligning them to one shared width would pad every workflow
+  // row wider for no visual benefit.
+  const workflowColumnWidth = Math.max(
+    ...definitions
+      .filter((definition) => definition.kind !== 'expert')
+      .map((definition) => (displayIds.get(definition.id) ?? definition.id).length)
+  );
+  const expertColumnWidth = Math.max(
+    ...definitions
+      .filter((definition) => definition.kind === 'expert')
+      .map((definition) => (displayIds.get(definition.id) ?? definition.id).length),
+    0
+  );
   const terminalColumns = resolveTerminalColumns();
-  for (const definition of selectableDefinitions) {
-    if (!currentState.workflows.includes(definition.id)) continue;
-    for (const dependency of definition.requires.workflows) requiredBy.set(dependency, definition.id);
+
+  const skillIdentityToId = new Map<string, string>();
+  for (const definition of definitions) {
+    for (const name of new Set([definition.skill.template.name, definition.skill.dirName])) {
+      skillIdentityToId.set(portablePathCollisionKey(name), definition.id);
+    }
   }
 
-  return selectableDefinitions.map((definition) => {
-    const workflow = definition.id;
+  const requiredBy = new Map<string, string>();
+  for (const definition of definitions) {
+    if (!currentState.workflows.includes(definition.id)) continue;
+    for (const dependency of definition.requires.workflows) requiredBy.set(dependency, definition.id);
+    for (const skillName of definition.requires.skills) {
+      const dependencyId = skillIdentityToId.get(portablePathCollisionKey(skillName));
+      if (dependencyId) requiredBy.set(dependencyId, definition.id);
+    }
+  }
+
+  const toChoice = (definition: (typeof definitions)[number]): WorkflowChoice => {
+    const id = definition.id;
+    const isExpert = definition.kind === 'expert';
     const metadata = definition.source === 'built-in'
-      ? messages.workflows[workflow as keyof typeof messages.workflows]
+      ? isExpert
+        ? messages.experts[id]
+        : messages.workflows[id as keyof typeof messages.workflows]
       : {
           name: definition.skill.template.name,
           description: `[${messages.sourceUser}] ${definition.skill.template.description}`,
         };
-    const displayId = displayIds.get(workflow) ?? workflow;
-    const dependencyOwner = requiredBy.get(workflow);
+    const displayId = displayIds.get(id) ?? id;
+    const dependencyOwner = requiredBy.get(id);
     return {
-      value: workflow,
-      name: `${displayId.padEnd(columnWidth)} - ${metadata.name}`,
+      value: id,
+      name: `${displayId.padEnd(isExpert ? expertColumnWidth : workflowColumnWidth)} - ${metadata.name}`,
       description: formatPickerDescription(metadata.description, terminalColumns),
       short: metadata.name,
-      checked: currentState.workflows.includes(workflow),
+      checked: currentState.workflows.includes(id) || requiredBy.has(id),
       disabled: dependencyOwner ? messages.requiredBy(dependencyOwner) : undefined,
     };
-  });
+  };
+
+  const workflowGroup = definitions.filter((definition) => definition.kind !== 'expert').map(toChoice);
+  const expertGroup = definitions.filter((definition) => definition.kind === 'expert').map(toChoice);
+
+  return [
+    new SeparatorCtor(messages.workflowsGroupLabel),
+    ...workflowGroup,
+    new SeparatorCtor(messages.expertsGroupLabel),
+    ...expertGroup,
+  ];
 }
 
 function deliveryChoices(
@@ -203,7 +267,7 @@ function deliveryChoices(
 }
 
 export async function promptForNewProfileState(currentState: ProfileState): Promise<ProfileState> {
-  const { select, checkbox } = await import('@inquirer/prompts');
+  const { select, checkbox, Separator } = await import('@inquirer/prompts');
   const messages = getProfilePromptMessages();
   const delivery = await select<Delivery>({
     message: messages.deliveryPickerMessage,
@@ -214,9 +278,9 @@ export async function promptForNewProfileState(currentState: ProfileState): Prom
     message: messages.workflowPickerMessage,
     instructions: messages.workflowPickerInstructions,
     shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-    pageSize: workflowChoices(currentState, messages).length,
+    pageSize: workflowChoices(currentState, messages, Separator).length,
     theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-    choices: workflowChoices(currentState, messages),
+    choices: workflowChoices(currentState, messages, Separator),
   });
   return {
     profile: deriveProfileFromWorkflowSelection(workflows),
@@ -240,11 +304,20 @@ export function printProfileApplyGuidance(): void {
   console.log(getProfileUiMessages().applyGuidance);
 }
 
+/**
+ * Persists a resolved profile state and marks the machine as having
+ * explicit expert selection (design.md D4): this is the picker's, `profile
+ * use`'s, and `profile new`/`import`'s shared write path, and one of the
+ * few paths allowed to set the marker. Once set, the profile-default plus
+ * dependency-closure expert set governs installs instead of the legacy
+ * "install every expert" fallback.
+ */
 export function applyProfileState(state: ProfileState): void {
   const config = getGlobalConfig();
   config.profile = state.profile;
   config.delivery = state.delivery;
   config.workflows = [...state.workflows];
+  config.expertSelectionExplicit = true;
   saveGlobalConfig(config);
 }
 
@@ -256,7 +329,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     return;
   }
 
-  const { select, checkbox, confirm } = await import('@inquirer/prompts');
+  const { select, checkbox, confirm, Separator } = await import('@inquirer/prompts');
   const chalk = (await import('chalk')).default;
 
   try {
@@ -318,9 +391,9 @@ export async function runInteractiveProfileEditor(): Promise<void> {
         message: messages.workflowPickerMessage,
         instructions: messages.workflowPickerInstructions,
         shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-        pageSize: workflowChoices(currentState, messages).length,
+        pageSize: workflowChoices(currentState, messages, Separator).length,
         theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-        choices: workflowChoices(currentState, messages),
+        choices: workflowChoices(currentState, messages, Separator),
       });
       nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows, nextState.delivery);
       nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);

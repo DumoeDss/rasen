@@ -3,7 +3,7 @@ import * as path from 'node:path';
 
 import { Command } from 'commander';
 
-import { getGlobalConfig } from '../core/global-config.js';
+import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import {
   BUILTIN_PROFILE_NAMES,
   PROFILE_DEFINITION_VERSION,
@@ -340,6 +340,16 @@ async function importProfileCommand(
     imported.definition.workflows.length
   ));
   console.log(messages.useImportedProfile(imported.name));
+
+  // Importing a profile is one of the explicit expert-aware write paths
+  // (design.md D4): the imported definition's `workflows` may name expert
+  // ids the user chose deliberately, so from this point on the
+  // profile-default plus closure expert set governs future installs
+  // instead of the legacy all-experts fallback.
+  const config = getGlobalConfig();
+  if (config.expertSelectionExplicit !== true) {
+    saveGlobalConfig({ ...config, expertSelectionExplicit: true });
+  }
 }
 
 async function exportProfileCommand(

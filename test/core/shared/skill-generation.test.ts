@@ -72,15 +72,17 @@ describe('skill-generation', () => {
       expect(uniqueIds.size).toBe(templates.length);
     });
 
-    it('should filter workflow skills by IDs (expert skills always included)', () => {
+    // Post-6b-flip: getSkillTemplates no longer force-installs every expert
+    // regardless of filter (design.md D3) — a filter selects exactly the
+    // ids passed in (resolved through requires.workflows only, since this
+    // function's own resolution stays workflow-only; callers thread the
+    // closure-included desired set in as the filter — see
+    // resolveDesiredWorkflowSelection in profiles.ts).
+    it('should filter to exactly the given IDs when no expert is requested', () => {
       const filtered = getSkillTemplates(['propose', 'explore', 'apply', 'archive']);
-      // 4 workflow + 21 expert skills
-      expect(filtered).toHaveLength(25);
+      expect(filtered).toHaveLength(4);
       const ids = filtered.map(t => t.workflowId);
-      expect(ids).toContain('propose');
-      expect(ids).toContain('explore');
-      expect(ids).toContain('apply');
-      expect(ids).toContain('archive');
+      expect(ids).toEqual(['propose', 'explore', 'apply', 'archive']);
       expect(ids).not.toContain('new');
     });
 
@@ -90,19 +92,24 @@ describe('skill-generation', () => {
       expect(noFilter).toHaveLength(all.length);
     });
 
-    it('should return only expert skills when filter matches no workflows', () => {
+    it('should return an empty array when filter matches no known id', () => {
       const filtered = getSkillTemplates(['nonexistent']);
-      // 0 workflow + 21 expert skills
-      expect(filtered).toHaveLength(21);
+      expect(filtered).toHaveLength(0);
     });
 
-    it('should return single workflow template plus expert skills when filter has one workflow', () => {
+    it('should return exactly one template when filter has one workflow (no expert leaks in)', () => {
       const filtered = getSkillTemplates(['propose']);
-      // 1 workflow + 21 expert skills
-      expect(filtered).toHaveLength(22);
-      const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
-      expect(workflowTemplates).toHaveLength(1);
-      expect(workflowTemplates[0].dirName).toBe('rasen-propose');
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].workflowId).toBe('propose');
+      expect(filtered[0].dirName).toBe('rasen-propose');
+    });
+
+    it('should install an expert when its id is explicitly included in the filter', () => {
+      const filtered = getSkillTemplates(['propose', 'review']);
+      expect(filtered).toHaveLength(2);
+      const ids = filtered.map(t => t.workflowId);
+      expect(ids).toContain('propose');
+      expect(ids).toContain('review');
     });
   });
 

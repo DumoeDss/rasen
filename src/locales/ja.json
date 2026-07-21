@@ -165,7 +165,95 @@
           "name": "目標ループを実行",
           "description": "長期目標の計画、反復、結果報告をまとめて進行します"
         }
-      }
+      },
+      "experts": {
+        "benchmark": {
+          "name": "ベンチマーク",
+          "description": "再現可能な計測とサイズベンチマークを予算と比較し、パフォーマンス退行を検出します"
+        },
+        "careful": {
+          "name": "慎重確認",
+          "description": "危険または取り消せないシェルコマンドの実行前に一時停止し、説明・確認を求めます"
+        },
+        "chrome-use": {
+          "name": "Chrome操作",
+          "description": "CDP経由で実際のChromeを操作し、DOMスナップショット、クリック、ネットワークキャプチャ、スクリーンショットを取得します"
+        },
+        "codebase-design": {
+          "name": "コードベース設計",
+          "description": "二度設計し、モジュール境界を深め、実装を意図したアーキテクチャに沿わせます"
+        },
+        "codex": {
+          "name": "Codex",
+          "description": "OpenAI Codex CLIを呼び出し、独立したレビューまたは実装パスを行います"
+        },
+        "cso": {
+          "name": "CSO監査",
+          "description": "ブランチ差分の敵対的セキュリティレビューを行い、確信度付きで重大度をタグ付けします"
+        },
+        "design-consultation": {
+          "name": "デザイン相談",
+          "description": "対話を通じてプロジェクトのデザインシステムを抽出・議論し、確定させます"
+        },
+        "design-review": {
+          "name": "デザインレビュー",
+          "description": "ブラウザベースでビジュアル階層・タイポグラフィ・色・レスポンシブ対応を採点します"
+        },
+        "freeze": {
+          "name": "フリーズ",
+          "description": "編集をディレクトリに制限し、範囲外への書き込みを拒否します"
+        },
+        "guard": {
+          "name": "ガード",
+          "description": "破壊的コマンドのガードレールと編集境界を一括で有効化するフルセーフモードです"
+        },
+        "investigate": {
+          "name": "調査",
+          "description": "修正を試みる前に、証拠に基づきバグを再現・切り分け・根本原因特定します"
+        },
+        "navigator": {
+          "name": "ナビゲーター",
+          "description": "このリポジトリのスキルとワークフロー、それぞれの使いどころの地図です"
+        },
+        "office-hours": {
+          "name": "オフィスアワー",
+          "description": "構築前に製品需要と方向性を検証します"
+        },
+        "prototype": {
+          "name": "プロトタイプ",
+          "description": "使い捨てのUIまたはロジックスパイクを素早く作り、疑問に答えます"
+        },
+        "qa": {
+          "name": "QA",
+          "description": "CDPプロキシ経由でアプリを探索し、証拠に基づく問題を記録して修正します"
+        },
+        "qa-only": {
+          "name": "QA（レポートのみ）",
+          "description": "QAと同じ探索とヘルススコアを行いますが、コードは編集しません"
+        },
+        "review": {
+          "name": "レビュー",
+          "description": "コードベース全体の文脈でブランチ差分をレビューし、重大度タグ付きの指摘と修正ループを提供します"
+        },
+        "tdd": {
+          "name": "TDD",
+          "description": "モックの指針を伴うレッド・グリーン・リファクタの規律です"
+        },
+        "unfreeze": {
+          "name": "アンフリーズ",
+          "description": "freezeまたはguardで設定した編集制限を解除します"
+        },
+        "workflow-author": {
+          "name": "ワークフロー作成",
+          "description": "インストール可能なワークフローとパイプラインを、段階的検証と独立レビューを経て安全に作成します"
+        },
+        "workflow-review": {
+          "name": "ワークフローレビュー",
+          "description": "インストール可能なワークフローとパイプラインを品質とセキュリティの観点から独立してレビューします"
+        }
+      },
+      "workflowsGroupLabel": "-- ワークフロー --",
+      "expertsGroupLabel": "-- エキスパート --"
     },
     "ui": {
       "errorPrefix": "エラー:",
@@ -379,7 +467,8 @@
       "invalidAutopilotSelection": "設定の'autopilot.selection'フィールドが無効です（'classify'、'manual'、または'compose'を指定してください）",
       "invalidAutopilot": "設定の'autopilot'フィールドが無効です（オブジェクトを指定してください）",
       "invalidHandoffThreshold": "設定の'handoff.threshold'フィールドが無効です（(0, 1]の数値、または{ remainingTokens: <正の整数> }を指定してください）",
-      "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）"
+      "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）",
+      "expertSelectionMigration": "注: エキスパートを個別に選択できるようになりました。これまでインストール済みのエキスパートは当面すべて維持されます — インストールするものを選ぶには `rasen profile` を実行してください。"
     }
   },
   "completion": {

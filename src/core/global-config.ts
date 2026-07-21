@@ -82,6 +82,17 @@ export interface GlobalConfig {
     noticeSeen?: boolean;
   };
   /**
+   * Machine-managed migration marker for the expert install-semantics flip
+   * (concept-coherence 6b). Absent/`false` = legacy: every built-in expert
+   * continues to install regardless of profile, preserving pre-flip
+   * behavior exactly (design.md D4). Set to `true` only by explicit
+   * expert-aware write paths (the profile picker's `applyProfileState`,
+   * `profile use`, `profile new`/`import`, and fresh `init`) — `update`
+   * never sets it, so a project that is merely re-`update`d keeps every
+   * expert forever until the user opens the picker.
+   */
+  expertSelectionExplicit?: boolean;
+  /**
    * Context-handoff threshold; project config of the same name wins over
    * this. `roles` carries per-role overrides (planner/implementer/
    * reviewer/fixer/shipper) mirroring the pipeline registry's

@@ -118,7 +118,17 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
 }
 
 /**
- * Gets skill templates with their directory names, optionally filtered by workflow IDs.
+ * Gets skill templates with their directory names, optionally filtered by
+ * workflow/expert IDs.
+ *
+ * Experts are catalog units like workflows (`kind: 'expert'`) and install
+ * according to the SAME filter — there is no more unconditional "always
+ * install every expert" branch (that was the pre-6b behavior). Callers that
+ * need experts installed (profile defaults, dependency closure) must include
+ * those expert ids in `workflowFilter` themselves — see the single
+ * desired-set resolver in `init.ts`/`update.ts`, which passes
+ * `resolveWorkflowSelection(..., { includeSkillDependencies: true })`'s
+ * result here.
  *
  * @param workflowFilter - If provided, only return templates whose workflowId is in this array
  */
@@ -127,30 +137,12 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
   const definitions = workflowFilter
     ? resolveWorkflowSelection(catalog, workflowFilter.filter((workflow) => catalog.has(workflow)))
     : catalog.definitions;
-  // Experts are catalog members too (kind:'expert'), but they're handled by
-  // the always-install branch below, not by workflowFilter selection — exclude
-  // them here so they aren't counted (and installed) twice.
-  const workflowSkills: SkillTemplateEntry[] = definitions
-    .filter((definition) => definition.kind !== 'expert')
-    .map((definition) => ({
-      template: definition.skill.template,
-      dirName: definition.skill.dirName,
-      workflowId: definition.id,
-      escapeFrontmatter: definition.source === 'user',
-    }));
-
-  // Expert skills are always installed regardless of workflowFilter (behavior
-  // preserved this round — see design.md D3/6b for the planned closure-driven flip).
-  const expertSkills: SkillTemplateEntry[] = catalog.definitions
-    .filter((definition) => definition.kind === 'expert')
-    .map((definition) => ({
-      template: definition.skill.template,
-      dirName: definition.skill.dirName,
-      workflowId: definition.id,
-      escapeFrontmatter: false,
-    }));
-
-  return [...workflowSkills, ...expertSkills];
+  return definitions.map((definition) => ({
+    template: definition.skill.template,
+    dirName: definition.skill.dirName,
+    workflowId: definition.id,
+    escapeFrontmatter: definition.source === 'user',
+  }));
 }
 
 /**

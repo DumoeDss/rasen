@@ -85,6 +85,38 @@ describe('named profiles', () => {
     expect(fs.existsSync(getNamedProfilesDir())).toBe(false);
   });
 
+  it('M1: accepts an expert id as a valid profile member', () => {
+    const definition = parseProfileDefinition({
+      version: 1,
+      delivery: 'both',
+      workflows: ['propose', 'review'],
+    });
+    expect(definition.workflows).toEqual(['propose', 'review']);
+  });
+
+  it('M1: still rejects an unknown id even alongside a valid expert id', () => {
+    expect(() =>
+      parseProfileDefinition({
+        version: 1,
+        delivery: 'both',
+        workflows: ['review', 'not-a-real-id'],
+      })
+    ).toThrow('Unknown workflow ID');
+  });
+
+  it('normalizes without auto-expanding closure-pulled experts (a saved snapshot lists exactly the chosen ids)', () => {
+    // `auto-command` requires the `review` expert via `requires.skills`, but
+    // normalization (used when saving/exporting a profile) must not widen
+    // the selection with that closure — only install-time resolution does.
+    const definition = parseProfileDefinition({
+      version: 1,
+      delivery: 'both',
+      workflows: ['auto-command'],
+    });
+    expect(definition.workflows).toEqual(['auto-command']);
+    expect(definition.workflows).not.toContain('review');
+  });
+
   it('imports JSON using the file basename and refuses an implicit overwrite', () => {
     const importPath = path.join(tempDir, 'minimal.json');
     fs.writeFileSync(
