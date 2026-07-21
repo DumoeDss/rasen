@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { validateConfigKeyPath as registryValidateConfigKeyPath } from './config-keys.js';
 import type { ConfigScope } from './config-keys.js';
 import { thresholdSchema } from './pipeline-registry/types.js';
+import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 
 /**
  * Zod schema for global Rasen configuration.
@@ -32,7 +33,7 @@ export const GlobalConfigSchema = z
     workflows: z
       .array(z.string())
       .optional(),
-    language: z.enum(['auto', 'en', 'ja']).optional().default('auto'),
+    language: z.enum(['auto', ...SUPPORTED_CLI_LOCALES]).optional().default('auto'),
     proactive: z.boolean().optional(),
     repoMode: z.enum(['solo', 'collaborative']).optional(),
     telemetry: z

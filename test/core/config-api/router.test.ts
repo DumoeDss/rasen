@@ -90,6 +90,7 @@ describe('config-api router (integration, via real http server)', () => {
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempConfigHome;
     process.env.XDG_DATA_HOME = tempConfigHome;
+    delete process.env.RASEN_LANG;
   });
 
   afterEach(async () => {
@@ -154,6 +155,24 @@ describe('config-api router (integration, via real http server)', () => {
       });
       expect(res.status).toBe(200);
       expect((res.json() as any).entry.definition.key).toBe('handoff.threshold');
+    });
+
+    it('exposes canonical language values in API metadata', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config/language',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const language = (res.json() as any).entry;
+      expect(language.definition.enumValues).toEqual(['auto', 'en', 'ja', 'zh-cn']);
+      expect(language.definition.constraints.enumValues).toEqual([
+        'auto',
+        'en',
+        'ja',
+        'zh-cn',
+      ]);
     });
 
     it('404s an unregistered key with code unknown_key', async () => {
@@ -256,6 +275,29 @@ describe('config-api router (integration, via real http server)', () => {
       });
       expect(res.status).toBe(400);
       expect((res.json() as any).error.code).toBe('not_settable');
+    });
+
+    it('persists exact zh-cn and rejects non-canonical language aliases', async () => {
+      const h = await startServer();
+      const accepted = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/language',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'global', value: 'zh-cn' }),
+      });
+      expect(accepted.status).toBe(200);
+      expect((accepted.json() as any).entry.value).toBe('zh-cn');
+      expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).language).toBe('zh-cn');
+
+      const rejected = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/language',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'global', value: 'zh-CN' }),
+      });
+      expect(rejected.status).toBe(400);
+      expect((rejected.json() as any).error.code).toBe('invalid_value');
+      expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).language).toBe('zh-cn');
     });
 
     it('sets a project-scope value and re-resolves it', async () => {

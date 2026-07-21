@@ -8,6 +8,7 @@ import {
 } from '../../src/core/config-keys.js';
 import { GlobalConfigSchema } from '../../src/core/config-schema.js';
 import { ProjectConfigSchema } from '../../src/core/project-config.js';
+import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
 
 describe('config-keys registry', () => {
   describe('validateConfigKeyPath', () => {
@@ -88,12 +89,15 @@ describe('config-keys registry', () => {
       expect(error).toMatch(/collaborative/);
     });
 
-    it('limits language to auto, English, or Japanese', () => {
+    it('limits language to auto or a canonical supported CLI locale', () => {
       const def = findConfigKeyDefinition('language', 'global')!;
-      expect(validateConfigValue(def, 'auto')).toBeNull();
-      expect(validateConfigValue(def, 'en')).toBeNull();
-      expect(validateConfigValue(def, 'ja')).toBeNull();
-      expect(validateConfigValue(def, 'fr')).toMatch(/auto/);
+      expect(def.enumValues).toEqual(['auto', ...SUPPORTED_CLI_LOCALES]);
+      for (const language of ['auto', ...SUPPORTED_CLI_LOCALES]) {
+        expect(validateConfigValue(def, language)).toBeNull();
+      }
+      for (const language of ['zh-CN', 'zh_CN', 'zh-SG', 'zh-Hans', 'zh', 'fr']) {
+        expect(validateConfigValue(def, language)).toMatch(/auto/);
+      }
     });
 
     it('names the allowed range for an out-of-range threshold', () => {

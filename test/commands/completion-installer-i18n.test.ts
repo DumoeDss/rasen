@@ -15,6 +15,7 @@ import {
   type InstallationResult,
 } from '../../src/core/completions/factory.js';
 import type { SupportedShell } from '../../src/utils/shell-detection.js';
+import type { CliLocale } from '../../src/utils/locale.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
 
 const BUILT_IN_SHELLS = ['bash', 'fish', 'powershell', 'zsh'] as const;
@@ -46,15 +47,21 @@ function getInstallBlockingPath(shell: SupportedShell, homeDir: string): string 
   }
 }
 
-function renderInstructions(result: InstallationResult): string[] {
+function renderInstructions(
+  result: InstallationResult,
+  locale: CliLocale = 'ja'
+): string[] {
   return (result.instructions ?? []).map((line, index) =>
-    formatInstallerMessage(result.instructionDescriptors?.[index] ?? undefined, line, 'ja')
+    formatInstallerMessage(result.instructionDescriptors?.[index] ?? undefined, line, locale)
   );
 }
 
-function renderWarnings(result: InstallationResult): string[] {
+function renderWarnings(
+  result: InstallationResult,
+  locale: CliLocale = 'ja'
+): string[] {
   return (result.warnings ?? []).map((line, index) =>
-    formatInstallerMessage(result.warningDescriptors?.[index] ?? undefined, line, 'ja')
+    formatInstallerMessage(result.warningDescriptors?.[index] ?? undefined, line, locale)
   );
 }
 
@@ -152,6 +159,54 @@ describe('completion installer structured localization', () => {
     expect(rendered).toContain('  echo $fpath | grep "custom/completions"');
   });
 
+  it('localizes manual setup for every built-in shell in Simplified Chinese while preserving shell code', async () => {
+    const bash = new BashInstaller(path.join(tempDir, 'bash-manual'));
+    vi.spyOn(bash, 'isBashCompletionInstalled').mockResolvedValue(false);
+    const bashResult = await bash.install('# bash completion');
+    expect(renderInstructions(bashResult, 'zh-cn')).toEqual(
+      expect.arrayContaining([
+        '要启用补全，请将以下内容添加到 ~/.bashrc 文件：',
+        expect.stringContaining('if [ -d'),
+      ])
+    );
+    expect(renderWarnings(bashResult, 'zh-cn')).toContain(
+      '⚠️  警告：未检测到 bash-completion 包'
+    );
+
+    const fishResult = await new FishInstaller(path.join(tempDir, 'fish-manual')).install(
+      '# fish completion'
+    );
+    expect(renderInstructions(fishResult, 'zh-cn')).toEqual([
+      'Fish 会自动从 ~/.config/fish/completions/ 加载补全',
+      '补全立即可用，无需重启 shell。',
+    ]);
+
+    const powershell = new PowerShellInstaller(path.join(tempDir, 'powershell-manual'));
+    vi.spyOn(powershell, 'configureProfile').mockResolvedValue(false);
+    const powershellResult = await powershell.install('# PowerShell completion');
+    const powershellInstructions = renderInstructions(powershellResult, 'zh-cn');
+    expect(powershellInstructions.some((line) => line.startsWith('要启用补全'))).toBe(true);
+    expect(powershellInstructions.some((line) => line.includes('Test-Path'))).toBe(true);
+    expect(powershellInstructions).toContain('然后重启 PowerShell 或运行：. $PROFILE');
+
+    const zshResult = await new ZshInstaller(path.join(tempDir, 'zsh-manual')).install(
+      '# zsh completion'
+    );
+    const zshInstructions = renderInstructions(zshResult, 'zh-cn');
+    expect(zshInstructions).toContain('要启用补全，请将以下内容添加到 ~/.zshrc 文件：');
+    expect(zshInstructions.some((line) => line.includes('fpath=('))).toBe(true);
+    expect(zshInstructions).toContain('请重启 shell 或运行：exec zsh');
+
+    const ohMyZshHome = path.join(tempDir, 'oh-my-zsh-manual');
+    fs.mkdirSync(path.join(ohMyZshHome, '.oh-my-zsh'), { recursive: true });
+    const ohMyZshResult = await new ZshInstaller(ohMyZshHome).install('# zsh completion');
+    const ohMyZshInstructions = renderInstructions(ohMyZshResult, 'zh-cn');
+    expect(ohMyZshInstructions).toContain(
+      '提示：Oh My Zsh 通常会自动加载 custom/completions 中的补全。'
+    );
+    expect(ohMyZshInstructions).toContain('  echo $fpath | grep "custom/completions"');
+  });
+
   it('does not print English debug or warning output during first installs', async () => {
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -213,68 +268,128 @@ describe('completion installer structured localization', () => {
     expect(renderWarnings(result)[0]).not.toContain('Warning: Could not configure');
   });
 
-  for (const shell of BUILT_IN_SHELLS) {
-    it(`suppresses direct diagnostics and reports a localized ${shell} ENOTDIR install failure`, async () => {
-      process.env.RASEN_LANG = 'ja';
-      const homeDir = path.join(tempDir, `${shell}-command-install`);
-      fs.mkdirSync(homeDir, { recursive: true });
-      fs.writeFileSync(getInstallBlockingPath(shell, homeDir), 'not a directory');
-      const installer = createInstaller(shell, homeDir);
-      vi.spyOn(CompletionFactory, 'createInstaller').mockReturnValue(installer);
-      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('returns Simplified Chinese auto-configuration diagnostics without direct English output', async () => {
+    delete process.env.RASEN_NO_AUTO_CONFIG;
+    vi.spyOn(FileSystemUtils, 'updateFileWithMarkers').mockRejectedValue(
+      new Error('test failure')
+    );
 
-      await new CompletionCommand().install({ shell });
+    const bash = new BashInstaller(path.join(tempDir, 'bash-zh-cn-failure'));
+    vi.spyOn(bash, 'isBashCompletionInstalled').mockResolvedValue(true);
+    const bashResult = await bash.install('# bash completion');
+    const zshResult = await new ZshInstaller(path.join(tempDir, 'zsh-zh-cn-failure')).install(
+      '# zsh completion'
+    );
 
-      const errorOutput = errorSpy.mock.calls.flat().join('\n');
-      expect(debugSpy).not.toHaveBeenCalled();
-      expect(errorOutput).toContain('補完スクリプトのインストールに失敗しました');
-      expect(errorOutput).not.toContain('Unable to determine write permissions');
-      expect(errorOutput).not.toContain('Path component');
-      expect(process.exitCode).toBe(1);
+    expect(renderWarnings(bashResult, 'zh-cn')).toContain(
+      '警告：无法为补全配置 .bashrc：test failure'
+    );
+    expect(renderWarnings(zshResult, 'zh-cn')).toContain(
+      '警告：无法为补全配置 .zshrc：test failure'
+    );
+    expect(renderWarnings(bashResult, 'zh-cn').join('\n')).not.toContain('Could not configure');
+    expect(renderWarnings(zshResult, 'zh-cn').join('\n')).not.toContain('Could not configure');
+  });
+
+  it('returns a Simplified Chinese PowerShell profile diagnostic without printing English', async () => {
+    const installer = new PowerShellInstaller(path.join(tempDir, 'powershell-zh-cn-failure'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(FileSystemUtils, 'canWriteFile').mockResolvedValue(false);
+    const warnings: string[] = [];
+    const descriptors: NonNullable<InstallationResult['warningDescriptors']> = [];
+
+    await installer.configureProfile('completion.ps1', (message, descriptor) => {
+      warnings.push(message);
+      descriptors.push(descriptor);
     });
+    const result: InstallationResult = {
+      success: true,
+      message: '',
+      warnings,
+      warningDescriptors: descriptors,
+    };
+
+    const rendered = renderWarnings(result, 'zh-cn')[0];
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(rendered).toMatch(/^警告：无法配置 .*：/);
+    expect(rendered).not.toContain('Warning: Could not configure');
+  });
+
+  for (const shell of BUILT_IN_SHELLS) {
+    it.each([
+      ['ja', '補完スクリプトのインストールに失敗しました'],
+      ['zh-cn', '补全脚本安装失败'],
+    ] as const)(
+      `suppresses direct diagnostics and reports a localized ${shell} ENOTDIR install failure in %s`,
+      async (locale, expectedFailure) => {
+        process.env.RASEN_LANG = locale;
+        const homeDir = path.join(tempDir, `${shell}-${locale}-command-install`);
+        fs.mkdirSync(homeDir, { recursive: true });
+        fs.writeFileSync(getInstallBlockingPath(shell, homeDir), 'not a directory');
+        const installer = createInstaller(shell, homeDir);
+        vi.spyOn(CompletionFactory, 'createInstaller').mockReturnValue(installer);
+        const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await new CompletionCommand().install({ shell });
+
+        const errorOutput = errorSpy.mock.calls.flat().join('\n');
+        expect(debugSpy).not.toHaveBeenCalled();
+        expect(errorOutput).toContain(expectedFailure);
+        expect(errorOutput).not.toContain('Unable to determine write permissions');
+        expect(errorOutput).not.toContain('Path component');
+        expect(process.exitCode).toBe(1);
+      }
+    );
   }
 
   it.skipIf(process.platform === 'win32')(
     'reports Fish and PowerShell read-only uninstall failures only through localized command results',
     async () => {
-      process.env.RASEN_LANG = 'ja';
-      const cases = [
-        {
-          shell: 'fish' as const,
-          homeDir: path.join(tempDir, 'fish-command-uninstall'),
-        },
-        {
-          shell: 'powershell' as const,
-          homeDir: path.join(tempDir, 'powershell-command-uninstall'),
-        },
-      ];
+      const locales = [
+        ['ja', '補完スクリプトのアンインストールに失敗しました'],
+        ['zh-cn', '补全脚本卸载失败'],
+      ] as const;
 
-      for (const { shell, homeDir } of cases) {
-        const installer = createInstaller(shell, homeDir);
-        const targetPath = shell === 'fish'
-          ? (installer as FishInstaller).getInstallationPath()
-          : (installer as PowerShellInstaller).getInstallationPath();
-        const targetDir = path.dirname(targetPath);
-        fs.mkdirSync(targetDir, { recursive: true });
-        fs.writeFileSync(targetPath, 'completion');
-        fs.chmodSync(targetDir, 0o555);
-        vi.spyOn(CompletionFactory, 'createInstaller').mockReturnValue(installer);
-        const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      for (const [locale, expectedFailure] of locales) {
+        process.env.RASEN_LANG = locale;
+        const cases = [
+          {
+            shell: 'fish' as const,
+            homeDir: path.join(tempDir, `${locale}-fish-command-uninstall`),
+          },
+          {
+            shell: 'powershell' as const,
+            homeDir: path.join(tempDir, `${locale}-powershell-command-uninstall`),
+          },
+        ];
 
-        try {
-          await new CompletionCommand().uninstall({ shell, yes: true });
+        for (const { shell, homeDir } of cases) {
+          const installer = createInstaller(shell, homeDir);
+          const targetPath = shell === 'fish'
+            ? (installer as FishInstaller).getInstallationPath()
+            : (installer as PowerShellInstaller).getInstallationPath();
+          const targetDir = path.dirname(targetPath);
+          fs.mkdirSync(targetDir, { recursive: true });
+          fs.writeFileSync(targetPath, 'completion');
+          fs.chmodSync(targetDir, 0o555);
+          vi.spyOn(CompletionFactory, 'createInstaller').mockReturnValue(installer);
+          const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+          const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-          const errorOutput = errorSpy.mock.calls.flat().join('\n');
-          expect(debugSpy).not.toHaveBeenCalled();
-          expect(errorOutput).toContain('補完スクリプトのアンインストールに失敗しました');
-          expect(errorOutput).not.toContain('Unable to determine write permissions');
-          expect(process.exitCode).toBe(1);
-        } finally {
-          fs.chmodSync(targetDir, 0o755);
-          vi.restoreAllMocks();
-          process.exitCode = 0;
+          try {
+            await new CompletionCommand().uninstall({ shell, yes: true });
+
+            const errorOutput = errorSpy.mock.calls.flat().join('\n');
+            expect(debugSpy).not.toHaveBeenCalled();
+            expect(errorOutput).toContain(expectedFailure);
+            expect(errorOutput).not.toContain('Unable to determine write permissions');
+            expect(process.exitCode).toBe(1);
+          } finally {
+            fs.chmodSync(targetDir, 0o755);
+            vi.restoreAllMocks();
+            process.exitCode = 0;
+          }
         }
       }
     }

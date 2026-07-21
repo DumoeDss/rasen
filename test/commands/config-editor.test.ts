@@ -144,6 +144,27 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     );
   });
 
+  it('localizes config groups and descriptions in Simplified Chinese while preserving canonical keys and values', async () => {
+    const { select } = await getPromptMocks();
+    process.env.RASEN_LANG = 'zh-cn';
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const languageRow = choices.find((choice) => choice.value === 'language')!;
+    expect(languageRow.name).toContain('外观 / language = zh-cn');
+    expect(languageRow.name).toContain('环境变量覆盖');
+    expect(languageRow.name).toContain('环境变量优先');
+    expect(languageRow.description).toContain('交互提示和 CLI 帮助所用的语言');
+    expect(choices.find((choice) => choice.value === '__exit__')?.name).toBe('退出');
+    expect(select.mock.calls[0][0].message).toBe('选择要编辑的键：');
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Rasen 配置'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('不在 Rasen 项目中')
+    );
+  });
+
   it('the workflows row is a disabled pointer to `rasen profile`', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');

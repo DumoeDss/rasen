@@ -38,7 +38,10 @@ export function localizeCommandRegistry(
   }));
 }
 
-export function hasJapaneseDescription(description: string): boolean {
-  const descriptions = getLocaleCatalog('ja').commandDescriptions as Record<string, string>;
+export function hasLocalizedDescription(
+  description: string,
+  locale: CliLocale
+): boolean {
+  const descriptions = getLocaleCatalog(locale).commandDescriptions as Record<string, string>;
   return descriptions[description] !== undefined;
 }

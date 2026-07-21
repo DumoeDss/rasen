@@ -186,6 +186,48 @@ describe('profile command', () => {
     expect(namedProfileExists('team')).toBe(false);
   });
 
+  it('uses Simplified Chinese prompts, built-in metadata, and results when creating a profile', async () => {
+    const { select, checkbox, confirm } = await promptMocks();
+    process.env.RASEN_LANG = 'zh-cn';
+    select.mockResolvedValueOnce('skills');
+    checkbox.mockResolvedValueOnce(['propose']);
+    confirm.mockResolvedValueOnce(false);
+
+    await runProfileCommand(['new', 'team']);
+
+    expect(select).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '交付模式（工作流的安装方式）：',
+        choices: expect.arrayContaining([
+          expect.objectContaining({ value: 'skills', name: '仅技能' }),
+        ]),
+      })
+    );
+    expect(checkbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '选择要启用的工作流：',
+        instructions: '按空格键切换，按 A 全选/清空，按 Enter 确认',
+        choices: expect.arrayContaining([
+          expect.objectContaining({
+            value: 'propose',
+            name: 'propose         - 提出变更',
+            description: '将请求转化为完整的提案、规格、设计和任务清单',
+          }),
+          expect.objectContaining({
+            value: 'review',
+            name: expect.stringContaining('审查'),
+            description: expect.stringContaining('合入前'),
+          }),
+        ]),
+      })
+    );
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: '保存并使用配置方案 "team"？' })
+    );
+    expect(consoleLogSpy).toHaveBeenCalledWith('配置方案创建已取消。');
+    expect(namedProfileExists('team')).toBe(false);
+  });
+
   it('keeps the name prompt open for reserved and existing profile names', async () => {
     saveNamedProfile('team', {
       version: 1,
@@ -247,6 +289,53 @@ describe('profile command', () => {
     expect(workflowDefinitionForJson(definition!)).toMatchObject({
       skill: { description: longDescription },
     });
+  });
+
+  it('keeps user-authored workflow content verbatim in the Simplified Chinese picker', async () => {
+    process.env.RASEN_LANG = 'zh-cn';
+    const authoredDescription = 'ユーザーが書いた説明をそのまま表示する';
+    const draft = scaffoldWorkflow(
+      'authored-verbatim',
+      path.join(tempDir, 'draft', 'authored-verbatim')
+    );
+    const skillPath = path.join(draft, 'SKILL.md');
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        'description: Describe when to use the authored-verbatim workflow.',
+        `description: ${authoredDescription}`
+      )
+    );
+    await importWorkflow(draft);
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      delivery: 'both',
+      workflows: ['authored-verbatim'],
+    });
+    const { select, checkbox, confirm } = await promptMocks();
+    select.mockResolvedValueOnce('both');
+    checkbox.mockResolvedValueOnce(['authored-verbatim']);
+    confirm.mockResolvedValueOnce(false);
+
+    await runProfileCommand(['new', 'authored-profile']);
+
+    const choices = checkbox.mock.calls[0][0].choices as Array<{
+      value: string;
+      name: string;
+      description: string;
+    }>;
+    expect(choices.find((choice) => choice.value === 'propose')).toEqual(
+      expect.objectContaining({ name: expect.stringMatching(/^propose\s+- 提出变更$/) })
+    );
+    expect(choices.find((choice) => choice.value === 'authored-verbatim')).toEqual(
+      expect.objectContaining({
+        description: `[用户] ${authoredDescription}`,
+      })
+    );
+    expect(loadWorkflowCatalog().get('authored-verbatim')?.skill.template.description).toBe(
+      authoredDescription
+    );
   });
 
   it('labels user workflows and prevents deselecting a required dependency', async () => {
@@ -327,6 +416,45 @@ describe('profile command', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'エラー: プロファイル形式「.txt」には対応していません。.yaml、.yml、または.jsonを使用してください。'
     );
+  });
+
+  it('localizes named-profile failures in Simplified Chinese', async () => {
+    process.env.RASEN_LANG = 'zh-cn';
+
+    await runProfileCommand(['use', 'missing']);
+
+    expect(process.exitCode).toBe(1);
+    let output = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(output).toMatch(/错误： 未找到配置方案文件：/);
+    expect(output).not.toContain('Profile file not found');
+
+    process.exitCode = undefined;
+    consoleErrorSpy.mockClear();
+    const sourcePath = path.join(tempDir, 'shared.txt');
+    fs.writeFileSync(sourcePath, 'not a profile', 'utf-8');
+    await runProfileCommand(['import', sourcePath]);
+
+    expect(process.exitCode).toBe(1);
+    output = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(output).toContain('不支持配置方案格式 ".txt"');
+    expect(output).not.toContain('Unsupported profile format');
+  });
+
+  it('reports legacy delivery migration in Simplified Chinese from the profile command-owned read', async () => {
+    process.env.RASEN_LANG = 'zh-cn';
+    const configPath = path.join(tempDir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ featureFlags: {}, language: 'zh-cn', delivery: 'commands-first' }),
+      'utf-8'
+    );
+
+    await runProfileCommand(['list']);
+
+    const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("交付模式 'commands-first' 已合并为 'both'");
+    expect(diagnostics).not.toContain('Note: delivery mode');
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).delivery).toBe('both');
   });
 
   it('lists built-in and saved profiles as JSON', async () => {

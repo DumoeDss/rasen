@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { serializeConfigEntry } from '../../../src/core/config-api/serialize.js';
 import { findConfigKeyDefinition } from '../../../src/core/config-keys.js';
 import type { EffectiveConfigEntry } from '../../../src/core/effective-config.js';
+import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
 
 function entryFor(key: string, scope: 'global' | 'project', overrides: Partial<EffectiveConfigEntry> = {}): EffectiveConfigEntry {
   const definition = findConfigKeyDefinition(key, scope)!;
@@ -46,6 +47,16 @@ describe('serializeConfigEntry', () => {
       enumValues: ['solo', 'collaborative'],
       range: undefined,
     });
+  });
+
+  it('exposes every canonical language through config API metadata', () => {
+    const entry = entryFor('language', 'global');
+    const wire = serializeConfigEntry(entry);
+    expect(wire.definition.enumValues).toEqual(['auto', ...SUPPORTED_CLI_LOCALES]);
+    expect(wire.definition.constraints.enumValues).toEqual([
+      'auto',
+      ...SUPPORTED_CLI_LOCALES,
+    ]);
   });
 
   it('carries no warnings when scope values are valid', () => {

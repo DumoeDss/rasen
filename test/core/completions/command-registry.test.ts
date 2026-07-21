@@ -6,9 +6,12 @@ import { COMMON_FLAGS } from '../../../src/core/completions/shared-flags.js';
 import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
 import { getCommandPath, program } from '../../../src/cli/index.js';
 import {
-  hasJapaneseDescription,
+  hasLocalizedDescription,
   localizeCommandRegistry,
+  localizeDescription,
 } from '../../../src/core/completions/description-localization.js';
+import { formatLocaleMessage, getLocaleCatalog } from '../../../src/locales/index.js';
+import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
 import type {
   CommandDefinition,
   FlagDefinition,
@@ -151,34 +154,63 @@ describe('command completion registry', () => {
     assertRegistryParity(program, COMMAND_REGISTRY);
   });
 
-  it('has Japanese descriptions for every command and flag', () => {
-    function assertLocalized(definitions: CommandDefinition[]): void {
+  it('has descriptions for every command and flag in every supported locale', () => {
+    function assertLocalized(
+      definitions: CommandDefinition[],
+      locale: (typeof SUPPORTED_CLI_LOCALES)[number]
+    ): void {
       for (const definition of definitions) {
         expect(
-          hasJapaneseDescription(definition.description),
-          `missing Japanese command description: ${definition.name} / ${definition.description}`
+          hasLocalizedDescription(definition.description, locale),
+          `missing ${locale} command description: ${definition.name} / ${definition.description}`
         ).toBe(true);
         for (const flag of definition.flags) {
           expect(
-            hasJapaneseDescription(flag.description),
-            `missing Japanese flag description: ${definition.name} --${flag.name} / ${flag.description}`
+            hasLocalizedDescription(flag.description, locale),
+            `missing ${locale} flag description: ${definition.name} --${flag.name} / ${flag.description}`
           ).toBe(true);
         }
-        assertLocalized(definition.subcommands ?? []);
+        assertLocalized(definition.subcommands ?? [], locale);
       }
     }
 
-    assertLocalized(COMMAND_REGISTRY);
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      assertLocalized(COMMAND_REGISTRY, locale);
+    }
   });
 
-  it('creates a Japanese completion registry without changing command structure', () => {
-    const localized = localizeCommandRegistry(COMMAND_REGISTRY, 'ja');
-    expect(localized.map((entry) => entry.name)).toEqual(
-      COMMAND_REGISTRY.map((entry) => entry.name)
+  it('creates a localized completion registry without changing command structure', () => {
+    const expectedProfileDescriptions = {
+      en: 'Manage reusable workflow profiles',
+      ja: '再利用可能なワークフロープロファイルを管理します',
+      'zh-cn': '管理可复用的工作流配置方案',
+    } as const;
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const localized = localizeCommandRegistry(COMMAND_REGISTRY, locale);
+      expect(localized.map((entry) => entry.name), locale).toEqual(
+        COMMAND_REGISTRY.map((entry) => entry.name)
+      );
+      expect(localized.find((entry) => entry.name === 'profile')?.description).toBe(
+        expectedProfileDescriptions[locale]
+      );
+    }
+  });
+
+  it('localizes dynamic tool descriptions in every supported locale', () => {
+    const ids = 'claude, codex';
+    const source = formatLocaleMessage(
+      getLocaleCatalog('en').commandDescriptionTemplates.toolsPrefix,
+      { ids }
     );
-    expect(localized.find((entry) => entry.name === 'profile')?.description).toBe(
-      '再利用可能なワークフロープロファイルを管理します'
-    );
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      expect(localizeDescription(source, locale), locale).toBe(
+        formatLocaleMessage(getLocaleCatalog(locale).commandDescriptionTemplates.toolsPrefix, {
+          ids,
+        })
+      );
+    }
   });
 
   it('uses one --store description on every lifecycle command', () => {

@@ -967,7 +967,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'pipeline',
-    description: 'Inspect orchestration pipelines (list, show, classify, resume)',
+    description: 'Inspect and manage orchestration pipelines',
     flags: [],
     subcommands: [
       {
