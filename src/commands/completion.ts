@@ -14,6 +14,7 @@ import {
   formatInstallerMessage,
   getCompletionUiMessages,
 } from './completion-messages.js';
+import { createConfigDiagnosticReporter } from './config-messages.js';
 
 interface GenerateOptions {
   shell?: string;
@@ -322,7 +323,9 @@ export class CompletionCommand {
           break;
         }
         case 'profiles': {
-          const delivery = getGlobalConfig().delivery ?? 'both';
+          const delivery = getGlobalConfig({
+            reporter: createConfigDiagnosticReporter(locale),
+          }).delivery ?? 'both';
           for (const profile of listAvailableProfiles(delivery)) {
             if (!profile.definition) continue;
             const source = profile.builtIn
@@ -335,7 +338,9 @@ export class CompletionCommand {
           break;
         }
         case 'saved-profiles': {
-          const delivery = getGlobalConfig().delivery ?? 'both';
+          const delivery = getGlobalConfig({
+            reporter: createConfigDiagnosticReporter(locale),
+          }).delivery ?? 'both';
           for (const profile of listAvailableProfiles(delivery)) {
             if (profile.builtIn || !profile.definition) continue;
             console.log(`${profile.name}\t${labels.savedProfile}`);

@@ -47,6 +47,7 @@ import {
   normalizeAgentRuntimeConfig,
   validatePipelineForExecution,
   type AgentRuntime,
+  type PipelineExecutionOptions,
   type PipelineInfo,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
@@ -67,6 +68,13 @@ import {
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
+import {
+  formatPipelineExecutionNotice,
+  formatPipelineRootSelectionNotice,
+  getPipelineMessages,
+  pipelineMessageError,
+  type PipelineMessages,
+} from './pipeline-messages.js';
 
 interface PipelineCommandOptions {
   json?: boolean;
@@ -151,8 +159,13 @@ function matchesKeyword(keyword: string, lowercasedText: string): boolean {
  * view: a bare fraction as-is, the absolute `{ remainingTokens }` form as
  * `N tokens remaining`.
  */
-function formatThreshold(threshold: ThresholdValue): string {
-  return typeof threshold === 'number' ? String(threshold) : `${threshold.remainingTokens} tokens remaining`;
+function formatThreshold(
+  threshold: ThresholdValue,
+  messages: PipelineMessages
+): string {
+  return typeof threshold === 'number'
+    ? String(threshold)
+    : messages.format('thresholdTokensRemaining', { tokens: threshold.remainingTokens });
 }
 
 export class PipelineCommand {
@@ -167,7 +180,19 @@ export class PipelineCommand {
   private async resolveRoot(
     options: PipelineCommandOptions
   ): Promise<ResolvedOpenSpecRoot | null> {
-    return resolveRootForCommand(options, { json: options.json });
+    if (options.json) {
+      return resolveRootForCommand(options, { json: true, reporter: false });
+    }
+    return resolveRootForCommand(options, {
+      reporter: (notice) => console.error(formatPipelineRootSelectionNotice(notice)),
+    });
+  }
+
+  private executionOptions(options: PipelineCommandOptions): PipelineExecutionOptions {
+    if (options.json) return { reporter: false };
+    return {
+      reporter: (notice) => console.warn(formatPipelineExecutionNotice(notice)),
+    };
   }
 
   /**
@@ -183,12 +208,13 @@ export class PipelineCommand {
       return;
     }
 
+    const messages = getPipelineMessages();
     if (pipelines.length === 0) {
-      console.log('No pipelines found.');
+      console.log(messages.format('noPipelinesFound'));
       return;
     }
 
-    this.printPipelineTable(pipelines);
+    this.printPipelineTable(pipelines, messages);
   }
 
   /**
@@ -204,11 +230,22 @@ export class PipelineCommand {
       pipeline = loadPipelineByName(name, projectRoot);
     } catch {
       const available = listPipelines(projectRoot);
-      const list = available.length > 0 ? available.join('\n  ') : '(none)';
-      throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
+      const messages = getPipelineMessages();
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        {
+          name,
+          available: available.length > 0 ? available.join('\n  ') : messages.format('none'),
+        },
+        'pipeline_not_found'
+      );
     }
     if (options.forExecution) {
-      await validatePipelineForExecution(pipeline, projectRoot);
+      await validatePipelineForExecution(
+        pipeline,
+        projectRoot,
+        this.executionOptions(options)
+      );
     }
 
     const graph = PipelineGraph.fromPipeline(pipeline);
@@ -238,7 +275,10 @@ export class PipelineCommand {
       return;
     }
 
-    this.printPipelineDetail(result, graph);
+    const source = listPipelinesWithInfo(projectRoot).find(
+      (info) => info.name === pipeline.name
+    )?.source;
+    this.printPipelineDetail(result, graph, source, getPipelineMessages());
   }
 
   /**
@@ -262,7 +302,7 @@ export class PipelineCommand {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      this.printAgentsDetail(result);
+      this.printAgentsDetail(result, getPipelineMessages());
       return;
     }
 
@@ -275,7 +315,7 @@ export class PipelineCommand {
       return;
     }
 
-    this.printAgentsDetail(result);
+    this.printAgentsDetail(result, getPipelineMessages());
   }
 
   /**
@@ -317,16 +357,17 @@ export class PipelineCommand {
       return;
     }
 
-    console.log(`Suggested pipeline: ${suggested}`);
+    const messages = getPipelineMessages();
+    console.log(messages.format('suggestedPipeline', { pipeline: suggested }));
     if (matched.length > 0) {
-      console.log(`Matched indicators: ${matched.join(', ')}`);
+      console.log(messages.format('matchedIndicators', { indicators: matched.join(', ') }));
     } else {
-      console.log('Matched indicators: (none — defaulted to small-feature)');
+      console.log(messages.format('matchedIndicatorsDefault'));
     }
-    console.log(`Basis: ${basis}`);
-    console.log('This suggestion is advisory; you can override it with any available pipeline.');
+    console.log(messages.format('classificationBasis', { basis }));
+    console.log(messages.format('classificationAdvisory'));
     if (available.length > 0) {
-      console.log(`Available: ${available.join(', ')}`);
+      console.log(messages.format('availablePipelines', { pipelines: available.join(', ') }));
     }
   }
 
@@ -360,7 +401,8 @@ export class PipelineCommand {
       for (const pipelineName of remainingPipelineNames) {
         await validatePipelineForExecution(
           loadPipelineByName(pipelineName, projectRoot),
-          projectRoot
+          projectRoot,
+          this.executionOptions(options)
         );
       }
       const runnable = runnableChildren(portfolio);
@@ -401,23 +443,36 @@ export class PipelineCommand {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      console.log(`Change: ${changeName} (portfolio of ${portfolio.children.length} children)`);
-      console.log(`Run-state read from: ${portfolioLocation.dir}`);
-      console.log(`Completed: ${completedChildren.length > 0 ? completedChildren.join(', ') : '(none)'}`);
-      console.log(`Runnable now: ${runnable.length > 0 ? runnable.join(', ') : '(none)'}`);
+      const messages = getPipelineMessages();
+      const none = messages.format('none');
+      console.log(messages.format('portfolioChange', {
+        change: changeName,
+        count: portfolio.children.length,
+      }));
+      console.log(messages.format('runStateReadFrom', { path: portfolioLocation.dir }));
+      console.log(messages.format('completed', {
+        stages: completedChildren.length > 0 ? completedChildren.join(', ') : none,
+      }));
+      console.log(messages.format('runnableNow', {
+        children: runnable.length > 0 ? runnable.join(', ') : none,
+      }));
       if (interrupted.length > 0) {
-        console.log(`Interrupted (warm-seed resume): ${interrupted.join(', ')}`);
+        console.log(messages.format('interrupted', { stages: interrupted.join(', ') }));
       }
       if (escalated.length > 0) {
-        console.log(`Escalated (needs attention): ${escalated.join(', ')}`);
+        console.log(messages.format('escalated', { stages: escalated.join(', ') }));
       }
       if (planner) {
-        const plannerId = planner.threadId ?? planner.agentId ?? planner.transcript ?? planner.role ?? 'recorded';
-        console.log(
-          `Planner (persistent, resumable): ${plannerId}`
-        );
+        const plannerId = planner.threadId
+          ?? planner.agentId
+          ?? planner.transcript
+          ?? planner.role
+          ?? messages.format('recorded');
+        console.log(messages.format('persistentPlanner', { planner: plannerId }));
       }
-      console.log(`Remaining: ${remainingChildren.length > 0 ? remainingChildren.join(', ') : '(none)'}`);
+      console.log(messages.format('remaining', {
+        stages: remainingChildren.length > 0 ? remainingChildren.join(', ') : none,
+      }));
       return;
     }
 
@@ -442,14 +497,21 @@ export class PipelineCommand {
           completed: [] as string[],
           next: null,
           remaining: [] as string[],
-          note: `Run-state file at ${runStateLocation.path} is invalid: ${runStateRead.reason}`,
+          note: getPipelineMessages('en').format('invalidRunStateNote', {
+            path: runStateLocation.path,
+            reason: runStateRead.reason,
+          }),
         };
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
           return;
         }
-        console.log(`Change: ${changeName}`);
-        console.log(result.note);
+        const messages = getPipelineMessages();
+        console.log(messages.format('changeLabel', { change: changeName }));
+        console.log(messages.format('invalidRunStateNote', {
+          path: runStateLocation.path,
+          reason: runStateRead.reason,
+        }));
         return;
       }
       const result = {
@@ -459,19 +521,24 @@ export class PipelineCommand {
         completed: [] as string[],
         next: null,
         remaining: [] as string[],
-        note: 'No run-state (auto-run.json) found; run classification to select a pipeline.',
+        note: getPipelineMessages('en').format('noRunStateNote'),
       };
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      console.log(`Change: ${changeName}`);
-      console.log(result.note);
+      const messages = getPipelineMessages();
+      console.log(messages.format('changeLabel', { change: changeName }));
+      console.log(messages.format('noRunStateNote'));
       return;
     }
 
     const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
-    await validatePipelineForExecution(pipeline, projectRoot);
+    await validatePipelineForExecution(
+      pipeline,
+      projectRoot,
+      this.executionOptions(options)
+    );
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const completed = completedStages(runState);
@@ -572,53 +639,65 @@ export class PipelineCommand {
       return;
     }
 
+    const messages = getPipelineMessages();
+    const none = messages.format('none');
     const warmSeedable = Object.keys(workers);
-    console.log(`Change: ${changeName}`);
-    console.log(`Pipeline: ${runState.pipeline}`);
-    console.log(`Run-state read from: ${runStateLocation!.dir}`);
-    console.log(`Completed: ${completed.length > 0 ? completed.join(', ') : '(none)'}`);
-    console.log(`Next: ${next ?? '(complete)'}`);
-    console.log(`Remaining: ${remaining.length > 0 ? remaining.join(', ') : '(none)'}`);
+    console.log(messages.format('changeLabel', { change: changeName }));
+    console.log(messages.format('pipelineLabel', { name: runState.pipeline }));
+    console.log(messages.format('runStateReadFrom', { path: runStateLocation!.dir }));
+    console.log(messages.format('completed', {
+      stages: completed.length > 0 ? completed.join(', ') : none,
+    }));
+    console.log(messages.format('nextStage', {
+      stage: next ?? messages.format('complete'),
+    }));
+    console.log(messages.format('remaining', {
+      stages: remaining.length > 0 ? remaining.join(', ') : none,
+    }));
     if (inProgressStages.length > 0) {
-      console.log(`Interrupted (warm-seed resume): ${inProgressStages.join(', ')}`);
+      console.log(messages.format('interrupted', { stages: inProgressStages.join(', ') }));
     }
     if (escalatedStages.length > 0) {
-      console.log(`Escalated (needs attention): ${escalatedStages.join(', ')}`);
+      console.log(messages.format('escalated', { stages: escalatedStages.join(', ') }));
     }
     if (openFindings.length > 0) {
-      console.log(`Open findings: ${openFindings.length} (resolve before ship)`);
+      console.log(messages.format('openFindings', { count: openFindings.length }));
     }
     if (legacySkillHints.length > 0) {
-      console.log(
-        `Legacy skill IDs in pipeline '${runState.pipeline}' (update the pipeline yaml):`
-      );
+      console.log(messages.format('legacySkillHeading', { pipeline: runState.pipeline }));
       for (const hint of legacySkillHints) {
-        console.log(`  stage ${hint.stage}: ${hint.from} -> ${hint.to}`);
+        console.log(messages.format('legacySkillEntry', hint));
       }
     }
-    for (const w of workerHandleWarnings) {
-      const recorded = w.keys.length > 0 ? w.keys.join(', ') : 'role-only / bare label';
-      console.log(
-        `Worker handle warning: stage '${w.stage}' worker has no durable handle (recorded: ${recorded}); record agentId/transcript on dispatch.`
-      );
+    for (const warning of workerHandleWarnings) {
+      const recorded = warning.keys.length > 0
+        ? warning.keys.join(', ')
+        : messages.format('bareWorkerLabel');
+      console.log(messages.format('workerHandleWarning', {
+        stage: warning.stage,
+        recorded,
+      }));
     }
-    for (const d of duplicateKeyWarnings) {
-      console.log(
-        `Duplicate run-state key: '${d.key}' repeated at ${d.path} (JSON.parse keeps the last value).`
-      );
+    for (const warning of duplicateKeyWarnings) {
+      console.log(messages.format('duplicateRunStateKey', {
+        key: warning.key,
+        path: warning.path,
+      }));
     }
     if (warmSeedable.length > 0) {
-      console.log(`Resume handles available (worker sessions/transcripts): ${warmSeedable.join(', ')}`);
+      console.log(messages.format('resumeHandles', { stages: warmSeedable.join(', ') }));
     }
     if (sessionHandoff) {
-      console.log(
-        `Session handoff (generation ${sessionHandoffGeneration(sessionHandoff)}): ${sessionHandoff.path}`
-      );
+      console.log(messages.format('sessionHandoff', {
+        generation: sessionHandoffGeneration(sessionHandoff),
+        path: sessionHandoff.path,
+      }));
     }
     if (runState.gatePolicy) {
-      console.log(
-        `Gate policy: ${runState.gatePolicy.effective} (${runState.gatePolicy.source})`
-      );
+      console.log(messages.format('gatePolicy', {
+        effective: runState.gatePolicy.effective,
+        source: runState.gatePolicy.source,
+      }));
     }
   }
 
@@ -631,8 +710,15 @@ export class PipelineCommand {
       return loadPipelineByName(name, projectRoot);
     } catch {
       const available = listPipelines(projectRoot);
-      const list = available.length > 0 ? available.join('\n  ') : '(none)';
-      throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
+      const messages = getPipelineMessages();
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        {
+          name,
+          available: available.length > 0 ? available.join('\n  ') : messages.format('none'),
+        },
+        'pipeline_not_found'
+      );
     }
   }
 
@@ -646,9 +732,7 @@ export class PipelineCommand {
       const parsedRole = StageRoleSchema.parse(role);
       const parsedRuntime = AgentRuntimeSchema.safeParse(value);
       if (!parsedRuntime.success) {
-        throw new Error(
-          `Invalid runtime '${value}' for ${role}. Expected one of: claude, codex`
-        );
+        throw pipelineMessageError('invalidRuntime', { runtime: value, role });
       }
       updates[parsedRole] = parsedRuntime.data;
     }
@@ -765,15 +849,28 @@ export class PipelineCommand {
     };
   }
 
-  private printPipelineTable(pipelines: PipelineInfo[]): void {
-    console.log('Available pipelines:');
+  private printPipelineTable(
+    pipelines: PipelineInfo[],
+    messages: PipelineMessages
+  ): void {
+    console.log(messages.format('availablePipelinesHeading'));
     console.log();
-    for (const p of pipelines) {
-      console.log(`  ${p.name}  [${p.source}]`);
-      if (p.description) {
-        console.log(`    ${p.description.replace(/\s+/g, ' ').trim()}`);
+    for (const pipeline of pipelines) {
+      console.log(messages.format('pipelineTableEntry', {
+        name: pipeline.name,
+        source: pipeline.source,
+      }));
+      const description = messages.description(
+        pipeline.name,
+        pipeline.source,
+        pipeline.description
+      );
+      if (description) {
+        console.log(`    ${description.replace(/\s+/g, ' ').trim()}`);
       }
-      console.log(`    stages: ${p.stages.join(' -> ')}`);
+      console.log(messages.format('pipelineTableStages', {
+        stages: pipeline.stages.join(' -> '),
+      }));
       console.log();
     }
   }
@@ -787,87 +884,130 @@ export class PipelineCommand {
       stages: StageView[];
       origin?: PipelineYaml['origin'];
     },
-    graph: PipelineGraph
+    graph: PipelineGraph,
+    source: PipelineInfo['source'] | undefined,
+    messages: PipelineMessages
   ): void {
-    console.log(`Pipeline: ${result.name}`);
-    if (result.description) {
-      console.log(result.description.replace(/\s+/g, ' ').trim());
+    console.log(messages.format('pipelineLabel', { name: result.name }));
+    const description = source
+      ? messages.description(result.name, source, result.description)
+      : result.description;
+    if (description) {
+      console.log(description.replace(/\s+/g, ' ').trim());
     }
     if (result.origin) {
-      console.log(`Origin: ${result.origin}`);
+      console.log(messages.format('originLabel', { origin: result.origin }));
     }
     console.log();
-    console.log('Build order:');
+    console.log(messages.format('buildOrderHeading'));
     for (const id of result.buildOrder) {
       const stage = graph.getStage(id);
       if (!stage) continue;
       const meta: string[] = [];
-      if (stage.role) meta.push(`role=${stage.role}`);
-      if (stage.requires.length > 0) meta.push(`requires=[${stage.requires.join(', ')}]`);
-      if (stage.gate === 'vet') meta.push('gate(vet)');
-      else if (stage.gate) meta.push('gate');
+      if (stage.role) meta.push(messages.format('stageMetaRole', { role: stage.role }));
+      if (stage.requires.length > 0) {
+        meta.push(messages.format('stageMetaRequires', {
+          requires: stage.requires.join(', '),
+        }));
+      }
+      if (stage.gate === 'vet') meta.push(messages.format('stageMetaGateVet'));
+      else if (stage.gate) meta.push(messages.format('stageMetaGate'));
       if (stage.loop) {
         if (stage.loop.kind === 'review-cycle') {
-          meta.push(`loop=review-cycle(max ${stage.loop.maxRounds})`);
+          meta.push(messages.format('stageMetaReviewLoop', {
+            maximum: stage.loop.maxRounds,
+          }));
         } else {
-          meta.push(
-            `loop=goal[${stage.loop.gate.kind}](max ${stage.loop.maxRounds}, stall ${stage.loop.loopStallLimit})`
-          );
+          meta.push(messages.format('stageMetaGoalLoop', {
+            gate: stage.loop.gate.kind,
+            maximum: stage.loop.maxRounds,
+            stall: stage.loop.loopStallLimit,
+          }));
         }
       }
-      if (stage.parallelGroup) meta.push(`parallelGroup=${stage.parallelGroup}`);
-      if (stage.condition) meta.push(`condition=${stage.condition}`);
-      if (stage.leadReview) meta.push('leadReview');
-      if (stage.verifyPolicy) meta.push(`verifyPolicy=${stage.verifyPolicy}`);
+      if (stage.parallelGroup) {
+        meta.push(messages.format('stageMetaParallelGroup', { group: stage.parallelGroup }));
+      }
+      if (stage.condition) {
+        meta.push(messages.format('stageMetaCondition', { condition: stage.condition }));
+      }
+      if (stage.leadReview) meta.push(messages.format('stageMetaLeadReview'));
+      if (stage.verifyPolicy) {
+        meta.push(messages.format('stageMetaVerifyPolicy', { policy: stage.verifyPolicy }));
+      }
       // Read runtime fields from the stageView (resolved once in toStageView
       // WITH the machine-config model layers) rather than re-resolving here
       // layerlessly — a second resolveStageRuntimeConfig call without
       // modelLayers would silently report a machine-config-blind model the
       // day someone renders `model` from it.
-      const stageView = result.stages.find((s) => s.id === id);
+      const stageView = result.stages.find((candidate) => candidate.id === id);
       if (stageView) {
         meta.push(
-          `runtime=${stageView.runtime}${stageView.runtimeSource === 'default' ? '' : `(${stageView.runtimeSource})`}`
+          stageView.runtimeSource === 'default'
+            ? messages.format('stageMetaRuntime', { runtime: stageView.runtime })
+            : messages.format('stageMetaRuntimeSource', {
+                runtime: stageView.runtime,
+                source: stageView.runtimeSource,
+              })
         );
-        if (stageView.sessionReuse) meta.push(`sessionReuse=${stageView.sessionReuse}`);
-        if (stageView.sandbox) meta.push(`sandbox=${stageView.sandbox}`);
+        if (stageView.sessionReuse) {
+          meta.push(messages.format('stageMetaSessionReuse', {
+            session: stageView.sessionReuse,
+          }));
+        }
+        if (stageView.sandbox) {
+          meta.push(messages.format('stageMetaSandbox', { sandbox: stageView.sandbox }));
+        }
       }
       if (stageView && stageView.handoff.source !== 'default') {
-        meta.push(
-          `handoff=${formatThreshold(stageView.handoff.threshold)}(${stageView.handoff.source})`
-        );
+        meta.push(messages.format('stageMetaHandoff', {
+          threshold: formatThreshold(stageView.handoff.threshold, messages),
+          source: stageView.handoff.source,
+        }));
       }
       const suffix = meta.length > 0 ? `  (${meta.join('; ')})` : '';
       // A decompose stage has no leaf skill; show its fan-out target instead.
-      const action =
-        stage.kind === 'decompose'
-          ? `decompose -> childPipeline=${resolveChildPipelineName(stage)}`
-          : stage.skill;
-      console.log(`  ${id} -> ${action}${suffix}`);
+      const action = stage.kind === 'decompose'
+        ? messages.format('stageActionDecompose', {
+            pipeline: resolveChildPipelineName(stage),
+          })
+        : (stage.skill ?? '');
+      console.log(messages.format('stageLine', { id, action, suffix }));
     }
   }
 
-  private printAgentsDetail(result: {
-    name: string;
-    overridePath: string | null;
-    effectiveRoles: Record<StageRole, AgentRuntime>;
-    stages: StageView[];
-  }): void {
-    console.log(`Pipeline: ${result.name}`);
+  private printAgentsDetail(
+    result: {
+      name: string;
+      overridePath: string | null;
+      effectiveRoles: Record<StageRole, AgentRuntime>;
+      stages: StageView[];
+    },
+    messages: PipelineMessages
+  ): void {
+    console.log(messages.format('pipelineLabel', { name: result.name }));
     if (result.overridePath) {
-      console.log(`Project override: ${result.overridePath}`);
+      console.log(messages.format('projectOverrideLabel', { path: result.overridePath }));
     }
     console.log();
-    console.log('Role runtimes:');
+    console.log(messages.format('roleRuntimesHeading'));
     for (const role of STAGE_ROLES) {
-      console.log(`  ${role}: ${result.effectiveRoles[role]}`);
+      console.log(messages.format('agentRoleLine', {
+        role,
+        runtime: result.effectiveRoles[role],
+      }));
     }
     console.log();
-    console.log('Stages:');
+    console.log(messages.format('stagesHeading'));
     for (const stage of result.stages) {
-      const role = stage.role ?? '(none)';
+      const role = stage.role ?? messages.format('none');
       const source = stage.runtimeSource === 'default' ? '' : ` (${stage.runtimeSource})`;
-      console.log(`  ${stage.id}: role=${role}; runtime=${stage.runtime}${source}`);
+      console.log(messages.format('agentStageLine', {
+        id: stage.id,
+        role,
+        runtime: stage.runtime,
+        source,
+      }));
     }
   }
 }

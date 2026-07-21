@@ -386,6 +386,68 @@ describe('config profile interactive flow', () => {
     ).toEqual(ALL_WORKFLOWS.map(() => 15));
   });
 
+  it('localizes the workflow picker and update result in Simplified Chinese', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    const { select, checkbox } = await getPromptMocks();
+
+    process.env.RASEN_LANG = 'zh-cn';
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both' });
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+
+    await runConfigCommand(['profile']);
+
+    const actionCall = select.mock.calls[0][0];
+    expect(actionCall.message).toBe('要配置什么？');
+    expect(actionCall.choices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'workflows', name: '仅工作流' }),
+      ])
+    );
+    const checkboxCall = checkbox.mock.calls[0][0];
+    expect(checkboxCall.message).toBe('选择要启用的工作流：');
+    expect(checkboxCall.instructions).toBe(
+      '按空格键切换，按 A 全选/清空，按 Enter 确认'
+    );
+    expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+    expect(checkboxCall.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'propose',
+        name: 'propose         - 提出变更',
+        description: '将请求转化为完整的提案、规格、设计和任务清单',
+      }),
+      expect.objectContaining({
+        value: 'goal-command',
+        name: 'goal            - 运行目标循环',
+        description: '为长期目标编排规划、迭代和报告',
+      }),
+    ]));
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('配置方案变更：'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      '配置已更新。请在项目中运行 `rasen update` 以应用。'
+    );
+  });
+
+  it('reports legacy delivery migration in Simplified Chinese from the interactive profile editor read', async () => {
+    const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+    const { select } = await getPromptMocks();
+    process.env.RASEN_LANG = 'zh-cn';
+    fs.mkdirSync(path.dirname(getGlobalConfigPath()), { recursive: true });
+    fs.writeFileSync(
+      getGlobalConfigPath(),
+      JSON.stringify({ featureFlags: {}, language: 'zh-cn', delivery: 'commands-first' }),
+      'utf-8'
+    );
+    select.mockResolvedValueOnce('keep');
+
+    await runConfigCommand(['profile']);
+
+    const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("交付模式 'commands-first' 已合并为 'both'");
+    expect(diagnostics).not.toContain('Note: delivery mode');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBe('both');
+  });
+
   it('selecting current values only should be a no-op and should not ask apply', async () => {
     const { saveGlobalConfig, getGlobalConfigPath } = await import('../../src/core/global-config.js');
     const { select, confirm } = await getPromptMocks();

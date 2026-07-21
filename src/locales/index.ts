@@ -1,5 +1,6 @@
 import en from './en.json' with { type: 'json' };
 import ja from './ja.json' with { type: 'json' };
+import zhCn from './zh-cn.json' with { type: 'json' };
 
 import type { CliLocale } from '../utils/locale.js';
 
@@ -8,6 +9,7 @@ export type LocaleCatalog = typeof en;
 const CATALOGS = {
   en,
   ja,
+  'zh-cn': zhCn,
 } satisfies Record<CliLocale, LocaleCatalog>;
 
 export function getLocaleCatalog(locale: CliLocale): LocaleCatalog {

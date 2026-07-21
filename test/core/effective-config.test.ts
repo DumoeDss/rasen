@@ -20,6 +20,7 @@ describe('effective-config', () => {
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
     delete process.env.RASEN_TELEMETRY;
+    delete process.env.RASEN_LANG;
     delete process.env.DO_NOT_TRACK;
     delete process.env.CI;
   });
@@ -67,6 +68,17 @@ describe('effective-config', () => {
       expect(repoMode.source).toBe('global');
     });
 
+    it('reports an exact persisted zh-cn language from the global layer', () => {
+      saveGlobalConfig({ language: 'zh-cn' });
+
+      const entries = resolveEffectiveConfig();
+      const language = entries.find((entry) => entry.definition.key === 'language')!;
+
+      expect(language.value).toBe('zh-cn');
+      expect(language.source).toBe('global');
+      expect(language.scopeValues.global).toBe('zh-cn');
+    });
+
     it('environment override wins over a global config value for telemetry.enabled', () => {
       saveGlobalConfig({ telemetry: { enabled: true } } as never);
       process.env.RASEN_TELEMETRY = '0';
@@ -78,14 +90,14 @@ describe('effective-config', () => {
       expect(telemetry.source).toBe('env-override');
     });
 
-    it('reports RASEN_LANG as an environment override for language', () => {
+    it('normalizes RASEN_LANG aliases as an environment override for language', () => {
       saveGlobalConfig({ language: 'en' });
-      process.env.RASEN_LANG = 'ja';
+      process.env.RASEN_LANG = 'ZH_cn.UTF-8@calendar';
 
       const entries = resolveEffectiveConfig();
       const language = entries.find((entry) => entry.definition.key === 'language')!;
 
-      expect(language.value).toBe('ja');
+      expect(language.value).toBe('zh-cn');
       expect(language.source).toBe('env-override');
       expect(language.scopeValues.global).toBe('en');
     });

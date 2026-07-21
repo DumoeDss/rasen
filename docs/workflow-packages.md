@@ -165,9 +165,11 @@ explicit staging path and never installs. `validate` is side-effect free.
 executes a declared script. Built-in workflows cannot be exported, replaced,
 or deleted.
 
-Human output and help are available in English and Japanese. JSON output keeps
-workflow/profile IDs, source values, digest strings, diagnostic codes, paths,
-and field names locale-neutral.
+Human output and help are available in English, Japanese, and Simplified
+Chinese. Rasen-owned presentation uses the resolved CLI locale, while
+user-authored names, descriptions, and workflow content remain as written. JSON
+output keeps workflow/profile IDs, source values, digest strings, diagnostic
+codes, paths, and field names locale-neutral.
 
 ## Profiles and self-contained packages
 

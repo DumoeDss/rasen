@@ -3,7 +3,11 @@ import * as path from 'node:path';
 
 import { Command } from 'commander';
 
-import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
+import {
+  getGlobalConfig,
+  saveGlobalConfig,
+  type GlobalConfig,
+} from '../core/global-config.js';
 import {
   BUILTIN_PROFILE_NAMES,
   PROFILE_DEFINITION_VERSION,
@@ -28,6 +32,7 @@ import {
   formatNamedProfileMessageDescriptor,
   getProfileUiMessages,
 } from './profile-messages.js';
+import { createConfigDiagnosticReporter } from './config-messages.js';
 import {
   applyProfileState,
   deriveProfileFromWorkflowSelection,
@@ -63,8 +68,12 @@ function definitionsMatch(left: ProfileDefinition, right: ProfileDefinition): bo
   );
 }
 
+function getGlobalConfigForProfile(): GlobalConfig {
+  return getGlobalConfig({ reporter: createConfigDiagnosticReporter() });
+}
+
 function currentProfileDefinition(): ProfileDefinition {
-  return profileDefinitionFromState(resolveCurrentProfileState(getGlobalConfig()));
+  return profileDefinitionFromState(resolveCurrentProfileState(getGlobalConfigForProfile()));
 }
 
 function validateNewProfileName(name: string): string | true {
@@ -122,7 +131,7 @@ function availableProfileChoices(): Array<{
   disabled?: string;
 }> {
   const messages = getProfileUiMessages();
-  const delivery = getGlobalConfig().delivery ?? 'both';
+  const delivery = getGlobalConfigForProfile().delivery ?? 'both';
   return listAvailableProfiles(delivery).map((profile) => {
     if (!profile.definition) {
       return {
@@ -176,7 +185,7 @@ async function chooseUserProfileName(message: string): Promise<string> {
 }
 
 export function useProfile(name: string): void {
-  const config = getGlobalConfig();
+  const config = getGlobalConfigForProfile();
   const definition = resolveProfileDefinition(name, config.delivery ?? 'both');
   applyProfileState(profileStateFromDefinition(definition));
   console.log(getProfileUiMessages().usingProfile(name));
@@ -213,7 +222,7 @@ async function createProfile(nameArgument?: string): Promise<void> {
     );
   }
 
-  const currentState = resolveCurrentProfileState(getGlobalConfig());
+  const currentState = resolveCurrentProfileState(getGlobalConfigForProfile());
   const nextState = await promptForNewProfileState(currentState);
   const diff = diffProfileState(currentState, nextState);
 
@@ -346,7 +355,7 @@ async function importProfileCommand(
   // ids the user chose deliberately, so from this point on the
   // profile-default plus closure expert set governs future installs
   // instead of the legacy all-experts fallback.
-  const config = getGlobalConfig();
+  const config = getGlobalConfigForProfile();
   if (config.expertSelectionExplicit !== true) {
     saveGlobalConfig({ ...config, expertSelectionExplicit: true });
   }
@@ -357,7 +366,7 @@ async function exportProfileCommand(
   options: { profile?: string; force?: boolean; thin?: boolean }
 ): Promise<void> {
   const messages = getProfileUiMessages();
-  const config = getGlobalConfig();
+  const config = getGlobalConfigForProfile();
   const definition = options.profile
     ? resolveProfileDefinition(options.profile, config.delivery ?? 'both')
     : profileDefinitionFromState(resolveCurrentProfileState(config));

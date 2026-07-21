@@ -186,6 +186,34 @@ describe('config command integration', () => {
     expect(diagnostics).toContain('JSONが無効なため、デフォルトを使用します');
     expect(diagnostics).not.toContain('Warning: Invalid JSON');
   });
+
+  it('localizes legacy delivery migration and invalid JSON diagnostics in Simplified Chinese', async () => {
+    process.env.RASEN_LANG = 'zh-cn';
+    const { getGlobalConfigDir, getGlobalConfigPath } = await import(
+      '../../src/core/global-config.js'
+    );
+    fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
+    fs.writeFileSync(
+      getGlobalConfigPath(),
+      JSON.stringify({ featureFlags: {}, language: 'zh-cn', delivery: 'commands-first' }),
+      'utf-8'
+    );
+
+    await runConfigCommand(['list']);
+
+    let diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("交付模式 'commands-first' 已合并为 'both'");
+    expect(diagnostics).not.toContain('Note: delivery mode');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBe('both');
+
+    consoleErrorSpy.mockClear();
+    fs.writeFileSync(getGlobalConfigPath(), '{ invalid json }', 'utf-8');
+    await runConfigCommand(['list']);
+
+    diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain('JSON 无效，将使用默认值');
+    expect(diagnostics).not.toContain('Warning: Invalid JSON');
+  });
 });
 
 describe('config command shell completion registry', () => {
@@ -559,26 +587,30 @@ describe('config command --scope project and promoted keys', () => {
 
   it.each([
     ['language', 'ja'],
+    ['language', 'zh-cn'],
     ['proactive', 'false'],
     ['repoMode', 'solo'],
     ['telemetry.enabled', 'false'],
     ['handoff.threshold', '0.6'],
-  ])('sets promoted global key %s without --allow-unknown', async (key, value) => {
+  ])('sets promoted global key %s=%s without --allow-unknown', async (key, value) => {
     await runConfigCommand(['set', key, value]);
     expect(process.exitCode).not.toBe(1);
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
-  it('persists the selected CLI language in the global JSON config', async () => {
-    const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+  it.each(['ja', 'zh-cn'] as const)(
+    'persists the selected CLI language %s canonically in the global JSON config',
+    async (language) => {
+      const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
 
-    await runConfigCommand(['set', 'language', 'ja']);
+      await runConfigCommand(['set', 'language', language]);
 
-    const saved = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')) as {
-      language?: string;
-    };
-    expect(saved.language).toBe('ja');
-  });
+      const saved = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')) as {
+        language?: string;
+      };
+      expect(saved.language).toBe(language);
+    }
+  );
 
   it('localizes non-JSON list, set, unset, and validation output in Japanese', async () => {
     process.env.RASEN_LANG = 'ja';
@@ -625,6 +657,56 @@ describe('config command --scope project and promoted keys', () => {
     diagnostics = warnSpy.mock.calls.map(([value]) => String(value)).join('\n');
     expect(diagnostics).toContain("'schema'フィールドが無効です");
     expect(diagnostics).toContain("'autopilot.gates'フィールドが無効です");
+    expect(diagnostics).not.toContain("Invalid 'schema'");
+    expect(diagnostics).not.toContain("Invalid 'autopilot.gates'");
+
+    warnSpy.mockRestore();
+  });
+
+  it('localizes non-JSON output and project diagnostics in Simplified Chinese without translating machine values', async () => {
+    process.env.RASEN_LANG = 'zh-cn';
+
+    await runConfigCommand(['set', 'language', 'zh-cn']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('已设置 language = "zh-cn"');
+
+    await runConfigCommand(['list']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('\n配置方案设置：');
+
+    await runConfigCommand(['unset', 'proactive']);
+    expect(consoleLogSpy).toHaveBeenCalledWith('已取消设置 proactive（恢复为默认值）');
+
+    await runConfigCommand(['set', 'unknownKey', '1']);
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('错误：配置键 "unknownKey" 无效。')
+    );
+
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+    await runConfigCommand(['list', '--json']);
+    const payload = JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0])) as {
+      language: string;
+    };
+    expect(payload.language).toBe('zh-cn');
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const configPath = path.join(projectDir, 'rasen', 'config.yaml');
+    fs.writeFileSync(configPath, 'schema: [\n', 'utf-8');
+    await runConfigCommand(['list', '--scope', 'project']);
+    let diagnostics = warnSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain('无法解析');
+    expect(diagnostics).not.toContain('Warning: could not parse');
+
+    warnSpy.mockClear();
+    fs.writeFileSync(
+      configPath,
+      'schema: 123\nautopilot:\n  gates: maybe\n',
+      'utf-8'
+    );
+    await runConfigCommand(['get', 'schema', '--scope', 'project']);
+    diagnostics = warnSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("'schema' 字段无效");
+    expect(diagnostics).toContain("'autopilot.gates' 字段无效");
     expect(diagnostics).not.toContain("Invalid 'schema'");
     expect(diagnostics).not.toContain("Invalid 'autopilot.gates'");
 

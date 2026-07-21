@@ -21,13 +21,19 @@ import {
   deletePipeline,
   exportPipeline,
   importPipelinePackage,
-  PipelineLibraryError,
   scaffoldPipeline,
   validatePipelineInput,
 } from '../core/pipeline-library.js';
 import { listPipelines } from '../core/pipeline-registry/index.js';
 import { isInteractive } from '../utils/interactive.js';
 import { resolveRootForCommand, type ResolvedOpenSpecRoot } from '../core/root-selection.js';
+import {
+  formatPipelineError,
+  formatPipelineErrorDetail,
+  formatPipelineRootSelectionNotice,
+  getPipelineMessages,
+  pipelineMessageError,
+} from './pipeline-messages.js';
 
 interface PipelineLibraryCommandOptions {
   json?: boolean;
@@ -44,15 +50,18 @@ function errorCode(error: unknown): string {
   return 'pipeline_command_error';
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+
 
 export class PipelineLibraryCommand {
   private async resolveRoot(
     options: PipelineLibraryCommandOptions
   ): Promise<ResolvedOpenSpecRoot | null> {
-    return resolveRootForCommand(options, { json: options.json });
+    if (options.json) {
+      return resolveRootForCommand(options, { json: true, reporter: false });
+    }
+    return resolveRootForCommand(options, {
+      reporter: (notice) => console.error(formatPipelineRootSelectionNotice(notice)),
+    });
   }
 
   async init(
@@ -63,13 +72,17 @@ export class PipelineLibraryCommand {
     if (!root) return;
     try {
       if (listPipelines(root.path).includes(name)) {
-        throw new PipelineLibraryError(`Pipeline "${name}" already exists`, 'pipeline_id_collision');
+        throw pipelineMessageError(
+          'pipelineIdCollision',
+          { name },
+          'pipeline_id_collision'
+        );
       }
       const output = scaffoldPipeline(name, options.output);
       if (options.json) {
         console.log(JSON.stringify({ pipeline: { name, output }, status: [] }, null, 2));
       } else {
-        console.log(`Created pipeline draft at ${output}`);
+        console.log(getPipelineMessages().format('createdDraft', { path: output }));
       }
     } catch (error) {
       this.reportError(options, error);
@@ -84,9 +97,14 @@ export class PipelineLibraryCommand {
       if (options.json) {
         console.log(JSON.stringify({ validation, status: [] }, null, 2));
       } else {
-        console.log(validation.valid ? 'Pipeline is valid.' : 'Pipeline is invalid.');
+        const messages = getPipelineMessages();
+        console.log(
+          validation.valid
+            ? messages.format('pipelineValid')
+            : messages.format('pipelineInvalid')
+        );
         for (const diagnostic of validation.diagnostics) {
-          console.log(`  [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`);
+          console.log(messages.format('validationDiagnostic', diagnostic));
         }
       }
       if (!validation.valid) process.exitCode = 1;
@@ -106,9 +124,13 @@ export class PipelineLibraryCommand {
       if (options.json) {
         console.log(JSON.stringify({ ...result, status: [] }, null, 2));
       } else {
-        console.log(`Imported pipeline(s) from ${result.path}:`);
+        const messages = getPipelineMessages();
+        console.log(messages.format('importedHeading', { path: result.path }));
         for (const name of result.imported) {
-          console.log(`  ${name} (digest ${result.digests[name]})`);
+          console.log(messages.format('importedEntry', {
+            name,
+            digest: result.digests[name],
+          }));
         }
       }
     } catch (error) {
@@ -123,17 +145,26 @@ export class PipelineLibraryCommand {
       let overwrite = options.force === true;
       if (fs.existsSync(destination) && !overwrite) {
         if (!isInteractive()) {
-          throw new PipelineLibraryError('Export destination already exists; use --force', 'destination_exists');
+          throw pipelineMessageError('destinationExists', undefined, 'destination_exists');
         }
         const { confirm } = await import('@inquirer/prompts');
-        overwrite = await confirm({ message: `Replace ${destination}?`, default: false });
-        if (!overwrite) throw new PipelineLibraryError('Export cancelled', 'cancelled');
+        const messages = getPipelineMessages();
+        overwrite = await confirm({
+          message: messages.format('replaceDestination', { path: destination }),
+          default: false,
+        });
+        if (!overwrite) {
+          throw pipelineMessageError('exportCancelled', undefined, 'cancelled');
+        }
       }
       const exportedPath = exportPipeline(name, destination, { projectRoot: root.path, overwrite });
       if (options.json) {
         console.log(JSON.stringify({ pipeline: { name, path: exportedPath }, status: [] }, null, 2));
       } else {
-        console.log(`Exported pipeline "${name}" to ${exportedPath}`);
+        console.log(getPipelineMessages().format('exported', {
+          name,
+          path: exportedPath,
+        }));
       }
     } catch (error) {
       this.reportError(options, error);
@@ -146,20 +177,34 @@ export class PipelineLibraryCommand {
     try {
       if (!options.yes) {
         if (!isInteractive()) {
-          throw new PipelineLibraryError('Deletion requires --yes in non-interactive mode', 'confirmation_required');
+          throw pipelineMessageError(
+            'deletionRequiresYes',
+            undefined,
+            'confirmation_required'
+          );
         }
         const { confirm } = await import('@inquirer/prompts');
-        const confirmed = await confirm({ message: `Delete pipeline "${name}"?`, default: false });
-        if (!confirmed) throw new PipelineLibraryError('Deletion cancelled', 'cancelled');
+        const messages = getPipelineMessages();
+        const confirmed = await confirm({
+          message: messages.format('deletePipeline', { name }),
+          default: false,
+        });
+        if (!confirmed) {
+          throw pipelineMessageError('deletionCancelled', undefined, 'cancelled');
+        }
       }
       const result = await deletePipeline(name, { projectRoot: root.path, force: options.force === true });
       if (options.json) {
         console.log(JSON.stringify({ deleted: name, forcedReferrers: result.forcedReferrers, status: [] }, null, 2));
       } else {
-        console.log(`Deleted pipeline "${name}".`);
-      }
-      if (result.forcedReferrers.length > 0) {
-        console.warn(`Warning: "${name}" was still referenced by: ${result.forcedReferrers.join(', ')}`);
+        const messages = getPipelineMessages();
+        console.log(messages.format('deleted', { name }));
+        if (result.forcedReferrers.length > 0) {
+          console.warn(messages.format('forcedDeleteWarning', {
+            name,
+            referrers: result.forcedReferrers.join(', '),
+          }));
+        }
       }
     } catch (error) {
       this.reportError(options, error);
@@ -167,11 +212,15 @@ export class PipelineLibraryCommand {
   }
 
   private reportError(options: PipelineLibraryCommandOptions, error: unknown): void {
-    const status = { severity: 'error' as const, code: errorCode(error), message: errorMessage(error) };
+    const status = {
+      severity: 'error' as const,
+      code: errorCode(error),
+      message: formatPipelineErrorDetail(error, 'en'),
+    };
     if (options.json) {
       console.log(JSON.stringify({ status: [status] }, null, 2));
     } else {
-      console.error(`Error: ${status.message}`);
+      console.error(formatPipelineError(error));
     }
     process.exitCode = 1;
   }

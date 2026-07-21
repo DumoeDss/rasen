@@ -338,36 +338,40 @@ describe('global-config', () => {
         expect(config.workflows).toEqual(['propose', 'review']);
       });
 
-      it('should round-trip new fields correctly', () => {
+      it('round-trips the exact canonical zh-cn language', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
         const originalConfig = {
           featureFlags: { flag1: true },
           profile: 'custom' as Profile,
           delivery: 'skills' as Delivery,
-          language: 'ja' as const,
+          language: 'zh-cn' as const,
           workflows: ['propose']
         };
 
         saveGlobalConfig(originalConfig);
         const loadedConfig = getGlobalConfig();
+        const persistedConfig = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
 
         expect(loadedConfig.profile).toBe('custom');
         expect(loadedConfig.delivery).toBe('skills');
-        expect(loadedConfig.language).toBe('ja');
+        expect(loadedConfig.language).toBe('zh-cn');
         expect(loadedConfig.workflows).toEqual(['propose']);
+        expect(persistedConfig.language).toBe('zh-cn');
       });
 
-      it('falls back to auto for an unsupported hand-edited language', () => {
-        process.env.XDG_CONFIG_HOME = tempDir;
-        const configDir = path.join(tempDir, 'rasen');
-        fs.mkdirSync(configDir, { recursive: true });
-        fs.writeFileSync(
-          path.join(configDir, 'config.json'),
-          JSON.stringify({ language: 'fr' })
-        );
+      it.each(['zh-CN', 'zh_CN', 'zh-SG', 'zh-Hans', 'zh', 'fr'])(
+        'falls back to auto without rewriting unsupported persisted language %j',
+        (language) => {
+          process.env.XDG_CONFIG_HOME = tempDir;
+          const configDir = path.join(tempDir, 'rasen');
+          const configPath = path.join(configDir, 'config.json');
+          fs.mkdirSync(configDir, { recursive: true });
+          fs.writeFileSync(configPath, JSON.stringify({ language }));
 
-        expect(getGlobalConfig().language).toBe('auto');
-      });
+          expect(getGlobalConfig().language).toBe('auto');
+          expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).language).toBe(language);
+        }
+      );
 
       it('should default workflows to undefined when not in config', () => {
         process.env.XDG_CONFIG_HOME = tempDir;

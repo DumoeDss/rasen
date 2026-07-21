@@ -2,7 +2,6 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { Separator } from '@inquirer/prompts';
 import type { GlobalConfig, Profile, Delivery } from '../core/global-config.js';
 import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import { OPENSPEC_DIR_NAME } from '../core/config.js';
@@ -22,12 +21,16 @@ import {
   type ProfilePromptMessages,
   getProfileUiMessages,
 } from './profile-messages.js';
+import { createConfigDiagnosticReporter } from './config-messages.js';
 import { isPromptCancellationError } from './shared-output.js';
 import type { CliLocale } from '../utils/locale.js';
 import {
   formatPickerDescription,
   resolveTerminalColumns,
 } from '../utils/terminal-text.js';
+
+type InquirerPrompts = typeof import('@inquirer/prompts');
+type PromptSeparator = InstanceType<InquirerPrompts['Separator']>;
 
 type ProfileAction = 'both' | 'delivery' | 'workflows' | 'keep';
 
@@ -163,8 +166,8 @@ interface WorkflowChoice {
 function workflowChoices(
   currentState: ProfileState,
   messages: ProfilePromptMessages,
-  SeparatorCtor: typeof Separator
-): Array<WorkflowChoice | Separator> {
+  SeparatorCtor: InquirerPrompts['Separator']
+): Array<WorkflowChoice | PromptSeparator> {
   const catalog = loadWorkflowCatalog();
   const definitions = catalog.definitions;
   const displayIds = new Map(
@@ -312,8 +315,12 @@ export function printProfileApplyGuidance(): void {
  * dependency-closure expert set governs installs instead of the legacy
  * "install every expert" fallback.
  */
+function getGlobalConfigForProfile(): GlobalConfig {
+  return getGlobalConfig({ reporter: createConfigDiagnosticReporter() });
+}
+
 export function applyProfileState(state: ProfileState): void {
-  const config = getGlobalConfig();
+  const config = getGlobalConfigForProfile();
   config.profile = state.profile;
   config.delivery = state.delivery;
   config.workflows = [...state.workflows];
@@ -333,7 +340,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
   const chalk = (await import('chalk')).default;
 
   try {
-    const config = getGlobalConfig();
+    const config = getGlobalConfigForProfile();
     const currentState = resolveCurrentProfileState(config);
     const messages = getProfilePromptMessages();
 

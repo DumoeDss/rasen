@@ -332,6 +332,38 @@ describe('telemetry/index', () => {
       );
     });
 
+    it('shows the Simplified Chinese notice on stderr without polluting JSON stdout', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+      const { maybeShowTelemetryNotice } = await loadTelemetry();
+
+      await maybeShowTelemetryNotice();
+      const jsonOutput = JSON.stringify({ status: 'ok', locale: 'zh-cn' });
+      console.log(jsonOutput);
+
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const notice = String(consoleErrorSpy.mock.calls[0][0]);
+      expect(notice).toContain('Rasen 会将匿名使用统计');
+      expect(notice).toContain('Cloudflare Worker');
+      expect(notice).toContain('RASEN_TELEMETRY=0');
+      expect(notice).not.toContain('Rasen sends anonymous usage statistics');
+      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(consoleLogSpy.mock.calls[0][0]))).toEqual({
+        status: 'ok',
+        locale: 'zh-cn',
+      });
+    });
+
+    it('suppresses the Simplified Chinese notice when RASEN_TELEMETRY=0', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+      process.env.RASEN_TELEMETRY = '0';
+      const { maybeShowTelemetryNotice } = await loadTelemetry();
+
+      await maybeShowTelemetryNotice();
+
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+    });
+
     it('does not itself send any telemetry (notice precedes any send)', async () => {
       const { maybeShowTelemetryNotice } = await loadTelemetry();
 
