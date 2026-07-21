@@ -15,6 +15,13 @@ import {
 import { resolveStageRuntimeConfig } from './types.js';
 import type { PipelineYaml } from './types.js';
 
+export type PipelineExecutionNotice = {
+  kind: 'unknown-profile-workflows';
+  workflowIds: string[];
+};
+
+export type PipelineExecutionReporter = (notice: PipelineExecutionNotice) => void;
+
 export interface PipelineExecutionOptions {
   /**
    * Codex-CLI availability check, injected so the preflight is unit-testable
@@ -23,6 +30,26 @@ export interface PipelineExecutionOptions {
    * `validatePipelineForExecution` invocation.
    */
   probeCodex?: () => boolean;
+  /** Human preflight notices. `false` suppresses them; omitted preserves the
+   * legacy English console output for non-pipeline callers. */
+  reporter?: PipelineExecutionReporter | false;
+}
+
+function reportPipelineExecutionNotice(
+  reporter: PipelineExecutionReporter | false | undefined,
+  notice: PipelineExecutionNotice
+): void {
+  if (reporter === false) return;
+  if (reporter) {
+    reporter(notice);
+    return;
+  }
+
+  console.log(
+    chalk.yellow(
+      `Warning: dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`
+    )
+  );
 }
 
 /** Whether any stage of `pipeline` resolves its effective runtime to `codex`. */
@@ -72,7 +99,8 @@ export interface PipelineExecutionSkillSets {
  * same as `update.ts`'s own best-effort fallback.
  */
 export async function resolvePipelineExecutionSkillSets(
-  projectRoot?: string
+  projectRoot?: string,
+  options: Pick<PipelineExecutionOptions, 'reporter'> = {}
 ): Promise<PipelineExecutionSkillSets> {
   const catalog = loadWorkflowCatalog();
   const knownSkillNames = new Set(catalog.definitions.map((definition) => definition.skill.template.name));
@@ -99,11 +127,10 @@ export async function resolvePipelineExecutionSkillSets(
     expertSelectionExplicit
   );
   if (unknownProfileWorkflows.length > 0) {
-    console.log(
-      chalk.yellow(
-        `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
-      )
-    );
+    reportPipelineExecutionNotice(options.reporter, {
+      kind: 'unknown-profile-workflows',
+      workflowIds: unknownProfileWorkflows,
+    });
   }
   const desiredSet = new Set(desiredIds);
   const enabledSkillNames = new Set(
@@ -134,7 +161,10 @@ export async function validatePipelineForExecution(
   projectRoot?: string,
   options?: PipelineExecutionOptions
 ): Promise<void> {
-  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(projectRoot);
+  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(
+    projectRoot,
+    { reporter: options?.reporter }
+  );
   validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
   validateDecomposeChildPipelines(pipeline, projectRoot);
 

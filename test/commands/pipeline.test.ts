@@ -2,9 +2,117 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import {
+  createPipelinePackage,
+  encodePackage,
+  type PipelinePackageInput,
+} from '../../src/core/workflow-package/index.js';
 import { runCLI } from '../helpers/run-cli.js';
 
-const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'] as const;
+const BUILTIN_NAMES = [
+  'auto-decompose',
+  'bug-fix',
+  'full-feature',
+  'goal-loop-evaluate',
+  'goal-loop-measure',
+  'goal-loop-research',
+  'small-feature',
+] as const;
+const PIPELINE_LOCALES = ['en', 'ja', 'zh-cn'] as const;
+
+function packagedPipeline(
+  name: string,
+  stages: string[] = [
+    '  - id: implement',
+    '    skill: rasen-apply-change',
+    '    role: implementer',
+    '    requires: []',
+  ]
+): PipelinePackageInput {
+  return {
+    name,
+    files: [
+      {
+        path: 'pipeline.yaml',
+        content: [`name: ${name}`, 'stages:', ...stages, ''].join('\n'),
+      },
+    ],
+  };
+}
+
+async function writePipelinePackage(
+  destination: string,
+  inputs: PipelinePackageInput[]
+): Promise<void> {
+  const packageValue = createPipelinePackage(
+    inputs.map((input) => input.name),
+    inputs
+  );
+  await fs.writeFile(destination, encodePackage(packageValue));
+}
+
+const HUMAN_LOCALE_CASES = [
+  {
+    locale: 'en',
+    listHeading: 'Available pipelines:',
+    builtInDescription: 'Minimal bug-fix pipeline',
+    pipelineLabel: 'Pipeline: bug-fix',
+    roleRuntimes: 'Role runtimes:',
+    suggested: 'Suggested pipeline: bug-fix',
+    noRunState: 'No run-state (auto-run.json) found',
+    createdDraft: 'Created pipeline draft at',
+    valid: 'Pipeline is valid.',
+    invalid: 'Pipeline is invalid.',
+    imported: 'Imported pipeline(s) from',
+    exported: 'Exported pipeline',
+    confirmation: 'Deletion requires --yes in non-interactive mode',
+    deleted: 'Deleted pipeline',
+    referrerWarning: 'was still referenced by:',
+    collision: 'Pipeline "bug-fix" already exists',
+    destinationExists: 'Export destination already exists; use --force',
+    notFound: "Pipeline 'missing-pipeline' not found",
+  },
+  {
+    locale: 'ja',
+    listHeading: '利用可能なパイプライン:',
+    builtInDescription: '最小限のバグ修正パイプライン',
+    pipelineLabel: 'パイプライン: bug-fix',
+    roleRuntimes: '役割別runtime:',
+    suggested: '推奨パイプライン: bug-fix',
+    noRunState: '実行状態（auto-run.json）が見つかりません',
+    createdDraft: 'パイプラインドラフトを',
+    valid: 'パイプラインは有効です。',
+    invalid: 'パイプラインは無効です。',
+    imported: 'からパイプラインをimportしました',
+    exported: 'を',
+    confirmation: '非対話モードで削除するには--yesが必要です',
+    deleted: 'を削除しました。',
+    referrerWarning: 'まだ参照されていました:',
+    collision: 'パイプライン"bug-fix"は既に存在します',
+    destinationExists: 'export先が既に存在します',
+    notFound: "パイプライン'missing-pipeline'が見つかりません",
+  },
+  {
+    locale: 'zh-cn',
+    listHeading: '可用流水线：',
+    builtInDescription: '最简缺陷修复流水线',
+    pipelineLabel: '流水线：bug-fix',
+    roleRuntimes: '各角色运行时：',
+    suggested: '建议流水线：bug-fix',
+    noRunState: '未找到运行状态（auto-run.json）',
+    createdDraft: '创建流水线草稿',
+    valid: '流水线有效。',
+    invalid: '流水线无效。',
+    imported: '导入流水线',
+    exported: '导出到',
+    confirmation: '非交互模式下删除需要 --yes',
+    deleted: '已删除流水线',
+    referrerWarning: '仍被以下引用方引用',
+    collision: '流水线 "bug-fix" 已存在',
+    destinationExists: '导出目标已存在',
+    notFound: "未找到流水线 'missing-pipeline'",
+  },
+] as const;
 
 describe('pipeline command', () => {
   const projectRoot = process.cwd();
@@ -28,6 +136,399 @@ describe('pipeline command', () => {
     );
     return home;
   }
+
+  describe('localized human presentation', () => {
+    it.each(HUMAN_LOCALE_CASES)(
+      'localizes representative $locale paths across all ten subcommands',
+      async (expected) => {
+        const home = path.join(testDir, `.pipeline-locale-home-${expected.locale}`);
+        const env = { RASEN_HOME: home, RASEN_LANG: expected.locale };
+        const changeName = `locale-change-${expected.locale}`;
+        await fs.mkdir(path.join(changesDir, changeName), { recursive: true });
+
+        const list = await runCLI(['pipeline', 'list'], { cwd: testDir, env });
+        expect(list.exitCode).toBe(0);
+        expect(list.stdout).toContain(expected.listHeading);
+        expect(list.stdout).toContain(expected.builtInDescription);
+
+        const show = await runCLI(['pipeline', 'show', 'bug-fix'], { cwd: testDir, env });
+        expect(show.exitCode).toBe(0);
+        expect(show.stdout).toContain(expected.pipelineLabel);
+        expect(show.stdout).toContain(expected.builtInDescription);
+
+        const missing = await runCLI(
+          ['pipeline', 'show', 'missing-pipeline'],
+          { cwd: testDir, env }
+        );
+        expect(missing.exitCode).toBe(1);
+        expect(missing.stderr).toContain(expected.notFound);
+
+        const agents = await runCLI(
+          ['pipeline', 'agents', 'bug-fix'],
+          { cwd: testDir, env }
+        );
+        expect(agents.exitCode).toBe(0);
+        expect(agents.stdout).toContain(expected.roleRuntimes);
+
+        const classify = await runCLI(
+          ['pipeline', 'classify', 'fix the broken login'],
+          { cwd: testDir, env }
+        );
+        expect(classify.exitCode).toBe(0);
+        expect(classify.stdout).toContain(expected.suggested);
+        expect(classify.stdout).toContain('keyword');
+
+        const resume = await runCLI(
+          ['pipeline', 'resume', changeName],
+          { cwd: testDir, env }
+        );
+        expect(resume.exitCode).toBe(0);
+        expect(resume.stdout).toContain(expected.noRunState);
+
+        const draftName = `draft-${expected.locale}`;
+        const draftPath = path.join(testDir, draftName);
+        const init = await runCLI(
+          ['pipeline', 'init', draftName, '--output', draftPath],
+          { cwd: testDir, env }
+        );
+        expect(init.exitCode).toBe(0);
+        expect(init.stdout).toContain(expected.createdDraft);
+        expect(init.stdout).toContain(draftPath);
+
+        const collision = await runCLI(
+          ['pipeline', 'init', 'bug-fix', '--output', path.join(testDir, 'bug-fix')],
+          { cwd: testDir, env }
+        );
+        expect(collision.exitCode).toBe(1);
+        expect(collision.stderr).toContain(expected.collision);
+
+        const validation = await runCLI(
+          ['pipeline', 'validate', 'bug-fix'],
+          { cwd: testDir, env }
+        );
+        expect(validation.exitCode).toBe(0);
+        expect(validation.stdout).toContain(expected.valid);
+
+        const invalidDraft = path.join(testDir, `invalid-${expected.locale}`);
+        await fs.mkdir(invalidDraft, { recursive: true });
+        const invalidValidation = await runCLI(
+          ['pipeline', 'validate', invalidDraft],
+          { cwd: testDir, env }
+        );
+        expect(invalidValidation.exitCode).toBe(1);
+        expect(invalidValidation.stdout).toContain(expected.invalid);
+        expect(invalidValidation.stdout).toContain('pipeline_manifest_missing');
+
+        const pipelineName = `localized-${expected.locale}`;
+        const childName = `localized-child-${expected.locale}`;
+        const parentName = `localized-parent-${expected.locale}`;
+        const packagePath = path.join(testDir, `localized-${expected.locale}.rasenpkg`);
+        await writePipelinePackage(packagePath, [
+          packagedPipeline(pipelineName),
+          packagedPipeline(childName),
+          packagedPipeline(parentName, [
+            '  - id: fanout',
+            '    kind: decompose',
+            `    childPipeline: ${childName}`,
+            '    requires: []',
+          ]),
+        ]);
+
+        const imported = await runCLI(
+          ['pipeline', 'import', packagePath],
+          { cwd: testDir, env }
+        );
+        expect(imported.exitCode).toBe(0);
+        expect(imported.stdout).toContain(expected.imported);
+        expect(imported.stdout).toContain(pipelineName);
+
+        const exportPath = path.join(testDir, `export-${expected.locale}.rasenpkg`);
+        const exported = await runCLI(
+          ['pipeline', 'export', pipelineName, exportPath],
+          { cwd: testDir, env }
+        );
+        expect(exported.exitCode).toBe(0);
+        expect(exported.stdout).toContain(expected.exported);
+        expect(exported.stdout).toContain(exportPath);
+
+        const destinationExists = await runCLI(
+          ['pipeline', 'export', pipelineName, exportPath],
+          { cwd: testDir, env }
+        );
+        expect(destinationExists.exitCode).toBe(1);
+        expect(destinationExists.stderr).toContain(expected.destinationExists);
+
+        const confirmation = await runCLI(
+          ['pipeline', 'delete', pipelineName],
+          { cwd: testDir, env }
+        );
+        expect(confirmation.exitCode).toBe(1);
+        expect(confirmation.stderr).toContain(expected.confirmation);
+
+        const deleted = await runCLI(
+          ['pipeline', 'delete', pipelineName, '--yes'],
+          { cwd: testDir, env }
+        );
+        expect(deleted.exitCode).toBe(0);
+        expect(deleted.stdout).toContain(expected.deleted);
+
+        const forcedDelete = await runCLI(
+          ['pipeline', 'delete', childName, '--yes', '--force'],
+          { cwd: testDir, env }
+        );
+        expect(forcedDelete.exitCode).toBe(0);
+        expect(forcedDelete.stderr).toContain(expected.referrerWarning);
+        expect(forcedDelete.stderr).toContain(`decompose:${parentName}`);
+      },
+      60_000
+    );
+  });
+
+  describe('locale-neutral JSON contracts', () => {
+    it('keeps all ten subcommand payloads identical across locales', async () => {
+      async function collect(locale: (typeof PIPELINE_LOCALES)[number]) {
+        const root = path.join(testDir, `json-${locale}`);
+        const home = path.join(root, 'home');
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+        const changeName = 'json-change';
+        await fs.mkdir(path.join(root, 'rasen', 'changes', changeName), {
+          recursive: true,
+        });
+
+        const packagePath = path.join(root, 'json-pipe.rasenpkg');
+        await writePipelinePackage(packagePath, [packagedPipeline('json-pipe')]);
+
+        const runJson = async (args: string[]) => {
+          const result = await runCLI(args, { cwd: root, env });
+          expect(result.exitCode, `${locale}: ${args.join(' ')}`).toBe(0);
+          expect(result.stderr, `${locale}: ${args.join(' ')}`).toBe('');
+          return JSON.parse(result.stdout.trim());
+        };
+
+        const payloads = {
+          list: await runJson(['pipeline', 'list', '--json']),
+          show: await runJson(['pipeline', 'show', 'bug-fix', '--json']),
+          agents: await runJson(['pipeline', 'agents', 'bug-fix', '--json']),
+          classify: await runJson([
+            'pipeline',
+            'classify',
+            'fix the broken login',
+            '--json',
+          ]),
+          resume: await runJson([
+            'pipeline',
+            'resume',
+            changeName,
+            '--json',
+          ]),
+          init: await runJson([
+            'pipeline',
+            'init',
+            'json-draft',
+            '--output',
+            path.join(root, 'json-draft'),
+            '--json',
+          ]),
+          validate: await runJson([
+            'pipeline',
+            'validate',
+            'bug-fix',
+            '--json',
+          ]),
+          import: await runJson([
+            'pipeline',
+            'import',
+            packagePath,
+            '--json',
+          ]),
+          export: await runJson([
+            'pipeline',
+            'export',
+            'json-pipe',
+            path.join(root, 'json-pipe-export.rasenpkg'),
+            '--json',
+          ]),
+          delete: await runJson([
+            'pipeline',
+            'delete',
+            'json-pipe',
+            '--yes',
+            '--json',
+          ]),
+        };
+
+        const normalizePaths = (value: unknown): unknown => {
+          if (typeof value === 'string') {
+            return value.split(root).join('<ROOT>');
+          }
+          if (Array.isArray(value)) return value.map(normalizePaths);
+          if (value && typeof value === 'object') {
+            return Object.fromEntries(
+              Object.entries(value).map(([key, nested]) => [key, normalizePaths(nested)])
+            );
+          }
+          return value;
+        };
+
+        return normalizePaths(payloads);
+      }
+
+      const [english, japanese, chinese] = await Promise.all(
+        PIPELINE_LOCALES.map((locale) => collect(locale))
+      );
+      expect(japanese).toEqual(english);
+      expect(chinese).toEqual(english);
+
+      const payloads = english as Record<string, any>;
+      const bugFixList = payloads.list.pipelines.find(
+        (pipeline: any) => pipeline.name === 'bug-fix'
+      );
+      expect(bugFixList).toMatchObject({
+        source: 'package',
+        description: expect.stringContaining('Minimal bug-fix pipeline'),
+      });
+      expect(payloads.show.description).toContain('Minimal bug-fix pipeline');
+      expect(Object.prototype.hasOwnProperty.call(payloads.show, 'source')).toBe(false);
+      expect(payloads.classify).toMatchObject({
+        suggested: 'bug-fix',
+        basis: 'keyword',
+      });
+      expect(payloads.classify.matched).toEqual(['fix', 'broken']);
+      expect(payloads.resume.note).toContain('No run-state');
+      expect(payloads.import.digests['json-pipe']).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(payloads.export.pipeline.name).toBe('json-pipe');
+      expect(payloads.delete).toEqual({
+        deleted: 'json-pipe',
+        forcedReferrers: [],
+        status: [],
+      });
+    }, 60_000);
+
+    it('keeps forced-referrer delete JSON byte-stable and stderr-silent across locales', async () => {
+      async function collect(locale: (typeof PIPELINE_LOCALES)[number]) {
+        const root = path.join(testDir, `forced-delete-json-${locale}`);
+        const home = path.join(root, 'home');
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+        await fs.mkdir(root, { recursive: true });
+        const packagePath = path.join(root, 'forced-delete.rasenpkg');
+        await writePipelinePackage(packagePath, [
+          packagedPipeline('json-child'),
+          packagedPipeline('json-parent', [
+            '  - id: fanout',
+            '    kind: decompose',
+            '    childPipeline: json-child',
+            '    requires: []',
+          ]),
+        ]);
+
+        const imported = await runCLI(
+          ['pipeline', 'import', packagePath, '--json'],
+          { cwd: root, env }
+        );
+        expect(imported.exitCode).toBe(0);
+        expect(imported.stderr).toBe('');
+
+        return runCLI(
+          [
+            'pipeline',
+            'delete',
+            'json-child',
+            '--yes',
+            '--force',
+            '--json',
+          ],
+          { cwd: root, env }
+        );
+      }
+
+      const results = await Promise.all(PIPELINE_LOCALES.map(collect));
+      const expected = `${JSON.stringify({
+        deleted: 'json-child',
+        forcedReferrers: ['decompose:json-parent'],
+        status: [],
+      }, null, 2)}\n`;
+
+      for (const result of results) {
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe(expected);
+        expect(result.stderr).toBe('');
+      }
+    }, 60_000);
+  });
+
+  describe('pipeline description content ownership', () => {
+    it.each([
+      { locale: 'ja', source: 'project' },
+      { locale: 'zh-cn', source: 'project' },
+      { locale: 'ja', source: 'user' },
+      { locale: 'zh-cn', source: 'user' },
+    ] as const)(
+      'preserves a same-name $source override under $locale',
+      async ({ locale, source }) => {
+        const home = path.join(testDir, `.ownership-home-${locale}-${source}`);
+        const baseDir = source === 'project'
+          ? path.join(testDir, 'rasen', 'pipelines')
+          : path.join(home, 'pipelines');
+        const pipelineDir = path.join(baseDir, 'bug-fix');
+        const authoredDescription = `Author-owned ${source} description / 用户原文`;
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          [
+            'name: bug-fix',
+            `description: ${authoredDescription}`,
+            'stages:',
+            '  - id: implement',
+            '    skill: rasen-apply-change',
+            '    role: implementer',
+            '    requires: []',
+            '',
+          ].join('\n'),
+          'utf-8'
+        );
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+        const localizedBuiltIn = HUMAN_LOCALE_CASES.find(
+          (entry) => entry.locale === locale
+        )!.builtInDescription;
+
+        const list = await runCLI(['pipeline', 'list'], { cwd: testDir, env });
+        expect(list.exitCode).toBe(0);
+        expect(list.stdout).toContain(authoredDescription);
+        expect(list.stdout).not.toContain(localizedBuiltIn);
+
+        const show = await runCLI(['pipeline', 'show', 'bug-fix'], {
+          cwd: testDir,
+          env,
+        });
+        expect(show.exitCode).toBe(0);
+        expect(show.stdout).toContain(authoredDescription);
+        expect(show.stdout).not.toContain(localizedBuiltIn);
+
+        const listJson = await runCLI(
+          ['pipeline', 'list', '--json'],
+          { cwd: testDir, env }
+        );
+        const listed = JSON.parse(listJson.stdout).pipelines.find(
+          (pipeline: any) => pipeline.name === 'bug-fix'
+        );
+        expect(listed).toMatchObject({
+          name: 'bug-fix',
+          description: authoredDescription,
+          source,
+        });
+
+        const showJson = await runCLI(
+          ['pipeline', 'show', 'bug-fix', '--json'],
+          { cwd: testDir, env }
+        );
+        const shown = JSON.parse(showJson.stdout);
+        expect(shown.description).toBe(authoredDescription);
+        expect(Object.prototype.hasOwnProperty.call(shown, 'source')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(shown, 'localizedDescription')).toBe(false);
+      },
+      30_000
+    );
+  });
 
   describe('list', () => {
     it('returns the built-in pipelines with source via --json', async () => {
@@ -73,6 +574,82 @@ describe('pipeline command', () => {
         JSON.parse(displayOnly.stdout.trim())
       );
     });
+
+    it.each([
+      {
+        locale: 'ja',
+        warning: '警告: 保存済みプロファイルから不明なワークフローIDを除外します: ff',
+      },
+      {
+        locale: 'zh-cn',
+        warning: '警告：已从存储的配置方案中忽略未知工作流 ID：ff',
+      },
+    ] as const)(
+      'localizes stale-profile preflight warnings for show and resume in $locale',
+      async ({ locale, warning }) => {
+        const name = `stale-profile-${locale}`;
+        const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+        const changeName = `stale-profile-change-${locale}`;
+        const home = path.join(testDir, `.stale-profile-home-${locale}`);
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.mkdir(path.join(changesDir, changeName), { recursive: true });
+        await fs.mkdir(home, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          [
+            `name: ${name}`,
+            'stages:',
+            '  - id: propose',
+            '    skill: rasen-propose',
+            '    role: planner',
+            '',
+          ].join('\n'),
+          'utf-8'
+        );
+        await fs.writeFile(
+          path.join(changesDir, changeName, 'auto-run.json'),
+          JSON.stringify({ pipeline: name, completed: [] }),
+          'utf-8'
+        );
+        await fs.writeFile(
+          path.join(home, 'config.json'),
+          JSON.stringify({
+            profile: 'custom',
+            delivery: 'both',
+            workflows: ['propose', 'ff'],
+          }),
+          'utf-8'
+        );
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+
+        const show = await runCLI(
+          ['pipeline', 'show', name, '--for-execution'],
+          { cwd: testDir, env }
+        );
+        expect(show.exitCode).toBe(0);
+        expect(show.stderr).toContain(warning);
+        expect(show.stderr).not.toContain('dropping unknown workflow');
+
+        const resume = await runCLI(
+          ['pipeline', 'resume', changeName],
+          { cwd: testDir, env }
+        );
+        expect(resume.exitCode).toBe(0);
+        expect(resume.stderr).toContain(warning);
+        expect(resume.stderr).not.toContain('dropping unknown workflow');
+
+        for (const args of [
+          ['pipeline', 'show', name, '--for-execution', '--json'],
+          ['pipeline', 'resume', changeName, '--json'],
+        ]) {
+          const json = await runCLI(args, { cwd: testDir, env });
+          expect(json.exitCode).toBe(0);
+          expect(json.stderr).toBe('');
+          expect(() => JSON.parse(json.stdout)).not.toThrow();
+        }
+      },
+      30_000
+    );
 
     it('blocks a fresh executable DAG when the active profile disables a known skill', async () => {
       const home = await createIsolatedProposeOnlyHome('.fresh-execution-home');
