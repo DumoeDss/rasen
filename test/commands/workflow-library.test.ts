@@ -75,7 +75,57 @@ describe('workflow command', () => {
     expect(output.status).toEqual([]);
     expect(output.workflows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'apply', source: 'built-in', commandId: 'apply' }),
+        expect.objectContaining({ id: 'apply', source: 'built-in', commandId: 'apply', kind: 'task' }),
+      ])
+    );
+  });
+
+  it('JSON always includes internal and driver workflows annotated with kind, regardless of --all', async () => {
+    await runWorkflowCommand(['list', '--json']);
+    const withoutAll = (lastJson().workflows as Array<{ id: string; kind: string }>);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--all', '--json']);
+    const withAll = (lastJson().workflows as Array<{ id: string; kind: string }>);
+
+    for (const ids of [withoutAll, withAll]) {
+      expect(ids).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'goal-plan', kind: 'internal' }),
+          expect.objectContaining({ id: 'auto-command', kind: 'driver' }),
+        ])
+      );
+    }
+    expect(withoutAll).toEqual(withAll);
+  });
+
+  it('human list groups by kind, hides internal by default, and reveals it with --all', async () => {
+    await runWorkflowCommand(['list']);
+    const linesWithoutAll = log.mock.calls.map((call) => call[0]);
+    expect(linesWithoutAll).toContain('Tasks:');
+    expect(linesWithoutAll).toContain('Drivers:');
+    expect(linesWithoutAll).not.toContain('Internal:');
+    expect(linesWithoutAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(false);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--all']);
+    const linesWithAll = log.mock.calls.map((call) => call[0]);
+    expect(linesWithAll).toContain('Internal:');
+    expect(linesWithAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(true);
+  });
+
+  it('shows the expert group by default (unlike internal), and JSON tags experts with kind:expert', async () => {
+    await runWorkflowCommand(['list']);
+    const lines = log.mock.calls.map((call) => call[0]);
+    expect(lines).toContain('Experts:');
+    expect(lines.some((line) => String(line).startsWith('review\t'))).toBe(true);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+    expect(lastJson().workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'review', source: 'built-in', commandId: null, kind: 'expert' }),
+        expect.objectContaining({ id: 'qa-only', source: 'built-in', commandId: null, kind: 'expert' }),
       ])
     );
   });
@@ -160,8 +210,9 @@ describe('workflow command', () => {
     log.mockClear();
     await runWorkflowCommand(['list', '--unused']);
 
-    expect(log).toHaveBeenCalledTimes(1);
-    expect(log).toHaveBeenCalledWith('batch-unused\tuser\trasen-batch-unused\tunused');
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenNthCalledWith(1, 'Tasks:');
+    expect(log).toHaveBeenNthCalledWith(2, 'batch-unused\tuser\trasen-batch-unused\tunused');
     expectReadCount(3);
   });
 
@@ -183,7 +234,7 @@ describe('workflow command', () => {
     log.mockClear();
     await runWorkflowCommand(['show', 'team-release', '--json']);
     expect(lastJson()).toMatchObject({
-      workflow: { id: 'team-release', source: 'user' },
+      workflow: { id: 'team-release', source: 'user', kind: 'task' },
       usage: [],
       status: [],
     });
@@ -205,7 +256,7 @@ describe('workflow command', () => {
 
     log.mockClear();
     await runWorkflowCommand(['delete', 'team-release', '--yes', '--json']);
-    expect(lastJson()).toEqual({ deleted: 'team-release', status: [] });
+    expect(lastJson()).toEqual({ deleted: 'team-release', forcedReferrers: [], status: [] });
     expect(warn).toHaveBeenCalledWith(
       'Warning: project-local consumers outside the current project may still exist.'
     );
@@ -277,6 +328,34 @@ describe('workflow command', () => {
       expect(process.exitCode).toBe(1);
     }
   );
+
+  it('deletes a referenced workflow with --force and reports the dangling referrers', async () => {
+    const id = 'force-delete-target';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    await runWorkflowCommand(['import', draft, '--json']);
+    fs.writeFileSync(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'both', workflows: [id] })
+    );
+
+    log.mockClear();
+    await runWorkflowCommand(['delete', id, '--yes', '--json']);
+    expect(lastJson()).toMatchObject({
+      deleted: null,
+      status: [expect.objectContaining({ code: 'workflow_in_use' })],
+    });
+
+    log.mockClear();
+    warn.mockClear();
+    await runWorkflowCommand(['delete', id, '--yes', '--force', '--json']);
+    expect(lastJson()).toMatchObject({
+      deleted: id,
+      forcedReferrers: [expect.stringContaining('global-selection')],
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(id));
+    expect(fs.existsSync(path.join(home, 'workflows', id))).toBe(false);
+  });
 
   it('localizes human output while preserving machine IDs and diagnostic codes', async () => {
     process.env.RASEN_LANG = 'ja';

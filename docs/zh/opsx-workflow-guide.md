@@ -149,7 +149,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 | 探索 | `/rasen:explore [topic]` | 不带结构地想清楚、查代码、比方案 | （无；可转入 propose/new）|
 | 需求验证 | `/rasen:office-hours` | YC 式需求验证（Startup 六问 / Builder 头脑风暴）| `office-hours-design.md` |
 | 立项 | `/rasen:propose [name-or-desc]` | 一步建 change + 生成全部规划产物 | proposal/design/specs/tasks |
-| 立项（细粒度）| `/rasen:new` → `/rasen:continue` → `/rasen:ff` | 逐个产物 / 按依赖生成下一个 / 一次性全生成 | 同上，分步 |
+| 立项（细粒度）| `/rasen:new` → `/rasen:continue`（重复）| 逐个产物，按依赖生成下一个 | 同上，分步 |
 | 实现 | `/rasen:apply` | 按 `tasks.md` 实现，逐条勾选 | 代码 + 勾选的 tasks |
 | 验证 | `/rasen:verify` | 校验实现是否匹配产物（spec scenario）| 验证结论 |
 | 深度验证 | `/rasen:verify-enhanced` | 产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查（按改动规模自动伸缩）| 各类 report |
@@ -275,7 +275,7 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
 
 - **Profile = 装哪些 workflow 命令**：
   - `core`（默认）= `propose` / `explore` / `apply` / `archive`。
-  - `custom`（expanded）= 你勾选的集合，可含 `new` `continue` `ff` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` 以及 fusion 命令 `auto` `ship` `verify-enhanced` `office-hours` `retro`。
+  - `custom`（expanded）= 你勾选的集合，可含 `new` `continue` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` 以及 fusion 命令 `auto` `ship` `verify-enhanced` `office-hours` `retro`。
   - **专家技能与 profile 无关，始终安装**。
 - **启用 expanded / fusion 命令**：
   ```bash
@@ -363,7 +363,7 @@ rasen archive add-jwt-auth
 | 看有哪些流水线 | `rasen pipeline list` |
 | 先想清楚再动 | `/rasen:explore` |
 | 验证需求该不该做 | `/rasen:office-hours` |
-| 立项 + 生成计划 | `/rasen:propose`（细粒度：`/rasen:new`+`/rasen:continue`+`/rasen:ff`）|
+| 立项 + 生成计划 | `/rasen:propose`（细粒度：`/rasen:new`+`/rasen:continue`）|
 | 实现 | `/rasen:apply` |
 | 评审→修→复审（直到干净）| `/rasen:review-cycle` |
 | 深度验证（代码/安全/QA/视觉）| `/rasen:verify-enhanced`（或 `/rasen:verify`）|

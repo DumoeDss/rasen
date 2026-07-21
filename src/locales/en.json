@@ -33,7 +33,13 @@
       "deletionRequiresYes": "Deletion requires --yes in non-interactive mode",
       "deleteWorkflow": "Delete workflow {id}?",
       "deleted": "Deleted workflow {id}",
-      "projectConsumerWarning": "Warning: project-local consumers outside the current project may still exist."
+      "forcedDeleteWarning": "Warning: forced deletion of {id} left these referrers dangling: {referrers}",
+      "projectConsumerWarning": "Warning: project-local consumers outside the current project may still exist.",
+      "taskGroupHeading": "Tasks",
+      "driverGroupHeading": "Drivers",
+      "expertGroupHeading": "Experts",
+      "internalGroupHeading": "Internal",
+      "kindLabel": "Kind"
     },
     "errors": {
       "workflow_not_found": "The workflow was not found.",
@@ -90,10 +96,6 @@
         "apply": {
           "name": "Apply tasks",
           "description": "Implement and track the tasks defined by a change"
-        },
-        "ff": {
-          "name": "Fast-forward",
-          "description": "Create every planning artifact needed for implementation in one pass"
         },
         "sync": {
           "name": "Sync specs",
@@ -163,7 +165,95 @@
           "name": "Run goal loop",
           "description": "Orchestrate planning, iterations, and reporting for a long-running goal"
         }
-      }
+      },
+      "experts": {
+        "benchmark": {
+          "name": "Benchmark",
+          "description": "Detect performance regressions by running repeatable timing and size benchmarks against budgets"
+        },
+        "careful": {
+          "name": "Careful",
+          "description": "Pause, explain, and confirm before any risky or irreversible shell command"
+        },
+        "chrome-use": {
+          "name": "Chrome Use",
+          "description": "Drive the real Chrome browser via CDP for DOM snapshots, clicks, network capture, and screenshots"
+        },
+        "codebase-design": {
+          "name": "Codebase Design",
+          "description": "Design it twice, deepen module boundaries, and keep implementation aligned with the intended architecture"
+        },
+        "codex": {
+          "name": "Codex",
+          "description": "Dispatch the OpenAI Codex CLI for an independent review or implementation pass"
+        },
+        "cso": {
+          "name": "CSO Audit",
+          "description": "Adversarial security review of the branch diff with confidence-scored, severity-tagged findings"
+        },
+        "design-consultation": {
+          "name": "Design Consultation",
+          "description": "Extract, discuss, and lock in the project design system through guided dialogue"
+        },
+        "design-review": {
+          "name": "Design Review",
+          "description": "Browser-based design audit grading visual hierarchy, typography, color, and responsiveness"
+        },
+        "freeze": {
+          "name": "Freeze",
+          "description": "Restrict edits to a directory so writes outside the frozen scope are rejected"
+        },
+        "guard": {
+          "name": "Guard",
+          "description": "Full safety mode — destructive-command guardrails plus an edit boundary in one switch"
+        },
+        "investigate": {
+          "name": "Investigate",
+          "description": "Reproduce, isolate, and root-cause a bug with evidence before attempting any fix"
+        },
+        "navigator": {
+          "name": "Navigator",
+          "description": "A map of this repo's skills and workflows and when to reach for each"
+        },
+        "office-hours": {
+          "name": "Office Hours",
+          "description": "Pressure-test product demand and design direction before building"
+        },
+        "prototype": {
+          "name": "Prototype",
+          "description": "Build a throwaway UI or logic spike to answer a question fast"
+        },
+        "qa": {
+          "name": "QA",
+          "description": "Explore the app via the CDP proxy, document evidence-backed issues, and fix findings"
+        },
+        "qa-only": {
+          "name": "QA (report only)",
+          "description": "The same exploration and health score as QA, but never edits code"
+        },
+        "review": {
+          "name": "Review",
+          "description": "Pre-landing PR review with full codebase context, severity-tagged findings, and a fix loop"
+        },
+        "tdd": {
+          "name": "TDD",
+          "description": "Red, green, refactor discipline with mocking guidance"
+        },
+        "unfreeze": {
+          "name": "Unfreeze",
+          "description": "Lift the edit restriction set by freeze or guard"
+        },
+        "workflow-author": {
+          "name": "Workflow Author",
+          "description": "Author installable workflows and pipelines safely, staged and independently reviewed"
+        },
+        "workflow-review": {
+          "name": "Workflow Review",
+          "description": "Review installable workflows and pipelines independently for quality and security"
+        }
+      },
+      "workflowsGroupLabel": "-- Workflows --",
+      "expertsGroupLabel": "-- Experts --"
     },
     "ui": {
       "errorPrefix": "Error:",
@@ -377,7 +467,8 @@
       "invalidAutopilotSelection": "Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')",
       "invalidAutopilot": "Invalid 'autopilot' field in config (must be an object)",
       "invalidHandoffThreshold": "Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })",
-      "invalidHandoff": "Invalid 'handoff' field in config (must be an object)"
+      "invalidHandoff": "Invalid 'handoff' field in config (must be an object)",
+      "expertSelectionMigration": "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install."
     }
   },
   "completion": {
@@ -551,6 +642,7 @@
     "Manage installable workflows in the user-wide library": "Manage installable workflows in the user-wide library",
     "List built-in and user workflows": "List built-in and user workflows",
     "Show only user workflows with no detected consumers": "Show only user workflows with no detected consumers",
+    "Also reveal internal workflows in the human table": "Also reveal internal workflows in the human table",
     "Show an installable workflow definition and known usage": "Show an installable workflow definition and known usage",
     "Show where an installable workflow resolves from": "Show where an installable workflow resolves from",
     "Create a minimal workflow draft without installing it": "Create a minimal workflow draft without installing it",
@@ -560,6 +652,15 @@
     "Export a user workflow and its user dependencies as .rasenpkg": "Export a user workflow and its user dependencies as .rasenpkg",
     "Replace an existing destination file": "Replace an existing destination file",
     "Delete an unreferenced user workflow": "Delete an unreferenced user workflow",
+    "Bypass the referrer guard, deleting even a still-referenced workflow": "Bypass the referrer guard, deleting even a still-referenced workflow",
+    "Create a minimal pipeline draft without installing it": "Create a minimal pipeline draft without installing it",
+    "Empty pipeline draft directory to create": "Empty pipeline draft directory to create",
+    "Validate an installed pipeline, draft directory, or .rasenpkg": "Validate an installed pipeline, draft directory, or .rasenpkg",
+    "Validate and atomically install a pipeline .rasenpkg": "Validate and atomically install a pipeline .rasenpkg",
+    "Overwrite an already-installed pipeline of the same name": "Overwrite an already-installed pipeline of the same name",
+    "Export a user pipeline as .rasenpkg": "Export a user pipeline as .rasenpkg",
+    "Delete an unreferenced user pipeline": "Delete an unreferenced user pipeline",
+    "Bypass the referrer guard, deleting even a still-referenced pipeline": "Bypass the referrer guard, deleting even a still-referenced pipeline",
     "Manage shell completions for Rasen CLI": "Manage shell completions for Rasen CLI",
     "Manage the resident Rasen daemon (sessions survive terminal exits)": "Manage the resident Rasen daemon (sessions survive terminal exits)",
     "Manage workflow schemas": "Manage workflow schemas",

@@ -65,7 +65,7 @@ rasen init
 
 这将在 `.claude/skills/`（或等效目录）中创建技能文件，AI 编码助手会自动检测到它们。
 
-默认情况下，OpenSpec 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`sync`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`ff`、`verify`、`bulk-archive`、`onboard`），请使用 `rasen config profile` 进行配置，并通过 `rasen update` 应用。
+默认情况下，OpenSpec 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`sync`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`verify`、`bulk-archive`、`onboard`），请使用 `rasen config profile` 进行配置，并通过 `rasen update` 应用。
 
 在设置过程中，系统会提示你创建**项目配置**（`rasen/config.yaml`）。这是可选的，但建议创建。
 
@@ -161,7 +161,6 @@ rules:
 | `/rasen:explore` | 思考想法、调查问题、澄清需求 |
 | `/rasen:new` | 创建新的变更脚手架（扩展工作流） |
 | `/rasen:continue` | 创建下一个产物（扩展工作流） |
-| `/rasen:ff` | 快速生成规划产物（扩展工作流） |
 | `/rasen:apply` | 实现任务，按需更新产物 |
 | `/rasen:verify` | 根据产物验证实现（扩展工作流） |
 | `/rasen:sync` | 将增量规格同步到主分支（默认工作流，可选） |
@@ -175,7 +174,7 @@ rules:
 ```
 /rasen:explore
 ```
-思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/rasen:propose`（默认）或 `/rasen:new`/`/rasen:ff`（扩展）。
+思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/rasen:propose`（默认）或 `/rasen:new`/`/rasen:continue`（扩展）。
 
 ### 开始新的变更
 ```
@@ -188,7 +187,6 @@ rules:
 ```text
 /rasen:new        # scaffold only
 /rasen:continue   # create one artifact at a time
-/rasen:ff         # create all planning artifacts at once
 ```
 
 ### 创建产物
@@ -196,11 +194,6 @@ rules:
 /rasen:continue
 ```
 根据依赖关系显示哪些产物可以创建，然后创建一个。反复使用以逐步构建你的变更。
-
-```
-/rasen:ff add-dark-mode
-```
-一次性创建所有规划产物。当你对要构建的内容有清晰的认识时使用。
 
 ### 实现（灵活的部分）
 ```
@@ -661,7 +654,7 @@ rasen schema validate my-workflow
 ## 提示
 
 - 使用 `/rasen:explore` 在正式提交变更前思考想法
-- 当你清楚想要什么时使用 `/rasen:ff`，探索时使用 `/rasen:continue`
+- 当你清楚想要什么时使用 `/rasen:propose`，探索时使用 `/rasen:new`/`/rasen:continue`
 - 在 `/rasen:apply` 期间，如果发现问题——修改产物，然后继续
 - 任务通过 `tasks.md` 中的复选框跟踪进度
 - 随时检查状态：`rasen status --change "name"`

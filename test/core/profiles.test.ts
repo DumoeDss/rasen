@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  ALL_EXPERTS,
   CORE_WORKFLOWS,
   ALL_WORKFLOWS,
+  QUALITY_FLOOR_EXPERTS,
   getProfileWorkflows,
 } from '../../src/core/profiles.js';
+import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
 
 describe('profiles', () => {
   describe('CORE_WORKFLOWS', () => {
@@ -20,14 +23,14 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 23 workflows (12 base + 5 Rasen fusion + review-cycle + handoff + 4 goal-loop)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(23);
+    it('should contain all 22 workflows (11 base + 5 Rasen fusion + review-cycle + handoff + 4 goal-loop)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(22);
     });
 
     it('should contain expected workflow IDs', () => {
       const expected = [
         'propose', 'explore', 'new', 'continue', 'apply',
-        'ff', 'sync', 'archive', 'bulk-archive', 'verify', 'onboard', 'help',
+        'sync', 'archive', 'bulk-archive', 'verify', 'onboard', 'help',
         // Rasen fusion workflow commands
         'office-hours-command', 'verify-enhanced-command', 'ship-command',
         'retro-command', 'auto-command',
@@ -58,41 +61,81 @@ describe('profiles', () => {
     });
   });
 
-  describe('getProfileWorkflows', () => {
-    it('should return all workflows for full profile (default)', () => {
-      const result = getProfileWorkflows('full');
-      expect(result).toEqual(ALL_WORKFLOWS);
+  describe('ALL_EXPERTS / QUALITY_FLOOR_EXPERTS', () => {
+    it('ALL_EXPERTS matches every built-in expert id (21)', () => {
+      const expected = getExpertSkillDefinitions().map((expert) => expert.id);
+      expect([...ALL_EXPERTS].sort()).toEqual(expected.sort());
+      expect(ALL_EXPERTS).toHaveLength(21);
     });
 
-    it('should return all workflows for full profile even if customWorkflows provided', () => {
-      const result = getProfileWorkflows('full', ['new', 'apply']);
-      expect(result).toEqual(ALL_WORKFLOWS);
+    it('QUALITY_FLOOR_EXPERTS is the six quality-floor experts and a subset of ALL_EXPERTS', () => {
+      expect([...QUALITY_FLOOR_EXPERTS].sort()).toEqual(
+        ['benchmark', 'cso', 'design-review', 'qa', 'qa-only', 'review'].sort()
+      );
+      for (const expert of QUALITY_FLOOR_EXPERTS) {
+        expect(ALL_EXPERTS).toContain(expert);
+      }
+    });
+  });
+
+  describe('getProfileWorkflows (design.md D2/D4 — the install-set matrix)', () => {
+    describe('legacy (expertSelectionExplicit omitted/false) — profile-independent all-experts fallback', () => {
+      it('full profile: ALL_WORKFLOWS + ALL_EXPERTS', () => {
+        const result = getProfileWorkflows('full');
+        expect([...result].sort()).toEqual([...ALL_WORKFLOWS, ...ALL_EXPERTS].sort());
+      });
+
+      it('full profile ignores customWorkflows', () => {
+        const result = getProfileWorkflows('full', ['new', 'apply']);
+        expect([...result].sort()).toEqual([...ALL_WORKFLOWS, ...ALL_EXPERTS].sort());
+      });
+
+      it('core profile: CORE_WORKFLOWS + ALL_EXPERTS (not just the quality floor — row 2 non-regression)', () => {
+        const result = getProfileWorkflows('core');
+        expect([...result].sort()).toEqual([...CORE_WORKFLOWS, ...ALL_EXPERTS].sort());
+      });
+
+      it('custom profile: customWorkflows + ALL_EXPERTS (row 3 non-regression)', () => {
+        const customWorkflows = ['explore', 'new', 'apply', 'archive'];
+        const result = getProfileWorkflows('custom', customWorkflows);
+        expect([...result].sort()).toEqual([...customWorkflows, ...ALL_EXPERTS].sort());
+      });
+
+      it('custom profile with no customWorkflows: just ALL_EXPERTS', () => {
+        const result = getProfileWorkflows('custom');
+        expect([...result].sort()).toEqual([...ALL_EXPERTS].sort());
+      });
+
+      it('custom profile with empty customWorkflows: just ALL_EXPERTS', () => {
+        const result = getProfileWorkflows('custom', []);
+        expect([...result].sort()).toEqual([...ALL_EXPERTS].sort());
+      });
     });
 
-    it('should return core workflows for core profile', () => {
-      const result = getProfileWorkflows('core');
-      expect(result).toEqual(CORE_WORKFLOWS);
-    });
+    describe('explicit (expertSelectionExplicit: true) — profile-default expert sets govern', () => {
+      it('full profile: ALL_WORKFLOWS + ALL_EXPERTS (unchanged from legacy — row 1)', () => {
+        const result = getProfileWorkflows('full', undefined, { expertSelectionExplicit: true });
+        expect([...result].sort()).toEqual([...ALL_WORKFLOWS, ...ALL_EXPERTS].sort());
+      });
 
-    it('should return core workflows for core profile even if customWorkflows provided', () => {
-      const result = getProfileWorkflows('core', ['new', 'apply']);
-      expect(result).toEqual(CORE_WORKFLOWS);
-    });
+      it('core profile: CORE_WORKFLOWS + QUALITY_FLOOR_EXPERTS only (row 5 — lean by design)', () => {
+        const result = getProfileWorkflows('core', undefined, { expertSelectionExplicit: true });
+        expect([...result].sort()).toEqual([...CORE_WORKFLOWS, ...QUALITY_FLOOR_EXPERTS].sort());
+        for (const expert of ALL_EXPERTS) {
+          if (!QUALITY_FLOOR_EXPERTS.includes(expert)) expect(result).not.toContain(expert);
+        }
+      });
 
-    it('should return custom workflows for custom profile', () => {
-      const customWorkflows = ['explore', 'new', 'apply', 'ff'];
-      const result = getProfileWorkflows('custom', customWorkflows);
-      expect(result).toEqual(customWorkflows);
-    });
+      it('custom profile: exactly customWorkflows, verbatim (no expert auto-union)', () => {
+        const customWorkflows = ['auto-command', 'review'];
+        const result = getProfileWorkflows('custom', customWorkflows, { expertSelectionExplicit: true });
+        expect(result).toEqual(customWorkflows);
+      });
 
-    it('should return empty array for custom profile with no customWorkflows', () => {
-      const result = getProfileWorkflows('custom');
-      expect(result).toEqual([]);
-    });
-
-    it('should return empty array for custom profile with empty customWorkflows', () => {
-      const result = getProfileWorkflows('custom', []);
-      expect(result).toEqual([]);
+      it('custom profile with no customWorkflows: empty array', () => {
+        const result = getProfileWorkflows('custom', undefined, { expertSelectionExplicit: true });
+        expect(result).toEqual([]);
+      });
     });
   });
 });

@@ -27,6 +27,8 @@ interface WorkflowFixtureOptions {
   scripts?: Record<string, string | Buffer>;
   requiresWorkflows?: string[];
   requiresSkills?: string[];
+  requiresPipelines?: string[];
+  requiresSchemas?: string[];
   recommends?: string[];
   extraManifest?: string;
 }
@@ -54,6 +56,8 @@ function writeWorkflow(parent: string, id: string, options: WorkflowFixtureOptio
     'requires:',
     `  workflows: ${JSON.stringify(options.requiresWorkflows ?? [])}`,
     `  skills: ${JSON.stringify(options.requiresSkills ?? [])}`,
+    `  pipelines: ${JSON.stringify(options.requiresPipelines ?? [])}`,
+    `  schemas: ${JSON.stringify(options.requiresSchemas ?? [])}`,
     'recommends:',
     `  workflows: ${JSON.stringify(options.recommends ?? [])}`,
     ...(options.extraManifest ? [options.extraManifest] : []),
@@ -107,8 +111,9 @@ describe('workflow directory validator', () => {
       id: 'team-release',
       source: 'user',
       manifestVersion: 1,
+      kind: 'task',
       skill: { dirName: 'rasen-team-release' },
-      requires: { workflows: [], skills: [] },
+      requires: { workflows: [], skills: [], pipelines: [], schemas: [] },
     });
     expect(result.definition?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
@@ -142,6 +147,26 @@ describe('workflow directory validator', () => {
   it('rejects unknown manifest fields', () => {
     const parent = temporaryDirectory();
     const root = writeWorkflow(parent, 'invalid-manifest', { extraManifest: 'unknown: true' });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('manifest_schema_invalid');
+  });
+
+  it('loads a manifest that declares kind: internal', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'internal-subunit', { extraManifest: 'kind: internal' });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.definition?.kind).toBe('internal');
+  });
+
+  it('rejects a manifest declaring a disallowed kind', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'driver-claim', { extraManifest: 'kind: driver' });
 
     const result = validateWorkflowDirectory(root);
 
@@ -260,6 +285,75 @@ describe('workflow directory validator', () => {
 
     expect(result.valid).toBe(false);
     expect(result.diagnostics.map((item) => item.code)).toContain('workflow_id_mismatch');
+  });
+
+  it('resolves declared requires.pipelines and requires.schemas that exist', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'pipeline-schema-consumer', {
+      requiresPipelines: ['small-feature'],
+      requiresSchemas: ['spec-driven'],
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.definition?.requires).toEqual({
+      workflows: [],
+      skills: [],
+      pipelines: ['small-feature'],
+      schemas: ['spec-driven'],
+    });
+  });
+
+  it('rejects requires.pipelines and requires.schemas that do not resolve', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'missing-pipeline-schema', {
+      requiresPipelines: ['not-a-real-pipeline'],
+      requiresSchemas: ['not-a-real-schema'],
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining(['pipeline_dependency_missing', 'schema_dependency_missing'])
+    );
+  });
+
+  it('resolves project-layer requires.pipelines/schemas only when a projectRoot is supplied (D6)', () => {
+    const parent = temporaryDirectory();
+    const project = temporaryDirectory();
+    const projectPipelineDir = path.join(project, 'rasen', 'pipelines', 'project-only-pipeline');
+    fs.mkdirSync(projectPipelineDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectPipelineDir, 'pipeline.yaml'),
+      'name: project-only-pipeline\nstages:\n  - id: a\n    skill: rasen-apply-change\n    requires: []\n'
+    );
+    const projectSchemaDir = path.join(project, 'rasen', 'schemas', 'project-only-schema');
+    fs.mkdirSync(projectSchemaDir, { recursive: true });
+    fs.writeFileSync(path.join(projectSchemaDir, 'schema.yaml'), 'name: project-only-schema\nartifacts: []\n');
+
+    const root = writeWorkflow(parent, 'project-context-consumer', {
+      requiresPipelines: ['project-only-pipeline'],
+      requiresSchemas: ['project-only-schema'],
+    });
+
+    // No regression without a project context: still built-in+user-only resolution.
+    const withoutContext = validateWorkflowDirectory(root);
+    expect(withoutContext.valid).toBe(false);
+    expect(withoutContext.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining(['pipeline_dependency_missing', 'schema_dependency_missing'])
+    );
+
+    // With a project context, the project-layer pipeline/schema resolve.
+    const withContext = validateWorkflowDirectory(root, { projectRoot: project });
+    expect(withContext.valid).toBe(true);
+    expect(withContext.definition?.requires).toEqual({
+      workflows: [],
+      skills: [],
+      pipelines: ['project-only-pipeline'],
+      schemas: ['project-only-schema'],
+    });
   });
 });
 

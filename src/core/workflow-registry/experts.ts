@@ -22,6 +22,8 @@ import {
   getWorkflowReviewSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { SkillTemplate } from '../templates/types.js';
+import { digestExpert, hashSidecarTree, resolveExpertSidecarDir } from './expert-digest.js';
+import type { WorkflowDefinition } from './types.js';
 
 export interface ExpertSkillDefinition {
   id: string;
@@ -58,4 +60,40 @@ export function getExpertSkillDefinitions(): ExpertSkillDefinition[] {
 
 export function getExpertSkillNames(): ReadonlySet<string> {
   return new Set(getExpertSkillDefinitions().map((definition) => definition.template.name));
+}
+
+/**
+ * Experts as unified-catalog units (`kind: 'expert'`, `source: 'built-in'`,
+ * no command, empty `files[]` — sidecar reference files stay directory-backed
+ * per the hybrid model, see design.md D1). Composed into
+ * `loadWorkflowCatalog` in `./registry.ts` alongside the built-in workflows.
+ *
+ * M2: memoized (module-level cache) — the sidecar tree is packaged and
+ * immutable at runtime, so re-hashing all 21 sidecar trees on every
+ * `loadWorkflowCatalog` call is wasted work. `getExpertSkillDefinitions`/
+ * `getExpertSkillNames` intentionally stay un-memoized pure derivations (they
+ * never hash anything).
+ */
+let cachedBuiltInExpertDefinitions: WorkflowDefinition[] | undefined;
+
+export function getBuiltInExpertDefinitions(): WorkflowDefinition[] {
+  if (!cachedBuiltInExpertDefinitions) {
+    cachedBuiltInExpertDefinitions = getExpertSkillDefinitions().map((expert) => {
+      const sidecars = hashSidecarTree(resolveExpertSidecarDir(expert.sidecarSourceId ?? expert.id));
+      return {
+        id: expert.id,
+        source: 'built-in',
+        manifestVersion: 1,
+        kind: 'expert',
+        skill: { dirName: expert.dirName, template: expert.template },
+        command: undefined,
+        requires: { workflows: [], skills: [], pipelines: [], schemas: [] },
+        recommends: { workflows: [] },
+        files: [],
+        digest: digestExpert(expert.id, expert.dirName, expert.template, sidecars),
+        sidecarSourceId: expert.sidecarSourceId,
+      };
+    });
+  }
+  return cachedBuiltInExpertDefinitions;
 }

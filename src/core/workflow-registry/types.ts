@@ -3,9 +3,21 @@ import type { SkillTemplate } from '../templates/types.js';
 
 export type WorkflowSourceKind = 'built-in' | 'user';
 
+/**
+ * Role classification for a workflow definition. `task` is an inner-loop
+ * operation invoked directly; `driver` is an outer-loop engine that consumes
+ * pipelines; `internal` is a sub-unit invoked only by a driver; `expert` is a
+ * review/analysis skill installed alongside workflows rather than run as one.
+ * Avoid exhaustive `switch`/`never` handling over this type — new members may
+ * be added.
+ */
+export type WorkflowKind = 'task' | 'driver' | 'internal' | 'expert';
+
 export interface WorkflowDependencySet {
   workflows: string[];
   skills: string[];
+  pipelines: string[];
+  schemas: string[];
 }
 
 export interface WorkflowRecommendations {
@@ -39,12 +51,19 @@ export interface WorkflowDefinition {
   source: WorkflowSourceKind;
   sourcePath?: string;
   manifestVersion: number;
+  kind: WorkflowKind;
   skill: WorkflowSkillDefinition;
   command?: WorkflowCommandDefinition;
   requires: WorkflowDependencySet;
   recommends: WorkflowRecommendations;
   files: WorkflowFileEntry[];
   digest: string;
+  /**
+   * For `kind: 'expert'` definitions whose sidecar reference files live under
+   * another expert's directory (e.g. `qa-only` reads `skills/experts/qa/`).
+   * Undefined for every non-expert definition and for experts with no alias.
+   */
+  sidecarSourceId?: string;
 }
 
 export type WorkflowDiagnosticSeverity = 'error' | 'warning';

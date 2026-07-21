@@ -35,14 +35,18 @@ import {
   detectLegacyArtifacts,
   formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredWorkflowSkillDirs,
+  RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
-import { getProfileWorkflows } from './profiles.js';
+import { resolveDesiredWorkflowSelection } from './profiles.js';
+import { reportConfigDiagnostic } from './config-diagnostics.js';
+import { resolveProjectHome } from './project-home.js';
+import { hasExpertSelectionAck, writeExpertSelectionAck } from './expert-selection-state.js';
 import {
-  getBuiltInWorkflowDefinitions,
+  getBuiltInCatalogDefinitions,
   loadWorkflowCatalog,
-  resolveWorkflowSelection,
 } from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
@@ -114,14 +118,72 @@ export class UpdateCommand {
     const globalConfig = getGlobalConfig();
     const profile = globalConfig.profile ?? 'full';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
-    const profileWorkflows = getProfileWorkflows(profile, globalConfig.workflows);
-    const desiredWorkflows = resolveWorkflowSelection(
-      loadWorkflowCatalog(),
-      profileWorkflows
-    ).map((workflow) => workflow.id);
+
+    // The machine-wide marker can flip to `true` from an action against a
+    // completely different project (review-round Blocker fix). Expert
+    // pruning below is additionally gated on THIS project's own
+    // acknowledgment file (expert-selection-state.ts): a project that has
+    // never been through its own transition keeps resolving the legacy
+    // (all-experts) branch regardless of the global marker, so it can never
+    // lose an installed expert as a side effect of what happened elsewhere.
+    const globalMarkerExplicit = globalConfig.expertSelectionExplicit === true;
+    let projectHome: Awaited<ReturnType<typeof resolveProjectHome>> = null;
+    try {
+      projectHome = await resolveProjectHome(resolvedProjectPath, { ensure: false });
+    } catch {
+      projectHome = null;
+    }
+    const projectAcknowledged = projectHome !== null && hasExpertSelectionAck(projectHome.homeDir);
+    const expertSelectionExplicit = globalMarkerExplicit && projectAcknowledged;
+
+    if (globalMarkerExplicit && !projectAcknowledged) {
+      // First post-flip update for this specific project: stay on the safe
+      // legacy branch this run (handled by `expertSelectionExplicit` above
+      // being `false`), and record the acknowledgment so the *next* update
+      // on this same project is the one that applies profile-default
+      // narrowing.
+      try {
+        const home = projectHome ?? (await resolveProjectHome(resolvedProjectPath, { ensure: true }));
+        if (home) writeExpertSelectionAck(home.homeDir);
+      } catch {
+        // Best-effort; a failed write just means this project re-evaluates
+        // from the same safe starting point on its next update.
+      }
+    }
+
+    const catalog = loadWorkflowCatalog();
+    const { ids: desiredWorkflows, unknown: unknownProfileWorkflows } = resolveDesiredWorkflowSelection(
+      catalog,
+      profile,
+      globalConfig.workflows,
+      expertSelectionExplicit
+    );
+    if (unknownProfileWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
+        )
+      );
+    }
     const shouldGenerateCommands = delivery === 'both';
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
+
+    // One-time (per run) non-regressive migration notice (design.md D4): an
+    // install that predates expert selection resolves ALL 21 experts under
+    // the legacy branch above, profile-independent — this only explains the
+    // shift, it never narrows the install itself. `update` never sets the
+    // marker; only the profile picker/`profile use`/`profile new`/`import`
+    // and a fresh `init` do, so this notice keeps firing on every legacy
+    // `update` until the user explicitly re-selects experts.
+    if (!expertSelectionExplicit) {
+      reportConfigDiagnostic({
+        key: 'expertSelectionMigration',
+        fallback:
+          "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install.",
+        output: 'warn',
+      });
+    }
 
     // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
     // refreshes only rasen-namespace artifacts; upstream/older-rasen `opsx`
@@ -166,13 +228,17 @@ export class UpdateCommand {
     const toolsUpToDate = toolStatuses.filter((s) => !toolsToUpdateSet.has(s.toolId));
 
     // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
-    // openspec-*) for every configured tool, before the up-to-date short-circuit.
-    // Installed dirs are not renamed in place, and the retired dirs are always
-    // stale, so this must run even when no tool otherwise needs an update.
+    // openspec-*) and skill/command artifacts left behind by retired built-in
+    // workflows (e.g. `ff` → `rasen-ff-change`) for every configured tool,
+    // before the up-to-date short-circuit. Installed artifacts are not
+    // renamed or removed in place, and retired artifacts are always stale, so
+    // this must run even when no tool otherwise needs an update.
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
       if (!tool?.skillsDir) continue;
       await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      await pruneRetiredWorkflowSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      await this.pruneRetiredWorkflowCommandFiles(resolvedProjectPath, toolId);
     }
 
     if (!this.force && toolsToUpdateSet.size === 0) {
@@ -420,7 +486,14 @@ export class UpdateCommand {
   }
 
   /**
-   * Removes skill directories for workflows that are no longer selected in the active profile.
+   * Removes skill directories for built-in workflows OR experts that are no
+   * longer in the resolved desired set (D5: iterates
+   * `getBuiltInCatalogDefinitions()`, not the workflow-only
+   * `getBuiltInWorkflowDefinitions()`, so a deselected-and-unreferenced
+   * expert is pruned the same way a deselected workflow is). `desiredWorkflows`
+   * already includes every profile-default and closure-required expert (and,
+   * under the legacy migration marker, all 21), so a protected expert is
+   * never removed here.
    * Returns the number of directories removed.
    */
   private async removeUnselectedSkillDirs(
@@ -430,7 +503,7 @@ export class UpdateCommand {
     const desiredSet = new Set(desiredWorkflows);
     let removed = 0;
 
-    for (const definition of getBuiltInWorkflowDefinitions()) {
+    for (const definition of getBuiltInCatalogDefinitions()) {
       if (desiredSet.has(definition.id)) continue;
       const dirName = definition.skill.dirName;
       if (!dirName) continue;
@@ -450,6 +523,41 @@ export class UpdateCommand {
   }
 
   /**
+   * Removes command files left behind by retired built-in workflows (e.g.
+   * `ff`), by resolving candidate paths via the tool's command adapter for
+   * each id in `RETIRED_WORKFLOW_COMMAND_IDS`. The registry-derived
+   * `removeUnselectedCommandFiles` cannot reach these once the id leaves the
+   * registry, so this is a narrow, exact-id retired-artifact prune. Scoped to
+   * exactly those ids; idempotent (a no-op when no such file exists).
+   */
+  private async pruneRetiredWorkflowCommandFiles(
+    projectPath: string,
+    toolId: string,
+  ): Promise<number> {
+    let removed = 0;
+
+    const adapter = CommandAdapterRegistry.get(toolId);
+    if (!adapter) return 0;
+
+    for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
+      for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+            removed++;
+          }
+        } catch {
+          // Ignore errors
+        }
+      }
+    }
+
+    return removed;
+  }
+
+  /**
    * Removes command files for workflows when delivery changed to skills-only.
    * Returns the number of files removed.
    */
@@ -462,7 +570,7 @@ export class UpdateCommand {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (!adapter) return 0;
 
-    for (const definition of getBuiltInWorkflowDefinitions()) {
+    for (const definition of getBuiltInCatalogDefinitions()) {
       if (!definition.command) continue;
       for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
@@ -498,7 +606,7 @@ export class UpdateCommand {
 
     const desiredSet = new Set(desiredWorkflows);
 
-    for (const definition of getBuiltInWorkflowDefinitions()) {
+    for (const definition of getBuiltInCatalogDefinitions()) {
       const workflow = definition.id;
       const stalePaths: string[] = [];
       if (definition.command && !desiredSet.has(workflow)) {

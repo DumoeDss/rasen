@@ -89,7 +89,14 @@ export function getConfiguredToolsForProfileSync(projectPath: string): string[] 
  * This function covers:
  * - required artifacts missing for selected workflows
  * - artifacts that should not exist for the selected delivery mode
- * - artifacts for workflows that were deselected from the current profile
+ * - artifacts for workflows (or, since the expert install-semantics flip,
+ *   experts) that were deselected from the current profile
+ *
+ * `desiredWorkflows` is expected to be the closure-included desired set
+ * (workflows + profile-default/closure-required experts) computed by
+ * `resolveDesiredWorkflowSelection` — the same array the install path
+ * (`getSkillTemplates`) and the removal seam (`removeUnselectedSkillDirs`)
+ * use, so drift, install, and removal never disagree about experts.
  */
 export function hasToolProfileOrDeliveryDrift(
   projectPath: string,

@@ -34,16 +34,16 @@ type ValidationIssue = {
  * skill-existence against the known skill-template set. Returns the same shape
  * the change/spec validators produce so it slots into the shared result set.
  */
-function validatePipelineByName(
+async function validatePipelineByName(
   id: string,
   projectRoot: string
-): { valid: boolean; issues: ValidationIssue[] } {
+): Promise<{ valid: boolean; issues: ValidationIssue[] }> {
   const issues: ValidationIssue[] = [];
   try {
     // parse + Zod + structural validators (duplicate ids, requires refs,
     // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
-    validatePipelineForExecution(pipeline, projectRoot);
+    await validatePipelineForExecution(pipeline, projectRoot);
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause
@@ -266,7 +266,7 @@ export class ValidateCommand {
   private async validateByType(root: ResolvedOpenSpecRoot, type: ItemType, id: string, opts: { strict: boolean; json: boolean }): Promise<void> {
     if (type === 'pipeline') {
       const start = Date.now();
-      const report = validatePipelineByName(id, root.path);
+      const report = await validatePipelineByName(id, root.path);
       const durationMs = Date.now() - start;
       this.printReport('pipeline', id, report, durationMs, opts.json, root);
       process.exitCode = report.valid ? 0 : 1;
@@ -365,7 +365,7 @@ export class ValidateCommand {
     for (const id of pipelineIds) {
       queue.push(async () => {
         const start = Date.now();
-        const report = validatePipelineByName(id, root.path);
+        const report = await validatePipelineByName(id, root.path);
         const durationMs = Date.now() - start;
         return { id, type: 'pipeline' as const, valid: report.valid, issues: report.issues, durationMs };
       });

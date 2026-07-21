@@ -22,7 +22,6 @@ For workflow patterns and when to use each command, see [Workflows](workflows.md
 |---------|---------|
 | `/rasen:new` | Start a new change scaffold |
 | `/rasen:continue` | Create the next artifact based on dependencies |
-| `/rasen:ff` | Fast-forward: create all planning artifacts at once |
 | `/rasen:verify` | Validate implementation matches artifacts |
 | `/rasen:bulk-archive` | Archive multiple changes at once |
 | `/rasen:onboard` | Guided tutorial through the complete workflow |
@@ -130,7 +129,7 @@ AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
 
 ### `/rasen:new`
 
-Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `/rasen:continue` or `/rasen:ff`.
+Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `/rasen:continue`.
 
 This command is part of the expanded workflow set (not included in the `core` profile).
 
@@ -165,7 +164,7 @@ AI:  Created rasen/changes/add-dark-mode/
      Schema: spec-driven
 
      Ready to create: proposal
-     Use /rasen:continue to create it, or /rasen:ff to create all artifacts.
+     Use /rasen:continue to create it, one artifact at a time.
 ```
 
 **Tips:**
@@ -223,49 +222,6 @@ AI:  Change: add-dark-mode
 - Good for complex changes where you want control
 - Multiple artifacts may become ready simultaneously
 - You can edit created artifacts before continuing
-
----
-
-### `/rasen:ff`
-
-Fast-forward through artifact creation. Creates all planning artifacts at once.
-
-**Syntax:**
-```
-/rasen:ff [change-name]
-```
-
-**Arguments:**
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `change-name` | No | Which change to fast-forward (inferred from context if not provided) |
-
-**What it does:**
-- Creates all artifacts in dependency order
-- Tracks progress via todo list
-- Stops when all `apply-required` artifacts are complete
-- Reads each dependency before creating the next artifact
-
-**Example:**
-```
-You: /rasen:ff add-dark-mode
-
-AI:  Fast-forwarding add-dark-mode...
-
-     ✓ Creating proposal.md
-     ✓ Creating specs/ui/spec.md
-     ✓ Creating design.md
-     ✓ Creating tasks.md
-
-     All planning artifacts complete!
-     Ready for implementation. Run /rasen:apply to begin.
-```
-
-**Tips:**
-- Use when you have a clear picture of what you're building
-- Faster than `/rasen:continue` for straightforward changes
-- You can still edit artifacts afterward
-- Good for small to medium features
 
 ---
 
@@ -777,7 +733,7 @@ The AI creates incomplete or incorrect artifacts.
 - Add project context in `rasen/config.yaml`
 - Add per-artifact rules for specific guidance
 - Provide more detail in your change description
-- Use `/rasen:continue` instead of `/rasen:ff` for more control
+- Use `/rasen:continue` to create and review one artifact at a time instead of all at once
 
 ---
 

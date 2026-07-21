@@ -30,6 +30,7 @@ import {
   getUserWorkflowsDir,
   isPortableWorkflowId,
   loadWorkflowCatalog,
+  portablePathCollisionKey,
   resolveWorkflowSelection,
   validateWorkflowDirectory,
   type WorkflowCatalog,
@@ -203,6 +204,8 @@ export function scaffoldWorkflow(id: string, outputPath: string): string {
     'requires:',
     '  workflows: []',
     '  skills: []',
+    '  pipelines: []',
+    '  schemas: []',
     'recommends:',
     '  workflows: []',
     '',
@@ -243,7 +246,7 @@ export async function importWorkflow(
     );
   }
   if (stats.isDirectory() && !stats.isSymbolicLink()) {
-    const validation = validateWorkflowDirectory(resolved);
+    const validation = validateWorkflowDirectory(resolved, { projectRoot: options.projectRoot });
     if (!validation.valid || !validation.definition) {
       throw new WorkflowLibraryError(
         'Workflow directory failed validation',
@@ -299,7 +302,7 @@ export function validateWorkflowInput(
   if (fs.existsSync(resolved)) {
     const stats = fs.lstatSync(resolved);
     if (stats.isDirectory() && !stats.isSymbolicLink()) {
-      const result = validateWorkflowDirectory(resolved);
+      const result = validateWorkflowDirectory(resolved, { projectRoot: options.projectRoot });
       return {
         valid: result.valid,
         kind: 'directory',
@@ -313,6 +316,7 @@ export function validateWorkflowInput(
       try {
         const plan = stagePackageWorkflows(packageValue, {
           workflowsDir: path.join(temporary, 'workflows'),
+          projectRoot: options.projectRoot,
         });
         discardWorkflowInstall(plan);
       } finally {
@@ -476,6 +480,32 @@ export function createWorkflowUsageContext(
     }
   }
 
+  // requires.skills references a skill identity (colon `template.name` or
+  // hyphen `dirName` form — both appear in the wild, e.g. built-in
+  // verify-enhanced-command/auto-command/review-cycle use the hyphen form), not
+  // a workflow ID, so resolve through both identities before recording usage.
+  // Scanned across every source (not just `user`) so a built-in workflow's
+  // requires.skills (e.g. review-cycle -> rasen-review) protects the expert it
+  // depends on.
+  const skillIdentityToWorkflowId = new Map<string, string>();
+  for (const definition of catalog.definitions) {
+    for (const name of new Set([definition.skill.template.name, definition.skill.dirName])) {
+      skillIdentityToWorkflowId.set(portablePathCollisionKey(name), definition.id);
+    }
+  }
+  for (const candidate of catalog.definitions) {
+    for (const skillName of new Set(candidate.requires.skills)) {
+      const id = skillIdentityToWorkflowId.get(portablePathCollisionKey(skillName));
+      if (!id) continue;
+      addWorkflowUsage(usageByWorkflowId, id, {
+        kind: 'dependency',
+        consumer: candidate.id,
+        path: candidate.sourcePath,
+        hard: true,
+      });
+    }
+  }
+
   const workflowIdBySkillName = new Map(
     catalog.definitions.map((definition) => [definition.skill.template.name, definition.id])
   );
@@ -522,11 +552,15 @@ export function scanWorkflowUsage(
   return [...(resolvedContext.byWorkflowId.get(id) ?? [])];
 }
 
+export interface DeleteWorkflowResult {
+  forcedReferrers: string[];
+}
+
 export async function deleteWorkflow(
   id: string,
-  options: WorkflowRegistryOptions & { projectRoot?: string } = {}
-): Promise<void> {
-  await withWorkflowRegistryLock(options, async () => {
+  options: WorkflowRegistryOptions & { projectRoot?: string; force?: boolean } = {}
+): Promise<DeleteWorkflowResult> {
+  return withWorkflowRegistryLock(options, async () => {
     const catalog = loadWorkflowCatalog(options);
     const definition = catalog.get(id);
     if (!definition) throw new WorkflowLibraryError(`Workflow "${id}" was not found`, 'workflow_not_found');
@@ -535,11 +569,12 @@ export async function deleteWorkflow(
     }
     const usageContext = createWorkflowUsageContext(catalog, options);
     const usage = scanWorkflowUsage(id, options, usageContext);
-    if (usage.length > 0) {
+    const forcedReferrers = usage.map((item) => `${item.kind}:${item.consumer}`);
+    if (usage.length > 0 && !options.force) {
       throw new WorkflowLibraryError(
         `Workflow "${id}" is still referenced`,
         'workflow_in_use',
-        { consumers: usage.map((item) => `${item.kind}:${item.consumer}`) }
+        { consumers: forcedReferrers }
       );
     }
 
@@ -552,6 +587,8 @@ export async function deleteWorkflow(
       fs.renameSync(tombstone, target);
       throw error;
     }
+
+    return { forcedReferrers: usage.length > 0 ? forcedReferrers : [] };
   });
 }
 
@@ -561,6 +598,7 @@ export function workflowDefinitionForJson(definition: WorkflowDefinition): Recor
     source: definition.source,
     sourcePath: definition.sourcePath ?? null,
     manifestVersion: definition.manifestVersion,
+    kind: definition.kind,
     digest: definition.digest,
     skill: {
       name: definition.skill.template.name,

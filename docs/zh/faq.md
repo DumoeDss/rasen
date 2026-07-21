@@ -62,7 +62,7 @@
 
 ### `/rasen:propose` 和 `/rasen:new` 有什么区别？
 
-`/rasen:propose` 是默认的一步式命令：它创建变更并一次性起草所有规划产物。`/rasen:new` 属于扩展命令集，只搭建一个空的变更框架，然后由你用 `/rasen:continue` 逐个创建产物（或用 `/rasen:ff` 一次性全部创建）。除非你想要逐步控制，否则就用 propose。参见[命令](commands.md)。
+`/rasen:propose` 是默认的一步式命令：它创建变更并一次性起草所有规划产物。`/rasen:new` 属于扩展命令集，只搭建一个空的变更框架，然后由你用 `/rasen:continue` 逐个创建产物。除非你想要逐步控制，否则就用 propose。参见[命令](commands.md)。
 
 ### 什么是 `core` 和扩展配置（profile）？
 

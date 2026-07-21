@@ -62,7 +62,7 @@ Explore to think it through, propose to draft the plan, apply to build it, archi
 
 ### What's the difference between `/rasen:propose` and `/rasen:new`?
 
-`/rasen:propose` is the default one-step command: it creates the change and drafts all the planning artifacts at once. `/rasen:new` is part of the expanded command set and only scaffolds an empty change, leaving you to create artifacts one at a time with `/rasen:continue` (or all at once with `/rasen:ff`). Use propose unless you want step-by-step control. See [Commands](commands.md).
+`/rasen:propose` is the default one-step command: it creates the change and drafts all the planning artifacts at once. `/rasen:new` is part of the expanded command set and only scaffolds an empty change, leaving you to create artifacts one at a time with `/rasen:continue`. Use propose unless you want step-by-step control. See [Commands](commands.md).
 
 ### What are `core` and expanded profiles?
 

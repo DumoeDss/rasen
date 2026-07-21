@@ -175,7 +175,7 @@ You: /rasen:continue
 AI:  Created specs/auth/spec.md. Now available: design.
 ```
 
-Review each artifact as it lands, edit freely, and continue when you're happy. When you want the rest drafted in one go, `/rasen:ff` fast-forwards through the remaining planning artifacts. Before archiving, `/rasen:verify` checks that the implementation actually matches the specs. See [Workflows](workflows.md#rasenff-vs-rasencontinue).
+Review each artifact as it lands, edit freely, and continue when you're happy. When you want everything drafted in one go instead, `/rasen:propose` covers the same ground as `/rasen:new` plus every remaining artifact. Before archiving, `/rasen:verify` checks that the implementation actually matches the specs. See [Workflows](workflows.md#rasenpropose-vs-rasencontinue).
 
 ## Recipe 7: Learning the whole loop hands-on
 

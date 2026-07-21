@@ -41,6 +41,8 @@ import {
   cleanupMarkerBlocks,
   formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredWorkflowSkillDirs,
+  RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import {
   SKILL_NAMES,
@@ -55,12 +57,12 @@ import {
   copySkillSidecars,
   type ToolSkillStatus,
 } from './shared/index.js';
-import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
-import { getProfileWorkflows, CORE_WORKFLOWS } from './profiles.js';
+import { getGlobalConfig, saveGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
+import { writeExpertSelectionAck } from './expert-selection-state.js';
+import { getProfileWorkflows, resolveDesiredWorkflowSelection, CORE_WORKFLOWS } from './profiles.js';
 import {
   getBuiltInWorkflowDefinitions,
   loadWorkflowCatalog,
-  resolveWorkflowSelection,
 } from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
@@ -178,15 +180,42 @@ export class InitCommand {
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
 
+    // A fresh (non-extend) init is one of the explicit expert-aware write
+    // paths (design.md D4): it marks the machine as having explicit expert
+    // selection so the profile-default expert set governs from the start
+    // (matrix row 4/5), rather than silently inheriting the legacy
+    // all-experts fallback that exists only to protect installs that
+    // predate expert selection. Re-running init on an already-initialized
+    // project (extend mode) is left alone here, matching update semantics.
+    // This global write alone is not enough to make ANOTHER already-existing
+    // project narrow (review-round Blocker fix): `update`'s pruning also
+    // requires that specific project's own acknowledgment file, written
+    // below once THIS project's machine home is known.
+    if (!extendMode) {
+      const currentConfig = getGlobalConfig();
+      if (currentConfig.expertSelectionExplicit !== true) {
+        saveGlobalConfig({ ...currentConfig, expertSelectionExplicit: true });
+      }
+    }
+
     // Resolve the complete catalog selection before creating project files.
     // Missing or invalid selected user workflows therefore fail without a
     // partially generated tool configuration.
     const effectiveConfig = getGlobalConfig();
     const effectiveProfile = this.resolveProfileOverride() ?? effectiveConfig.profile ?? 'full';
-    resolveWorkflowSelection(
+    const { unknown: unknownEffectiveWorkflows } = resolveDesiredWorkflowSelection(
       loadWorkflowCatalog(),
-      getProfileWorkflows(effectiveProfile, effectiveConfig.workflows)
+      effectiveProfile,
+      effectiveConfig.workflows,
+      effectiveConfig.expertSelectionExplicit === true
     );
+    if (unknownEffectiveWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownEffectiveWorkflows.join(', ')}`
+        )
+      );
+    }
 
     // Create directory structure and config
     await this.createDirectoryStructure(openspecPath, extendMode);
@@ -201,6 +230,16 @@ export class InitCommand {
     // effort: a registration failure never fails init - the repo-side
     // setup above has already completed.
     const machineHome = await this.registerMachineHome(projectPath);
+
+    // A fresh (non-extend) init has nothing pre-existing to lose, so it is
+    // safe to record THIS project's own expert-selection acknowledgment
+    // immediately (review-round Blocker fix, expert-selection-state.ts):
+    // its first `update` narrows straight away instead of taking the
+    // one-run legacy detour a project that never ran its own explicit
+    // action goes through.
+    if (!extendMode && 'homeDir' in machineHome) {
+      writeExpertSelectionAck(machineHome.homeDir);
+    }
 
     // Display success message
     this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome);
@@ -620,6 +659,33 @@ export class InitCommand {
   // SKILL & COMMAND GENERATION
   // ═══════════════════════════════════════════════════════════
 
+  /**
+   * Removes command files left behind by retired built-in workflows (e.g.
+   * `ff`), resolving candidate paths via the tool's command adapter for each
+   * id in `RETIRED_WORKFLOW_COMMAND_IDS`. Scoped to exactly those ids;
+   * idempotent (a no-op when no such file exists).
+   */
+  private async pruneRetiredWorkflowCommandFiles(
+    projectPath: string,
+    toolId: string,
+  ): Promise<void> {
+    const adapter = CommandAdapterRegistry.get(toolId);
+    if (!adapter) return;
+
+    for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
+      for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+          }
+        } catch {
+          // Ignore errors
+        }
+      }
+    }
+  }
+
   private async generateSkillsAndCommands(
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
@@ -640,10 +706,19 @@ export class InitCommand {
     const globalConfig = getGlobalConfig();
     const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'full';
     const delivery: Delivery = globalConfig.delivery ?? 'both';
-    const workflows = resolveWorkflowSelection(
+    const { ids: workflows, unknown: unknownProfileWorkflows } = resolveDesiredWorkflowSelection(
       loadWorkflowCatalog(),
-      getProfileWorkflows(profile, globalConfig.workflows)
-    ).map((definition) => definition.id);
+      profile,
+      globalConfig.workflows,
+      globalConfig.expertSelectionExplicit === true
+    );
+    if (unknownProfileWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
+        )
+      );
+    }
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
@@ -668,6 +743,12 @@ export class InitCommand {
         // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
         // openspec-*); installed dirs are not renamed in place.
         await pruneRetiredExpertSkillDirs(skillsDir);
+
+        // Prune skill/command artifacts left behind by retired built-in
+        // workflows (e.g. `ff` → `rasen-ff-change`); the registry-derived
+        // cleanup below can no longer reach a retired id.
+        await pruneRetiredWorkflowSkillDirs(skillsDir);
+        await this.pruneRetiredWorkflowCommandFiles(projectPath, tool.value);
 
         // Create skill directories and SKILL.md files
         for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
@@ -819,7 +900,12 @@ export class InitCommand {
       const globalConfig = getGlobalConfig();
       const profile: Profile = (this.profileOverride as Profile) ?? globalConfig.profile ?? 'full';
       const delivery: Delivery = globalConfig.delivery ?? 'both';
-      const workflows = getProfileWorkflows(profile, globalConfig.workflows);
+      const { ids: workflows } = resolveDesiredWorkflowSelection(
+        loadWorkflowCatalog(),
+        profile,
+        globalConfig.workflows,
+        globalConfig.expertSelectionExplicit === true
+      );
       // Tools with a machine-global skills home (Hermes) report their
       // resolved global location instead of the project-local `.hermes/`
       // label, so the user knows skills landed outside the project.

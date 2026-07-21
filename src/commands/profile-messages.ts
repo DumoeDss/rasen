@@ -27,6 +27,10 @@ export interface ProfilePromptMessages {
   requiredBy: (workflow: string) => string;
   delivery: Record<Delivery, DeliveryPromptMeta>;
   workflows: Record<WorkflowId, WorkflowPromptMeta>;
+  /** Picker metadata for built-in experts, keyed by expert id (D1: a disjoint id space from `workflows`). */
+  experts: Record<string, WorkflowPromptMeta>;
+  workflowsGroupLabel: string;
+  expertsGroupLabel: string;
 }
 
 export interface ProfileUiMessages {

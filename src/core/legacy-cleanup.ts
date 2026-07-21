@@ -53,6 +53,56 @@ export async function pruneRetiredExpertSkillDirs(skillsDir: string): Promise<st
 }
 
 /**
+ * Installed skill directory names left behind by retired built-in workflows.
+ * A retired workflow id is no longer in the registry, so the registry-derived
+ * deselection cleanup (`removeUnselectedSkillDirs`) can never reach its
+ * installed directory; {@link pruneRetiredWorkflowSkillDirs} removes it by
+ * exact name instead. Append here when a future built-in workflow is retired.
+ */
+export const RETIRED_WORKFLOW_SKILL_DIRS = ['rasen-ff-change'] as const;
+
+/**
+ * Command ids left behind by retired built-in workflows. Command file paths
+ * are adapter-specific, so the corresponding prune lives in `update.ts`
+ * (which already has the configured-tool + adapter context) rather than
+ * here; this constant is the shared list of ids it prunes.
+ */
+export const RETIRED_WORKFLOW_COMMAND_IDS = ['ff'] as const;
+
+/**
+ * Removes installed skill directories orphaned by a retired built-in
+ * workflow — those whose name exactly matches one of
+ * {@link RETIRED_WORKFLOW_SKILL_DIRS}. Scoped to exact names (not a prefix),
+ * so it can never remove a current skill directory. Idempotent: a no-op (no
+ * error) when the skills directory is absent or contains no such directory.
+ *
+ * @param skillsDir - Absolute path to a tool's installed skills directory
+ *   (e.g. `<project>/.claude/skills`)
+ * @returns The directory names that were removed
+ */
+export async function pruneRetiredWorkflowSkillDirs(skillsDir: string): Promise<string[]> {
+  const removed: string[] = [];
+
+  for (const dirName of RETIRED_WORKFLOW_SKILL_DIRS) {
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      const stat = await fs.stat(dirPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue; // does not exist — nothing to prune
+    }
+    try {
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
+    } catch {
+      // Best-effort cleanup; ignore per-directory failures.
+    }
+  }
+
+  return removed;
+}
+
+/**
  * Legacy config file names from the old ToolRegistry.
  * These were config files created at project root with Rasen markers.
  */

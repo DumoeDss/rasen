@@ -21,6 +21,7 @@ import { registerDaemonCommand } from '../commands/daemon.js';
 import { registerProfileCommand } from '../commands/profile.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
+import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
 import { registerDoctorCommand } from '../commands/doctor.js';
@@ -713,6 +714,71 @@ pipelineCmd
       ora().fail(`Error: ${(error as Error).message}`);
       process.exit(1);
     }
+  });
+
+pipelineCmd
+  .command('init <name>')
+  .description('Create a minimal pipeline draft without installing it')
+  .requiredOption('--output <path>', 'Empty pipeline draft directory to create')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.init(name, options);
+  });
+
+pipelineCmd
+  .command('validate <name-or-path>')
+  .description('Validate an installed pipeline, draft directory, or .rasenpkg')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.validate(nameOrPath, options);
+  });
+
+pipelineCmd
+  .command('import <path>')
+  .description('Validate and atomically install a pipeline .rasenpkg')
+  .option('--force', 'Overwrite an already-installed pipeline of the same name')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.import(sourcePath, options);
+  });
+
+pipelineCmd
+  .command('export <name> <path>')
+  .description('Export a user pipeline as .rasenpkg')
+  .option('--force', 'Replace an existing destination file')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.export(name, destination, options);
+  });
+
+pipelineCmd
+  .command('delete <name>')
+  .description('Delete an unreferenced user pipeline')
+  .option('-y, --yes', 'Skip confirmation')
+  .option('--force', 'Bypass the referrer guard, deleting even a still-referenced pipeline')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.delete(name, options);
   });
 
 // Agent command group: introspect an agent's own runtime state

@@ -118,7 +118,7 @@ CLI 是**引擎**。它掌握规则：变更文件夹长什么样、哪些产物
 
 一个不错的默认节奏：`explore`（想清楚做什么）→ `propose` → `apply` → `archive`。[先做探索](explore.md)这份指南解释了为什么开头那一步值得。
 
-此外还有一个**扩展**命令集，给那些想要更精细控制的人（`/rasen:new`、`/rasen:continue`、`/rasen:ff`、`/rasen:verify`、`/rasen:bulk-archive`、`/rasen:onboard`）。你用 `rasen config profile` 开启它，再用 `rasen update` 应用。
+此外还有一个**扩展**命令集，给那些想要更精细控制的人（`/rasen:new`、`/rasen:continue`、`/rasen:verify`、`/rasen:bulk-archive`、`/rasen:onboard`）。你用 `rasen config profile` 开启它，再用 `rasen update` 应用。
 
 对这一切都还陌生？`/rasen:onboard`（在扩展命令集里）会带你用自己的代码库走完一整个变更，并为每一步讲解。它是你能找到的最友好的入门。
 

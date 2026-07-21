@@ -6,6 +6,7 @@
  * (design D10) — never reach into individual files under `src/core/codex/`.
  */
 export { resolveCodexHome, CODEX_CLI_VERSION_PREMISE } from './codex-home.js';
+export { probeCodexAvailability } from './availability.js';
 export {
   buildCodexExecInvocation,
   formatShellInvocation,

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { getGlobalDataDir } from '../global-config.js';
 import { getBuiltInWorkflowDefinitions } from './builtins.js';
 import { WorkflowCatalog } from './catalog.js';
-import { getExpertSkillDefinitions } from './experts.js';
+import { getBuiltInExpertDefinitions } from './experts.js';
 import { portablePathCollisionKey } from './path-policy.js';
 import type {
   InvalidWorkflowRecord,
@@ -18,6 +18,12 @@ export const USER_WORKFLOWS_DIR_NAME = 'workflows';
 export interface WorkflowRegistryOptions {
   globalDataDir?: string;
   workflowsDir?: string;
+  /**
+   * Repo/project root used to resolve project-layer `requires.pipelines` /
+   * `requires.schemas` referents during directory validation. Optional —
+   * omitting it keeps today's built-in+user-only resolution (no regression).
+   */
+  projectRoot?: string;
 }
 
 export function getUserWorkflowsDir(options: WorkflowRegistryOptions = {}): string {
@@ -57,8 +63,19 @@ function dependencyCycleIds(definitions: readonly WorkflowDefinition[]): Set<str
   return cycleIds;
 }
 
+/**
+ * The full built-in catalog: workflows plus experts (`kind: 'expert'`),
+ * unified per the registry-unification decision (design.md D3). Built-in
+ * workflows and built-in experts are disjoint ID/skill-identity spaces by
+ * construction; a real collision here is a built-in authoring bug, not a
+ * runtime condition to recover from.
+ */
+export function getBuiltInCatalogDefinitions(): WorkflowDefinition[] {
+  return [...getBuiltInWorkflowDefinitions(), ...getBuiltInExpertDefinitions()];
+}
+
 export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): WorkflowCatalog {
-  const builtIns = getBuiltInWorkflowDefinitions();
+  const builtIns = getBuiltInCatalogDefinitions();
   const workflowsDir = getUserWorkflowsDir(options);
   const invalid: InvalidWorkflowRecord[] = [];
   const warnings: WorkflowDiagnostic[] = [];
@@ -111,13 +128,9 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
   const byId = new Map(builtIns.map((definition) => [definition.id, definition]));
   const bySkill = new Map<string, { id: string; kind: 'workflow' | 'expert' }>();
   for (const definition of builtIns) {
+    const kind = definition.kind === 'expert' ? 'expert' : 'workflow';
     for (const name of new Set([definition.skill.template.name, definition.skill.dirName])) {
-      bySkill.set(portablePathCollisionKey(name), { id: definition.id, kind: 'workflow' });
-    }
-  }
-  for (const definition of getExpertSkillDefinitions()) {
-    for (const name of new Set([definition.template.name, definition.dirName])) {
-      bySkill.set(portablePathCollisionKey(name), { id: definition.id, kind: 'expert' });
+      bySkill.set(portablePathCollisionKey(name), { id: definition.id, kind });
     }
   }
   const byCommand = new Map(
@@ -175,7 +188,9 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
   }
 
   const expertNames = new Set(
-    getExpertSkillDefinitions().map((definition) => definition.template.name)
+    builtIns
+      .filter((definition) => definition.kind === 'expert')
+      .map((definition) => definition.skill.template.name)
   );
   const dependencyInvalid = new Map<string, WorkflowDiagnostic[]>();
   const userDefinitions = accepted.filter((definition) => definition.source === 'user');

@@ -499,6 +499,46 @@ artifacts:
 
 关于创建和使用自定义模式的完整说明，请参阅[自定义配置](customization.md)。
 
+## 执行模型：内循环与外循环（Inner and Outer Loops）
+
+模式回答的是"产出什么"。这一节回答"怎么跑起来"——以及为什么 rasen 会把 `workflow`（工作流）和 `pipeline` 说成是两个不同的东西，尽管两者听起来都只是"会跑的步骤"。
+
+**内容层。** 模式（见上文）定义了一种方法论产出哪些产物、以及它们之间如何依赖。它本身从不运行任何东西——它是地图，不是旅程。
+
+**执行层。** 真正让工作跑起来的部分，分成两个相互嵌套的循环：
+
+- **工作流（workflow）——内循环。** 一个工作流是在一个 session 里跑完的一个任务单元：AI 代码 agent 自主规划并执行它，过程中可能会调度 subagent，最终带着结果返回。`rasen:propose`、`rasen:apply`、`rasen:review-cycle`——每一个都是一个内循环任务。`rasen workflow list` 展示的就是这些可安装单元的目录。
+- **Pipeline——外循环。** Pipeline 是一个 harness（例如驱动 autopilot 的 `/rasen:auto`）把多个内循环任务串起来按顺序推进的方式——先 propose，再 apply，再 archive，每一步都是独立的工作流，依次运行，中间还有 gate 和 review 循环。`rasen pipeline list` 展示 harness 可用的内置与自定义 pipeline。
+
+换个说法：工作流是*一次* AI session 里发生的事；pipeline 是 harness 为了把一个变更完整交付而驱动的一连串 session。
+
+### kind：CLI 里的一眼分类
+
+每个工作流定义都带有一个 `kind`，在 `rasen workflow list` 里可见：
+
+- **`task`**——你直接调用的普通内循环单元（`propose`、`apply`、`archive`，以及默认目录里的其余部分）。
+- **`driver`**——消费 pipeline 而不是"属于"某个 pipeline 的外循环引擎。`auto-command` 和 `goal-command` 是内置的 driver：它们读取一份 pipeline 定义，并按顺序运行其中的各个 stage。driver 不是它所运行的那个 pipeline 的"一部分"，就像测试运行器不是它执行的那套测试用例的一部分。
+- **`internal`**——只被某个 driver 调用、用户不会直接选中的子单元。支撑 `/rasen:goal` 的 `goal-plan` / `goal-iterate` / `goal-report` 三件套就是 internal；除非传入 `--all`，否则 `rasen workflow list` 会隐藏它们。
+
+`kind` 只是呈现层的元数据，不是一次结构性搬家：driver 和 internal 工作流仍然活在和其他一切相同的可安装工作流库里，因为只有这个库拥有安装/更新/digest 机制。把它们拆到一个独立注册表里，等于再造一套安装器，却毫无收益。
+
+### 为什么名字不改
+
+`workflow` 从单个 session 内部看是"小"的，从外循环视角看——一个 pipeline 串起好几个 workflow——又显得"大"，这种张力是真实存在的，也很容易让人想改掉三个名字里的某一个来缓解它。Rasen 没有这么做，理由有三点：`workflow` 是上游 OpenSpec 的遗产，偏离它的代价大于收益；GitHub Actions 早已给出先例，用"workflow"命名一个更大运行中可串联的单元，所以这个词本身并不奇怪；而改名会牵动今天所有说"workflow"的 skill、command、文档和 locale 字符串，为的只是纯粹的观感收益。解法是把这个模型写下来——也就是这一节——而不是发明新词。
+
+### 范围与定位
+
+有几条边界值得说清楚，因为很容易被想当然地假设成别的样子：
+
+- **模式（schema）维持三层。** 模式解析（项目 → 用户 → 包）不受这个模型影响。后续的一个变更会在工作流的 `requires` 字段里预留一个 `schemas` 槽位，仅用于存在性校验——不会把 schema 并入工作流/pipeline 的可安装包机制。
+- **`-command` 后缀暂不改。** 一些 driver 的 ID 以 `-command` 结尾（`auto-command`、`goal-command`），这是历史原因，和 `kind` 字段无关。把它们改名（例如 `auto-command` → `auto`）是一项延后、单独排期的清理工作，不属于这个模型的范围。
+- **分享靠文件，不是应用商店。** 可安装的工作流和 pipeline 以 `.rasenpkg` 文件的形式，通过手工传递、git 或 pull request 分享——没有托管的注册中心或应用商店，这个模型里也没有计划做一个。
+- **信任边界。** 一份共享的工作流或 pipeline 本质上是一段可执行的 prompt：导入它，就意味着一个 AI agent 会读取并按其内容行动。Rasen 不用签名体系来解决这个问题，而是用事务化安装（校验通过之前不写入任何东西）、内容 digest（让重装或更新能证明底层内容没有被篡改）、静态 `validate`（在安装前完成检查），以及 `workflow-author` / `workflow-review` 两个专家（用于编写和审查包）来缓解风险。在导入前审查来源——就像审查一个要加进项目的依赖一样。
+
+### 接下来的方向
+
+以下三个后续变更是方向，不是已交付的行为：显式依赖图，让工作流的 `requires` 能表达真实的边（workflow → workflow、workflow → pipeline、driver → pipeline），而不是靠"全体必装"来兜底缺失的依赖数据；pipeline 通过和工作流相同的 `.rasenpkg` 机制变得可安装、可导出，CLI 动词集（`init`/`validate`/`import`/`export`/`delete`）随之补齐；以及 21 个内置专家（`rasen:review`、`rasen:qa` 等）加入同一个注册表，归为 `kind: 'expert'`，让它们的安装/digest/依赖故事不再是特例。这些都尚未上线——目前每个内置工作流的 `requires` 字段仍然是空的，也还没有 `rasen pipeline import`。
+
 ## 归档（Archive）
 
 归档通过把变更的增量规格合并进主规格来完成一个变更，同时为历史记录保留该变更。
@@ -568,7 +608,7 @@ openspec/
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  2. CREATE     │  /rasen:ff or /rasen:continue (expanded workflow)         │
+│   │  2. CREATE     │  /rasen:continue (expanded workflow)                     │
 │   │     ARTIFACTS  │  Creates proposal → specs → design → tasks              │
 │   │                │  (based on schema dependencies)                         │
 │   └───────┬────────┘                                                         │
@@ -614,6 +654,11 @@ openspec/
 | **变更（Change）** | 对系统的一项提议修改，打包为一个包含产物的文件夹 |
 | **增量规格（Delta spec）** | 描述相对于当前规格所发生变化（ADDED/MODIFIED/REMOVED）的规格 |
 | **领域（Domain）** | 规格的逻辑分组（例如 `auth/`、`payments/`） |
+| **Driver** | 一种通过消费 pipeline 来运行外循环的工作流 `kind`（例如 `auto-command`、`goal-command`）；不"属于"它所运行的那个 pipeline |
+| **内循环（Inner loop）** | 一个工作流如何运行：在一个 AI session 内执行的单个任务单元，过程中可能调度 subagent |
+| **可安装工作流（Installable workflow）** | 一个面向整机、可在 profile 中选择的内循环任务单元，用 `rasen workflow` 管理；参见[执行模型](#执行模型内循环与外循环inner-and-outer-loops) |
+| **外循环（Outer loop）** | 一个 pipeline 如何运行：由 harness（例如 `/rasen:auto`）按顺序串联多个内循环工作流 |
+| **Pipeline** | harness 为推进一个变更而串联的一串工作流，例如 propose → apply → archive；用 `rasen pipeline` 管理 |
 | **需求（Requirement）** | 系统必须具备的某项具体行为 |
 | **场景（Scenario）** | 需求的一个具体示例，通常采用 Given/When/Then 格式 |
 | **模式（Schema）** | 产物类型及其依赖关系的定义 |

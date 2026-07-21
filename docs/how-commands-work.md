@@ -118,7 +118,7 @@ By default, rasen installs the **full** profile — every slash command out of t
 
 A good default rhythm: `explore` when you're figuring out what to do, then `propose`, `apply`, `archive`. The [Explore First](explore.md) guide explains why that opening step pays off.
 
-The full profile also includes an **expanded** set for people who want finer control (`/rasen:new`, `/rasen:continue`, `/rasen:ff`, `/rasen:verify`, `/rasen:bulk-archive`, `/rasen:onboard`), plus other stages like `/rasen:review-cycle` and `/rasen:goal`. If you'd rather slim down to just the core set, switch with `rasen config profile core`, then apply it with `rasen update`.
+The full profile also includes an **expanded** set for people who want finer control (`/rasen:new`, `/rasen:continue`, `/rasen:verify`, `/rasen:bulk-archive`, `/rasen:onboard`), plus other stages like `/rasen:review-cycle` and `/rasen:goal`. If you'd rather slim down to just the core set, switch with `rasen config profile core`, then apply it with `rasen update`.
 
 New to all of this? `/rasen:onboard` (in the expanded set) walks you through a complete change on your own codebase, narrating each step. It's the friendliest possible introduction.
 

@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { getGlobalConfigDir, type Delivery } from './global-config.js';
 import { acquireFileLock, releaseFileLock } from './file-state.js';
-import { ALL_WORKFLOWS, CORE_WORKFLOWS } from './profiles.js';
+import { ALL_EXPERTS, ALL_WORKFLOWS, CORE_WORKFLOWS, QUALITY_FLOOR_EXPERTS } from './profiles.js';
 import {
   WORKFLOW_PACKAGE_LIMITS,
   commitWorkflowInstall,
@@ -360,7 +360,11 @@ export function getBuiltinProfileDefinition(
   return {
     version: PROFILE_DEFINITION_VERSION,
     delivery,
-    workflows: name === 'full' ? [...ALL_WORKFLOWS] : [...CORE_WORKFLOWS],
+    // Experts share the unified workflow id space (D1) — `full` names every
+    // built-in expert, `core` names the quality-floor set.
+    workflows: name === 'full'
+      ? [...ALL_WORKFLOWS, ...ALL_EXPERTS]
+      : [...CORE_WORKFLOWS, ...QUALITY_FLOOR_EXPERTS],
   };
 }
 

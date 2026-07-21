@@ -69,8 +69,9 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .command('list')
     .description('List built-in and user workflows')
     .option('--unused', 'Show only user workflows with no detected consumers')
+    .option('--all', 'Also reveal internal workflows in the human table')
     .option('--json', 'Output as JSON')
-    .action(async (options: { unused?: boolean; json?: boolean }) => {
+    .action(async (options: { unused?: boolean; all?: boolean; json?: boolean }) => {
       await runWorkflowAction(options, { workflows: [], diagnostics: [] }, () => {
         const messages = getWorkflowUiMessages();
         const catalog = loadWorkflowCatalog();
@@ -86,6 +87,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
               source: definition.source,
               sourcePath: definition.sourcePath ?? null,
               digest: definition.digest,
+              kind: definition.kind,
               skillName: definition.skill.template.name,
               commandId: definition.command?.content.id ?? null,
               unused: definition.source === 'user' && usage.length === 0,
@@ -103,8 +105,19 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           printJson({ workflows, invalid, diagnostics: catalog.diagnostics, status: [] });
           return;
         }
-        for (const entry of workflows) {
-          console.log(`${entry.id}\t${messages.source(entry.source)}\t${entry.skillName}${entry.unused ? `\t${messages.unused}` : ''}`);
+        const groupOrder: Array<{ kind: 'task' | 'driver' | 'expert' | 'internal'; heading: string }> = [
+          { kind: 'task', heading: messages.taskGroupHeading },
+          { kind: 'driver', heading: messages.driverGroupHeading },
+          { kind: 'expert', heading: messages.expertGroupHeading },
+          ...(options.all ? [{ kind: 'internal' as const, heading: messages.internalGroupHeading }] : []),
+        ];
+        for (const group of groupOrder) {
+          const entries = workflows.filter((entry) => entry.kind === group.kind);
+          if (entries.length === 0) continue;
+          console.log(`${group.heading}:`);
+          for (const entry of entries) {
+            console.log(`${entry.id}\t${messages.source(entry.source)}\t${entry.skillName}${entry.unused ? `\t${messages.unused}` : ''}`);
+          }
         }
         for (const entry of invalid) console.log(`${entry.id}\t${messages.source('user')}\t${messages.invalid}`);
         for (const diagnostic of catalog.diagnostics) {
@@ -135,6 +148,7 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           return;
         }
         console.log(`${definition.id} (${messages.source(definition.source)})`);
+        console.log(`${messages.kindLabel}: ${definition.kind}`);
         console.log(`${messages.skillLabel}: ${definition.skill.template.name}`);
         console.log(`${messages.commandLabel}: ${definition.command?.content.id ?? messages.none}`);
         console.log(`${messages.digestLabel}: ${definition.digest}`);
@@ -192,7 +206,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .action(async (idOrPath: string, options: JsonOption) => {
       await runWorkflowAction(options, { validation: null }, () => {
         const messages = getWorkflowUiMessages();
-        const validation = validateWorkflowInput(idOrPath);
+        const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+        const validation = validateWorkflowInput(idOrPath, { projectRoot });
         if (options.json) printJson({ validation, status: [] });
         else {
           console.log(validation.valid ? messages.workflowValid : messages.workflowInvalid);
@@ -215,7 +230,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .action(async (sourcePath: string, options: JsonOption) => {
       await runWorkflowAction(options, { imported: [], reused: [], roots: [] }, async () => {
         const messages = getWorkflowUiMessages();
-        const result = await importWorkflow(sourcePath);
+        const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+        const result = await importWorkflow(sourcePath, { projectRoot });
         if (options.json) printJson({ ...result, status: [] });
         else {
           if (result.imported.length > 0) console.log(messages.imported(result.imported.join(', ')));
@@ -252,9 +268,10 @@ export function registerWorkflowLibraryCommand(program: Command): void {
     .command('delete <id>')
     .description('Delete an unreferenced user workflow')
     .option('-y, --yes', 'Skip confirmation')
+    .option('--force', 'Bypass the referrer guard, deleting even a still-referenced workflow')
     .option('--json', 'Output as JSON')
-    .action(async (id: string, options: JsonOption & { yes?: boolean }) => {
-      await runWorkflowAction(options, { deleted: null }, async () => {
+    .action(async (id: string, options: JsonOption & { yes?: boolean; force?: boolean }) => {
+      await runWorkflowAction(options, { deleted: null, forcedReferrers: [] }, async () => {
         const messages = getWorkflowUiMessages();
         if (!options.yes) {
           if (!isInteractive()) {
@@ -265,9 +282,12 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           if (!confirmed) throw new WorkflowLibraryError('Deletion cancelled', 'cancelled');
         }
         const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-        await deleteWorkflow(id, { projectRoot });
-        if (options.json) printJson({ deleted: id, status: [] });
+        const result = await deleteWorkflow(id, { projectRoot, force: options.force === true });
+        if (options.json) printJson({ deleted: id, forcedReferrers: result.forcedReferrers, status: [] });
         else console.log(messages.deleted(id));
+        if (result.forcedReferrers.length > 0) {
+          console.warn(messages.forcedDeleteWarning(id, result.forcedReferrers));
+        }
         console.warn(messages.projectConsumerWarning);
       });
     });

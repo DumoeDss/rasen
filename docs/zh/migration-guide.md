@@ -295,7 +295,6 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 |---------|---------|
 | `/rasen:new` | 创建新的变更脚手架 |
 | `/rasen:continue` | 创建下一个产物（一次一个） |
-| `/rasen:ff` | 快进——一次创建规划产物 |
 | `/rasen:verify` | 验证实现是否匹配规格 |
 | `/rasen:sync` | 将 delta specs 合并到主 specs |
 | `/rasen:bulk-archive` | 一次归档多个变更 |
@@ -307,7 +306,7 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 | 旧版 | OPSX 对应命令 |
 |--------|-----------------|
-| `/openspec:proposal` | `/rasen:propose`（默认）或 `/rasen:new` 然后 `/rasen:ff`（扩展） |
+| `/openspec:proposal` | `/rasen:propose`（默认）或 `/rasen:new` 然后 `/rasen:continue`（扩展） |
 | `/openspec:apply` | `/rasen:apply` |
 | `/openspec:archive` | `/rasen:archive` |
 
@@ -562,7 +561,7 @@ project/
 │       ├── openspec-explore/
 │       ├── openspec-apply-change/
 │       ├── openspec-sync-specs/
-│       └── ...                   # 扩展 profile 添加 new/continue/ff 等
+│       └── ...                   # 扩展 profile 添加 new/continue 等
 ├── CLAUDE.md                     # OpenSpec 标记已移除，你的内容保留
 └── AGENTS.md                     # OpenSpec 标记已移除，你的内容保留
 ```
@@ -584,7 +583,6 @@ project/
 # 扩展工作流（如果启用）：
 /rasen:new          创建变更脚手架
 /rasen:continue     创建下一个产物
-/rasen:ff           创建规划产物
 ```
 
 ---

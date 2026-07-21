@@ -32,12 +32,11 @@ describe('tool-detection', () => {
 
   describe('SKILL_NAMES', () => {
     it('should contain all skill names matching COMMAND_IDS', () => {
-      expect(SKILL_NAMES).toHaveLength(11);
+      expect(SKILL_NAMES).toHaveLength(10);
       expect(SKILL_NAMES).toContain('rasen-explore');
       expect(SKILL_NAMES).toContain('rasen-new-change');
       expect(SKILL_NAMES).toContain('rasen-continue-change');
       expect(SKILL_NAMES).toContain('rasen-apply-change');
-      expect(SKILL_NAMES).toContain('rasen-ff-change');
       expect(SKILL_NAMES).toContain('rasen-sync-specs');
       expect(SKILL_NAMES).toContain('rasen-archive-change');
       expect(SKILL_NAMES).toContain('rasen-bulk-archive-change');

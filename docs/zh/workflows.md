@@ -74,7 +74,7 @@ You: /rasen:propose rebuild-search-index-on-write
 
 ### 扩展/完整工作流（自定义选择）
 
-如果你需要显式的脚手架和构建命令（`/rasen:new`、`/rasen:continue`、`/rasen:ff`、`/rasen:verify`、`/rasen:bulk-archive`、`/rasen:onboard`），通过以下方式启用：
+如果你需要显式的脚手架和构建命令（`/rasen:new`、`/rasen:continue`、`/rasen:verify`、`/rasen:bulk-archive`、`/rasen:onboard`），通过以下方式启用：
 
 ```bash
 rasen config profile
@@ -88,20 +88,16 @@ rasen update
 当你清楚要构建什么、只需要执行时：
 
 ```text
-/rasen:new ──► /rasen:ff ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
+/rasen:propose ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
 ```
 
 **对话示例：**
 
 ```text
-You: /rasen:new add-logout-button
+You: /rasen:propose add-logout-button
 
 AI:  Created rasen/changes/add-logout-button/
-     Ready to create: proposal
-
-You: /rasen:ff
-
-AI:  Creating all planning artifacts...
+     Creating all planning artifacts...
      ✓ proposal.md
      ✓ specs/
      ✓ design.md
@@ -179,11 +175,11 @@ AI:  Creating specs...
 同时处理多个变更：
 
 ```text
-Change A: /rasen:new ──► /rasen:ff ──► /rasen:apply (in progress)
-                                         │
-                                    context switch
-                                         │
-Change B: /rasen:new ──► /rasen:ff ──────► /rasen:apply
+Change A: /rasen:propose ──► /rasen:apply (in progress)
+                               │
+                          context switch
+                               │
+Change B: /rasen:propose ──────► /rasen:apply
 ```
 
 **对话示例：**
@@ -191,13 +187,10 @@ Change B: /rasen:new ──► /rasen:ff ──────► /rasen:apply
 ```text
 You: I'm working on add-dark-mode but got pulled into a bug fix
 
-You: /rasen:new fix-login-redirect
+You: /rasen:propose fix-login-redirect
 
 AI:  Created rasen/changes/fix-login-redirect/
-
-You: /rasen:ff
-
-AI:  ✓ Created planning artifacts
+     ✓ Created planning artifacts
 
 You: /rasen:apply
 
@@ -350,17 +343,17 @@ AI:  ✓ Synced specs to rasen/specs/auth/spec.md
 
 ## 何时使用什么
 
-### `/rasen:ff` 与 `/rasen:continue` 的对比
+### `/rasen:propose` 与 `/rasen:continue` 的对比
 
 | 场景 | 使用 |
 |------|------|
-| 需求明确，准备构建 | `/rasen:ff` |
-| 探索中，想逐步审查 | `/rasen:continue` |
-| 想在 specs 之前迭代 proposal | `/rasen:continue` |
-| 时间紧迫，需要快速推进 | `/rasen:ff` |
-| 复杂变更，需要精细控制 | `/rasen:continue` |
+| 需求明确，准备构建 | `/rasen:propose` |
+| 探索中，想逐步审查 | `/rasen:new` 然后 `/rasen:continue` |
+| 想在 specs 之前迭代 proposal | `/rasen:new` 然后 `/rasen:continue` |
+| 时间紧迫，需要快速推进 | `/rasen:propose` |
+| 复杂变更，需要精细控制 | `/rasen:new` 然后 `/rasen:continue` |
 
-**经验法则：** 如果你���提前描述完整范围，使用 `/rasen:ff`。如果你在过程中逐步摸索，使用 `/rasen:continue`。
+**经验法则：** 如果你能提前描述完整范围，使用 `/rasen:propose`。如果你在过程中逐步摸索，使用 `/rasen:new` 然后 `/rasen:continue`。
 
 ### 何时更新已有变更 vs 重新开始
 
@@ -482,7 +475,6 @@ implement-2fa                  wip
 | `/rasen:explore` | 和 AI 一起思考想法 | 不确定时从这里开始：需求不明确、调查研究、比较方案 |
 | `/rasen:new` | 创建变更脚手架 | 扩展模式，显式产物控制 |
 | `/rasen:continue` | 创建下一个产物 | 扩展模式，逐步创建产物 |
-| `/rasen:ff` | 创建所有规划产物 | 扩展模式，范围明确 |
 | `/rasen:apply` | 实施任务 | 准备编写代码 |
 | `/rasen:verify` | 验证实现 | 扩展模式，归档前 |
 | `/rasen:sync` | 合并增量规格 | 扩展模式，可选 |

@@ -2,7 +2,6 @@
 
 ## Purpose
 Define `/rasen:onboard` behavior for guiding users through an end-to-end Rasen workflow on their real codebase.
-
 ## Requirements
 ### Requirement: Rasen Onboard Skill
 
@@ -137,15 +136,15 @@ The skill SHALL archive the completed change and explain what happened.
 
 ### Requirement: Recap and Next Steps
 
-The skill SHALL conclude with a recap and command reference.
+The skill SHALL conclude with a recap and command reference. The command reference SHALL NOT list the removed `ff` workflow.
 
 #### Scenario: Final recap
 
 - **WHEN** onboarding is complete
 - **THEN** agent summarizes the workflow phases completed
 - **AND** emphasizes this rhythm works for any size change
-- **AND** provides command reference table (/rasen:explore, /rasen:new, /rasen:ff, /rasen:continue, /rasen:apply, /rasen:verify, /rasen:archive)
-- **AND** suggests next actions (try /rasen:new or /rasen:ff on something)
+- **AND** provides command reference table (/rasen:explore, /rasen:new, /rasen:continue, /rasen:apply, /rasen:verify, /rasen:archive)
+- **AND** suggests next actions (try /rasen:new or /rasen:propose on something)
 
 ### Requirement: Graceful Exit Handling
 

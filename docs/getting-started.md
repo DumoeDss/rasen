@@ -42,7 +42,7 @@ Start with `/rasen:explore` when you're figuring out what to do, or jump straigh
 **Expanded path (step-by-step artifact control):**
 
 ```text
-/rasen:new ──► /rasen:ff or /rasen:continue ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
+/rasen:new ──► /rasen:continue ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
 ```
 
 The default global profile is `full`, which installs every workflow command — you already have both paths above available. If you'd rather slim down to the essentials (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and then `rasen update`.
@@ -160,7 +160,7 @@ AI:  Created rasen/changes/add-dark-mode/
      Ready for implementation!
 ```
 
-If you've enabled the expanded workflow profile, you can also do this as two steps: `/rasen:new` then `/rasen:ff` (or `/rasen:continue` incrementally).
+If you've enabled the expanded workflow profile, you can also do this as two steps: `/rasen:new` then `/rasen:continue` incrementally.
 
 ### 2. What Gets Created
 

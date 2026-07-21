@@ -1,8 +1,7 @@
 # propose-workflow Specification
 
 ## Purpose
-Provide a single `propose` workflow that combines `new` and `ff` to create a change and its planning artifacts in one step.
-
+Provide a single `propose` workflow that creates a change and generates all its planning artifacts in one step.
 ## Requirements
 ### Requirement: Propose workflow creation
 The system SHALL provide a `propose` workflow that creates a change and generates all artifacts in one step.
@@ -32,14 +31,16 @@ The `propose` workflow SHALL include explanatory output to help new users unders
 - **WHEN** the system creates each artifact
 - **THEN** the system SHALL show progress (e.g., "✓ Created proposal.md")
 
-### Requirement: Propose workflow combines new and ff
-The `propose` workflow SHALL perform the same operations as running `new` followed by `ff`.
+### Requirement: Propose workflow creates the change and all artifacts
 
-#### Scenario: Equivalent to new + ff
+The `propose` workflow SHALL create the change and generate all artifacts required for implementation in one step, equivalent to creating the change (`new`) and then generating every remaining artifact in the schema's apply requirements.
+
+#### Scenario: Change and artifacts created in one step
+
 - **WHEN** user invokes `/rasen:propose "feature name"`
-- **THEN** the result SHALL be functionally equivalent to invoking `/rasen:new "feature-name"` followed by `/rasen:ff feature-name`
-- **THEN** the same directory structure and artifacts SHALL be created
-- **THEN** console output MAY differ (propose includes onboarding explanations)
+- **THEN** the change directory SHALL be created
+- **AND** all artifacts required for implementation SHALL be generated
+- **THEN** console output MAY include onboarding explanations
 
 ### Requirement: Consume office-hours validation as input context
 

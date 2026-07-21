@@ -5,7 +5,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 
-import { ALL_WORKFLOWS } from '../../src/core/profiles.js';
+import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
+import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
+
+// The picker's choice list is workflows + experts + 2 group Separators
+// (design.md D6: experts are selectable alongside workflows, shown as a
+// second labeled group).
+const PICKER_CHOICE_COUNT = ALL_WORKFLOWS.length + ALL_EXPERTS.length + 2;
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
@@ -15,11 +21,15 @@ vi.mock('node:child_process', async () => {
   };
 });
 
-vi.mock('@inquirer/prompts', () => ({
-  select: vi.fn(),
-  checkbox: vi.fn(),
-  confirm: vi.fn(),
-}));
+vi.mock('@inquirer/prompts', async () => {
+  const actual = await vi.importActual<typeof import('@inquirer/prompts')>('@inquirer/prompts');
+  return {
+    ...actual,
+    select: vi.fn(),
+    checkbox: vi.fn(),
+    confirm: vi.fn(),
+  };
+});
 
 async function runConfigCommand(args: string[]): Promise<void> {
   const { registerConfigCommand } = await import('../../src/commands/config.js');
@@ -80,9 +90,17 @@ describe('deriveProfileFromWorkflowSelection', () => {
     expect(deriveProfileFromWorkflowSelection(['propose', 'explore', 'apply', 'sync', 'archive', 'new'])).toBe('custom');
   });
 
-  it('returns core when selection has exactly core workflows in different order', async () => {
+  it('returns custom when selection has exactly the core workflows but no quality-floor experts', async () => {
     const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection(['archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help'])).toBe('core');
+    expect(deriveProfileFromWorkflowSelection(['archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help'])).toBe('custom');
+  });
+
+  it('returns core when selection has exactly core workflows plus the quality-floor experts, in different order', async () => {
+    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromWorkflowSelection([
+      'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
+      'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
+    ])).toBe('core');
   });
 });
 
@@ -117,6 +135,15 @@ describe('config profile interactive flow', () => {
       const skillPath = path.join(projectDir, '.claude', 'skills', dirName, 'SKILL.md');
       fs.mkdirSync(path.dirname(skillPath), { recursive: true });
       fs.writeFileSync(skillPath, `name: ${dirName}\n`, 'utf-8');
+    }
+
+    // Legacy (no explicit expert selection) resolves to CORE_WORKFLOWS +
+    // ALL_EXPERTS (design.md D4 non-regression fallback) — a project fully
+    // in sync also has every expert skill dir installed.
+    for (const expert of getExpertSkillDefinitions()) {
+      const skillPath = path.join(projectDir, '.claude', 'skills', expert.dirName, 'SKILL.md');
+      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+      fs.writeFileSync(skillPath, `name: ${expert.dirName}\n`, 'utf-8');
     }
 
     const coreCommands = ['propose', 'explore', 'apply', 'sync', 'archive', 'auto', 'help'];
@@ -231,7 +258,7 @@ describe('config profile interactive flow', () => {
     expect(select).toHaveBeenCalledTimes(1);
     expect(checkbox).toHaveBeenCalledTimes(1);
     const checkboxCall = checkbox.mock.calls[0][0];
-    expect(checkboxCall.pageSize).toBe(ALL_WORKFLOWS.length);
+    expect(checkboxCall.pageSize).toBe(PICKER_CHOICE_COUNT);
     expect(checkboxCall.theme).toEqual({
       icon: {
         checked: '[x]',
@@ -292,7 +319,7 @@ describe('config profile interactive flow', () => {
         description: 'Check that implementation matches the change artifacts before archiving',
       }),
     ]));
-    expect(checkboxCall.choices).toHaveLength(ALL_WORKFLOWS.length);
+    expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
     expect(checkboxCall.choices).toEqual(expect.arrayContaining([
       expect.objectContaining({
         value: 'goal-command',
@@ -301,7 +328,9 @@ describe('config profile interactive flow', () => {
       }),
     ]));
     expect(
-      checkboxCall.choices.map((choice: { name: string }) => choice.name.indexOf(' - '))
+      checkboxCall.choices
+        .filter((choice: { value?: string }) => choice.value && (ALL_WORKFLOWS as readonly string[]).includes(choice.value))
+        .map((choice: { name: string }) => choice.name.indexOf(' - '))
     ).toEqual(ALL_WORKFLOWS.map(() => 15));
     expect(
       checkboxCall.choices.find(
@@ -337,7 +366,7 @@ describe('config profile interactive flow', () => {
     expect(checkboxCall.instructions).toBe(
       'Spaceで切り替え、Aですべて選択・解除、Enterで確定'
     );
-    expect(checkboxCall.choices).toHaveLength(ALL_WORKFLOWS.length);
+    expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
     expect(checkboxCall.choices).toEqual(expect.arrayContaining([
       expect.objectContaining({
         value: 'propose',
@@ -351,7 +380,9 @@ describe('config profile interactive flow', () => {
       }),
     ]));
     expect(
-      checkboxCall.choices.map((choice: { name: string }) => choice.name.indexOf(' - '))
+      checkboxCall.choices
+        .filter((choice: { value?: string }) => choice.value && (ALL_WORKFLOWS as readonly string[]).includes(choice.value))
+        .map((choice: { name: string }) => choice.name.indexOf(' - '))
     ).toEqual(ALL_WORKFLOWS.map(() => 15));
   });
 
@@ -487,7 +518,13 @@ describe('config profile interactive flow', () => {
     const config = getGlobalConfig();
     expect(config.profile).toBe('core');
     expect(config.delivery).toBe('skills');
-    expect(config.workflows).toEqual(['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help']);
+    // `profile use core` is an explicit expert-aware write path (design.md
+    // D4): the core preset now names the quality-floor experts too.
+    expect(config.workflows).toEqual([
+      'propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help',
+      'review', 'cso', 'qa', 'qa-only', 'benchmark', 'design-review',
+    ]);
+    expect(config.expertSelectionExplicit).toBe(true);
     expect(select).not.toHaveBeenCalled();
     expect(checkbox).not.toHaveBeenCalled();
     expect(confirm).not.toHaveBeenCalled();

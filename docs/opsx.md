@@ -65,7 +65,7 @@ rasen init
 
 This creates skills in `.claude/skills/` (or equivalent) that AI coding assistants auto-detect.
 
-By default, rasen uses the `full` workflow profile — every workflow, including the expanded commands (`new`, `continue`, `ff`, `verify`, `bulk-archive`, `onboard`). If you'd rather slim down to the everyday `core` set (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and apply with `rasen update`.
+By default, rasen uses the `full` workflow profile — every workflow, including the expanded commands (`new`, `continue`, `verify`, `bulk-archive`, `onboard`). If you'd rather slim down to the everyday `core` set (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and apply with `rasen update`.
 
 During setup, you'll be prompted to create a **project config** (`rasen/config.yaml`). This is optional but recommended.
 
@@ -161,7 +161,6 @@ rules:
 | `/rasen:explore` | Think through ideas, investigate problems, clarify requirements |
 | `/rasen:new` | Start a new change scaffold (expanded workflow) |
 | `/rasen:continue` | Create the next artifact (expanded workflow) |
-| `/rasen:ff` | Fast-forward planning artifacts (expanded workflow) |
 | `/rasen:apply` | Implement tasks, updating artifacts as needed |
 | `/rasen:verify` | Validate implementation against artifacts (expanded workflow) |
 | `/rasen:sync` | Sync delta specs to main (default workflow, optional) |
@@ -175,7 +174,7 @@ rules:
 ```
 /rasen:explore
 ```
-Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/rasen:propose` (default) or `/rasen:new`/`/rasen:ff` (expanded).
+Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/rasen:propose` (default) or `/rasen:new`/`/rasen:continue` (expanded).
 
 ### Start a new change
 ```
@@ -188,7 +187,6 @@ If you've enabled expanded workflows, you can instead use:
 ```text
 /rasen:new        # scaffold only
 /rasen:continue   # create one artifact at a time
-/rasen:ff         # create all planning artifacts at once
 ```
 
 ### Create artifacts
@@ -196,11 +194,6 @@ If you've enabled expanded workflows, you can instead use:
 /rasen:continue
 ```
 Shows what's ready to create based on dependencies, then creates one artifact. Use repeatedly to build up your change incrementally.
-
-```
-/rasen:ff add-dark-mode
-```
-Creates all planning artifacts at once. Use when you have a clear picture of what you're building.
 
 ### Implement (the fluid part)
 ```
@@ -661,7 +654,7 @@ rasen schema validate my-workflow
 ## Tips
 
 - Use `/rasen:explore` to think through an idea before committing to a change
-- `/rasen:ff` when you know what you want, `/rasen:continue` when exploring
+- `/rasen:propose` when you know what you want, `/rasen:new`/`/rasen:continue` when exploring
 - During `/rasen:apply`, if something's wrong — fix the artifact, then continue
 - Tasks track progress via checkboxes in `tasks.md`
 - Check status anytime: `rasen status --change "name"`

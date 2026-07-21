@@ -27,7 +27,13 @@ export interface WorkflowUiMessages {
   deletionRequiresYes: string;
   deleteWorkflow: (id: string) => string;
   deleted: (id: string) => string;
+  forcedDeleteWarning: (id: string, referrers: string[]) => string;
   projectConsumerWarning: string;
+  taskGroupHeading: string;
+  driverGroupHeading: string;
+  expertGroupHeading: string;
+  internalGroupHeading: string;
+  kindLabel: string;
   error: (code: string, fallback: string) => string;
 }
 
@@ -55,6 +61,7 @@ export function getWorkflowUiMessages(
     exported: (id, path) => format(raw.exported, { id, path }),
     deleteWorkflow: (id) => format(raw.deleteWorkflow, { id }),
     deleted: (id) => format(raw.deleted, { id }),
+    forcedDeleteWarning: (id, referrers) => format(raw.forcedDeleteWarning, { id, referrers: referrers.join(', ') }),
     error: (code, fallback) => {
       if (locale === 'en') return fallback;
       const template = errors[code] ?? errors.workflow_command_error;

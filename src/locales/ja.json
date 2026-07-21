@@ -33,7 +33,13 @@
       "deletionRequiresYes": "非対話モードで削除するには--yesが必要です",
       "deleteWorkflow": "ワークフロー{id}を削除しますか?",
       "deleted": "ワークフロー{id}を削除しました",
-      "projectConsumerWarning": "警告: 現在のプロジェクト外に検出できないproject-localの利用元が残っている可能性があります。"
+      "forcedDeleteWarning": "警告: {id}を強制削除したため、次の利用元が参照切れになりました: {referrers}",
+      "projectConsumerWarning": "警告: 現在のプロジェクト外に検出できないproject-localの利用元が残っている可能性があります。",
+      "taskGroupHeading": "タスク",
+      "driverGroupHeading": "ドライバー",
+      "expertGroupHeading": "エキスパート",
+      "internalGroupHeading": "内部",
+      "kindLabel": "種別"
     },
     "errors": {
       "workflow_not_found": "ワークフローが見つかりません。",
@@ -90,10 +96,6 @@
         "apply": {
           "name": "タスクを実装",
           "description": "変更で定義されたタスクを実装し、進捗を反映します"
-        },
-        "ff": {
-          "name": "成果物を一括作成",
-          "description": "実装開始に必要な計画成果物を一度にすべて作成します"
         },
         "sync": {
           "name": "仕様を同期",
@@ -163,7 +165,95 @@
           "name": "目標ループを実行",
           "description": "長期目標の計画、反復、結果報告をまとめて進行します"
         }
-      }
+      },
+      "experts": {
+        "benchmark": {
+          "name": "ベンチマーク",
+          "description": "再現可能な計測とサイズベンチマークを予算と比較し、パフォーマンス退行を検出します"
+        },
+        "careful": {
+          "name": "慎重確認",
+          "description": "危険または取り消せないシェルコマンドの実行前に一時停止し、説明・確認を求めます"
+        },
+        "chrome-use": {
+          "name": "Chrome操作",
+          "description": "CDP経由で実際のChromeを操作し、DOMスナップショット、クリック、ネットワークキャプチャ、スクリーンショットを取得します"
+        },
+        "codebase-design": {
+          "name": "コードベース設計",
+          "description": "二度設計し、モジュール境界を深め、実装を意図したアーキテクチャに沿わせます"
+        },
+        "codex": {
+          "name": "Codex",
+          "description": "OpenAI Codex CLIを呼び出し、独立したレビューまたは実装パスを行います"
+        },
+        "cso": {
+          "name": "CSO監査",
+          "description": "ブランチ差分の敵対的セキュリティレビューを行い、確信度付きで重大度をタグ付けします"
+        },
+        "design-consultation": {
+          "name": "デザイン相談",
+          "description": "対話を通じてプロジェクトのデザインシステムを抽出・議論し、確定させます"
+        },
+        "design-review": {
+          "name": "デザインレビュー",
+          "description": "ブラウザベースでビジュアル階層・タイポグラフィ・色・レスポンシブ対応を採点します"
+        },
+        "freeze": {
+          "name": "フリーズ",
+          "description": "編集をディレクトリに制限し、範囲外への書き込みを拒否します"
+        },
+        "guard": {
+          "name": "ガード",
+          "description": "破壊的コマンドのガードレールと編集境界を一括で有効化するフルセーフモードです"
+        },
+        "investigate": {
+          "name": "調査",
+          "description": "修正を試みる前に、証拠に基づきバグを再現・切り分け・根本原因特定します"
+        },
+        "navigator": {
+          "name": "ナビゲーター",
+          "description": "このリポジトリのスキルとワークフロー、それぞれの使いどころの地図です"
+        },
+        "office-hours": {
+          "name": "オフィスアワー",
+          "description": "構築前に製品需要と方向性を検証します"
+        },
+        "prototype": {
+          "name": "プロトタイプ",
+          "description": "使い捨てのUIまたはロジックスパイクを素早く作り、疑問に答えます"
+        },
+        "qa": {
+          "name": "QA",
+          "description": "CDPプロキシ経由でアプリを探索し、証拠に基づく問題を記録して修正します"
+        },
+        "qa-only": {
+          "name": "QA（レポートのみ）",
+          "description": "QAと同じ探索とヘルススコアを行いますが、コードは編集しません"
+        },
+        "review": {
+          "name": "レビュー",
+          "description": "コードベース全体の文脈でブランチ差分をレビューし、重大度タグ付きの指摘と修正ループを提供します"
+        },
+        "tdd": {
+          "name": "TDD",
+          "description": "モックの指針を伴うレッド・グリーン・リファクタの規律です"
+        },
+        "unfreeze": {
+          "name": "アンフリーズ",
+          "description": "freezeまたはguardで設定した編集制限を解除します"
+        },
+        "workflow-author": {
+          "name": "ワークフロー作成",
+          "description": "インストール可能なワークフローとパイプラインを、段階的検証と独立レビューを経て安全に作成します"
+        },
+        "workflow-review": {
+          "name": "ワークフローレビュー",
+          "description": "インストール可能なワークフローとパイプラインを品質とセキュリティの観点から独立してレビューします"
+        }
+      },
+      "workflowsGroupLabel": "-- ワークフロー --",
+      "expertsGroupLabel": "-- エキスパート --"
     },
     "ui": {
       "errorPrefix": "エラー:",
@@ -377,7 +467,8 @@
       "invalidAutopilotSelection": "設定の'autopilot.selection'フィールドが無効です（'classify'、'manual'、または'compose'を指定してください）",
       "invalidAutopilot": "設定の'autopilot'フィールドが無効です（オブジェクトを指定してください）",
       "invalidHandoffThreshold": "設定の'handoff.threshold'フィールドが無効です（(0, 1]の数値、または{ remainingTokens: <正の整数> }を指定してください）",
-      "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）"
+      "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）",
+      "expertSelectionMigration": "注: エキスパートを個別に選択できるようになりました。これまでインストール済みのエキスパートは当面すべて維持されます — インストールするものを選ぶには `rasen profile` を実行してください。"
     }
   },
   "completion": {
@@ -551,6 +642,7 @@
     "Manage installable workflows in the user-wide library": "ユーザー共通ライブラリのインストール可能ワークフローを管理します",
     "List built-in and user workflows": "組み込み・ユーザーワークフローを一覧表示します",
     "Show only user workflows with no detected consumers": "検出可能な利用元がないユーザーワークフローだけを表示します",
+    "Also reveal internal workflows in the human table": "内部ワークフローも人間向け表に表示します",
     "Show an installable workflow definition and known usage": "インストール可能ワークフローの定義と既知の利用元を表示します",
     "Show where an installable workflow resolves from": "インストール可能ワークフローの解決元を表示します",
     "Create a minimal workflow draft without installing it": "インストールせず最小ワークフロードラフトを作成します",
@@ -560,6 +652,15 @@
     "Export a user workflow and its user dependencies as .rasenpkg": "ユーザーワークフローとそのユーザー依存を.rasenpkgとしてexportします",
     "Replace an existing destination file": "既存の出力先ファイルを置き換えます",
     "Delete an unreferenced user workflow": "参照されていないユーザーワークフローを削除します",
+    "Bypass the referrer guard, deleting even a still-referenced workflow": "参照ガードを無視し、まだ参照されているワークフローでも削除します",
+    "Create a minimal pipeline draft without installing it": "インストールせず最小パイプラインドラフトを作成します",
+    "Empty pipeline draft directory to create": "作成する空のパイプラインドラフトディレクトリです",
+    "Validate an installed pipeline, draft directory, or .rasenpkg": "インストール済みパイプライン、ドラフトディレクトリ、または.rasenpkgを検証します",
+    "Validate and atomically install a pipeline .rasenpkg": "パイプラインの.rasenpkgを検証してatomicにインストールします",
+    "Overwrite an already-installed pipeline of the same name": "同名のインストール済みパイプラインを上書きします",
+    "Export a user pipeline as .rasenpkg": "ユーザーパイプラインを.rasenpkgとしてexportします",
+    "Delete an unreferenced user pipeline": "参照されていないユーザーパイプラインを削除します",
+    "Bypass the referrer guard, deleting even a still-referenced pipeline": "参照ガードを無視し、まだ参照されているパイプラインでも削除します",
     "Manage shell completions for Rasen CLI": "Rasen CLIのshell補完を管理します",
     "Manage the resident Rasen daemon (sessions survive terminal exits)": "常駐Rasenデーモンを管理します（セッションはターミナル終了後も継続します）",
     "Manage workflow schemas": "ワークフロースキーマを管理します",

@@ -22,7 +22,6 @@
 |---------|---------|
 | `/rasen:new` | 开始新的变更脚手架 |
 | `/rasen:continue` | 根据依赖关系创建下一个产物 |
-| `/rasen:ff` | 快进：一次性创建所有规划产物 |
 | `/rasen:verify` | 验证实现是否与产物匹配 |
 | `/rasen:bulk-archive` | 一次性归档多个变更 |
 | `/rasen:onboard` | 完整工作流的引导式教程 |
@@ -130,7 +129,7 @@ AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
 
 ### `/rasen:new`
 
-开始新的变更脚手架。创建变更文件夹，等待你使用 `/rasen:continue` 或 `/rasen:ff` 生成产物。
+开始新的变更脚手架。创建变更文件夹，等待你使用 `/rasen:continue` 生成产物。
 
 此命令属于扩展工作流集（不包含在默认的 `core` profile 中）。
 
@@ -165,7 +164,7 @@ AI:  Created rasen/changes/add-dark-mode/
      Schema: spec-driven
 
      Ready to create: proposal
-     Use /rasen:continue to create it, or /rasen:ff to create all artifacts.
+     Use /rasen:continue to create it, one artifact at a time.
 ```
 
 **提示：**
@@ -223,49 +222,6 @@ AI:  Change: add-dark-mode
 - 适合需要精细控制的复杂变更
 - 多个产物可能同时就绪
 - 你可以在继续之前编辑已创建的产物
-
----
-
-### `/rasen:ff`
-
-快进式创建产物。一次性创建所有规划产物。
-
-**语法：**
-```
-/rasen:ff [change-name]
-```
-
-**参数：**
-| 参数 | 必需 | 描述 |
-|----------|----------|-------------|
-| `change-name` | 否 | 要快进的变更（未提供时从上下文推断） |
-
-**功能说明：**
-- 按依赖顺序创建所有产物
-- 通过待办列表跟踪进度
-- 当所有 `apply-required` 产物完成时停止
-- 在创建下一个产物之前读取每个依赖
-
-**示例：**
-```
-You: /rasen:ff add-dark-mode
-
-AI:  Fast-forwarding add-dark-mode...
-
-     ✓ Creating proposal.md
-     ✓ Creating specs/ui/spec.md
-     ✓ Creating design.md
-     ✓ Creating tasks.md
-
-     All planning artifacts complete!
-     Ready for implementation. Run /rasen:apply to begin.
-```
-
-**提示：**
-- 当你对要构建的内容有清晰想法时使用
-- 对于简单直接的变更，比 `/rasen:continue` 更快
-- 之后仍然可以编辑产物
-- 适合中小型功能
 
 ---
 
@@ -797,7 +753,7 @@ AI 创建了不完整或不正确的产物。
 - 在 `rasen/config.yaml` 中添加项目上下文
 - 为特定指导添加每个产物的规则
 - 在变更描述中提供更多细节
-- 使用 `/rasen:continue` 替代 `/rasen:ff` 以获得更多控制
+- 使用 `/rasen:continue` 逐个创建并审查产物，而不是一次性全部生成
 
 ---
 
