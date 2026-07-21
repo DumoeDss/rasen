@@ -2,6 +2,12 @@
 
 配置 OpenSpec 以生成英语以外的其他语言的产出物。
 
+## 界面语言与产物语言
+
+CLI 界面语言和生成的产物语言是两项独立设置。机器全局配置中的 `language: "auto" | "en" | "ja" | "zh-cn"` 或临时的 `RASEN_LANG=en|ja|zh-cn` 只控制 Rasen 自有的帮助、提示和人类可读输出；切换界面语言不会翻译已有产物或用户编写的工作流、流水线描述。
+
+产物语言由项目 `rasen/config.yaml` 的 `context` 指令交给 AI 助手执行。更改这段指令不会改变 CLI 界面语言；要使用简体中文界面，请设置 `rasen config set language zh-cn`。以下示例配置的是产物语言。
+
 ## 快速设置
 
 在你的 `rasen/config.yaml` 中添加语言指令：
