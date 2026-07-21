@@ -123,13 +123,13 @@ The system SHALL provide an interactive picker for configuring profiles.
 - **AND** the picker instructions SHALL advertise the `A` shortcut
 
 #### Scenario: Localized workflow picker
-- **WHEN** the user's resolved CLI locale is Japanese
-- **THEN** delivery choices, built-in workflow names and descriptions, picker prompts, and picker instructions SHALL be displayed in Japanese
+- **WHEN** the user's resolved CLI locale is Japanese or Simplified Chinese
+- **THEN** delivery choices, built-in workflow names and descriptions, picker prompts, and picker instructions SHALL be displayed in the resolved locale
 - **AND** every workflow in `ALL_WORKFLOWS` SHALL have a specific name and description rather than a workflow-ID fallback
 - **AND** each workflow row SHALL show its stable public workflow id before the localized name
 - **AND** the separator between id and localized name SHALL be aligned using the longest public workflow id
 - **AND** internal `-command` suffixes SHALL be removed from the displayed id while the stored workflow value remains unchanged
-- **AND** user-workflow source labels and dependency messages SHALL be displayed in Japanese
+- **AND** user-workflow source labels and dependency messages SHALL be displayed in the resolved locale
 - **AND** the localized user-workflow source label SHALL remain visible when the resolved width can contain the complete label
 - **AND** user-authored workflow names and descriptions SHALL remain in their original language
 - **WHEN** the resolved locale is English or unsupported
@@ -147,21 +147,25 @@ The system SHALL provide an interactive picker for configuring profiles.
 - **AND** the persisted workflow definition, package content, JSON output, and generated skill or command content SHALL remain unmodified
 
 #### Scenario: Persisted CLI language
-- **WHEN** the user sets global config `language` to `en` or `ja`
-- **THEN** the selection SHALL be persisted in the machine-global JSON config
+- **WHEN** the user sets global config `language` to `en`, `ja`, or `zh-cn`
+- **THEN** the selection SHALL be persisted exactly in the machine-global JSON config
 - **AND** interactive prompts, profile and config output, CLI help, and shell-completion descriptions and management messages SHALL use that language
 - **WHEN** `language` is `auto`
 - **THEN** Unix-like systems SHALL inspect `LC_ALL`, `LC_MESSAGES`, then `LANG`, falling back to the system locale
-- **AND** Windows SHALL use the system locale reported by the runtime
-- **AND** unsupported locales SHALL fall back to English
-- **AND** a valid `RASEN_LANG=en|ja` SHALL temporarily override the persisted setting
+- **AND** Windows SHALL use the system locale reported by the runtime rather than Unix shell locale variables
+- **AND** `zh-CN`, `zh_CN.UTF-8`, `zh-SG`, `zh-Hans`, and bare `zh` SHALL resolve to `zh-cn`
+- **AND** `zh-TW`, `zh-HK`, `zh-MO`, and `zh-Hant` SHALL remain unsupported and fall back to English
+- **AND** all other unsupported locales SHALL fall back to English
+- **AND** a valid `RASEN_LANG=en|ja|zh-cn` SHALL temporarily override the persisted setting
+- **AND** an invalid `RASEN_LANG` SHALL be ignored so persisted or automatic resolution can continue
 
 #### Scenario: JSON locale catalogs
 - **WHEN** maintainers add or update translated CLI text
-- **THEN** English and Japanese translations SHALL be stored in `src/locales/en.json` and `src/locales/ja.json`
-- **AND** both catalogs SHALL expose the same keys and interpolation placeholders
-- **AND** every workflow in `ALL_WORKFLOWS` SHALL have a non-empty name and description in both catalogs
-- **AND** the build SHALL copy both catalogs to `dist/locales/` for inclusion in the published package
+- **THEN** English, Japanese, and Simplified Chinese translations SHALL be stored in `src/locales/en.json`, `src/locales/ja.json`, and `src/locales/zh-cn.json`
+- **AND** all three catalogs SHALL expose the same keys and interpolation placeholders
+- **AND** every workflow in `ALL_WORKFLOWS` SHALL have a non-empty name and description in all three catalogs
+- **AND** every built-in expert and every Rasen-owned command and option description SHALL have a non-empty entry in all three catalogs
+- **AND** the build SHALL copy all three catalogs to `dist/locales/` for inclusion in the published package
 
 #### Scenario: Core preset shortcut
 - **WHEN** user runs `rasen profile use core`
@@ -195,7 +199,8 @@ Current profile and delivery settings SHALL be stored in the existing global con
 
 #### Scenario: Config schema
 - **WHEN** reading profile configuration
-- **THEN** the config SHALL contain `profile` (full|core|custom), `delivery` (both|skills), `language` (auto|en|ja), and optionally `workflows` (array of workflow names)
+- **THEN** the config SHALL contain `profile` (full|core|custom), `delivery` (both|skills), `language` (auto|en|ja|zh-cn), and optionally `workflows` (array of workflow names)
+- **AND** persisted language values SHALL accept only the exact canonical enum values and SHALL NOT normalize aliases such as `zh-CN` or `zh_CN`
 
 #### Scenario: Schema evolution
 - **WHEN** loading config without profile/delivery fields
@@ -366,8 +371,8 @@ The interactive profile picker SHALL present built-in experts as selectable togg
 
 #### Scenario: Localized expert picker metadata
 - **WHEN** the picker renders experts
-- **THEN** each built-in expert SHALL have a specific localized name and description rather than an id fallback in both English and Japanese
-- **AND** the expert metadata catalog SHALL define an entry for every built-in expert in both languages
+- **THEN** each built-in expert SHALL have a specific localized name and description rather than an id fallback in English, Japanese, and Simplified Chinese
+- **AND** the expert metadata catalog SHALL define an entry for every built-in expert in all three supported locales
 
 ### Requirement: Expert installation is profile-governed and non-regressive
 
