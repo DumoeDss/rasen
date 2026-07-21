@@ -218,6 +218,8 @@ export interface RunsResponse {
 export interface SubmitChangeRequest {
   name: string;
   description: string;
+  /** Optional planning-space selector (`project:<id|root>` | `store:<id>`); omitted = launch project (planning-space-addressing design D1). */
+  space?: string;
 }
 
 export interface SubmitChangeResponse {
@@ -235,12 +237,25 @@ export interface SubmitChangeResponse {
 // rest of this file: copied field-for-field, kept in sync by hand, pinned
 // by `satisfies <ResponseType>` fixtures.
 
+/**
+ * A session's frozen planning-space attribution as sent over the wire
+ * (planning-space-addressing design D3). Mirrors `SessionSpaceWire`
+ * (management-api/wire-types.ts).
+ */
+export interface SessionSpaceWire {
+  type: 'project' | 'store';
+  id: string;
+  root: string;
+}
+
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
   id: string;
   kind: 'auto' | 'goal';
   task: string;
   cwd: string;
+  /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
+  space?: SessionSpaceWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';
@@ -265,6 +280,8 @@ export interface LaunchSessionRequest {
   kind: string;
   task: string;
   changeName?: string;
+  /** Optional planning-space selector (`project:<id|root>` | `store:<id>`); omitted = launch project (planning-space-addressing design D3). */
+  space?: string;
   timeoutMs?: number;
   noOutputTimeoutMs?: number;
 }
@@ -297,4 +314,40 @@ export interface SessionDetailResponse {
 /** `POST /api/v1/sessions` and `DELETE /api/v1/sessions/:id` response shape. */
 export interface SessionActionResponse {
   session: SessionRecordWire;
+}
+
+// ---- Spaces listing (planning-space-addressing design D6) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package (`GET /api/v1/spaces`). Same hand-maintained-mirror discipline as
+// the rest of this file.
+
+/** A store's member project (design D4): a pointer repo whose config `store:` currently names the store. */
+export interface SpaceMember {
+  projectId: string;
+  name: string;
+  root: string;
+}
+
+/** An in-repo project space (design D6). */
+export interface ProjectSpaceEntry {
+  type: 'project';
+  id: string;
+  name: string;
+  root: string;
+}
+
+/** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
+export interface StoreSpaceEntry {
+  type: 'store';
+  id: string;
+  name: string;
+  root: string;
+  members: SpaceMember[];
+}
+
+export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
+
+/** `GET /api/v1/spaces` response (design D6). */
+export interface SpacesResponse {
+  spaces: SpaceEntry[];
 }

@@ -14,7 +14,6 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     ...actual,
     listChanges: vi.fn(),
     listRuns: vi.fn(),
-    listSessions: vi.fn(),
     // createChange is intentionally left as the real implementation (it goes
     // through the single `request()` seam over `fetch`) so the 401 test
     // below exercises the actual markUnauthorized() wiring rather than a
@@ -22,6 +21,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   };
 });
 
+import { LocationProvider } from 'preact-iso';
 import { BoardPage } from '../../src/components/BoardPage.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
@@ -70,10 +70,6 @@ describe('BoardPage', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
-    // The live-sessions indicator (design D3.3 of `slice3-sessions-ui`)
-    // fetches on every board mount — default to "no live sessions" unless a
-    // test overrides it.
-    (client.listSessions as any).mockResolvedValue({ sessions: [] });
   });
 
   afterEach(() => {
@@ -350,88 +346,37 @@ describe('BoardPage', () => {
     });
   });
 
-  describe('Live sessions indicator (design D3.3 of slice3-sessions-ui)', () => {
-    it('renders nothing prominent when there are zero live sessions', async () => {
-      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
+  describe('space scoping (management-ui-shell design D6)', () => {
+    it('threads the route space selector into listChanges/listRuns when mounted under a space route', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
       (client.listRuns as any).mockResolvedValue({ runs: [] });
-      (client.listSessions as any).mockResolvedValue({ sessions: [] });
 
-      await mount(container);
-
-      expect(container.querySelector('[data-testid="board-sessions-indicator"]')).toBeNull();
-    });
-
-    it('shows a live-session count linking to /sessions when sessions are live', async () => {
-      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
-      (client.listRuns as any).mockResolvedValue({ runs: [] });
-      (client.listSessions as any).mockResolvedValue({
-        sessions: [
-          { session: { id: 'a', kind: 'auto', task: 't', cwd: '/p', state: 'running', startedAt: 1, lastOutputAt: 1 }, runState: { kind: 'absent' } },
-          { session: { id: 'b', kind: 'auto', task: 't', cwd: '/p', state: 'exited', startedAt: 1, lastOutputAt: 1 }, runState: { kind: 'absent' } },
-        ],
-      });
-
-      await mount(container);
-
-      const indicator = container.querySelector('[data-testid="board-sessions-indicator"]');
-      expect(indicator).not.toBeNull();
-      expect(indicator!.textContent).toContain('1 live session');
-      expect(indicator!.getAttribute('href')).toBe('/sessions');
-    });
-
-    it('re-polls only while the last response had a live session', async () => {
-      vi.useFakeTimers();
-      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
-      (client.listRuns as any).mockResolvedValue({ runs: [] });
-      (client.listSessions as any).mockResolvedValue({ sessions: [] });
-
-      await mount(container);
-      expect(client.listSessions).toHaveBeenCalledTimes(1);
-
+      window.history.pushState({}, '', '/p/proj_x/board');
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(3000);
+        render(
+          <LocationProvider>
+            <BoardPage />
+          </LocationProvider>,
+          container
+        );
       });
-      // Idle board: no live session in the last response, so no re-poll.
-      expect(client.listSessions).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await flushMicrotasks();
+      });
 
-      vi.useRealTimers();
+      expect(client.listChanges).toHaveBeenCalledWith('project:proj_x');
+      expect(client.listRuns).toHaveBeenCalledWith('project:proj_x');
+
+      window.history.pushState({}, '', '/');
     });
 
-    it('drops the indicator once a follow-up poll reports zero live sessions (review round 1 m1: the kill-reflected-on-board acceptance)', async () => {
-      vi.useFakeTimers();
-      (client.listChanges as any).mockResolvedValue({ changes: [changesListFixture.changes[1]!], errors: [] });
+    it('sends no selector when mounted with no resolvable space (launch-project fallback)', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
       (client.listRuns as any).mockResolvedValue({ runs: [] });
-      (client.listSessions as any).mockResolvedValue({
-        sessions: [
-          {
-            session: { id: 'a', kind: 'auto', task: 't', cwd: '/p', state: 'running', startedAt: 1, lastOutputAt: 1 },
-            runState: { kind: 'absent' },
-          },
-        ],
-      });
 
-      await mount(container);
-      expect(container.querySelector('[data-testid="board-sessions-indicator"]')!.textContent).toContain(
-        '1 live session'
-      );
+      await mount(container); // bare, no LocationProvider → no space
 
-      // The session reached a terminal state — the next poll reports none live.
-      (client.listSessions as any).mockResolvedValue({
-        sessions: [
-          {
-            session: { id: 'a', kind: 'auto', task: 't', cwd: '/p', state: 'exited', startedAt: 1, lastOutputAt: 1 },
-            runState: { kind: 'absent' },
-          },
-        ],
-      });
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(3000);
-      });
-
-      expect(container.querySelector('[data-testid="board-sessions-indicator"]')).toBeNull();
-
-      vi.useRealTimers();
+      expect(client.listChanges).toHaveBeenCalledWith(undefined);
     });
   });
 });

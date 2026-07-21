@@ -52,6 +52,15 @@
 6. **`rasen ui` 发 URL 前 ensure-register cwd 项目**(CLI 侧写,红线内),否则未注册项目发出的 `project:<id>` 选择器解析不了;`resolveLaunchProjectRef` 的 projectId 可为空串,不能直接用。
 7. session 空间归属**launch 时冻结**在 SessionRecord(cwd 派生或显式 space),listing join 改用 session 自己的 space root + per-space home——顺手修掉今天"非 launch 项目的 session join 全错"的既有 bug。
 
+## Planner findings（child 2 shell propose,2026-07-21）
+
+8. **`?space=` 活过 token 擦除**——`packages/ui/src/api/token.ts` 的擦除是 `history.replaceState(null,'',location.pathname+location.search)`,**保留 search**;child 1 发的 `…/?space=project:<id>#token=<t>` 里 `?space=` 因此能到达 app。shell 的 bootstrap 在 `initTokenFromLocation()` 之后跑,读 `?space=` → `route('/p/<id>/board', true)`(replace,丢查询)。child 3/4 别改 token.ts 擦除逻辑,否则断掉 space 引导。
+9. **URL 事实源路由形态(child 3/4/5 全消费)**:空间前缀路由 `/p/:projectId/...` `/s/:storeId/...`;section 段 = `board|config|archive|task/:changeName`。`useSpace()`(`store/use-space.ts`,child 2 新增)从 `useRoute()` 读 `{type,id,selector}`,`selector=\`${type}:${id}\``;**所有空间域调用**经 `client.ts` 的 `spaceQuery(selector)` 串上。child 3 的 Task board、child 4 的 Task detail、child 5 的 Archive 都 `useSpace()` 取空间,别自己解析 URL。task detail 路由已在 child 2 占位(placeholder),child 4 只替换 placeholder 组件、别动路由表形状。
+10. **opaque-token 铁律(承 child1 m1+finding3)**:`project:`/`store:` 后的 id 全程当不透明规范 token——bootstrap 抄进路由参、`useSpace` 读回、`spaceQuery` 重新加前缀,**任何环节不 normalize/lowercase/path-canonicalize**。child 3/4/5 构造空间内链接一律 `/p|s/<useSpace().id>/...` + `encodeURIComponent`,别从 root 路径反推 id。
+11. **switcher 只 render 顶层 spaces、不碰 members**:store 成员 chip = child 3;child 2 的 switcher 消费 `/api/v1/spaces` 的顶层条目,`members[]` 留给 child 3 的 Task board 过滤。
+12. **config 仍走 `?project=` 非 `?space=`**:child 1 没把 config-api 挪到 `?space=`;child 2 的 `ConfigPage` 对 project 空间传 project id(照旧),对 store 空间只出 "store config 待 Config 重构" 提示(**store-scoped config 是延后项**,归后续 Config-scope-tabs child,不是 child 3/4/5)。
+13. **归档次序雷区(承 child1 finding4)**:顶级 Sessions 页的需求属未归档 `slice3-sessions-ui` 的 `sessions-ui` capability delta(**主 specs 里没有 sessions-ui**);child 2 删顶级 Sessions 页,并在 `config-ui-package` MODIFY 里显式复述 Board·Archive·Config 导航来对账漂移。归档本 portfolio 时须**连同 slice3-sessions-ui/slice2 遗留一起归档**,否则 sessions-ui delta 会复活被删的 Sessions 导航项。child 2 的三 spec:新 `management-ui-shell`(ADDED)、`board-ui`(MODIFY 仅"平台主页/导航"一条)、`config-ui-package`(MODIFY 仅"Platform shell"一条)——child 3 若也改 board-ui,注意别撞 child 2 已改的那条。
+
 ## 约束
 
 - **工作树有未提交改动**(测试隔离修复+listProjects 过滤,属于本 portfolio 的先导修复):child 1 的 ship 把它们一并纳入或先行单独 commit,由 shipper 裁定,勿丢弃勿回退。
