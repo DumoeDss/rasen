@@ -3,14 +3,22 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
+  ConfigSource,
   StoreLayerRef,
   ThresholdValue,
   WireConfigEntry,
   WirePipeline,
   WirePipelineStage,
 } from '../api/types.js';
-import { useSpace } from '../store/use-space.js';
-import { KNOWN_MODEL_IDS, modeScope, type ConfigMode, type SpaceType } from '../config/controls.js';
+import { useSpace, spaceHref } from '../store/use-space.js';
+import {
+  KNOWN_MODEL_IDS,
+  modeScope,
+  isStoreInherited,
+  type ConfigMode,
+  type SpaceType,
+} from '../config/controls.js';
+import { errorSurface } from '../config/errors.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
 
 /**
@@ -27,10 +35,21 @@ import { ConfigEntryRow } from './ConfigEntryRow.js';
  * rendered verbatim (design D1) — the UI never re-derives resolution.
  */
 
-/** The role matrix (design D5): the twelve default keys plus the two autopilot controls. */
-const ROLES = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const;
-const MODEL_KEYS = ['models.default', ...ROLES.map((r) => `models.roles.${r}`)];
-const HANDOFF_KEYS = ['handoff.threshold', ...ROLES.map((r) => `handoff.roles.${r}`)];
+/**
+ * The role matrix (design D5): one row per role, each pairing that role's model
+ * key with its handoff-threshold key. The `Default` row carries the base
+ * `models.default` / `handoff.threshold` keys every other role inherits from.
+ * Rendered as a compact table — role down the side, Model and Handoff across —
+ * rather than one full-width config row per key.
+ */
+const MATRIX_ROLES: ReadonlyArray<{ label: string; modelKey: string; handoffKey: string }> = [
+  { label: 'Default', modelKey: 'models.default', handoffKey: 'handoff.threshold' },
+  { label: 'Planner', modelKey: 'models.roles.planner', handoffKey: 'handoff.roles.planner' },
+  { label: 'Implementer', modelKey: 'models.roles.implementer', handoffKey: 'handoff.roles.implementer' },
+  { label: 'Reviewer', modelKey: 'models.roles.reviewer', handoffKey: 'handoff.roles.reviewer' },
+  { label: 'Fixer', modelKey: 'models.roles.fixer', handoffKey: 'handoff.roles.fixer' },
+  { label: 'Shipper', modelKey: 'models.roles.shipper', handoffKey: 'handoff.roles.shipper' },
+];
 const AUTOPILOT_KEYS = ['autopilot.gates', 'autopilot.selection'];
 
 /** A per-stage/per-role override is set when the effective source came from a family instance. */
@@ -175,10 +194,12 @@ export function PipelinesPage() {
       </div>
 
       <section class="pipelines-defaults" data-testid="pipelines-defaults">
-        <h3>Defaults</h3>
-        <DefaultsGroup
-          heading="Models"
-          keys={MODEL_KEYS}
+        <h3 class="pipelines-defaults__title">Defaults</h3>
+        <p class="pipelines-defaults__legend">
+          The model and context-handoff threshold every pipeline stage inherits, per role. A blank
+          field inherits the wider scope; the badge names where the effective value resolved from.
+        </p>
+        <DefaultsMatrix
           entryFor={byKey}
           mode={mode}
           spaceType={spaceType}
@@ -187,28 +208,23 @@ export function PipelinesPage() {
           onPageError={(message, fix) => setPageError({ message, fix })}
           onEntryUpdated={updateEntry}
         />
-        <DefaultsGroup
-          heading="Handoff"
-          keys={HANDOFF_KEYS}
-          entryFor={byKey}
-          mode={mode}
-          spaceType={spaceType}
-          selector={selector}
-          storeRef={storeRef}
-          onPageError={(message, fix) => setPageError({ message, fix })}
-          onEntryUpdated={updateEntry}
-        />
-        <DefaultsGroup
-          heading="Autopilot"
-          keys={AUTOPILOT_KEYS}
-          entryFor={byKey}
-          mode={mode}
-          spaceType={spaceType}
-          selector={selector}
-          storeRef={storeRef}
-          onPageError={(message, fix) => setPageError({ message, fix })}
-          onEntryUpdated={updateEntry}
-        />
+        <div class="pipelines-defaults__autopilot" data-testid="pipelines-defaults-autopilot">
+          {AUTOPILOT_KEYS.map((key) => {
+            const entry = byKey(key);
+            return entry ? (
+              <ConfigEntryRow
+                key={key}
+                entry={entry}
+                mode={mode}
+                spaceType={spaceType}
+                spaceSelector={selector}
+                storeRef={storeRef}
+                onPageError={(message, fix) => setPageError({ message, fix })}
+                onEntryUpdated={updateEntry}
+              />
+            ) : null;
+          })}
+        </div>
       </section>
 
       <section class="pipelines-list" data-testid="pipelines-list">
@@ -241,46 +257,233 @@ type Dialog =
   | { kind: 'export'; name: string }
   | { kind: 'delete'; name: string };
 
-// ── Defaults table ───────────────────────────────────────────────────────────
+// ── Defaults matrix ──────────────────────────────────────────────────────────
+// A compact role-first table (design D5): one row per role, columns Model and
+// Handoff threshold. Each cell is the bare control plus a source badge — the
+// dot-path and description ride a title tooltip, not a per-row paragraph, so the
+// whole section fits roughly one screen. Every write rides the ordinary config
+// scope chain via `putKey` / `deleteKey`, exactly as the full ConfigEntryRow
+// does, and hands the re-resolved entry back to the page.
 
-function DefaultsGroup({
-  heading,
-  keys,
-  entryFor,
-  mode,
-  spaceType,
-  selector,
-  storeRef,
-  onPageError,
-  onEntryUpdated,
-}: {
-  heading: string;
-  keys: string[];
-  entryFor: (key: string) => WireConfigEntry | undefined;
+interface DefaultsCellCtx {
   mode: ConfigMode;
   spaceType: SpaceType;
   selector: string;
   storeRef: StoreLayerRef | null;
   onPageError: (message: string, fix?: string) => void;
   onEntryUpdated: (entry: WireConfigEntry) => void;
-}) {
-  const rows = keys.map(entryFor).filter((e): e is WireConfigEntry => e !== undefined);
+}
+
+function DefaultsMatrix({
+  entryFor,
+  ...ctx
+}: { entryFor: (key: string) => WireConfigEntry | undefined } & DefaultsCellCtx) {
+  const rows = MATRIX_ROLES.map((role) => ({
+    role,
+    model: entryFor(role.modelKey),
+    handoff: entryFor(role.handoffKey),
+  })).filter((r) => r.model !== undefined || r.handoff !== undefined);
   if (rows.length === 0) return null;
+
   return (
-    <div class="pipelines-defaults__group" data-testid={`pipelines-defaults-${heading.toLowerCase()}`}>
-      <h4>{heading}</h4>
-      {rows.map((entry) => (
-        <ConfigEntryRow
-          key={entry.definition.key}
-          entry={entry}
-          mode={mode}
-          spaceType={spaceType}
-          spaceSelector={selector}
-          storeRef={storeRef}
-          onPageError={onPageError}
-          onEntryUpdated={onEntryUpdated}
+    <table class="defaults-matrix" data-testid="defaults-matrix">
+      <thead>
+        <tr>
+          <th scope="col">Role</th>
+          <th scope="col">Model</th>
+          <th scope="col">Handoff threshold</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ role, model, handoff }) => (
+          <tr key={role.label} class="defaults-matrix__row" data-role={role.label.toLowerCase()}>
+            <th scope="row" class="defaults-matrix__role">{role.label}</th>
+            <td class="defaults-matrix__cell">
+              {model ? <ModelCell entry={model} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
+            </td>
+            <td class="defaults-matrix__cell">
+              {handoff ? <HandoffCell entry={handoff} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** A config-source pill reusing the Config page's badge palette (default / global / store / project / env-override). */
+function ConfigSourceBadge({ source }: { source: ConfigSource }) {
+  return (
+    <span class={`config-entry__source config-entry__source--${source}`} data-testid="defaults-source">
+      {source}
+    </span>
+  );
+}
+
+/**
+ * Per-cell write plumbing — a lean mirror of ConfigEntryRow's commit/unset that
+ * targets the active mode's scope and surfaces page-level errors (project
+ * resolution) up to the page, field-level errors inline.
+ */
+function useDefaultsCell(key: string, ctx: DefaultsCellCtx) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const writeScope = modeScope(ctx.mode, ctx.spaceType);
+
+  async function run(fn: () => Promise<{ entry: WireConfigEntry }>) {
+    setPending(true);
+    setError(null);
+    try {
+      const result = await fn();
+      ctx.onEntryUpdated(result.entry);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401) return;
+        if (errorSurface(err.code) === 'page') ctx.onPageError(err.message, err.fix);
+        else setError(err.message);
+      } else {
+        setError('Write failed.');
+      }
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return {
+    pending,
+    error,
+    writeScope,
+    commit: (value: unknown) => run(() => client.putKey(key, { scope: writeScope, value }, ctx.selector)),
+    unset: () => run(() => client.deleteKey(key, writeScope, ctx.selector)),
+  };
+}
+
+/** True when a store layer supplies this key while addressing a project space in Local mode — read-only with an edit-in-store link, mirroring ConfigEntryRow (design D3). */
+function cellStoreInherited(entry: WireConfigEntry, ctx: DefaultsCellCtx): boolean {
+  return isStoreInherited(entry, ctx.mode, ctx.spaceType) && ctx.storeRef !== null;
+}
+
+function ModelCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCellCtx) {
+  const key = entry.definition.key;
+  const w = useDefaultsCell(key, ctx);
+  const listId = `${key}-defaults-suggestions`;
+
+  if (cellStoreInherited(entry, ctx)) {
+    return <StoreInheritedCell entry={entry} storeRef={ctx.storeRef!} />;
+  }
+
+  return (
+    <div class="defaults-cell defaults-cell--model" data-key={key} title={entry.definition.description}>
+      <input
+        type="text"
+        list={listId}
+        class="defaults-cell__input"
+        data-testid="defaults-model-input"
+        value={entry.value == null ? '' : String(entry.value)}
+        placeholder="inherit"
+        disabled={w.pending}
+        onChange={(e) => {
+          const v = (e.target as HTMLInputElement).value.trim();
+          // An empty field is not a model id — clear the override so the wider scope shows through.
+          if (v.length === 0) w.unset();
+          else w.commit(v);
+        }}
+      />
+      <datalist id={listId}>
+        {KNOWN_MODEL_IDS.map((id) => (
+          <option key={id} value={id} />
+        ))}
+      </datalist>
+      <ConfigSourceBadge source={entry.source} />
+      {w.error && <span class="defaults-cell__error" role="alert">{w.error}</span>}
+    </div>
+  );
+}
+
+function HandoffCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCellCtx) {
+  const key = entry.definition.key;
+  const w = useDefaultsCell(key, ctx);
+  const value = entry.value as ThresholdValue | null | undefined;
+  const isAbsolute = typeof value === 'object' && value !== null && 'remainingTokens' in value;
+
+  if (cellStoreInherited(entry, ctx)) {
+    return <StoreInheritedCell entry={entry} storeRef={ctx.storeRef!} />;
+  }
+
+  return (
+    <div class="defaults-cell defaults-cell--handoff" data-key={key} title={entry.definition.description}>
+      <div class="defaults-cell__forms">
+        <label>
+          <input
+            type="radio"
+            name={`${key}-defaults-form`}
+            checked={!isAbsolute}
+            disabled={w.pending}
+            onChange={() => w.commit(0.5)}
+          />
+          Fraction
+        </label>
+        <label>
+          <input
+            type="radio"
+            name={`${key}-defaults-form`}
+            checked={isAbsolute}
+            disabled={w.pending}
+            onChange={() => w.commit({ remainingTokens: 50_000 })}
+          />
+          Tokens
+        </label>
+      </div>
+      {!isAbsolute ? (
+        <input
+          type="number"
+          step="any"
+          class="defaults-cell__num"
+          data-testid="defaults-handoff-fraction"
+          value={typeof value === 'number' ? String(value) : '0.5'}
+          disabled={w.pending}
+          onChange={(e) => {
+            const raw = Number((e.target as HTMLInputElement).value);
+            if (!Number.isNaN(raw)) w.commit(raw);
+          }}
         />
-      ))}
+      ) : (
+        <input
+          type="number"
+          step="1"
+          class="defaults-cell__num"
+          data-testid="defaults-handoff-remaining"
+          value={String((value as { remainingTokens: number }).remainingTokens)}
+          disabled={w.pending}
+          onChange={(e) => {
+            const raw = Number((e.target as HTMLInputElement).value);
+            if (Number.isInteger(raw)) w.commit({ remainingTokens: raw });
+          }}
+        />
+      )}
+      <ConfigSourceBadge source={entry.source} />
+      {w.error && <span class="defaults-cell__error" role="alert">{w.error}</span>}
+    </div>
+  );
+}
+
+/** A store-inherited key: read-only value plus an edit-in-store link (design D3), the compact analogue of ConfigEntryRow's store handling. */
+function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; storeRef: StoreLayerRef }) {
+  const display =
+    entry.value == null
+      ? 'not set'
+      : typeof entry.value === 'object'
+        ? JSON.stringify(entry.value)
+        : String(entry.value);
+  return (
+    <div class="defaults-cell defaults-cell--readonly" title={entry.definition.description}>
+      <span class="defaults-cell__value">{display}</span>
+      <a
+        class="config-entry__store-edit"
+        href={spaceHref({ type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` }, 'config')}
+      >
+        Edit in store {storeRef.id} →
+      </a>
     </div>
   );
 }

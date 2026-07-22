@@ -109,7 +109,6 @@ export function WorkflowsPage() {
         testid="workflows-group-built-in"
         entries={builtIns}
         onOpen={setSelectedId}
-        onValidate={(id) => setDialog({ kind: 'validate', prefill: id })}
         onExport={undefined}
         onDelete={undefined}
       />
@@ -118,7 +117,6 @@ export function WorkflowsPage() {
         testid="workflows-group-user"
         entries={userWorkflows}
         onOpen={setSelectedId}
-        onValidate={(id) => setDialog({ kind: 'validate', prefill: id })}
         onExport={(id) => setDialog({ kind: 'export', id })}
         onDelete={(id) => setDialog({ kind: 'delete', id })}
       />
@@ -161,7 +159,6 @@ function WorkflowGroup({
   testid,
   entries,
   onOpen,
-  onValidate,
   onExport,
   onDelete,
 }: {
@@ -169,7 +166,6 @@ function WorkflowGroup({
   testid: string;
   entries: WorkflowListEntry[];
   onOpen: (id: string) => void;
-  onValidate: (id: string) => void;
   onExport?: (id: string) => void;
   onDelete?: (id: string) => void;
 }) {
@@ -180,13 +176,7 @@ function WorkflowGroup({
       <ul class="workflows-group__list">
         {entries.map((entry) => (
           <li key={entry.id}>
-            <WorkflowCard
-              entry={entry}
-              onOpen={onOpen}
-              onValidate={onValidate}
-              onExport={onExport}
-              onDelete={onDelete}
-            />
+            <WorkflowCard entry={entry} onOpen={onOpen} onExport={onExport} onDelete={onDelete} />
           </li>
         ))}
       </ul>
@@ -197,13 +187,11 @@ function WorkflowGroup({
 function WorkflowCard({
   entry,
   onOpen,
-  onValidate,
   onExport,
   onDelete,
 }: {
   entry: WorkflowListEntry;
   onOpen: (id: string) => void;
-  onValidate: (id: string) => void;
   onExport?: (id: string) => void;
   onDelete?: (id: string) => void;
 }) {
@@ -233,21 +221,23 @@ function WorkflowCard({
           </span>
         )}
       </div>
-      <div class="workflow-card__actions">
-        <button type="button" data-testid="workflow-validate" onClick={() => onValidate(entry.id)}>
-          Validate
-        </button>
-        {onExport && (
-          <button type="button" data-testid="workflow-export" onClick={() => onExport(entry.id)}>
-            Export
-          </button>
-        )}
-        {onDelete && (
-          <button type="button" data-testid="workflow-delete" onClick={() => onDelete(entry.id)}>
-            Delete
-          </button>
-        )}
-      </div>
+      {/* Built-ins are pre-validated and locked, so they carry no per-card
+          actions — validation lives in the toolbar's Validate… dialog. Only
+          user-library cards expose export / delete. */}
+      {(onExport || onDelete) && (
+        <div class="workflow-card__actions">
+          {onExport && (
+            <button type="button" data-testid="workflow-export" onClick={() => onExport(entry.id)}>
+              Export
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" data-testid="workflow-delete" onClick={() => onDelete(entry.id)}>
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

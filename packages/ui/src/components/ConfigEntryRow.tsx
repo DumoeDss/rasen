@@ -16,9 +16,15 @@ import { errorSurface } from '../config/errors.js';
 import { labelFor } from '../config/labels.js';
 import { spaceHref } from '../store/use-space.js';
 
-/** Renders a value for display — objects (e.g. a `{ remainingTokens: N }` threshold) as JSON, everything else via `String()`. */
+/** Renders a value for display — objects (e.g. a `{ remainingTokens: N }` threshold) as JSON, an unset value as "not set" (never the literal "undefined"), everything else via `String()`. */
 function formatDisplayValue(value: unknown): string {
-  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+  if (value === undefined || value === null) return 'not set';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+/** An input's `value` attribute — an unset (null/undefined) draft renders as an empty field, never the literal "undefined". */
+function inputValue(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value);
 }
 
 interface Props {
@@ -137,7 +143,7 @@ export function ConfigEntryRow({
       case 'select':
         return (
           <select
-            value={String(draft)}
+            value={inputValue(draft)}
             disabled={pending}
             onChange={(e) => {
               const value = (e.target as HTMLSelectElement).value;
@@ -156,7 +162,7 @@ export function ConfigEntryRow({
         return (
           <input
             type="number"
-            value={String(draft)}
+            value={inputValue(draft)}
             disabled={pending}
             onChange={(e) => {
               const raw = Number((e.target as HTMLInputElement).value);
@@ -265,7 +271,7 @@ export function ConfigEntryRow({
             <input
               type="text"
               list={listId}
-              value={String(draft)}
+              value={inputValue(draft)}
               disabled={pending}
               onChange={(e) => {
                 const value = (e.target as HTMLInputElement).value;
@@ -284,7 +290,7 @@ export function ConfigEntryRow({
         return (
           <input
             type="text"
-            value={String(draft)}
+            value={inputValue(draft)}
             disabled={pending}
             onChange={(e) => {
               const value = (e.target as HTMLInputElement).value;
