@@ -61,44 +61,59 @@ On load, the app SHALL take the session token from the URL fragment, keep it onl
 - **WHEN** a previously-opened tab talks to a newly-restarted server (its token is no longer valid)
 - **THEN** the app shows a notice instructing the user to re-launch `rasen ui`
 
-### Requirement: Configuration page renders the effective config with source transparency
-The configuration page SHALL render every configuration entry the API lists, grouped by the registry's group metadata with each key's description visible. Each entry SHALL show its effective value, an annotation of where that value comes from (default, global, project, or environment override), and the underlying per-scope values when a narrower scope shadows a wider one. Entries whose on-disk value is invalid SHALL display the API's warning visibly, and the UI SHALL never rewrite or auto-correct on-disk values. Environment-override values SHALL be displayed as read-only precedence, not offered for editing.
+### Requirement: Configuration page renders effective config with layer transparency across project and store spaces
+The configuration page SHALL serve every planning space: a project space edits its project-layer values, and a store space edits that store's own values — no space type is deferred or stubbed. Every entry the API lists SHALL render with its description and effective value, annotated with where the value comes from (default, global, store, project, or environment override). When the page's local scope holds no value for a visible multi-scope key, the entry SHALL show an inherited-value line naming the providing layer and its value — the inherited store identified by its id when the store layer provides it, otherwise the global layer or the built-in default. When a narrower value shadows wider ones, the shadowed values SHALL remain revealed. A key whose effective value is inherited from a store SHALL render read-only with an affordance that navigates to that store space's configuration page, where the value is editable; in a space with no store inheritance, no store-related affordance SHALL appear anywhere. Entries whose on-disk value is invalid SHALL display the API's warning visibly, the UI SHALL never rewrite or auto-correct on-disk values, and environment-override values SHALL be displayed as read-only precedence.
 
-#### Scenario: Grouped rendering with descriptions
-- **WHEN** the configuration page loads
-- **THEN** entries appear grouped by their registry groups, each with its description and effective value
+#### Scenario: Store space edits its own configuration
+- **WHEN** the user opens the configuration page in a store space
+- **THEN** the page renders the store's entries with local writes targeting the store's own configuration, with no deferral notice
 
-#### Scenario: Shadowed value transparency
-- **WHEN** a key has both a global and a project value
-- **THEN** the entry shows the effective value with a project source annotation and reveals the shadowed global value
+#### Scenario: Inherited-from-store line with store identified
+- **WHEN** a project declaring a store pointer has no local value for a key the store sets
+- **THEN** the entry shows an inherited-value line naming that store by id with the store's value, and the value annotation reflects the store layer
+
+#### Scenario: Store-inherited row navigates to the store to edit
+- **WHEN** the user activates the store-edit affordance on a store-inherited entry
+- **THEN** the app switches to that store space's configuration page, where the same key is locally editable
+
+#### Scenario: No store noise without inheritance
+- **WHEN** the addressed project declares no store pointer
+- **THEN** no inherited-from-store line, store navigation affordance, or store annotation renders on any entry
+
+#### Scenario: Inherited-from-global line
+- **WHEN** a multi-scope key has no local value and no store layer provides one
+- **THEN** the entry shows an inherited-value line naming the global layer (or the built-in default) with its value, and remains locally editable
 
 #### Scenario: Invalid on-disk value surfaces as a warning
 - **WHEN** the API reports a warning for a hand-edited invalid value on disk
 - **THEN** the entry displays the warning message and the value is not silently corrected
 
-### Requirement: Editing is constraint-driven and scope-explicit
-Edit controls SHALL be rendered from each entry's serialized constraints — toggles for booleans, selection lists for enumerations, bounded numeric inputs for ranged numbers, a form-picker plus bounded numeric input for dual-form thresholds, text inputs for strings. Every write and unset SHALL carry an explicit scope; when a key is settable in more than one scope, the user chooses the scope. Client-side validation gives immediate feedback, but the API's verdict is authoritative: API errors SHALL be surfaced with their message and fix guidance at the level they apply — on the field for value and scope errors (including an invalid-scope answer naming the correct scope), on the page for project-resolution errors — and a successful write SHALL update the entry's displayed value and source from the API's re-resolved response.
+### Requirement: Editing is constraint-driven with a page-level scope mode
+Edit controls SHALL be rendered from each entry's serialized constraints — toggles for booleans, selection lists for enumerations, bounded numeric inputs for ranged numbers, a form-picker plus bounded numeric input for dual-form thresholds, text inputs for strings — unchanged. The scope of every write SHALL be selected by a single page-level Global / Local segmented control, not per row: Global targets the global scope; Local targets the current space's own scope — the project layer at a project space, the store layer at a store space. The active mode SHALL also filter visibility: only keys settable in the active mode's scope are shown, and a key not settable there is simply absent rather than badged. Every write and unset SHALL carry the active mode's explicit scope, and the unset action SHALL be offered only when the active mode's scope holds a value. Client-side validation gives immediate feedback, but the API's verdict is authoritative: API errors SHALL be surfaced with their message and fix guidance at the level they apply — on the field for value and scope errors, on the page for space-resolution errors — and a successful write SHALL update the entry's displayed value and annotations from the API's re-resolved response. Switching modes SHALL re-target writes and re-filter the visible keys without a reload.
+
+#### Scenario: Mode selects the write target
+- **WHEN** the user edits a dual-scope key in Global mode and then the same key in Local mode at a project space
+- **THEN** the first write carries the global scope and the second the project scope, with no per-row scope control involved
+
+#### Scenario: Local mode at a store space writes store scope
+- **WHEN** the user edits a key in Local mode at a store space
+- **THEN** the write carries the store scope and lands in that store's own configuration
+
+#### Scenario: Mode filters visibility
+- **WHEN** the user switches from Global to Local mode
+- **THEN** keys settable only globally disappear, keys settable only locally appear, and no reload occurs
+
+#### Scenario: Unset follows the mode
+- **WHEN** a key has a value in the active mode's scope and the user unsets it
+- **THEN** the unset carries that scope and the entry re-renders showing the value now inherited from the wider layers
 
 #### Scenario: Control types follow constraints
 - **WHEN** the page renders a boolean key, an enum key, and a ranged numeric key
 - **THEN** they render as a toggle, a selection list, and a bounded numeric input respectively
 
-#### Scenario: Dual-form threshold control lets the user pick either form
-- **WHEN** the page renders a `threshold`-typed key (e.g. `handoff.threshold`)
-- **THEN** it offers a choice between the fraction form and the absolute `{ remainingTokens: N }` form, with a bounded numeric input for whichever form is selected
-- **AND** the current value's form (fraction or absolute) is pre-selected
-
-#### Scenario: Scope-explicit write
-- **WHEN** the user edits a key settable in both scopes
-- **THEN** the UI requires a scope choice and the write is sent with that explicit scope
-
 #### Scenario: Invalid scope surfaces the API's guidance
-- **WHEN** the user attempts a write the API rejects as invalid for that scope
-- **THEN** the field shows the API's message and its guidance naming the scope where the key is settable
-
-#### Scenario: Unset returns a scope value to inherited
-- **WHEN** the user unsets a key's project value
-- **THEN** the unset is sent with the explicit project scope and the entry re-renders showing the value now inherited from global or default
+- **WHEN** a write is rejected by the API as invalid for its scope
+- **THEN** the field shows the API's message and its guidance naming where the key is settable
 
 ### Requirement: Continuous integration builds and tests the UI package
 Every pull request SHALL build the UI package, run its tests, and verify the contracted build output exists; a failure SHALL block the merge gate. The UI package job SHALL be a single additional job feeding the existing CI gate, without widening the cross-platform test matrix.
@@ -158,37 +173,24 @@ The editor's visual identity SHALL be delivered entirely by assets bundled into 
 - **WHEN** the package's dependencies are inspected after the restyle
 - **THEN** no new runtime dependency has been added and the build remains a pure static-asset front end
 
-### Requirement: Autopilot and Workflow groups lead the configuration page
-The configuration page SHALL order its groups so that the `Autopilot` and `Workflow` groups appear at the top of the page, ahead of the remaining groups (Profile, Behavior, Telemetry, Project, Archive, Advanced). Within the `Workflow` group, the per-agent tuning keys SHALL render as per-role overrides of their base: the five per-role handoff threshold keys (`handoff.roles.<role>`) each as a dual-form threshold control alongside the base `handoff.threshold`, and the five per-role model keys (`models.roles.<role>`) each as a model control alongside the base `models.default`. Each per-role control SHALL be scope-explicit exactly like its base (settable at global and project scope). A per-role model control SHALL be a text input that accepts any model id, offering known model-preset ids as non-binding suggestions (e.g. a datalist) rather than restricting the value to an allow-list.
+### Requirement: The configuration page is organized into four scope-filtered tabs
 
-#### Scenario: Autopilot and Workflow lead the page
+The configuration page SHALL present its keys in exactly four tabs mapped from the registry's group metadata: General (Profile, Appearance, and Behavior groups), Project (Project and Archive groups), Privacy (Telemetry group), and Advanced (the Advanced group). The Workflow, Autopilot, and Pipelines groups SHALL NOT render on the configuration page — their keys and family entries belong to the Pipelines page. A tab none of whose keys are visible in the active scope mode SHALL not be shown; a key whose group maps to no tab and is not claimed by another surface SHALL still be reachable in a trailing bucket rather than hidden. Each entry SHALL title on a human-readable label with its dot-path key as secondary text.
+
+#### Scenario: Four tabs, pipeline-surface groups absent
+
 - **WHEN** the configuration page loads
-- **THEN** the `Autopilot` group and the `Workflow` group appear before the other groups in the page order
+- **THEN** it offers at most General, Project, Privacy, and Advanced tabs, and no key of the Workflow, Autopilot, or Pipelines groups renders anywhere on the page
 
-#### Scenario: Per-role thresholds render as threshold controls
-- **WHEN** the page renders the `Workflow` group
-- **THEN** the base `handoff.threshold` and each `handoff.roles.<role>` key render as dual-form threshold controls (fraction or absolute `{ remainingTokens: N }`), each with a scope choice
-- **AND** a per-role value set at project scope displays with a project source annotation over any global value for the same role
+#### Scenario: Empty tab is absent
 
-#### Scenario: Per-role models render as suggestion-backed text controls
-- **WHEN** the page renders the `Workflow` group
-- **THEN** the base `models.default` and each `models.roles.<role>` key render as text inputs that accept any model id, each with a scope choice
-- **AND** known model-preset ids are offered as non-binding suggestions, and a typed id that matches no preset is still accepted (not blocked by the control)
+- **WHEN** the active mode leaves a tab with no visible keys
+- **THEN** that tab is not offered until the mode changes
 
-### Requirement: The Autopilot group shows a read-only gates inventory
-The configuration page SHALL render, within the `Autopilot` group, a read-only gates inventory sourced from `GET /api/v1/pipelines`. The inventory SHALL show, per pipeline, the stages that act as gates, and SHALL mark every stage whose gate value is `'vet'` as always-pausing — a gate that cannot be disabled by an `autopilot.gates: off` default or a `--no-gate` run — distinctly from an ordinary `gate: true` stage. The inventory SHALL be display-only: it never writes configuration and offers no gate-editing controls.
+#### Scenario: Unclaimed unmapped group stays reachable
 
-#### Scenario: Gates inventory lists gated stages per pipeline
-- **WHEN** the user views the `Autopilot` group
-- **THEN** a gates inventory lists each pipeline and its gated stages, fed by the pipelines endpoint
-
-#### Scenario: The vet gate is marked as always-pausing
-- **WHEN** the inventory renders a stage whose gate value is `'vet'`
-- **THEN** that stage is marked as always pausing and not disableable by gates-off, distinctly from ordinary gates
-
-#### Scenario: The inventory is read-only
-- **WHEN** the user interacts with the gates inventory
-- **THEN** no gate-editing control is offered and no configuration write is issued from it
+- **WHEN** an entry's group matches no tab mapping and no other surface claims it
+- **THEN** the entry still renders in a trailing bucket rather than disappearing
 
 ### Requirement: Platform shell scoped to space-aware routing, layout, and API client
 The app SHALL provide a platform shell — client-side routing, an application layout with navigation and a dual-namespace space switcher, and a typed API client mirroring the served APIs' wire shapes — whose navigation offers the platform's views within the selected planning space: the board (the space home), an archive view, and the configuration page. The shell SHALL derive the active planning space from the URL (per the management-ui-shell capability) rather than from an in-memory selection store. The space switcher SHALL list registered projects and stores as two type-tagged groups and SHALL always address a real space — the shell SHALL NOT offer a "no space" / global-only shell state. The shell SHALL NOT provide a top-level Sessions page; live runs surface only through the header's running-run summary. Future task and archive modules extend the shell.
@@ -206,4 +208,28 @@ The app SHALL provide a platform shell — client-side routing, an application l
 #### Scenario: The shell always addresses a real space
 - **WHEN** the shell resolves the active space
 - **THEN** it addresses a concrete project or store from the URL, and offers no "no project / global only" shell state; when no space is registered it shows a hint to run `rasen ui` inside a Rasen project
+
+### Requirement: Telemetry payload disclosure on the Privacy surface
+
+Beside the `telemetry.enabled` entry, the configuration page SHALL offer a help affordance disclosing exactly what an enabled telemetry setting sends: the five fields of the actual payload, verbatim — the command name, the CLI version, an anonymous randomly generated UUID, the operating system platform, and the Node.js version — with no field omitted and none added. The disclosure SHALL also state that the key is global-only (one setting for the machine) and that environment opt-outs (`RASEN_TELEMETRY=0`, `DO_NOT_TRACK=1`, and CI environments) always win over the configured value. The disclosure is informational only: it never changes the setting, and its field list SHALL be kept in lockstep with the sending code so the two cannot drift silently.
+
+#### Scenario: The five fields are listed verbatim
+
+- **WHEN** the user opens the telemetry help affordance
+- **THEN** it lists exactly the command name, the CLI version, an anonymous random UUID, the OS platform, and the Node.js version as the payload — nothing more, nothing less
+
+#### Scenario: Scope and environment precedence are stated
+
+- **WHEN** the disclosure renders
+- **THEN** it states the key is global-only and that the environment opt-outs always override the configured value
+
+#### Scenario: Disclosure cannot drift from the payload
+
+- **WHEN** the test suite runs
+- **THEN** a test pins the disclosed field list against the telemetry sending code's actual payload fields, failing on any drift in either direction
+
+#### Scenario: Disclosure changes nothing
+
+- **WHEN** the user opens and closes the disclosure
+- **THEN** no configuration write is issued and the toggle's value is unchanged
 

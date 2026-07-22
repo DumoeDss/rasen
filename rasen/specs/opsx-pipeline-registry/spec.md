@@ -251,38 +251,48 @@ Run-state parsing SHALL be host-runtime-neutral: before schema validation, `pars
 - **WHEN** `rasen pipeline resume <change> --json` finds no `auto-run.json` in either location
 - **THEN** the output SHALL report `hasRunState: false` without `invalidRunState`, with the existing "no run-state" note
 
-### Requirement: Machine config supplies a per-role agent model layer
-The effective model for a stage SHALL incorporate machine configuration layers below the pipeline's per-role runtime override and above the runtime's own default. A project or machine (global) config MAY declare a base model under `models.default` and per-role model overrides under `models.roles.<role>` for the closed role set (`planner`, `implementer`, `reviewer`, `fixer`, `shipper`). The effective stage model SHALL resolve with precedence: the stage-level `model` first, then the pipeline `agents.<role>.model` role default, then the project config `models.roles.<role>`, then the project config `models.default`, then the global config `models.roles.<role>`, then the global config `models.default`, then the runtime's built-in default (no configured model). Within each machine config scope a per-role model SHALL win over that scope's `models.default`, and the project scope SHALL win over the global scope entirely. A model id at any layer SHALL be an opaque string accepted as-is; a value matching no model-preset SHALL still be used (no allow-list rejection). `rasen pipeline show <name> --json` SHALL report each stage's resolved model, and the resolved model SHALL be the one the model-preset (handoff/reuse threshold) layer keys off.
+### Requirement: Per-stage configured models top the stage model resolution chain
 
-#### Scenario: Global base model applies when nothing more specific is set
-- **WHEN** the global config sets `models.default: sonnet`, no project model config or pipeline `agents.<role>.model` applies to a stage, and the stage sets no `model`
-- **THEN** the stage's resolved model SHALL be `sonnet`
+The effective model for a stage SHALL resolve with precedence: a `pipelines.<name>.models.<stage>` configuration instance first (itself resolving project over store over global), then the stage-level `model`, then the pipeline `agents.<role>.model` role default, then the project config `models.roles.<role>`, then the project config `models.default`, then the inherited store config `models.roles.<role>`, then the inherited store config `models.default`, then the global config `models.roles.<role>`, then the global config `models.default`, then the runtime's built-in default. Within each machine config scope a per-role model SHALL win over that scope's `models.default`, the machine scopes SHALL rank project > store > global entirely, and the store layers apply only where configuration inheritance is active (see `store-config-inheritance`). A model id at any layer SHALL be an opaque string accepted as-is (no allow-list rejection). `rasen pipeline show <name> --json` SHALL report each stage's resolved model with a source distinguishing the per-stage configured layers (scope-qualified) from the stage, pipeline, project, store, and global layers, and the resolved model SHALL be the one the model-preset (handoff/reuse threshold) layer keys off. Setting a per-stage instance SHALL NOT write any pipeline definition file.
 
-#### Scenario: Per-role model beats the base within a scope
-- **WHEN** the global config sets `models.default: sonnet` and `models.roles.reviewer: fable`
-- **AND** neither the pipeline nor the stage sets a model for a `reviewer`-role stage
-- **THEN** that stage's resolved model SHALL be `fable`, while a non-reviewer stage resolves to `sonnet`
+#### Scenario: Per-stage instance beats the stage-level YAML model
 
-#### Scenario: Project model config beats global
-- **WHEN** the global config sets `models.roles.reviewer: sonnet` and the project config sets `models.roles.reviewer: fable`
-- **THEN** a `reviewer`-role stage resolves to `fable` (the project value wins over the global value)
+- **WHEN** a stage declares `model: sonnet` in its pipeline definition and `pipelines.<name>.models.<that stage>` is set to `fable` at project scope
+- **THEN** the stage's resolved model is `fable` with a per-stage project source, and the pipeline definition file is unmodified
 
-#### Scenario: Pipeline role default beats machine config
-- **WHEN** the pipeline declares `agents.reviewer.model: opus` and the global config sets `models.roles.reviewer: sonnet`
-- **THEN** the `reviewer`-role stage resolves to `opus` (the pipeline role default wins over the machine config layer)
+#### Scenario: Per-stage instances rank project over store over global
 
-#### Scenario: Stage-level model wins over everything
-- **WHEN** a stage sets `model: haiku` and the pipeline and machine config set other models for that role
-- **THEN** the stage resolves to `haiku`
+- **WHEN** the same per-stage instance is set to different values at global and project scope
+- **THEN** the project value wins, and with only store and global set, the store value wins
 
-#### Scenario: An unrecognized model id is used as-is
-- **WHEN** the project config sets `models.roles.implementer` to a model id that matches no built-in preset
-- **THEN** the `implementer`-role stage resolves to that id unchanged, and `rasen pipeline show --json` reports it as the stage model
-- **AND** the model-preset layer simply contributes no suggested threshold for it (the id resolves to no preset)
+#### Scenario: Chain below the top layer is unchanged
 
-#### Scenario: pipeline show reflects the machine-config model
-- **WHEN** a machine or project `models.*` value determines a stage's effective model and the user runs `rasen pipeline show <name> --json`
-- **THEN** that stage's reported `model` SHALL be the machine-config-resolved value, with its source identifying the config layer that supplied it
+- **WHEN** no per-stage instance exists for a stage
+- **THEN** resolution ranks stage > pipeline role default > project role > project default > store role > store default > global role > global default > runtime default, byte-identically to before this capability, including all store-layer and no-store behaviors
+
+#### Scenario: pipeline show reports the per-stage source
+
+- **WHEN** a per-stage instance determines a stage's effective model and the user runs `rasen pipeline show <name> --json`
+- **THEN** that stage's reported model is the instance value with a source identifying the per-stage configured layer and its scope
+
+### Requirement: Per-role runtime updates persist as configuration, not pipeline copies
+
+`rasen pipeline agents <name>` SHALL keep its command surface (per-role runtime flags, `--json`, root selection) while persisting per-role runtime updates as `pipelines.<name>.runtimes.<role>` configuration instances written to the resolved root's configuration through the standard config write path — it SHALL NOT write a pipeline definition file. The effective runtime for a role SHALL resolve: the per-role runtime family instance (project over store over global) first, then the pipeline's declared `agents.<role>.runtime`, then the default runtime. Reads SHALL report each role's resolved runtime with the layer that supplied it. A pipeline definition copy previously frozen into a project by the old behavior SHALL remain untouched and SHALL keep resolving as that project's definition (the project layer of pipeline resolution) — the inspection surface's source badge makes the frozen copy visible, and removing it is the user's explicit action, never an automatic migration.
+
+#### Scenario: Setting a runtime writes config, not YAML
+
+- **WHEN** the user runs `rasen pipeline agents small-feature --reviewer codex` in a project
+- **THEN** a `pipelines.small-feature.runtimes.reviewer` instance is written to the project's configuration, no `pipeline.yaml` is created or modified, and subsequent upstream changes to the built-in pipeline keep applying in that project
+
+#### Scenario: Runtime chain resolves config over declaration
+
+- **WHEN** a pipeline declares `agents.reviewer.runtime: claude` and the project sets the reviewer runtime instance to `codex`
+- **THEN** the reviewer-role stages resolve to `codex` with a config-layer source, and unsetting the instance reverts to the declaration
+
+#### Scenario: Existing frozen copies stay visible, not silently migrated
+
+- **WHEN** a project carries a full pipeline copy written by the old `agents` behavior
+- **THEN** that copy still resolves as the project's definition with its project source badge shown, and no automatic deletion or rewrite occurs
 
 ### Requirement: Pipeline packages
 

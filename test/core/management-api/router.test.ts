@@ -271,6 +271,81 @@ describe('management-api router (integration, via real http server)', () => {
     });
   });
 
+  describe('GET /api/v1/local-paths (local-path-browsing)', () => {
+    it('401s without a token and enumerates nothing', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/local-paths' });
+      expect(res.status).toBe(401);
+    });
+
+    it('starts at home when no path is supplied', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/local-paths', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.home).toBe(true);
+      expect(Array.isArray(body.entries)).toBe(true);
+    });
+
+    it('405s POST on /api/v1/local-paths', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'POST', path: '/api/v1/local-paths', headers: authed() });
+      expect(res.status).toBe(405);
+      expect((res.json() as any).error.code).toBe('method_not_allowed');
+    });
+
+    it('400s a relative path with invalid_path', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/local-paths?path=relative%2Fdir',
+        headers: authed(),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_path');
+    });
+  });
+
+  describe('/api/v1/spaces admission (space-creation)', () => {
+    it('serves GET (listing) under the management posture', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/spaces', headers: authed() });
+      expect(res.status).toBe(200);
+      expect(Array.isArray((res.json() as any).spaces)).toBe(true);
+    });
+
+    it('admits POST to the creation bridge (a bad kind reaches validation as 400, not 405)', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/spaces',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'banana', path: '/tmp/whatever' }),
+      });
+      // Routed to the bridge (not method-rejected): validation answers 400.
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_input');
+    });
+
+    it('401s an unauthenticated POST and spawns nothing', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/spaces',
+        body: JSON.stringify({ kind: 'project', path: '/tmp/whatever' }),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('405s PUT and DELETE on /api/v1/spaces', async () => {
+      const h = await startServer();
+      for (const method of ['PUT', 'DELETE']) {
+        const res = await req(h.port, { method, path: '/api/v1/spaces', headers: authed() });
+        expect(res.status, method).toBe(405);
+      }
+    });
+  });
+
   describe('identity headers (design D3)', () => {
     it('are present on a 200 management response', async () => {
       const h = await startServer();

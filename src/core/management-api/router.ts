@@ -25,9 +25,17 @@ import {
   type LaunchSpaceResolution,
 } from './sessions.js';
 import { handleSpaces } from './spaces.js';
+import { handleLocalPaths } from './local-paths.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
 import { createChangeSubmitter } from './submit.js';
+import { createSpaceCreator } from './create-space.js';
+import {
+  handleWorkflowDetail,
+  handleWorkflowValidation,
+  handleWorkflowsList,
+} from './workflows.js';
+import { createWorkflowSubmitter } from './workflow-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
@@ -69,10 +77,14 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/runs',
   '/api/v1/sessions',
   '/api/v1/spaces',
+  '/api/v1/local-paths',
+  '/api/v1/workflows',
+  '/api/v1/workflow-validation',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
+const WORKFLOW_ID_PATH_PREFIX = '/api/v1/workflows/';
 
 /**
  * Matches `/api/v1/tasks/<id>` exactly one segment deep (mirrors
@@ -85,6 +97,28 @@ const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
 function matchTaskIdPath(pathname: string): string | null {
   if (!pathname.startsWith(TASK_ID_PATH_PREFIX)) return null;
   const rest = pathname.slice(TASK_ID_PATH_PREFIX.length);
+  if (rest.length === 0 || rest.includes('/')) return null;
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Matches `/api/v1/workflows/<id>` exactly one segment deep (workflow-http-api
+ * design D3), returning the percent-decoded id. Workflow ids are user-chosen,
+ * so NO format constraint is applied here — a workflow legitimately named
+ * `validate` must resolve as a detail path, and the handler returns 404 for an
+ * unknown id. The check only rejects a missing or multi-segment suffix
+ * (`/api/v1/workflows/<id>/extra` falls through to the rest of the server's
+ * routing, spec: "Deeper workflow suffixes are not management paths"). The
+ * bare collection `/api/v1/workflows` has no trailing slash and so never
+ * matches this prefix.
+ */
+function matchWorkflowIdPath(pathname: string): string | null {
+  if (!pathname.startsWith(WORKFLOW_ID_PATH_PREFIX)) return null;
+  const rest = pathname.slice(WORKFLOW_ID_PATH_PREFIX.length);
   if (rest.length === 0 || rest.includes('/')) return null;
   try {
     return decodeURIComponent(rest);
@@ -113,7 +147,7 @@ function matchSessionIdPath(pathname: string): string | null {
   return rest;
 }
 
-/** Methods admitted per management path (design D1/D4): everywhere GETs, `/changes` and `/sessions` also POST, session-id paths also DELETE. */
+/** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
@@ -121,11 +155,19 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (matchTaskIdPath(pathname) !== null) {
     return method === 'GET';
   }
+  if (matchWorkflowIdPath(pathname) !== null) {
+    return method === 'GET';
+  }
+  if (pathname === '/api/v1/workflows') {
+    return method === 'GET' || method === 'POST';
+  }
   if (pathname === '/api/v1/sessions') {
     return method === 'GET' || method === 'POST';
   }
   if (method === 'GET') return true;
-  return pathname === '/api/v1/changes' && method === 'POST';
+  return (
+    (pathname === '/api/v1/changes' || pathname === '/api/v1/spaces') && method === 'POST'
+  );
 }
 
 type BodyReadResult =
@@ -189,7 +231,8 @@ export function isManagementPath(pathname: string): boolean {
   return (
     MANAGEMENT_PATHS.has(stripped) ||
     matchSessionIdPath(stripped) !== null ||
-    matchTaskIdPath(stripped) !== null
+    matchTaskIdPath(stripped) !== null ||
+    matchWorkflowIdPath(stripped) !== null
   );
 }
 
@@ -226,6 +269,13 @@ export function createManagementRouter(
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
+
+  // One space creator per server instance (space-creation design D5): its own
+  // cap-1 concurrency, independent of change submission's cap.
+  const createSpace = createSpaceCreator();
+  // The workflow mutation bridge (workflow-http-api design D4): its own cap-1
+  // state, admitting only the four workflow bounded-cli ops.
+  const submitWorkflow = createWorkflowSubmitter(context);
 
   // One supervisor per server instance (design D4/task 2.4): its own
   // registry, its own concurrency cap, its own agent-CLI resolution cache.
@@ -343,6 +393,36 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/workflows' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      // The workflow bridge guards and admits its own input (unknown op → 400,
+      // relative path / option-shaped id → 400, all before any spawn); no
+      // `space` selector — workflow endpoints have no space addressing (design
+      // D2), so cwd is the launch project resolved inside the submitter.
+      const result = await submitWorkflow(body.value ?? {});
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/status') {
       const body: StatusResponse = {
         version: context.version,
@@ -387,8 +467,81 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/spaces' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await createSpace(body.value);
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/spaces') {
       sendJson(res, 200, await handleSpaces());
+      return;
+    }
+
+    if (pathname === '/api/v1/local-paths') {
+      const pathParam = url.searchParams.get('path') ?? undefined;
+      const result = await handleLocalPaths(pathParam);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/workflows' && req.method === 'GET') {
+      const result = handleWorkflowsList();
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/workflow-validation') {
+      // No space addressing on workflow endpoints (design D2): the validation
+      // project context is the server's launch project, falling back to the
+      // server cwd — exactly as the CLI resolves it from its own cwd.
+      const target = url.searchParams.get('target') ?? undefined;
+      const projectRoot = context.launchProjectRoot ?? process.cwd();
+      const result = handleWorkflowValidation(target, projectRoot);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    const workflowId = matchWorkflowIdPath(pathname);
+    if (workflowId !== null && req.method === 'GET') {
+      const result = handleWorkflowDetail(workflowId);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
       return;
     }
 

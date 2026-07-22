@@ -509,6 +509,52 @@ describe('config command --scope project and promoted keys', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith('Set autopilot.gates = "off"');
   });
 
+  it('set/get/unset --scope project handle a pipelines.<name>.gates.<stage> instance', async () => {
+    await runConfigCommand([
+      'set',
+      'pipelines.small-feature.gates.propose',
+      'on',
+      '--scope',
+      'project',
+    ]);
+    expect(process.exitCode).not.toBe(1);
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).toMatch(/propose: on/);
+
+    await runConfigCommand([
+      'get',
+      'pipelines.small-feature.gates.propose',
+      '--scope',
+      'project',
+    ]);
+    expect(consoleLogSpy).toHaveBeenCalledWith('on');
+
+    await runConfigCommand([
+      'unset',
+      'pipelines.small-feature.gates.propose',
+      '--scope',
+      'project',
+    ]);
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).not.toContain('propose');
+  });
+
+  it('set --scope project rejects an invalid pipelines instance value without writing (M1)', async () => {
+    await runConfigCommand([
+      'set',
+      'pipelines.small-feature.gates.propose',
+      'maybe',
+      '--scope',
+      'project',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('on, off'));
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).not.toContain('propose');
+    expect(raw).not.toContain('maybe');
+  });
+
   it('get/list --scope project reads rasen/config.yaml', async () => {
     fs.writeFileSync(
       path.join(projectDir, 'rasen', 'config.yaml'),
@@ -793,6 +839,37 @@ describe('config command --scope project and promoted keys', () => {
     const printed = consoleLogSpy.mock.calls.map(([line]) => String(line));
     expect(printed.some((line) => line.startsWith('proactive ='))).toBe(true);
     expect(printed.some((line) => line.includes('--help'))).toBe(true);
+  });
+
+  it('renders an inherited store value with the store source label', async () => {
+    process.env.XDG_DATA_HOME = tempDir;
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = false;
+    const { registerStore, getGlobalDataDir } = await import('../../src/core/index.js');
+
+    const storeRoot = path.join(tempDir, 'the-store');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(storeRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nmodels:\n  default: opus\n'
+    );
+    await registerStore({ id: 'the-store', localPath: storeRoot, globalDataDir: getGlobalDataDir() });
+
+    const memberDir = path.join(tempDir, 'member');
+    fs.mkdirSync(path.join(memberDir, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(memberDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: the-store\n'
+    );
+    process.chdir(memberDir);
+
+    await runConfigCommand([]);
+
+    expect(process.exitCode).not.toBe(1);
+    const printed = consoleLogSpy.mock.calls.map(([line]) => String(line));
+    const modelLine = printed.find((line) => line.startsWith('models.default ='));
+    expect(modelLine).toBeDefined();
+    expect(modelLine).toContain('opus');
+    expect(modelLine).toContain('(store)');
   });
 
   describe('reset/edit reject --scope project (M1)', () => {

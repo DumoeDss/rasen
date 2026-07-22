@@ -136,6 +136,10 @@ describe('locale catalogs', () => {
     expect(catalog.config.editor.source).toEqual({
       default: '默认',
       global: '全局',
+      // `store` is the ratified store config scope (W1); the label stays the
+      // bare proper noun "store" in every locale, matching how Store is left
+      // untranslated elsewhere in the zh-cn catalog.
+      store: 'store',
       project: '项目',
       'env-override': '环境变量覆盖',
     });

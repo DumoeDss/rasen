@@ -736,7 +736,7 @@ describe('resolveHandoffThresholdReport', () => {
     const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-outside-'));
 
-    const result = resolveHandoffThresholdReport(0.3, 700_000, outsideDir);
+    const result = await resolveHandoffThresholdReport(0.3, 700_000, outsideDir);
 
     expect(result).toEqual({ threshold: 0.5, thresholdSource: 'default', shouldHandoff: false });
     fs.rmSync(outsideDir, { recursive: true, force: true });
@@ -747,7 +747,7 @@ describe('resolveHandoffThresholdReport', () => {
     const projectRoot = path.join(tempDir, 'project');
     writeProjectConfig(projectRoot, 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n');
 
-    const result = resolveHandoffThresholdReport(0.62, 380_000, projectRoot);
+    const result = await resolveHandoffThresholdReport(0.62, 380_000, projectRoot);
 
     expect(result).toEqual({ threshold: 0.6, thresholdSource: 'project', shouldHandoff: true });
   });
@@ -759,7 +759,7 @@ describe('resolveHandoffThresholdReport', () => {
     const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-'));
 
-    const result = resolveHandoffThresholdReport(0.5, 500_000, outsideDir);
+    const result = await resolveHandoffThresholdReport(0.5, 500_000, outsideDir);
 
     expect(result).toEqual({ threshold: 0.65, thresholdSource: 'global', shouldHandoff: false });
     fs.rmSync(outsideDir, { recursive: true, force: true });
@@ -773,7 +773,7 @@ describe('resolveHandoffThresholdReport', () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-abs-'));
 
     // Low pct but remainingTokens under the floor: should still fire.
-    const result = resolveHandoffThresholdReport(0.1, 50_000, outsideDir);
+    const result = await resolveHandoffThresholdReport(0.1, 50_000, outsideDir);
 
     expect(result).toEqual({
       threshold: { remainingTokens: 60_000 },
@@ -781,5 +781,37 @@ describe('resolveHandoffThresholdReport', () => {
       shouldHandoff: true,
     });
     fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('reports the inherited store threshold when the project sets none', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-store-data-'));
+    process.env.XDG_DATA_HOME = dataDir;
+    const { registerStore, getGlobalDataDir } = await import('../../src/core/index.js');
+    // Register into the SAME machine data dir the production probe reads
+    // (resolveConfigStoreLayer -> listRegisteredStores() with no pathOptions).
+    const globalDataDir = getGlobalDataDir();
+
+    // A registered store declaring a handoff threshold.
+    const storeRoot = path.join(tempDir, 'ctx-store');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(storeRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nhandoff:\n  threshold: 0.7\n'
+    );
+    await registerStore({ id: 'ctx-store', localPath: storeRoot, globalDataDir });
+
+    // A member project with local planning + `store:` pointer, no own threshold.
+    const projectRoot = path.join(tempDir, 'ctx-member');
+    fs.mkdirSync(path.join(projectRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: ctx-store\n'
+    );
+
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const result = await resolveHandoffThresholdReport(0.72, 100_000, projectRoot);
+
+    expect(result).toEqual({ threshold: 0.7, thresholdSource: 'store', shouldHandoff: true });
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 });

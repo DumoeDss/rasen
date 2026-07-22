@@ -81,6 +81,20 @@ describe('pipeline run-state', () => {
       expect(s.gatePolicy).toBeUndefined();
     });
 
+    it('parses a gatePolicy recorded with source store', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'small-feature', gatePolicy: { effective: 'off', source: 'store' } })
+      );
+      expect(s.gatePolicy).toEqual({ effective: 'off', source: 'store' });
+    });
+
+    it('still accepts the legacy source value config from pre-store run-states', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'small-feature', gatePolicy: { effective: 'on', source: 'config' } })
+      );
+      expect(s.gatePolicy).toEqual({ effective: 'on', source: 'config' });
+    });
+
     it('rejects an invalid gatePolicy.effective value', () => {
       expect(() =>
         parseRunState(

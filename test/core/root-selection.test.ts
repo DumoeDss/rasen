@@ -337,7 +337,7 @@ describe('resolveOpenSpecRoot', () => {
       expect(root.path).toBe(otherRoot);
     });
 
-    it('never overrides a real root and warns once about the ignored pointer', async () => {
+    it('never overrides a real root and reports inheritance once for a registered store', async () => {
       await registerStore('team-context');
       const repo = mkdir('real-repo');
       createOpenSpecRoot(repo);
@@ -360,7 +360,65 @@ describe('resolveOpenSpecRoot', () => {
 
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("declares store 'team-context'");
-      expect(warnings[0]).toContain('the declaration is ignored');
+      expect(warnings[0]).toContain('configuration inherits from that store');
+      expect(warnings[0]).not.toContain('the declaration is ignored');
+    });
+
+    it('warns that the pointer is inactive when the named store is unregistered', async () => {
+      const repo = mkdir('real-repo-unregistered');
+      createOpenSpecRoot(repo);
+      fs.writeFileSync(
+        path.join(repo, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: not-registered\n'
+      );
+
+      const warnings: string[] = [];
+      const original = console.error;
+      console.error = (message: string) => warnings.push(String(message));
+      try {
+        const root = await resolveOpenSpecRoot({ startPath: repo, globalDataDir });
+        // The local root still wins; only the notice reflects inactivity.
+        expect(root.source).toBe('nearest');
+        expect(root.path).toBe(repo);
+      } finally {
+        console.error = original;
+      }
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("declares store 'not-registered'");
+      expect(warnings[0]).toContain('no such store is registered');
+      expect(warnings[0]).not.toContain('configuration inherits from that store');
+    });
+
+    it('stays silent for a registered store root that itself declares a store pointer (no-transitivity)', async () => {
+      // A root that IS a registered store, with local planning shape, that also
+      // declares a `store:` pointer. resolveConfigStoreLayer returns null for it
+      // (rule 3 — a store root never inherits), so the notice must NOT claim
+      // inheritance; it stays silent (matching the resolver — design D5).
+      const storeRoot = await registerStore('team-context');
+      fs.writeFileSync(
+        path.join(storeRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: team-context\n'
+      );
+
+      const warnings: string[] = [];
+      const original = console.error;
+      console.error = (message: string) => warnings.push(String(message));
+      let root;
+      try {
+        root = await resolveOpenSpecRoot({ startPath: storeRoot, globalDataDir });
+      } finally {
+        console.error = original;
+      }
+
+      expect(root.source).toBe('nearest');
+      expect(root.path).toBe(storeRoot);
+      // No inheriting notice (nor any other root-selection notice) is emitted.
+      expect(warnings).toEqual([]);
+
+      // The resolver agrees: a store's own root gets no inherited store layer.
+      const { resolveConfigStoreLayer } = await import('../../src/core/effective-config.js');
+      expect(await resolveConfigStoreLayer(storeRoot, { globalDataDir })).toBeNull();
     });
 
     it('keeps config-only directories without a pointer as plain roots', async () => {

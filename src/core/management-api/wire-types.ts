@@ -7,6 +7,14 @@
  */
 import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
+import type {
+  WorkflowDependencySet,
+  WorkflowDiagnostic,
+  WorkflowRecommendations,
+  WorkflowSourceKind,
+} from '../workflow-registry/index.js';
+import type { WorkflowKind } from '../workflow-registry/types.js';
+import type { WorkflowUsage, WorkflowValidationSummary } from '../workflow-library.js';
 
 /** A registered project, or the server's launch project. Mirrors config-api's `ProjectRef`. */
 export interface ProjectRef {
@@ -210,6 +218,55 @@ export interface ArchiveResponse {
 }
 
 // -----------------------------------------------------------------------
+// Local-path browsing (local-path-browsing design D3) — `GET /api/v1/local-paths`.
+// Read-only directory enumeration feeding the create-space picker: home start
+// point, any explicit absolute path, git-repo detection. The browser never
+// touches the filesystem itself — every directory fact on screen comes from here.
+// -----------------------------------------------------------------------
+
+/** One entry of an enumerated directory (design D3). */
+export interface LocalPathEntry {
+  name: string;
+  isDir: boolean;
+  /** True when the entry contains a `.git` directory OR a `.git` file (worktrees/submodules use a file). */
+  isGitRepo: boolean;
+}
+
+/** `GET /api/v1/local-paths` response (design D3). */
+export interface LocalPathsResponse {
+  /** The canonical absolute path enumerated. */
+  path: string;
+  /** The canonical parent path, or null at a filesystem root. */
+  parent: string | null;
+  /** The platform path separator (`path.sep`). */
+  separator: string;
+  /** True only for the home start-point response (no `path` param supplied). */
+  home?: boolean;
+  entries: LocalPathEntry[];
+}
+
+// -----------------------------------------------------------------------
+// Space creation (space-creation design D4/D5) — `POST /api/v1/spaces`.
+// The server never writes workspace files: it spawns the CLI (init / store
+// register / store setup), passing the CLI's own errors through verbatim.
+// -----------------------------------------------------------------------
+
+/** `POST /api/v1/spaces` request body (design D4). */
+export interface CreateSpaceRequest {
+  kind: 'project' | 'store';
+  /** An absolute filesystem path — the space's target directory. */
+  path: string;
+  /** Store id; required only for a fresh store (a directory with no `rasen/` root). */
+  id?: string;
+}
+
+/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
+export interface CreateSpaceResponse {
+  operation: 'init' | 'store-register' | 'store-setup';
+  space: SpaceEntry;
+}
+
+// -----------------------------------------------------------------------
 // Sessions (session-supervision design D2/D4) — sibling-stable wire shapes
 // for the sessions UI child.
 // -----------------------------------------------------------------------
@@ -316,3 +373,108 @@ export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
 export interface SpacesResponse {
   spaces: SpaceEntry[];
 }
+
+// -----------------------------------------------------------------------
+// Workflow library (workflow-http-api design D3/D4) — the listing, detail,
+// validation reads and the CLI-backed mutation bridge. Every read mirrors the
+// corresponding `rasen workflow <sub> --json` payload field-for-field so the
+// UI never diverges from CLI truth.
+// -----------------------------------------------------------------------
+
+/** One valid catalog unit as reported by `GET /api/v1/workflows` (mirrors `workflow list --json`). */
+export interface WorkflowListEntry {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string | null;
+  digest: string;
+  kind: WorkflowKind;
+  skillName: string;
+  commandId: string | null;
+  /** True only for a user workflow with no detected machine-level consumer (same marker `workflow list` computes). */
+  unused: boolean;
+}
+
+/** One invalid user entry, reported rather than dropped (mirrors the CLI list's `invalid` collection). */
+export interface WorkflowInvalidEntry {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string;
+  valid: false;
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** `GET /api/v1/workflows` response. */
+export interface WorkflowListResponse {
+  workflows: WorkflowListEntry[];
+  invalid: WorkflowInvalidEntry[];
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** The full definition as reported by `GET /api/v1/workflows/<id>` (mirrors `workflowDefinitionForJson`). */
+export interface WorkflowDefinitionWire {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string | null;
+  manifestVersion: number;
+  kind: WorkflowKind;
+  digest: string;
+  skill: { name: string; dirName: string; description: string };
+  command: { id: string; name: string; category: string; tags: string[] } | null;
+  requires: WorkflowDependencySet;
+  recommends: WorkflowRecommendations;
+  files: { path: string; sha256: string }[];
+}
+
+/** `GET /api/v1/workflows/<id>` response (mirrors `workflow show --json`). */
+export interface WorkflowDetailResponse {
+  workflow: WorkflowDefinitionWire;
+  usage: WorkflowUsage[];
+}
+
+/** `GET /api/v1/workflow-validation` response (mirrors `workflow validate --json`). */
+export interface WorkflowValidationResponse {
+  validation: WorkflowValidationSummary;
+}
+
+/**
+ * `POST /api/v1/workflows` request body, discriminated by `op` (design D3/D4).
+ * `import` takes a source path; `init` a new id and output directory; `export`
+ * an id, a destination path, and an optional overwrite flag; `delete` an id
+ * and an optional force flag (confirmation is the UI's job, so the bridge
+ * always runs the CLI's `--yes` form).
+ */
+export type WorkflowMutationRequest =
+  | { op: 'import'; path: string }
+  | { op: 'init'; id: string; output: string }
+  | { op: 'export'; id: string; path: string; force?: boolean }
+  | { op: 'delete'; id: string; force?: boolean };
+
+/** `import` success payload (passed through from `workflow import --json`). */
+export interface WorkflowImportResponse {
+  imported: string[];
+  reused: string[];
+  roots?: string[];
+}
+
+/** `init` success payload (passed through from `workflow init --json`). */
+export interface WorkflowInitResponse {
+  workflow: { id: string; output: string };
+}
+
+/** `export` success payload (passed through from `workflow export --json`). */
+export interface WorkflowExportResponse {
+  workflow: { id: string; path: string };
+}
+
+/** `delete` success payload (passed through from `workflow delete --json`). */
+export interface WorkflowDeleteResponse {
+  deleted: string;
+  forcedReferrers: string[];
+}
+
+/** `POST /api/v1/workflows` success response — one of the four op payloads. */
+export type WorkflowMutationResponse =
+  | WorkflowImportResponse
+  | WorkflowInitResponse
+  | WorkflowExportResponse
+  | WorkflowDeleteResponse;

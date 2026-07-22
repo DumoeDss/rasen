@@ -3,7 +3,13 @@
  * `constraints` to the control the config page should render, plus the
  * client-side validation mirror (the server verdict remains authoritative).
  */
-import type { WireConfigEntry } from '../api/types.js';
+import type { ConfigScope, WireConfigEntry } from '../api/types.js';
+
+/** The page-level scope mode (design D1): Global writes the machine-wide scope; Local writes the current space's own scope. */
+export type ConfigMode = 'global' | 'local';
+
+/** A planning space's type — kept local so this module stays DOM-free and testable (design D9). */
+export type SpaceType = 'project' | 'store';
 
 export type ControlKind = 'toggle' | 'select' | 'ranged-number' | 'threshold' | 'text' | 'model' | 'readonly';
 
@@ -47,15 +53,48 @@ function isModelKey(key: string): boolean {
 }
 
 /**
- * Env-override values are always read-only precedence (design.md D6): never
- * offered for editing regardless of type. Everything else follows
- * `constraints.type` — UNLESS every scope the key allows has been filtered
- * out by `projectSelected` (design.md D6 "Launched outside a project": a
- * project-only key has nothing writable until a project is selected), in
- * which case the control is disabled too rather than firing a write that the
- * server will reject with `project_required`.
+ * The concrete config scope the Local mode writes at, given the space type
+ * (design D1): the project layer at a project space, the store layer at a
+ * store space. The UI never asks the user to know this distinction — the space
+ * already encodes it.
  */
-export function selectControl(entry: WireConfigEntry, projectSelected: boolean): ControlSpec {
+export function localScopeFor(spaceType: SpaceType): ConfigScope {
+  return spaceType === 'store' ? 'store' : 'project';
+}
+
+/** The concrete config scope the active mode writes at (design D1/D4): `global` in Global mode, the space's local scope in Local mode. */
+export function modeScope(mode: ConfigMode, spaceType: SpaceType): ConfigScope {
+  return mode === 'global' ? 'global' : localScopeFor(spaceType);
+}
+
+/**
+ * Whether a key is visible in the active mode (design D1): Global mode shows
+ * keys whose scopes include `global`; Local mode shows keys settable at the
+ * space's local scope. A key not settable in the active mode is simply absent
+ * (Fork 1A) — this predicate is the page's visibility filter.
+ */
+export function isVisibleInMode(
+  entry: WireConfigEntry,
+  mode: ConfigMode,
+  spaceType: SpaceType
+): boolean {
+  return entry.definition.scopes.includes(modeScope(mode, spaceType));
+}
+
+/**
+ * Env-override values are always read-only precedence (design.md D6): never
+ * offered for editing regardless of type. Wildcard family entries (e.g.
+ * featureFlags) are display-only in v1. Otherwise the control follows
+ * `constraints.type`, provided the key is settable in the active mode's scope
+ * (design D1/D4: a key not settable in the active mode is not editable there —
+ * though the page filters such keys out before rendering, this keeps the
+ * control honest if one is passed through).
+ */
+export function selectControl(
+  entry: WireConfigEntry,
+  mode: ConfigMode,
+  spaceType: SpaceType
+): ControlSpec {
   if (entry.source === 'env-override' || entry.definition.wildcard) {
     // env-override: always read-only precedence. wildcard (e.g. featureFlags):
     // the API returns not_supported for individual leaves in v1 (D6) — the
@@ -63,7 +102,7 @@ export function selectControl(entry: WireConfigEntry, projectSelected: boolean):
     return { kind: 'readonly', readonly: true };
   }
 
-  if (writableScopes(entry, projectSelected).length === 0) {
+  if (!isVisibleInMode(entry, mode, spaceType)) {
     return { kind: 'readonly', readonly: true };
   }
 
@@ -127,34 +166,17 @@ export function validateThresholdValue(
 }
 
 /**
- * Scopes a key allows for writes/unsets (registry `scopes`, minus
- * env-override which is never writable, minus `project` when no project is
- * selected — design.md D6 "Launched outside a project": project-scope
- * editing is disabled until a project is selected, so it must never appear
- * as a choosable/default scope in that state).
+ * Whether a store layer provides this entry's effective value while addressing
+ * a project space in Local mode (design D3): the row then renders read-only
+ * with an "edit in store" affordance instead of a local editor, because the
+ * UI does not offer project-level overrides of store-inherited keys. Only
+ * meaningful for a project space in Local mode — Global mode edits the
+ * machine-wide scope regardless, and a store space edits the store directly.
  */
-export function writableScopes(
+export function isStoreInherited(
   entry: WireConfigEntry,
-  projectSelected: boolean
-): Array<'global' | 'project'> {
-  if (entry.source === 'env-override') return [];
-  return entry.definition.scopes.filter((s) => s !== 'project' || projectSelected);
-}
-
-/**
- * The scope a scope-choice control should default to (design.md D6): the
- * currently-effective scope when it's writable, otherwise the first allowed
- * scope. The user can always change it — every write still carries the
- * explicit chosen scope.
- */
-export function defaultWriteScope(
-  entry: WireConfigEntry,
-  projectSelected: boolean
-): 'global' | 'project' | undefined {
-  const scopes = writableScopes(entry, projectSelected);
-  if (scopes.length === 0) return undefined;
-  if (entry.source === 'global' || entry.source === 'project') {
-    if (scopes.includes(entry.source)) return entry.source;
-  }
-  return scopes[0];
+  mode: ConfigMode,
+  spaceType: SpaceType
+): boolean {
+  return mode === 'local' && spaceType === 'project' && entry.source === 'store';
 }

@@ -9,12 +9,17 @@ import type {
   ArchiveResponse,
   ChangesResponse,
   ConfigScope,
+  CreateSpaceRequest,
+  CreateSpaceResponse,
   GetConfigKeyResponse,
   HealthResponse,
   LaunchSessionRequest,
   ListConfigResponse,
   ListPipelinesResponse,
   ListProjectsResponse,
+  LocalPathsResponse,
+  PipelineMutationRequest,
+  PipelineMutationResponse,
   RunsResponse,
   SessionActionResponse,
   SessionDetailResponse,
@@ -24,6 +29,11 @@ import type {
   SubmitChangeRequest,
   SubmitChangeResponse,
   TaskDetailResponse,
+  WorkflowDetailResponse,
+  WorkflowListResponse,
+  WorkflowMutationRequest,
+  WorkflowMutationResponse,
+  WorkflowValidationResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -92,15 +102,12 @@ async function request<T>(
   return body as T;
 }
 
-/** Config-api scoping (unchanged): the config endpoints stay on `?project=` (planning-space-addressing did not move config onto `?space=`). */
-function projectQuery(project?: string): string {
-  return project ? `?project=${encodeURIComponent(project)}` : '';
-}
-
 /**
- * Management-api space scoping (design.md D6): a `<type>:<id>` selector,
- * URL-encoded once here at the single client seam. Omitting it sends no
- * `space` param, preserving the server's launch-project fallback exactly.
+ * Space scoping (design.md D6): a `<type>:<id>` selector, URL-encoded once
+ * here at the single client seam. Omitting it sends no `space` param,
+ * preserving the server's launch-project fallback exactly. Every space-scoped
+ * endpoint — management AND config (W2 design D7: the config client moved
+ * wholesale off `?project=`) — routes through this one helper.
  */
 function spaceQuery(selector?: string): string {
   return selector ? `?space=${encodeURIComponent(selector)}` : '';
@@ -114,28 +121,46 @@ export function listProjects(): Promise<ListProjectsResponse> {
   return request<ListProjectsResponse>('/api/v1/projects');
 }
 
-export function listConfig(project?: string): Promise<ListConfigResponse> {
-  return request<ListConfigResponse>(`/api/v1/config${projectQuery(project)}`);
+/** The effective config for a planning space (W2 design D7); no selector = launch-project fallback. */
+export function listConfig(space?: string): Promise<ListConfigResponse> {
+  return request<ListConfigResponse>(`/api/v1/config${spaceQuery(space)}`);
 }
 
-/** Read-only gates inventory (D5/D6): the available pipelines and their gate-carrying stages. */
-export function listPipelines(): Promise<ListPipelinesResponse> {
-  return request<ListPipelinesResponse>('/api/v1/pipelines');
+/**
+ * The addressed space's resolved pipelines (pipeline-http-api): each stage's
+ * declared gate plus its effective gate/model/handoff/runtime with a
+ * scope-qualified source. No selector = launch-project fallback.
+ */
+export function listPipelines(space?: string): Promise<ListPipelinesResponse> {
+  return request<ListPipelinesResponse>(`/api/v1/pipelines${spaceQuery(space)}`);
 }
 
-export function getKey(key: string, project?: string): Promise<GetConfigKeyResponse> {
+/**
+ * Run a pipeline-library mutation through the CLI-backed bridge (import / init /
+ * export / delete). On failure the thrown `ApiError.message` is the CLI's own
+ * error text, verbatim.
+ */
+export function mutatePipeline(body: PipelineMutationRequest): Promise<PipelineMutationResponse> {
+  return request<PipelineMutationResponse>('/api/v1/pipelines', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+export function getKey(key: string, space?: string): Promise<GetConfigKeyResponse> {
   return request<GetConfigKeyResponse>(
-    `/api/v1/config/${encodeURIComponent(key)}${projectQuery(project)}`
+    `/api/v1/config/${encodeURIComponent(key)}${spaceQuery(space)}`
   );
 }
 
 export function putKey(
   key: string,
   body: { scope: ConfigScope; value: unknown },
-  project?: string
+  space?: string
 ): Promise<WriteConfigKeyResponse> {
   return request<WriteConfigKeyResponse>(
-    `/api/v1/config/${encodeURIComponent(key)}${projectQuery(project)}`,
+    `/api/v1/config/${encodeURIComponent(key)}${spaceQuery(space)}`,
     {
       method: 'PUT',
       json: true,
@@ -171,6 +196,31 @@ export function listSpaces(): Promise<SpacesResponse> {
 }
 
 /**
+ * Read-only directory enumeration for the create-space picker
+ * (local-path-browsing design D3). No `path` starts at home; an explicit
+ * absolute path enumerates it (the sole escape above home); a relative path
+ * 400s. The value is encoded once here at the single client seam.
+ */
+export function listLocalPaths(path?: string): Promise<LocalPathsResponse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : '';
+  return request<LocalPathsResponse>(`/api/v1/local-paths${query}`);
+}
+
+/**
+ * Creates a planning space (space-creation design D4): the server spawns the
+ * CLI (`init` / `store register` / `store setup`) — it never writes workspace
+ * files itself. On failure the thrown `ApiError.message` is the CLI's own
+ * error text, verbatim.
+ */
+export function createSpace(body: CreateSpaceRequest): Promise<CreateSpaceResponse> {
+  return request<CreateSpaceResponse>('/api/v1/spaces', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+/**
  * One Task's full roster — active + archived children and portfolio dependency
  * hints (ui-space-redesign-task-detail design D1). The `id` is the polymorphic
  * Task id (a portfolio container OR a bare change), used verbatim (only
@@ -197,10 +247,10 @@ export function createChange(body: SubmitChangeRequest): Promise<SubmitChangeRes
 export function deleteKey(
   key: string,
   scope: ConfigScope,
-  project?: string
+  space?: string
 ): Promise<WriteConfigKeyResponse> {
   const query = new URLSearchParams({ scope });
-  if (project) query.set('project', project);
+  if (space) query.set('space', space);
   return request<WriteConfigKeyResponse>(`/api/v1/config/${encodeURIComponent(key)}?${query}`, {
     method: 'DELETE',
     json: true,
@@ -232,5 +282,40 @@ export function killSession(id: string): Promise<SessionActionResponse> {
   return request<SessionActionResponse>(`/api/v1/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     json: true,
+  });
+}
+
+// ---- Workflow library (workflow-http-api design D3/D4) ----
+// The workflow endpoints carry NO space selector — the library is user-wide
+// and its endpoints have no space addressing (design D2). All four route
+// through the single `request()` seam like every other call.
+
+/** The user-wide workflow library (mirrors `workflow list --json`). */
+export function listWorkflows(): Promise<WorkflowListResponse> {
+  return request<WorkflowListResponse>('/api/v1/workflows');
+}
+
+/** One workflow's full definition and usage (mirrors `workflow show --json`); id used verbatim, only percent-encoded. */
+export function getWorkflow(id: string): Promise<WorkflowDetailResponse> {
+  return request<WorkflowDetailResponse>(`/api/v1/workflows/${encodeURIComponent(id)}`);
+}
+
+/** Validate an installed id or an absolute draft/package path (mirrors `workflow validate --json`). */
+export function validateWorkflow(target: string): Promise<WorkflowValidationResponse> {
+  return request<WorkflowValidationResponse>(
+    `/api/v1/workflow-validation?target=${encodeURIComponent(target)}`
+  );
+}
+
+/**
+ * Run a library mutation through the CLI-backed bridge (import / init /
+ * export / delete). On failure the thrown `ApiError.message` is the CLI's own
+ * error text, verbatim.
+ */
+export function mutateWorkflow(body: WorkflowMutationRequest): Promise<WorkflowMutationResponse> {
+  return request<WorkflowMutationResponse>('/api/v1/workflows', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
   });
 }

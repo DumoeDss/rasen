@@ -7,6 +7,9 @@ import { BoardPage } from './components/BoardPage.js';
 import { SpaceBootstrap } from './components/SpaceBootstrap.js';
 import { ArchivePage } from './components/ArchivePage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
+import { SpacesPage } from './components/SpacesPage.js';
+import { WorkflowsPage } from './components/WorkflowsPage.js';
+import { PipelinesPage } from './components/PipelinesPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
 
@@ -33,7 +36,9 @@ function SpaceRootRedirect() {
  * so it always renders for a resolved space. Every section — Board, Config,
  * Archive, Task detail — now renders its real page; the shell carries no
  * placeholders. The former `/sessions` top-level page is gone — live runs
- * surface through the header summary.
+ * surface through the header summary. `/workflows` is a deliberately
+ * space-agnostic route (workflows-ui spec): the installable library is
+ * user-wide, so it carries no space prefix, exactly like `/spaces`.
  */
 export function App() {
   const [unauthorized, setUnauthorized] = useState(!hasToken() || isUnauthorized());
@@ -49,10 +54,14 @@ export function App() {
       <Layout>
         <Router>
           <Route path="/" component={SpaceBootstrap} />
+          <Route path="/spaces" component={SpacesPage} />
+          <Route path="/workflows" component={WorkflowsPage} />
           <Route path="/p/:projectId/board" component={BoardPage} />
           <Route path="/s/:storeId/board" component={BoardPage} />
           <Route path="/p/:projectId/config" component={ConfigPage} />
           <Route path="/s/:storeId/config" component={ConfigPage} />
+          <Route path="/p/:projectId/pipelines" component={PipelinesPage} />
+          <Route path="/s/:storeId/pipelines" component={PipelinesPage} />
           <Route path="/p/:projectId/archive" component={ArchivePage} />
           <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />

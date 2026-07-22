@@ -43,6 +43,7 @@ import { classifyOpenSpecDir, readProjectConfig, storePointerProblem } from './p
 import { touchProjectRegistry } from './project-home.js';
 import { findProjectRegistryEntry } from './project-registry.js';
 import { listRegisteredStores } from './store/registry.js';
+import { isRegisteredStoreRoot } from './effective-config.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 
 export type OpenSpecRootSource = 'store' | 'declared' | 'nearest' | 'implicit';
@@ -77,7 +78,12 @@ export interface ResolvedOpenSpecRoot {
 
 export type RootSelectionNotice =
   | {
-    kind: 'ignored-store-pointer';
+    kind: 'inheriting-store-config';
+    filePath: string;
+    storeId: string;
+  }
+  | {
+    kind: 'inactive-store-pointer';
     filePath: string;
     storeId: string;
   }
@@ -91,9 +97,16 @@ export type RootSelectionNotice =
 export type RootSelectionReporter = (notice: RootSelectionNotice) => void;
 
 function defaultRootSelectionReporter(notice: RootSelectionNotice): void {
-  if (notice.kind === 'ignored-store-pointer') {
+  if (notice.kind === 'inheriting-store-config') {
     console.error(
-      `Warning: ${notice.filePath} declares store '${notice.storeId}', but this directory is a real Rasen root; the declaration is ignored.`
+      `${notice.filePath} declares store '${notice.storeId}'; planning stays local and configuration inherits from that store.`
+    );
+    return;
+  }
+
+  if (notice.kind === 'inactive-store-pointer') {
+    console.error(
+      `Warning: ${notice.filePath} declares store '${notice.storeId}', but no such store is registered; the declaration currently has no effect. Register it with rasen store register <path> --id ${notice.storeId}.`
     );
     return;
   }
@@ -429,12 +442,32 @@ async function resolveNearestOrDeclaredRoot(
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(nearestRoot);
 
   if (hasPlanningShape) {
+    // A well-formed `store:` pointer beside local planning declares
+    // configuration inheritance (store-config-inheritance): planning stays
+    // local (this root still wins), but the notice reports whether the named
+    // store is registered — inheriting when it is, inactive when it is not.
+    // The notice must not claim inheritance that will not happen, so it is
+    // gated on the SAME facts resolveConfigStoreLayer uses:
+    //  - the root is itself a registered store -> no-transitivity (rule 3), a
+    //    store root never inherits, so the pointer is inert; stay silent
+    //    (matching the resolver's null result — the spec is silent on the
+    //    store-pointing-at-a-store case) rather than claiming inheritance.
+    //  - otherwise: named store registered -> inheriting; unregistered ->
+    //    inactive-pointer warning.
+    // A malformed pointer stays silent (value undefined in that branch).
     if (pointer.value !== undefined && pointer.filePath !== null) {
-      reportRootSelectionNotice(reporter, {
-        kind: 'ignored-store-pointer',
-        filePath: pointer.filePath,
-        storeId: pointer.value,
-      });
+      const pathOptions = globalDataDir ? { globalDataDir } : {};
+      const stores = await listRegisteredStores(pathOptions);
+      if (!isRegisteredStoreRoot(nearestRoot, stores)) {
+        const registered = stores.some(
+          (candidate) => candidate.type === 'store' && candidate.id === pointer.value
+        );
+        reportRootSelectionNotice(reporter, {
+          kind: registered ? 'inheriting-store-config' : 'inactive-store-pointer',
+          filePath: pointer.filePath,
+          storeId: pointer.value,
+        });
+      }
     }
     return makeRoot(nearestRoot, 'nearest');
   }

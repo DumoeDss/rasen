@@ -142,6 +142,32 @@ export interface GlobalConfig {
       shipper?: string;
     };
   };
+  /**
+   * UI-managed preferences. `pinnedSpaces` is the user's pinned planning
+   * spaces as `<type>:<id>` selectors, written from the web Spaces page (or
+   * `rasen config set`) — surviving a browser change and visible to the CLI.
+   */
+  ui?: {
+    pinnedSpaces?: string[];
+  };
+  /**
+   * Per-pipeline configuration overrides, keyed by pipeline name. The inner
+   * records mirror the `pipelines.<name>.{gates,models,handoff}.<stage>` and
+   * `pipelines.<name>.runtimes.<role>` config-key families (an unset instance
+   * is absent, never defaulted). `gates`/`models`/`handoff` are keyed by stage;
+   * `runtimes` is keyed by role. This `pipelines` block shares nothing with the
+   * `rasen/pipelines/` directory namespace — it is config data keyed by pipeline
+   * name, not stored pipeline definitions.
+   */
+  pipelines?: Record<
+    string,
+    {
+      gates?: Record<string, 'on' | 'off'>;
+      models?: Record<string, string>;
+      handoff?: Record<string, ThresholdValue>;
+      runtimes?: Record<string, 'claude' | 'codex'>;
+    }
+  >;
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {

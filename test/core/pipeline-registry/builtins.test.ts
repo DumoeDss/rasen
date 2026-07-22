@@ -72,10 +72,8 @@ describe('pipeline-registry/built-ins', () => {
     });
   }
 
-  // autopilot-gate-policy backward-compat regression: widening StageSchema.gate
-  // to accept 'vet' must not change the existing boolean gate stages of the
-  // three non-goal-loop built-ins (unaffected by this change — only the
-  // goal-loop define-goal stages flip to 'vet').
+  // autopilot-gate-policy: the stage gate is a plain boolean; the existing
+  // boolean gate stages of the three non-goal-loop built-ins are unchanged.
   describe('backward-compat: existing gate: true stages are unchanged', () => {
     it('small-feature: propose/apply/ship remain gate: true', () => {
       const pipeline = loadPipelineByName('small-feature');
@@ -230,18 +228,29 @@ describe('pipeline-registry/built-ins', () => {
     });
   });
 
-  // autopilot-gate-policy: define-goal is marked gate: 'vet' (never
-  // auto-approved by --no-gate) because it is where the human vets the
-  // LEAD-generated arbitrary-shell measure command before any round runs.
-  // ship stays gate: true (an ordinary, skippable gate).
-  describe('goal-loop define-goal gate is vet (autopilot-gate-policy)', () => {
+  // autopilot-gate-policy: define-goal is an ordinary gate: true (the vet type
+  // is retired). It pauses by default, where the human confirms the
+  // LEAD-generated arbitrary-shell measure command before any round runs; under
+  // an off base it can be auto-approved unless a per-stage instance restores the
+  // pause. No built-in stage declares a 'vet' gate. ship stays gate: true.
+  describe('goal-loop define-goal gate is true (autopilot-gate-policy)', () => {
     for (const name of GOAL_LOOP_NAMES) {
-      it(`${name}: define-goal is gate: 'vet'`, () => {
+      it(`${name}: define-goal is gate: true`, () => {
         const pipeline = loadPipelineByName(name);
         const defineGoal = pipeline.stages.find((s) => s.id === 'define-goal');
-        expect(defineGoal?.gate).toBe('vet');
+        expect(defineGoal?.gate).toBe(true);
       });
     }
+
+    it('no built-in stage declares a vet gate', () => {
+      for (const name of listPipelines()) {
+        const pipeline = loadPipelineByName(name);
+        for (const stage of pipeline.stages) {
+          expect(stage.gate).not.toBe('vet');
+          expect(typeof stage.gate).toBe('boolean');
+        }
+      }
+    });
 
     it("goal-loop-measure/evaluate: ship stays gate: true (skippable)", () => {
       for (const name of ['goal-loop-measure', 'goal-loop-evaluate'] as const) {

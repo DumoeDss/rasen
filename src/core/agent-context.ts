@@ -23,7 +23,7 @@ import {
   CODEX_CLI_VERSION_PREMISE,
 } from './codex/index.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
-import { resolveHandoffThresholdLayers } from './effective-config.js';
+import { resolveConfigStoreLayer, resolveHandoffThresholdLayers } from './effective-config.js';
 import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry/types.js';
 import { resolveModelPreset } from './model-presets.js';
 
@@ -462,7 +462,7 @@ export function resolveTranscriptPath(options: ProbeOptions, runtime?: Transcrip
   throw new Error('Specify a transcript to probe: pass --transcript <path> or --latest.');
 }
 
-export type HandoffThresholdSource = 'project' | 'global' | 'default';
+export type HandoffThresholdSource = 'project' | 'store' | 'global' | 'default';
 
 export interface HandoffThresholdReport {
   threshold: ThresholdValue;
@@ -479,31 +479,38 @@ export interface HandoffThresholdReport {
 /**
  * Resolves the configured context-handoff threshold for `rasen agent
  * context`: project config `handoff.threshold` (when `cwd` resolves inside a
- * Rasen project) else global config `handoff.threshold` else the built-in
- * default (0.5), and reports whether the probe has crossed it, in either
- * dual-form (D1/D2). Role-agnostic by design — a transcript probe has no
- * stage identity, so pipeline/stage/role overrides (which apply only to
+ * Rasen project) else the inherited store config `handoff.threshold` (when the
+ * project's configuration inherits from a store — see
+ * `store-config-inheritance`) else global config `handoff.threshold` else the
+ * built-in default (0.5), and reports whether the probe has crossed it, in
+ * either dual-form (D1/D2). Role-agnostic by design — a transcript probe has
+ * no stage identity, so pipeline/stage/role overrides (which apply only to
  * `resolveStageHandoffConfig`) do not apply here, and neither does the
  * model-preset layer (that is a stage/role-scoped suggestion, not a bare
  * probe's business). Shares `resolveHandoffThresholdLayers()`
  * (src/core/effective-config.ts) with the pipeline resolver so the two
- * consumers cannot drift on what "the configured threshold" means. Remains a
- * probe: callers must not treat `shouldHandoff` as a reason to change the
- * exit code.
+ * consumers cannot drift on what "the configured threshold" means. Async
+ * because resolving the store layer reads the store registry
+ * (`resolveConfigStoreLayer`). Remains a probe: callers must not treat
+ * `shouldHandoff` as a reason to change the exit code.
  */
-export function resolveHandoffThresholdReport(
+export async function resolveHandoffThresholdReport(
   pct: number,
   remainingTokens: number,
   cwd: string = process.cwd()
-): HandoffThresholdReport {
+): Promise<HandoffThresholdReport> {
   const projectRoot = findRepoPlanningRootSync(cwd);
-  const layers = resolveHandoffThresholdLayers(projectRoot);
+  const storeLayer = await resolveConfigStoreLayer(projectRoot);
+  const layers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
 
   let threshold: ThresholdValue;
   let thresholdSource: HandoffThresholdSource;
   if (layers.projectThreshold !== undefined) {
     threshold = layers.projectThreshold;
     thresholdSource = 'project';
+  } else if (layers.storeThreshold !== undefined) {
+    threshold = layers.storeThreshold;
+    thresholdSource = 'store';
   } else if (layers.globalThreshold !== undefined) {
     threshold = layers.globalThreshold;
     thresholdSource = 'global';
