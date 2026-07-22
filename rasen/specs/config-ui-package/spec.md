@@ -3,9 +3,7 @@
 ## Purpose
 
 Deliver the Rasen visual configuration editor as a separately-installable, optional web UI package. The package is a pure static-asset front end that reads and writes exclusively through the config HTTP API, adds nothing the CLI config commands and API don't already expose, and stays independent of the root package. It provides a minimal platform shell (routing, layout, project switcher, typed API client) whose only module today is the configuration page, leaving room for future modules.
-
 ## Requirements
-
 ### Requirement: Installing the UI package unlocks a visual config editor
 The web UI SHALL be delivered as a separately-installable package that is optional forever: installing it beside the CLI makes `rasen config ui` serve a visual configuration editor, and NOT installing it takes nothing away — every configuration capability the UI exposes SHALL remain available through the CLI config commands and the config HTTP API. The UI SHALL contain no configuration logic of its own: it never reads or writes configuration files, and every read and write flows through the config API.
 
@@ -62,23 +60,6 @@ On load, the app SHALL take the session token from the URL fragment, keep it onl
 #### Scenario: Stale tab after server restart
 - **WHEN** a previously-opened tab talks to a newly-restarted server (its token is no longer valid)
 - **THEN** the app shows a notice instructing the user to re-launch `rasen ui`
-
-### Requirement: Platform shell scoped to routing, layout, and API client
-The app SHALL provide a platform shell — client-side routing, an application layout with navigation and a project switcher, and a typed API client mirroring the served APIs' wire shapes — whose navigation offers the platform's views: the board (the platform home) and the configuration page. The shell SHALL NOT pre-build task-submission or session-supervision modules or their state management; future modules extend the shell.
-
-#### Scenario: Navigation offers the platform views
-- **WHEN** the user explores the app's navigation
-- **THEN** it offers the board and the configuration page, with the active view indicated
-- **AND** no task-submission or session-supervision module is offered
-
-#### Scenario: Project switcher
-- **WHEN** the user opens the project switcher
-- **THEN** it lists the machine's registered projects from the API and defaults to the project the server was launched from
-- **AND** selecting a project reloads the configuration view for that project
-
-#### Scenario: Launched outside a project
-- **WHEN** the server was launched outside any Rasen project and no project is selected
-- **THEN** the app shows global configuration, and project-scope editing is disabled with an explanation until a project is selected
 
 ### Requirement: Configuration page renders the effective config with source transparency
 The configuration page SHALL render every configuration entry the API lists, grouped by the registry's group metadata with each key's description visible. Each entry SHALL show its effective value, an annotation of where that value comes from (default, global, project, or environment override), and the underlying per-scope values when a narrower scope shadows a wider one. Entries whose on-disk value is invalid SHALL display the API's warning visibly, and the UI SHALL never rewrite or auto-correct on-disk values. Environment-override values SHALL be displayed as read-only precedence, not offered for editing.
@@ -208,3 +189,21 @@ The configuration page SHALL render, within the `Autopilot` group, a read-only g
 #### Scenario: The inventory is read-only
 - **WHEN** the user interacts with the gates inventory
 - **THEN** no gate-editing control is offered and no configuration write is issued from it
+
+### Requirement: Platform shell scoped to space-aware routing, layout, and API client
+The app SHALL provide a platform shell — client-side routing, an application layout with navigation and a dual-namespace space switcher, and a typed API client mirroring the served APIs' wire shapes — whose navigation offers the platform's views within the selected planning space: the board (the space home), an archive view, and the configuration page. The shell SHALL derive the active planning space from the URL (per the management-ui-shell capability) rather than from an in-memory selection store. The space switcher SHALL list registered projects and stores as two type-tagged groups and SHALL always address a real space — the shell SHALL NOT offer a "no space" / global-only shell state. The shell SHALL NOT provide a top-level Sessions page; live runs surface only through the header's running-run summary. Future task and archive modules extend the shell.
+
+#### Scenario: Navigation offers the platform views
+- **WHEN** the user explores the app's navigation within a space
+- **THEN** it offers the board, the archive view, and the configuration page for the current space, with the active view indicated
+- **AND** no top-level Sessions page is offered
+
+#### Scenario: Space switcher lists both namespaces
+- **WHEN** the user opens the space switcher
+- **THEN** it lists the machine's registered projects and stores from the spaces API as two type-tagged groups, with the current route's space selected
+- **AND** selecting a space navigates to that space's route for the current section, re-scoping the view
+
+#### Scenario: The shell always addresses a real space
+- **WHEN** the shell resolves the active space
+- **THEN** it addresses a concrete project or store from the URL, and offers no "no project / global only" shell state; when no space is registered it shows a hint to run `rasen ui` inside a Rasen project
+
