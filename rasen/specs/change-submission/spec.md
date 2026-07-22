@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the management platform's first write path: the CLI-backed subprocess bridge behind `POST /api/v1/changes` — its operation whitelist, subprocess security model (argv, cwd, timeout, concurrency), and error-passthrough contract. The CLI remains the only entry point that ever writes workspace files.
-
 ## Requirements
 ### Requirement: Change submission endpoint creates changes through the CLI only
 The management server SHALL accept `POST /api/v1/changes` with a JSON body `{ name, description }` and fulfil it exclusively by spawning the existing `rasen` CLI as a subprocess (`new change <name> --proposal=<description> --json`), using an argv array with `shell: false`. The server SHALL NOT write workspace files directly and SHALL NOT reimplement any change-creation logic beyond pre-spawn input validation. On subprocess success the server SHALL respond 201 with the created change's id, path, and schema parsed from the CLI's JSON output. The CLI entry SHALL be resolved from the running server's own installation, not from PATH.
@@ -15,13 +14,6 @@ The management server SHALL accept `POST /api/v1/changes` with a JSON body `{ na
 #### Scenario: Submission without a launch project rejected before spawning
 - **WHEN** the server was launched outside any Rasen project and a client sends `POST /api/v1/changes`
 - **THEN** the server responds 409 with error code `no_project` and no subprocess is spawned
-
-### Requirement: Whitelisted operations only, bounded by the slice boundary rule
-The submission bridge SHALL admit only operations from a data-driven whitelist. In this slice the whitelist SHALL contain exactly one operation: create-change. An operation is eligible for the whitelist only if it terminates deterministically in bounded time without LLM or network dependency, leaves no resident process behind, and has its result observable through existing read endpoints. Long-running agent commands (auto runs, goal runs, claudecode sessions) SHALL NOT be admitted by this capability; admitting them requires the session-supervision capability (slice 3) to modify this requirement explicitly.
-
-#### Scenario: Only the create-change operation exists
-- **WHEN** the submission bridge's whitelist is enumerated
-- **THEN** it contains exactly the create-change operation and no operation that spawns an agent session
 
 ### Requirement: Pre-spawn input validation and injection posture
 The server SHALL validate submission input before spawning: the change name MUST satisfy the same kebab-case rule the CLI's change-name validation enforces, and the description MUST be non-empty, length-capped, and free of control characters other than tab (`\t`) and newline (`\n`), which are permitted since the description is natural multi-line proposal text. Invalid input SHALL be rejected with 400 and no subprocess. All values SHALL be passed as discrete argv elements (the description as a single `--proposal=<text>` token) so no client input is ever interpreted by a shell or parsed as an additional CLI option, regardless of embedded newlines.
@@ -74,3 +66,24 @@ When the subprocess exits non-zero, the server SHALL respond 422 with an error e
 #### Scenario: No CORS relaxation on the write path
 - **WHEN** any response from `POST /api/v1/changes` is inspected
 - **THEN** it carries no `Access-Control-Allow-Origin` header
+
+### Requirement: Whitelisted operations, tiered by termination guarantee
+The submission bridge SHALL admit only operations from a data-driven whitelist. The whitelist SHALL be tiered:
+
+- **Bounded CLI tier** — operations that terminate deterministically in bounded time without LLM or network dependency, leave no resident process behind, and have their result observable through existing read endpoints. This tier SHALL contain exactly one operation: create-change, served by `POST /api/v1/changes` with unchanged semantics.
+- **Supervised long-runner tier** — long-running agent operations, admissible only because the session-supervision capability replaces the bounded-termination guarantee with supervision guarantees: registry tracking, an overall duration cap, a no-output watchdog, and reliable process-tree termination. This tier SHALL contain exactly two operations: `auto` (the `/rasen:auto` pipeline) and `goal` (the `/rasen:goal` loop), served exclusively by the sessions endpoints — never by `POST /api/v1/changes`.
+
+Each tier's endpoint SHALL admit only entries of its own tier. Operations in neither tier SHALL NOT be reachable through any write endpoint.
+
+#### Scenario: Whitelist tiers are exact
+- **WHEN** the admission whitelist is enumerated
+- **THEN** the bounded CLI tier contains exactly create-change, the supervised long-runner tier contains exactly auto and goal, and no other operation exists
+
+#### Scenario: Long-runner not launchable through the submission endpoint
+- **WHEN** a client attempts to invoke an auto or goal run via `POST /api/v1/changes`
+- **THEN** the request is rejected without spawning any agent session
+
+#### Scenario: Bounded operation not launchable through the sessions endpoint
+- **WHEN** a client sends `POST /api/v1/sessions` with `kind` set to create-change or any value outside the supervised long-runner tier
+- **THEN** the server responds 400 with a validation error and spawns nothing
+

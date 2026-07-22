@@ -1,6 +1,12 @@
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Whitelisted operations only, bounded by the slice boundary rule
+**Reason**: The single-tier bounded-only whitelist (create-change as the sole admissible operation) is superseded by a two-tier model once the session-supervision capability adds supervised long-runners.
+**Migration**: create-change stays the sole Bounded CLI tier operation served by `POST /api/v1/changes`; `auto` and `goal` are admitted only through the sessions endpoints under supervision guarantees — see the ADDED requirement.
+
+## ADDED Requirements
+
+### Requirement: Whitelisted operations, tiered by termination guarantee
 The submission bridge SHALL admit only operations from a data-driven whitelist. The whitelist SHALL be tiered:
 
 - **Bounded CLI tier** — operations that terminate deterministically in bounded time without LLM or network dependency, leave no resident process behind, and have their result observable through existing read endpoints. This tier SHALL contain exactly one operation: create-change, served by `POST /api/v1/changes` with unchanged semantics.
