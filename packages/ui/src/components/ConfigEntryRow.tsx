@@ -353,7 +353,10 @@ export function ConfigEntryRow({
       }
       return (
         <p class="config-entry__shadowed">
-          Inherited from default: {formatDisplayValue(entry.definition.defaultValue)}
+          Inherited from default:{' '}
+          {entry.definition.defaultValue === undefined
+            ? 'not set'
+            : formatDisplayValue(entry.definition.defaultValue)}
         </p>
       );
     }

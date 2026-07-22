@@ -100,7 +100,11 @@ describe('PipelinesPage', () => {
 
     expect(container.querySelector('[data-testid="pipelines-defaults"]')).not.toBeNull();
     const sections = [...container.querySelectorAll('[data-testid="pipeline-section"]')];
-    expect(sections.map((s) => s.getAttribute('data-pipeline'))).toEqual(['small-feature', 'my-flow']);
+    expect(sections.map((s) => s.getAttribute('data-pipeline'))).toEqual([
+      'small-feature',
+      'my-flow',
+      'forked-flow',
+    ]);
 
     // Provenance + source-layer badges.
     const builtIn = sections.find((s) => s.getAttribute('data-pipeline') === 'small-feature')!;
@@ -108,15 +112,24 @@ describe('PipelinesPage', () => {
     expect(builtIn.querySelector('[data-testid="pipeline-source-layer"]')!.textContent).toBe('package');
   });
 
-  it('locks delete on built-ins but keeps export; a user section offers both', async () => {
+  it('exposes export/delete only for user-library pipelines; built-in AND project-layer are locked', async () => {
     await mount(container);
-    const builtIn = stageSection(container, 'small-feature');
-    const user = stageSection(container, 'my-flow');
-    // Built-in: delete locked, but export stays available (fork / share is legitimate).
+    const builtIn = stageSection(container, 'small-feature'); // sourceLayer package
+    const user = stageSection(container, 'my-flow'); // sourceLayer user
+    const project = stageSection(container, 'forked-flow'); // sourceLayer project
+
+    // Built-in (package): locked, no export AND no delete — the CLI refuses both.
     expect(builtIn.querySelector('[data-testid="pipeline-lock"]')).not.toBeNull();
+    expect(builtIn.querySelector('[data-testid="pipeline-export"]')).toBeNull();
     expect(builtIn.querySelector('[data-testid="pipeline-delete"]')).toBeNull();
-    expect(builtIn.querySelector('[data-testid="pipeline-export"]')).not.toBeNull();
-    // User: both.
+
+    // Project-layer (provenance 'user' but sourceLayer 'project'): also locked —
+    // `exportPipeline`/`deletePipeline` both refuse `source !== 'user'`.
+    expect(project.querySelector('[data-testid="pipeline-lock"]')).not.toBeNull();
+    expect(project.querySelector('[data-testid="pipeline-export"]')).toBeNull();
+    expect(project.querySelector('[data-testid="pipeline-delete"]')).toBeNull();
+
+    // User-library: both offered.
     expect(user.querySelector('[data-testid="pipeline-export"]')).not.toBeNull();
     expect(user.querySelector('[data-testid="pipeline-delete"]')).not.toBeNull();
   });
