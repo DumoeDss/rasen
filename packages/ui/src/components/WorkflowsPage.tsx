@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
+import { LocalPathPicker } from './LocalPathPicker.js';
 import type {
   WorkflowDetailResponse,
   WorkflowInvalidEntry,
@@ -20,11 +21,12 @@ import type {
  * verbatim. The page manages the library ONLY: no model, handoff, or gate
  * control appears anywhere (Fork 4B rejected; those bind to pipeline stages).
  *
- * Path inputs are absolute-path text fields ("on this machine"): the server
- * guards every path to be absolute. NOTE (LEAD merge point): the ratified
- * design picks these through the shared local-path browser introduced by the
- * spaces-page sibling; when that component lands, swap the `PathField`s here
- * for it — the server contract (absolute paths) is unchanged either way.
+ * Paths are picked through the shared `LocalPathPicker` (the same server-local
+ * browser the create-space flow uses): init picks the parent folder (the draft
+ * lands at parentFolder/<id>, satisfying the CLI's basename===id rule), import
+ * picks a `.rasenpkg` file OR a draft directory, and export picks a destination
+ * folder plus a filename. The browser is server-rooted (home start), so every
+ * pickable path is server-local; a typed absolute path is the escape above home.
  */
 export function WorkflowsPage() {
   const [data, setData] = useState<WorkflowListResponse | null>(null);
@@ -383,39 +385,9 @@ function DialogShell({
   );
 }
 
-/**
- * Absolute-path text field. LEAD merge point: replace with the shared
- * local-path browser (spaces-page sibling) — the server contract (absolute
- * paths only) is identical, so only the input widget changes.
- */
-function PathField({
-  label,
-  value,
-  onInput,
-  disabled,
-  placeholder,
-  testid,
-}: {
-  label: string;
-  value: string;
-  onInput: (v: string) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  testid: string;
-}) {
-  return (
-    <label class="workflow-dialog__field">
-      <span>{label} (absolute path on this machine)</span>
-      <input
-        type="text"
-        data-testid={testid}
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-      />
-    </label>
-  );
+/** Joins a child name onto a directory using the platform separator the picker reports. */
+function joinChild(dir: string, sep: string, name: string): string {
+  return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
 }
 
 function cliMessage(err: unknown, fallback: string): string {
@@ -426,14 +398,19 @@ function cliMessage(err: unknown, fallback: string): string {
 
 function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [id, setId] = useState('');
-  const [output, setOutput] = useState('');
+  // The picked PARENT folder + separator; the draft lands at parent/<id> so the
+  // CLI's basename===id rule holds by construction.
+  const [parentDir, setParentDir] = useState<string | null>(null);
+  const [sep, setSep] = useState('/');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdPath, setCreatedPath] = useState<string | null>(null);
 
+  const output = id && parentDir ? joinChild(parentDir, sep, id) : '';
+
   async function submit(event: Event) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || !id || !parentDir) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -468,16 +445,24 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
               onInput={(e) => setId((e.target as HTMLInputElement).value)}
             />
           </label>
-          <PathField
-            label="Output directory"
-            testid="workflow-init-output"
-            value={output}
-            onInput={setOutput}
+          <span class="workflow-dialog__field-label">Parent folder (the draft is created at parentFolder/&lt;id&gt;)</span>
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            currentLabel="Parent folder"
             disabled={submitting}
+            onDirChange={(p, s) => {
+              setParentDir(p);
+              setSep(s);
+            }}
           />
+          {output && (
+            <p class="workflow-dialog__hint" data-testid="workflow-init-output-preview">
+              Will create: <code class="workflow-detail__mono">{output}</code>
+            </p>
+          )}
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" data-testid="workflow-init-submit" disabled={submitting}>
+            <button type="submit" data-testid="workflow-init-submit" disabled={submitting || !id || !parentDir}>
               {submitting ? 'Creating…' : 'Create draft'}
             </button>
           </div>
@@ -490,18 +475,22 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
 // ── import ───────────────────────────────────────────────────────────────────
 
 function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [path, setPath] = useState('');
+  // The chosen import source: a `.rasenpkg` FILE picked from the listing, or a
+  // draft DIRECTORY (the currently-browsed folder). The local-paths listing
+  // already includes files, so a package is directly selectable.
+  const [source, setSource] = useState<string | null>(null);
+  const [currentDir, setCurrentDir] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ imported: string[]; reused: string[] } | null>(null);
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || !source) return;
     setSubmitting(true);
     setError(null);
     try {
-      const res = (await client.mutateWorkflow({ op: 'import', path })) as { imported: string[]; reused: string[] };
+      const res = (await client.mutateWorkflow({ op: 'import', path: source })) as { imported: string[]; reused: string[] };
       setResult({ imported: res.imported, reused: res.reused });
       onDone();
     } catch (err) {
@@ -520,16 +509,31 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         </div>
       ) : (
         <form class="workflow-dialog__form" onSubmit={submit}>
-          <PathField
-            label="Workflow directory or .rasenpkg"
-            testid="workflow-import-path"
-            value={path}
-            onInput={setPath}
+          <span class="workflow-dialog__field-label">Pick a .rasenpkg file, or browse to a draft folder and use it</span>
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            mode="file-or-dir"
+            currentLabel="In folder"
             disabled={submitting}
+            onDirChange={(p) => setCurrentDir(p)}
+            onFileSelect={(p) => setSource(p)}
           />
+          <div class="workflow-dialog__actions">
+            <button
+              type="button"
+              data-testid="workflow-import-use-dir"
+              disabled={submitting || !currentDir}
+              onClick={() => setSource(currentDir)}
+            >
+              Use this folder (draft directory)
+            </button>
+          </div>
+          <p class="workflow-dialog__hint" data-testid="workflow-import-source">
+            Selected: <code class="workflow-detail__mono">{source ?? 'nothing yet'}</code>
+          </p>
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" data-testid="workflow-import-submit" disabled={submitting}>
+            <button type="submit" data-testid="workflow-import-submit" disabled={submitting || !source}>
               {submitting ? 'Importing…' : 'Import'}
             </button>
           </div>
@@ -608,7 +612,10 @@ function ValidateDialog({ prefill, onClose }: { prefill?: string; onClose: () =>
 // ── export ───────────────────────────────────────────────────────────────────
 
 function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
-  const [dir, setDir] = useState('');
+  // The picked destination FOLDER + separator; the package is written at
+  // destinationFolder/<filename>.
+  const [dir, setDir] = useState<string | null>(null);
+  const [sep, setSep] = useState('/');
   const [filename, setFilename] = useState(`${id}.rasenpkg`);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -617,13 +624,12 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const [refused, setRefused] = useState(false);
 
   function destination(): string {
-    const trimmed = dir.replace(/[/\\]+$/, '');
-    return `${trimmed}/${filename}`;
+    return dir ? joinChild(dir, sep, filename) : '';
   }
 
   async function run(force: boolean, event?: Event) {
     event?.preventDefault();
-    if (submitting) return;
+    if (submitting || !dir || !filename) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -653,12 +659,15 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
       ) : (
         <form class="workflow-dialog__form" onSubmit={(e) => run(false, e)}>
-          <PathField
-            label="Destination directory"
-            testid="workflow-export-dir"
-            value={dir}
-            onInput={setDir}
+          <span class="workflow-dialog__field-label">Destination folder</span>
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            currentLabel="Destination folder"
             disabled={submitting}
+            onDirChange={(p, s) => {
+              setDir(p);
+              setSep(s);
+            }}
           />
           <label class="workflow-dialog__field">
             <span>Filename</span>
@@ -670,9 +679,14 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
               onInput={(e) => setFilename((e.target as HTMLInputElement).value)}
             />
           </label>
+          {dir && filename && (
+            <p class="workflow-dialog__hint" data-testid="workflow-export-destination">
+              Export to: <code class="workflow-detail__mono">{destination()}</code>
+            </p>
+          )}
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" data-testid="workflow-export-submit" disabled={submitting}>
+            <button type="submit" data-testid="workflow-export-submit" disabled={submitting || !dir || !filename}>
               {submitting ? 'Exporting…' : 'Export'}
             </button>
             {refused && (

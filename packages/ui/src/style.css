@@ -564,25 +564,31 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 }
 .create-space-dialog__kind-btn--selected { color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .create-space-dialog__kind-btn--selected:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
-.create-space-dialog__picker { display: flex; flex-direction: column; gap: var(--space-2); }
-.create-space-dialog__pathbar { display: flex; gap: var(--space-2); }
-.create-space-dialog__path-input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); }
-.create-space-dialog__current { font-size: var(--text-xs); color: var(--muted); margin: 0; overflow-wrap: anywhere; }
-.create-space-dialog__current code { font-family: var(--font-mono); }
-.create-space-dialog__entries {
+/* Shared local-path browser (LocalPathPicker): create-space keeps its own
+   class prefix for DOM/test stability; the workflow dialogs use the neutral
+   `local-path-picker` prefix. Both share these rules. */
+.create-space-dialog__picker, .local-path-picker__picker { display: flex; flex-direction: column; gap: var(--space-2); }
+.create-space-dialog__pathbar, .local-path-picker__pathbar { display: flex; gap: var(--space-2); }
+.create-space-dialog__path-input, .local-path-picker__path-input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); }
+.create-space-dialog__current, .local-path-picker__current { font-size: var(--text-xs); color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+.create-space-dialog__current code, .local-path-picker__current code { font-family: var(--font-mono); }
+.create-space-dialog__browse-error, .local-path-picker__browse-error { color: var(--danger-fg); font-size: var(--text-xs); margin: 0; overflow-wrap: anywhere; }
+.create-space-dialog__entries, .local-path-picker__entries {
   list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
 }
-.create-space-dialog__entry {
+.create-space-dialog__entry, .local-path-picker__entry {
   width: 100%; display: flex; align-items: center; gap: var(--space-2); justify-content: flex-start;
   background: none; box-shadow: none; border-radius: 0; padding: var(--space-2) var(--space-3); color: var(--fg); text-align: left;
 }
-.create-space-dialog__entry:hover:not(:disabled) { background: var(--surface-muted); box-shadow: none; }
-.create-space-dialog__entry-name { overflow-wrap: anywhere; min-width: 0; }
-.create-space-dialog__git-badge {
+.create-space-dialog__entry:hover:not(:disabled), .local-path-picker__entry:hover:not(:disabled) { background: var(--surface-muted); box-shadow: none; }
+.local-path-picker__entry[data-file="true"] { font-family: var(--font-mono); font-size: var(--text-xs); }
+.create-space-dialog__entry-name, .local-path-picker__entry-name { overflow-wrap: anywhere; min-width: 0; }
+.create-space-dialog__git-badge, .local-path-picker__git-badge {
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted);
   background: var(--surface-muted); border-radius: var(--radius-pill); padding: 1px var(--space-2);
 }
+.workflow-dialog__field-label { font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
 
 /* ═══ 16b. Spaces page ══════════════════════════════════════════════════ */
 .spaces-page__toolbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-5); }

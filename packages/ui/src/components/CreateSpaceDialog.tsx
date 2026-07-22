@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { CreateSpaceResponse, LocalPathsResponse } from '../api/types.js';
+import type { CreateSpaceResponse } from '../api/types.js';
 import { spaceHref, type Space } from '../store/use-space.js';
+import { LocalPathPicker } from './LocalPathPicker.js';
 
 /**
  * Create-space flow (spaces-ui design D3/D4). A kind toggle (project | store),
- * a directory picker driven entirely by the local-path browsing endpoint
- * (starting at home, with parent navigation, git repositories visibly marked,
- * and a free path input as the sole escape above home), an optional store id,
- * and submit → the space-creation endpoint. On success the UI routes straight
- * into the new space's board (SPA nav — a hard navigation would drop the
- * token). On failure the CLI's own error message is shown verbatim.
+ * a directory picker driven entirely by the shared local-path browser
+ * (`LocalPathPicker` — starting at home, with parent navigation, git
+ * repositories visibly marked, and a free path input as the sole escape above
+ * home), an optional store id, and submit → the space-creation endpoint. On
+ * success the UI routes straight into the new space's board (SPA nav — a hard
+ * navigation would drop the token). On failure the CLI's own error message is
+ * shown verbatim.
  *
  * The browser never touches the filesystem itself: every directory fact on
  * screen comes from `listLocalPaths`, and the creation is performed entirely by
@@ -23,47 +25,21 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
 
   const [kind, setKind] = useState<'project' | 'store'>('project');
   const [storeId, setStoreId] = useState('');
-  const [listing, setListing] = useState<LocalPathsResponse | null>(null);
-  const [pathInput, setPathInput] = useState('');
-  const [browseError, setBrowseError] = useState<string | null>(null);
+  // The picker's current directory — the space's target root. Null until the
+  // home listing loads (submit stays disabled until then, exactly as before).
+  const [target, setTarget] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Load a directory listing. An absolute `path` enumerates it; omitting it
-  // starts at home. A browse error (bad path, permissions) is shown inline and
-  // leaves the previous listing in place.
-  function browse(path?: string) {
-    setBrowseError(null);
-    client
-      .listLocalPaths(path)
-      .then((res) => {
-        setListing(res);
-        setPathInput(res.path);
-      })
-      .catch((err) => {
-        setBrowseError(err instanceof ApiError ? err.message : 'Failed to read that directory.');
-      });
-  }
-
-  // Start at home on mount.
-  useEffect(() => {
-    browse();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function joinChild(dir: string, sep: string, name: string): string {
-    return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
-  }
-
   async function handleSubmit(event: Event) {
     event.preventDefault();
-    if (submitting || !listing) return;
+    if (submitting || !target) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
       const result: CreateSpaceResponse = await client.createSpace({
         kind,
-        path: listing.path,
+        path: target,
         ...(kind === 'store' && storeId ? { id: storeId } : {}),
       });
       // Route straight into the new space's board (SPA nav).
@@ -81,8 +57,6 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
       setSubmitError(err instanceof ApiError ? err.message : 'Failed to create the space.');
     }
   }
-
-  const dirEntries = listing?.entries.filter((e) => e.isDir) ?? [];
 
   return (
     <div class="create-space-dialog__overlay">
@@ -110,66 +84,11 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
           </button>
         </div>
 
-        <div class="create-space-dialog__picker" data-testid="path-picker">
-          <div class="create-space-dialog__pathbar">
-            <input
-              type="text"
-              class="create-space-dialog__path-input"
-              aria-label="Directory path"
-              placeholder="Type an absolute path…"
-              value={pathInput}
-              disabled={submitting}
-              onInput={(e) => setPathInput((e.target as HTMLInputElement).value)}
-            />
-            <button type="button" disabled={submitting} onClick={() => browse(pathInput)}>
-              Go
-            </button>
-            <button
-              type="button"
-              disabled={submitting || listing?.home || !listing?.parent}
-              onClick={() => {
-                // Never ascend from the home start point: home is the
-                // confinement floor, and the sole escape above it is a typed
-                // absolute path (belt-and-braces with the server nulling
-                // `parent` at home). Elsewhere, "Up" follows the parent.
-                if (!listing?.home && listing?.parent) browse(listing.parent);
-              }}
-            >
-              Up
-            </button>
-          </div>
-
-          {browseError && (
-            <p class="create-space-dialog__browse-error" role="alert">
-              {browseError}
-            </p>
-          )}
-
-          <p class="create-space-dialog__current" data-testid="current-path">
-            Target: <code>{listing?.path ?? '…'}</code>
-          </p>
-
-          <ul class="create-space-dialog__entries" data-testid="dir-entries">
-            {dirEntries.map((entry) => (
-              <li key={entry.name}>
-                <button
-                  type="button"
-                  class="create-space-dialog__entry"
-                  data-git={entry.isGitRepo ? 'true' : undefined}
-                  disabled={submitting}
-                  onClick={() => listing && browse(joinChild(listing.path, listing.separator, entry.name))}
-                >
-                  <span class="create-space-dialog__entry-name">{entry.name}</span>
-                  {entry.isGitRepo && (
-                    <span class="create-space-dialog__git-badge" data-testid="git-badge">
-                      git
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <LocalPathPicker
+          classPrefix="create-space-dialog"
+          disabled={submitting}
+          onDirChange={(path) => setTarget(path)}
+        />
 
         {kind === 'store' && (
           <label class="create-space-dialog__field">
@@ -195,7 +114,7 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
           <button type="button" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" disabled={submitting || !listing}>
+          <button type="submit" disabled={submitting || !target}>
             {submitting ? 'Creating…' : `Create ${kind}`}
           </button>
         </div>
