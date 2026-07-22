@@ -52,11 +52,24 @@ Each registered project SHALL have a home directory `<global data dir>/projects/
 - **WHEN** the resolver is called in probe (non-ensuring) mode for a project with no identity
 - **THEN** it reports that no home exists and creates neither config changes, registry entries, nor directories
 
-### Requirement: Clones fork, worktrees share, moves rebind
+### Requirement: Clones fork, worktrees unify, moves rebind
 
-When a project path is registered whose `projectId` is already registered at another path, the system SHALL distinguish three cases: (1) the old path no longer exists — the entry is rebound to the new path keeping the same home (a moved repo keeps its state); (2) the new path is a git worktree of the same repository — the new path shares the existing home (worktrees share ephemera); (3) otherwise — the new path is an independent clone and receives a distinct home named with the first free integer suffix (`<name>-<shortHash>-2`, `-3`, …). When the relationship cannot be determined, the system SHALL prefer forking over sharing.
+Registration SHALL key a project's registry entry at its canonical root: for a path inside a git repository, the MAIN checkout's working-tree directory (the parent of `git rev-parse --git-common-dir`); for any other path, the path itself. Running Rasen in a linked worktree SHALL register or refresh the MAIN checkout's entry and SHALL NOT create a separate entry keyed at the worktree path. When the main checkout cannot be resolved or no longer exists on disk (deleted, bare repository, or git unavailable), the registering path itself SHALL be registered so work in a surviving worktree is never left without a home.
 
-When a NEW home directory is created (cases with no existing home to reuse), its human-readable `<name>` prefix SHALL derive from the MAIN repository — the parent directory of `git rev-parse --git-common-dir` — rather than from the registering path's basename, so that a worktree (e.g. `.claude/worktrees/<branch>`) registering before the main repo does not name the shared home after the worktree. When the registering path is not inside a git working tree, or the main-repo directory cannot be resolved, the `<name>` prefix SHALL fall back to the registering path's basename. The `<shortHash>` (derived from `projectId`) is unchanged, so identity and collision-freedom are unaffected; only the readable prefix is corrected.
+When a registered path with the same `projectId` exists elsewhere, the system SHALL still distinguish: (1) the old path no longer exists — the entry is rebound to the new canonical root keeping the same home (a moved repo keeps its state); (2) the new path is a git worktree of the same repository as a live same-id entry (reachable only through the fallback, e.g. the main checkout is gone) — the existing home is shared; (3) otherwise — an independent clone receives a distinct home named with the first free integer suffix. When the relationship cannot be determined, the system SHALL prefer forking over sharing. A newly created home's readable `<name>` prefix SHALL derive from the main repository directory when resolvable, else from the registering path's basename; the `<shortHash>` SHALL always derive from the `projectId`.
+
+When a registration write places an entry, it SHALL prune other entries carrying the same `projectId` whose paths are live linked worktrees of the placed entry's repository (guaranteed duplicates sharing the same home), so active projects converge to one entry without waiting for garbage collection.
+
+#### Scenario: Worktree registration refreshes the main entry
+
+- **WHEN** a Rasen command registers from a linked worktree of a repository whose main checkout is at `E:\Work\my-app`
+- **THEN** the registry entry is keyed at `E:\Work\my-app` with its display name derived from `my-app`
+- **AND** no entry keyed at the worktree path is created
+
+#### Scenario: Main checkout gone falls back to the worktree
+
+- **WHEN** a Rasen command registers from a linked worktree whose main checkout directory has been deleted
+- **THEN** the worktree path itself is registered so the work remains addressable
 
 #### Scenario: Moved repo keeps its home
 
@@ -68,20 +81,14 @@ When a NEW home directory is created (cases with no existing home to reuse), its
 - **WHEN** a second clone of a project (same `projectId`, both paths exist, not worktrees of one repo) is registered
 - **THEN** it receives its own home directory with an integer suffix while the first clone's home is untouched
 
-#### Scenario: Worktrees resolve to one home
+#### Scenario: Registration prunes sibling duplicates
 
-- **WHEN** a git worktree of an already-registered project is registered
-- **THEN** both paths map to the same home directory
-
-#### Scenario: Worktree-first registration names the home after the main repo
-
-- **WHEN** a git worktree (e.g. `.claude/worktrees/feature`) is the FIRST path to register a project whose main repository directory is `my-app`
-- **THEN** the newly created shared home's readable prefix SHALL derive from `my-app` (the main repo), not from the worktree directory name
-- **AND** the `<shortHash>` SHALL still derive from the `projectId`
+- **WHEN** a registration write places the main checkout's entry while a legacy entry keyed at one of its live linked worktrees (same `projectId`) still exists
+- **THEN** the legacy worktree entry is removed in the same write and the shared home directory is untouched
 
 ### Requirement: Registry self-healing
 
-On CLI runs that resolve a project root carrying a `projectId`, the system SHALL keep the registry consistent with reality — refreshing the entry when the path binding, name, or mode changed, and periodically updating `lastSeen` — without user action. Self-healing SHALL be best-effort: registry problems SHALL never fail or visibly slow the user's command. Self-healing SHALL NEVER rename, re-derive, or re-create an existing home directory: a registry entry's `home` is fixed once assigned, and refreshing an entry (including a path-exact update or a worktree share) SHALL reuse the existing `home` unchanged.
+On CLI runs that resolve a project root carrying a `projectId`, the system SHALL keep the registry consistent with reality — refreshing the entry when the path binding, name, or mode changed, and periodically updating `lastSeen` — without user action. Self-healing SHALL target the project's canonical root: a run inside a linked worktree refreshes the MAIN checkout's entry (deriving the entry's name and mode from the main checkout, never from the worktree's directory basename or branch state), falling back to the worktree path only when the main checkout cannot be resolved. Self-healing SHALL be best-effort: registry problems SHALL never fail or visibly slow the user's command. Self-healing SHALL NEVER rename, re-derive, or re-create an existing home directory: a registry entry's `home` is fixed once assigned, and refreshing an entry (including a path-exact update or a worktree share) SHALL reuse the existing `home` unchanged.
 
 #### Scenario: Self-heal survives a broken registry
 
@@ -99,9 +106,15 @@ On CLI runs that resolve a project root carrying a `projectId`, the system SHALL
 - **THEN** the entry's `home` directory name SHALL remain unchanged
 - **AND** no home directory SHALL be renamed or re-created
 
+#### Scenario: Self-heal from a worktree targets the main entry
+
+- **WHEN** a command runs inside a linked worktree of a registered project whose main checkout still exists
+- **THEN** self-healing refreshes the entry keyed at the main checkout
+- **AND** no entry keyed at the worktree path is created or refreshed
+
 ### Requirement: Doctor reports and garbage-collects registry rot
 
-`rasen doctor` SHALL report the current project's registry entry (or that it is unregistered) and list dangling entries — registered paths that no longer exist. Doctor SHALL remain read-only by default; `rasen doctor --gc` SHALL remove dangling entries and delete home directories that no remaining entry references. A home directory still referenced by any live entry SHALL never be deleted.
+`rasen doctor` SHALL report the current project's registry entry (or that it is unregistered) and list dangling entries — registered paths that no longer exist. Doctor SHALL also report worktree-duplicate entries: entries whose path is a linked worktree of a repository whose main checkout is itself registered with the same `projectId`. Doctor SHALL remain read-only by default; `rasen doctor --gc` SHALL remove dangling entries, collapse worktree-duplicate entries onto the main checkout's entry (deleting the duplicate when the main checkout is registered, rebinding it to the main checkout when that root exists on disk but is not yet registered), and delete home directories that no remaining entry references. A home directory still referenced by any live entry SHALL never be deleted.
 
 #### Scenario: Dangling entry reported
 
@@ -112,6 +125,17 @@ On CLI runs that resolve a project root carrying a `projectId`, the system SHALL
 
 - **WHEN** `rasen doctor --gc` runs while a worktree entry still references the same home as a dangling entry
 - **THEN** the dangling registry entry is removed but the shared home directory is kept
+
+#### Scenario: Worktree-duplicate entries reported
+
+- **WHEN** `rasen doctor` runs on a machine whose registry holds entries for both a main checkout and its linked worktrees under one `projectId`
+- **THEN** the report lists the worktree-keyed entries as duplicates and suggests `rasen doctor --gc`
+- **AND** no registry entry is modified
+
+#### Scenario: GC collapses worktree duplicates
+
+- **WHEN** `rasen doctor --gc` runs while entries exist for a registered main checkout and two of its live linked worktrees (same `projectId`, shared home)
+- **THEN** the worktree-keyed entries are removed, the main checkout's entry remains, and the shared home directory is kept
 
 ### Requirement: Doctor surfaces pending legacy ephemera with the migration hint
 
