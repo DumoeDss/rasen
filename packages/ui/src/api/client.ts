@@ -24,6 +24,11 @@ import type {
   SubmitChangeRequest,
   SubmitChangeResponse,
   TaskDetailResponse,
+  WorkflowDetailResponse,
+  WorkflowListResponse,
+  WorkflowMutationRequest,
+  WorkflowMutationResponse,
+  WorkflowValidationResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -232,5 +237,40 @@ export function killSession(id: string): Promise<SessionActionResponse> {
   return request<SessionActionResponse>(`/api/v1/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     json: true,
+  });
+}
+
+// ---- Workflow library (workflow-http-api design D3/D4) ----
+// The workflow endpoints carry NO space selector — the library is user-wide
+// and its endpoints have no space addressing (design D2). All four route
+// through the single `request()` seam like every other call.
+
+/** The user-wide workflow library (mirrors `workflow list --json`). */
+export function listWorkflows(): Promise<WorkflowListResponse> {
+  return request<WorkflowListResponse>('/api/v1/workflows');
+}
+
+/** One workflow's full definition and usage (mirrors `workflow show --json`); id used verbatim, only percent-encoded. */
+export function getWorkflow(id: string): Promise<WorkflowDetailResponse> {
+  return request<WorkflowDetailResponse>(`/api/v1/workflows/${encodeURIComponent(id)}`);
+}
+
+/** Validate an installed id or an absolute draft/package path (mirrors `workflow validate --json`). */
+export function validateWorkflow(target: string): Promise<WorkflowValidationResponse> {
+  return request<WorkflowValidationResponse>(
+    `/api/v1/workflow-validation?target=${encodeURIComponent(target)}`
+  );
+}
+
+/**
+ * Run a library mutation through the CLI-backed bridge (import / init /
+ * export / delete). On failure the thrown `ApiError.message` is the CLI's own
+ * error text, verbatim.
+ */
+export function mutateWorkflow(body: WorkflowMutationRequest): Promise<WorkflowMutationResponse> {
+  return request<WorkflowMutationResponse>('/api/v1/workflows', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
   });
 }

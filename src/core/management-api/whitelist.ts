@@ -1,11 +1,13 @@
 /**
  * The admission whitelist, as data (design D7). Two tiers: `bounded-cli`
- * (deterministic, bounded, resident-process-free — `POST /api/v1/changes`)
- * and `supervised-long-runner` (admissible only because session-supervision
- * replaces the bounded-termination guarantee with registry tracking, dual
- * timeouts, and reliable tree-kill — the sessions endpoints). Each
- * endpoint's handler admits only entries of its own tier; adding a future
- * operation is a table row, not new plumbing (proposal.md, "Capabilities").
+ * (deterministic, bounded, resident-process-free — change submission via
+ * `POST /api/v1/changes` and the four workflow-library mutations via
+ * `POST /api/v1/workflows`) and `supervised-long-runner` (admissible only
+ * because session-supervision replaces the bounded-termination guarantee with
+ * registry tracking, dual timeouts, and reliable tree-kill — the sessions
+ * endpoints). Each endpoint's handler admits only entries of its own
+ * operation set; adding a future operation is a table row, not new plumbing
+ * (proposal.md, "Capabilities").
  */
 
 export const OVERALL_TIMEOUT_DEFAULT_MS = 4 * 60 * 60 * 1000; // 4h (design D3)
@@ -30,13 +32,28 @@ export interface SupervisedLongRunnerEntry {
 export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
 
 /**
- * The whitelist table. Bounded CLI tier SHALL contain exactly one entry
- * (`create-change`); supervised long-runner tier SHALL contain exactly two
- * (`auto`, `goal`) — both requirement-level exactness rules from
- * change-submission's spec.
+ * The whitelist table, enumerated by tier (change-submission spec's
+ * requirement-level exactness rules — described by tier here rather than a
+ * hardcoded count that drifts as endpoints are added):
+ *
+ * - `bounded-cli`: change submission (`create-change`) and the four
+ *   workflow-library mutations (`import-workflow`, `init-workflow`,
+ *   `export-workflow`, `delete-workflow`). Each is deterministic, bounded,
+ *   and leaves no resident process. Space-creation adds three more bounded
+ *   ops (`create-project-space`, `register-store-space`, `setup-store-space`)
+ *   in its own sibling change — reconciled into this table at merge.
+ * - `supervised-long-runner`: exactly `auto` and `goal`.
+ *
+ * Each mutation endpoint admits only entries of its own operation set (the
+ * workflow bridge serves only the four workflow ops, the change bridge only
+ * `create-change`).
  */
 export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze({
   'create-change': { tier: 'bounded-cli', op: 'create-change' },
+  'import-workflow': { tier: 'bounded-cli', op: 'import-workflow' },
+  'init-workflow': { tier: 'bounded-cli', op: 'init-workflow' },
+  'export-workflow': { tier: 'bounded-cli', op: 'export-workflow' },
+  'delete-workflow': { tier: 'bounded-cli', op: 'delete-workflow' },
   auto: {
     tier: 'supervised-long-runner',
     op: 'auto',
