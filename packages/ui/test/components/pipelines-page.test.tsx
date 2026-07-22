@@ -266,7 +266,11 @@ describe('Pipelines nav entry (Layout)', () => {
     expect(nav!.getAttribute('aria-current')).toBe('page');
   });
 
-  it('omits the Pipelines entry when no space is resolved (it is space-scoped)', async () => {
+  it('omits the Pipelines entry only when no space is resolved AND none was ever visited', async () => {
+    // The agnostic-route nav falls back to the most recent space, so the
+    // entry disappears only on a truly fresh session (no route space, no
+    // recency). Clear the recency other tests in this file recorded.
+    localStorage.removeItem('rasen.recentSpaces');
     await mountLayout('/'); // bootstrap: no space
     expect(container.querySelector('[data-testid="nav-pipelines"]')).toBeNull();
   });

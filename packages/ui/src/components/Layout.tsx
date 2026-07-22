@@ -3,7 +3,8 @@ import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
 import { RunningSessionsMenu } from './RunningSessionsMenu.js';
 import { ThemeToggle } from './ThemeToggle.js';
-import { parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
+import { parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
+import { getRecentSpaces } from '../store/recent-spaces.js';
 
 /**
  * App layout (management-ui-shell design D7; config-ui-package spec): header
@@ -11,9 +12,11 @@ import { parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
  * content area. Navigation offers Board · Archive · Config for the current
  * planning space, built from the space prefix in the URL, with active
  * detection relative to that prefix. There is no Sessions entry — live runs
- * surface through the running-run summary. When no space is resolved yet (the
- * `/` bootstrap or the empty state) the space-scoped controls are omitted; the
- * switcher still renders so the user can pick a space.
+ * surface through the running-run summary. On a space-agnostic route
+ * (/workflows, /spaces) the nav falls back to the most recently visited space
+ * so the space-scoped entries stay reachable; only when no space has ever
+ * been visited (the `/` bootstrap or a fresh browser) are the space-scoped
+ * controls omitted — the switcher still renders so the user can pick a space.
  *
  * The `Workflows` entry (workflows-ui spec) is space-agnostic and therefore
  * ALWAYS rendered — the installable library is user-wide, reachable from any
@@ -24,7 +27,14 @@ import { parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
  */
 export function Layout({ children }: { children: ComponentChildren }) {
   const { path } = useLocation();
-  const space = parseSpacePath(path);
+  const routeSpace = parseSpacePath(path);
+  // On a space-agnostic route (/workflows, /spaces) the URL carries no space,
+  // which used to drop the whole space-scoped nav block and strand the user
+  // there. Fall back to the most recently visited space (recorded by the
+  // switcher on every space-scoped visit) so Board/Archive/Config/Pipelines
+  // stay reachable; the truly-first visit with no recency still degrades to
+  // the switcher-only header.
+  const space = routeSpace ?? parseSelector(getRecentSpaces()[0] ?? '');
   const section = spaceSection(path);
   const onWorkflows = path.startsWith('/workflows');
 
@@ -61,7 +71,7 @@ export function Layout({ children }: { children: ComponentChildren }) {
               Workflows
             </a>
           </nav>
-          {space && <RunningSessionsMenu />}
+          {routeSpace && <RunningSessionsMenu />}
           <SpaceSwitcher />
         </div>
       </header>
