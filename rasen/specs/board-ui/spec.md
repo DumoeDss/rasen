@@ -217,6 +217,11 @@ When a project space's repository has more than one worktree (per the live workt
 - **WHEN** the user selects a linked worktree in the panel
 - **THEN** the board refetches and shows that worktree's branch-local changes and runs only, with no entries from any other worktree mixed in
 
+#### Scenario: Switching keeps the previous board visible while the new source loads
+
+- **WHEN** the user switches the board's data source between worktrees of one space
+- **THEN** the previous source's board stays visible with a visible refreshing indication until the new source's data arrives, and the full-page loading state appears only on first load or when the space itself changes
+
 #### Scenario: Selection survives reload without changing the space
 
 - **WHEN** the user reloads the board after selecting a worktree

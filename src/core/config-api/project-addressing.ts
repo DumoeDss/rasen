@@ -10,8 +10,8 @@ import {
   deriveProjectDisplayName,
   findProjectRegistryEntry,
   readProjectRegistryState,
-  resolveRegistrationRoot,
 } from '../project-registry.js';
+import { cachedResolveRegistrationRoot } from './piercing-cache.js';
 import { listRegisteredStores } from '../store/registry.js';
 import { inspectRegisteredStore, type RegisteredStoreInspection } from '../root-selection.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
@@ -174,7 +174,9 @@ export async function resolveProjectSelector(selector: string): Promise<Resolved
   // registered project. Answer from the worktree's own root with the owning
   // project's identity, so a worktree's branch-local planning state is
   // addressable without the worktree becoming a separate space.
-  const pierced = await resolveRegistrationRoot(canonical);
+  // Cached (TTL + .git mtime invalidation): uncached, every board fetch
+  // against a worktree-root selector spawned two git rev-parse processes.
+  const pierced = await cachedResolveRegistrationRoot(canonical);
   if (pierced !== canonical) {
     const mainEntry = state.projects[pierced];
     if (mainEntry) {

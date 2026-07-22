@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
@@ -67,6 +67,15 @@ export function BoardPage() {
   const [worktrees, setWorktrees] = useState<SpaceWorktreeEntry[]>([]);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  // True while re-fetching a board that is already showing data for THIS
+  // space (a worktree switch or a manual refresh): the old board stays
+  // visible, dimmed, instead of being wiped to the full-page loading state —
+  // a sub-second refetch that blanks the whole board reads as a page reload.
+  const [refreshing, setRefreshing] = useState(false);
+  // The space selector the currently-displayed data was loaded for; a
+  // different selector means a genuine space switch, which DOES take the
+  // full loading state (stale data from another space must never linger).
+  const loadedSelectorRef = useRef<string | undefined>(undefined);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [highlightedName, setHighlightedName] = useState<string | null>(null);
@@ -77,12 +86,15 @@ export function BoardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const backgroundRefresh = changes !== null && loadedSelectorRef.current === selector;
+    if (backgroundRefresh) setRefreshing(true);
+    else setLoading(true);
     setPageError(null);
     setSelectedMember(null);
     Promise.all([client.listChanges(dataSelector), client.listRuns(dataSelector), client.listSessions(selector)])
       .then(([changesRes, runsRes, sessionsRes]) => {
         if (cancelled) return;
+        loadedSelectorRef.current = selector;
         setChanges(changesRes.changes);
         // `@atelierai/rasen-ui` is published/resolved independently of the
         // CLI (design.md D1 of `unified-config-ui-pkg`) — a UI build newer
@@ -102,7 +114,10 @@ export function BoardPage() {
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -263,7 +278,11 @@ export function BoardPage() {
   }
 
   return (
-    <div class="board-page">
+    <div
+      class={`board-page${refreshing ? ' board-page--refreshing' : ''}`}
+      aria-busy={refreshing}
+      data-refreshing={refreshing ? 'true' : undefined}
+    >
       <div class="board-page__toolbar">
         <button type="button" onClick={() => setDialogOpen(true)}>
           New change
