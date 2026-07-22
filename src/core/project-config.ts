@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
 import { isKebabId } from './id.js';
-import { thresholdSchema } from './pipeline-registry/types.js';
+import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
   reportConfigDiagnostic,
   type ConfigDiagnostic,
@@ -156,6 +156,27 @@ export const ProjectConfigSchema = z.object({
     })
     .optional()
     .describe('Per-agent model configuration'),
+
+  // Optional: per-pipeline, per-stage config overrides keyed by pipeline name
+  // — the planning-root storage side of the
+  // `pipelines.<name>.{gates,models,handoff}.<stage>` config-key families,
+  // serving both the project and (a store root's own) store layers. Inner
+  // objects `.passthrough()` so an unknown sub-key survives the schema; the
+  // resilient parser below drops invalid leaves with a warning. Shares nothing
+  // with the `rasen/pipelines/` directory namespace.
+  pipelines: z
+    .record(
+      z.string(),
+      z
+        .object({
+          gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
+          models: z.record(z.string(), z.string().min(1)).optional(),
+          handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+        })
+        .passthrough()
+    )
+    .optional()
+    .describe('Per-pipeline, per-stage config overrides keyed by pipeline name'),
 });
 
 /** Valid `archive.timing` values. */
@@ -288,6 +309,74 @@ function parseDeclarationList(
     );
   }
   return byId.size > 0 ? [...byId.values()] : undefined;
+}
+
+/**
+ * Resilient parser for the `pipelines:` block (a map keyed by pipeline name of
+ * `gates`/`models`/`handoff` per-stage records). Mirrors the field-by-field
+ * drop-with-warning discipline of the blocks above: a non-map pipeline entry,
+ * an unknown or non-map axis, or an invalid per-stage leaf is dropped while
+ * valid siblings survive. `gates` leaves must be `on`/`off`, `models` leaves a
+ * non-empty string, `handoff` leaves the dual-form threshold. Returns
+ * undefined when nothing valid remains.
+ */
+function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    console.warn(`Invalid 'pipelines' field in config (must be an object)`);
+    return undefined;
+  }
+
+  type PipelineEntry = NonNullable<ProjectConfig['pipelines']>[string];
+  const result: NonNullable<ProjectConfig['pipelines']> = {};
+
+  for (const [pipelineName, pipelineRaw] of Object.entries(raw as Record<string, unknown>)) {
+    if (!pipelineRaw || typeof pipelineRaw !== 'object' || Array.isArray(pipelineRaw)) {
+      console.warn(`Invalid 'pipelines.${pipelineName}' field in config (must be an object)`);
+      continue;
+    }
+    const entry: PipelineEntry = {};
+
+    for (const [axis, axisRaw] of Object.entries(pipelineRaw as Record<string, unknown>)) {
+      if (axis !== 'gates' && axis !== 'models' && axis !== 'handoff') {
+        console.warn(
+          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, or handoff); ignoring it.`
+        );
+        continue;
+      }
+      if (!axisRaw || typeof axisRaw !== 'object' || Array.isArray(axisRaw)) {
+        console.warn(`Invalid 'pipelines.${pipelineName}.${axis}' field in config (must be an object)`);
+        continue;
+      }
+
+      const gates: Record<string, 'on' | 'off'> = {};
+      const models: Record<string, string> = {};
+      const handoff: Record<string, ThresholdValue> = {};
+      for (const [stage, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
+        const label = `pipelines.${pipelineName}.${axis}.${stage}`;
+        if (axis === 'gates') {
+          if (leaf === 'on' || leaf === 'off') gates[stage] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be 'on' or 'off')`);
+        } else if (axis === 'models') {
+          if (typeof leaf === 'string' && leaf.length > 0) models[stage] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
+        } else {
+          const parsed = thresholdSchema('threshold').safeParse(leaf);
+          if (parsed.success) handoff[stage] = parsed.data;
+          else
+            console.warn(
+              `Invalid '${label}' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            );
+        }
+      }
+      if (axis === 'gates' && Object.keys(gates).length > 0) entry.gates = gates;
+      if (axis === 'models' && Object.keys(models).length > 0) entry.models = models;
+      if (axis === 'handoff' && Object.keys(handoff).length > 0) entry.handoff = handoff;
+    }
+
+    if (Object.keys(entry).length > 0) result[pipelineName] = entry;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the references index
@@ -743,6 +832,20 @@ function parseProjectConfigContent(
         config.models = models;
       } else {
         console.warn(`Invalid 'models' field in config (must be an object)`);
+      }
+    }
+
+    // Parse pipelines field: an optional map keyed by pipeline name, each
+    // value an optional map of `gates`/`models`/`handoff` per-stage records —
+    // the storage side of the `pipelines.<name>.{gates,models,handoff}.<stage>`
+    // config-key families. Resilient like every block above: a non-map, an
+    // invalid axis, or an invalid per-stage leaf is dropped with a warning
+    // while valid siblings survive. Unknown axes (not gates/models/handoff)
+    // are ignored with a warning, never a hard error.
+    if (raw.pipelines !== undefined) {
+      const pipelines = parsePipelinesBlock(raw.pipelines);
+      if (pipelines) {
+        config.pipelines = pipelines;
       }
     }
 

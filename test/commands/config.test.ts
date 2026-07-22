@@ -509,6 +509,52 @@ describe('config command --scope project and promoted keys', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith('Set autopilot.gates = "off"');
   });
 
+  it('set/get/unset --scope project handle a pipelines.<name>.gates.<stage> instance', async () => {
+    await runConfigCommand([
+      'set',
+      'pipelines.small-feature.gates.propose',
+      'on',
+      '--scope',
+      'project',
+    ]);
+    expect(process.exitCode).not.toBe(1);
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).toMatch(/propose: on/);
+
+    await runConfigCommand([
+      'get',
+      'pipelines.small-feature.gates.propose',
+      '--scope',
+      'project',
+    ]);
+    expect(consoleLogSpy).toHaveBeenCalledWith('on');
+
+    await runConfigCommand([
+      'unset',
+      'pipelines.small-feature.gates.propose',
+      '--scope',
+      'project',
+    ]);
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).not.toContain('propose');
+  });
+
+  it('set --scope project rejects an invalid pipelines instance value without writing (M1)', async () => {
+    await runConfigCommand([
+      'set',
+      'pipelines.small-feature.gates.propose',
+      'maybe',
+      '--scope',
+      'project',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('on, off'));
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).not.toContain('propose');
+    expect(raw).not.toContain('maybe');
+  });
+
   it('get/list --scope project reads rasen/config.yaml', async () => {
     fs.writeFileSync(
       path.join(projectDir, 'rasen', 'config.yaml'),

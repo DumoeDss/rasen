@@ -150,6 +150,22 @@ export interface GlobalConfig {
   ui?: {
     pinnedSpaces?: string[];
   };
+  /**
+   * Per-pipeline, per-stage configuration overrides, keyed by pipeline name.
+   * The three inner records mirror the `pipelines.<name>.{gates,models,handoff}.<stage>`
+   * config-key families (an unset instance is absent, never defaulted). This
+   * `pipelines` block shares nothing with the `rasen/pipelines/` directory
+   * namespace — it is config data keyed by pipeline name, not stored pipeline
+   * definitions.
+   */
+  pipelines?: Record<
+    string,
+    {
+      gates?: Record<string, 'on' | 'off'>;
+      models?: Record<string, string>;
+      handoff?: Record<string, ThresholdValue>;
+    }
+  >;
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {
