@@ -7,7 +7,7 @@ Provide a loopback-bound, bearer-secured HTTP surface over the user-wide workflo
 
 ### Requirement: Workflow listing endpoint mirrors the CLI listing
 
-The management server SHALL serve `GET /api/v1/workflows` returning the user-wide workflow catalog from a fresh read at request time: valid workflows each carrying `id`, `source` (built-in or user), `sourcePath`, `digest`, `kind` (task, driver, expert, or internal), `skillName`, `commandId`, and an `unused` marker; invalid user entries with their diagnostics; and catalog-level diagnostics. The `unused` marker SHALL be computed exactly as `rasen workflow list` computes it — a user workflow with no detected machine-level consumer — so the page and the CLI never disagree. The endpoint SHALL answer under the management security posture (loopback bind, bearer token, 405 for non-GET methods other than the admitted mutation POST).
+The management server SHALL serve `GET /api/v1/workflows` returning the user-wide workflow catalog from a fresh read at request time: valid workflows each carrying `id`, `source` (built-in or user), `sourcePath`, `digest`, `kind` (task, driver, expert, or internal), `skillName`, and an `unused` marker; invalid user entries with their diagnostics; and catalog-level diagnostics. The `unused` marker SHALL be computed exactly as `rasen workflow list` computes it — a user workflow with no detected machine-level consumer — so the page and the CLI never disagree. The endpoint SHALL answer under the management security posture (loopback bind, bearer token, 405 for non-GET methods other than the admitted mutation POST).
 
 #### Scenario: Listing includes every catalog unit with its kind
 
@@ -31,7 +31,7 @@ The management server SHALL serve `GET /api/v1/workflows` returning the user-wid
 
 ### Requirement: Workflow detail endpoint mirrors the CLI show
 
-The management server SHALL serve `GET /api/v1/workflows/<id>` — exactly one path segment deep — returning the full definition (identity, kind, source, manifest version, digest, skill, command, `requires` and `recommends` slots, file inventory) together with the workflow's known usage referrers, matching the content of `rasen workflow show <id> --json`. An id not present in the catalog SHALL yield 404 with a structured error envelope.
+The management server SHALL serve `GET /api/v1/workflows/<id>` — exactly one path segment deep — returning the full definition (identity, kind, source, manifest version, digest, skill, `requires` and `recommends` slots, file inventory) together with the workflow's known usage referrers, matching the content of `rasen workflow show <id> --json`. An id not present in the catalog SHALL yield 404 with a structured error envelope.
 
 #### Scenario: Detail returns definition and usage
 
