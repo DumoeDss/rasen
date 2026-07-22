@@ -30,6 +30,9 @@ vi.mock('../src/components/TaskDetailPage.js', async () => {
     },
   };
 });
+vi.mock('../src/components/SpacesPage.js', () => ({
+  SpacesPage: () => <div data-testid="spaces-page">spaces</div>,
+}));
 vi.mock('../src/components/SpaceSwitcher.js', () => ({
   SpaceSwitcher: () => <div data-testid="space-switcher" />,
 }));
@@ -145,6 +148,13 @@ describe('App routing', () => {
     await mountAt(container, '/p/proj_x/task/my-change');
     expect(container.querySelector('[data-testid="task-detail-page"]')).not.toBeNull();
     expect(container.textContent).toContain('my-change');
+  });
+
+  it('renders the space-agnostic Spaces page at /spaces (no space prefix)', async () => {
+    await mountAt(container, '/spaces');
+    expect(container.querySelector('[data-testid="spaces-page"]')).not.toBeNull();
+    // A space-agnostic route: no board/config/archive space view is mounted.
+    expect(container.querySelector('[data-testid="board-page"]')).toBeNull();
   });
 
   it('the retired /sessions path is not a dead route — it bootstraps and redirects to a resolved space', async () => {

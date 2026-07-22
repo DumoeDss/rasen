@@ -7,6 +7,7 @@ import { BoardPage } from './components/BoardPage.js';
 import { SpaceBootstrap } from './components/SpaceBootstrap.js';
 import { ArchivePage } from './components/ArchivePage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
+import { SpacesPage } from './components/SpacesPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
 
@@ -49,6 +50,7 @@ export function App() {
       <Layout>
         <Router>
           <Route path="/" component={SpaceBootstrap} />
+          <Route path="/spaces" component={SpacesPage} />
           <Route path="/p/:projectId/board" component={BoardPage} />
           <Route path="/s/:storeId/board" component={BoardPage} />
           <Route path="/p/:projectId/config" component={ConfigPage} />

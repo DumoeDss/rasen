@@ -525,6 +525,8 @@
       "environmentOverrideNote": " [环境变量优先]",
       "workflowsDescription": "使用 `rasen profile` 更改工作流",
       "workflowsDisabled": "使用 `rasen profile`",
+      "pinnedSpacesDescription": "固定项在 `rasen ui` 的空间页面管理（或 `rasen config set ui.pinnedSpaces`）",
+      "pinnedSpacesDisabled": "在空间页面管理",
       "projectRequired": "需要 Rasen 项目",
       "projectScope": "项目（此仓库）",
       "globalScope": "全局（此机器）",

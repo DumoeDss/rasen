@@ -525,6 +525,8 @@
       "environmentOverrideNote": " [環境変数の値が優先されます]",
       "workflowsDescription": "`rasen profile` でワークフローを変更します",
       "workflowsDisabled": "`rasen profile` を使用",
+      "pinnedSpacesDescription": "ピンは `rasen ui` のスペースページで管理します（または `rasen config set ui.pinnedSpaces`）",
+      "pinnedSpacesDisabled": "スペースページで管理",
       "projectRequired": "Rasenプロジェクト内でのみ利用可能",
       "projectScope": "プロジェクト（このリポジトリ）",
       "globalScope": "グローバル（このマシン）",

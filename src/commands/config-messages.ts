@@ -13,6 +13,8 @@ export interface ConfigEditorMessages {
   environmentOverrideNote: string;
   workflowsDescription: string;
   workflowsDisabled: string;
+  pinnedSpacesDescription: string;
+  pinnedSpacesDisabled: string;
   projectRequired: string;
   scopePrompt: (key: string) => string;
   projectScope: string;

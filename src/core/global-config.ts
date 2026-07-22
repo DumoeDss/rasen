@@ -142,6 +142,14 @@ export interface GlobalConfig {
       shipper?: string;
     };
   };
+  /**
+   * UI-managed preferences. `pinnedSpaces` is the user's pinned planning
+   * spaces as `<type>:<id>` selectors, written from the web Spaces page (or
+   * `rasen config set`) — surviving a browser change and visible to the CLI.
+   */
+  ui?: {
+    pinnedSpaces?: string[];
+  };
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {

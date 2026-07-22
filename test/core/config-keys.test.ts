@@ -155,6 +155,30 @@ describe('config-keys registry', () => {
       const def = findConfigKeyDefinition('proactive', 'global')!;
       expect(validateConfigValue(def, 'yes')).toMatch(/boolean/);
     });
+
+    it('rejects a non-array value for ui.pinnedSpaces (the array type)', () => {
+      const def = findConfigKeyDefinition('ui.pinnedSpaces', 'global')!;
+      expect(validateConfigValue(def, 'project:api')).toMatch(/array/);
+      expect(validateConfigValue(def, { a: 1 })).toMatch(/array/);
+      expect(validateConfigValue(def, ['project:api', 'store:team'])).toBeNull();
+    });
+  });
+
+  describe('ui.pinnedSpaces (spaces-page pins key)', () => {
+    it('is a global-only array key with an empty-array default', () => {
+      expect(validateConfigKeyPath('ui.pinnedSpaces', 'global').valid).toBe(true);
+      expect(validateConfigKeyPath('ui.pinnedSpaces', 'project').valid).toBe(false);
+      const def = findConfigKeyDefinition('ui.pinnedSpaces', 'global')!;
+      expect(def.type).toBe('array');
+      expect(def.defaultValue).toEqual([]);
+    });
+
+    it('round-trips a selector array through the global config schema', () => {
+      const result = GlobalConfigSchema.safeParse({
+        ui: { pinnedSpaces: ['store:team-store', 'project:api'] },
+      });
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('registry/schema round-trip consistency', () => {

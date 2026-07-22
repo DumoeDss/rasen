@@ -176,6 +176,18 @@ function buildEditorChoice(
     };
   }
 
+  // `ui.pinnedSpaces` is the second-ever array key and, like `workflows`, has
+  // no interactive array prompt — render it as a disabled row pointing at the
+  // Spaces page rather than letting the editor try to prompt an array type.
+  if (definition.key === 'ui.pinnedSpaces') {
+    return {
+      value: '__pinnedSpaces__',
+      name: label,
+      description: ui.pinnedSpacesDescription,
+      disabled: ui.pinnedSpacesDisabled,
+    };
+  }
+
   const isProjectOnly = definition.scopes.length === 1 && definition.scopes[0] === 'project';
   if (isProjectOnly && !projectRoot) {
     return {

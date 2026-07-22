@@ -9,12 +9,15 @@ import type {
   ArchiveResponse,
   ChangesResponse,
   ConfigScope,
+  CreateSpaceRequest,
+  CreateSpaceResponse,
   GetConfigKeyResponse,
   HealthResponse,
   LaunchSessionRequest,
   ListConfigResponse,
   ListPipelinesResponse,
   ListProjectsResponse,
+  LocalPathsResponse,
   RunsResponse,
   SessionActionResponse,
   SessionDetailResponse,
@@ -168,6 +171,31 @@ export function listArchive(space?: string): Promise<ArchiveResponse> {
 /** Every addressable planning space (planning-space-addressing design D6), for the space switcher. */
 export function listSpaces(): Promise<SpacesResponse> {
   return request<SpacesResponse>('/api/v1/spaces');
+}
+
+/**
+ * Read-only directory enumeration for the create-space picker
+ * (local-path-browsing design D3). No `path` starts at home; an explicit
+ * absolute path enumerates it (the sole escape above home); a relative path
+ * 400s. The value is encoded once here at the single client seam.
+ */
+export function listLocalPaths(path?: string): Promise<LocalPathsResponse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : '';
+  return request<LocalPathsResponse>(`/api/v1/local-paths${query}`);
+}
+
+/**
+ * Creates a planning space (space-creation design D4): the server spawns the
+ * CLI (`init` / `store register` / `store setup`) — it never writes workspace
+ * files itself. On failure the thrown `ApiError.message` is the CLI's own
+ * error text, verbatim.
+ */
+export function createSpace(body: CreateSpaceRequest): Promise<CreateSpaceResponse> {
+  return request<CreateSpaceResponse>('/api/v1/spaces', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 /**

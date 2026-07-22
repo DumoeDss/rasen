@@ -177,6 +177,19 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(String(workflowsRow.disabled)).toContain('rasen profile');
   });
 
+  it('the ui.pinnedSpaces row is a disabled pointer to the Spaces page', async () => {
+    const { select } = await getPromptMocks();
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const pinnedRow = choices.find((c) => c.value === '__pinnedSpaces__')!;
+    expect(pinnedRow).toBeTruthy();
+    expect(pinnedRow.disabled).toBeTruthy();
+    expect(String(pinnedRow.disabled)).toContain('Spaces page');
+  });
+
   it('project-only keys are disabled outside a Rasen project', async () => {
     // config-page-coherence D3 promoted autopilot.gates to BOTH scopes, so it
     // is never row-disabled anymore (it always has a settable global
