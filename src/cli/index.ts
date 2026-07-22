@@ -22,6 +22,7 @@ import { registerProfileCommand } from '../commands/profile.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
 import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
+import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
 import { registerDoctorCommand } from '../commands/doctor.js';
@@ -87,6 +88,12 @@ function failWithError(
     console.error(`Fix: ${fix}`);
   }
   process.exitCode = process.exitCode ?? 1;
+}
+
+function failPipelineAction(error: unknown): never {
+  console.log();
+  ora().fail(formatPipelineError(error));
+  process.exit(1);
 }
 
 const program = new Command();
@@ -605,7 +612,7 @@ newCmd
 // Pipeline command group: inspect orchestration pipelines and run-state
 const pipelineCmd = program
   .command('pipeline')
-  .description('Inspect orchestration pipelines (list, show, classify, resume)');
+  .description('Inspect and manage orchestration pipelines');
 
 pipelineCmd
   .command('list')
@@ -619,9 +626,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.list(options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -638,9 +643,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -674,9 +677,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.agents(name, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -692,9 +693,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.classify(task, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -710,9 +709,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 

@@ -60,6 +60,7 @@ export interface ResolveOpenSpecRootOptions extends StoreSelectorOptions {
   startPath?: string;
   allowImplicitRoot?: boolean;
   globalDataDir?: string;
+  reporter?: RootSelectionReporter | false;
 }
 
 export interface ResolvedOpenSpecRoot {
@@ -72,6 +73,41 @@ export interface ResolvedOpenSpecRoot {
   storeId?: string;
   /** Set alongside storeId; the namespace the id was resolved from. */
   storeType?: StoreEntryType;
+}
+
+export type RootSelectionNotice =
+  | {
+    kind: 'ignored-store-pointer';
+    filePath: string;
+    storeId: string;
+  }
+  | {
+    kind: 'selected-root';
+    path: string;
+    storeId: string;
+    storeType: StoreEntryType;
+  };
+
+export type RootSelectionReporter = (notice: RootSelectionNotice) => void;
+
+function defaultRootSelectionReporter(notice: RootSelectionNotice): void {
+  if (notice.kind === 'ignored-store-pointer') {
+    console.error(
+      `Warning: ${notice.filePath} declares store '${notice.storeId}', but this directory is a real Rasen root; the declaration is ignored.`
+    );
+    return;
+  }
+
+  const label = notice.storeType === 'project' ? 'project ' : '';
+  console.error(`Using Rasen root: ${label}${notice.storeId} (${notice.path})`);
+}
+
+function reportRootSelectionNotice(
+  reporter: RootSelectionReporter | false | undefined,
+  notice: RootSelectionNotice
+): void {
+  if (reporter === false) return;
+  (reporter ?? defaultRootSelectionReporter)(notice);
 }
 
 export interface RootSelectionDiagnostic {
@@ -387,15 +423,18 @@ export async function deriveSpaceFromCwd(
 
 async function resolveNearestOrDeclaredRoot(
   nearestRoot: string,
-  globalDataDir?: string
+  globalDataDir?: string,
+  reporter?: RootSelectionReporter | false
 ): Promise<ResolvedOpenSpecRoot> {
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(nearestRoot);
 
   if (hasPlanningShape) {
-    if (pointer.value !== undefined) {
-      console.error(
-        `Warning: ${pointer.filePath} declares store '${pointer.value}', but this directory is a real Rasen root; the declaration is ignored.`
-      );
+    if (pointer.value !== undefined && pointer.filePath !== null) {
+      reportRootSelectionNotice(reporter, {
+        kind: 'ignored-store-pointer',
+        filePath: pointer.filePath,
+        storeId: pointer.value,
+      });
     }
     return makeRoot(nearestRoot, 'nearest');
   }
@@ -479,7 +518,11 @@ export async function resolveOpenSpecRoot(
   const startPath = options.startPath ?? process.cwd();
   const nearestRoot = findQualifyingRootSync(startPath);
   if (nearestRoot) {
-    return resolveNearestOrDeclaredRoot(nearestRoot, options.globalDataDir);
+    return resolveNearestOrDeclaredRoot(
+      nearestRoot,
+      options.globalDataDir,
+      options.reporter
+    );
   }
 
   let registry;
@@ -560,12 +603,17 @@ export function isStoreSelectedRoot(
  * Human-mode verification signal for a selected store. Written to stderr so
  * raw-Markdown and agent-consumed stdout payloads stay clean.
  */
-export function emitStoreRootBanner(root: ResolvedOpenSpecRoot): void {
+export function emitStoreRootBanner(
+  root: ResolvedOpenSpecRoot,
+  reporter?: RootSelectionReporter | false
+): void {
   if (isStoreSelectedRoot(root)) {
-    // Store wording stays exactly as before (empty label); a project-typed
-    // root gets an explicit label so the banner identifies it as a project.
-    const label = root.storeType === 'project' ? 'project ' : '';
-    console.error(`Using Rasen root: ${label}${root.storeId} (${root.path})`);
+    reportRootSelectionNotice(reporter, {
+      kind: 'selected-root',
+      path: root.path,
+      storeId: root.storeId,
+      storeType: root.storeType ?? 'store',
+    });
   }
 }
 
@@ -615,6 +663,10 @@ export async function resolveRootForCommand(
      * project would silently register temp paths in the real machine
      * registry unless the process env happens to pin XDG_DATA_HOME. */
     globalDataDir?: string;
+    /** Human notices emitted during successful root selection. `false` keeps
+     * machine-oriented callers silent; omitted preserves the legacy English
+     * console output. */
+    reporter?: RootSelectionReporter | false;
   } = {}
 ): Promise<ResolvedOpenSpecRoot | null> {
   try {
@@ -626,12 +678,13 @@ export async function resolveRootForCommand(
         ? { allowImplicitRoot: output.allowImplicitRoot }
         : {}),
       ...(output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}),
+      reporter: output.reporter,
     });
 
     // Emitted at resolution time so the banner survives command failures
     // that happen after the root was successfully selected.
     if (!output.json) {
-      emitStoreRootBanner(root);
+      emitStoreRootBanner(root, output.reporter);
     }
 
     // Registry self-healing (design D6): best-effort, throttled, and every

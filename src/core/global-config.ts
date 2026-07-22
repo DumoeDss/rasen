@@ -10,6 +10,10 @@ import {
 } from './project-registry.js';
 import type { ThresholdValue } from './model-presets.js';
 import {
+  SUPPORTED_CLI_LOCALES,
+  type CliLanguage,
+} from '../utils/locale.js';
+import {
   reportConfigDiagnostic,
   type ConfigDiagnosticReporter,
 } from './config-diagnostics.js';
@@ -29,7 +33,7 @@ const LEGACY_BRAND_DIR_NAME = 'openspec';
 // TypeScript types
 export type Profile = 'full' | 'core' | 'custom';
 export type Delivery = 'both' | 'skills';
-export type Language = 'auto' | 'en' | 'ja';
+export type Language = CliLanguage;
 type LegacyDelivery = 'commands' | 'skills-first' | 'commands-first';
 export type RepoMode = 'solo' | 'collaborative';
 
@@ -41,6 +45,10 @@ const LEGACY_DELIVERY_MAP: Record<LegacyDelivery, Delivery> = {
 
 function isLegacyDelivery(value: unknown): value is LegacyDelivery {
   return value === 'commands' || value === 'skills-first' || value === 'commands-first';
+}
+
+function isLanguage(value: unknown): value is Language {
+  return value === 'auto' || SUPPORTED_CLI_LOCALES.some((locale) => locale === value);
 }
 
 /**
@@ -294,7 +302,7 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
     if (parsed.delivery === undefined) {
       merged.delivery = DEFAULT_CONFIG.delivery;
     }
-    if (parsed.language !== 'auto' && parsed.language !== 'en' && parsed.language !== 'ja') {
+    if (!isLanguage(parsed.language)) {
       merged.language = DEFAULT_CONFIG.language;
     }
     if (parsed.proactive === undefined) {

@@ -379,4 +379,56 @@ describe('workflow command', () => {
       status: [expect.objectContaining({ code: 'workflow_not_found' })],
     });
   });
+
+  it('localizes Simplified Chinese human output while preserving JSON and user-authored content', async () => {
+    process.env.RASEN_LANG = 'zh-cn';
+    const id = 'authored-language';
+    const authoredDescription = '作者が書いた説明は翻訳しない';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    const skillPath = path.join(draft, 'SKILL.md');
+    fs.writeFileSync(
+      skillPath,
+      fs.readFileSync(skillPath, 'utf8').replace(
+        `description: Describe when to use the ${id} workflow.`,
+        `description: ${authoredDescription}`
+      ),
+      'utf-8'
+    );
+    await runWorkflowCommand(['import', draft, '--json']);
+
+    log.mockClear();
+    await runWorkflowCommand(['list']);
+    const humanLines = log.mock.calls.map(([value]) => String(value));
+    expect(humanLines).toContain('任务:');
+    expect(humanLines).toContain('驱动:');
+    expect(humanLines).toContain('专家:');
+    expect(humanLines).toContain(`${id}\t用户\trasen-${id}\t未使用`);
+    expect(humanLines).toContainEqual(expect.stringMatching(/^apply\t内置\trasen-apply-change/));
+    expect(humanLines).not.toContain('Tasks:');
+
+    error.mockClear();
+    await runWorkflowCommand(['show', 'missing']);
+    expect(error).toHaveBeenCalledWith('错误： 未找到该工作流。');
+    expect(error).not.toHaveBeenCalledWith(expect.stringContaining('Workflow was not found'));
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    log.mockClear();
+    await runWorkflowCommand(['show', id, '--json']);
+    const payload = lastJson() as {
+      workflow: {
+        id: string;
+        source: string;
+        kind: string;
+        skill: { description: string };
+      };
+    };
+    expect(payload.workflow).toMatchObject({
+      id,
+      source: 'user',
+      kind: 'task',
+      skill: { description: authoredDescription },
+    });
+  });
 });

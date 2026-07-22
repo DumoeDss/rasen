@@ -985,6 +985,22 @@ spec-driven resolves from: package
 
 ## 配置命令
 
+### CLI 界面语言
+
+Rasen CLI 支持英语（`en`）、日语（`ja`）和简体中文（`zh-cn`）界面。机器全局 JSON 配置使用规范值 `language: "auto" | "en" | "ja" | "zh-cn"`；持久化设置只接受这些值，不会把 `zh-CN` 或 `zh_CN` 自动改写为 `zh-cn`。
+
+```bash
+# 持久化简体中文界面
+rasen config set language zh-cn
+
+# 仅为当前进程临时覆盖界面语言
+RASEN_LANG=zh-cn rasen --help
+```
+
+`RASEN_LANG=en|ja|zh-cn` 会临时覆盖已保存的设置。默认的 `auto` 模式在类 Unix 系统上依次检查 `LC_ALL`、`LC_MESSAGES` 和 `LANG`，然后使用运行时系统语言环境；Windows 直接使用运行时系统语言环境。`zh-CN`、`zh_CN.UTF-8`、`zh-SG`、`zh-Hans` 和不带区域的 `zh` 会解析为 `zh-cn`。繁体中文语言环境 `zh-TW`、`zh-HK`、`zh-MO` 和 `zh-Hant` 暂不支持，并回退到英语。
+
+界面语言只控制 Rasen 自有的帮助、提示和人类可读输出，不决定 AI 生成的产物语言。产物语言应通过项目 `rasen/config.yaml` 的 `context` 指令设置，详见[多语言指南](multi-language.md)。更改已保存的界面语言后，请重新运行 `rasen completion install [shell]`；如果手动管理补全脚本，则重新运行 `rasen completion generate [shell]`，以刷新生成的命令说明。
+
 ### `rasen workflow`
 
 管理面向整机（machine-wide）用户库中的可安装工作流。这些命令操作的是工作流定义本身，不是产物 schema，也不是编排 pipeline。
@@ -1049,6 +1065,8 @@ rasen pipeline delete <name> [--yes] [--force] [--json]
 ```
 
 全部十个子命令都接受 `--store <id>` / `--project <id>`，其根解析方式与 `rasen validate` 完全一致。
+
+全部十个子命令的帮助和 Rasen 自有的人类可读输出都支持英语、日语和简体中文。本地化只改变呈现：pipeline 与 stage ID、role/runtime/source 值、路径、JSON 字段与原始描述，以及分类器的关键词、`suggested`、`matched` 和 `basis` 语义都保持不变。项目和用户编写的名称与描述保留原文；只有包内置流水线（pipeline）的描述会在人类视图中本地化，其 JSON 描述仍保留原始值。
 
 | 子命令 | 说明 |
 |------------|-------------|
@@ -1236,6 +1254,7 @@ rasen completion uninstall
 | `OPENSPEC_TELEMETRY` | 设为 `0` 禁用遥测 |
 | `DO_NOT_TRACK` | 设为 `1` 禁用遥测（标准 DNT 信号） |
 | `OPENSPEC_CONCURRENCY` | 批量校验的默认并发数（默认：6） |
+| `RASEN_LANG` | 临时覆盖已保存的 CLI 界面语言（`en`、`ja` 或 `zh-cn`） |
 | `EDITOR` 或 `VISUAL` | `rasen config edit` 使用的编辑器 |
 | `NO_COLOR` | 设置时禁用彩色输出 |
 

@@ -1,10 +1,20 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
+import {
+  BUILT_IN_PIPELINE_IDS,
+  PIPELINE_ERROR_KEYS,
+  PIPELINE_MESSAGE_KEYS,
+} from '../../src/commands/pipeline-messages.js';
+import { getPackagePipelinesDir } from '../../src/core/pipeline-registry/index.js';
 import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../../src/locales/index.js';
 import { ROOT_OPTION_DESCRIPTIONS } from '../../src/cli/help-localization.js';
 import { INSTALLER_MESSAGE_KEYS } from '../../src/core/completions/factory.js';
 import { CONFIG_DIAGNOSTIC_KEYS } from '../../src/core/config-diagnostics.js';
+import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
 
 function collectLeafStrings(
   value: unknown,
@@ -30,18 +40,25 @@ function placeholders(value: string): string[] {
 }
 
 describe('locale catalogs', () => {
-  it('keeps English and Japanese keys and placeholders in sync', () => {
+  it('keeps every supported locale key and placeholder in sync with English', () => {
     const en = collectLeafStrings(getLocaleCatalog('en'));
-    const ja = collectLeafStrings(getLocaleCatalog('ja'));
 
-    expect([...ja.keys()].sort()).toEqual([...en.keys()].sort());
-    for (const [key, template] of en) {
-      expect(placeholders(ja.get(key) ?? ''), key).toEqual(placeholders(template));
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const catalog = getLocaleCatalog(locale);
+      const localized = collectLeafStrings(catalog);
+
+      expect(catalog.locale).toBe(locale);
+      expect([...localized.keys()].sort(), locale).toEqual([...en.keys()].sort());
+      for (const [key, template] of en) {
+        expect(placeholders(localized.get(key) ?? ''), `${locale}: ${key}`).toEqual(
+          placeholders(template)
+        );
+      }
     }
   });
 
-  it('defines a name and description for every workflow in both languages', () => {
-    for (const locale of ['en', 'ja'] as const) {
+  it('defines a name and description for every workflow in every supported locale', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
       const workflows = getLocaleCatalog(locale).profile.prompt.workflows;
       expect(Object.keys(workflows).sort()).toEqual([...ALL_WORKFLOWS].sort());
       for (const workflow of ALL_WORKFLOWS) {
@@ -51,8 +68,8 @@ describe('locale catalogs', () => {
     }
   });
 
-  it('defines a name and description for every built-in expert in both languages (mirrors the workflow guard; ALL_WORKFLOWS/profile.prompt.workflows stay untouched — experts are a disjoint id space)', () => {
-    for (const locale of ['en', 'ja'] as const) {
+  it('defines a name and description for every built-in expert in every supported locale (mirrors the workflow guard; ALL_WORKFLOWS/profile.prompt.workflows stay untouched — experts are a disjoint id space)', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
       const experts = getLocaleCatalog(locale).profile.prompt.experts as Record<
         string,
         { name: string; description: string }
@@ -65,13 +82,94 @@ describe('locale catalogs', () => {
     }
   });
 
+  it('defines metadata for every actual package pipeline in every supported locale', () => {
+    const packageDir = getPackagePipelinesDir();
+    const packageIds = fs
+      .readdirSync(packageDir, { withFileTypes: true })
+      .filter(
+        (entry) => entry.isDirectory()
+          && fs.existsSync(path.join(packageDir, entry.name, 'pipeline.yaml'))
+      )
+      .map((entry) => entry.name)
+      .sort();
+
+    expect([...BUILT_IN_PIPELINE_IDS].sort()).toEqual(packageIds);
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const builtIns = getLocaleCatalog(locale).pipeline.builtIns;
+      expect(Object.keys(builtIns).sort(), locale).toEqual(packageIds);
+      for (const id of BUILT_IN_PIPELINE_IDS) {
+        expect(builtIns[id].description, `${locale}: ${id}`).not.toBe('');
+      }
+    }
+  });
+
+  it('defines every stable pipeline message and error key in every supported locale', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const pipeline = getLocaleCatalog(locale).pipeline;
+      expect(Object.keys(pipeline.messages).sort(), `${locale}: messages`).toEqual(
+        [...PIPELINE_MESSAGE_KEYS].sort()
+      );
+      expect(Object.keys(pipeline.errors).sort(), `${locale}: errors`).toEqual(
+        [...PIPELINE_ERROR_KEYS].sort()
+      );
+    }
+  });
+
   it('formats known placeholders and preserves unknown placeholders', () => {
     expect(formatLocaleMessage('{name}: {count} / {missing}', { name: 'demo', count: 2 }))
       .toBe('demo: 2 / {missing}');
   });
 
+  it('uses natural Simplified Chinese for human-facing profile and config labels', () => {
+    const catalog = getLocaleCatalog('zh-cn');
+    const profile = catalog.profile.ui;
+
+    expect(formatLocaleMessage(profile.diffDelivery, {
+      before: 'both',
+      after: 'skills',
+    })).toBe('交付方式：both -> skills');
+    expect(formatLocaleMessage(profile.diffProfile, {
+      before: 'full',
+      after: 'core',
+    })).toBe('配置方案：full -> core');
+    expect(profile.diffWorkflowsAdded).toBe('工作流：已添加 {items}');
+    expect(catalog.config.editor.source).toEqual({
+      default: '默认',
+      global: '全局',
+      project: '项目',
+      'env-override': '环境变量覆盖',
+    });
+
+    const reviewText = [
+      catalog.pipeline.messages.openFindings,
+      catalog.profile.prompt.experts.cso.description,
+      catalog.profile.prompt.experts.qa.description,
+      catalog.profile.prompt.experts.review.description,
+    ].join('\n');
+    expect(reviewText).not.toContain('发现');
+    expect(catalog.pipeline.messages.workerHandleWarning).toContain('智能体工作者');
+    expect(catalog.pipeline.messages.workerHandleWarning).not.toContain('工作进程');
+    expect(catalog.config.descriptions['telemetry.enabled']).toContain(
+      '环境变量中的停用设置'
+    );
+  });
+
+  it('defines Simplified Chinese Commander help labels', () => {
+    expect(getLocaleCatalog('zh-cn').help).toEqual({
+      titles: {
+        'Usage:': '用法：',
+        'Arguments:': '参数：',
+        'Options:': '选项：',
+        'Global Options:': '全局选项：',
+        'Commands:': '命令：',
+      },
+      helpOption: '显示命令帮助',
+      helpCommand: '显示指定命令的帮助',
+    });
+  });
+
   it('defines translations for every visible root option description', () => {
-    for (const locale of ['en', 'ja'] as const) {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
       const descriptions = getLocaleCatalog(locale).commandDescriptions as Record<string, string>;
       for (const description of ROOT_OPTION_DESCRIPTIONS) {
         expect(descriptions[description], `${locale}: ${description}`).toBeTruthy();
@@ -79,15 +177,15 @@ describe('locale catalogs', () => {
     }
   });
 
-  it('defines every structured installer message in both languages', () => {
-    for (const locale of ['en', 'ja'] as const) {
+  it('defines every structured installer message in every supported locale', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
       const messages = getLocaleCatalog(locale).completion.installerMessages;
       expect(Object.keys(messages).sort()).toEqual([...INSTALLER_MESSAGE_KEYS].sort());
     }
   });
 
-  it('defines every structured config diagnostic in both languages', () => {
-    for (const locale of ['en', 'ja'] as const) {
+  it('defines every structured config diagnostic in every supported locale', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
       const messages = getLocaleCatalog(locale).config.diagnostics;
       expect(Object.keys(messages).sort()).toEqual([...CONFIG_DIAGNOSTIC_KEYS].sort());
     }

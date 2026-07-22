@@ -42,7 +42,7 @@
     "!dist/**/*.map"
   ],
   "scripts": {
-    "lint": "eslint src/",
+    "lint": "eslint src/ test/ vitest.config.ts vitest.setup.ts",
     "build": "node build.js",
     "dev": "tsc --watch",
     "dev:cli": "pnpm build && node bin/rasen.js",

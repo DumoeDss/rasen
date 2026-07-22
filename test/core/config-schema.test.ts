@@ -360,11 +360,13 @@ describe('config-schema', () => {
       expect(result.language).toBe('auto');
     });
 
-    it('should accept supported language settings and reject others', () => {
-      expect(GlobalConfigSchema.safeParse({ language: 'auto' }).success).toBe(true);
-      expect(GlobalConfigSchema.safeParse({ language: 'en' }).success).toBe(true);
-      expect(GlobalConfigSchema.safeParse({ language: 'ja' }).success).toBe(true);
-      expect(GlobalConfigSchema.safeParse({ language: 'fr' }).success).toBe(false);
+    it('accepts canonical language settings and rejects aliases or unsupported values', () => {
+      for (const language of ['auto', 'en', 'ja', 'zh-cn']) {
+        expect(GlobalConfigSchema.safeParse({ language }).success).toBe(true);
+      }
+      for (const language of ['zh-CN', 'zh_CN', 'zh-SG', 'zh-Hans', 'zh', 'fr']) {
+        expect(GlobalConfigSchema.safeParse({ language }).success).toBe(false);
+      }
     });
   });
 

@@ -2,7 +2,6 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { Separator } from '@inquirer/prompts';
 import type { GlobalConfig, Profile, Delivery } from '../core/global-config.js';
 import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import { OPENSPEC_DIR_NAME } from '../core/config.js';
@@ -22,12 +21,17 @@ import {
   type ProfilePromptMessages,
   getProfileUiMessages,
 } from './profile-messages.js';
+import { createConfigDiagnosticReporter } from './config-messages.js';
 import { isPromptCancellationError } from './shared-output.js';
 import type { CliLocale } from '../utils/locale.js';
 import {
   formatPickerDescription,
   resolveTerminalColumns,
+  resolveTerminalRows,
 } from '../utils/terminal-text.js';
+
+type InquirerPrompts = typeof import('@inquirer/prompts');
+type PromptSeparator = InstanceType<InquirerPrompts['Separator']>;
 
 type ProfileAction = 'both' | 'delivery' | 'workflows' | 'keep';
 
@@ -43,6 +47,29 @@ export interface ProfileStateDiff {
 }
 
 const WORKFLOW_PICKER_SHORTCUTS = { all: 'a' } as const;
+const DEFAULT_WORKFLOW_PICKER_PAGE_SIZE = 7;
+// Question, spacer, up to two description lines, and instructions.
+const WORKFLOW_PICKER_RESERVED_ROWS = 5;
+
+export function resolveWorkflowPickerPageSize(
+  choiceCount: number,
+  terminalRows: number | undefined
+): number {
+  if (
+    terminalRows === undefined ||
+    !Number.isFinite(terminalRows) ||
+    !Number.isInteger(terminalRows) ||
+    terminalRows <= 0
+  ) {
+    return Math.min(choiceCount, DEFAULT_WORKFLOW_PICKER_PAGE_SIZE);
+  }
+
+  return Math.min(
+    choiceCount,
+    Math.max(1, terminalRows - WORKFLOW_PICKER_RESERVED_ROWS)
+  );
+}
+
 function normalizedSelectedWorkflows(workflows: readonly string[], delivery: Delivery): string[] {
   return normalizeProfileDefinition({
     version: PROFILE_DEFINITION_VERSION,
@@ -163,8 +190,8 @@ interface WorkflowChoice {
 function workflowChoices(
   currentState: ProfileState,
   messages: ProfilePromptMessages,
-  SeparatorCtor: typeof Separator
-): Array<WorkflowChoice | Separator> {
+  SeparatorCtor: InquirerPrompts['Separator']
+): Array<WorkflowChoice | PromptSeparator> {
   const catalog = loadWorkflowCatalog();
   const definitions = catalog.definitions;
   const displayIds = new Map(
@@ -242,6 +269,26 @@ function workflowChoices(
   ];
 }
 
+function workflowPickerOptions(
+  currentState: ProfileState,
+  messages: ProfilePromptMessages,
+  SeparatorCtor: InquirerPrompts['Separator']
+) {
+  const choices = workflowChoices(currentState, messages, SeparatorCtor);
+
+  return {
+    message: messages.workflowPickerMessage,
+    instructions: messages.workflowPickerInstructions,
+    shortcuts: WORKFLOW_PICKER_SHORTCUTS,
+    pageSize: resolveWorkflowPickerPageSize(
+      choices.length,
+      resolveTerminalRows(process.stdout)
+    ),
+    theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
+    choices,
+  };
+}
+
 function deliveryChoices(
   currentDelivery: Delivery | undefined,
   messages: ProfilePromptMessages
@@ -274,14 +321,9 @@ export async function promptForNewProfileState(currentState: ProfileState): Prom
     choices: deliveryChoices(currentState.delivery, messages),
     default: currentState.delivery,
   });
-  const workflows = await checkbox<string>({
-    message: messages.workflowPickerMessage,
-    instructions: messages.workflowPickerInstructions,
-    shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-    pageSize: workflowChoices(currentState, messages, Separator).length,
-    theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-    choices: workflowChoices(currentState, messages, Separator),
-  });
+  const workflows = await checkbox<string>(
+    workflowPickerOptions(currentState, messages, Separator)
+  );
   return {
     profile: deriveProfileFromWorkflowSelection(workflows),
     delivery,
@@ -312,8 +354,12 @@ export function printProfileApplyGuidance(): void {
  * dependency-closure expert set governs installs instead of the legacy
  * "install every expert" fallback.
  */
+function getGlobalConfigForProfile(): GlobalConfig {
+  return getGlobalConfig({ reporter: createConfigDiagnosticReporter() });
+}
+
 export function applyProfileState(state: ProfileState): void {
-  const config = getGlobalConfig();
+  const config = getGlobalConfigForProfile();
   config.profile = state.profile;
   config.delivery = state.delivery;
   config.workflows = [...state.workflows];
@@ -333,7 +379,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
   const chalk = (await import('chalk')).default;
 
   try {
-    const config = getGlobalConfig();
+    const config = getGlobalConfigForProfile();
     const currentState = resolveCurrentProfileState(config);
     const messages = getProfilePromptMessages();
 
@@ -387,14 +433,9 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     }
 
     if (action === 'both' || action === 'workflows') {
-      const selectedWorkflows = await checkbox<string>({
-        message: messages.workflowPickerMessage,
-        instructions: messages.workflowPickerInstructions,
-        shortcuts: WORKFLOW_PICKER_SHORTCUTS,
-        pageSize: workflowChoices(currentState, messages, Separator).length,
-        theme: { icon: { checked: '[x]', unchecked: '[ ]' } },
-        choices: workflowChoices(currentState, messages, Separator),
-      });
+      const selectedWorkflows = await checkbox<string>(
+        workflowPickerOptions(currentState, messages, Separator)
+      );
       nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows, nextState.delivery);
       nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
     }

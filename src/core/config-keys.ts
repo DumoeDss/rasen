@@ -14,6 +14,8 @@
  * silently diverge.
  */
 
+import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
+
 export type ConfigScope = 'global' | 'project';
 /**
  * 'threshold' is the dual-form handoff/reuse shape (see `ThresholdValue` in
@@ -130,7 +132,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     key: 'language',
     scopes: ['global'],
     type: 'enum',
-    enumValues: ['auto', 'en', 'ja'],
+    enumValues: ['auto', ...SUPPORTED_CLI_LOCALES],
     defaultValue: 'auto',
     description: 'Language for interactive prompts and CLI help (`auto` detects the system locale)',
     group: 'Appearance',

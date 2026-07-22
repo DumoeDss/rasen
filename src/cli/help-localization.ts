@@ -36,7 +36,7 @@ function localizeCommand(
         : (flagDefinition?.description ?? option.description);
   }
 
-  if (locale === 'ja') {
+  if (locale !== 'en') {
     const help = getLocaleCatalog(locale).help;
     const titles = help.titles as Record<string, string>;
     command.helpOption('-h, --help', help.helpOption);
