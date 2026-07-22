@@ -29,7 +29,6 @@ When the user types \`/benchmark\`, run this skill.
 ### Phase 1: Setup
 
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
 mkdir -p .rasen/benchmark-reports
 mkdir -p .rasen/benchmark-reports/baselines
 \`\`\`

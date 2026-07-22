@@ -347,6 +347,52 @@ describe('rasen doctor (3.6)', () => {
       expect(fs.existsSync(getProjectHomeDir(entry.home, { globalDataDir }))).toBe(false);
     });
 
+    it('reports worktree-duplicate entries with a --gc hint, and --gc collapses them keeping the shared home (worktree-aware-spaces D5)', async () => {
+      const repoRoot = path.join(tempDir, 'wt-dup-repo');
+      fs.mkdirSync(repoRoot, { recursive: true });
+      const gitEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+
+      const worktreePath = path.join(tempDir, 'wt-dup-linked');
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalWt = fs.realpathSync.native(worktreePath);
+
+      // Seed a legacy worktree-keyed duplicate sharing the main entry's home.
+      const registryPath = path.join(globalDataDir, 'projects', 'registry.json');
+      const registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+      registry.projects[canonicalWt] = { ...main.entry, name: 'wt-dup-linked', lastSeen: '2026-07-09T12:00:00.000Z' };
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.stdout).toContain('Worktree-duplicate entries: 1');
+      expect(human.stdout).toContain(canonicalWt);
+      expect(human.stdout).toContain('rasen doctor --gc');
+
+      const jsonBefore = parseJson(
+        await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env })
+      );
+      expect(jsonBefore.machineHome.worktreeDuplicates).toEqual([
+        { path: canonicalWt, home: main.entry.home, mainRoot: main.canonicalPath },
+      ]);
+
+      const afterGc = parseJson(
+        await runCLI(['doctor', '--json', '--gc', '--store', 'team-context'], { cwd: tempDir, env })
+      );
+      expect(afterGc.machineHome.worktreeDuplicates).toEqual([]);
+      expect(afterGc.gc.removed_entries).toEqual([{ path: canonicalWt, home: main.entry.home }]);
+      // The shared home is referenced by the surviving main entry — kept.
+      expect(afterGc.gc.removed_homes).toEqual([]);
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+    });
+
     it('hints at migratable legacy ephemera for a registered project (migrate-legacy-ephemera 3.1)', async () => {
       const projectId = randomUUID();
       await registerProject({ projectRoot: storeRoot, projectId, mode: 'in-repo' }, { globalDataDir });

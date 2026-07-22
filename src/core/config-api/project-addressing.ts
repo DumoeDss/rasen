@@ -10,6 +10,7 @@ import {
   deriveProjectDisplayName,
   findProjectRegistryEntry,
   readProjectRegistryState,
+  resolveRegistrationRoot,
 } from '../project-registry.js';
 import { listRegisteredStores } from '../store/registry.js';
 import { inspectRegisteredStore, type RegisteredStoreInspection } from '../root-selection.js';
@@ -140,9 +141,13 @@ export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorRe
 
 /**
  * Resolves an explicit `project` selector: exact `projectId` match in the
- * registry first, else a canonical-root-path match on the registry key.
- * Returns `null` when the selector matches nothing (callers respond
- * `project_not_found`).
+ * registry first, else a canonical-root-path match on the registry key, else a
+ * worktree-path fallback (worktree-aware-spaces D3) — a canonical path that is
+ * not itself a registry key but is a linked git worktree of a registered
+ * project resolves to that project's identity with the requested worktree path
+ * as the answering root. Returns `null` when the selector matches nothing
+ * (callers respond `project_not_found`). Non-mutating (git rev-parse only) —
+ * the "resolution has no side effects" contract is preserved.
  */
 export async function resolveProjectSelector(selector: string): Promise<ResolvedProject | null> {
   const state = await readProjectRegistryState();
@@ -161,8 +166,22 @@ export async function resolveProjectSelector(selector: string): Promise<Resolved
     return null;
   }
   const entry = state.projects[canonical];
-  if (!entry) return null;
-  return { root: canonical, ref: { projectId: entry.projectId, name: entry.name, root: canonical } };
+  if (entry) {
+    return { root: canonical, ref: { projectId: entry.projectId, name: entry.name, root: canonical } };
+  }
+
+  // Worktree-path fallback: the requested path is a linked worktree of a
+  // registered project. Answer from the worktree's own root with the owning
+  // project's identity, so a worktree's branch-local planning state is
+  // addressable without the worktree becoming a separate space.
+  const pierced = await resolveRegistrationRoot(canonical);
+  if (pierced !== canonical) {
+    const mainEntry = state.projects[pierced];
+    if (mainEntry) {
+      return { root: canonical, ref: { projectId: mainEntry.projectId, name: mainEntry.name, root: canonical } };
+    }
+  }
+  return null;
 }
 
 /**

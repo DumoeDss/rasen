@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, CHROME_USE_SETUP, QA_METHODOLOGY } from './_shared.js';
+import { PREAMBLE, CHROME_USE_SETUP, QA_METHODOLOGY, PROJECT_DOCS_DIR_RESOLUTION } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
@@ -40,10 +40,10 @@ mkdir -p "$REPORT_DIR/screenshots"
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check \`~/.rasen/projects/\` for recent \`*-test-plan-*.md\` files for this repo
+1. **Project-scoped test plans:** Check the project's registry-backed documents directory for recent \`*-test-plan-*.md\` files for this repo
+   ${PROJECT_DOCS_DIR_RESOLUTION}
    \`\`\`bash
-   SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-   ls -t ~/.rasen/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ls -t "$DOCS_DIR"/*-test-plan-*.md 2>/dev/null | head -1
    \`\`\`
 2. **Conversation context:** Check if a prior planning or review step produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -63,10 +63,8 @@ ${QA_METHODOLOGY}
 **Local:** \`.rasen/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
-\`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
-\`\`\`
-Write to \`~/.rasen/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md\`
+${PROJECT_DOCS_DIR_RESOLUTION}
+Write to \`$DOCS_DIR/{user}-{branch}-test-outcome-{datetime}.md\`
 
 ### Output Structure
 

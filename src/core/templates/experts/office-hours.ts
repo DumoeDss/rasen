@@ -1,6 +1,12 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE_DIALOGUE, CHROME_USE_SETUP, DESIGN_SKETCH, SPEC_REVIEW_LOOP } from './_shared.js';
+import {
+  PREAMBLE_DIALOGUE,
+  CHROME_USE_SETUP,
+  DESIGN_SKETCH,
+  SPEC_REVIEW_LOOP,
+  PROJECT_DOCS_DIR_RESOLUTION,
+} from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
@@ -19,16 +25,14 @@ You are a **YC office hours partner**. Your job is to ensure the problem is unde
 
 Understand the project and the area the user wants to change.
 
-\`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-\`\`\`
+${PROJECT_DOCS_DIR_RESOLUTION}
 
 1. Read \`CLAUDE.md\`, \`TODOS.md\` (if they exist).
 2. Run \`git log --oneline -30\` and \`git diff origin/main --stat 2>/dev/null\` to understand recent context.
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    \`\`\`bash
-   ls -t ~/.rasen/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t "$DOCS_DIR"/*-design-*.md 2>/dev/null
    \`\`\`
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
@@ -287,14 +291,14 @@ After the user states the problem (first question of the Diagnosis product or th
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 \`\`\`bash
-grep -li "<keyword1>\\|<keyword2>\\|<keyword3>" ~/.rasen/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\\|<keyword2>\\|<keyword3>" "$DOCS_DIR"/*-design-*.md 2>/dev/null
 \`\`\`
 
 If matches found, read the matching design docs and surface them:
 - "FYI: Related design found — '{title}' by {user} on {date} (branch: {branch}). Key overlap: {1-line summary of relevant section}."
 - Ask via AskUserQuestion: "Should we build on this prior design or start fresh?"
 
-This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in \`~/.rasen/projects/\`.
+This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in the project's registry-backed documents directory.
 
 If no matches found, proceed silently.
 
@@ -362,21 +366,21 @@ Count the signals. You'll use this count in Phase 6 to determine which tier of c
 
 **HARD GATE:** The precondition for writing the design doc is explicit user approval — either **approval of a recommended approach** when the fork-scan's method-space fork rendered an approach menu, or the **explicit "yes" to distilling a converged discussion into a doc** when no approach menu was needed (the Design product's convergence terminal). Those are the only two ways in. A complaint, silence, or a question is NOT approval — a user asking to be answered first or to discuss more is asking for more conversation, not a doc. Do not write or begin the design doc without that explicit approval. If it is missing, return to the discussion (Dialogue Override) or re-run the approach-approval question.
 
-Write the design document to the project directory.
+Write the design document to the project's registry-backed documents directory.
 
+${PROJECT_DOCS_DIR_RESOLUTION}
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 \`\`\`
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 \`\`\`bash
-PRIOR=$(ls -t ~/.rasen/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t "$DOCS_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 \`\`\`
 If \`$PRIOR\` exists, the new doc gets a \`Supersedes:\` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to \`~/.rasen/projects/{slug}/{user}-{branch}-design-{datetime}.md\`:
+Write to \`$DOCS_DIR/{user}-{branch}-design-{datetime}.md\`:
 
 ### Diagnosis product design doc template:
 
@@ -575,7 +579,7 @@ After the plea, suggest the next step:
 
 - **\`/rasen-propose\`** — turn the validated idea into a change: proposal, design, specs, and tasks
 
-The design doc at \`~/.rasen/projects/\` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
+The design doc at the project's registry-backed documents directory is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
 ---
 

@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE_DIALOGUE, CHROME_USE_SETUP } from './_shared.js';
+import { PREAMBLE_DIALOGUE, CHROME_USE_SETUP, PROJECT_DOCS_DIR_RESOLUTION } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
@@ -34,9 +34,9 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 
 Look for office-hours output:
 
+${PROJECT_DOCS_DIR_RESOLUTION}
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
-ls ~/.rasen/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls -t "$DOCS_DIR"/*-design-*.md 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 \`\`\`
 

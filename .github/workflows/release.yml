@@ -45,6 +45,32 @@ jobs:
         with:
           files: ${{ steps.pack.outputs.tgz }}
 
+  notify-site:
+    name: Notify rasen-site
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Dispatch release-published event
+        env:
+          SITE_DISPATCH_TOKEN: ${{ secrets.RASEN_SITE_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+        run: |
+          payload="$(node -e 'process.stdout.write(JSON.stringify({event_type:"rasen-release-published",client_payload:{tag:process.env.RELEASE_TAG,source_repository:process.env.SOURCE_REPOSITORY,source_run_url:process.env.SOURCE_RUN_URL,release_url:process.env.RELEASE_URL}}))')"
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${SITE_DISPATCH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            https://api.github.com/repos/DumoeDss/rasen-site/dispatches
+
   publish-npm:
     name: Publish to npm
     runs-on: ubuntu-latest

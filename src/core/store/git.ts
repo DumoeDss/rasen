@@ -6,7 +6,23 @@ import { promisify } from 'node:util';
 import { StoreError } from './errors.js';
 
 const fs = nodeFs.promises;
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+
+/**
+ * Every git spawn goes through here so `windowsHide` is always set: the
+ * daemon is a console-less parent on Windows, and each console child (git)
+ * would otherwise flash a visible conhost window per probe — the space
+ * listing runs one inventory probe per project, so a board or Spaces load
+ * flashed a burst of windows. Same flag the daemon and session supervisor
+ * spawns already pass.
+ */
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { cwd?: string } = {}
+): Promise<{ stdout: string; stderr: string }> {
+  return execFilePromise(file, args, { ...options, windowsHide: true });
+}
 
 /**
  * Git mechanics for stores: repository detection, setup-time init and
@@ -284,4 +300,93 @@ export async function gitDir(repoPath: string): Promise<string | null> {
   const raw = stdout?.trim();
   if (!raw) return null;
   return path.isAbsolute(raw) ? raw : path.resolve(repoPath, raw);
+}
+
+/** One worktree of a repository, as reported by `git worktree list --porcelain` (worktree-aware-spaces D2). */
+export interface GitWorktreeEntry {
+  /** The worktree's absolute working-tree root, verbatim from git. */
+  root: string;
+  /** The checked-out commit sha, or null (a fresh worktree with no HEAD). */
+  head: string | null;
+  /** The checked-out branch's short name (`refs/heads/` stripped), or null when detached or bare. */
+  branch: string | null;
+  /** True for the main checkout — the FIRST porcelain entry (git lists it first). */
+  isMain: boolean;
+  locked: boolean;
+  prunable: boolean;
+}
+
+/**
+ * Parses `git worktree list --porcelain` output (worktree-aware-spaces D2).
+ * Records are blank-line-separated; each is a sequence of `label [value]`
+ * lines (`worktree <path>`, `HEAD <sha>`, `branch <ref>` | `detached`,
+ * `bare`, `locked [reason]`, `prunable [reason]`). The first record git
+ * emits is always the main checkout, so `isMain` is derived by position, not
+ * by any per-record flag. Exported for fixture-driven parser tests.
+ */
+export function parseWorktreePorcelain(stdout: string): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = [];
+  let root: string | undefined;
+  let head: string | null = null;
+  let branch: string | null = null;
+  let locked = false;
+  let prunable = false;
+
+  const flush = () => {
+    if (root === undefined) return;
+    entries.push({ root, head, branch, isMain: entries.length === 0, locked, prunable });
+    root = undefined;
+    head = null;
+    branch = null;
+    locked = false;
+    prunable = false;
+  };
+
+  for (const rawLine of stdout.split('\n')) {
+    const line = rawLine.replace(/\r$/, '');
+    if (line.trim() === '') {
+      flush();
+      continue;
+    }
+    const spaceIdx = line.indexOf(' ');
+    const label = spaceIdx === -1 ? line : line.slice(0, spaceIdx);
+    const value = spaceIdx === -1 ? '' : line.slice(spaceIdx + 1);
+    switch (label) {
+      case 'worktree':
+        flush();
+        root = value;
+        break;
+      case 'HEAD':
+        head = value || null;
+        break;
+      case 'branch':
+        branch = value.replace(/^refs\/heads\//, '') || null;
+        break;
+      case 'detached':
+        branch = null;
+        break;
+      case 'locked':
+        locked = true;
+        break;
+      case 'prunable':
+        prunable = true;
+        break;
+      // `bare` and any future labels: ignored — the record still flushes.
+    }
+  }
+  flush();
+  return entries;
+}
+
+/**
+ * The live worktree inventory for `repoRoot`, derived from `git worktree list
+ * --porcelain` at read time (worktree-aware-spaces D2) — never persisted.
+ * Returns null on ANY failure (git unavailable, not a repository), matching
+ * the three-way posture of the other read-only probes; callers degrade to
+ * "no inventory" (an empty listing, not an error).
+ */
+export async function gitWorktreeList(repoRoot: string): Promise<GitWorktreeEntry[] | null> {
+  const stdout = await gitProbe(repoRoot, ['worktree', 'list', '--porcelain']);
+  if (stdout === null) return null;
+  return parseWorktreePorcelain(stdout);
 }

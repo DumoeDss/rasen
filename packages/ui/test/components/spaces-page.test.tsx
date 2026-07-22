@@ -120,6 +120,25 @@ describe('SpacesPage', () => {
     expect(container.querySelector('[data-testid="space-members"]')?.textContent).toContain('Member One');
   });
 
+  it('shows a worktree badge on a multi-worktree project and none otherwise (spaces-ui spec)', async () => {
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [
+        { type: 'project', id: 'multi', name: 'Multi', root: '/multi', worktreeCount: 3 },
+        { type: 'project', id: 'single', name: 'Single', root: '/single', worktreeCount: 1 },
+        { type: 'project', id: 'plain', name: 'Plain', root: '/plain' },
+      ],
+    });
+
+    await mount(container);
+
+    const badge = container.querySelector('[data-selector="project:multi"] [data-testid="worktree-badge"]');
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toContain('3 worktrees');
+    // A single-worktree count or an absent count shows no badge.
+    expect(container.querySelector('[data-selector="project:single"] [data-testid="worktree-badge"]')).toBeNull();
+    expect(container.querySelector('[data-selector="project:plain"] [data-testid="worktree-badge"]')).toBeNull();
+  });
+
   it('filters the listing client-side by the search query', async () => {
     await mount(container);
     const search = container.querySelector('[data-testid="spaces-search"]') as HTMLInputElement;

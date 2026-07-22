@@ -356,6 +356,13 @@ export interface ProjectSpaceEntry {
   id: string;
   name: string;
   root: string;
+  /**
+   * The project's live worktree count (worktree-aware-spaces D3), derived from
+   * `git worktree list` at read time and never persisted. Present only when the
+   * root is a git repository with more than one worktree; absent otherwise (no
+   * inventory, or a single worktree) so a single-worktree project shows no badge.
+   */
+  worktreeCount?: number;
 }
 
 /** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
@@ -372,6 +379,27 @@ export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
 /** `GET /api/v1/spaces` response (design D6). */
 export interface SpacesResponse {
   spaces: SpaceEntry[];
+}
+
+/**
+ * One worktree of a space's repository (worktree-aware-spaces D3), from the
+ * live `GET /api/v1/spaces/worktrees` inventory — derived from git at read time,
+ * never persisted.
+ */
+export interface SpaceWorktreeEntry {
+  /** The worktree's absolute working-tree root. */
+  root: string;
+  /** The checked-out branch's short name, or null when detached. */
+  branch: string | null;
+  /** True for the main checkout. */
+  isMain: boolean;
+  /** Active changes in this worktree's own `rasen/changes` (same definition as the changes listing: `proposal.md` present). */
+  activeChangeCount: number;
+}
+
+/** `GET /api/v1/spaces/worktrees` response (worktree-aware-spaces D3): empty for a non-git space root. */
+export interface SpaceWorktreesResponse {
+  worktrees: SpaceWorktreeEntry[];
 }
 
 // -----------------------------------------------------------------------
@@ -418,7 +446,6 @@ export interface WorkflowDefinitionWire {
   kind: WorkflowKind;
   digest: string;
   skill: { name: string; dirName: string; description: string };
-  command: { id: string; name: string; category: string; tags: string[] } | null;
   requires: WorkflowDependencySet;
   recommends: WorkflowRecommendations;
   files: { path: string; sha256: string }[];

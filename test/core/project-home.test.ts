@@ -3,14 +3,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+
 import { resolveProjectHome, touchProjectRegistry } from '../../src/core/project-home.js';
 import { readProjectConfig } from '../../src/core/project-config.js';
 import {
   getProjectRegistryPath,
   readProjectRegistryState,
+  registerProject,
   writeProjectRegistryState,
 } from '../../src/core/project-registry.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
+import { isolatedGitEnv } from '../helpers/store-git.js';
 
 describe('project-home', () => {
   let projectRoot: string;
@@ -197,5 +202,65 @@ describe('touchProjectRegistry (self-healing)', () => {
     fs.writeFileSync(registryPath, '{not valid json');
 
     await expect(touchProjectRegistry(projectRoot, { globalDataDir })).resolves.toBeUndefined();
+  });
+});
+
+describe('worktree piercing for probe and self-heal (worktree-aware-spaces D1)', () => {
+  let repoRoot: string;
+  let worktreePath: string;
+  let globalDataDir: string;
+  let gitExecEnv: NodeJS.ProcessEnv;
+  const projectId = randomUUID();
+
+  beforeEach(() => {
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-wt-home-'));
+    globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-wt-home-gdd-'));
+    gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+    // A committed rasen/config.yaml carrying the shared projectId, so the
+    // linked worktree inherits the same identity (branch-local but committed).
+    fs.mkdirSync(path.join(repoRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoRoot, 'rasen', 'config.yaml'),
+      `schema: spec-driven\nprojectId: ${projectId}\n`
+    );
+    execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+    execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+    worktreePath = path.join(path.dirname(repoRoot), `rasen-wt-home-wt-${randomUUID().slice(0, 8)}`);
+    execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+  });
+
+  afterEach(() => {
+    try {
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+    } catch {
+      // best-effort cleanup
+    }
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+    fs.rmSync(worktreePath, { recursive: true, force: true });
+    fs.rmSync(globalDataDir, { recursive: true, force: true });
+  });
+
+  it('probe (ensure:false) from a worktree resolves the main checkout entry', async () => {
+    const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+    const probed = await resolveProjectHome(worktreePath, { globalDataDir, ensure: false });
+    expect(probed).not.toBeNull();
+    expect(probed!.projectId).toBe(projectId);
+    expect(path.basename(probed!.homeDir)).toBe(main.entry.home);
+  });
+
+  it('self-heal from a worktree refreshes the main entry, never a worktree-keyed one', async () => {
+    const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+    await touchProjectRegistry(worktreePath, { globalDataDir });
+
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(Object.keys(state?.projects ?? {})).toEqual([main.canonicalPath]);
+    expect(state?.projects[FileSystemUtils.canonicalizeExistingPath(worktreePath)]).toBeUndefined();
   });
 });
