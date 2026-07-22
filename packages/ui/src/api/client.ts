@@ -95,15 +95,12 @@ async function request<T>(
   return body as T;
 }
 
-/** Config-api scoping (unchanged): the config endpoints stay on `?project=` (planning-space-addressing did not move config onto `?space=`). */
-function projectQuery(project?: string): string {
-  return project ? `?project=${encodeURIComponent(project)}` : '';
-}
-
 /**
- * Management-api space scoping (design.md D6): a `<type>:<id>` selector,
- * URL-encoded once here at the single client seam. Omitting it sends no
- * `space` param, preserving the server's launch-project fallback exactly.
+ * Space scoping (design.md D6): a `<type>:<id>` selector, URL-encoded once
+ * here at the single client seam. Omitting it sends no `space` param,
+ * preserving the server's launch-project fallback exactly. Every space-scoped
+ * endpoint — management AND config (W2 design D7: the config client moved
+ * wholesale off `?project=`) — routes through this one helper.
  */
 function spaceQuery(selector?: string): string {
   return selector ? `?space=${encodeURIComponent(selector)}` : '';
@@ -117,8 +114,9 @@ export function listProjects(): Promise<ListProjectsResponse> {
   return request<ListProjectsResponse>('/api/v1/projects');
 }
 
-export function listConfig(project?: string): Promise<ListConfigResponse> {
-  return request<ListConfigResponse>(`/api/v1/config${projectQuery(project)}`);
+/** The effective config for a planning space (W2 design D7); no selector = launch-project fallback. */
+export function listConfig(space?: string): Promise<ListConfigResponse> {
+  return request<ListConfigResponse>(`/api/v1/config${spaceQuery(space)}`);
 }
 
 /** Read-only gates inventory (D5/D6): the available pipelines and their gate-carrying stages. */
@@ -126,19 +124,19 @@ export function listPipelines(): Promise<ListPipelinesResponse> {
   return request<ListPipelinesResponse>('/api/v1/pipelines');
 }
 
-export function getKey(key: string, project?: string): Promise<GetConfigKeyResponse> {
+export function getKey(key: string, space?: string): Promise<GetConfigKeyResponse> {
   return request<GetConfigKeyResponse>(
-    `/api/v1/config/${encodeURIComponent(key)}${projectQuery(project)}`
+    `/api/v1/config/${encodeURIComponent(key)}${spaceQuery(space)}`
   );
 }
 
 export function putKey(
   key: string,
   body: { scope: ConfigScope; value: unknown },
-  project?: string
+  space?: string
 ): Promise<WriteConfigKeyResponse> {
   return request<WriteConfigKeyResponse>(
-    `/api/v1/config/${encodeURIComponent(key)}${projectQuery(project)}`,
+    `/api/v1/config/${encodeURIComponent(key)}${spaceQuery(space)}`,
     {
       method: 'PUT',
       json: true,
@@ -225,10 +223,10 @@ export function createChange(body: SubmitChangeRequest): Promise<SubmitChangeRes
 export function deleteKey(
   key: string,
   scope: ConfigScope,
-  project?: string
+  space?: string
 ): Promise<WriteConfigKeyResponse> {
   const query = new URLSearchParams({ scope });
-  if (project) query.set('project', project);
+  if (space) query.set('space', space);
   return request<WriteConfigKeyResponse>(`/api/v1/config/${encodeURIComponent(key)}?${query}`, {
     method: 'DELETE',
     json: true,

@@ -25,7 +25,7 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
   it('config-list fixture has plausible entries', () => {
     expect(configListFixture.entries.length).toBeGreaterThan(0);
     for (const entry of configListFixture.entries) {
-      expect(['default', 'global', 'project', 'env-override']).toContain(entry.source);
+      expect(['default', 'global', 'store', 'project', 'env-override']).toContain(entry.source);
       expect(['boolean', 'number', 'string', 'enum', 'array', 'threshold']).toContain(
         entry.definition.type
       );

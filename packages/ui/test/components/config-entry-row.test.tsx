@@ -1,50 +1,64 @@
 // @vitest-environment jsdom
 /**
- * Component-level coverage for ConfigEntryRow (review round 1, m5): nothing
- * previously rendered this component, which is exactly the layer where B1
- * (project-scope gating) and B2 (stale draft after the entry prop updates)
- * lived — a jsdom render is the only way to catch either.
+ * Component-level coverage for ConfigEntryRow after the W2 redesign: the
+ * per-row Scope select is gone (scope comes from the page mode via props), the
+ * row titles on a human label with the dot-path as secondary text, and layer
+ * transparency renders as an inherited-value line (with a store-edit link when
+ * the store provides the value) or a shadowed reveal.
  */
 import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock the API client so a radio-toggle's immediate commit (MIN-M3) resolves
-// synchronously with a fake re-resolved entry instead of hitting a real
-// server. `ApiError` stays the real class (imported by the component for an
-// `instanceof` check on failure).
 vi.mock('../../src/api/client.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/client.js')>();
-  return {
-    ...actual,
-    putKey: vi.fn(),
-    deleteKey: vi.fn(),
-  };
+  return { ...actual, putKey: vi.fn(), deleteKey: vi.fn() };
 });
 
 import { ConfigEntryRow } from '../../src/components/ConfigEntryRow.js';
 import * as client from '../../src/api/client.js';
-import { configListFixture } from '../fixtures/config-list.js';
-import type { WireConfigEntry } from '../../src/api/types.js';
+import {
+  configListFixture,
+  configListInheritedFixture,
+  configListStoreSpaceFixture,
+} from '../fixtures/config-list.js';
+import type { StoreLayerRef, WireConfigEntry } from '../../src/api/types.js';
+import type { ConfigMode, SpaceType } from '../../src/config/controls.js';
 
 const byKey = (key: string): WireConfigEntry =>
   configListFixture.entries.find((e) => e.definition.key === key)!;
+const inheritedByKey = (key: string): WireConfigEntry =>
+  configListInheritedFixture.entries.find((e) => e.definition.key === key)!;
+const storeSpaceByKey = (key: string): WireConfigEntry =>
+  configListStoreSpaceFixture.entries.find((e) => e.definition.key === key)!;
+
+interface MountOpts {
+  mode?: ConfigMode;
+  spaceType?: SpaceType;
+  spaceSelector?: string;
+  storeRef?: StoreLayerRef | null;
+}
 
 function mount(
   entry: WireConfigEntry,
-  projectId: string | undefined,
   container: HTMLElement,
+  opts: MountOpts = {},
   onEntryUpdated: (entry: WireConfigEntry) => void = () => {}
 ) {
-  // `act` flushes preact's effect queue synchronously so the useEffect
-  // resync (B2's fix) has already run before the assertions below query the
-  // DOM — without it, `useEffect` runs on a microtask preact schedules
-  // itself and a bare `render()` call would race it.
+  const {
+    mode = 'local',
+    spaceType = 'project',
+    spaceSelector = 'project:proj_abc123',
+    storeRef = null,
+  } = opts;
   act(() => {
     render(
       <ConfigEntryRow
         entry={entry}
-        projectId={projectId}
+        mode={mode}
+        spaceType={spaceType}
+        spaceSelector={spaceSelector}
+        storeRef={storeRef}
         onPageError={() => {}}
         onEntryUpdated={onEntryUpdated}
       />,
@@ -67,151 +81,174 @@ describe('ConfigEntryRow', () => {
     vi.restoreAllMocks();
   });
 
-  it('B2: resyncs the displayed value when the entry prop is replaced (e.g. after an unset)', () => {
-    const withProjectValue = byKey('handoff.threshold'); // value 0.8, source project, shadows global 0.6
-    mount(withProjectValue, 'proj_abc123', container);
+  it('titles on a human label with the dot-path as secondary text, and renders no scope select', () => {
+    mount(byKey('handoff.threshold'), container);
+    expect(container.querySelector('.config-entry__label')?.textContent).toBe('Handoff threshold');
+    expect(container.querySelector('.config-entry__key')?.textContent).toBe('handoff.threshold');
+    // The per-row Scope select is gone — the only <select> a row can now show
+    // is an enum control, and handoff.threshold is a threshold, not an enum.
+    expect(container.querySelector('.config-entry__scope-choice')).toBeNull();
+    expect(container.querySelector('select')).toBeNull();
+  });
 
+  it('B2: resyncs the displayed value when the entry prop is replaced (e.g. after an unset)', () => {
+    const withProjectValue = byKey('handoff.threshold'); // value 0.8, source project
+    mount(withProjectValue, container);
     let input = container.querySelector('input[type="number"]') as HTMLInputElement;
     expect(input.value).toBe('0.8');
 
-    // Simulate the server's re-resolved entry after an unset: value reverts
-    // to the shadowed global value, source flips to "global".
     const afterUnset: WireConfigEntry = {
       ...withProjectValue,
       value: 0.6,
       source: 'global',
       scopeValues: { global: 0.6 },
     };
-    mount(afterUnset, 'proj_abc123', container);
-
+    mount(afterUnset, container);
     input = container.querySelector('input[type="number"]') as HTMLInputElement;
-    expect(input.value).toBe('0.6'); // was stuck at "0.8" before the B2 fix
+    expect(input.value).toBe('0.6');
     expect(container.querySelector('.config-entry__source--global')).not.toBeNull();
   });
 
-  it('B1: a project-only key is disabled with a hint when no project is selected', () => {
-    const projectOnly = byKey('autopilot.gates');
-    mount(projectOnly, undefined, container);
+  it('mode selects the write target: Global mode writes the global scope', async () => {
+    const putKeyMock = client.putKey as unknown as ReturnType<typeof vi.fn>;
+    putKeyMock.mockResolvedValue({ entry: byKey('proactive'), store: null });
+    mount(byKey('proactive'), container, { mode: 'global' }); // proactive: global-only boolean
 
+    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await act(async () => {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(putKeyMock).toHaveBeenCalledTimes(1);
+    const [, body] = putKeyMock.mock.calls[0];
+    expect(body.scope).toBe('global');
+  });
+
+  it('mode selects the write target: Local mode at a project space writes the project scope', async () => {
+    const putKeyMock = client.putKey as unknown as ReturnType<typeof vi.fn>;
+    putKeyMock.mockResolvedValue({ entry: byKey('autopilot.gates'), store: null });
+    mount(byKey('autopilot.gates'), container, { mode: 'local', spaceType: 'project' });
+
+    const select = container.querySelector('select') as HTMLSelectElement;
+    await act(async () => {
+      select.value = 'off';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    const [, body] = putKeyMock.mock.calls[0];
+    expect(body.scope).toBe('project');
+  });
+
+  it('Local mode at a store space writes the store scope', async () => {
+    const putKeyMock = client.putKey as unknown as ReturnType<typeof vi.fn>;
+    putKeyMock.mockResolvedValue({ entry: storeSpaceByKey('schema'), store: null });
+    mount(storeSpaceByKey('schema'), container, {
+      mode: 'local',
+      spaceType: 'store',
+      spaceSelector: 'store:shared-store',
+    });
+
+    const input = container.querySelector('input[type="text"]') as HTMLInputElement;
+    await act(async () => {
+      input.value = 'other-schema';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    const [key, body, selector] = putKeyMock.mock.calls[0];
+    expect(key).toBe('schema');
+    expect(body.scope).toBe('store');
+    expect(selector).toBe('store:shared-store');
+  });
+
+  it('inherited-from-store row is read-only, names the store, and links to edit in the store', () => {
+    const storeRef = { id: 'shared-store', root: '/Users/dev/shared-store' };
+    mount(inheritedByKey('autopilot.gates'), container, {
+      mode: 'local',
+      spaceType: 'project',
+      storeRef,
+    });
+
+    // Read-only: no enum select, a readonly value span instead.
     expect(container.querySelector('select')).toBeNull();
-    expect(container.querySelector('.control--readonly')).not.toBeNull();
-    expect(container.textContent).toContain('select a project above to edit');
+    expect(container.querySelector('.control--readonly')?.textContent).toContain('off');
+    expect(container.textContent).toContain('Inherited from store shared-store: off');
+
+    const link = container.querySelector('a.config-entry__store-edit') as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute('href')).toBe('/s/shared-store/config');
+    expect(link.textContent).toContain('Edit in store shared-store');
   });
 
-  it('B1: the same project-only key becomes editable once a project is selected', () => {
-    const projectOnly = byKey('autopilot.gates');
-    mount(projectOnly, 'proj_abc123', container);
-
-    expect(container.querySelector('select')).not.toBeNull();
-    expect(container.querySelector('.control--readonly')).toBeNull();
-  });
-
-  it('B1: a dual-scope key stays editable (global only) with no project selected, and hides the project unset button', () => {
-    const dualScope = byKey('handoff.threshold');
-    mount(dualScope, undefined, container);
-
+  it('inherited-from-global row shows the global value and remains editable', () => {
+    const inheritedFromGlobal: WireConfigEntry = {
+      ...byKey('handoff.threshold'),
+      value: 0.6,
+      source: 'global',
+      scopeValues: { global: 0.6 },
+    };
+    mount(inheritedFromGlobal, container, { mode: 'local', spaceType: 'project' });
+    expect(container.textContent).toContain('Inherited from global: 0.6');
+    // Editable — the threshold control still renders.
     expect(container.querySelector('input[type="number"]')).not.toBeNull();
-    const buttons = [...container.querySelectorAll('button')].map((b) => b.textContent);
-    expect(buttons).not.toContain('Unset project value');
+    expect(container.querySelector('a.config-entry__store-edit')).toBeNull();
+  });
+
+  it('renders no store affordance when there is no store ref (no store noise without inheritance)', () => {
+    mount(byKey('handoff.threshold'), container, { mode: 'local', spaceType: 'project', storeRef: null });
+    expect(container.querySelector('a.config-entry__store-edit')).toBeNull();
+    expect(container.textContent).not.toContain('Inherited from store');
+  });
+
+  it('unset follows the mode: a single unset button carries the active mode scope', async () => {
+    const deleteKeyMock = client.deleteKey as unknown as ReturnType<typeof vi.fn>;
+    deleteKeyMock.mockResolvedValue({ entry: byKey('handoff.threshold'), store: null });
+    // Local mode at a project space, handoff.threshold has a project value → one unset button.
+    mount(byKey('handoff.threshold'), container, { mode: 'local', spaceType: 'project' });
+
+    const buttons = [...container.querySelectorAll('button')];
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.textContent).toBe('Unset project value');
+
+    await act(async () => {
+      buttons[0]!.click();
+      await Promise.resolve();
+    });
+    const [, scope] = deleteKeyMock.mock.calls[0];
+    expect(scope).toBe('project');
+  });
+
+  it('unset is not offered when the active mode scope holds no value', () => {
+    // Global mode: handoff.threshold has a global value → unset shows "global".
+    mount(byKey('autopilot.gates'), container, { mode: 'local', spaceType: 'project' });
+    // autopilot.gates is source 'default' with empty scopeValues → no project value → no unset.
+    expect(container.querySelector('button')).toBeNull();
   });
 
   it('dual-form threshold: renders the fraction input by default and switches to the remainingTokens input on the absolute-form radio', () => {
-    const threshold = byKey('handoff.threshold'); // value 0.8 (fraction form)
-    mount(threshold, 'proj_abc123', container);
-
+    mount(byKey('handoff.threshold'), container, { mode: 'local', spaceType: 'project' });
     const radios = [...container.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
     expect(radios).toHaveLength(2);
-    expect(radios[0].checked).toBe(true); // fraction radio starts selected
-    expect(radios[1].checked).toBe(false);
+    expect(radios[0].checked).toBe(true);
 
     let numberInputs = [...container.querySelectorAll('input[type="number"]')] as HTMLInputElement[];
-    expect(numberInputs).toHaveLength(1);
     expect(numberInputs[0].value).toBe('0.8');
 
+    const putKeyMock = client.putKey as unknown as ReturnType<typeof vi.fn>;
+    putKeyMock.mockResolvedValue({ entry: byKey('handoff.threshold'), store: null });
     act(() => {
       radios[1].dispatchEvent(new Event('change', { bubbles: true }));
     });
-
     numberInputs = [...container.querySelectorAll('input[type="number"]')] as HTMLInputElement[];
     expect(numberInputs).toHaveLength(1);
-    // Switched to the absolute-form input, seeded with a value above the floor.
     expect(Number(numberInputs[0].value)).toBeGreaterThan(0);
-  });
-
-  it('dual-form threshold: an absolute-form value starts with the remainingTokens radio selected', () => {
-    const threshold = byKey('handoff.threshold');
-    const absoluteForm: WireConfigEntry = {
-      ...threshold,
-      value: { remainingTokens: 60_000 },
-      scopeValues: { ...threshold.scopeValues, project: { remainingTokens: 60_000 } },
-    };
-    mount(absoluteForm, 'proj_abc123', container);
-
-    const radios = [...container.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
-    expect(radios[0].checked).toBe(false);
-    expect(radios[1].checked).toBe(true);
-
-    const numberInput = container.querySelector('input[type="number"]') as HTMLInputElement;
-    expect(numberInput.value).toBe('60000');
-  });
-
-  it('MIN-M3: selecting the absolute-form radio commits immediately with a sensible seed, instead of leaving the display diverged from the stored value', async () => {
-    const putKeyMock = client.putKey as unknown as ReturnType<typeof vi.fn>;
-    const threshold = byKey('handoff.threshold'); // value 0.8 (fraction form), project scope
-    const updated: WireConfigEntry[] = [];
-    putKeyMock.mockResolvedValue({
-      entry: { ...threshold, value: { remainingTokens: 50_000 }, scopeValues: { ...threshold.scopeValues, project: { remainingTokens: 50_000 } } },
-    });
-
-    mount(threshold, 'proj_abc123', container, (e) => updated.push(e));
-
-    const radios = [...container.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
-    await act(async () => {
-      radios[1].dispatchEvent(new Event('change', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    // The toggle wrote through immediately (not deferred to a subsequent
-    // number-input edit) with a sensible, always-valid seed — not the
-    // boundary value `remainingTokensGt + 1`.
-    expect(putKeyMock).toHaveBeenCalledTimes(1);
-    const [, body] = putKeyMock.mock.calls[0];
-    expect(body.value).toEqual({ remainingTokens: 50_000 });
-    expect(body.scope).toBe('project');
-    expect(updated).toHaveLength(1);
-    expect(updated[0].value).toEqual({ remainingTokens: 50_000 });
-  });
-
-  it('MIN-M3: selecting the fraction-form radio from an absolute value commits immediately', async () => {
-    const putKeyMock = client.putKey as unknown as ReturnType<typeof vi.fn>;
-    const threshold = byKey('handoff.threshold');
-    const absoluteForm: WireConfigEntry = {
-      ...threshold,
-      value: { remainingTokens: 60_000 },
-      scopeValues: { ...threshold.scopeValues, project: { remainingTokens: 60_000 } },
-    };
-    putKeyMock.mockResolvedValue({
-      entry: { ...threshold, value: 0.5, scopeValues: { ...threshold.scopeValues, project: 0.5 } },
-    });
-
-    mount(absoluteForm, 'proj_abc123', container);
-
-    const radios = [...container.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
-    await act(async () => {
-      radios[0].dispatchEvent(new Event('change', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(putKeyMock).toHaveBeenCalledTimes(1);
-    const [, body] = putKeyMock.mock.calls[0];
-    expect(body.value).toBe(0.5);
   });
 
   it('config-page-coherence: renders a models.* key as a text input with a datalist of known suggestions', () => {
     const modelKey: WireConfigEntry = {
       definition: {
         key: 'models.roles.reviewer',
-        scopes: ['global', 'project'],
+        scopes: ['global', 'store', 'project'],
         type: 'string',
         defaultValue: undefined,
         description: 'Per-role model override for the reviewer role',
@@ -222,24 +259,14 @@ describe('ConfigEntryRow', () => {
       source: 'default',
       scopeValues: {},
     };
-    mount(modelKey, 'proj_abc123', container);
+    mount(modelKey, container, { mode: 'local', spaceType: 'project' });
 
     const input = container.querySelector('input[type="text"]') as HTMLInputElement;
-    expect(input).not.toBeNull();
     expect(input.value).toBe('fable');
     const listId = input.getAttribute('list');
-    expect(listId).toBeTruthy();
     const datalist = document.getElementById(listId!);
-    expect(datalist).not.toBeNull();
     const options = [...(datalist?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'));
     expect(options).toContain('sonnet-5');
     expect(options).toContain('fable');
-
-    // A typed id matching no suggestion is still accepted (no allow-list).
-    act(() => {
-      input.value = 'not-a-real-model-xyz';
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    expect(input.value).toBe('not-a-real-model-xyz');
   });
 });

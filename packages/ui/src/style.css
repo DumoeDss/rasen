@@ -475,31 +475,33 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   font-size: var(--text-lg); margin-bottom: var(--space-4);
   padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft);
 }
-.config-page__error, .config-page__store-deferred {
+.config-page__error {
   border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-6); font-size: var(--text-sm);
+  background: var(--danger-bg); color: var(--danger-fg); box-shadow: 0 0 0 1px color-mix(in oklab, var(--danger), transparent 78%);
 }
-.config-page__store-deferred { background: var(--surface-warm); color: var(--muted); box-shadow: var(--ring); }
-.config-page__error { background: var(--danger-bg); color: var(--danger-fg); box-shadow: 0 0 0 1px color-mix(in oklab, var(--danger), transparent 78%); }
+.config-page__mode { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+.config-page__tabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
 
 .config-entry { padding: var(--space-4) 0; border-top: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: var(--space-2); }
 .config-entry:first-of-type { border-top: none; padding-top: 0; }
 .config-entry__header { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.config-entry__key { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
+.config-entry__label { font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
+.config-entry__key { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600; color: var(--meta); }
 .config-entry__source {
   font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.02em;
   padding: 1px var(--space-2); border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--muted);
 }
 .config-entry__source--default { background: color-mix(in oklab, var(--meta), transparent 86%); color: var(--muted); }
 .config-entry__source--global { background: var(--accent-tint); color: var(--accent); }
+.config-entry__source--store { background: var(--surface-warm); color: var(--fg-2); box-shadow: var(--ring); }
 .config-entry__source--project { background: var(--success-bg); color: var(--success-fg); }
 .config-entry__source--env-override { background: var(--warn-bg); color: var(--warn-fg); }
 .config-entry__description { margin: 0; color: var(--muted); font-size: var(--text-sm); }
 .config-entry__warnings { margin: 0; padding-left: var(--space-5); color: var(--danger-fg); font-size: var(--text-sm); }
 .config-entry__shadowed { margin: 0; color: var(--meta); font-size: var(--text-xs); }
-.config-entry__no-project-hint { color: var(--meta); font-style: italic; }
+.config-entry__store-edit { font-weight: 600; }
 .config-entry__error { margin: 0; color: var(--danger-fg); font-size: var(--text-sm); font-weight: 600; }
-.config-entry__scope-choice { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
 .control { font-size: var(--text-sm); }
 .control--readonly {
   display: inline-block; font-family: var(--font-mono); color: var(--fg-2);

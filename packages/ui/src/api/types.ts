@@ -13,14 +13,25 @@
  * is a bug in this mirror, not a sanctioned protocol change.
  */
 
-export type ConfigScope = 'global' | 'project';
+export type ConfigScope = 'global' | 'store' | 'project';
 export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array' | 'threshold';
-export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
+export type ConfigSource = 'default' | 'global' | 'store' | 'project' | 'env-override';
 
 /** A registered project, or the server's launch project. */
 export interface ProjectRef {
   projectId: string;
   name: string;
+  root: string;
+}
+
+/**
+ * The store contributing the store layer to a config read (W1 design D6,
+ * mirrored from `StoreLayerRef` in the CLI's wire-types.ts): the inherited
+ * store for a project context, or the addressed store's own root for a store
+ * context. `null` in a response when no store layer is active.
+ */
+export interface StoreLayerRef {
+  id: string;
   root: string;
 }
 
@@ -54,7 +65,7 @@ export interface WireConfigEntry {
   definition: WireConfigKeyDefinition;
   value: unknown;
   source: ConfigSource;
-  scopeValues: { global?: unknown; project?: unknown };
+  scopeValues: { global?: unknown; store?: unknown; project?: unknown };
   /** Present only when a raw on-disk scope value fails registry validation. */
   warnings?: string[];
 }
@@ -83,11 +94,15 @@ export interface ListProjectsResponse {
 
 export interface ListConfigResponse {
   project: ProjectRef | null;
+  /** The store layer contributing to this read (W1 design D6): the inherited store at a project space, the addressed store at a store space, or null. */
+  store: StoreLayerRef | null;
   entries: WireConfigEntry[];
 }
 
 export interface GetConfigKeyResponse {
   entry: WireConfigEntry;
+  /** The store layer contributing to this read (W1 design D6); null when no store layer is active. */
+  store: StoreLayerRef | null;
 }
 
 /** PUT and DELETE both respond with the re-resolved entry. */

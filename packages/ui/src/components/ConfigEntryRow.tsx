@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { WireConfigEntry, ConfigScope } from '../api/types.js';
+import type { StoreLayerRef, WireConfigEntry } from '../api/types.js';
 import {
   selectControl,
   validateRangedNumber,
   validateThresholdValue,
-  writableScopes,
-  defaultWriteScope,
+  modeScope,
+  localScopeFor,
+  isStoreInherited,
+  type ConfigMode,
+  type SpaceType,
 } from '../config/controls.js';
 import { errorSurface } from '../config/errors.js';
+import { labelFor } from '../config/labels.js';
+import { spaceHref } from '../store/use-space.js';
 
 /** Renders a value for display — objects (e.g. a `{ remainingTokens: N }` threshold) as JSON, everything else via `String()`. */
 function formatDisplayValue(value: unknown): string {
@@ -18,101 +23,101 @@ function formatDisplayValue(value: unknown): string {
 
 interface Props {
   entry: WireConfigEntry;
-  projectId?: string;
-  /** Bubbles a page-level error (project_required / project_not_found) up to the page. */
+  /** The active page-level scope mode (design D1) — the write target and visibility filter. */
+  mode: ConfigMode;
+  /** The current space's type — decides what "Local" writes (project vs store scope). */
+  spaceType: SpaceType;
+  /** The `<type>:<id>` selector every config call is addressed with (design D7). */
+  spaceSelector: string;
+  /** The store layer contributing to this read (design D3); null when the space has no store inheritance. */
+  storeRef: StoreLayerRef | null;
+  /** Bubbles a page-level error (space-resolution) up to the page. */
   onPageError: (message: string, fix?: string) => void;
   /** Replaces this row's entry in place after a successful write/unset (design.md D6). */
   onEntryUpdated: (entry: WireConfigEntry) => void;
 }
 
-/** One config key's row: value, source badge, shadowed scope values, warnings, and its edit control. */
-export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }: Props) {
-  const hasProject = projectId !== undefined;
-  const control = selectControl(entry, hasProject);
-  const scopes = writableScopes(entry, hasProject);
-  // Only "project"-scoped keys become newly readonly for lack of a project
-  // (design.md D6 "Launched outside a project") — env-override/wildcard
-  // entries are readonly regardless and get no such hint.
-  const disabledForNoProject =
-    control.readonly &&
-    entry.source !== 'env-override' &&
-    !entry.definition.wildcard &&
-    entry.definition.scopes.includes('project') &&
-    !hasProject;
-  const [scope, setScope] = useState<ConfigScope | undefined>(defaultWriteScope(entry, hasProject));
+/** The wider layers below the effective source, narrow→wide, used to reveal shadowed values (design D3). */
+function shadowedWiderScopes(entry: WireConfigEntry): Array<'store' | 'global'> {
+  const chain = ['project', 'store', 'global'] as const;
+  const idx = chain.indexOf(entry.source as 'project' | 'store' | 'global');
+  if (idx < 0) return []; // default / env-override reveal nothing here
+  return (['store', 'global'] as const).filter(
+    (s) => chain.indexOf(s) > idx && entry.scopeValues[s] !== undefined
+  );
+}
+
+/** One config key's row: label, value, source badge, inherited/shadowed lines, warnings, and its edit control. */
+export function ConfigEntryRow({
+  entry,
+  mode,
+  spaceType,
+  spaceSelector,
+  storeRef,
+  onPageError,
+  onEntryUpdated,
+}: Props) {
+  const key = entry.definition.key;
+  const writeScope = modeScope(mode, spaceType);
+  // A store-inherited key is read-only with an "edit in store" link (design
+  // D3): the UI does not offer project-level overrides of store-set keys.
+  const storeInherited = isStoreInherited(entry, mode, spaceType) && storeRef !== null;
+  const control = storeInherited ? { kind: 'readonly' as const, readonly: true } : selectControl(entry, mode, spaceType);
+
   const [draft, setDraft] = useState<unknown>(entry.value);
   const [fieldError, setFieldError] = useState<{ message: string; fix?: string } | null>(null);
   const [pending, setPending] = useState(false);
 
-  const key = entry.definition.key;
-
   // Resync local edit state whenever the server hands back a fresh entry
-  // (write, unset, or a project switch re-fetch) — rows are keyed by
-  // `definition.key`, which never changes, so preact reuses the component
-  // instance and `draft`/`scope` would otherwise keep showing the value from
-  // before the write (design.md D6 "Unset returns a scope value to
-  // inherited").
+  // (write, unset, a space switch re-fetch, or a mode change) — rows are keyed
+  // by `definition.key`, which never changes, so preact reuses the component
+  // instance and `draft` would otherwise keep showing the value from before.
   useEffect(() => {
     setDraft(entry.value);
-    setScope(defaultWriteScope(entry, hasProject));
     setFieldError(null);
-  }, [entry, hasProject]);
+  }, [entry, mode]);
 
-  async function commit(value: unknown, writeScope: ConfigScope) {
+  async function commit(value: unknown) {
     setPending(true);
     setFieldError(null);
     try {
-      const result = await client.putKey(key, { scope: writeScope, value }, projectId);
+      const result = await client.putKey(key, { scope: writeScope, value }, spaceSelector);
       onEntryUpdated(result.entry);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (errorSurface(err.code) === 'page') {
-          onPageError(err.message, err.fix);
-        } else {
-          setFieldError({ message: err.message, fix: err.fix });
-        }
-      } else {
-        setFieldError({ message: 'Unexpected error' });
-      }
+      surfaceError(err);
     } finally {
       setPending(false);
     }
   }
 
-  async function unset(writeScope: ConfigScope) {
+  async function unset() {
     setPending(true);
     setFieldError(null);
     try {
-      const result = await client.deleteKey(key, writeScope, projectId);
+      const result = await client.deleteKey(key, writeScope, spaceSelector);
       onEntryUpdated(result.entry);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (errorSurface(err.code) === 'page') {
-          onPageError(err.message, err.fix);
-        } else {
-          setFieldError({ message: err.message, fix: err.fix });
-        }
-      } else {
-        setFieldError({ message: 'Unexpected error' });
-      }
+      surfaceError(err);
     } finally {
       setPending(false);
+    }
+  }
+
+  function surfaceError(err: unknown) {
+    if (err instanceof ApiError) {
+      if (errorSurface(err.code) === 'page') {
+        onPageError(err.message, err.fix);
+      } else {
+        setFieldError({ message: err.message, fix: err.fix });
+      }
+    } else {
+      setFieldError({ message: 'Unexpected error' });
     }
   }
 
   function renderControl() {
     if (control.readonly) {
-      return (
-        <span class="control control--readonly">
-          {formatDisplayValue(entry.value)}
-          {disabledForNoProject && (
-            <span class="config-entry__no-project-hint">
-              {' '}
-              — select a project above to edit
-            </span>
-          )}
-        </span>
-      );
+      return <span class="control control--readonly">{formatDisplayValue(entry.value)}</span>;
     }
 
     switch (control.kind) {
@@ -125,7 +130,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
             onChange={(e) => {
               const value = (e.target as HTMLInputElement).checked;
               setDraft(value);
-              if (scope) commit(value, scope);
+              commit(value);
             }}
           />
         );
@@ -137,7 +142,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
             onChange={(e) => {
               const value = (e.target as HTMLSelectElement).value;
               setDraft(value);
-              if (scope) commit(value, scope);
+              commit(value);
             }}
           >
             {control.enumValues?.map((v) => (
@@ -161,7 +166,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                 setFieldError({ message: localError });
                 return;
               }
-              if (scope) commit(raw, scope);
+              commit(raw);
             }}
           />
         );
@@ -192,7 +197,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                   // number input to be edited (MIN-M3).
                   const value = Number.isNaN(fractionValue) ? 0.5 : fractionValue;
                   setDraft(value);
-                  if (scope) commit(value, scope);
+                  commit(value);
                 }}
               />
               Fraction
@@ -206,7 +211,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                 onChange={() => {
                   const value = { remainingTokens: remainingSeed };
                   setDraft(value);
-                  if (scope) commit(value, scope);
+                  commit(value);
                 }}
               />
               Remaining tokens
@@ -225,7 +230,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                     setFieldError({ message: localError });
                     return;
                   }
-                  if (scope) commit(raw, scope);
+                  commit(raw);
                 }}
               />
             ) : (
@@ -243,7 +248,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                     setFieldError({ message: localError });
                     return;
                   }
-                  if (scope) commit(value, scope);
+                  commit(value);
                 }}
               />
             )}
@@ -265,7 +270,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
               onChange={(e) => {
                 const value = (e.target as HTMLInputElement).value;
                 setDraft(value);
-                if (scope) commit(value, scope);
+                commit(value);
               }}
             />
             <datalist id={listId}>
@@ -284,16 +289,98 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
             onChange={(e) => {
               const value = (e.target as HTMLInputElement).value;
               setDraft(value);
-              if (scope) commit(value, scope);
+              commit(value);
             }}
           />
         );
     }
   }
 
+  function renderAnnotations() {
+    if (entry.source === 'env-override') {
+      return (
+        <p class="config-entry__shadowed">
+          Environment variable overrides every scope
+          {entry.scopeValues.global !== undefined
+            ? ` (global value: ${formatDisplayValue(entry.scopeValues.global)})`
+            : ''}
+          {entry.scopeValues.store !== undefined
+            ? ` (store value: ${formatDisplayValue(entry.scopeValues.store)})`
+            : ''}
+          {entry.scopeValues.project !== undefined
+            ? ` (project value: ${formatDisplayValue(entry.scopeValues.project)})`
+            : ''}
+        </p>
+      );
+    }
+
+    const localScope = localScopeFor(spaceType);
+    const hasLocalValue = entry.scopeValues[localScope] !== undefined;
+    const multiScope = entry.definition.scopes.length > 1;
+
+    // Inherited-value line (design D3): in Local mode, a visible multi-scope
+    // key with no value at the local scope shows where its value comes from —
+    // the shadowed-value element inverted (the winning wider value shown under
+    // an absent local one).
+    if (mode === 'local' && multiScope && !hasLocalValue) {
+      if (entry.scopeValues.store !== undefined && storeRef) {
+        return (
+          <p class="config-entry__shadowed">
+            Inherited from store {storeRef.id}: {formatDisplayValue(entry.scopeValues.store)}
+            {storeInherited && (
+              <>
+                {' '}
+                <a
+                  class="config-entry__store-edit"
+                  href={spaceHref(
+                    { type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` },
+                    'config'
+                  )}
+                >
+                  Edit in store {storeRef.id} →
+                </a>
+              </>
+            )}
+          </p>
+        );
+      }
+      if (entry.scopeValues.global !== undefined) {
+        return (
+          <p class="config-entry__shadowed">
+            Inherited from global: {formatDisplayValue(entry.scopeValues.global)}
+          </p>
+        );
+      }
+      return (
+        <p class="config-entry__shadowed">
+          Inherited from default: {formatDisplayValue(entry.definition.defaultValue)}
+        </p>
+      );
+    }
+
+    // Shadowed reveal (design D3): a local value shadows wider layers — keep
+    // those values visible, now including a shadowed store value.
+    const shadowed = shadowedWiderScopes(entry);
+    if (shadowed.length > 0) {
+      return (
+        <>
+          {shadowed.map((s) => (
+            <p key={s} class="config-entry__shadowed">
+              {s === 'store' ? 'Store' : 'Global'} value: {formatDisplayValue(entry.scopeValues[s])} (shadowed by{' '}
+              {entry.source})
+            </p>
+          ))}
+        </>
+      );
+    }
+
+    return null;
+  }
+
   return (
     <div class="config-entry" data-key={key}>
       <div class="config-entry__header">
+        <span class="config-entry__label">{labelFor(key)}</span>
         <span class="config-entry__key">{key}</span>
         <span class={`config-entry__source config-entry__source--${entry.source}`}>{entry.source}</span>
       </div>
@@ -307,42 +394,9 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
         </ul>
       )}
 
-      {scopes.length > 1 && !control.readonly && (
-        <label class="config-entry__scope-choice">
-          Scope
-          <select
-            value={scope}
-            onChange={(e) => setScope((e.target as HTMLSelectElement).value as ConfigScope)}
-          >
-            {scopes.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
       {renderControl()}
 
-      {entry.source === 'project' &&
-        entry.scopeValues.global !== undefined &&
-        entry.scopeValues.project !== undefined && (
-          <p class="config-entry__shadowed">
-            Global value: {formatDisplayValue(entry.scopeValues.global)} (shadowed by project)
-          </p>
-        )}
-      {entry.source === 'env-override' && (
-        <p class="config-entry__shadowed">
-          Environment variable overrides every scope
-          {entry.scopeValues.global !== undefined
-            ? ` (global value: ${formatDisplayValue(entry.scopeValues.global)})`
-            : ''}
-          {entry.scopeValues.project !== undefined
-            ? ` (project value: ${formatDisplayValue(entry.scopeValues.project)})`
-            : ''}
-        </p>
-      )}
+      {renderAnnotations()}
 
       {fieldError && (
         <p class="config-entry__error">
@@ -351,15 +405,11 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
         </p>
       )}
 
-      {!control.readonly &&
-        scopes.map(
-          (s) =>
-            entry.scopeValues[s] !== undefined && (
-              <button key={s} type="button" disabled={pending} onClick={() => unset(s)}>
-                Unset {s} value
-              </button>
-            )
-        )}
+      {!control.readonly && entry.scopeValues[writeScope] !== undefined && (
+        <button type="button" disabled={pending} onClick={() => unset()}>
+          Unset {writeScope} value
+        </button>
+      )}
     </div>
   );
 }
