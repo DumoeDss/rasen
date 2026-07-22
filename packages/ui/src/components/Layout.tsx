@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
 import { RunningSessionsMenu } from './RunningSessionsMenu.js';
+import { ThemeToggle } from './ThemeToggle.js';
 import { parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 
 /**
@@ -45,6 +46,7 @@ export function Layout({ children }: { children: ComponentChildren }) {
         </div>
       </header>
       <main class="app-content">{children}</main>
+      <ThemeToggle />
     </div>
   );
 }
