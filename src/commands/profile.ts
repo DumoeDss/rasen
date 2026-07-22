@@ -47,7 +47,6 @@ import {
 function profileStateFromDefinition(definition: ProfileDefinition): ProfileState {
   return {
     profile: deriveProfileFromWorkflowSelection(definition.workflows),
-    delivery: definition.delivery,
     workflows: [...definition.workflows],
   };
 }
@@ -55,14 +54,12 @@ function profileStateFromDefinition(definition: ProfileDefinition): ProfileState
 function profileDefinitionFromState(state: ProfileState): ProfileDefinition {
   return {
     version: PROFILE_DEFINITION_VERSION,
-    delivery: state.delivery,
     workflows: [...state.workflows],
   };
 }
 
 function definitionsMatch(left: ProfileDefinition, right: ProfileDefinition): boolean {
   return (
-    left.delivery === right.delivery &&
     left.workflows.length === right.workflows.length &&
     left.workflows.every((workflow, index) => workflow === right.workflows[index])
   );
@@ -131,8 +128,7 @@ function availableProfileChoices(): Array<{
   disabled?: string;
 }> {
   const messages = getProfileUiMessages();
-  const delivery = getGlobalConfigForProfile().delivery ?? 'both';
-  return listAvailableProfiles(delivery).map((profile) => {
+  return listAvailableProfiles().map((profile) => {
     if (!profile.definition) {
       return {
         value: profile.name,
@@ -144,7 +140,7 @@ function availableProfileChoices(): Array<{
     return {
       value: profile.name,
       name: profile.name,
-      description: `${messages.profileSource(profile.builtIn)} · ${profile.definition.delivery} · ${messages.workflowCount(profile.definition.workflows.length)}`,
+      description: `${messages.profileSource(profile.builtIn)} · ${messages.workflowCount(profile.definition.workflows.length)}`,
     };
   });
 }
@@ -178,15 +174,14 @@ async function chooseUserProfileName(message: string): Promise<string> {
       value: profile.name,
       name: profile.name,
       description: profile.definition
-        ? `${profile.definition.delivery} · ${getProfileUiMessages().workflowCount(profile.definition.workflows.length)}`
+        ? getProfileUiMessages().workflowCount(profile.definition.workflows.length)
         : formatAvailableProfileError(profile),
     })),
   });
 }
 
 export function useProfile(name: string): void {
-  const config = getGlobalConfigForProfile();
-  const definition = resolveProfileDefinition(name, config.delivery ?? 'both');
+  const definition = resolveProfileDefinition(name);
   applyProfileState(profileStateFromDefinition(definition));
   console.log(getProfileUiMessages().usingProfile(name));
   printProfileApplyGuidance();
@@ -259,7 +254,7 @@ function profileListPayload(): {
   profiles: Array<AvailableProfile & { matchesCurrent: boolean }>;
 } {
   const current = currentProfileDefinition();
-  const profiles = listAvailableProfiles(current.delivery).map((profile) => {
+  const profiles = listAvailableProfiles().map((profile) => {
     const entry: AvailableProfile & { matchesCurrent: boolean } = {
       ...profile,
       matchesCurrent: profile.definition
@@ -296,7 +291,7 @@ function listProfiles(options: { json?: boolean }): void {
     }
     const source = messages.profileSource(profile.builtIn);
     console.log(
-      `${marker} ${profile.name} [${source}] ${profile.definition.delivery}, ${messages.workflowCount(profile.definition.workflows.length)}`
+      `${marker} ${profile.name} [${source}] ${messages.workflowCount(profile.definition.workflows.length)}`
     );
   }
   console.log(messages.matchesCurrentSettings);
@@ -345,7 +340,6 @@ async function importProfileCommand(
     : importNamedProfile(sourcePath, { overwrite: options.force, name: options.as });
   console.log(messages.profileImported(
     imported.name,
-    imported.definition.delivery,
     imported.definition.workflows.length
   ));
   console.log(messages.useImportedProfile(imported.name));
@@ -368,7 +362,7 @@ async function exportProfileCommand(
   const messages = getProfileUiMessages();
   const config = getGlobalConfigForProfile();
   const definition = options.profile
-    ? resolveProfileDefinition(options.profile, config.delivery ?? 'both')
+    ? resolveProfileDefinition(options.profile)
     : profileDefinitionFromState(resolveCurrentProfileState(config));
 
   let overwrite = options.force === true;

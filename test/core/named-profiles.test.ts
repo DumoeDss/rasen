@@ -48,7 +48,6 @@ describe('named profiles', () => {
   it('saves definitions as normalized YAML and lists built-in profiles first', () => {
     saveNamedProfile('team', {
       version: 1,
-      delivery: 'skills',
       workflows: ['apply', 'propose', 'explore'],
     });
 
@@ -56,10 +55,9 @@ describe('named profiles', () => {
     expect(fs.existsSync(getNamedProfilePath('team'))).toBe(true);
     expect(readNamedProfile('team')).toEqual({
       version: 1,
-      delivery: 'skills',
       workflows: ['propose', 'explore', 'apply'],
     });
-    expect(listAvailableProfiles('both').map((profile) => profile.name)).toEqual([
+    expect(listAvailableProfiles().map((profile) => profile.name)).toEqual([
       'full',
       'core',
       'team',
@@ -70,7 +68,6 @@ describe('named profiles', () => {
     expect(() =>
       parseProfileDefinition({
         version: 1,
-        delivery: 'both',
         workflows: ['propose', 'unknown-workflow'],
       })
     ).toThrow('Unknown workflow ID');
@@ -78,7 +75,6 @@ describe('named profiles', () => {
     expect(() =>
       parseProfileDefinition({
         version: 1,
-        delivery: 'both',
         workflows: ['propose', 'propose'],
       })
     ).toThrow('Duplicate workflow ID');
@@ -88,7 +84,6 @@ describe('named profiles', () => {
   it('M1: accepts an expert id as a valid profile member', () => {
     const definition = parseProfileDefinition({
       version: 1,
-      delivery: 'both',
       workflows: ['propose', 'review'],
     });
     expect(definition.workflows).toEqual(['propose', 'review']);
@@ -98,7 +93,6 @@ describe('named profiles', () => {
     expect(() =>
       parseProfileDefinition({
         version: 1,
-        delivery: 'both',
         workflows: ['review', 'not-a-real-id'],
       })
     ).toThrow('Unknown workflow ID');
@@ -110,7 +104,6 @@ describe('named profiles', () => {
     // the selection with that closure — only install-time resolution does.
     const definition = parseProfileDefinition({
       version: 1,
-      delivery: 'both',
       workflows: ['auto-command'],
     });
     expect(definition.workflows).toEqual(['auto-command']);
@@ -137,7 +130,6 @@ describe('named profiles', () => {
     );
     importNamedProfile(importPath, { overwrite: true });
     expect(readNamedProfile('minimal')).toMatchObject({
-      delivery: 'skills',
       workflows: ['explore'],
     });
   });
@@ -145,7 +137,6 @@ describe('named profiles', () => {
   it('does not replace an existing definition when imported content is invalid', () => {
     saveNamedProfile('team', {
       version: 1,
-      delivery: 'both',
       workflows: ['propose'],
     });
     const sourcePath = path.join(tempDir, 'team.yaml');
@@ -164,7 +155,6 @@ describe('named profiles', () => {
   it('exports JSON or YAML and requires an explicit overwrite', () => {
     const definition = {
       version: 1 as const,
-      delivery: 'both' as const,
       workflows: ['apply', 'propose'],
     };
     const jsonPath = path.join(tempDir, 'exports', 'profile.json');
@@ -175,10 +165,9 @@ describe('named profiles', () => {
 
     expect(JSON.parse(fs.readFileSync(jsonPath, 'utf-8'))).toEqual({
       version: 1,
-      delivery: 'both',
       workflows: ['propose', 'apply'],
     });
-    expect(fs.readFileSync(yamlPath, 'utf-8')).toContain('delivery: both');
+    expect(fs.readFileSync(yamlPath, 'utf-8')).toContain('workflows:');
     expect(() => exportProfileDefinition(jsonPath, definition)).toThrow('already exists');
   });
 
@@ -199,7 +188,6 @@ describe('named profiles', () => {
     await importWorkflow(draftRoot);
     const definition = {
       version: 1 as const,
-      delivery: 'both' as const,
       workflows: ['propose', 'team-release'],
     };
     const packagePath = path.join(tempDir, 'team.rasenpkg');
@@ -229,7 +217,6 @@ describe('named profiles', () => {
     await importWorkflow(draftRoot);
     const definition = {
       version: 1 as const,
-      delivery: 'skills' as const,
       workflows: ['portable-profile'],
     };
     const yamlPath = path.join(tempDir, 'portable-profile.yaml');
@@ -257,7 +244,6 @@ describe('named profiles', () => {
     const packagePath = path.join(tempDir, 'rollback.rasenpkg');
     exportProfile(packagePath, 'rollback-target', {
       version: 1,
-      delivery: 'both',
       workflows: ['rollback-profile'],
     });
 

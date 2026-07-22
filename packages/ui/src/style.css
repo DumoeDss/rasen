@@ -823,14 +823,21 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .workflow-card__name { font-size: var(--text-base); font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .workflow-card__id { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); overflow-wrap: anywhere; }
 .workflow-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--muted); }
-.workflow-card__kind, .workflow-card__unused, .workflow-card__lock {
+.workflow-card__unused, .workflow-card__lock {
   font-size: var(--text-xs); font-weight: 600; border-radius: var(--radius-pill); padding: 1px var(--space-2);
 }
-.workflow-card__kind { background: var(--accent-tint); color: var(--accent); }
 .workflow-card__unused { background: var(--warn-bg); color: var(--warn-fg); }
 .workflow-card__lock { background: var(--surface-muted); color: var(--meta); }
-.workflow-card__digest, .workflow-card__command { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+.workflow-card__digest { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
 .workflow-card__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-1); }
+.workflows-internal { margin-top: var(--space-3); }
+.workflows-internal__toggle {
+  background: none; border: none; box-shadow: none; padding: 0; cursor: pointer;
+  font-size: var(--text-xs); font-weight: 600; color: var(--meta);
+}
+.workflows-internal__toggle:hover:not(:disabled) { color: var(--accent); background: none; box-shadow: none; }
+.workflows-internal__toggle:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius); }
+.workflows-internal .workflows-group__list { margin-top: var(--space-2); }
 .workflow-card__diagnostics { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .workflow-diagnostic { font-size: var(--text-xs); color: var(--muted); }
 .workflow-diagnostic--error { color: var(--danger-fg); }

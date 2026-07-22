@@ -14,12 +14,11 @@ const mockState = {
   config: {
     featureFlags: {},
     profile: 'core' as const,
-    delivery: 'both' as const,
   } as GlobalConfig,
   // When true, delegate to the real (unmocked) getGlobalConfig/saveGlobalConfig —
-  // used by the legacy-delivery healing test, which must exercise the real
-  // normalizeDelivery/notice/persist path in global-config.ts rather than the
-  // in-memory mock state below.
+  // used by the retired-delivery healing test, which must exercise the real
+  // retirement-detection/notice/persist path in global-config.ts rather than
+  // the in-memory mock state below.
   useReal: false,
 };
 
@@ -44,7 +43,7 @@ function setMockConfig(config: GlobalConfig) {
 }
 
 function resetMockConfig() {
-  mockState.config = { featureFlags: {}, profile: 'core', delivery: 'both' };
+  mockState.config = { featureFlags: {}, profile: 'core' };
 }
 
 describe('UpdateCommand', () => {
@@ -200,8 +199,8 @@ Old instructions content
     });
   });
 
-  describe('command updates', () => {
-    it('should update opsx commands for configured Claude tool', async () => {
+  describe('command updates (retired)', () => {
+    it('never creates a command file for a configured Claude tool — skills are the only delivery surface', async () => {
       // Set up a configured Claude tool
       const skillsDir = path.join(testDir, '.claude', 'skills');
       await fs.mkdir(path.join(skillsDir, 'rasen-explore'), {
@@ -214,21 +213,12 @@ Old instructions content
 
       await updateCommand.execute(testDir);
 
-      // Check opsx command files were created
       const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
       const exploreCmd = path.join(commandsDir, 'explore.md');
-      const exists = await FileSystemUtils.fileExists(exploreCmd);
-      expect(exists).toBe(true);
-
-      const content = await fs.readFile(exploreCmd, 'utf-8');
-      expect(content).toContain('---');
-      expect(content).toContain('name:');
-      expect(content).toContain('description:');
-      expect(content).toContain('category:');
-      expect(content).toContain('tags:');
+      expect(await FileSystemUtils.fileExists(exploreCmd)).toBe(false);
     });
 
-    it('should update core profile opsx commands when tool is configured', async () => {
+    it('updates core profile skills, and never creates a command file, when a tool is configured', async () => {
       // Set up a configured tool
       const skillsDir = path.join(testDir, '.claude', 'skills');
       await fs.mkdir(path.join(skillsDir, 'rasen-explore'), {
@@ -241,22 +231,15 @@ Old instructions content
 
       await updateCommand.execute(testDir);
 
-      // Verify core profile commands were created (propose, explore, apply, sync, archive)
-      const coreCommandIds = ['explore', 'apply', 'sync', 'archive', 'propose'];
-      const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
-      for (const cmdId of coreCommandIds) {
-        const cmdFile = path.join(commandsDir, `${cmdId}.md`);
-        const exists = await FileSystemUtils.fileExists(cmdFile);
-        expect(exists).toBe(true);
+      // Verify core profile skills were created (propose, explore, apply, sync, archive)
+      const coreSkillDirs = ['rasen-explore', 'rasen-apply-change', 'rasen-sync-specs', 'rasen-archive-change', 'rasen-propose'];
+      for (const dirName of coreSkillDirs) {
+        expect(await FileSystemUtils.fileExists(path.join(skillsDir, dirName, 'SKILL.md'))).toBe(true);
       }
 
-      // Verify non-core commands are NOT created
-      const nonCoreCommandIds = ['new', 'continue', 'bulk-archive', 'verify'];
-      for (const cmdId of nonCoreCommandIds) {
-        const cmdFile = path.join(commandsDir, `${cmdId}.md`);
-        const exists = await FileSystemUtils.fileExists(cmdFile);
-        expect(exists).toBe(false);
-      }
+      // No command file is ever created.
+      const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
+      expect(await FileSystemUtils.fileExists(commandsDir)).toBe(false);
     });
 
   });
@@ -309,7 +292,7 @@ Old instructions content
       consoleSpy.mockRestore();
     });
 
-    it('should update Qwen tool with correct command format', async () => {
+    it('updates Qwen skills and never creates a command file', async () => {
       // Set up Qwen
       const qwenSkillsDir = path.join(testDir, '.qwen', 'skills');
       await fs.mkdir(path.join(qwenSkillsDir, 'rasen-explore'), {
@@ -322,22 +305,17 @@ Old instructions content
 
       await updateCommand.execute(testDir);
 
-      // Check Qwen command format (TOML) - Qwen uses flat path structure: opsx-<id>.toml
-      const qwenCmd = path.join(
-        testDir,
-        '.qwen',
-        'commands',
-        'rasen-explore.toml'
-      );
-      const exists = await FileSystemUtils.fileExists(qwenCmd);
-      expect(exists).toBe(true);
+      expect(await FileSystemUtils.fileExists(
+        path.join(qwenSkillsDir, 'rasen-explore', 'SKILL.md')
+      )).toBe(true);
 
-      const content = await fs.readFile(qwenCmd, 'utf-8');
-      expect(content).toContain('description =');
-      expect(content).toContain('prompt =');
+      // Qwen never had its own skills-format command file — no command
+      // surface exists for any tool now.
+      const qwenCmd = path.join(testDir, '.qwen', 'commands', 'rasen-explore.toml');
+      expect(await FileSystemUtils.fileExists(qwenCmd)).toBe(false);
     });
 
-    it('should update Windsurf tool with correct command format', async () => {
+    it('updates Windsurf skills and never creates a command file', async () => {
       // Set up Windsurf
       const windsurfSkillsDir = path.join(testDir, '.windsurf', 'skills');
       await fs.mkdir(path.join(windsurfSkillsDir, 'rasen-explore'), {
@@ -350,19 +328,12 @@ Old instructions content
 
       await updateCommand.execute(testDir);
 
-      // Check Windsurf command format
-      const windsurfCmd = path.join(
-        testDir,
-        '.windsurf',
-        'workflows',
-        'rasen-explore.md'
-      );
-      const exists = await FileSystemUtils.fileExists(windsurfCmd);
-      expect(exists).toBe(true);
+      expect(await FileSystemUtils.fileExists(
+        path.join(windsurfSkillsDir, 'rasen-explore', 'SKILL.md')
+      )).toBe(true);
 
-      const content = await fs.readFile(windsurfCmd, 'utf-8');
-      expect(content).toContain('---');
-      expect(content).toContain('name:');
+      const windsurfCmd = path.join(testDir, '.windsurf', 'workflows', 'rasen-explore.md');
+      expect(await FileSystemUtils.fileExists(windsurfCmd)).toBe(false);
     });
 
     it('should treat Hermes as configured via its global skills home and refresh only rasen- skills there', async () => {
@@ -934,7 +905,6 @@ metadata:
       setMockConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'both',
         workflows: ['explore', 'new'],
       });
 
@@ -966,7 +936,6 @@ metadata:
       setMockConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'both',
         workflows: ['propose', 'explore', 'apply', 'archive'],
       });
 
@@ -997,11 +966,10 @@ metadata:
       consoleSpy.mockRestore();
     });
 
-    it('should respect skills-only delivery setting', async () => {
+    it('never generates a command file, under any profile (the surface is fully retired)', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'skills',
       });
 
       const skillsDir = path.join(testDir, '.claude', 'skills');
@@ -1022,64 +990,10 @@ metadata:
       )).toBe(false);
     });
 
-    it('should keep skills present under both delivery (no delivery mode deletes skills)', async () => {
-      setMockConfig({
-        featureFlags: {},
-        profile: 'core',
-        delivery: 'both',
-      });
-
-      const skillsDir = path.join(testDir, '.claude', 'skills');
-      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
-      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
-
-      await updateCommand.execute(testDir);
-
-      // Commands should be created
-      const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
-      expect(await FileSystemUtils.fileExists(
-        path.join(commandsDir, 'explore.md')
-      )).toBe(true);
-
-      // Skills are always installed — they remain (refreshed) alongside commands.
-      expect(await FileSystemUtils.fileExists(
-        path.join(skillsDir, 'rasen-explore', 'SKILL.md')
-      )).toBe(true);
-    });
-
-    it('should keep skills for configured tools without command adapters (no delivery mode deletes skills)', async () => {
-      setMockConfig({
-        featureFlags: {},
-        profile: 'core',
-        delivery: 'both',
-      });
-
-      const { AI_TOOLS } = await import('../../src/core/config.js');
-      const { CommandAdapterRegistry } = await import('../../src/core/command-generation/index.js');
-      const adapterlessTool = AI_TOOLS.find((tool) => tool.skillsDir && !CommandAdapterRegistry.get(tool.value));
-      expect(adapterlessTool).toBeDefined();
-      if (!adapterlessTool?.skillsDir) {
-        return;
-      }
-
-      const skillsDir = path.join(testDir, adapterlessTool.skillsDir, 'skills');
-      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
-      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
-
-      await expect(updateCommand.execute(testDir)).resolves.toBeUndefined();
-
-      // A tool without a command adapter can never receive commands, but it
-      // still keeps its skills — skills are never removed by delivery.
-      expect(await FileSystemUtils.fileExists(
-        path.join(skillsDir, 'rasen-explore', 'SKILL.md')
-      )).toBe(true);
-    });
-
     it('should apply config sync when templates are up to date', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'skills',
       });
 
       const skillsDir = path.join(testDir, '.claude', 'skills');
@@ -1103,7 +1017,8 @@ content
 
       await updateCommand.execute(testDir);
 
-      // Command files should be removed due to delivery change, even though skill version is current
+      // A stale (pre-retirement) command file is cleaned up opportunistically,
+      // even though the skill version is current and no tool needs an update.
       expect(await FileSystemUtils.fileExists(
         path.join(commandsDir, 'explore.md')
       )).toBe(false);
@@ -1113,7 +1028,6 @@ content
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'both',
       });
 
       const commandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
@@ -1133,10 +1047,14 @@ content
       );
       expect(hasNoConfiguredMessage).toBe(false);
 
-      // Commands should be updated/generated for the core profile
+      // Skills are generated for the core profile; the pre-existing command
+      // file is cleaned up (the surface is retired).
       expect(await FileSystemUtils.fileExists(
-        path.join(commandsDir, 'propose.md')
+        path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md')
       )).toBe(true);
+      expect(await FileSystemUtils.fileExists(
+        path.join(commandsDir, 'explore.md')
+      )).toBe(false);
 
       consoleSpy.mockRestore();
     });
@@ -1146,7 +1064,6 @@ content
       setMockConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'both',
       });
 
       // Set up tool with extra workflows beyond core profile
@@ -1165,7 +1082,7 @@ content
 
       await updateCommand.execute(testDir);
 
-      // Deselected workflow artifacts should be removed for both delivery surfaces.
+      // Deselected workflow artifacts should be removed.
       expect(await FileSystemUtils.fileExists(
         path.join(skillsDir, 'rasen-new-change', 'SKILL.md')
       )).toBe(false);
@@ -1183,11 +1100,10 @@ content
       consoleSpy.mockRestore();
     });
 
-    it('should install the goal-loop workflow family under the full profile', async () => {
+    it('should install the goal-loop workflow family under the full profile, with no command file', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'full',
-        delivery: 'both',
       });
 
       // Set up a configured tool
@@ -1215,21 +1131,15 @@ content
         expect(remainingSkillDirs).toContain(skillDir);
       }
 
-      const { CommandAdapterRegistry, getCommandFileId } = await import('../../src/core/command-generation/index.js');
-      const adapter = CommandAdapterRegistry.get('claude');
-      if (!adapter) throw new Error('Claude adapter unavailable in test environment');
-      const goalCommandPath = adapter.getFilePath(getCommandFileId('goal-command'));
-      const fullGoalCommandPath = path.isAbsolute(goalCommandPath)
-        ? goalCommandPath
-        : path.join(testDir, goalCommandPath);
-      expect(await FileSystemUtils.fileExists(fullGoalCommandPath)).toBe(true);
+      // No command file is ever generated — the surface is retired.
+      const goalCommandPath = path.join(testDir, '.claude', 'commands', 'rasen', 'goal.md');
+      expect(await FileSystemUtils.fileExists(goalCommandPath)).toBe(false);
     });
 
-    it('should never remove a skill dir for a workflow that also has a command counterpart, under both delivery', async () => {
+    it('should never remove a skill dir for a workflow that used to have a command counterpart', async () => {
       setMockConfig({
         featureFlags: {},
         profile: 'full',
-        delivery: 'both',
       });
 
       // Set up a configured tool
@@ -1247,24 +1157,19 @@ content
         )).toBe(true);
       }
 
-      // A workflow with a command counterpart (e.g. apply) ALSO keeps its
-      // skill dir — no delivery mode removes skill directories anymore (design D5).
+      // A workflow that used to have a command counterpart (e.g. apply) ALSO
+      // keeps its skill dir — no mode removes skill directories anymore
+      // (design D5).
       expect(await FileSystemUtils.fileExists(
         path.join(skillsDir, 'rasen-apply-change', 'SKILL.md')
       )).toBe(true);
 
-      // The goal command payload (rasen-goal's counterpart) is also present.
-      const { CommandAdapterRegistry, getCommandFileId } = await import('../../src/core/command-generation/index.js');
-      const adapter = CommandAdapterRegistry.get('claude');
-      if (!adapter) throw new Error('Claude adapter unavailable in test environment');
-      const goalCommandPath = adapter.getFilePath(getCommandFileId('goal-command'));
-      const fullGoalCommandPath = path.isAbsolute(goalCommandPath)
-        ? goalCommandPath
-        : path.join(testDir, goalCommandPath);
-      expect(await FileSystemUtils.fileExists(fullGoalCommandPath)).toBe(true);
+      // No command file is ever generated — the surface is retired.
+      const goalCommandPath = path.join(testDir, '.claude', 'commands', 'rasen', 'goal.md');
+      expect(await FileSystemUtils.fileExists(goalCommandPath)).toBe(false);
     });
 
-    it('should map a legacy delivery value to both, print a one-time notice, and restore missing skills on update', async () => {
+    it('should read a stored legacy delivery value without error, print a one-time retirement notice, strip it, and restore missing skills on update', async () => {
       const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
       const originalRasenHome = process.env.RASEN_HOME;
       const configTempDir = path.join(os.tmpdir(), `openspec-update-config-${randomUUID()}`);
@@ -1297,13 +1202,15 @@ content
         await updateCommand.execute(testDir);
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('commands-first'));
-        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('both'));
 
         const rewritten = JSON.parse(await fs.readFile(configPath, 'utf-8'));
-        expect(rewritten.delivery).toBe('both');
+        expect(rewritten.delivery).toBeUndefined();
 
         const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
         expect(await FileSystemUtils.fileExists(skillFile)).toBe(true);
+
+        // The pre-existing (pre-retirement) command file is cleaned up.
+        expect(await FileSystemUtils.fileExists(path.join(commandsDir, 'explore.md'))).toBe(false);
       } finally {
         mockState.useReal = false;
         process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
@@ -1320,7 +1227,6 @@ content
       setMockConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'both',
         workflows: ['explore', 'ff', 'apply'],
       });
 

@@ -5,10 +5,10 @@
  * or a successor worker) can continue the work without replaying the exhausted
  * agent's transcript. The document carries what the change-directory blackboard
  * cannot: decision rationale, eliminated hypotheses, dead ends, and the next
- * concrete action. Session-level use is manual (`/rasen:handoff`); worker-level
+ * concrete action. Session-level use is manual (`rasen-handoff`); worker-level
  * use is driven by the orchestration playbook's handoff protocol (Step H).
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const HANDOFF_INSTRUCTIONS = `Write a handoff document — distill the current working context so a fresh agent can continue without replaying this conversation.
@@ -28,7 +28,7 @@ Use when: "handoff", "交接", context usage is high and a fresh session is plan
 3. **Write the document** to \`<workDir>/handoff/lead-<n>.md\` (fallback: \`rasen/changes/<name>/handoff/lead-<n>.md\`) where \`<n>\` is 1 + the highest existing lead-* number (never overwrite a predecessor). Use the template below.
 4. **Update run-state** (\`<workDir>/auto-run.json\`, fallback: \`rasen/changes/<name>/auto-run.json\`): set top-level \`sessionHandoff\` to \`{ "path": "handoff/lead-<n>.md", "n": <n>, "pct": <probe pct>, "afterStage": "<last completed stage>", "at": "<ISO timestamp>" }\` — \`n\` is the relay generation and matches the document number (a record without \`n\` reads as generation 1). Create the file with just that field if no run-state exists yet.
 5. **Offer to relay** (below the cap — see Session relay): ask whether to launch the successor session now. On yes, follow the Session relay protocol. On no — or when the generation cap is reached — fall back to manual resume:
-6. **Tell the user how to resume manually**: start a fresh session and run \`/rasen:auto <change>\` (or \`rasen pipeline resume <change> --json\` manually) — resume reports the sessionHandoff pointer and the new LEAD reads the document FIRST, before any transcript warm-seeding.
+6. **Tell the user how to resume manually**: start a fresh session and run \`rasen-auto <change>\` (or \`rasen pipeline resume <change> --json\` manually) — resume reports the sessionHandoff pointer and the new LEAD reads the document FIRST, before any transcript warm-seeding.
 
 ## Session relay (launching the successor yourself)
 
@@ -114,16 +114,5 @@ export function getHandoffSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxHandoffCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Handoff',
-    description:
-      'Write a handoff document distilling the current session or worker context so a fresh agent can continue the change',
-    category: 'Workflow',
-    tags: ['workflow', 'handoff', 'context', 'orchestration'],
-    content: HANDOFF_INSTRUCTIONS,
   };
 }

@@ -86,7 +86,6 @@ export function getBuiltInExpertDefinitions(): WorkflowDefinition[] {
         manifestVersion: 1,
         kind: 'expert',
         skill: { dirName: expert.dirName, template: expert.template },
-        command: undefined,
         requires: { workflows: [], skills: [], pipelines: [], schemas: [] },
         recommends: { workflows: [] },
         files: [],

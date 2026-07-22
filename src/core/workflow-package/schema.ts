@@ -28,7 +28,11 @@ export const PackagedWorkflowSchema = z.strictObject({
 
 export const PackagedProfileSchema = z.strictObject({
   version: z.literal(1),
-  delivery: z.enum(['both', 'skills']),
+  // The `delivery` dimension is retired (skills are the only delivery
+  // surface now). Accepted-but-ignored so a `.rasenpkg` package produced by
+  // an older rasen release still decodes without error; never re-emitted by
+  // a package created going forward.
+  delivery: z.unknown().optional(),
   workflows: z.array(z.string()),
 });
 

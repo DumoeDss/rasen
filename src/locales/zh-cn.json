@@ -194,22 +194,11 @@
   },
   "profile": {
     "prompt": {
-      "deliveryPickerMessage": "交付模式（工作流的安装方式）：",
       "workflowPickerMessage": "选择要启用的工作流：",
       "workflowPickerInstructions": "按空格键切换，按 A 全选/清空，按 Enter 确认",
       "currentSuffix": " [当前]",
       "sourceUser": "用户",
       "requiredBy": "由 {workflow} 要求",
-      "delivery": {
-        "both": {
-          "name": "两者（技能 + 命令）",
-          "description": "将工作流同时安装为技能和斜杠命令"
-        },
-        "skills": {
-          "name": "仅技能",
-          "description": "仅将工作流安装为技能"
-        }
-      },
       "workflows": {
         "propose": {
           "name": "提出变更",
@@ -413,22 +402,12 @@
       "applyGuidance": "配置已更新。请在项目中运行 `rasen update` 以应用。",
       "interactiveRequired": "需要交互模式。请使用 `rasen profile use <name>`，或通过环境变量/标志设置配置。",
       "currentSettingsHeading": "\n当前配置方案设置",
-      "deliveryLabel": "交付方式",
       "workflowsLabel": "工作流",
-      "deliveryExplanation": "  交付方式 = 是否在技能之外同时安装命令（始终安装技能）",
       "workflowsExplanation": "  工作流 = 可使用哪些操作（propose、explore、apply 等）",
       "configurePrompt": "要配置什么？",
       "actions": {
-        "both": {
-          "name": "交付方式和工作流",
-          "description": "同时更新安装模式和可用操作"
-        },
-        "delivery": {
-          "name": "仅交付方式",
-          "description": "更改工作流的安装位置"
-        },
         "workflows": {
-          "name": "仅工作流",
+          "name": "工作流",
           "description": "更改可用的工作流操作"
         },
         "keep": {
@@ -455,14 +434,13 @@
       "builtInCannotDelete": "无法删除内置配置方案 \"{name}\"。",
       "deleteProfile": "删除配置方案 \"{name}\"？",
       "profileDeleted": "已删除配置方案 \"{name}\"。当前设置未更改。",
-      "profileImported": "已导入配置方案 \"{name}\"（{delivery}，{count} 个工作流）。",
+      "profileImported": "已导入配置方案 \"{name}\"（{count} 个工作流）。",
       "useImportedProfile": "运行 `rasen profile use {name}` 以使用该配置方案。",
       "destinationExists": "目标已存在：{path}。传入 --force 可将其覆盖。",
       "overwriteFile": "覆盖现有文件 \"{path}\"？",
       "profileExported": "已将 {subject} 导出到 {path}。",
       "namedProfileSettings": "配置方案 \"{name}\"",
       "workflowSummary": "已选择 {count} 个（{profile}）",
-      "diffDelivery": "交付方式：{before} -> {after}",
       "diffProfile": "配置方案：{before} -> {after}",
       "diffWorkflowsAdded": "工作流：已添加 {items}",
       "diffWorkflowsRemoved": "工作流：已移除 {items}",
@@ -489,7 +467,6 @@
   "config": {
     "descriptions": {
       "profile": "控制可用操作的工作流配置方案（profile）",
-      "delivery": "是否在技能之外同时安装命令（始终安装技能）",
       "workflows": "显式选择工作流（通过 `rasen profile` 编辑）",
       "language": "交互提示和 CLI 帮助所用的语言（`auto` 检测系统语言环境）",
       "featureFlags": "功能标志开关（featureFlags.<name>）",
@@ -554,6 +531,7 @@
       "fromCoreProfile": "（来自 core 配置方案）",
       "noneValue": "（无）",
       "invalidKey": "错误：配置键 \"{key}\" 无效。{detail}",
+      "retiredKey": "提示：\"{key}\" 设置已被弃用，不再存储。未做任何更改。",
       "listKeysGuidance": "使用 \"{command}\" 查看可用键。",
       "allowUnknownGuidance": "传入 --allow-unknown 可跳过此检查。",
       "errorWithDetail": "错误：{detail}",
@@ -579,7 +557,7 @@
       "unableToValidate": "错误：无法校验配置——{detail}"
     },
     "diagnostics": {
-      "legacyDelivery": "提示：交付模式 '{legacy}' 已合并为 '{delivery}'（始终安装技能）。配置已更新。",
+      "deliveryRetired": "提示：'delivery' 设置已被弃用（技能是现在唯一的交付方式）。正在从配置中移除 '{legacy}'。",
       "invalidGlobalJson": "警告：{path} 中的 JSON 无效，将使用默认值",
       "projectParseFailed": "警告：无法解析 {path}（{detail}）；将忽略该文件。",
       "projectNotObject": "rasen/config.yaml 不是有效的 YAML 对象",
@@ -909,5 +887,17 @@
   },
   "telemetry": {
     "notice": "提示：Rasen 会将匿名使用统计（命令、版本、OS、Node.js 版本和随机 ID）发送到自己的 Cloudflare Worker。退出：RASEN_TELEMETRY=0"
+  },
+  "workflowChain": {
+    "reasons": {
+      "continueAuthoring": "仍有缺失的工件需要创建。请使用 {workflow} 继续编写。",
+      "readyForVerify": "所有任务已完成。运行 {workflow} 以检查实现。",
+      "readyForApply": "所有规划工件均已完成。使用 {workflow} 开始实现。",
+      "entryToApply": "运行 {workflow} 以继续。",
+      "exploreToPropose": "使用 {workflow} 将其转化为一个 change。",
+      "officeHoursToPropose": "使用 {workflow} 将其转化为一个 change。",
+      "skipAhead": "{original} 未安装，因此下一步是 {workflow}。"
+    },
+    "hint": "下一步：{workflow} — {reason}"
   }
 }

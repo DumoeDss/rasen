@@ -122,37 +122,22 @@ describe('config command integration', () => {
     );
   });
 
-  it('config set delivery <legacy value> heals to the consolidated value on the next read (cli-config spec)', async () => {
+  it('config set delivery is a retired-key no-op notice, not an unknown-key error', async () => {
     await runConfigCommand(['set', 'delivery', 'commands-first']);
 
-    // `config set` persists the raw coerced value at write time — it validates
-    // via the zod schema (which internally transforms) but only consumes
-    // {success, error}, not the transformed output. This matches the spec:
-    // "the effective delivery on the next read SHALL be the consolidated
-    // value" (not immediately on write), so the file legitimately holds the
-    // literal legacy string right after `set`.
-    const { getGlobalConfigPath, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const onDiskAfterSet = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
-    expect(onDiskAfterSet.delivery).toBe('commands-first');
-
-    // The very next read heals it: the one-time notice fires, and both the
-    // effective value and the file on disk become the consolidated 'both'.
-    const config = getGlobalConfig();
-    expect(config.delivery).toBe('both');
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('commands-first'));
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('both'));
-
-    const onDiskAfterRead = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
-    expect(onDiskAfterRead.delivery).toBe('both');
-
-    // A second read is idempotent — no repeated notice.
-    consoleErrorSpy.mockClear();
-    const config2 = getGlobalConfig();
-    expect(config2.delivery).toBe('both');
+    // Retired keys (design D4) are recognized by name and route to a
+    // friendly notice — no persistence, no crash — rather than the generic
+    // "unknown key" error a bare registry removal would produce.
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('delivery')
+    );
     expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+    expect(fs.existsSync(getGlobalConfigPath())).toBe(false);
   });
 
-  it('localizes the legacy delivery migration notice in Japanese', async () => {
+  it('localizes the retired delivery notice in Japanese', async () => {
     process.env.RASEN_LANG = 'ja';
     const { getGlobalConfigDir, getGlobalConfigPath } = await import(
       '../../src/core/global-config.js'
@@ -167,9 +152,9 @@ describe('config command integration', () => {
     await runConfigCommand(['list']);
 
     const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
-    expect(diagnostics).toContain("deliveryモード'commands-first'は'both'へ統合されました");
+    expect(diagnostics).toContain("'delivery' 設定は廃止されました");
     expect(diagnostics).not.toContain('Note: delivery mode');
-    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBe('both');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBeUndefined();
   });
 
   it('localizes invalid global JSON diagnostics in Japanese', async () => {
@@ -202,9 +187,9 @@ describe('config command integration', () => {
     await runConfigCommand(['list']);
 
     let diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
-    expect(diagnostics).toContain("交付模式 'commands-first' 已合并为 'both'");
+    expect(diagnostics).toContain("'delivery' 设置已被弃用");
     expect(diagnostics).not.toContain('Note: delivery mode');
-    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBe('both');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBeUndefined();
 
     consoleErrorSpy.mockClear();
     fs.writeFileSync(getGlobalConfigPath(), '{ invalid json }', 'utf-8');
@@ -318,9 +303,11 @@ describe('config key validation', () => {
     expect(validateConfigKeyPath('profile').valid).toBe(true);
   });
 
-  it('allows delivery key', async () => {
+  it('delivery key is retired: not a valid registry key, but recognized for the retired-key notice path', async () => {
     const { validateConfigKeyPath } = await import('../../src/core/config-schema.js');
-    expect(validateConfigKeyPath('delivery').valid).toBe(true);
+    const { RETIRED_CONFIG_KEYS } = await import('../../src/core/config-keys.js');
+    expect(validateConfigKeyPath('delivery').valid).toBe(false);
+    expect(RETIRED_CONFIG_KEYS.has('delivery')).toBe(true);
   });
 
   it('allows workflows key', async () => {
@@ -350,23 +337,20 @@ describe('config profile command', () => {
     vi.resetModules();
   });
 
-  it('core preset should set profile to core and preserve delivery', async () => {
+  it('core preset should set profile to core', async () => {
     const { getGlobalConfig, saveGlobalConfig } = await import('../../src/core/global-config.js');
 
-    // Set initial config with custom delivery
-    saveGlobalConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills', workflows: ['explore'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'custom', workflows: ['explore'] });
 
     // Simulate the core preset logic
     const config = getGlobalConfig();
     const { CORE_WORKFLOWS } = await import('../../src/core/profiles.js');
     config.profile = 'core';
     config.workflows = [...CORE_WORKFLOWS];
-    // Delivery should be preserved
     saveGlobalConfig(config);
 
     const result = getGlobalConfig();
     expect(result.profile).toBe('core');
-    expect(result.delivery).toBe('skills'); // preserved
     expect(result.workflows).toEqual(['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help']);
   });
 
@@ -385,7 +369,6 @@ describe('config profile command', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: isCoreMatch ? 'core' : 'custom',
-      delivery: 'both',
       workflows: selectedWorkflows,
     });
 
@@ -405,41 +388,37 @@ describe('config profile command', () => {
     expect(isCoreMatch).toBe(true);
   });
 
-  it('config schema should validate profile and delivery values', async () => {
+  it('config schema should validate profile values', async () => {
     const { validateConfig } = await import('../../src/core/config-schema.js');
 
-    expect(validateConfig({ featureFlags: {}, profile: 'full', delivery: 'both' }).success).toBe(true);
-    expect(validateConfig({ featureFlags: {}, profile: 'core', delivery: 'both' }).success).toBe(true);
-    expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills' }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, profile: 'full' }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, profile: 'core' }).success).toBe(true);
+    expect(validateConfig({ featureFlags: {}, profile: 'custom' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, language: 'ja' }).success).toBe(true);
     expect(validateConfig({ featureFlags: {}, language: 'fr' }).success).toBe(false);
   });
 
-  it('config schema should accept legacy delivery values and transform them to the mapped value', async () => {
+  it('config schema never rejects a stored delivery value, current or legacy, and never transforms it', async () => {
     const { GlobalConfigSchema, validateConfig } = await import('../../src/core/config-schema.js');
 
-    // Whole-file validation (config set/edit) never rejects an old value.
-    expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'commands', workflows: ['explore'] }).success).toBe(true);
-    expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'commands-first', workflows: ['explore'] }).success).toBe(true);
-    expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills-first', workflows: ['explore'] }).success).toBe(true);
+    // Whole-file validation (config set/edit) never rejects any delivery
+    // value — the setting is retired, so the schema no longer declares it
+    // (passthrough lets it through unvalidated).
+    for (const stored of ['both', 'skills', 'commands', 'commands-first', 'skills-first', 'anything-at-all']) {
+      expect(validateConfig({ featureFlags: {}, profile: 'custom', delivery: stored, workflows: ['explore'] }).success).toBe(true);
+    }
 
-    // And the legacy value is actually transformed to its mapped equivalent.
-    expect(GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'commands' }).delivery).toBe('both');
-    expect(GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'commands-first' }).delivery).toBe('both');
-    expect(GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'skills-first' }).delivery).toBe('skills');
+    // And it is never transformed on parse — passthrough keeps it verbatim.
+    // (global-config.ts's getGlobalConfig, not this schema, is the seam that
+    // strips it on the next read.)
+    expect((GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'commands' }) as any).delivery).toBe('commands');
+    expect((GlobalConfigSchema.parse({ featureFlags: {}, delivery: 'skills-first' }) as any).delivery).toBe('skills-first');
   });
 
   it('config schema should reject invalid profile values', async () => {
     const { validateConfig } = await import('../../src/core/config-schema.js');
 
     const result = validateConfig({ featureFlags: {}, profile: 'invalid' });
-    expect(result.success).toBe(false);
-  });
-
-  it('config schema should reject invalid delivery values', async () => {
-    const { validateConfig } = await import('../../src/core/config-schema.js');
-
-    const result = validateConfig({ featureFlags: {}, delivery: 'invalid' });
     expect(result.success).toBe(false);
   });
 });

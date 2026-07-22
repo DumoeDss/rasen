@@ -8,12 +8,9 @@ import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../src/core/profiles.js';
 import {
   getSkillTemplates,
-  getCommandTemplates,
-  getCommandContents,
 } from '../../src/core/shared/skill-generation.js';
 import {
   getReviewCycleSkillTemplate,
-  getOpsxReviewCycleCommandTemplate,
 } from '../../src/core/templates/skill-templates.js';
 
 const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
@@ -57,25 +54,10 @@ describe('review-cycle workflow', () => {
       expect(skill?.template.name).toBe('rasen-review-cycle');
     });
 
-    it('is registered as a command template with a clean (no -command suffix) id', () => {
-      const command = getCommandTemplates().find(c => c.id === 'review-cycle');
-      expect(command).toBeDefined();
-      expect(command?.template.name).toBe('Rasen: Review Cycle');
-      expect(command?.template.category).toBe('Workflow');
-
-      // The command id becomes the generated slash command: /rasen:review-cycle
-      const content = getCommandContents().find(c => c.id === 'review-cycle');
-      expect(content).toBeDefined();
-    });
   });
 
   describe('instruction content', () => {
     const skillText = getReviewCycleSkillTemplate().instructions;
-    const commandText = getOpsxReviewCycleCommandTemplate().content;
-
-    it('skill and command share the same instruction body', () => {
-      expect(commandText).toBe(skillText);
-    });
 
     it('delegates each review pass to the rasen-review engine (does not fork it)', () => {
       expect(skillText).toContain('rasen-review');
@@ -168,9 +150,9 @@ describe('review-cycle workflow', () => {
       expect(skillText).toContain('run-state');
     });
 
-    it('shares the playbook with /rasen:auto (it is auto\'s loop stage)', () => {
+    it('shares the playbook with rasen-auto (it is auto\'s loop stage)', () => {
       expect(skillText.toLowerCase()).toContain('shares the orchestration playbook with');
-      expect(skillText).toContain('/rasen:auto');
+      expect(skillText).toContain('rasen-auto');
     });
   });
 
@@ -205,12 +187,11 @@ describe('review-cycle workflow', () => {
       vi.restoreAllMocks();
     });
 
-    it('generates the review-cycle skill + command for claude when opted in', async () => {
+    it('generates the review-cycle skill for claude when opted in (skills-only, no command file)', async () => {
       // Opt in via a custom profile that includes review-cycle (plus a core anchor).
       saveGlobalConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'both',
         workflows: ['propose', 'review-cycle'],
       });
 
@@ -220,24 +201,18 @@ describe('review-cycle workflow', () => {
       const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
 
       expect(await fileExists(skillFile)).toBe(true);
-      expect(await fileExists(commandFile)).toBe(true);
+      // The command surface is retired: no command file is ever generated.
+      expect(await fileExists(commandFile)).toBe(false);
 
       const skillContent = await fs.readFile(skillFile, 'utf-8');
       expect(skillContent).toContain('name: rasen-review-cycle');
       expect(skillContent).toContain('rasen-review');
-
-      const commandContent = await fs.readFile(commandFile, 'utf-8');
-      expect(commandContent).toContain('name: "Rasen: Review Cycle"');
-      // No ugly -command suffix in the generated slash command file name.
-      const suffixed = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle-command.md');
-      expect(await fileExists(suffixed)).toBe(false);
     });
 
     it('does NOT generate review-cycle under the core profile', async () => {
       saveGlobalConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'both',
         workflows: ['propose', 'explore', 'apply', 'archive'],
       });
 
@@ -254,31 +229,22 @@ describe('review-cycle workflow', () => {
       expect(await fileExists(commandFile)).toBe(false);
     });
 
-    it('keeps the review-cycle skill dir present across a both->skills re-init (no delivery mode removes skill dirs)', async () => {
-      // 1) Generate skills + commands (delivery: both), creating the
-      //    review-cycle skill dir and command file.
+    it('cleans up a pre-existing (pre-retirement) review-cycle command file on re-init while keeping the skill', async () => {
       saveGlobalConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'both',
         workflows: ['propose', 'review-cycle'],
       });
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
       const skillDir = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle');
       const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
       expect(await fileExists(path.join(skillDir, 'SKILL.md'))).toBe(true);
-      expect(await fileExists(commandFile)).toBe(true);
 
-      // 2) Re-init with skills-only delivery: the command file is removed
-      //    (delivery === 'skills' gates command generation), but the skill
-      //    dir survives — skills are always installed regardless of delivery
-      //    (design D5), so no `removeSkillDirs` machinery exists anymore.
-      saveGlobalConfig({
-        featureFlags: {},
-        profile: 'custom',
-        delivery: 'skills',
-        workflows: ['propose', 'review-cycle'],
-      });
+      // Simulate a pre-existing install that predates the command-surface
+      // retirement: a stray command file left on disk.
+      await fs.mkdir(path.dirname(commandFile), { recursive: true });
+      await fs.writeFile(commandFile, '# stale command\n', 'utf-8');
+
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
       expect(await fileExists(path.join(skillDir, 'SKILL.md'))).toBe(true);

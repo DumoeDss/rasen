@@ -135,7 +135,7 @@ export function createWorkflowPackage(
 
 export function createProfilePackage(
   name: string,
-  profile: PackagedProfile,
+  profile: Omit<PackagedProfile, 'delivery'>,
   roots: readonly string[],
   definitions: readonly WorkflowDefinition[]
 ): ProfilePackage {
@@ -147,7 +147,6 @@ export function createProfilePackage(
     name,
     profile: {
       version: profile.version,
-      delivery: profile.delivery,
       workflows: profileWorkflows,
     },
     roots: normalizeRoots(roots, profileWorkflows),

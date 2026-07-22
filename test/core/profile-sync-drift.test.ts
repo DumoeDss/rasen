@@ -7,8 +7,6 @@ import {
   WORKFLOW_TO_SKILL_DIR,
 } from '../../src/core/profile-sync-drift.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../src/core/profiles.js';
-import { CommandAdapterRegistry, getCommandFileId } from '../../src/core/command-generation/index.js';
-import { COMMAND_IDS } from '../../src/core/shared/index.js';
 import { InitCommand } from '../../src/core/init.js';
 import { getGlobalConfig, saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveCurrentProfileState } from '../../src/commands/profile-editor.js';
@@ -43,39 +41,15 @@ function setupClosureExperts(projectDir: string, workflows: readonly string[]): 
   }
 }
 
-function writeCommand(projectDir: string, workflowId: string): void {
-  const adapter = CommandAdapterRegistry.get('claude');
-  if (!adapter) throw new Error('Claude adapter unavailable in test environment');
-  const cmdPath = adapter.getFilePath(getCommandFileId(workflowId));
-  const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectDir, cmdPath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, `# ${workflowId}\n`);
-}
-
 function setupCoreSkills(projectDir: string): void {
   for (const workflow of CORE_WORKFLOWS) {
     writeSkill(projectDir, workflow);
   }
 }
 
-function setupCoreCommands(projectDir: string): void {
-  for (const workflow of CORE_WORKFLOWS) {
-    writeCommand(projectDir, workflow);
-  }
-}
-
 function setupFullSkills(projectDir: string): void {
   for (const workflow of ALL_WORKFLOWS) {
     writeSkill(projectDir, workflow);
-  }
-}
-
-function setupFullCommands(projectDir: string): void {
-  // Only workflows with a command template (e.g. goal-command) get a command
-  // file. Skill-only workflows (e.g. goal-plan/iterate/report) have none.
-  for (const workflow of ALL_WORKFLOWS) {
-    if (!(COMMAND_IDS as readonly string[]).includes(workflow)) continue;
-    writeCommand(projectDir, workflow);
   }
 }
 
@@ -100,73 +74,42 @@ describe('profile sync drift detection', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('detects drift for skills-only delivery when commands still exist', () => {
-    setupCoreSkills(tempDir);
-    setupCoreCommands(tempDir);
-
-    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, 'skills');
-    expect(hasDrift).toBe(true);
-  });
-
-  it('detects drift when skills are missing, regardless of delivery (skills are always forward-required)', () => {
-    setupCoreCommands(tempDir);
-    // No skills written — skills are forward-required for every selected
-    // workflow no matter the delivery setting (design D7).
-    for (const delivery of ['both', 'skills'] as const) {
-      const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, delivery);
-      expect(hasDrift).toBe(true);
-    }
-  });
-
-  it('detects drift when required profile workflow files are missing', () => {
+  it('detects drift when required profile skill files are missing', () => {
     writeSkill(tempDir, 'explore');
 
-    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, 'both');
+    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS);
     expect(hasDrift).toBe(true);
   });
 
-  it('returns false when project files match core profile and delivery', () => {
+  it('returns false when project skill files match the core profile', () => {
     setupCoreSkills(tempDir);
-    setupCoreCommands(tempDir);
     // CORE_WORKFLOWS includes `auto-command`, whose dependency closure
     // requires the `review` expert skill — closure-aware drift detection
     // now forward-requires it too, matching what a real install puts on
     // disk.
     setupClosureExperts(tempDir, CORE_WORKFLOWS);
 
-    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, 'both');
+    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS);
     expect(hasDrift).toBe(false);
   });
 
-  it('detects drift when extra workflows are installed for both delivery', () => {
+  it('detects drift when extra workflows are installed', () => {
     setupCoreSkills(tempDir);
-    setupCoreCommands(tempDir);
     writeSkill(tempDir, 'new');
-    writeCommand(tempDir, 'new');
 
-    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS, 'both');
+    const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS);
     expect(hasDrift).toBe(true);
   });
 
   it('returns false for the full profile after a clean install, including the skill-only goal-loop stage workflows', () => {
     setupFullSkills(tempDir);
-    setupFullCommands(tempDir);
     // ALL_WORKFLOWS's closure requires review/cso/qa/design-review/qa-only
     // (pulled in by verify-enhanced-command and auto-command) — install
     // them too so the closure-aware forward-required check is satisfied,
     // matching a real install.
     setupClosureExperts(tempDir, ALL_WORKFLOWS);
 
-    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS, 'both');
-    expect(hasDrift).toBe(false);
-  });
-
-  it('returns false for the full profile under skills delivery when only skills are installed (no commands required)', () => {
-    setupFullSkills(tempDir);
-    setupClosureExperts(tempDir, ALL_WORKFLOWS);
-    // No commands written — under 'skills' delivery, commands are not
-    // required and their absence is not drift.
-    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS, 'skills');
+    const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS);
     expect(hasDrift).toBe(false);
   });
 });
@@ -205,7 +148,6 @@ describe('profile sync drift detection through the production caller (profile-ed
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: [...CUSTOM_WORKFLOWS],
       expertSelectionExplicit: true,
     });
@@ -232,19 +174,19 @@ describe('profile sync drift detection through the production caller (profile-ed
       expect(fs.existsSync(path.join(testDir, '.claude', 'skills', dirName))).toBe(true);
     }
 
-    expect(hasProjectConfigDrift(testDir, state.workflows, state.delivery)).toBe(false);
+    expect(hasProjectConfigDrift(testDir, state.workflows)).toBe(false);
   });
 
   it('still reports drift when a genuinely orphaned expert is installed', async () => {
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
     const state = resolveCurrentProfileState(getGlobalConfig());
-    expect(hasProjectConfigDrift(testDir, state.workflows, state.delivery)).toBe(false);
+    expect(hasProjectConfigDrift(testDir, state.workflows)).toBe(false);
 
     // `benchmark` is neither in the stored selection nor required by
     // `verify-enhanced-command`'s dependency closure — a lingering install
     // of it is a real deselection, not a closure artifact.
     writeSkill(testDir, 'benchmark');
-    expect(hasProjectConfigDrift(testDir, state.workflows, state.delivery)).toBe(true);
+    expect(hasProjectConfigDrift(testDir, state.workflows)).toBe(true);
   });
 });

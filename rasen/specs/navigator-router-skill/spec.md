@@ -20,19 +20,20 @@ The system SHALL provide a router skill `navigator` as an inline TypeScript temp
 
 ### Requirement: Navigator maps Rasen and the experts, reflecting the post-absorb state
 
-The navigator body SHALL present a four-part map: a main flow (`/rasen:explore` or `/rasen:office-hours` → `/rasen:propose` → `/rasen:apply` → review/verify → `/rasen:ship` → `/rasen:archive` → `/rasen:retro`, with `/rasen:auto` as the driver), on-ramps, a vocabulary layer (`/codebase-design`), and standalone specialists, each with a one-line "when to reach for it". It SHALL reflect the post-absorb reality and SHALL NOT reference grill skills absent from this fork, nor any of the removed parallel-lifecycle skills, nor the removed `/domain-modeling` methodology skill. The map SHALL NOT contain a Deploy family section, a Plan family section, a standalone `/retro` entry, or a `/document-release` entry.
+The navigator body SHALL present a four-part map: a main flow (`rasen-explore` or `rasen-office-hours-command` → `rasen-propose` → `rasen-apply-change` → review/verify → `rasen-ship` → `rasen-archive-change` → `rasen-retro`, with `rasen-auto` as the driver), on-ramps, a vocabulary layer (`rasen-codebase-design`), and standalone specialists, each with a one-line "when to reach for it". Workflows and expert skills SHALL be named by their canonical skill name, not the `/rasen:*` colon form. It SHALL reflect the post-absorb reality and SHALL NOT reference grill skills absent from this fork, nor any of the removed parallel-lifecycle skills, nor the removed `/domain-modeling` methodology skill. The map SHALL NOT contain a Deploy family section, a Plan family section, a standalone `/retro` entry, or a `/document-release` entry.
 
 #### Scenario: Four-part map present
 
 - **WHEN** the generated navigator skill is inspected
 - **THEN** it SHALL contain a main flow, on-ramps, a vocabulary layer, and a standalone section
 - **AND** each named skill SHALL have a one-line "when to use"
+- **AND** each named skill SHALL be referenced by its canonical `rasen-*` skill name, not a `/rasen:*` colon reference
 
 #### Scenario: Reflects absorbed skills
 
 - **WHEN** the navigator map is inspected
-- **THEN** `/investigate` SHALL be described as refusing to hypothesise before a red-capable feedback loop
-- **AND** `/review` SHALL be described as a two-axis (Standards + Spec) review
+- **THEN** the `rasen-investigate` skill SHALL be described as refusing to hypothesise before a red-capable feedback loop
+- **AND** the `rasen-review` skill SHALL be described as a two-axis (Standards + Spec) review
 
 #### Scenario: No fork-absent grill skills referenced
 
@@ -43,7 +44,7 @@ The navigator body SHALL present a four-part map: a main flow (`/rasen:explore` 
 
 - **WHEN** the navigator map is inspected
 - **THEN** it SHALL NOT reference `/autoplan`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/land-and-deploy`, `/setup-deploy`, `/canary`, `/document-release`, or a standalone `/retro` expert
-- **AND** the `/rasen:ship` and `/rasen:retro` entries in the main flow SHALL remain
+- **AND** the `rasen-ship` and `rasen-retro` entries in the main flow SHALL remain
 
 #### Scenario: No removed methodology skill referenced
 
@@ -53,8 +54,8 @@ The navigator body SHALL present a four-part map: a main flow (`/rasen:explore` 
 #### Scenario: Ship entry reflects the delivery modes
 
 - **WHEN** the navigator map's main flow is inspected
-- **THEN** the `/rasen:ship` one-liner SHALL name the three delivery modes (pr / push / local) and evidence-gated testing
-- **AND** it SHALL remain a one-line "when to reach for it" entry, not the full ship contract (resolution precedence, the merge step, and the ship-log fields stay in the ship command)
+- **THEN** the `rasen-ship` one-liner SHALL name the three delivery modes (pr / push / local) and evidence-gated testing
+- **AND** it SHALL remain a one-line "when to reach for it" entry, not the full ship contract (resolution precedence, the merge step, and the ship-log fields stay in the ship skill)
 
 ### Requirement: Navigator registered as an expert with count +1
 

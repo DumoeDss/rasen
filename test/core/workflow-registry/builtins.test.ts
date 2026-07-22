@@ -28,7 +28,6 @@ describe('built-in workflow catalog', () => {
       id: definition.id,
       skillName: definition.skill.template.name,
       dirName: definition.skill.dirName,
-      commandId: definition.command?.content.id ?? null,
       kind: definition.kind,
     }));
 
@@ -37,15 +36,13 @@ describe('built-in workflow catalog', () => {
     expect(CORE_WORKFLOWS).toBe(CORE_WORKFLOW_IDS);
   });
 
-  it('indexes IDs, skill names, and command IDs', () => {
+  it('indexes IDs and skill names', () => {
     const definitions = getBuiltInWorkflowDefinitions();
     const catalog = new WorkflowCatalog(definitions);
     const apply = catalog.get('apply');
 
     expect(apply?.source).toBe('built-in');
     expect(catalog.getBySkillName('rasen-apply-change')).toBe(apply);
-    expect(catalog.getByCommandId('apply')).toBe(apply);
-    expect(catalog.getByCommandId('goal-plan')).toBeUndefined();
   });
 
   it('folds the 21 experts into the built-in catalog as kind:expert members', () => {
@@ -55,7 +52,6 @@ describe('built-in workflow catalog', () => {
     expect(experts).toHaveLength(21);
     expect(experts.every((expert) => expert.kind === 'expert')).toBe(true);
     expect(experts.every((expert) => expert.source === 'built-in')).toBe(true);
-    expect(experts.every((expert) => expert.command === undefined)).toBe(true);
     expect(experts.every((expert) => expert.files.length === 0)).toBe(true);
     expect(experts.some((expert) => workflowIds.has(expert.id))).toBe(false);
 

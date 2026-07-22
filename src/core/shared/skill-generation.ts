@@ -8,8 +8,7 @@ import { readdirSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../templates/skill-templates.js';
-import type { CommandContent } from '../command-generation/index.js';
-import { quoteYamlValue } from '../command-generation/yaml.js';
+import { quoteYamlValue } from './yaml.js';
 import {
   getExpertSkillDefinitions,
   loadWorkflowCatalog,
@@ -25,20 +24,6 @@ export interface SkillTemplateEntry {
   workflowId: string;
   /** User-authored frontmatter must be emitted as quoted YAML scalars. */
   escapeFrontmatter: boolean;
-}
-
-/**
- * Command template with ID mapping.
- */
-export interface CommandTemplateEntry {
-  template: {
-    name: string;
-    description: string;
-    category: string;
-    tags: string[];
-    content: string;
-  };
-  id: string;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -142,52 +127,6 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
     dirName: definition.skill.dirName,
     workflowId: definition.id,
     escapeFrontmatter: definition.source === 'user',
-  }));
-}
-
-/**
- * Gets command templates with their IDs, optionally filtered by workflow IDs.
- *
- * @param workflowFilter - If provided, only return templates whose id is in this array
- */
-export function getCommandTemplates(workflowFilter?: readonly string[]): CommandTemplateEntry[] {
-  const catalog = loadWorkflowCatalog();
-  const definitions = workflowFilter
-    ? resolveWorkflowSelection(catalog, workflowFilter.filter((workflow) => catalog.has(workflow)))
-    : catalog.definitions;
-  const all: CommandTemplateEntry[] = definitions
-    .filter((definition) => definition.command)
-    .map((definition) => {
-      const command = definition.command!.content;
-      return {
-        id: definition.id,
-        template: {
-          name: command.name,
-          description: command.description,
-          category: command.category,
-          tags: [...command.tags],
-          content: command.body,
-        },
-      };
-    });
-
-  return all;
-}
-
-/**
- * Converts command templates to CommandContent array, optionally filtered by workflow IDs.
- *
- * @param workflowFilter - If provided, only return contents whose id is in this array
- */
-export function getCommandContents(workflowFilter?: readonly string[]): CommandContent[] {
-  const commandTemplates = getCommandTemplates(workflowFilter);
-  return commandTemplates.map(({ template, id }) => ({
-    id,
-    name: template.name,
-    description: template.description,
-    category: template.category,
-    tags: template.tags,
-    body: template.content,
   }));
 }
 

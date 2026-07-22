@@ -23,7 +23,7 @@ The system SHALL support built-in `full` and `core` profiles, the current `custo
 
 ### Requirement: Drift detection evaluates the desired selection as its dependency closure
 
-Profile and delivery drift detection SHALL evaluate the desired workflow selection as its full dependency closure — the selection plus every expert required by a selected workflow's skill-dependency closure — before deciding whether an installed artifact is unexpected. Because a stored profile is intentionally not closure-expanded (a stored profile is not auto-expanded with closure-pulled experts) while installed experts are governed by the resolved profile plus dependency closure, the detector SHALL reconcile the two by closing the desired selection itself, using the same closure resolution as the install and removal seams. Consequently a closure-required expert that is present on disk SHALL NOT be reported as drift, and drift detection SHALL give the same result whether its caller passes the raw selection or an already-closure-resolved selection.
+Profile drift detection SHALL evaluate the desired workflow selection as its full dependency closure — the selection plus every expert required by a selected workflow's skill-dependency closure — before deciding whether an installed artifact is unexpected. Because a stored profile is intentionally not closure-expanded (a stored profile is not auto-expanded with closure-pulled experts) while installed experts are governed by the resolved profile plus dependency closure, the detector SHALL reconcile the two by closing the desired selection itself, using the same closure resolution as the install and removal seams. Consequently a closure-required expert that is present on disk SHALL NOT be reported as drift, and drift detection SHALL give the same result whether its caller passes the raw selection or an already-closure-resolved selection.
 
 #### Scenario: Closure-required expert on disk is not drift for a custom profile
 
@@ -40,64 +40,23 @@ Profile and delivery drift detection SHALL evaluate the desired workflow selecti
 - **WHEN** a built-in expert is installed on disk that is neither in the resolved profile's expert set nor required by any selected workflow's dependency closure
 - **THEN** drift detection SHALL still report it, so real deselections continue to trigger sync
 
-### Requirement: Delivery is independent of profile
-The delivery setting SHALL control HOW workflows are installed, separate from WHICH workflows are installed. Skills are the always-installed foundation (orchestration workflows invoke worker skills at runtime); commands are an optional addition.
+### Requirement: Delivery setting is retired
+The `delivery` setting is retired. Skills are the single delivery format; there is no command delivery surface and no delivery choice to configure. Any `delivery` value stored in a prior config — a current value (`both`, `skills`) or a legacy value (`commands`, `commands-first`, `skills-first`) — SHALL be read without error, SHALL trigger a one-time notice explaining that commands have been consolidated into skills and the setting has been retired, and SHALL be removed from the config file on the next write. An old delivery value SHALL never cause a command to fail.
 
-#### Scenario: Delivery options
-- **WHEN** configuring delivery
-- **THEN** the system SHALL support two options: `both` (skills and commands), `skills` (skill files only)
-
-#### Scenario: Both delivery
-- **WHEN** delivery is set to `both`
-- **THEN** the system SHALL install both skill files and command files for each workflow
-
-#### Scenario: Skills-only delivery
-- **WHEN** delivery is set to `skills`
-- **THEN** the system SHALL install only skill files for each workflow
-- **THEN** the system SHALL NOT install command files
-
-#### Scenario: Skills are always installed
-- **WHEN** workflows are installed under any delivery setting
-- **THEN** skill files for the selected workflows SHALL be installed
-- **AND** no delivery setting SHALL cause an installed skill directory to be removed
-
-#### Scenario: Core profile with custom delivery
-- **WHEN** profile is set to `core`
-- **AND** delivery is set to `skills`
-- **THEN** the system SHALL install core workflows as skills only (no commands)
-
-#### Scenario: Delivery defaults
-- **WHEN** delivery is not set in global config
-- **THEN** the system SHALL default to `both`
-
-### Requirement: Legacy delivery values migrate gracefully
-Configurations written before the delivery consolidation may contain the retired values `commands`, `commands-first`, or `skills-first`. The system SHALL keep working with such a config: the value is silently mapped to its consolidated equivalent, a one-time notice explains the consolidation, and the config file is updated to the new value. An old delivery value SHALL never cause a command to fail.
-
-#### Scenario: skills-first maps to skills
-- **WHEN** the global config contains `delivery: "skills-first"` and any command reads the config
-- **THEN** the effective delivery SHALL be `skills`
-- **AND** a notice SHALL state that `skills-first` has been consolidated into `skills`
-
-#### Scenario: commands maps to both
-- **WHEN** the global config contains `delivery: "commands"` and any command reads the config
-- **THEN** the effective delivery SHALL be `both`
-- **AND** a notice SHALL state that `commands` has been consolidated into `both` (skills are always installed)
-
-#### Scenario: commands-first maps to both
-- **WHEN** the global config contains `delivery: "commands-first"` and any command reads the config
-- **THEN** the effective delivery SHALL be `both`
-- **AND** a notice SHALL state that `commands-first` has been consolidated into `both` (skills are always installed)
+#### Scenario: Stored delivery value is read without error and retired
+- **WHEN** the global config contains a `delivery` key with any value (`both`, `skills`, `commands`, `commands-first`, or `skills-first`) and any command reads the config
+- **THEN** the command SHALL succeed
+- **AND** a one-time notice SHALL state that commands have been consolidated into skills and the delivery setting has been retired
+- **AND** the `delivery` key SHALL be removed from the config file
 
 #### Scenario: Notice appears only once
-- **WHEN** a legacy delivery value is mapped
-- **THEN** the config file SHALL be rewritten with the consolidated value
-- **AND** subsequent runs SHALL read the consolidated value and print no further notice
+- **WHEN** a stored `delivery` key is retired and the config is rewritten without it
+- **THEN** subsequent runs SHALL read the config with no `delivery` key and print no further notice
 
-#### Scenario: Unrecognized delivery value falls back to default
-- **WHEN** the global config contains a delivery value that is neither a current value (`both`, `skills`) nor a retired value (`commands`, `commands-first`, `skills-first`)
-- **THEN** the system SHALL behave as if delivery were the default (`both`)
-- **AND** SHALL NOT rewrite the config file for the unrecognized value
-- **AND** SHALL NOT fail
+#### Scenario: Config without a delivery key needs no rewrite
+- **WHEN** the global config has no `delivery` key
+- **THEN** the system SHALL NOT print the retirement notice
+- **AND** SHALL NOT rewrite the config file for that reason
 
 ### Requirement: Profile configuration via interactive picker
 The system SHALL provide an interactive picker for configuring profiles.
@@ -105,12 +64,11 @@ The system SHALL provide an interactive picker for configuring profiles.
 #### Scenario: Interactive profile configuration
 - **WHEN** user runs `rasen profile`
 - **THEN** the system SHALL display an interactive picker with:
-  - Delivery selection: `both`, `skills`
   - Workflow toggles for all available workflows
 - **THEN** the system SHALL pre-select current config values
 - **THEN** on confirmation, the system SHALL update global config
 - **THEN** the system SHALL set profile to `custom` if selected workflows differ from core defaults
-- **THEN** the system SHALL set profile to `core` if selected workflows match core defaults exactly (propose, explore, apply, archive), regardless of delivery setting
+- **THEN** the system SHALL set profile to `core` if selected workflows match core defaults exactly (propose, explore, apply, archive)
 - **THEN** the system SHALL NOT modify any project files
 - **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
 
@@ -124,7 +82,7 @@ The system SHALL provide an interactive picker for configuring profiles.
 
 #### Scenario: Localized workflow picker
 - **WHEN** the user's resolved CLI locale is Japanese or Simplified Chinese
-- **THEN** delivery choices, built-in workflow names and descriptions, picker prompts, and picker instructions SHALL be displayed in the resolved locale
+- **THEN** built-in workflow names and descriptions, picker prompts, and picker instructions SHALL be displayed in the resolved locale
 - **AND** every workflow in `ALL_WORKFLOWS` SHALL have a specific name and description rather than a workflow-ID fallback
 - **AND** each workflow row SHALL show its stable public workflow id before the localized name
 - **AND** the separator between id and localized name SHALL be aligned using the longest public workflow id
@@ -144,7 +102,7 @@ The system SHALL provide an interactive picker for configuring profiles.
 - **AND** a narrower terminal SHALL use as many `.` characters as can fit
 - **AND** wrapping and truncation SHALL use terminal display columns rather than UTF-16 code units or UTF-8 bytes
 - **AND** fullwidth CJK characters, emoji sequences, and combining sequences SHALL NOT be split in the middle of a grapheme cluster
-- **AND** the persisted workflow definition, package content, JSON output, and generated skill or command content SHALL remain unmodified
+- **AND** the persisted workflow definition, package content, JSON output, and generated skill content SHALL remain unmodified
 
 #### Scenario: Persisted CLI language
 - **WHEN** the user sets global config `language` to `en`, `ja`, or `zh-cn`
@@ -171,7 +129,6 @@ The system SHALL provide an interactive picker for configuring profiles.
 - **WHEN** user runs `rasen profile use core`
 - **THEN** the system SHALL set profile to `core`
 - **THEN** the system SHALL set workflows to the current `CORE_WORKFLOWS`
-- **THEN** the system SHALL NOT change the delivery setting (preserves user preference)
 - **THEN** the system SHALL NOT modify any project files
 - **THEN** the system SHALL display: "Config updated. Run `rasen update` in your projects to apply."
 - **THEN** the new profile takes effect on the next `rasen init` or `rasen update` run
@@ -195,21 +152,21 @@ The system SHALL provide an interactive picker for configuring profiles.
 - **THEN** the system SHALL exit with code 1
 
 ### Requirement: Profile settings stored in global config
-Current profile and delivery settings SHALL be stored in the existing global config file under the resolved machine home alongside telemetry and feature flags.
+Current profile settings SHALL be stored in the existing global config file under the resolved machine home alongside telemetry and feature flags.
 
 #### Scenario: Config schema
 - **WHEN** reading profile configuration
-- **THEN** the config SHALL contain `profile` (full|core|custom), `delivery` (both|skills), `language` (auto|en|ja|zh-cn), and optionally `workflows` (array of workflow names)
+- **THEN** the config SHALL contain `profile` (full|core|custom), `language` (auto|en|ja|zh-cn), and optionally `workflows` (array of workflow names)
 - **AND** persisted language values SHALL accept only the exact canonical enum values and SHALL NOT normalize aliases such as `zh-CN` or `zh_CN`
 
 #### Scenario: Schema evolution
-- **WHEN** loading config without profile/delivery fields
-- **THEN** the system SHALL use defaults (profile=core, delivery=both)
+- **WHEN** loading config without a profile field
+- **THEN** the system SHALL use the default (profile=core)
 - **AND** existing config fields (telemetry, featureFlags) SHALL be preserved
 
 #### Scenario: Config list displays profile settings
 - **WHEN** user runs `rasen config list`
-- **THEN** the system SHALL display profile, delivery, and workflows settings
+- **THEN** the system SHALL display profile and workflows settings
 - **AND** SHALL indicate which values are defaults vs explicitly set
 
 ### Requirement: Config is global, projects are explicit
@@ -225,18 +182,18 @@ Config changes SHALL NOT automatically propagate to projects.
 The existing `rasen update` command SHALL apply the current global config to a project. See `specs/cli-update/spec.md` for detailed update behavior.
 
 #### Scenario: Config changes require explicit project sync
-- **WHEN** user updates profile or delivery via `rasen profile`
+- **WHEN** user updates the profile or workflow selection via `rasen profile`
 - **THEN** the global config SHALL be updated immediately
 - **AND** project files SHALL remain unchanged until `rasen update` is run for that project
 
 ### Requirement: Named profile management
 
-The system SHALL expose reusable profile snapshots through the top-level `rasen profile` command group.
+The system SHALL expose reusable profile snapshots through the top-level `rasen profile` command group. A profile snapshot captures the workflow (and expert) selection only; the retired `delivery` setting is not part of a profile.
 
 #### Scenario: Create a named profile
 - **WHEN** user runs `rasen profile new [name]` in an interactive terminal
 - **THEN** the system SHALL validate or prompt for a portable profile name
-- **AND** SHALL prompt for delivery and workflows using current settings as defaults
+- **AND** SHALL prompt for workflows using current settings as defaults
 - **AND** SHALL save the definition under the machine-global `profiles` directory
 - **AND** SHALL apply the new definition to current global config after confirmation
 
@@ -248,12 +205,12 @@ The system SHALL expose reusable profile snapshots through the top-level `rasen 
 
 #### Scenario: Reject an unavailable explicit profile name
 - **WHEN** user runs `rasen profile new <name>` with an invalid, reserved, or existing name
-- **THEN** the command SHALL fail before prompting for delivery or workflows
+- **THEN** the command SHALL fail before prompting for workflows
 - **AND** SHALL display the reason
 
 #### Scenario: Use a named profile
 - **WHEN** user runs `rasen profile use <name>`
-- **THEN** the system SHALL copy that definition's delivery and workflows into current global config
+- **THEN** the system SHALL copy that definition's workflows into current global config
 - **AND** SHALL classify the current selection as `full`, `core`, or `custom`
 - **AND** SHALL instruct the user to run `rasen update` in projects
 
@@ -265,7 +222,7 @@ The system SHALL expose reusable profile snapshots through the top-level `rasen 
 
 #### Scenario: List profiles for humans or automation
 - **WHEN** user runs `rasen profile list`
-- **THEN** the system SHALL list built-in and saved profiles with delivery and workflow count
+- **THEN** the system SHALL list built-in and saved profiles with workflow count
 - **WHEN** user adds `--json`
 - **THEN** the system SHALL emit structured JSON including whether each profile matches current settings
 
@@ -277,15 +234,19 @@ The system SHALL expose reusable profile snapshots through the top-level `rasen 
 
 ### Requirement: Named profile storage and validation
 
-User-named profiles SHALL be stored as versioned YAML definitions under `<global-config-dir>/profiles/<name>.yaml` and SHALL contain only `version`, `delivery`, and `workflows`. The `workflows` list MAY name workflow ids and expert ids.
+User-named profiles SHALL be stored as versioned YAML definitions under `<global-config-dir>/profiles/<name>.yaml` and SHALL contain only `version` and `workflows`. The `workflows` list MAY name workflow ids and expert ids. A retired `delivery` field present in a legacy definition file SHALL be tolerated and ignored on read rather than rejected, so existing saved profiles keep loading.
 
 #### Scenario: Validate names and content before saving
 - **WHEN** a profile is created or imported
 - **THEN** its name SHALL be a lowercase portable slug of at most 64 characters
 - **AND** `full`, `core`, and `custom` SHALL be reserved
-- **AND** delivery SHALL be `both` or `skills`
 - **AND** every entry SHALL be a unique current catalog id — a workflow id or an expert id
 - **AND** unsupported versions, unknown ids, duplicate ids, and unknown fields SHALL fail without modifying an existing definition
+
+#### Scenario: Legacy delivery field is tolerated on read
+- **WHEN** a saved profile definition from before the delivery retirement still contains a `delivery` field
+- **THEN** the definition SHALL load successfully
+- **AND** the `delivery` field SHALL be ignored
 
 #### Scenario: Saved profile is a snapshot
 - **WHEN** user applies a named profile and later edits current settings with `rasen profile`
@@ -309,7 +270,7 @@ The system SHALL exchange profile definitions as versioned YAML or JSON without 
 
 #### Scenario: Export current settings
 - **WHEN** user runs `rasen profile export <path>`
-- **THEN** the current delivery and workflows SHALL be exported
+- **THEN** the current workflows SHALL be exported
 
 #### Scenario: Export a selected profile
 - **WHEN** user runs `rasen profile export <path> --profile <name>`

@@ -194,22 +194,11 @@
   },
   "profile": {
     "prompt": {
-      "deliveryPickerMessage": "配信方法（ワークフローのインストール形式）:",
       "workflowPickerMessage": "利用可能にするワークフローを選択:",
       "workflowPickerInstructions": "Spaceで切り替え、Aですべて選択・解除、Enterで確定",
       "currentSuffix": " [現在]",
       "sourceUser": "ユーザー",
       "requiredBy": "{workflow}が必要としています",
-      "delivery": {
-        "both": {
-          "name": "両方（スキル + コマンド）",
-          "description": "ワークフローをスキルとスラッシュコマンドの両方でインストールします"
-        },
-        "skills": {
-          "name": "スキルのみ",
-          "description": "ワークフローをスキルとしてのみインストールします"
-        }
-      },
       "workflows": {
         "propose": {
           "name": "変更を提案",
@@ -413,22 +402,12 @@
       "applyGuidance": "設定を更新しました。各プロジェクトで `rasen update` を実行してください。",
       "interactiveRequired": "対話モードが必要です。`rasen profile use <name>` または設定コマンドを使用してください。",
       "currentSettingsHeading": "\n現在のプロファイル設定",
-      "deliveryLabel": "配信方法",
       "workflowsLabel": "ワークフロー",
-      "deliveryExplanation": "  配信方法 = スキルに加えてコマンドもインストールするか（スキルは常にインストール）",
       "workflowsExplanation": "  ワークフロー = 利用可能にする操作（propose、explore、applyなど）",
       "configurePrompt": "何を設定しますか?",
       "actions": {
-        "both": {
-          "name": "配信方法とワークフロー",
-          "description": "インストール形式と利用可能な操作をまとめて更新します"
-        },
-        "delivery": {
-          "name": "配信方法のみ",
-          "description": "ワークフローのインストール形式を変更します"
-        },
         "workflows": {
-          "name": "ワークフローのみ",
+          "name": "ワークフロー",
           "description": "利用可能にするワークフローを変更します"
         },
         "keep": {
@@ -455,14 +434,13 @@
       "builtInCannotDelete": "組み込みプロファイル「{name}」は削除できません。",
       "deleteProfile": "プロファイル「{name}」を削除しますか?",
       "profileDeleted": "プロファイル「{name}」を削除しました。現在設定は変更していません。",
-      "profileImported": "プロファイル「{name}」をimportしました（{delivery}、{count}ワークフロー）。",
+      "profileImported": "プロファイル「{name}」をimportしました（{count}ワークフロー）。",
       "useImportedProfile": "使用するには `rasen profile use {name}` を実行してください。",
       "destinationExists": "出力先が既に存在します: {path}。上書きするには--forceを指定してください。",
       "overwriteFile": "既存ファイル「{path}」を上書きしますか?",
       "profileExported": "{subject}を{path}へexportしました。",
       "namedProfileSettings": "プロファイル「{name}」",
       "workflowSummary": "{count}件選択（{profile}）",
-      "diffDelivery": "配信方法: {before} → {after}",
       "diffProfile": "プロファイル: {before} → {after}",
       "diffWorkflowsAdded": "ワークフロー: 追加 {items}",
       "diffWorkflowsRemoved": "ワークフロー: 削除 {items}",
@@ -489,7 +467,6 @@
   "config": {
     "descriptions": {
       "profile": "利用可能にする操作を決めるワークフロープロファイル",
-      "delivery": "スキルに加えてコマンドもインストールするか（スキルは常にインストール）",
       "workflows": "明示的なワークフロー選択（`rasen profile` で編集）",
       "language": "対話プロンプトとCLIヘルプの言語（`auto` はシステムlocaleから自動判定）",
       "featureFlags": "機能フラグの切り替え（featureFlags.<name>）",
@@ -554,6 +531,7 @@
       "fromCoreProfile": "(coreプロファイル由来)",
       "noneValue": "(なし)",
       "invalidKey": "エラー: 設定キー\"{key}\"は無効です。{detail}",
+      "retiredKey": "注: \"{key}\" は廃止された設定です。もう保存されません。変更はありませんでした。",
       "listKeysGuidance": "利用可能なキーは \"{command}\" で確認してください。",
       "allowUnknownGuidance": "この確認を省略するには--allow-unknownを指定してください。",
       "errorWithDetail": "エラー: {detail}",
@@ -579,7 +557,7 @@
       "unableToValidate": "エラー: 設定を検証できません - {detail}"
     },
     "diagnostics": {
-      "legacyDelivery": "注: deliveryモード'{legacy}'は'{delivery}'へ統合されました（skillsは常にインストールされます）。設定を更新しました。",
+      "deliveryRetired": "注: 'delivery' 設定は廃止されました（skillsが唯一の配信方法です）。設定から '{legacy}' を削除します。",
       "invalidGlobalJson": "警告: {path}のJSONが無効なため、デフォルトを使用します",
       "projectParseFailed": "警告: {path}を解析できませんでした（{detail}）。この設定を無視します。",
       "projectNotObject": "rasen/config.yamlは有効なYAMLオブジェクトではありません",
@@ -909,5 +887,17 @@
   },
   "telemetry": {
     "notice": "お知らせ: Rasenは匿名の利用統計（コマンド、バージョン、OS、Node.jsバージョン、ランダムID）を独自のCloudflare Workerへ送信します。無効化: RASEN_TELEMETRY=0"
+  },
+  "workflowChain": {
+    "reasons": {
+      "continueAuthoring": "不足しているアーティファクトの作成が必要です。{workflow} で作成を続けてください。",
+      "readyForVerify": "すべてのタスクが完了しました。{workflow} を実行して実装を確認してください。",
+      "readyForApply": "すべての計画アーティファクトが完了しました。{workflow} で実装を開始してください。",
+      "entryToApply": "{workflow} を実行して続けてください。",
+      "exploreToPropose": "{workflow} でこれを変更に落とし込みましょう。",
+      "officeHoursToPropose": "{workflow} でこれを変更に落とし込みましょう。",
+      "skipAhead": "{original} はインストールされていないため、次は {workflow} です。"
+    },
+    "hint": "次のステップ: {workflow} — {reason}"
   }
 }

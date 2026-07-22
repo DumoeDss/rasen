@@ -2,12 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 import {
   getSkillTemplates,
-  getCommandTemplates,
-  getCommandContents,
 } from '../../src/core/shared/skill-generation.js';
 import {
   getShipCommandSkillTemplate,
-  getOpsxShipCommandTemplate,
 } from '../../src/core/templates/skill-templates.js';
 
 describe('ship workflow (delivery modes + evidence-based test gate)', () => {
@@ -18,23 +15,10 @@ describe('ship workflow (delivery modes + evidence-based test gate)', () => {
       expect(skill?.dirName).toBe('rasen-ship');
       expect(skill?.template.name).toBe('rasen-ship');
     });
-
-    it('is registered as a command template (/rasen:ship)', () => {
-      const command = getCommandTemplates().find(c => c.id === 'ship-command');
-      expect(command).toBeDefined();
-      expect(command?.template.name).toBe('Rasen: Ship');
-      expect(command?.template.category).toBe('Workflow');
-      expect(getCommandContents().find(c => c.id === 'ship-command')).toBeDefined();
-    });
   });
 
   describe('instruction content', () => {
     const skillText = getShipCommandSkillTemplate().instructions;
-    const commandText = getOpsxShipCommandTemplate().content;
-
-    it('skill and command share the same instruction body', () => {
-      expect(commandText).toBe(skillText);
-    });
 
     it('resolves exactly one of the three delivery modes', () => {
       expect(skillText).toContain('Resolve the delivery mode');

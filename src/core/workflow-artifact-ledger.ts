@@ -4,9 +4,7 @@ import * as path from 'node:path';
 
 import { z } from 'zod';
 
-import { CommandAdapterRegistry, getCommandFileId } from './command-generation/index.js';
 import { AI_TOOLS } from './config.js';
-import type { Delivery } from './global-config.js';
 import { resolveToolSkillsRoot } from './shared/index.js';
 import {
   loadWorkflowCatalog,
@@ -123,8 +121,7 @@ function resolveArtifactFile(projectRoot: string, file: ArtifactFile): string | 
 function expectedArtifactPaths(
   projectRoot: string,
   toolId: string,
-  definition: WorkflowDefinition,
-  delivery: Delivery
+  definition: WorkflowDefinition
 ): string[] {
   const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
   if (!tool?.skillsDir) return [];
@@ -133,13 +130,6 @@ function expectedArtifactPaths(
   for (const file of definition.files) {
     if (file.path === 'SKILL.md' || file.path === 'workflow.yaml') continue;
     files.push(path.join(skillDir, ...file.path.split('/')));
-  }
-  if (delivery === 'both' && definition.command) {
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (adapter) {
-      const commandPath = adapter.getFilePath(getCommandFileId(definition.command.content.id));
-      files.push(path.isAbsolute(commandPath) ? commandPath : path.join(projectRoot, commandPath));
-    }
   }
   return files.map((file) => path.resolve(file)).sort();
 }
@@ -151,10 +141,9 @@ function artifactKey(file: Pick<ArtifactFile, 'scope' | 'path'>): string {
 function buildWorkflowEntry(
   projectRoot: string,
   toolId: string,
-  definition: WorkflowDefinition,
-  delivery: Delivery
+  definition: WorkflowDefinition
 ): WorkflowEntry {
-  const files = expectedArtifactPaths(projectRoot, toolId, definition, delivery).map((filePath) => {
+  const files = expectedArtifactPaths(projectRoot, toolId, definition).map((filePath) => {
     const digest = sha256File(filePath);
     if (!digest) {
       throw new WorkflowArtifactLedgerError(
@@ -235,26 +224,12 @@ function isAllowedManagedPath(
   const tool = AI_TOOLS.find((item) => item.value === toolId);
   if (!tool?.skillsDir) return false;
   const skillsRoot = path.resolve(resolveToolSkillsRoot(tool, projectRoot));
-  const skillDir = path.join(skillsRoot, definition.skill.dirName);
   const expectedSkillPaths = new Set(
-    expectedArtifactPaths(projectRoot, toolId, definition, 'skills').map((item) => path.resolve(item))
+    expectedArtifactPaths(projectRoot, toolId, definition).map((item) => path.resolve(item))
   );
   const resolvedCandidate = path.resolve(candidate);
-  if (expectedSkillPaths.has(resolvedCandidate)) {
-    const boundary = isWithin(projectRoot, resolvedCandidate) ? projectRoot : skillsRoot;
-    return !containsSymlinkInChain(boundary, resolvedCandidate);
-  }
-  if (!definition.command) return false;
-  const adapter = CommandAdapterRegistry.get(toolId);
-  if (!adapter) return false;
-  const commandPath = adapter.getFilePath(getCommandFileId(definition.command.content.id));
-  const absoluteCommandPath = path.isAbsolute(commandPath)
-    ? path.resolve(commandPath)
-    : path.resolve(projectRoot, commandPath);
-  if (resolvedCandidate !== absoluteCommandPath) return false;
-  const boundary = isWithin(projectRoot, resolvedCandidate)
-    ? projectRoot
-    : path.dirname(path.dirname(absoluteCommandPath));
+  if (!expectedSkillPaths.has(resolvedCandidate)) return false;
+  const boundary = isWithin(projectRoot, resolvedCandidate) ? projectRoot : skillsRoot;
   return !containsSymlinkInChain(boundary, resolvedCandidate);
 }
 
@@ -279,8 +254,7 @@ function removeEmptyParents(start: string, stop: string): void {
 export function syncWorkflowArtifactLedger(
   projectRoot: string,
   toolId: string,
-  desiredWorkflows: readonly string[],
-  delivery: Delivery
+  desiredWorkflows: readonly string[]
 ): { removedFiles: number } {
   const resolvedProject = path.resolve(projectRoot);
   const catalog = loadWorkflowCatalog();
@@ -291,7 +265,7 @@ export function syncWorkflowArtifactLedger(
   const next: Record<string, WorkflowEntry> = {};
 
   for (const definition of desiredUsers) {
-    next[definition.id] = buildWorkflowEntry(resolvedProject, toolId, definition, delivery);
+    next[definition.id] = buildWorkflowEntry(resolvedProject, toolId, definition);
   }
 
   let removedFiles = 0;
@@ -329,8 +303,7 @@ export function syncWorkflowArtifactLedger(
 export function hasWorkflowArtifactLedgerDrift(
   projectRoot: string,
   toolIds: readonly string[],
-  desiredWorkflows: readonly string[],
-  delivery: Delivery
+  desiredWorkflows: readonly string[]
 ): boolean {
   const catalog = loadWorkflowCatalog();
   const desiredUsers = resolveWorkflowSelection(catalog, desiredWorkflows)
@@ -350,7 +323,7 @@ export function hasWorkflowArtifactLedgerDrift(
       if (!entry || entry.digest !== definition.digest || entry.source !== (definition.sourcePath ?? definition.source)) {
         return true;
       }
-      const expected = expectedArtifactPaths(projectRoot, toolId, definition, delivery)
+      const expected = expectedArtifactPaths(projectRoot, toolId, definition)
         .map((filePath) => storedArtifactFile(projectRoot, filePath));
       const expectedKeys = expected.map(artifactKey).sort();
       const actualKeys = entry.files.map(artifactKey).sort();

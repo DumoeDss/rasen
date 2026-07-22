@@ -53,7 +53,7 @@ The command SHALL provide clear, actionable next steps upon successful initializ
 - **THEN** display categorized summary:
   - "Created: <tools>" for newly configured tools
   - "Refreshed: <tools>" for already-configured tools that were updated
-  - Count of skills and commands generated
+  - Count of skills generated
 - **AND** display getting started section with:
   - `/rasen:new` - Start a new change
   - `/rasen:continue` - Create the next artifact
@@ -114,19 +114,19 @@ The command SHALL support non-interactive operation through command-line options
 - **WHEN** run with `--tools all`
 - **THEN** automatically select every adapted AI tool (`claude`, `codex`) without prompting
 - **AND** NOT select any unadapted tool
-- **AND** proceed with skill and command generation
+- **AND** proceed with skill generation
 
 #### Scenario: Select specific tools non-interactively
 
 - **WHEN** run with `--tools claude,codex`
 - **THEN** parse the comma-separated tool IDs
-- **AND** generate skills and commands for the specified adapted tools only
+- **AND** generate skills for the specified adapted tools only
 
 #### Scenario: Skip tool configuration non-interactively
 
 - **WHEN** run with `--tools none`
 - **THEN** create only the rasen directory structure
-- **AND** skip skill and command generation
+- **AND** skip skill generation
 - **AND** create config only when config creation conditions are met
 
 #### Scenario: Known but unadapted tool specification
@@ -172,38 +172,6 @@ The init command SHALL generate skills based on the active profile, not a fixed 
 - **WHEN** generating skills
 - **THEN** the system SHALL include the `propose` workflow as an available skill template
 
-### Requirement: Slash Command Generation
-
-The init command SHALL generate commands based on profile AND delivery settings, and SHALL generate command files only for selected tools that have a registered command adapter; adapterless tools remain valid for skill generation. Skill generation is unconditional: every delivery setting installs skills.
-
-#### Scenario: Skills-only delivery
-- **WHEN** delivery is set to `skills`
-- **THEN** the system SHALL NOT generate any command files
-
-#### Scenario: Both delivery
-- **WHEN** delivery is set to `both`
-- **THEN** the system SHALL generate both skill and command files for profile workflows
-
-#### Scenario: Skills generated under every delivery setting
-- **WHEN** init runs with any delivery setting (`both` or `skills`, including a legacy value mapped to one of them)
-- **THEN** the system SHALL generate skill files for the profile workflows
-
-#### Scenario: Propose workflow included in command templates
-- **WHEN** generating commands
-- **THEN** the system SHALL include the `propose` workflow as an available command template
-
-#### Scenario: Selected tool has no command adapter
-- **GIVEN** a selected tool has `skillsDir` configured but no registered command adapter
-- **WHEN** initialization includes command generation
-- **THEN** skill generation for that tool SHALL still remain valid
-- **AND** command-file generation SHALL be skipped for that tool
-- **AND** the command output SHALL include `Commands skipped for: <tool-id> (no adapter)`
-
-#### Scenario: Kimi CLI skips command-file generation
-- **WHEN** the user selects Kimi CLI during initialization
-- **THEN** Rasen SHALL treat it as a supported tool with `skillsDir: '.kimi'`
-- **AND** command-file generation SHALL be skipped because no Kimi adapter is registered
-
 ### Requirement: Config File Generation
 
 The command SHALL create a rasen config file with schema settings.
@@ -224,13 +192,13 @@ The command SHALL create a rasen config file with schema settings.
 
 ### Requirement: Init output uses the rasen namespace
 
-All init success output, next-step hints, and generated artifact references SHALL use the rasen namespace: slash commands as `/rasen:*`, the workspace as `rasen/`, and skill directories as `rasen-*`.
+All init success output, next-step hints, and generated artifact references SHALL use the rasen namespace: workflows are referenced by their canonical skill-directory name (`rasen-*`, e.g. `rasen-propose`), the workspace as `rasen/`, and skill directories as `rasen-*`. Next-step hints SHALL NOT use the `/rasen:*` colon form — project skills surface under the skill-directory name on every tool.
 
 #### Scenario: Success message references rasen commands
 
 - **WHEN** `rasen init` completes successfully
-- **THEN** the next-step hints reference `/rasen:*` commands and the `rasen/` workspace
-- **AND** no hint references `/rasen:*` or a `rasen/` path
+- **THEN** the next-step hints reference workflows by their canonical `rasen-*` skill name and the `rasen/` workspace
+- **AND** no hint SHALL use a `/rasen:*` colon-form reference
 
 ### Requirement: Experimental Command Alias
 
@@ -265,19 +233,19 @@ The init command SHALL work with sensible defaults and tool confirmation, minimi
 - **WHEN** user runs `rasen init` interactively and adapted tool directories are detected
 - **THEN** the system SHALL show detected adapted tools pre-selected
 - **THEN** the system SHALL ask for confirmation (not full selection)
-- **THEN** the system SHALL use default profile (`core`) and delivery (`both`)
+- **THEN** the system SHALL use the default profile (`core`)
 
 #### Scenario: Init with no detected tools (interactive)
 - **WHEN** user runs `rasen init` interactively and no adapted tool directories are detected
 - **THEN** the system SHALL prompt for tool selection from the adapted tools
-- **THEN** the system SHALL use default profile (`core`) and delivery (`both`)
+- **THEN** the system SHALL use the default profile (`core`)
 
 #### Scenario: Non-interactive with detected tools
 - **WHEN** user runs `rasen init` non-interactively (e.g., in CI)
 - **AND** adapted tool directories are detected
 - **THEN** the system SHALL use the detected adapted tools automatically without prompting
 - **AND** SHALL ignore detected directories for unadapted tools
-- **THEN** the system SHALL use default profile and delivery
+- **THEN** the system SHALL use the default profile
 
 #### Scenario: Non-interactive with no detected tools
 - **WHEN** user runs `rasen init` non-interactively
@@ -294,21 +262,18 @@ The init command SHALL work with sensible defaults and tool confirmation, minimi
 - **WHEN** user runs `rasen init --tools claude` interactively
 - **THEN** the system SHALL use specified tools (ignoring auto-detection)
 - **THEN** the system SHALL NOT prompt for tool selection
-- **THEN** the system SHALL proceed with default profile and delivery
+- **THEN** the system SHALL proceed with the default profile
 
 #### Scenario: Init success message (propose installed)
 - **WHEN** init completes successfully
 - **AND** `propose` is in the active profile
-- **THEN** the system SHALL display a tool-appropriate success message
-- **THEN** for tools using colon syntax (Claude Code): "Start your first change: /rasen:propose \"your idea\""
-- **THEN** for tools using hyphen syntax (Cursor, others): "Start your first change: /rasen-propose \"your idea\""
+- **THEN** the system SHALL display the success message: "Start your first change: run the rasen-propose skill with \"your idea\"" using the canonical skill-directory name for every tool
 
 #### Scenario: Init success message (propose not installed, new installed)
 - **WHEN** init completes successfully
 - **AND** `propose` is NOT in the active profile
 - **AND** `new` is in the active profile
-- **THEN** for tools using colon syntax: "Start your first change: /rasen:new \"your idea\""
-- **THEN** for tools using hyphen syntax: "Start your first change: /rasen-new \"your idea\""
+- **THEN** the system SHALL display the success message: "Start your first change: run the rasen-new-change skill with \"your idea\"" using the canonical skill-directory name for every tool
 
 #### Scenario: Init success message (neither propose nor new)
 - **WHEN** init completes successfully
@@ -336,10 +301,6 @@ The init command SHALL read and apply settings from global config.
 #### Scenario: User has profile preference
 - **WHEN** global config contains `profile: "custom"` with custom workflows
 - **THEN** init SHALL install custom profile workflows
-
-#### Scenario: User has delivery preference
-- **WHEN** global config contains `delivery: "skills"`
-- **THEN** init SHALL install only skill files, not commands
 
 #### Scenario: Override via flags
 - **WHEN** user runs `rasen init --profile core`
@@ -372,31 +333,29 @@ The init command SHALL apply the resolved profile (`--profile` override or globa
 - **THEN** the system SHALL proceed directly without a profile confirmation prompt
 
 ### Requirement: Init preserves existing workflows
-The init command SHALL NOT remove workflows that are already installed, but SHALL respect delivery setting. Delivery-driven cleanup applies to command files only; skill directories are never removed because of a delivery setting.
+The init command SHALL NOT remove workflows that are already installed. Skills are the only delivery format; no delivery setting influences installation. Init SHALL always remove any previously installed rasen command files (skill directories are removed only through workflow deselection).
 
 #### Scenario: Existing custom installation
 - **WHEN** user has custom profile with extra workflows and runs `rasen init` with core profile
 - **THEN** the system SHALL NOT remove extra workflows
-- **THEN** the system SHALL regenerate core workflow files, overwriting existing content with latest templates
+- **THEN** the system SHALL regenerate core workflow skill files, overwriting existing content with latest templates
 
-#### Scenario: Init with different delivery setting
-- **WHEN** user runs `rasen init` on existing project
-- **AND** delivery setting differs from what's installed (e.g., was `both`, now `skills`)
-- **THEN** the system SHALL generate files matching current delivery setting
-- **THEN** the system SHALL delete files that don't match delivery (e.g., commands removed if `skills`)
+#### Scenario: Init removes any existing command files
+- **WHEN** user runs `rasen init` on an existing project that has rasen command files installed
+- **THEN** the system SHALL generate skill files only
+- **THEN** the system SHALL delete every previously installed rasen command file
 - **THEN** this applies to all workflows, including extras not in profile
 
-#### Scenario: Re-init applies delivery cleanup even when templates are current
+#### Scenario: Re-init removes command files even when templates are current
 - **WHEN** user runs `rasen init` on an existing project
-- **AND** existing files are already on current template versions
-- **AND** delivery changed since the previous init
-- **THEN** the system SHALL still remove files that no longer match delivery
-- **THEN** for example, switching from `both` to `skills` SHALL remove generated command files
+- **AND** existing skill files are already on current template versions
+- **AND** rasen command files remain from a prior install
+- **THEN** the system SHALL still remove those command files
 
-#### Scenario: Delivery never removes skill directories
+#### Scenario: Init never removes skill directories for delivery reasons
 - **WHEN** user runs `rasen init` on an existing project with skill directories installed
-- **THEN** no delivery setting SHALL cause those skill directories to be removed
-- **AND** skill directories are removed only through workflow deselection, never through delivery
+- **THEN** no delivery reason SHALL cause those skill directories to be removed
+- **AND** skill directories are removed only through workflow deselection
 
 ### Requirement: Init tool confirmation UX
 The init command SHALL show detected tools and ask for confirmation.
@@ -430,7 +389,7 @@ The init command SHALL show detected tools and ask for confirmation.
 
 ### Requirement: Init configures Hermes via its global skills home
 
-When Hermes is among the selected tools, the init command SHALL install Rasen's workflow skills to the resolved Hermes skills home rather than a project-local directory, and SHALL skip command-file generation for Hermes (Hermes has no command-file adapter; its skills surface as slash commands). Skills SHALL be installed under every delivery setting.
+When Hermes is among the selected tools, the init command SHALL install Rasen's workflow skills to the resolved Hermes skills home rather than a project-local directory. No command files are generated for any tool, including Hermes (Hermes's skills surface as slash commands).
 
 #### Scenario: Init installs Hermes skills to the global home
 
@@ -438,12 +397,11 @@ When Hermes is among the selected tools, the init command SHALL install Rasen's 
 - **THEN** the system SHALL write Rasen skill files under the resolved Hermes skills home (`<HERMES_HOME or ~/.hermes>/skills/rasen-<workflow>/SKILL.md`)
 - **AND** SHALL NOT create a project-local `.hermes/skills/` tree
 
-#### Scenario: Init skips command files for Hermes
+#### Scenario: Init generates no command files for Hermes
 
-- **WHEN** user runs `rasen init --tools hermes` with a delivery setting that would generate commands
-- **THEN** skill installation for Hermes SHALL still occur
-- **AND** command-file generation SHALL be skipped for Hermes
-- **AND** the command output SHALL report Hermes among tools with skipped command generation
+- **WHEN** user runs `rasen init --tools hermes`
+- **THEN** skill installation for Hermes SHALL occur
+- **AND** no command files SHALL be generated for Hermes
 
 #### Scenario: Init reports where Hermes skills were installed
 

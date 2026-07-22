@@ -22,6 +22,7 @@ import {
   findConfigKeyDefinition,
   findWildcardDefinition,
   validateConfigValue,
+  RETIRED_CONFIG_KEYS,
   type ConfigScope,
 } from '../core/config-keys.js';
 import {
@@ -478,12 +479,8 @@ export function registerConfigCommand(program: Command): void {
           const profileSource = rawConfig.profile !== undefined
             ? messages.explicitSource
             : messages.defaultSource;
-          const deliverySource = rawConfig.delivery !== undefined
-            ? messages.explicitSource
-            : messages.defaultSource;
           console.log(`\n${messages.profileSettingsHeading}`);
           console.log(`  profile: ${config.profile} ${profileSource}`);
-          console.log(`  delivery: ${config.delivery} ${deliverySource}`);
           if (config.profile === 'full') {
             console.log(`  workflows: ${ALL_WORKFLOWS.join(', ')} ${messages.fromFullProfile}`);
           } else if (config.profile === 'core') {
@@ -542,6 +539,16 @@ export function registerConfigCommand(program: Command): void {
       ) => {
         runScoped(command, (scope) => {
           const messages = getConfigCommandMessages();
+
+          // Retired keys (e.g. `delivery`) are recognized by name and routed
+          // to a friendly notice — no persistence, no crash — rather than
+          // the generic "unknown key" error a bare registry removal would
+          // otherwise produce (design D4).
+          if (scope === 'global' && RETIRED_CONFIG_KEYS.has(key)) {
+            console.log(messages.retiredKey(key));
+            return;
+          }
+
           const allowUnknown = scope === 'global' && Boolean(options.allowUnknown);
           const keyValidation = validateConfigKeyPath(key, scope);
           if (!keyValidation.valid && !allowUnknown) {
@@ -569,12 +576,8 @@ export function registerConfigCommand(program: Command): void {
           // since `findConfigKeyDefinition` only returns fixed keys; without
           // this a junk instance value would write to config.yaml unchecked
           // and be silently dropped on read. Global scope skips this whole
-          // block: `delivery` accepts legacy synonyms
-          // (commands/skills-first/commands-first) that the zod schema
-          // transforms on read but the registry's enum intentionally does not
-          // list, so registry validation would wrongly reject them there —
-          // and global's `validateConfig()` already gates wildcard values via
-          // the schema.
+          // block: global's `validateConfig()` already gates wildcard values
+          // via the schema.
           if (scope === 'project') {
             const definition =
               findConfigKeyDefinition(key, scope) ?? findWildcardDefinition(key, scope);
@@ -634,6 +637,12 @@ export function registerConfigCommand(program: Command): void {
     .action((key: string, _options: unknown, command: Command) => {
       runScoped(command, (scope) => {
         const messages = getConfigCommandMessages();
+
+        if (scope === 'global' && RETIRED_CONFIG_KEYS.has(key)) {
+          console.log(messages.retiredKey(key));
+          return;
+        }
+
         if (scope === 'project') {
           // Registry-gated like `set`: unset must not delete hand-edit-only
           // fields (context, rules, quality-rules, ...) the design explicitly

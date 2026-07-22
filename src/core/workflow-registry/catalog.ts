@@ -8,7 +8,7 @@ import { portablePathCollisionKey } from './path-policy.js';
 export class WorkflowCatalogError extends Error {
   constructor(
     message: string,
-    readonly code: 'duplicate_id' | 'duplicate_skill' | 'duplicate_command'
+    readonly code: 'duplicate_id' | 'duplicate_skill'
   ) {
     super(message);
     this.name = 'WorkflowCatalogError';
@@ -21,7 +21,6 @@ export class WorkflowCatalog {
   readonly diagnostics: readonly WorkflowDiagnostic[];
   private readonly byId = new Map<string, WorkflowDefinition>();
   private readonly bySkillName = new Map<string, WorkflowDefinition>();
-  private readonly byCommandId = new Map<string, WorkflowDefinition>();
 
   constructor(
     definitions: readonly WorkflowDefinition[],
@@ -56,18 +55,6 @@ export class WorkflowCatalog {
         }
         this.bySkillName.set(key, definition);
       }
-
-      const commandId = definition.command?.content.id;
-      if (commandId) {
-        const existingCommand = this.byCommandId.get(commandId);
-        if (existingCommand) {
-          throw new WorkflowCatalogError(
-            `Command ID "${commandId}" is used by workflows "${existingCommand.id}" and "${definition.id}"`,
-            'duplicate_command'
-          );
-        }
-        this.byCommandId.set(commandId, definition);
-      }
     }
   }
 
@@ -77,10 +64,6 @@ export class WorkflowCatalog {
 
   getBySkillName(name: string): WorkflowDefinition | undefined {
     return this.bySkillName.get(portablePathCollisionKey(name));
-  }
-
-  getByCommandId(id: string): WorkflowDefinition | undefined {
-    return this.byCommandId.get(id);
   }
 
   has(id: string): boolean {

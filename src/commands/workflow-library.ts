@@ -89,7 +89,6 @@ export function registerWorkflowLibraryCommand(program: Command): void {
               digest: definition.digest,
               kind: definition.kind,
               skillName: definition.skill.template.name,
-              commandId: definition.command?.content.id ?? null,
               unused: definition.source === 'user' && usage.length === 0,
             };
           })
@@ -150,7 +149,6 @@ export function registerWorkflowLibraryCommand(program: Command): void {
         console.log(`${definition.id} (${messages.source(definition.source)})`);
         console.log(`${messages.kindLabel}: ${definition.kind}`);
         console.log(`${messages.skillLabel}: ${definition.skill.template.name}`);
-        console.log(`${messages.commandLabel}: ${definition.command?.content.id ?? messages.none}`);
         console.log(`${messages.digestLabel}: ${definition.digest}`);
         console.log(`${messages.requiresWorkflowsLabel}: ${definition.requires.workflows.join(', ') || messages.none}`);
         console.log(`${messages.requiresSkillsLabel}: ${definition.requires.skills.join(', ') || messages.none}`);

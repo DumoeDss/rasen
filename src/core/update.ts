@@ -15,16 +15,12 @@ import { ensureClaudeAgentTeams } from './claude-settings.js';
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import { AI_TOOLS, OPENSPEC_DIR_NAME } from './config.js';
 import {
-  generateCommands,
-  CommandAdapterRegistry,
-  getLegacyCommandFilePath,
-  getCommandFileId,
+  getAllRetiredCommandFilePathCandidates,
   getCommandFilePathCandidates,
-} from './command-generation/index.js';
+} from './shared/retired-command-paths.js';
 import {
   getToolVersionStatus,
   getSkillTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
   getToolsWithSkillsDir,
@@ -39,7 +35,7 @@ import {
   RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
-import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
+import { getGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { resolveDesiredWorkflowSelection } from './profiles.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
 import { resolveProjectHome } from './project-home.js';
@@ -51,7 +47,6 @@ import {
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import {
-  getCommandConfiguredTools,
   getConfiguredToolsForProfileSync,
   getToolsNeedingProfileSync,
 } from './profile-sync-drift.js';
@@ -63,6 +58,33 @@ import {
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
 const OLD_CORE_WORKFLOWS = ['propose', 'explore', 'apply', 'archive'] as const;
+
+/**
+ * Returns tools that have at least one pre-retirement rasen command file on
+ * disk (via the frozen static path knowledge), so a project whose only
+ * artifact for a tool predates the command-surface retirement is still
+ * recognized as configured — update then cleans up its command files and
+ * installs skills, rather than treating it as unconfigured.
+ */
+function getCommandConfiguredTools(projectPath: string): string[] {
+  return AI_TOOLS
+    .filter((tool) => {
+      if (!tool.skillsDir) return false;
+      const toolDir = path.join(projectPath, tool.skillsDir);
+      try {
+        return fs.statSync(toolDir).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .map((tool) => tool.value)
+    .filter((toolId) =>
+      getAllRetiredCommandFilePathCandidates(toolId).some((cmdPath) => {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+        return fs.existsSync(fullPath);
+      })
+    );
+}
 
 /**
  * Options for the update command.
@@ -114,10 +136,9 @@ export class UpdateCommand {
     const detectedTools = getAvailableTools(resolvedProjectPath);
     migrateIfNeededShared(resolvedProjectPath, detectedTools);
 
-    // 3. Read global config for profile/delivery
+    // 3. Read global config for profile
     const globalConfig = getGlobalConfig();
     const profile = globalConfig.profile ?? 'full';
-    const delivery: Delivery = globalConfig.delivery ?? 'both';
 
     // The machine-wide marker can flip to `true` from an action against a
     // completely different project (review-round Blocker fix). Expert
@@ -165,7 +186,6 @@ export class UpdateCommand {
         )
       );
     }
-    const shouldGenerateCommands = delivery === 'both';
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
@@ -190,8 +210,15 @@ export class UpdateCommand {
     // command files and `openspec-*` skill dirs are left untouched (D4).
     await this.noticeLegacyArtifacts(resolvedProjectPath);
 
-    // 5. Find configured tools
-    const configuredTools = getConfiguredToolsForProfileSync(resolvedProjectPath);
+    // 5. Find configured tools. Union in tools configured only via a
+    // pre-retirement command file (skills-based detection alone would miss
+    // a commands-only install) so it is still recognized and its stale
+    // command files cleaned up rather than treated as unconfigured.
+    const commandConfiguredTools = getCommandConfiguredTools(resolvedProjectPath);
+    const commandConfiguredSet = new Set(commandConfiguredTools);
+    const configuredTools = [
+      ...new Set([...getConfiguredToolsForProfileSync(resolvedProjectPath), ...commandConfiguredTools]),
+    ];
 
     if (configuredTools.length === 0) {
       console.log(chalk.yellow('No configured tools found.'));
@@ -200,8 +227,6 @@ export class UpdateCommand {
     }
 
     // 6. Check version status for all configured tools
-    const commandConfiguredTools = getCommandConfiguredTools(resolvedProjectPath);
-    const commandConfiguredSet = new Set(commandConfiguredTools);
     const toolStatuses = configuredTools.map((toolId) => {
       const status = getToolVersionStatus(resolvedProjectPath, toolId, OPENSPEC_VERSION);
       if (!status.configured && commandConfiguredSet.has(toolId)) {
@@ -218,7 +243,6 @@ export class UpdateCommand {
     const toolsNeedingConfigSync = getToolsNeedingProfileSync(
       resolvedProjectPath,
       desiredWorkflows,
-      delivery,
       configuredTools
     );
     const toolsToUpdateSet = new Set<string>([
@@ -228,17 +252,23 @@ export class UpdateCommand {
     const toolsUpToDate = toolStatuses.filter((s) => !toolsToUpdateSet.has(s.toolId));
 
     // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
-    // openspec-*) and skill/command artifacts left behind by retired built-in
-    // workflows (e.g. `ff` → `rasen-ff-change`) for every configured tool,
+    // openspec-*), skill/command artifacts left behind by retired built-in
+    // workflows (e.g. `ff` → `rasen-ff-change`), AND any rasen command file
+    // (the whole command surface is retired) for every configured tool,
     // before the up-to-date short-circuit. Installed artifacts are not
-    // renamed or removed in place, and retired artifacts are always stale, so
-    // this must run even when no tool otherwise needs an update.
+    // renamed or removed in place, and retired/stale artifacts are always
+    // stale, so this must run even when no tool otherwise needs an update.
+    let removedCommandCount = 0;
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
       if (!tool?.skillsDir) continue;
       await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
       await pruneRetiredWorkflowSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
       await this.pruneRetiredWorkflowCommandFiles(resolvedProjectPath, toolId);
+      removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
+    }
+    if (removedCommandCount > 0) {
+      console.log(chalk.dim(`Removed: ${removedCommandCount} command files (commands have been consolidated into skills)`));
     }
 
     if (!this.force && toolsToUpdateSet.size === 0) {
@@ -260,16 +290,13 @@ export class UpdateCommand {
     }
     console.log();
 
-    // 9. Determine what to generate based on delivery — skills are always installed
+    // 9. Skills are the only delivery surface now.
     const skillTemplates = getSkillTemplates(desiredWorkflows);
-    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
 
     // 10. Update tools (all if force, otherwise only those needing update)
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
     const updatedTools: string[] = [];
     const failedTools: Array<{ name: string; error: string }> = [];
-    let removedCommandCount = 0;
-    let removedDeselectedCommandCount = 0;
     let removedDeselectedSkillCount = 0;
 
     for (const toolId of toolsToUpdate) {
@@ -310,31 +337,7 @@ export class UpdateCommand {
 
         removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
 
-        // Generate commands if delivery includes commands
-        if (shouldGenerateCommands) {
-          const adapter = CommandAdapterRegistry.get(tool.value);
-          if (adapter) {
-            const generatedCommands = generateCommands(commandContents, adapter);
-
-            for (const cmd of generatedCommands) {
-              const commandFile = path.isAbsolute(cmd.path) ? cmd.path : path.join(resolvedProjectPath, cmd.path);
-              await FileSystemUtils.writeFile(commandFile, cmd.fileContent);
-            }
-
-            removedDeselectedCommandCount += await this.removeUnselectedCommandFiles(
-              resolvedProjectPath,
-              toolId,
-              desiredWorkflows
-            );
-          }
-        }
-
-        // Delete command files if delivery is skills-only
-        if (!shouldGenerateCommands) {
-          removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
-        }
-
-        syncWorkflowArtifactLedger(resolvedProjectPath, toolId, desiredWorkflows, delivery);
+        syncWorkflowArtifactLedger(resolvedProjectPath, toolId, desiredWorkflows);
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -359,12 +362,6 @@ export class UpdateCommand {
     }
     if (failedTools.length > 0) {
       console.log(chalk.red(`✗ Failed: ${failedTools.map(f => `${f.name} (${f.error})`).join(', ')}`));
-    }
-    if (removedCommandCount > 0) {
-      console.log(chalk.dim(`Removed: ${removedCommandCount} command files (delivery: skills)`));
-    }
-    if (removedDeselectedCommandCount > 0) {
-      console.log(chalk.dim(`Removed: ${removedDeselectedCommandCount} command files (deselected workflows)`));
     }
     if (removedDeselectedSkillCount > 0) {
       console.log(chalk.dim(`Removed: ${removedDeselectedSkillCount} skill directories (deselected workflows)`));
@@ -524,11 +521,10 @@ export class UpdateCommand {
 
   /**
    * Removes command files left behind by retired built-in workflows (e.g.
-   * `ff`), by resolving candidate paths via the tool's command adapter for
-   * each id in `RETIRED_WORKFLOW_COMMAND_IDS`. The registry-derived
-   * `removeUnselectedCommandFiles` cannot reach these once the id leaves the
-   * registry, so this is a narrow, exact-id retired-artifact prune. Scoped to
-   * exactly those ids; idempotent (a no-op when no such file exists).
+   * `ff`), resolving candidate paths for each id in
+   * `RETIRED_WORKFLOW_COMMAND_IDS` via the frozen static path knowledge.
+   * Scoped to exactly those ids; idempotent (a no-op when no such file
+   * exists).
    */
   private async pruneRetiredWorkflowCommandFiles(
     projectPath: string,
@@ -536,11 +532,8 @@ export class UpdateCommand {
   ): Promise<number> {
     let removed = 0;
 
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
-
     for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
+      for (const cmdPath of getCommandFilePathCandidates(toolId, commandId)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
         try {
@@ -558,8 +551,14 @@ export class UpdateCommand {
   }
 
   /**
-   * Removes command files for workflows when delivery changed to skills-only.
-   * Returns the number of files removed.
+   * Unconditionally removes every rasen command file for a tool — all 19
+   * built-in command ids plus their `-command`/`opsx` legacy path variants
+   * — using only the frozen static path knowledge (D2/D3: never the deleted
+   * live command-generation registry, and never gated on workflow
+   * selection since commands no longer exist to select). Merges the former
+   * delivery-gated `removeCommandFiles` and selection-gated
+   * `removeUnselectedCommandFiles` into one unconditional cleanup. Returns
+   * the number of files removed.
    */
   private async removeCommandFiles(
     projectPath: string,
@@ -567,75 +566,21 @@ export class UpdateCommand {
   ): Promise<number> {
     let removed = 0;
 
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
+    for (const cmdPath of getAllRetiredCommandFilePathCandidates(toolId)) {
+      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
-    for (const definition of getBuiltInCatalogDefinitions()) {
-      if (!definition.command) continue;
-      for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-
-        try {
-          if (fs.existsSync(fullPath)) {
-            await fs.promises.unlink(fullPath);
-            removed++;
-          }
-        } catch {
-          // Ignore errors
+      try {
+        if (fs.existsSync(fullPath)) {
+          await fs.promises.unlink(fullPath);
+          removed++;
         }
+      } catch {
+        // Ignore errors
       }
     }
 
     return removed;
   }
-
-  /**
-   * Removes command files for workflows that are no longer selected in the active profile,
-   * plus legacy '-command'-suffixed files superseded by the short filenames.
-   * Returns the number of files removed.
-   */
-  private async removeUnselectedCommandFiles(
-    projectPath: string,
-    toolId: string,
-    desiredWorkflows: readonly string[]
-  ): Promise<number> {
-    let removed = 0;
-
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
-
-    const desiredSet = new Set(desiredWorkflows);
-
-    for (const definition of getBuiltInCatalogDefinitions()) {
-      const workflow = definition.id;
-      const stalePaths: string[] = [];
-      if (definition.command && !desiredSet.has(workflow)) {
-        stalePaths.push(adapter.getFilePath(getCommandFileId(workflow)));
-      }
-      // Legacy suffixed filenames are stale even for selected workflows —
-      // the current filename was just (re)generated alongside.
-      const legacyPath = getLegacyCommandFilePath(adapter, workflow);
-      if (legacyPath) {
-        stalePaths.push(legacyPath);
-      }
-
-      for (const cmdPath of stalePaths) {
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-
-        try {
-          if (fs.existsSync(fullPath)) {
-            await fs.promises.unlink(fullPath);
-            removed++;
-          }
-        } catch {
-          // Ignore errors
-        }
-      }
-    }
-
-    return removed;
-  }
-
 
   /**
    * Prints a one-time coexistence notice when legacy-namespace command/skill

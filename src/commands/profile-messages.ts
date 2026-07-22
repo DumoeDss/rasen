@@ -1,4 +1,3 @@
-import type { Delivery } from '../core/global-config.js';
 import type { WorkflowId } from '../core/profiles.js';
 import type {
   NamedProfileError,
@@ -13,19 +12,12 @@ export interface WorkflowPromptMeta {
   description: string;
 }
 
-interface DeliveryPromptMeta {
-  name: string;
-  description: string;
-}
-
 export interface ProfilePromptMessages {
-  deliveryPickerMessage: string;
   workflowPickerMessage: string;
   workflowPickerInstructions: string;
   currentSuffix: string;
   sourceUser: string;
   requiredBy: (workflow: string) => string;
-  delivery: Record<Delivery, DeliveryPromptMeta>;
   workflows: Record<WorkflowId, WorkflowPromptMeta>;
   /** Picker metadata for built-in experts, keyed by expert id (D1: a disjoint id space from `workflows`). */
   experts: Record<string, WorkflowPromptMeta>;
@@ -63,7 +55,7 @@ export interface ProfileUiMessages {
   deleteProfile: (name: string) => string;
   profileDeletionCancelled: string;
   profileDeleted: (name: string) => string;
-  profileImported: (name: string, delivery: Delivery, count: number) => string;
+  profileImported: (name: string, count: number) => string;
   useImportedProfile: (name: string) => string;
   destinationExists: (path: string) => string;
   overwriteFile: (path: string) => string;
@@ -74,13 +66,11 @@ export interface ProfileUiMessages {
   applyGuidance: string;
   interactiveRequired: string;
   currentSettingsHeading: string;
-  deliveryLabel: string;
   workflowsLabel: string;
   workflowSummary: (count: number, profile: string) => string;
-  deliveryExplanation: string;
   workflowsExplanation: string;
   configurePrompt: string;
-  actions: Record<'both' | 'delivery' | 'workflows' | 'keep', WorkflowPromptMeta>;
+  actions: Record<'workflows' | 'keep', WorkflowPromptMeta>;
   noConfigChanges: string;
   driftWarning: string;
   profileChangesHeading: string;
@@ -88,7 +78,6 @@ export interface ProfileUiMessages {
   updateOtherProjects: string;
   updateFailed: string;
   profileCancelled: string;
-  diffDelivery: (before: Delivery, after: Delivery) => string;
   diffProfile: (before: string, after: string) => string;
   diffWorkflows: (added: string[], removed: string[]) => string;
   externalError: (code: string, fallback: string) => string;
@@ -125,15 +114,14 @@ export function getProfileUiMessages(locale: CliLocale = getCliLocale()): Profil
     builtInCannotDelete: (name) => format(raw.builtInCannotDelete, { name }),
     deleteProfile: (name) => format(raw.deleteProfile, { name }),
     profileDeleted: (name) => format(raw.profileDeleted, { name }),
-    profileImported: (name, delivery, count) =>
-      format(raw.profileImported, { name, delivery, count }),
+    profileImported: (name, count) =>
+      format(raw.profileImported, { name, count }),
     useImportedProfile: (name) => format(raw.useImportedProfile, { name }),
     destinationExists: (path) => format(raw.destinationExists, { path }),
     overwriteFile: (path) => format(raw.overwriteFile, { path }),
     profileExported: (subject, path) => format(raw.profileExported, { subject, path }),
     namedProfileSettings: (name) => format(raw.namedProfileSettings, { name }),
     workflowSummary: (count, profile) => format(raw.workflowSummary, { count, profile }),
-    diffDelivery: (before, after) => format(raw.diffDelivery, { before, after }),
     diffProfile: (before, after) => format(raw.diffProfile, { before, after }),
     diffWorkflows: (added, removed) => {
       if (added.length > 0 && removed.length > 0) {

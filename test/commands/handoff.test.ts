@@ -8,11 +8,9 @@ import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../src/core/profiles.js';
 import {
   getSkillTemplates,
-  getCommandTemplates,
 } from '../../src/core/shared/skill-generation.js';
 import {
   getHandoffSkillTemplate,
-  getOpsxHandoffCommandTemplate,
   getAutoCommandSkillTemplate,
   getReviewCycleSkillTemplate,
 } from '../../src/core/templates/skill-templates.js';
@@ -59,20 +57,10 @@ describe('handoff workflow', () => {
       expect(skill?.template.name).toBe('rasen-handoff');
     });
 
-    it('is registered as a command template under the plain id (/rasen:handoff)', () => {
-      const command = getCommandTemplates().find(c => c.id === 'handoff');
-      expect(command).toBeDefined();
-      expect(command?.template.name).toBe('Rasen: Handoff');
-    });
   });
 
   describe('instruction content', () => {
     const skillText = getHandoffSkillTemplate().instructions;
-    const commandText = getOpsxHandoffCommandTemplate().content;
-
-    it('skill and command share the same instruction body', () => {
-      expect(commandText).toBe(skillText);
-    });
 
     it('measures via the agent context probe, never guessing', () => {
       expect(skillText).toContain('rasen agent context --latest');
@@ -190,7 +178,7 @@ describe('handoff workflow', () => {
       const autoText = getAutoCommandSkillTemplate().instructions;
       expect(autoText).toContain('## 0. Pre-flight context probe (once, non-blocking)');
       expect(autoText).toContain('rasen agent context --latest --json');
-      expect(autoText).toContain('/rasen:handoff');
+      expect(autoText).toContain('rasen-handoff');
     });
 
     it('auto pre-flight offers the three-way relay choice', () => {
@@ -238,11 +226,10 @@ describe('handoff workflow', () => {
       vi.restoreAllMocks();
     });
 
-    it('generates the handoff skill + command for claude when opted in', async () => {
+    it('generates the handoff skill for claude when opted in (skills-only, no command file)', async () => {
       saveGlobalConfig({
         featureFlags: {},
         profile: 'custom',
-        delivery: 'both',
         workflows: ['propose', 'handoff'],
       });
 
@@ -252,7 +239,8 @@ describe('handoff workflow', () => {
       const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'handoff.md');
 
       expect(await fileExists(skillFile)).toBe(true);
-      expect(await fileExists(commandFile)).toBe(true);
+      // The command surface is retired: no command file is ever generated.
+      expect(await fileExists(commandFile)).toBe(false);
 
       const skillContent = await fs.readFile(skillFile, 'utf-8');
       expect(skillContent).toContain('name: rasen-handoff');
@@ -263,7 +251,6 @@ describe('handoff workflow', () => {
       saveGlobalConfig({
         featureFlags: {},
         profile: 'core',
-        delivery: 'both',
         workflows: [...CORE_WORKFLOWS],
       });
 

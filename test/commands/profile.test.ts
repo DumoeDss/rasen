@@ -113,10 +113,9 @@ describe('profile command', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('uses a saved profile by copying its delivery and workflows to global config', async () => {
+  it('uses a saved profile by copying its workflows to global config', async () => {
     saveNamedProfile('minimal', {
       version: 1,
-      delivery: 'skills',
       workflows: ['propose', 'apply'],
     });
 
@@ -124,19 +123,18 @@ describe('profile command', () => {
 
     expect(getGlobalConfig()).toMatchObject({
       profile: 'custom',
-      delivery: 'skills',
       workflows: ['propose', 'apply'],
     });
     expect(consoleLogSpy).toHaveBeenCalledWith('Using profile "minimal".');
   });
 
-  it('preserves delivery when using a built-in profile', async () => {
-    saveGlobalConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills', workflows: [] });
+  it('uses a built-in profile and does not surface a delivery setting', async () => {
+    saveGlobalConfig({ featureFlags: {}, profile: 'custom', workflows: [] });
 
     await runProfileCommand(['use', 'core']);
 
     expect(getGlobalConfig().profile).toBe('core');
-    expect(getGlobalConfig().delivery).toBe('skills');
+    expect((getGlobalConfig() as any).delivery).toBeUndefined();
     expect(getGlobalConfig().workflows).toContain('sync');
   });
 
@@ -153,9 +151,8 @@ describe('profile command', () => {
   });
 
   it('creates, saves, and selects a named profile within a short terminal', async () => {
-    const { select, checkbox, confirm } = await promptMocks();
+    const { checkbox, confirm } = await promptMocks();
     const restoreRows = setStdoutRows(12);
-    select.mockResolvedValueOnce('skills');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
     confirm.mockResolvedValueOnce(true);
 
@@ -164,12 +161,10 @@ describe('profile command', () => {
 
       expect(readNamedProfile('team')).toEqual({
         version: 1,
-        delivery: 'skills',
         workflows: ['propose', 'explore'],
       });
       expect(getGlobalConfig()).toMatchObject({
         profile: 'custom',
-        delivery: 'skills',
         workflows: ['propose', 'explore'],
       });
       expect(checkbox).toHaveBeenCalledWith(
@@ -192,7 +187,6 @@ describe('profile command', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: ['propose'],
       expertSelectionExplicit: true,
     });
@@ -215,9 +209,8 @@ describe('profile command', () => {
   });
 
   it('falls back safely and recaptures height when the picker opens again', async () => {
-    const { select, checkbox, confirm } = await promptMocks();
+    const { checkbox, confirm } = await promptMocks();
     const restoreRows = setStdoutRows(undefined);
-    select.mockResolvedValue('skills');
     checkbox.mockResolvedValue(['propose']);
     confirm.mockResolvedValue(false);
 
@@ -237,23 +230,15 @@ describe('profile command', () => {
     }
   });
 
-  it('uses Japanese delivery and workflow pickers when creating a profile', async () => {
+  it('uses the Japanese workflow picker when creating a profile (no delivery prompt)', async () => {
     const { select, checkbox, confirm } = await promptMocks();
     process.env.RASEN_LANG = 'ja';
-    select.mockResolvedValueOnce('skills');
     checkbox.mockResolvedValueOnce(['propose']);
     confirm.mockResolvedValueOnce(false);
 
     await runProfileCommand(['new', 'team']);
 
-    expect(select).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: '配信方法（ワークフローのインストール形式）:',
-        choices: expect.arrayContaining([
-          expect.objectContaining({ value: 'skills', name: 'スキルのみ' }),
-        ]),
-      })
-    );
+    expect(select).not.toHaveBeenCalled();
     expect(checkbox).toHaveBeenCalledWith(
       expect.objectContaining({
         message: '利用可能にするワークフローを選択:',
@@ -277,20 +262,12 @@ describe('profile command', () => {
   it('uses Simplified Chinese prompts, built-in metadata, and results when creating a profile', async () => {
     const { select, checkbox, confirm } = await promptMocks();
     process.env.RASEN_LANG = 'zh-cn';
-    select.mockResolvedValueOnce('skills');
     checkbox.mockResolvedValueOnce(['propose']);
     confirm.mockResolvedValueOnce(false);
 
     await runProfileCommand(['new', 'team']);
 
-    expect(select).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: '交付模式（工作流的安装方式）：',
-        choices: expect.arrayContaining([
-          expect.objectContaining({ value: 'skills', name: '仅技能' }),
-        ]),
-      })
-    );
+    expect(select).not.toHaveBeenCalled();
     expect(checkbox).toHaveBeenCalledWith(
       expect.objectContaining({
         message: '选择要启用的工作流：',
@@ -319,12 +296,10 @@ describe('profile command', () => {
   it('keeps the name prompt open for reserved and existing profile names', async () => {
     saveNamedProfile('team', {
       version: 1,
-      delivery: 'both',
       workflows: ['propose'],
     });
-    const { input, select, checkbox, confirm } = await promptMocks();
+    const { input, checkbox, confirm } = await promptMocks();
     input.mockResolvedValueOnce('fresh');
-    select.mockResolvedValueOnce('both');
     checkbox.mockResolvedValueOnce(['propose']);
     confirm.mockResolvedValueOnce(true);
 
@@ -353,11 +328,9 @@ describe('profile command', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: ['picker-long'],
     });
-    const { select, checkbox, confirm } = await promptMocks();
-    select.mockResolvedValueOnce('both');
+    const { checkbox, confirm } = await promptMocks();
     checkbox.mockResolvedValueOnce(['picker-long']);
     confirm.mockResolvedValueOnce(false);
 
@@ -398,11 +371,9 @@ describe('profile command', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: ['authored-verbatim'],
     });
-    const { select, checkbox, confirm } = await promptMocks();
-    select.mockResolvedValueOnce('both');
+    const { checkbox, confirm } = await promptMocks();
     checkbox.mockResolvedValueOnce(['authored-verbatim']);
     confirm.mockResolvedValueOnce(false);
 
@@ -442,11 +413,9 @@ describe('profile command', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: ['picker-base', 'picker-root'],
     });
-    const { select, checkbox, confirm } = await promptMocks();
-    select.mockResolvedValueOnce('both');
+    const { checkbox, confirm } = await promptMocks();
     checkbox.mockResolvedValueOnce(['picker-root']);
     confirm.mockResolvedValueOnce(false);
 
@@ -466,7 +435,6 @@ describe('profile command', () => {
   it('fails clearly for an explicit existing profile name', async () => {
     saveNamedProfile('team', {
       version: 1,
-      delivery: 'both',
       workflows: ['propose'],
     });
     const { select, checkbox } = await promptMocks();
@@ -540,15 +508,14 @@ describe('profile command', () => {
     await runProfileCommand(['list']);
 
     const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
-    expect(diagnostics).toContain("交付模式 'commands-first' 已合并为 'both'");
-    expect(diagnostics).not.toContain('Note: delivery mode');
-    expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).delivery).toBe('both');
+    expect(diagnostics).toContain("'delivery' 设置已被弃用");
+    expect(diagnostics).not.toContain('交付模式');
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).delivery).toBeUndefined();
   });
 
   it('lists built-in and saved profiles as JSON', async () => {
     saveNamedProfile('team', {
       version: 1,
-      delivery: 'both',
       workflows: ['propose'],
     });
 
@@ -616,7 +583,6 @@ describe('profile command', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'skills',
       workflows: ['explore'],
     });
     const sourcePath = path.join(tempDir, 'shared.json');
@@ -634,7 +600,6 @@ describe('profile command', () => {
     await runProfileCommand(['export', destinationPath, '--profile', 'shared']);
     expect(JSON.parse(fs.readFileSync(destinationPath, 'utf-8'))).toEqual({
       version: 1,
-      delivery: 'both',
       workflows: ['propose'],
     });
   });
@@ -656,7 +621,6 @@ describe('profile command', () => {
     await importWorkflow(draft);
     saveNamedProfile('portable', {
       version: 1,
-      delivery: 'both',
       workflows: ['profile-command-user'],
     });
     const packagePath = path.join(tempDir, 'portable.rasenpkg');
@@ -679,7 +643,6 @@ describe('profile command', () => {
     await importWorkflow(draft);
     saveNamedProfile('immutable-profile', {
       version: 1,
-      delivery: 'skills',
       workflows: ['immutable-profile-user'],
     });
     const packagePath = path.join(tempDir, 'immutable-profile.rasenpkg');
@@ -695,19 +658,17 @@ describe('profile command', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('conflicts with installed user content')
     );
-    expect(readNamedProfile('immutable-profile').delivery).toBe('skills');
+    expect(readNamedProfile('immutable-profile').workflows).toEqual(['immutable-profile-user']);
   });
 
   it('deletes a saved profile without changing current settings', async () => {
     saveNamedProfile('obsolete', {
       version: 1,
-      delivery: 'both',
       workflows: ['propose'],
     });
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'skills',
       workflows: ['explore'],
     });
 
