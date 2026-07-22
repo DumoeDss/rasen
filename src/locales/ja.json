@@ -106,7 +106,6 @@
       "thresholdTokensRemaining": "残り{tokens}トークン",
       "stageMetaRole": "役割={role}",
       "stageMetaRequires": "依存=[{requires}]",
-      "stageMetaGateVet": "ゲート(vet)",
       "stageMetaGate": "ゲート",
       "stageMetaReviewLoop": "ループ=review-cycle(最大{maximum})",
       "stageMetaGoalLoop": "ループ=goal[{gate}](最大{maximum}、停滞{stall})",

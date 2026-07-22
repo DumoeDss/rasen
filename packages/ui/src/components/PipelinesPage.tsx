@@ -471,19 +471,6 @@ function StageGateControl({
   const w = useInstanceWriter(key, scope, selector, onWrite);
   const eff = stage.effectiveGate;
 
-  // The always-pausing `'vet'` gate is outside the mask entirely (W5 boundary):
-  // never overridable, so it renders locked with no control.
-  if (stage.gate === 'vet' || eff.value === 'vet') {
-    return (
-      <div class="stage-control stage-control--gate" data-testid="stage-gate" data-pipeline={pipeline} data-stage={stage.id}>
-        <span class="stage-control__label">Gate</span>
-        <span class="stage-control__vet" data-testid="stage-gate-vet">
-          Always pauses (vet)
-        </span>
-      </div>
-    );
-  }
-
   const selectValue = isOverridden(eff.source) ? (eff.value === true ? 'on' : 'off') : 'inherit';
   return (
     <div class="stage-control stage-control--gate" data-testid="stage-gate" data-pipeline={pipeline} data-stage={stage.id}>

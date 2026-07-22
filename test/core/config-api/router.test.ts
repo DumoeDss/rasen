@@ -204,7 +204,7 @@ describe('config-api router (integration, via real http server)', () => {
   });
 
   describe('pipelines inventory (pipeline-http-api)', () => {
-    it('returns declared + effective per-stage metadata, provenance, with vet distinguishable', async () => {
+    it('returns declared + effective per-stage metadata, provenance, with boolean gates', async () => {
       const h = await startServer();
       const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
       expect(res.status).toBe(200);
@@ -229,9 +229,14 @@ describe('config-api router (integration, via real http server)', () => {
       const goalLoop = body.pipelines.find((p: any) => p.name === 'goal-loop-measure');
       if (goalLoop) {
         const defineGoal = goalLoop.stages.find((s: any) => s.id === 'define-goal');
-        expect(defineGoal.gate).toBe('vet');
-        // A vet gate is outside the mask — always pausing regardless of policy.
-        expect(defineGoal.effectiveGate.value).toBe('vet');
+        // The vet type is retired: define-goal is an ordinary gate: true, and
+        // every stage's declared/effective gate is a boolean.
+        expect(defineGoal.gate).toBe(true);
+        expect(defineGoal.effectiveGate.value).toBe(true);
+        for (const stage of goalLoop.stages) {
+          expect(typeof stage.gate).toBe('boolean');
+          expect(typeof stage.effectiveGate.value).toBe('boolean');
+        }
       }
     });
 

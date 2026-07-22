@@ -12,7 +12,8 @@ import type { ListConfigResponse, ListPipelinesResponse } from '../../src/api/ty
 /**
  * Two pipelines: a built-in `small-feature` (locked; a propose stage with no
  * override, an implement stage overridden at project scope on every axis, and a
- * `vet` stage outside the mask) and a user `my-flow` (export/delete affordances).
+ * reviewer stage with an ordinary pause gate) and a user `my-flow`
+ * (export/delete affordances).
  */
 export const pipelinesFixture = {
   project: { projectId: 'proj_abc123', name: 'rasen', root: '/Users/dev/rasen' },
@@ -48,8 +49,8 @@ export const pipelinesFixture = {
           id: 'gate-review',
           role: 'reviewer',
           skill: 'rasen-review',
-          gate: 'vet',
-          effectiveGate: { value: 'vet', source: 'stage' },
+          gate: true,
+          effectiveGate: { value: true, source: 'stage' },
           effectiveModel: { value: null, source: 'default' },
           effectiveHandoff: { value: 0.5, source: 'default' },
           effectiveRuntime: { value: 'claude', source: 'default' },

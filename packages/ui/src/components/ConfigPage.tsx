@@ -1,3 +1,4 @@
+import { Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
@@ -6,6 +7,7 @@ import { tabbedEntries } from '../config/grouping.js';
 import type { ConfigMode } from '../config/controls.js';
 import { useSpace } from '../store/use-space.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
+import { TelemetryDisclosure } from './TelemetryDisclosure.js';
 
 /**
  * The config page (design D1/D2/D7): one space-addressed `listConfig` call
@@ -130,16 +132,22 @@ export function ConfigPage() {
         <section key={group.group} class="config-group">
           <h2>{group.group}</h2>
           {group.entries.map((entry) => (
-            <ConfigEntryRow
-              key={entry.definition.key}
-              entry={entry}
-              mode={mode}
-              spaceType={spaceType}
-              spaceSelector={selector ?? ''}
-              storeRef={storeRef}
-              onPageError={(message, fix) => setPageError({ message, fix })}
-              onEntryUpdated={updateEntry}
-            />
+            // A keyed Fragment (no wrapping DOM node) keeps every `.config-entry`
+            // a DIRECT child of `.config-group`, so `.config-entry:first-of-type`
+            // (style.css) still strips the top border/padding from only the first
+            // row of the group rather than from every row.
+            <Fragment key={entry.definition.key}>
+              <ConfigEntryRow
+                entry={entry}
+                mode={mode}
+                spaceType={spaceType}
+                spaceSelector={selector ?? ''}
+                storeRef={storeRef}
+                onPageError={(message, fix) => setPageError({ message, fix })}
+                onEntryUpdated={updateEntry}
+              />
+              {entry.definition.key === 'telemetry.enabled' && <TelemetryDisclosure />}
+            </Fragment>
           ))}
         </section>
       ))}

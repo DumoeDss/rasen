@@ -160,11 +160,15 @@ describe('PipelinesPage', () => {
     expect((runtime.querySelector('[data-testid="role-runtime-select"]') as HTMLSelectElement).value).toBe('codex');
   });
 
-  it('renders the always-pausing vet gate locked, with no gate control', async () => {
+  it('renders every stage gate as an ordinary control — no vet lock remains', async () => {
     await mount(container);
     const gate = stageControl(container, 'stage-gate', 'small-feature', 'gate-review')!;
-    expect(gate.querySelector('[data-testid="stage-gate-vet"]')).not.toBeNull();
-    expect(gate.querySelector('[data-testid="stage-gate-select"]')).toBeNull();
+    // The vet type is retired: the reviewer stage's gate is an ordinary
+    // configurable control, not a locked always-pausing badge.
+    expect(gate.querySelector('[data-testid="stage-gate-vet"]')).toBeNull();
+    const select = gate.querySelector('[data-testid="stage-gate-select"]') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    expect(select.value).toBe('inherit');
   });
 
   it('imports a pipeline through the bridge and refreshes without a reload', async () => {

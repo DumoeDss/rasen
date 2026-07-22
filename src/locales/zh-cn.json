@@ -106,7 +106,6 @@
       "thresholdTokensRemaining": "剩余 {tokens} 个 token",
       "stageMetaRole": "角色={role}",
       "stageMetaRequires": "依赖=[{requires}]",
-      "stageMetaGateVet": "门控(vet)",
       "stageMetaGate": "门控",
       "stageMetaReviewLoop": "循环=review-cycle(最多 {maximum} 轮)",
       "stageMetaGoalLoop": "循环=goal[{gate}](最多 {maximum} 轮，停滞 {stall} 轮)",
