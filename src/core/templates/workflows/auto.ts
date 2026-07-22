@@ -7,7 +7,7 @@
  * registry via the `rasen pipeline` CLI (classify / show / resume); the DAG
  * is not hard-coded here, and the orchestration playbook is registry-agnostic.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
@@ -23,7 +23,7 @@ Use when: "auto", "autopilot", "end to end", "do it all", "one shot".
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now — write the session handoff document and launch a successor session per the playbook's Step H.7; (b) continue this session (auto-compact remains the backstop); (c) handle it manually via /rasen:handoff. Proceed on the user's say-so; below the threshold, proceed silently. Declining leaves behavior exactly as before. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy from the transcript's recorded API usage. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now — write the session handoff document and launch a successor session per the playbook's Step H.7; (b) continue this session (auto-compact remains the backstop); (c) handle it manually via rasen-handoff. Proceed on the user's say-so; below the threshold, proceed silently. Declining leaves behavior exactly as before. Never re-probe on a running loop and never inject a token countdown into the conversation; this is a single entry check, not a meter.
 
 This probe is non-blocking for EVERY host, including a non-Claude LEAD (e.g. a Codex CLI session) that has no Claude transcript for the probe to read. On such a host the command exits \`0\` and prints \`{"available": false, "reason": "no-transcript", "detail": "..."}\` instead of erroring — treat that shape as "no occupancy signal available", record it if you are tracking your own state (e.g. \`unavailable-<runtime>\`), and proceed exactly as if the threshold had not been reached. Do not treat \`available: false\` as a failure to swallow or retry.
 
@@ -41,12 +41,12 @@ Resolve the effective **selection policy** with precedence **run flags (\`--auto
 
 ## 1. Select the pipeline (explicit wins; policy governs the rest)
 
-**Input**: \`/rasen:auto [--pipeline <name>] [--auto-select] [--auto-compose] [--review-plan] [--no-gate] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
+**Input**: \`rasen-auto [--pipeline <name>] [--auto-select] [--auto-compose] [--review-plan] [--no-gate] [--planner claude|codex] [--implementer claude|codex] [--reviewer claude|codex] [--fixer claude|codex] [--shipper claude|codex] <task description>\`.
 
 \`--no-gate\` makes gate stages (\`gate: true\`) auto-approve instead of pausing, for unattended runs — see **step 0.5** below for resolution and recording. \`--auto-select\` opts this run into adopting the classification suggestion, and \`--auto-compose\` opts into the superset compose policy — see **step 0.6** above and the policy branch below.
 
 Choose the pipeline in this order:
-1. **Explicit always wins** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`rasen pipeline list --json\` (e.g. \`/rasen:auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description. Classification is NOT consulted and the selection policy (including \`--auto-select\` and \`--auto-compose\`) has no effect — explicit selection sits ABOVE the policy, not inside it.
+1. **Explicit always wins** — if the invocation has \`--pipeline <name>\`, OR its first token is a known pipeline name from \`rasen pipeline list --json\` (e.g. \`rasen-auto full-feature 重构鉴权子系统\`), use THAT pipeline. Strip the selector token; the rest is the task description. Classification is NOT consulted and the selection policy (including \`--auto-select\` and \`--auto-compose\`) has no effect — explicit selection sits ABOVE the policy, not inside it.
 2. **No explicit selector — follow the resolved selection policy (step 0.6):**
    - **\`classify\` policy (opt-in)** — run \`rasen pipeline classify "<task>" --json\`. If it returns a \`suggested\` pipeline that IS in \`available\`, ADOPT it exactly as returned: display the adoption with its basis (e.g. \`Pipeline: bug-fix (auto-selected, matched: fix)\` for a \`keyword\` basis, \`Pipeline: small-feature (auto-selected, default basis)\` for a \`default\` basis) and let the user change it before proceeding — adoption only changes the starting value, never the user's authority to override. Never escalate or substitute a different pipeline by your own judgment; adopt exactly what classify returned. If the command fails, returns no suggestion, or suggests a pipeline NOT in \`available\`, fall back to \`small-feature\` and display the fallback and its cause — the same invariant fallback as the \`manual\` policy below.
    - **\`compose\` policy (opt-in, classify-first)** — run classify exactly as the \`classify\` policy does. A \`keyword\`-basis suggestion is adopted exactly as above; composition never overrides an affirmative match. On a \`default\`-basis suggestion, judge fit: if \`small-feature\` or any other registered pipeline (\`rasen pipeline list --json\`) fits the task's stage needs, use it — a registered pipeline that fits is always preferred. Only when NO registered pipeline fits MAY you compose: draw stages from the registered stage vocabulary (inspect built-ins via \`rasen pipeline show <name> --json\`), reusing known skills/roles/gates/loops/verifyPolicy values and drawing \`requires\` edges yourself; name it \`composed-<slug>\` (a short kebab slug of the task) after checking \`rasen pipeline list --json\` for a collision — on collision append a numeric suffix, NEVER overwrite or reuse an existing name; stamp the YAML \`origin: composed\`; include the quality-floor stages — at least one stage with \`role: reviewer\` and at least one stage with \`loop.kind: review-cycle\` — every composition MUST carry both, never a composition free of independent inspection; write it to the project pipelines directory. Then gate execution on \`rasen validate <name> --type pipeline --json\`: proceed only on \`valid: true\`. On a validation failure you MAY make ONE bounded fix attempt; if it still does not validate, fall back to \`small-feature\`, display the fallback and its cause, and remove the invalid composed pipeline directory so it does not linger in the registry. Display the composition (name, full stage list with the floor stages called out, and the validation verdict) at the same user-changeable display point as an adopted classify suggestion — the user may replace it with any registered pipeline, or reject it, before any stage runs. Composition is permission, not obligation: \`small-feature\` remains a fine general-purpose fallback.
@@ -176,15 +176,5 @@ export function getAutoCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxAutoCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Auto',
-    description: 'Autopilot mode — LEAD orchestrates role-isolated subagents to drive the full Rasen workflow end-to-end',
-    category: 'Workflow',
-    tags: ['workflow', 'autopilot', 'dispatch', 'orchestration'],
-    content: AUTO_INSTRUCTIONS,
   };
 }

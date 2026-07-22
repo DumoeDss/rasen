@@ -25,7 +25,7 @@ Use \`checklist.md\` and verify:
 - purpose, trigger, scope, inputs, outputs, completion, and escalation;
 - manifest \`requires\` / \`recommends\` agreement with instruction references;
 - responsibility overlap with built-in workflows and always-installed experts;
-- skill-only versus command delivery and cross-tool portability;
+- skill identity and cross-tool portability;
 - confirmation boundaries for destructive, network, secret, and external writes;
 - shell interpolation, path traversal, credential handling, and absolute paths;
 - profile/pipeline input-output contracts and deterministic failure behavior;

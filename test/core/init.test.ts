@@ -139,28 +139,32 @@ describe('InitCommand', () => {
       }
     });
 
-    it('should create full profile commands for Claude Code by default', async () => {
+    it('should create full profile skills for Claude Code by default and no command files', async () => {
       const initCommand = new InitCommand({ tools: 'claude', force: true });
 
       await initCommand.execute(testDir);
 
-      // Full profile (default): all workflow commands are installed
-      const expectedCommandNames = [
-        'rasen/propose.md',
-        'rasen/explore.md',
-        'rasen/apply.md',
-        'rasen/sync.md',
-        'rasen/archive.md',
-        'rasen/new.md',
-        'rasen/continue.md',
-        'rasen/bulk-archive.md',
-        'rasen/verify.md',
+      // Full profile (default): all workflow skills are installed, and the
+      // command surface is retired — no command file is ever generated.
+      const expectedSkillDirs = [
+        'rasen-propose',
+        'rasen-explore',
+        'rasen-apply-change',
+        'rasen-sync-specs',
+        'rasen-archive-change',
+        'rasen-new-change',
+        'rasen-continue-change',
+        'rasen-bulk-archive-change',
+        'rasen-verify-change',
       ];
 
-      for (const cmdName of expectedCommandNames) {
-        const cmdFile = path.join(testDir, '.claude', 'commands', cmdName);
-        expect(await fileExists(cmdFile)).toBe(true);
+      for (const dirName of expectedSkillDirs) {
+        const skillFile = path.join(testDir, '.claude', 'skills', dirName, 'SKILL.md');
+        expect(await fileExists(skillFile)).toBe(true);
       }
+
+      const commandsDir = path.join(testDir, '.claude', 'commands');
+      expect(await fileExists(commandsDir)).toBe(false);
     });
 
     it('should create only core profile skills with --profile core', async () => {
@@ -219,7 +223,7 @@ describe('InitCommand', () => {
       expect(await directoryExists(projectLocalDir)).toBe(false);
     });
 
-    it('should skip command-file generation for Hermes (no adapter) while still installing skills', async () => {
+    it('installs Hermes skills with no command surface (retired for every tool)', async () => {
       const hermesHome = path.join(testDir, '.hermes-home');
       process.env.HERMES_HOME = hermesHome;
       const initCommand = new InitCommand({ tools: 'hermes', force: true });
@@ -228,13 +232,6 @@ describe('InitCommand', () => {
 
       const globalSkillFile = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
       expect(await fileExists(globalSkillFile)).toBe(true);
-
-      const logCalls = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.flat().map(String);
-      expect(
-        logCalls.some(
-          (entry) => entry.includes('Commands skipped for: hermes') && entry.includes('(no adapter)'),
-        ),
-      ).toBe(true);
     });
 
     it('should reject an unadapted tool (Windsurf) with a "not yet adapted" message', async () => {
@@ -456,30 +453,25 @@ describe('InitCommand', () => {
     });
   });
 
-  describe('command generation', () => {
-    it('should generate Claude Code commands with correct format', async () => {
+  describe('command generation (retired)', () => {
+    it('never generates a Claude Code command file — skills are the only delivery surface', async () => {
       const initCommand = new InitCommand({ tools: 'claude', force: true });
       await initCommand.execute(testDir);
 
       const cmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md');
-      const content = await fs.readFile(cmdFile, 'utf-8');
+      expect(await fileExists(cmdFile)).toBe(false);
 
-      // Claude commands use YAML frontmatter
-      expect(content).toMatch(/^---\n/);
-      expect(content).toContain('name:');
-      expect(content).toContain('description:');
+      const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(skillFile)).toBe(true);
     });
 
-    it('should generate Codex commands with correct format', async () => {
+    it('never generates a Codex command file — skills are the only delivery surface', async () => {
       process.env.CODEX_HOME = path.join(testDir, '.codex-home');
       const initCommand = new InitCommand({ tools: 'codex', force: true });
       await initCommand.execute(testDir);
 
       const cmdFile = path.join(process.env.CODEX_HOME, 'prompts', 'rasen-explore.md');
-      expect(await fileExists(cmdFile)).toBe(true);
-
-      const content = await fs.readFile(cmdFile, 'utf-8');
-      expect(content).toMatch(/^---\n/);
+      expect(await fileExists(cmdFile)).toBe(false);
     });
   });
 
@@ -566,8 +558,7 @@ describe('InitCommand - profile and detection features', () => {
     // Set global config to custom profile
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
-      delivery: 'both',
+      profile: 'custom',
       workflows: ['explore', 'new', 'apply'],
     });
 
@@ -587,8 +578,7 @@ describe('InitCommand - profile and detection features', () => {
   it('should drop a retired workflow id (ff) from a stored custom profile with a warning, and still succeed', async () => {
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
-      delivery: 'both',
+      profile: 'custom',
       workflows: ['explore', 'ff', 'apply'],
     });
 
@@ -670,9 +660,10 @@ describe('InitCommand - profile and detection features', () => {
       logCalls.some((entry) => entry.includes('Legacy OpenSpec-namespace artifacts detected'))
     ).toBe(true);
 
-    // New rasen-namespaced commands are still created at the correct path.
-    const newCommandsDir = path.join(testDir, '.claude', 'commands', 'rasen');
-    expect(await directoryExists(newCommandsDir)).toBe(true);
+    // New rasen-namespaced skills are still created (the command surface is
+    // retired: no rasen commands dir is ever created).
+    const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
+    expect(await fileExists(skillFile)).toBe(true);
   });
 
   it('should preselect configured tools but not directory-detected tools in extend mode', async () => {
@@ -729,7 +720,6 @@ describe('InitCommand - profile and detection features', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: ['explore', 'new'],
     });
 
@@ -747,7 +737,7 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(proposeSkill)).toBe(false);
   });
 
-  it('should migrate commands-only extend mode to custom profile, healing delivery to both (skills restored)', async () => {
+  it('should migrate a pre-retirement commands-only extend mode to custom profile, restoring skills and cleaning up the stale command file', async () => {
     await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
     await fs.mkdir(path.join(testDir, '.claude', 'commands', 'rasen'), { recursive: true });
     await fs.writeFile(path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md'), '# explore\n');
@@ -757,17 +747,17 @@ describe('InitCommand - profile and detection features', () => {
 
     const config = getGlobalConfig();
     expect(config.profile).toBe('custom');
-    // inferDelivery now heals a commands-only install to 'both' instead of
-    // 'commands' — skills are restored rather than treated as data loss (design D6).
-    expect(config.delivery).toBe('both');
+    expect((config as any).delivery).toBeUndefined();
     expect(config.workflows).toEqual(['explore']);
 
+    // The command surface is retired: the stale command file is cleaned up
+    // on init, and no new command file is ever generated.
     const exploreCommand = path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md');
     const proposeCommand = path.join(testDir, '.claude', 'commands', 'rasen', 'propose.md');
-    expect(await fileExists(exploreCommand)).toBe(true);
+    expect(await fileExists(exploreCommand)).toBe(false);
     expect(await fileExists(proposeCommand)).toBe(false);
 
-    // Skills are always installed now — the explore skill is restored even
+    // Skills are always installed — the explore skill is restored even
     // though the project was previously commands-only.
     const exploreSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
     const proposeSkill = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
@@ -779,7 +769,6 @@ describe('InitCommand - profile and detection features', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-      delivery: 'both',
       workflows: ['explore', 'new'],
     });
 
@@ -801,11 +790,10 @@ describe('InitCommand - profile and detection features', () => {
     expect(logCalls.some((entry) => entry.includes('Applying custom profile'))).toBe(false);
   });
 
-  it('should respect delivery=skills setting (no commands)', async () => {
+  it('never generates command files regardless of profile (the surface is fully retired)', async () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'core',
-      delivery: 'skills',
     });
 
     const initCommand = new InitCommand({ tools: 'claude', force: true });
@@ -820,10 +808,11 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(cmdFile)).toBe(false);
   });
 
-  it('should always generate skills under a legacy commands-only config value, and heal delivery to both', async () => {
-    // Simulate a pre-existing config file holding the removed 'commands' value —
-    // written directly (not via saveGlobalConfig, whose Delivery type no longer
-    // accepts it) to reproduce what an old config.json on disk looks like.
+  it('reads a stored config with a retired delivery value without error, still installing skills only', async () => {
+    // Simulate a pre-existing config file holding a legacy 'commands' value —
+    // written directly (not via saveGlobalConfig, whose GlobalConfig type no
+    // longer has a delivery field) to reproduce what an old config.json on
+    // disk looks like.
     const legacyConfigPath = path.join(process.env.XDG_CONFIG_HOME!, 'rasen', 'config.json');
     await fs.mkdir(path.dirname(legacyConfigPath), { recursive: true });
     await fs.writeFile(legacyConfigPath, JSON.stringify({ featureFlags: {}, profile: 'core', delivery: 'commands' }));
@@ -831,23 +820,29 @@ describe('InitCommand - profile and detection features', () => {
     const initCommand = new InitCommand({ tools: 'claude', force: true });
     await initCommand.execute(testDir);
 
-    // The legacy value is mapped to 'both' on the read inside execute().
+    // The retired key is stripped on the next read inside execute().
     const config = getGlobalConfig();
-    expect(config.delivery).toBe('both');
+    expect((config as any).delivery).toBeUndefined();
 
-    // Skills are always installed, regardless of the legacy value.
+    // Skills are always installed.
     const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
     expect(await fileExists(skillFile)).toBe(true);
 
-    // Commands are also installed, since the mapped delivery is 'both'.
+    // No command file is ever generated, retired value or not.
     const cmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md');
-    expect(await fileExists(cmdFile)).toBe(true);
+    expect(await fileExists(cmdFile)).toBe(false);
   });
 
-  it('should never remove skill dirs by delivery, including under a legacy commands-first config value', async () => {
+  it('never removes skill dirs, and cleans up any pre-retirement command files, under a legacy commands-first config value', async () => {
     const legacyConfigPath = path.join(process.env.XDG_CONFIG_HOME!, 'rasen', 'config.json');
     await fs.mkdir(path.dirname(legacyConfigPath), { recursive: true });
     await fs.writeFile(legacyConfigPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: 'commands-first' }));
+
+    // A pre-existing project directory carrying a stale (pre-retirement)
+    // command file.
+    const goalCmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'goal.md');
+    await fs.mkdir(path.dirname(goalCmdFile), { recursive: true });
+    await fs.writeFile(goalCmdFile, '# goal\n');
 
     const initCommand = new InitCommand({ tools: 'claude', force: true });
     await initCommand.execute(testDir);
@@ -855,35 +850,30 @@ describe('InitCommand - profile and detection features', () => {
     const skillsDir = path.join(testDir, '.claude', 'skills');
 
     // No mode deletes skill directories anymore — the goal-loop's skill-only
-    // stage workflows AND workflows with a command counterpart (e.g. apply)
-    // all keep their skill dirs.
+    // stage workflows AND workflows that used to have a command counterpart
+    // (e.g. apply) all keep their skill dirs.
     for (const skillDir of ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report', 'rasen-apply-change']) {
       expect(await fileExists(path.join(skillsDir, skillDir, 'SKILL.md'))).toBe(true);
     }
 
-    // The goal command payload is present too, since the legacy value maps to 'both'.
-    const goalCmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'goal.md');
-    expect(await fileExists(goalCmdFile)).toBe(true);
+    // The stale command file is cleaned up opportunistically.
+    expect(await fileExists(goalCmdFile)).toBe(false);
   });
 
-  it('should remove commands on re-init when delivery changes to skills', async () => {
+  it('cleans up a command file left behind by a prior (pre-retirement) run on re-init', async () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'core',
-      delivery: 'both',
     });
 
     const initCommand1 = new InitCommand({ tools: 'claude', force: true });
     await initCommand1.execute(testDir);
 
+    // Simulate a stray command file predating the retirement.
     const cmdFile = path.join(testDir, '.claude', 'commands', 'rasen', 'explore.md');
+    await fs.mkdir(path.dirname(cmdFile), { recursive: true });
+    await fs.writeFile(cmdFile, '# explore\n');
     expect(await fileExists(cmdFile)).toBe(true);
-
-    saveGlobalConfig({
-      featureFlags: {},
-      profile: 'core',
-      delivery: 'skills',
-    });
 
     const initCommand2 = new InitCommand({ tools: 'claude', force: true });
     await initCommand2.execute(testDir);

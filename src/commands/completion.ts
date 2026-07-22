@@ -6,7 +6,6 @@ import { getCliLocale } from '../core/cli-locale.js';
 import { detectShell, SupportedShell } from '../utils/shell-detection.js';
 import { CompletionProvider } from '../core/completions/completion-provider.js';
 import { getArchivedChangeIds } from '../utils/item-discovery.js';
-import { getGlobalConfig } from '../core/global-config.js';
 import { listAvailableProfiles } from '../core/named-profiles.js';
 import { loadWorkflowCatalog } from '../core/workflow-registry/index.js';
 import { getLocaleCatalog } from '../locales/index.js';
@@ -14,7 +13,6 @@ import {
   formatInstallerMessage,
   getCompletionUiMessages,
 } from './completion-messages.js';
-import { createConfigDiagnosticReporter } from './config-messages.js';
 
 interface GenerateOptions {
   shell?: string;
@@ -323,10 +321,7 @@ export class CompletionCommand {
           break;
         }
         case 'profiles': {
-          const delivery = getGlobalConfig({
-            reporter: createConfigDiagnosticReporter(locale),
-          }).delivery ?? 'both';
-          for (const profile of listAvailableProfiles(delivery)) {
+          for (const profile of listAvailableProfiles()) {
             if (!profile.definition) continue;
             const source = profile.builtIn
               ? labels.builtIn
@@ -338,10 +333,7 @@ export class CompletionCommand {
           break;
         }
         case 'saved-profiles': {
-          const delivery = getGlobalConfig({
-            reporter: createConfigDiagnosticReporter(locale),
-          }).delivery ?? 'both';
-          for (const profile of listAvailableProfiles(delivery)) {
+          for (const profile of listAvailableProfiles()) {
             if (profile.builtIn || !profile.definition) continue;
             console.log(`${profile.name}\t${labels.savedProfile}`);
           }

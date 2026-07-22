@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   getOfficeHoursSkillTemplate,
   getOfficeHoursCommandSkillTemplate,
-  getOpsxOfficeHoursCommandTemplate,
 } from '../../../src/core/templates/skill-templates.js';
 import { generateSkillContent } from '../../../src/core/shared/skill-generation.js';
 
@@ -26,13 +25,6 @@ describe('office-hours: no legacy named-path references', () => {
     const content = generateSkillContent(getOfficeHoursCommandSkillTemplate(), 'REGRESSION-GUARD');
     for (const banned of BANNED_SUBSTRINGS) {
       expect(content, `command skill template should not contain "${banned}"`).not.toContain(banned);
-    }
-  });
-
-  it('the opsx office-hours command content contains none of the deleted named paths', () => {
-    const content = getOpsxOfficeHoursCommandTemplate().content;
-    for (const banned of BANNED_SUBSTRINGS) {
-      expect(content, `opsx command template should not contain "${banned}"`).not.toContain(banned);
     }
   });
 });

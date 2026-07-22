@@ -10,23 +10,23 @@ For workflow patterns and when to use each command, see [Workflows](workflows.md
 
 | Command | Purpose |
 |---------|---------|
-| `/rasen:propose` | Create a change and generate planning artifacts in one step |
-| `/rasen:explore` | Think through ideas before committing to a change |
-| `/rasen:apply` | Implement tasks from the change |
-| `/rasen:sync` | Merge delta specs into main specs |
-| `/rasen:archive` | Archive a completed change |
+| `rasen-propose` | Create a change and generate planning artifacts in one step |
+| `rasen-explore` | Think through ideas before committing to a change |
+| `rasen-apply-change` | Implement tasks from the change |
+| `rasen-sync-specs` | Merge delta specs into main specs |
+| `rasen-archive-change` | Archive a completed change |
 
 ### Expanded Workflow Commands (custom workflow selection)
 
 | Command | Purpose |
 |---------|---------|
-| `/rasen:new` | Start a new change scaffold |
-| `/rasen:continue` | Create the next artifact based on dependencies |
-| `/rasen:verify` | Validate implementation matches artifacts |
-| `/rasen:bulk-archive` | Archive multiple changes at once |
-| `/rasen:onboard` | Guided tutorial through the complete workflow |
-| `/rasen:review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
-| `/rasen:goal` | Goal-driven iteration — repeat modify→judge against a measure or evaluate gate until satisfied or the round cap is hit (perf optimization, rubric-clean code, research brief) |
+| `rasen-new-change` | Start a new change scaffold |
+| `rasen-continue-change` | Create the next artifact based on dependencies |
+| `rasen-verify-change` | Validate implementation matches artifacts |
+| `rasen-bulk-archive-change` | Archive multiple changes at once |
+| `rasen-onboard` | Guided tutorial through the complete workflow |
+| `rasen-review-cycle` | Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate |
+| `rasen-goal` | Goal-driven iteration — repeat modify→judge against a measure or evaluate gate until satisfied or the round cap is hit (perf optimization, rubric-clean code, research brief) |
 
 The default global profile is `full` — all workflow commands are installed out of the box. To slim down to the essentials, run `rasen config profile core` (or pick a custom subset with `rasen config profile`), then run `rasen update` in your project.
 
@@ -34,13 +34,13 @@ The default global profile is `full` — all workflow commands are installed out
 
 ## Command Reference
 
-### `/rasen:propose`
+### `rasen-propose`
 
 Create a new change and generate planning artifacts in one step. This is the default start command in the `core` profile.
 
 **Syntax:**
 ```text
-/rasen:propose [change-name-or-description]
+rasen-propose [change-name-or-description]
 ```
 
 **Arguments:**
@@ -51,27 +51,27 @@ Create a new change and generate planning artifacts in one step. This is the def
 **What it does:**
 - Creates `rasen/changes/<change-name>/`
 - Generates artifacts needed before implementation (for `spec-driven`: proposal, specs, design, tasks)
-- Stops when the change is ready for `/rasen:apply`
+- Stops when the change is ready for `rasen-apply-change`
 
 **Example:**
 ```text
-You: /rasen:propose add-dark-mode
+You: rasen-propose add-dark-mode
 
 AI:  Created rasen/changes/add-dark-mode/
      ✓ proposal.md
      ✓ specs/ui/spec.md
      ✓ design.md
      ✓ tasks.md
-     Ready for implementation. Run /rasen:apply.
+     Ready for implementation. Run rasen-apply-change.
 ```
 
 **Tips:**
 - Use this for the fastest end-to-end path
-- If you want step-by-step artifact control, enable expanded workflows and use `/rasen:new` + `/rasen:continue`
+- If you want step-by-step artifact control, enable expanded workflows and use `rasen-new-change` + `rasen-continue-change`
 
 ---
 
-### `/rasen:explore`
+### `rasen-explore`
 
 > **Start here when you're unsure.** Explore is a no-stakes thinking partner: it reads your codebase, compares options, and sharpens a fuzzy idea into a concrete plan before any change exists. It ships in the default profile. For the full case and more examples, see the [Explore First](explore.md) guide.
 
@@ -79,7 +79,7 @@ Think through ideas, investigate problems, and clarify requirements before commi
 
 **Syntax:**
 ```
-/rasen:explore [topic]
+rasen-explore [topic]
 ```
 
 **Arguments:**
@@ -92,11 +92,11 @@ Think through ideas, investigate problems, and clarify requirements before commi
 - Investigates the codebase to answer questions
 - Compares options and approaches
 - Creates visual diagrams to clarify thinking
-- Can transition to `/rasen:propose` (default) or `/rasen:new` (expanded workflow) when insights crystallize
+- Can transition to `rasen-propose` (default) or `rasen-new-change` (expanded workflow) when insights crystallize
 
 **Example:**
 ```text
-You: /rasen:explore
+You: rasen-explore
 
 AI:  What would you like to explore?
 
@@ -116,7 +116,7 @@ AI:  Let me investigate your current auth setup...
 
 You: Let's go with JWT. Can we start a change for that?
 
-AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
+AI:  Ready when you are. Run rasen-propose add-jwt-auth to begin.
 ```
 
 **Tips:**
@@ -127,15 +127,15 @@ AI:  Ready when you are. Run /rasen:propose add-jwt-auth to begin.
 
 ---
 
-### `/rasen:new`
+### `rasen-new-change`
 
-Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `/rasen:continue`.
+Start a new change scaffold. Creates the change folder and waits for you to generate artifacts with `rasen-continue-change`.
 
 This command is part of the expanded workflow set (not included in the `core` profile).
 
 **Syntax:**
 ```
-/rasen:new [change-name] [--schema <schema-name>]
+rasen-new-change [change-name] [--schema <schema-name>]
 ```
 
 **Arguments:**
@@ -158,13 +158,13 @@ rasen/changes/<change-name>/
 
 **Example:**
 ```
-You: /rasen:new add-dark-mode
+You: rasen-new-change add-dark-mode
 
 AI:  Created rasen/changes/add-dark-mode/
      Schema: spec-driven
 
      Ready to create: proposal
-     Use /rasen:continue to create it, one artifact at a time.
+     Use rasen-continue-change to create it, one artifact at a time.
 ```
 
 **Tips:**
@@ -174,13 +174,13 @@ AI:  Created rasen/changes/add-dark-mode/
 
 ---
 
-### `/rasen:continue`
+### `rasen-continue-change`
 
 Create the next artifact in the dependency chain. Creates one artifact at a time for incremental progress.
 
 **Syntax:**
 ```
-/rasen:continue [change-name]
+rasen-continue-change [change-name]
 ```
 
 **Arguments:**
@@ -197,7 +197,7 @@ Create the next artifact in the dependency chain. Creates one artifact at a time
 
 **Example:**
 ```
-You: /rasen:continue
+You: rasen-continue-change
 
 AI:  Change: add-dark-mode
 
@@ -214,7 +214,7 @@ AI:  Change: add-dark-mode
      ✓ Created rasen/changes/add-dark-mode/specs/ui/spec.md
 
      Now available: tasks
-     Run /rasen:continue to create the next artifact.
+     Run rasen-continue-change to create the next artifact.
 ```
 
 **Tips:**
@@ -225,13 +225,13 @@ AI:  Change: add-dark-mode
 
 ---
 
-### `/rasen:apply`
+### `rasen-apply-change`
 
 Implement tasks from the change. Works through the task list, writing code and checking off items.
 
 **Syntax:**
 ```
-/rasen:apply [change-name]
+rasen-apply-change [change-name]
 ```
 
 **Arguments:**
@@ -247,7 +247,7 @@ Implement tasks from the change. Works through the task list, writing code and c
 
 **Example:**
 ```
-You: /rasen:apply
+You: rasen-apply-change
 
 AI:  Implementing add-dark-mode...
 
@@ -275,13 +275,13 @@ AI:  Implementing add-dark-mode...
 
 ---
 
-### `/rasen:verify`
+### `rasen-verify-change`
 
 Validate that implementation matches your change artifacts. Checks completeness, correctness, and coherence.
 
 **Syntax:**
 ```
-/rasen:verify [change-name]
+rasen-verify-change [change-name]
 ```
 
 **Arguments:**
@@ -305,7 +305,7 @@ Validate that implementation matches your change artifacts. Checks completeness,
 
 **Example:**
 ```
-You: /rasen:verify
+You: rasen-verify-change
 
 AI:  Verifying add-dark-mode...
 
@@ -343,13 +343,13 @@ AI:  Verifying add-dark-mode...
 
 ---
 
-### `/rasen:review-cycle`
+### `rasen-review-cycle`
 
 Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `rasen-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
 
 **Syntax:**
 ```
-/rasen:review-cycle [change-name]
+rasen-review-cycle [change-name]
 ```
 
 **Arguments:**
@@ -373,7 +373,7 @@ A finding is resolved only when a reviewer who did NOT author the fix confirms i
 
 **Example:**
 ```
-You: /rasen:review-cycle add-dark-mode
+You: rasen-review-cycle add-dark-mode
 
 AI:  Review Cycle: add-dark-mode (round 1/3)
      Findings: 1 Blocker, 2 Major
@@ -386,19 +386,19 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 ```
 
 **Tips:**
-- Use AFTER implementation, against the live diff; for a single verification gate use `/rasen:verify` instead
+- Use AFTER implementation, against the live diff; for a single verification gate use `rasen-verify-change` instead
 - The loop is bounded — if it escalates, the open findings and round history go to a human, not to a silent pass
 
 ---
 
-### `/rasen:goal`
+### `rasen-goal`
 
-Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `/rasen:auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `/rasen:auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
+Goal-driven iteration for tasks whose "done" is a **condition**, not a document — drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. A sibling entry to `rasen-auto`: the LEAD classifies the task, picks ONE backend pipeline, and repeats **modify → judge** until a gate is satisfied or a round cap is hit. Shares the same orchestration playbook as `rasen-auto` (LEAD + role-isolated workers, tiers, run-state, gates, resume). For the full chapter, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
 
 **Syntax:**
 ```text
-/rasen:goal [measure|evaluate|research] <task>
-/rasen:goal --pipeline goal-loop-<variant> <task>
+rasen-goal [measure|evaluate|research] <task>
+rasen-goal --pipeline goal-loop-<variant> <task>
 ```
 
 **Arguments:**
@@ -423,7 +423,7 @@ Goal-driven iteration for tasks whose "done" is a **condition**, not a document 
 
 **Example:**
 ```text
-You: /rasen:goal drive the Lighthouse performance score to 90
+You: rasen-goal drive the Lighthouse performance score to 90
 
 AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
      Fetch DAG: define-goal -> iterate (measure gate) -> ship -> archive
@@ -436,19 +436,19 @@ AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
 ```
 
 **Tips:**
-- Use `/rasen:goal` when the product is a *condition* met by iteration; use `/rasen:auto` when the product is a code-change document
+- Use `rasen-goal` when the product is a *condition* met by iteration; use `rasen-auto` when the product is a code-change document
 - Kill mid-loop and run `rasen pipeline resume <change>` — the goal-loop resume protocol reads the last `goal-run.json` record and resumes at the right round
 - The `define-goal` gate is the safety valve for "measure.command is arbitrary shell" — review the command before continuing
 
 ---
 
-### `/rasen:sync`
+### `rasen-sync-specs`
 
 **Optional command.** Merge delta specs from a change into main specs. Archive will prompt to sync if needed, so you typically don't need to run this manually.
 
 **Syntax:**
 ```
-/rasen:sync [change-name]
+rasen-sync-specs [change-name]
 ```
 
 **Arguments:**
@@ -465,7 +465,7 @@ AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
 
 **Example:**
 ```text
-You: /rasen:sync
+You: rasen-sync-specs
 
 AI:  Syncing add-dark-mode delta specs...
 
@@ -479,7 +479,7 @@ AI:  Syncing add-dark-mode delta specs...
      Merging...
      ✓ rasen/specs/ui/spec.md updated
 
-     Change remains active. Run /rasen:archive when ready to complete.
+     Change remains active. Run rasen-archive-change when ready to complete.
 ```
 
 **When to use manually:**
@@ -499,13 +499,13 @@ AI:  Syncing add-dark-mode delta specs...
 
 ---
 
-### `/rasen:archive`
+### `rasen-archive-change`
 
 Archive a completed change. Finalizes the change and moves it to the archive folder.
 
 **Syntax:**
 ```
-/rasen:archive [change-name]
+rasen-archive-change [change-name]
 ```
 
 **Arguments:**
@@ -522,7 +522,7 @@ Archive a completed change. Finalizes the change and moves it to the archive fol
 
 **Example:**
 ```text
-You: /rasen:archive
+You: rasen-archive-change
 
 AI:  Archiving add-dark-mode...
 
@@ -547,17 +547,17 @@ AI:  ✓ Synced specs to rasen/specs/ui/spec.md
 - Archive won't block on incomplete tasks, but will warn
 - Delta specs can be synced during archive or beforehand
 - Archived changes are preserved for history
-- Use `/rasen:verify` first to catch issues
+- Use `rasen-verify-change` first to catch issues
 
 ---
 
-### `/rasen:bulk-archive`
+### `rasen-bulk-archive-change`
 
 Archive multiple completed changes at once. Handles spec conflicts between changes.
 
 **Syntax:**
 ```
-/rasen:bulk-archive [change-names...]
+rasen-bulk-archive-change [change-names...]
 ```
 
 **Arguments:**
@@ -574,7 +574,7 @@ Archive multiple completed changes at once. Handles spec conflicts between chang
 
 **Example:**
 ```
-You: /rasen:bulk-archive
+You: rasen-bulk-archive-change
 
 AI:  Found 3 completed changes:
      - add-dark-mode (8/8 tasks complete)
@@ -607,13 +607,13 @@ AI:  ✓ Archived add-dark-mode
 
 ---
 
-### `/rasen:onboard`
+### `rasen-onboard`
 
 Guided onboarding through the complete rasen workflow. An interactive tutorial using your actual codebase.
 
 **Syntax:**
 ```
-/rasen:onboard
+rasen-onboard
 ```
 
 **What it does:**
@@ -627,19 +627,19 @@ Guided onboarding through the complete rasen workflow. An interactive tutorial u
 **Phases:**
 1. Welcome and codebase analysis
 2. Finding an improvement opportunity
-3. Creating a change (`/rasen:new`)
+3. Creating a change (`rasen-new-change`)
 4. Writing the proposal
 5. Creating specs
 6. Writing the design
 7. Creating tasks
-8. Implementing tasks (`/rasen:apply`)
+8. Implementing tasks (`rasen-apply-change`)
 9. Verifying implementation
 10. Archiving the change
 11. Summary and next steps
 
 **Example:**
 ```
-You: /rasen:onboard
+You: rasen-onboard
 
 AI:  Welcome to rasen!
 
@@ -669,20 +669,18 @@ AI:  Welcome to rasen!
 
 ## Command Syntax by AI Tool
 
-Different AI tools use slightly different command syntax. Use the format that matches your tool:
+Rasen installs a **skill** for every workflow — `.claude/skills/rasen-*/SKILL.md` and equivalents per tool — and no separate slash-command file is generated. Each AI tool that natively discovers project skills (Claude Code and 15+ others) surfaces that skill using its own invocation syntax:
 
 | Tool | Syntax Example |
 |------|----------------|
-| Claude Code | `/rasen:propose`, `/rasen:apply` |
+| Claude Code | `rasen-propose`, `rasen-apply-change` |
 | Cursor | `/rasen-propose`, `/rasen-apply` |
 | Windsurf | `/rasen-propose`, `/rasen-apply` |
 | Copilot (IDE) | `/rasen-propose`, `/rasen-apply` |
-| Kimi CLI | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` (no generated command files) |
-| Trae | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` (no generated command files) |
+| Kimi CLI | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` |
+| Trae | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` |
 
-The intent is the same across tools, but how commands are surfaced can differ by integration.
-
-> **Note:** GitHub Copilot commands (`.github/prompts/*.prompt.md`) are only available in IDE extensions (VS Code, JetBrains, Visual Studio). GitHub Copilot CLI does not currently support custom prompt files — see [Supported Tools](supported-tools.md) for details and workarounds.
+The intent is the same across tools, but how a skill is surfaced can differ by integration — consult your tool's own docs if the syntax above doesn't match what you see.
 
 ---
 
@@ -693,7 +691,7 @@ The intent is the same across tools, but how commands are surfaced can differ by
 The command couldn't identify which change to work on.
 
 **Solutions:**
-- Specify the change name explicitly: `/rasen:apply add-dark-mode`
+- Specify the change name explicitly: `rasen-apply-change add-dark-mode`
 - Check that the change folder exists: `rasen list`
 - Verify you're in the right project directory
 
@@ -733,7 +731,7 @@ The AI creates incomplete or incorrect artifacts.
 - Add project context in `rasen/config.yaml`
 - Add per-artifact rules for specific guidance
 - Provide more detail in your change description
-- Use `/rasen:continue` to create and review one artifact at a time instead of all at once
+- Use `rasen-continue-change` to create and review one artifact at a time instead of all at once
 
 ---
 

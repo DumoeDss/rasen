@@ -196,8 +196,6 @@ export function scaffoldWorkflow(id: string, outputPath: string): string {
   const manifest = [
     'version: 1',
     `id: ${id}`,
-    'command:',
-    '  enabled: false',
     'files:',
     '  sidecars: []',
     '  scripts: []',
@@ -605,14 +603,6 @@ export function workflowDefinitionForJson(definition: WorkflowDefinition): Recor
       dirName: definition.skill.dirName,
       description: definition.skill.template.description,
     },
-    command: definition.command
-      ? {
-          id: definition.command.content.id,
-          name: definition.command.content.name,
-          category: definition.command.content.category,
-          tags: definition.command.content.tags,
-        }
-      : null,
     requires: definition.requires,
     recommends: definition.recommends,
     files: definition.files.map((file) => ({ path: file.path, sha256: file.sha256 })),

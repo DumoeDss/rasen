@@ -98,7 +98,6 @@ function assertInstallableSet(
   const reused: string[] = [];
   const incomingById = new Map<string, WorkflowDefinition>();
   const incomingSkillNames = new Map<string, string>();
-  const incomingCommandIds = new Map<string, string>();
 
   for (const definition of definitions) {
     const duplicate = incomingById.get(definition.id);
@@ -147,24 +146,6 @@ function assertInstallableSet(
     }
     incomingSkillNames.set(skillName, definition.id);
 
-    const commandId = definition.command?.content.id;
-    if (commandId) {
-      const commandCollision = current.getByCommandId(commandId);
-      if (commandCollision) {
-        throw new WorkflowTransactionError(
-          `Command ID "${commandId}" conflicts with workflow "${commandCollision.id}"`,
-          'command_id_collision'
-        );
-      }
-      const incomingCommand = incomingCommandIds.get(commandId);
-      if (incomingCommand) {
-        throw new WorkflowTransactionError(
-          `Command ID "${commandId}" is shared by "${incomingCommand}" and "${definition.id}"`,
-          'command_id_collision'
-        );
-      }
-      incomingCommandIds.set(commandId, definition.id);
-    }
     for (const skill of definition.requires.skills) {
       if (!expertNames.has(skill)) {
         throw new WorkflowTransactionError(
@@ -189,7 +170,7 @@ function assertInstallableSet(
     }
   }
 
-  // The indexed catalog also proves skill and command identity uniqueness.
+  // The indexed catalog also proves skill identity uniqueness.
   const combinedCatalog = new WorkflowCatalog(combined);
   for (const root of roots) resolveWorkflowSelection(combinedCatalog, [root]);
   return { install, reused };

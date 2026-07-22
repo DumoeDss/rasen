@@ -1,13 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   getSkillTemplates,
-  getCommandContents,
   generateSkillContent,
 } from '../../src/core/shared/skill-generation.js';
-import {
-  CommandAdapterRegistry,
-  generateCommands,
-} from '../../src/core/command-generation/index.js';
 
 /**
  * Brand guard: no generated artifact (command file paths, command file bodies,
@@ -59,13 +54,4 @@ describe('brand guard — generated output carries no legacy namespace tokens', 
     }
   });
 
-  it('every adapter generates legacy-token-free command paths and bodies', () => {
-    const contents = getCommandContents();
-    for (const adapter of CommandAdapterRegistry.getAll()) {
-      for (const generated of generateCommands(contents, adapter)) {
-        assertClean(`${adapter.toolId} command path`, generated.path);
-        assertClean(`${adapter.toolId} command body`, generated.fileContent);
-      }
-    }
-  });
 });

@@ -1,5 +1,5 @@
 export const CONFIG_DIAGNOSTIC_KEYS = [
-  'legacyDelivery',
+  'deliveryRetired',
   'invalidGlobalJson',
   'projectParseFailed',
   'projectNotObject',

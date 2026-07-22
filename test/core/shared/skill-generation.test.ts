@@ -5,8 +5,6 @@ import { tmpdir } from 'os';
 import { parse as parseYaml } from 'yaml';
 import {
   getSkillTemplates,
-  getCommandTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
 } from '../../../src/core/shared/skill-generation.js';
@@ -110,110 +108,6 @@ describe('skill-generation', () => {
       const ids = filtered.map(t => t.workflowId);
       expect(ids).toContain('propose');
       expect(ids).toContain('review');
-    });
-  });
-
-  describe('getCommandTemplates', () => {
-    it('should return all 19 command templates', () => {
-      const templates = getCommandTemplates();
-      expect(templates).toHaveLength(19);
-    });
-
-    it('should include the review-cycle command with a clean (no -command suffix) id', () => {
-      const templates = getCommandTemplates();
-      const reviewCycle = templates.find(t => t.id === 'review-cycle');
-      expect(reviewCycle).toBeDefined();
-      expect(reviewCycle?.template.name).toBe('Rasen: Review Cycle');
-      expect(reviewCycle?.template.category).toBe('Workflow');
-    });
-
-    it('should have unique IDs', () => {
-      const templates = getCommandTemplates();
-      const ids = templates.map(t => t.id);
-      const uniqueIds = new Set(ids);
-      expect(uniqueIds.size).toBe(templates.length);
-    });
-
-    it('should include all expected commands', () => {
-      const templates = getCommandTemplates();
-      const ids = templates.map(t => t.id);
-
-      expect(ids).toContain('explore');
-      expect(ids).toContain('new');
-      expect(ids).toContain('continue');
-      expect(ids).toContain('apply');
-      expect(ids).toContain('sync');
-      expect(ids).toContain('archive');
-      expect(ids).toContain('bulk-archive');
-      expect(ids).toContain('verify');
-      expect(ids).toContain('onboard');
-      expect(ids).toContain('propose');
-      expect(ids).toContain('goal-command');
-    });
-
-    it('should filter by workflow IDs when provided', () => {
-      const filtered = getCommandTemplates(['propose', 'explore', 'apply', 'archive']);
-      expect(filtered).toHaveLength(4);
-      const ids = filtered.map(t => t.id);
-      expect(ids).toContain('propose');
-      expect(ids).toContain('explore');
-      expect(ids).toContain('apply');
-      expect(ids).toContain('archive');
-      expect(ids).not.toContain('new');
-    });
-
-    it('should return all templates when filter is undefined', () => {
-      const all = getCommandTemplates();
-      const noFilter = getCommandTemplates(undefined);
-      expect(noFilter).toHaveLength(all.length);
-    });
-
-    it('should return empty array when filter matches nothing', () => {
-      const filtered = getCommandTemplates(['nonexistent']);
-      expect(filtered).toHaveLength(0);
-    });
-  });
-
-  describe('getCommandContents', () => {
-    it('should return all 19 command contents', () => {
-      const contents = getCommandContents();
-      expect(contents).toHaveLength(19);
-    });
-
-    it('should have valid content structure', () => {
-      const contents = getCommandContents();
-
-      for (const content of contents) {
-        expect(content.id).toBeTruthy();
-        expect(content.name).toBeTruthy();
-        expect(content.description).toBeTruthy();
-        expect(content.body).toBeTruthy();
-      }
-    });
-
-    it('should have matching IDs with command templates', () => {
-      const templates = getCommandTemplates();
-      const contents = getCommandContents();
-
-      const templateIds = templates.map(t => t.id).sort();
-      const contentIds = contents.map(c => c.id).sort();
-
-      expect(contentIds).toEqual(templateIds);
-    });
-
-    it('should filter by workflow IDs when provided', () => {
-      const filtered = getCommandContents(['propose', 'explore']);
-      expect(filtered).toHaveLength(2);
-      const ids = filtered.map(c => c.id);
-      expect(ids).toContain('propose');
-      expect(ids).toContain('explore');
-      expect(ids).not.toContain('new');
-    });
-
-    it('should return all contents when filter is undefined', () => {
-      const all = getCommandContents();
-      const noFilter = getCommandContents(undefined);
-      expect(noFilter).toHaveLength(all.length);
     });
   });
 

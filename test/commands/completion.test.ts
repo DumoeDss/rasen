@@ -413,7 +413,7 @@ describe('CompletionCommand', () => {
       expect(consoleLogSpy).toHaveBeenCalledWith('core\t内置 配置方案');
     });
 
-    it('reports legacy delivery migration in Simplified Chinese from the completion command-owned read', async () => {
+    it('lists profiles without reading global config at all (delivery is retired, no diagnostic path left)', async () => {
       process.env.RASEN_LANG = 'zh-cn';
       const configPath = path.join(tempDir, 'config.json');
       fs.writeFileSync(
@@ -424,10 +424,10 @@ describe('CompletionCommand', () => {
 
       await command.complete({ type: 'profiles' });
 
-      const diagnostics = consoleErrorSpy.mock.calls.map(([value]: [unknown]) => String(value)).join('\n');
-      expect(diagnostics).toContain("交付模式 'commands-first' 已合并为 'both'");
-      expect(diagnostics).not.toContain('Note: delivery mode');
-      expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).delivery).toBe('both');
+      // Profile completion no longer resolves delivery, so a retired stored
+      // value never surfaces a diagnostic here — and the file is untouched.
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+      expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).delivery).toBe('commands-first');
     });
   });
 

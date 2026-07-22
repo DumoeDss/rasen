@@ -42,6 +42,13 @@ import {
   type TaskItem,
   type ApplyInstructions,
 } from './shared.js';
+import {
+  resolveNextSteps,
+  resolveInstalledWorkflowIds,
+  formatNextWorkflowHint,
+  type ChainState,
+} from '../../core/workflow-chain.js';
+import { getCliLocale } from '../../core/cli-locale.js';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -485,6 +492,14 @@ export async function generateApplyInstructions(
   // D2): it mints project identity on first use, same as instructionsCommand.
   const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: true });
 
+  // Runtime-resolved next workflow(s) (design D4): apply's `ready` state is
+  // mid-implementation, so it has no forward step (empty array). `blocked`
+  // and `all_done` map 1:1 onto the chain's own state vocabulary.
+  const nextWorkflows =
+    state === 'ready'
+      ? []
+      : resolveNextSteps('apply', state as ChainState, resolveInstalledWorkflowIds(), getCliLocale());
+
   return {
     changeName,
     changeDir,
@@ -495,6 +510,7 @@ export async function generateApplyInstructions(
     state,
     missingArtifacts: missingArtifacts.length > 0 ? missingArtifacts : undefined,
     instruction,
+    nextWorkflows,
     ...(references !== undefined ? { references } : {}),
     ...(workDir ? { workDir } : {}),
   };
@@ -546,7 +562,7 @@ export async function applyInstructionsCommand(options: ApplyInstructionsOptions
 }
 
 export function printApplyInstructionsText(instructions: ApplyInstructions): void {
-  const { changeName, schemaName, contextFiles, progress, tasks, state, missingArtifacts, instruction, workDir } = instructions;
+  const { changeName, schemaName, contextFiles, progress, tasks, state, missingArtifacts, instruction, workDir, nextWorkflows } = instructions;
 
   console.log(`## Apply: ${changeName}`);
   console.log(`Schema: ${schemaName}`);
@@ -605,4 +621,14 @@ export function printApplyInstructionsText(instructions: ApplyInstructions): voi
   // Instruction
   console.log('### Instruction');
   console.log(instruction);
+
+  // Next-workflow hint (design D4/D6): the runtime replacement for
+  // hardcoded skill-body steering. Omitted entirely when resolution finds
+  // no installed downstream workflow.
+  if (nextWorkflows.length > 0) {
+    console.log();
+    for (const step of nextWorkflows) {
+      console.log(formatNextWorkflowHint(step, getCliLocale()));
+    }
+  }
 }

@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { GlobalConfig, Profile, Delivery } from '../core/global-config.js';
+import type { GlobalConfig, Profile } from '../core/global-config.js';
 import { getGlobalConfig, saveGlobalConfig } from '../core/global-config.js';
 import { OPENSPEC_DIR_NAME } from '../core/config.js';
 import {
@@ -14,7 +14,7 @@ import {
 } from '../core/profiles.js';
 import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
 import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
-import { getCommandFileId } from '../core/command-generation/command-file-id.js';
+import { getCommandFileId } from '../core/shared/retired-command-paths.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
 import {
   getProfilePromptMessages,
@@ -33,11 +33,10 @@ import {
 type InquirerPrompts = typeof import('@inquirer/prompts');
 type PromptSeparator = InstanceType<InquirerPrompts['Separator']>;
 
-type ProfileAction = 'both' | 'delivery' | 'workflows' | 'keep';
+type ProfileAction = 'workflows' | 'keep';
 
 export interface ProfileState {
   profile: Profile;
-  delivery: Delivery;
   workflows: string[];
 }
 
@@ -70,23 +69,21 @@ export function resolveWorkflowPickerPageSize(
   );
 }
 
-function normalizedSelectedWorkflows(workflows: readonly string[], delivery: Delivery): string[] {
+function normalizedSelectedWorkflows(workflows: readonly string[]): string[] {
   return normalizeProfileDefinition({
     version: PROFILE_DEFINITION_VERSION,
-    delivery,
     workflows: [...workflows],
   }).workflows;
 }
 
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
   const profile = config.profile || 'full';
-  const delivery = config.delivery || 'both';
   const workflows = [
     ...getProfileWorkflows(profile, config.workflows ? [...config.workflows] : undefined, {
       expertSelectionExplicit: config.expertSelectionExplicit === true,
     }),
   ];
-  return { profile, delivery, workflows };
+  return { profile, workflows };
 }
 
 /**
@@ -148,9 +145,6 @@ export function diffProfileState(
   const messages = getProfileUiMessages(locale);
   const lines: string[] = [];
 
-  if (before.delivery !== after.delivery) {
-    lines.push(messages.diffDelivery(before.delivery, after.delivery));
-  }
   if (before.profile !== after.profile) {
     lines.push(messages.diffProfile(before.profile, after.profile));
   }
@@ -194,11 +188,11 @@ function workflowChoices(
 ): Array<WorkflowChoice | PromptSeparator> {
   const catalog = loadWorkflowCatalog();
   const definitions = catalog.definitions;
+  // Display ids strip the internal '-command' suffix fusion workflow ids
+  // carry (e.g. `ship-command` -> `ship`) so the picker shows the friendly
+  // public name — independent of the (now-retired) command file surface.
   const displayIds = new Map(
-    definitions.map((definition) => [
-      definition.id,
-      definition.command ? getCommandFileId(definition.id) : definition.id,
-    ])
+    definitions.map((definition) => [definition.id, getCommandFileId(definition.id)])
   );
   // Column width is computed per group (workflows vs. experts), not across
   // the combined set: expert ids run longer (e.g. `design-consultation`)
@@ -289,45 +283,15 @@ function workflowPickerOptions(
   };
 }
 
-function deliveryChoices(
-  currentDelivery: Delivery | undefined,
-  messages: ProfilePromptMessages
-): Array<{
-  value: Delivery;
-  name: string;
-  description: string;
-}> {
-  const choices = [
-    {
-      value: 'both' as const,
-      ...messages.delivery.both,
-    },
-    {
-      value: 'skills' as const,
-      ...messages.delivery.skills,
-    },
-  ];
-  for (const choice of choices) {
-    if (choice.value === currentDelivery) choice.name += messages.currentSuffix;
-  }
-  return choices;
-}
-
 export async function promptForNewProfileState(currentState: ProfileState): Promise<ProfileState> {
-  const { select, checkbox, Separator } = await import('@inquirer/prompts');
+  const { checkbox, Separator } = await import('@inquirer/prompts');
   const messages = getProfilePromptMessages();
-  const delivery = await select<Delivery>({
-    message: messages.deliveryPickerMessage,
-    choices: deliveryChoices(currentState.delivery, messages),
-    default: currentState.delivery,
-  });
   const workflows = await checkbox<string>(
     workflowPickerOptions(currentState, messages, Separator)
   );
   return {
     profile: deriveProfileFromWorkflowSelection(workflows),
-    delivery,
-    workflows: normalizedSelectedWorkflows(workflows, delivery),
+    workflows: normalizedSelectedWorkflows(workflows),
   };
 }
 
@@ -338,7 +302,7 @@ function maybeWarnProjectConfigDrift(
 ): void {
   const openspecDir = path.join(projectDir, OPENSPEC_DIR_NAME);
   if (!fs.existsSync(openspecDir)) return;
-  if (!hasProjectConfigDrift(projectDir, state.workflows, state.delivery)) return;
+  if (!hasProjectConfigDrift(projectDir, state.workflows)) return;
   console.log(colorize(getProfileUiMessages().driftWarning));
 }
 
@@ -361,7 +325,6 @@ function getGlobalConfigForProfile(): GlobalConfig {
 export function applyProfileState(state: ProfileState): void {
   const config = getGlobalConfigForProfile();
   config.profile = state.profile;
-  config.delivery = state.delivery;
   config.workflows = [...state.workflows];
   config.expertSelectionExplicit = true;
   saveGlobalConfig(config);
@@ -384,23 +347,13 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     const messages = getProfilePromptMessages();
 
     console.log(chalk.bold(ui.currentSettingsHeading));
-    console.log(`  ${ui.deliveryLabel}: ${currentState.delivery}`);
     console.log(`  ${ui.workflowsLabel}: ${formatWorkflowSummary(currentState.workflows, currentState.profile)}`);
-    console.log(chalk.dim(ui.deliveryExplanation));
     console.log(chalk.dim(ui.workflowsExplanation));
     console.log();
 
     const action = await select<ProfileAction>({
       message: ui.configurePrompt,
       choices: [
-        {
-          value: 'both',
-          ...ui.actions.both,
-        },
-        {
-          value: 'delivery',
-          ...ui.actions.delivery,
-        },
         {
           value: 'workflows',
           ...ui.actions.workflows,
@@ -420,25 +373,14 @@ export async function runInteractiveProfileEditor(): Promise<void> {
 
     const nextState: ProfileState = {
       profile: currentState.profile,
-      delivery: currentState.delivery,
       workflows: [...currentState.workflows],
     };
 
-    if (action === 'both' || action === 'delivery') {
-      nextState.delivery = await select<Delivery>({
-        message: messages.deliveryPickerMessage,
-        choices: deliveryChoices(currentState.delivery, messages),
-        default: currentState.delivery,
-      });
-    }
-
-    if (action === 'both' || action === 'workflows') {
-      const selectedWorkflows = await checkbox<string>(
-        workflowPickerOptions(currentState, messages, Separator)
-      );
-      nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows, nextState.delivery);
-      nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
-    }
+    const selectedWorkflows = await checkbox<string>(
+      workflowPickerOptions(currentState, messages, Separator)
+    );
+    nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows);
+    nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
 
     const diff = diffProfileState(currentState, nextState);
     if (!diff.hasChanges) {

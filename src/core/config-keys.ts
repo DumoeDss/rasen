@@ -75,6 +75,16 @@ export const NOT_SETTABLE_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Retired top-level keys: no longer a live setting, but `config set`/`config
+ * unset` recognize them by name and route to a friendly retirement notice
+ * (no persistence, no crash) instead of the generic "unknown key" error a
+ * bare registry removal would produce. `delivery` (the command/skills
+ * install-surface dimension) was retired when the command-delivery surface
+ * itself was removed — skills are the only delivery surface now.
+ */
+export const RETIRED_CONFIG_KEYS: ReadonlySet<string> = new Set(['delivery']);
+
+/**
  * Dual-form threshold validator: a bare number in (0, 1], or the strict
  * object `{ remainingTokens: <positive integer> }`. Mirrors the zod union
  * `thresholdSchema()` in src/core/pipeline-registry/types.ts (not imported
@@ -126,15 +136,6 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     enumValues: ['full', 'core', 'custom'],
     defaultValue: 'full',
     description: 'Workflow profile controlling which actions are available',
-    group: 'Profile',
-  },
-  {
-    key: 'delivery',
-    scopes: ['global'],
-    type: 'enum',
-    enumValues: ['both', 'skills'],
-    defaultValue: 'both',
-    description: 'Whether commands are installed alongside skills (skills are always installed)',
     group: 'Profile',
   },
   {

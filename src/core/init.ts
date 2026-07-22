@@ -1,7 +1,7 @@
 /**
  * Init Command
  *
- * Sets up Rasen with Agent Skills and /rasen:* slash commands.
+ * Sets up Rasen with Agent Skills (invoked by their canonical rasen-* skill name).
  * This is the unified setup command that replaces both the old init and experimental commands.
  */
 
@@ -31,11 +31,9 @@ import { PALETTE } from './styles/palette.js';
 import { isInteractive } from '../utils/interactive.js';
 import { serializeConfig } from './config-prompts.js';
 import {
-  generateCommands,
-  CommandAdapterRegistry,
-  getLegacyCommandFilePath,
+  getAllRetiredCommandFilePathCandidates,
   getCommandFilePathCandidates,
-} from './command-generation/index.js';
+} from './shared/retired-command-paths.js';
 import {
   detectLegacyArtifacts,
   cleanupMarkerBlocks,
@@ -52,18 +50,14 @@ import {
   getToolSkillStatus,
   getToolStates,
   getSkillTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
   type ToolSkillStatus,
 } from './shared/index.js';
-import { getGlobalConfig, saveGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
+import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
 import { getProfileWorkflows, resolveDesiredWorkflowSelection, CORE_WORKFLOWS } from './profiles.js';
-import {
-  getBuiltInWorkflowDefinitions,
-  loadWorkflowCatalog,
-} from './workflow-registry/index.js';
+import { loadWorkflowCatalog } from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
@@ -661,19 +655,17 @@ export class InitCommand {
 
   /**
    * Removes command files left behind by retired built-in workflows (e.g.
-   * `ff`), resolving candidate paths via the tool's command adapter for each
-   * id in `RETIRED_WORKFLOW_COMMAND_IDS`. Scoped to exactly those ids;
-   * idempotent (a no-op when no such file exists).
+   * `ff`), resolving candidate paths for each id in
+   * `RETIRED_WORKFLOW_COMMAND_IDS` via the frozen static path knowledge.
+   * Scoped to exactly those ids; idempotent (a no-op when no such file
+   * exists).
    */
   private async pruneRetiredWorkflowCommandFiles(
     projectPath: string,
     toolId: string,
   ): Promise<void> {
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return;
-
     for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
+      for (const cmdPath of getCommandFilePathCandidates(toolId, commandId)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
         try {
           if (fs.existsSync(fullPath)) {
@@ -702,10 +694,9 @@ export class InitCommand {
     const commandsSkipped: string[] = [];
     let removedCommandCount = 0;
 
-    // Read global config for profile and delivery settings (use --profile override if set)
+    // Read global config for profile settings (use --profile override if set)
     const globalConfig = getGlobalConfig();
     const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'full';
-    const delivery: Delivery = globalConfig.delivery ?? 'both';
     const { ids: workflows, unknown: unknownProfileWorkflows } = resolveDesiredWorkflowSelection(
       loadWorkflowCatalog(),
       profile,
@@ -722,10 +713,7 @@ export class InitCommand {
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
-    // Skills are always installed; only command generation is gated on delivery.
-    const shouldGenerateCommands = delivery === 'both';
     const skillTemplates = getSkillTemplates(workflows);
-    const commandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
 
     // Process each tool
     for (const tool of tools) {
@@ -780,39 +768,14 @@ export class InitCommand {
           copySkillSidecars(workflowId, skillDir);
         }
 
-        // Generate commands if delivery includes commands
-        if (shouldGenerateCommands) {
-          const adapter = CommandAdapterRegistry.get(tool.value);
-          if (adapter) {
-            const generatedCommands = generateCommands(commandContents, adapter);
+        // The command surface is retired: skills are the only delivery
+        // format now. A fresh init still opportunistically cleans up any
+        // rasen command files (all 19 built-in ids + legacy variants) so it
+        // leaves zero command files even on a project directory that
+        // carries stale ones from before the retirement.
+        removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
 
-            for (const cmd of generatedCommands) {
-              const commandFile = path.isAbsolute(cmd.path) ? cmd.path : path.join(projectPath, cmd.path);
-              await FileSystemUtils.writeFile(commandFile, cmd.fileContent);
-            }
-
-            // Remove legacy '-command'-suffixed files replaced by the short names above
-            for (const content of commandContents) {
-              const legacyPath = getLegacyCommandFilePath(adapter, content.id);
-              if (!legacyPath) continue;
-              const fullPath = path.isAbsolute(legacyPath) ? legacyPath : path.join(projectPath, legacyPath);
-              try {
-                if (fs.existsSync(fullPath)) {
-                  await fs.promises.unlink(fullPath);
-                }
-              } catch {
-                // Ignore errors
-              }
-            }
-          } else {
-            commandsSkipped.push(tool.value);
-          }
-        }
-        if (!shouldGenerateCommands) {
-          removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
-        }
-
-        syncWorkflowArtifactLedger(projectPath, tool.value, workflows, delivery);
+        syncWorkflowArtifactLedger(projectPath, tool.value, workflows);
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -899,7 +862,6 @@ export class InitCommand {
     if (successfulTools.length > 0) {
       const globalConfig = getGlobalConfig();
       const profile: Profile = (this.profileOverride as Profile) ?? globalConfig.profile ?? 'full';
-      const delivery: Delivery = globalConfig.delivery ?? 'both';
       const { ids: workflows } = resolveDesiredWorkflowSelection(
         loadWorkflowCatalog(),
         profile,
@@ -921,13 +883,8 @@ export class InitCommand {
       // tool is project-local; a global entry already reads as a full path.
       const toolDirs = hasGlobalTool ? toolDirEntries.join(', ') : `${toolDirEntries.join(', ')}/`;
       const skillCount = getSkillTemplates(workflows).length;
-      const commandCount = delivery === 'both' ? getCommandContents(workflows).length : 0;
-      if (skillCount > 0 && commandCount > 0) {
-        console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}`);
-      } else if (skillCount > 0) {
+      if (skillCount > 0) {
         console.log(`${skillCount} skills in ${toolDirs}`);
-      } else if (commandCount > 0) {
-        console.log(`${commandCount} commands in ${toolDirs}`);
       }
     }
 
@@ -936,12 +893,8 @@ export class InitCommand {
       console.log(chalk.red(`Failed: ${results.failedTools.map((f) => `${f.name} (${f.error.message})`).join(', ')}`));
     }
 
-    // Show skipped commands
-    if (results.commandsSkipped.length > 0) {
-      console.log(chalk.dim(`Commands skipped for: ${results.commandsSkipped.join(', ')} (no adapter)`));
-    }
     if (results.removedCommandCount > 0) {
-      console.log(chalk.dim(`Removed: ${results.removedCommandCount} command files (delivery: skills)`));
+      console.log(chalk.dim(`Removed: ${results.removedCommandCount} command files (commands have been consolidated into skills)`));
     }
 
     // Config status
@@ -971,10 +924,10 @@ export class InitCommand {
     console.log();
     if (activeWorkflows.includes('propose')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /rasen:propose "your idea"');
+      console.log('  Start your first change: run the rasen-propose skill with "your idea"');
     } else if (activeWorkflows.includes('new')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /rasen:new "your idea"');
+      console.log('  Start your first change: run the rasen-new-change skill with "your idea"');
     } else {
       console.log("Done. Run 'rasen profile' to configure your workflows.");
     }
@@ -1014,24 +967,27 @@ export class InitCommand {
     }).start();
   }
 
+  /**
+   * Unconditionally removes every rasen command file for a tool — all 19
+   * built-in command ids plus their `-command`/`opsx` legacy path variants
+   * — using only the frozen static path knowledge (never the deleted live
+   * command-generation registry). The command surface is retired: a fresh
+   * `init` leaves zero rasen command files, and re-running it on an
+   * existing project cleans up any that predate the retirement.
+   */
   private async removeCommandFiles(projectPath: string, toolId: string): Promise<number> {
     let removed = 0;
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
 
-    for (const definition of getBuiltInWorkflowDefinitions()) {
-      if (!definition.command) continue;
-      for (const cmdPath of getCommandFilePathCandidates(adapter, definition.command.content.id)) {
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+    for (const cmdPath of getAllRetiredCommandFilePathCandidates(toolId)) {
+      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
-        try {
-          if (fs.existsSync(fullPath)) {
-            await fs.promises.unlink(fullPath);
-            removed++;
-          }
-        } catch {
-          // Ignore errors
+      try {
+        if (fs.existsSync(fullPath)) {
+          await fs.promises.unlink(fullPath);
+          removed++;
         }
+      } catch {
+        // Ignore errors
       }
     }
 

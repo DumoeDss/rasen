@@ -5,7 +5,7 @@
  * answers usage questions, and helps with configuration — layered
  * from first-run onboarding to pipeline extension.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getHelpSkillTemplate(): SkillTemplate {
@@ -39,8 +39,8 @@ Give the mental model in three sentences before any command:
 Then the first-session path — in order, one step at a time:
 
 1. \`rasen init\` — pick your AI tools and a profile (\`core\` is the streamlined set; \`full\` is everything).
-2. \`/rasen:onboard\` — a guided 15–20 minute walkthrough that does one real small task in their codebase through the complete cycle, narrating each artifact. **Route every first-time user here before anything else.**
-3. First real work: \`/rasen:propose <idea>\` — then follow the main flow below.
+2. \`rasen-onboard\` — a guided 15–20 minute walkthrough that does one real small task in their codebase through the complete cycle, narrating each artifact. **Route every first-time user here before anything else.**
+3. First real work: \`rasen-propose <idea>\` — then follow the main flow below.
 
 If they ask "why not just prompt the AI directly?": the artifacts are the answer — specs survive the conversation, reviews check the diff against a written contract instead of vibes, and the archive explains next quarter why the code is the way it is.
 
@@ -50,29 +50,29 @@ A change moves: **propose → apply → verify → sync → archive**.
 
 | Step | Command | What happens |
 |---|---|---|
-| 1 | \`/rasen:propose <idea>\` | Creates the change, drafts all artifacts in one pass |
-| 2 | \`/rasen:apply <name>\` | Implements the tasks, checking them off |
-| 3 | \`/rasen:verify <name>\` | Checks implementation against the artifacts (\`/rasen:verify-enhanced\` for the deeper multi-pass review) |
-| 4 | \`/rasen:sync <name>\` | Merges the change's delta specs into main specs |
-| 5 | \`/rasen:archive <name>\` | Closes the loop; the change becomes decision history |
+| 1 | \`rasen-propose <idea>\` | Creates the change, drafts all artifacts in one pass |
+| 2 | \`rasen-apply-change <name>\` | Implements the tasks, checking them off |
+| 3 | \`rasen-verify-change <name>\` | Checks implementation against the artifacts (\`rasen-verify-enhanced\` for the deeper multi-pass review) |
+| 4 | \`rasen-sync-specs <name>\` | Merges the change's delta specs into main specs |
+| 5 | \`rasen-archive-change <name>\` | Closes the loop; the change becomes decision history |
 
 **Choosing a variant** — route by situation:
-- Idea still fuzzy → \`/rasen:office-hours <topic>\` (structured design Q&A) or \`/rasen:explore\` (investigate, no code changes).
-- Want artifacts one at a time with review between → \`/rasen:new <name>\`, then \`/rasen:continue <name>\`.
-- Several finished changes piled up → \`/rasen:bulk-archive\`.
-- Session running out of context mid-change → \`/rasen:handoff\` (writes a handoff document a fresh session resumes from).
+- Idea still fuzzy → \`rasen-office-hours-command <topic>\` (structured design Q&A) or \`rasen-explore\` (investigate, no code changes).
+- Want artifacts one at a time with review between → \`rasen-new-change <name>\`, then \`rasen-continue-change <name>\`.
+- Several finished changes piled up → \`rasen-bulk-archive-change\`.
+- Session running out of context mid-change → \`rasen-handoff\` (writes a handoff document a fresh session resumes from).
 
 ## Level 2 — Autonomous orchestration
 
 When the user wants Rasen to drive the loop instead of stepping manually:
 
-- **\`/rasen:auto <task>\`** — the default "do this for me": a LEAD agent classifies the task, picks a pipeline, and drives role agents (planner/implementer/reviewer/fixer/shipper) through it, pausing at gates for approval.
-- **\`/rasen:review-cycle <name>\`** — adversarial review loop over a change until findings run dry.
-- **\`/rasen:ship <name>\`** — finalize: commit, sync specs, archive.
-- **\`/rasen:goal <goal>\`** — goal-driven iteration (plan → iterate → report) toward a measurable target; for "make X faster/better" work rather than a defined feature.
-- **\`/rasen:retro\`** — retrospective over recent work.
+- **\`rasen-auto <task>\`** — the default "do this for me": a LEAD agent classifies the task, picks a pipeline, and drives role agents (planner/implementer/reviewer/fixer/shipper) through it, pausing at gates for approval.
+- **\`rasen-review-cycle <name>\`** — adversarial review loop over a change until findings run dry.
+- **\`rasen-ship <name>\`** — finalize: commit, sync specs, archive.
+- **\`rasen-goal <goal>\`** — goal-driven iteration (plan → iterate → report) toward a measurable target; for "make X faster/better" work rather than a defined feature.
+- **\`rasen-retro\`** — retrospective over recent work.
 
-Resuming and inspecting a run: \`rasen pipeline resume <change>\` shows a change's run-state (next/remaining stages); \`/rasen:auto\` picks up where it left off.
+Resuming and inspecting a run: \`rasen pipeline resume <change>\` shows a change's run-state (next/remaining stages); \`rasen-auto\` picks up where it left off.
 
 ## Level 3 — Advanced: pipelines, gates, and extension
 
@@ -87,7 +87,7 @@ For users who ask "can I change how the autonomous run works?" — yes, this is 
 - \`gate: true\` — a human approval pause point
 - optional \`condition\`, \`verifyPolicy\`, \`model\`, \`childPipeline\` (fan-out to child changes, see \`auto-decompose\`)
 
-A project-level pipeline with the same name as a built-in **overrides it** — that is how you customize \`/rasen:auto\`'s behavior for one repo. Verify with \`rasen pipeline show <name>\` that your file resolves and the DAG is what you meant.
+A project-level pipeline with the same name as a built-in **overrides it** — that is how you customize \`rasen-auto\`'s behavior for one repo. Verify with \`rasen pipeline show <name>\` that your file resolves and the DAG is what you meant.
 
 **Tune gates and roles.**
 - \`rasen/config.yaml\` → \`autopilot.gates: on|off\` — whether ordinary gates pause for approval (default on) or auto-approve.
@@ -95,7 +95,7 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 
 **Work across repositories.** Register other Rasen repos as stores (\`rasen store register <path>\`) or projects (\`rasen store add-project\`), then target them with \`--store <id>\` / \`--project <id>\` on workspace commands. \`rasen store list --json\` shows what's registered.
 
-**Adjust what's installed.** Profile controls WHICH workflows install; delivery (\`both\` / \`skills\`) controls HOW. Use \`rasen profile\` to edit the current selection, or \`rasen profile new/use/list\` to reuse named selections, then run \`rasen update\` to regenerate.
+**Adjust what's installed.** Profile controls WHICH workflows install. Use \`rasen profile\` to edit the current selection, or \`rasen profile new/use/list\` to reuse named selections, then run \`rasen update\` to regenerate.
 
 ## CLI quick reference
 
@@ -117,12 +117,12 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 
 - Project config: \`rasen/config.yaml\`. Machine state: \`~/.rasen\` (override with the \`RASEN_HOME\` environment variable).
 - Telemetry is anonymous (command name, version, anonymous UUID, OS/Node only). Opt out with \`RASEN_TELEMETRY=0\` or \`DO_NOT_TRACK=1\`; disabled automatically in CI.
-- Upstream coexistence: Rasen lives in its own namespaces (\`rasen\` binary, \`/rasen:*\`, \`rasen-*\` skills, \`rasen/\` workspace). An upstream OpenSpec install in the same project keeps working untouched; \`rasen migrate\` copies its legacy workspace into \`rasen/\` and never modifies the original.
+- Upstream coexistence: Rasen lives in its own namespaces (\`rasen\` binary, \`rasen-*\` skills, \`rasen/\` workspace). An upstream OpenSpec install in the same project keeps working untouched; \`rasen migrate\` copies its legacy workspace into \`rasen/\` and never modifies the original.
 
 ## Troubleshooting
 
 - **"Missing rasen/ directory"** — not initialized: \`rasen init\` (or \`rasen migrate\` if a legacy upstream OpenSpec workspace exists).
-- **Slash commands or skills missing/stale** — \`rasen update\`; if something specific is absent, check profile and delivery (a custom profile only installs its listed workflows).
+- **Skills missing/stale** — \`rasen update\`; if something specific is absent, check the profile (a custom profile only installs its listed workflows).
 - **Pipeline not found / wrong pipeline running** — \`rasen pipeline list\` to see resolution order; a project-level file shadows same-named built-ins.
 - **Environment looks broken** — \`rasen doctor\`.
 - Anything beyond this map: \`rasen <command> --help\` is authoritative for flags; \`rasen feedback\` files a bug.
@@ -134,14 +134,4 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 - Ground version/flag/state claims in actual CLI output; check \`--help\` before answering when unsure.
 - Keep answers short: the situation's flow, the one next action, and only the context needed to choose.
 - If the question reveals a missing or broken install, fix setup first (init/update/doctor) before routing to workflow commands.`;
-}
-
-export function getOpsxHelpCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Help',
-    description: 'Ask which Rasen command or flow fits your situation - from first-run onboarding to custom pipelines',
-    category: 'Workflow',
-    tags: ['workflow', 'help', 'guide', 'configuration'],
-    content: getHelpInstructions(),
-  };
 }

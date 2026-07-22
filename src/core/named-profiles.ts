@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 
-import { getGlobalConfigDir, type Delivery } from './global-config.js';
+import { getGlobalConfigDir } from './global-config.js';
 import { acquireFileLock, releaseFileLock } from './file-state.js';
 import { ALL_EXPERTS, ALL_WORKFLOWS, CORE_WORKFLOWS, QUALITY_FLOOR_EXPERTS } from './profiles.js';
 import {
@@ -39,7 +39,11 @@ const SUPPORTED_IMPORT_EXTENSIONS = new Set(['.json', '.yaml', '.yml']);
 const ProfileDefinitionSchema = z
   .object({
     version: z.literal(PROFILE_DEFINITION_VERSION),
-    delivery: z.enum(['both', 'skills']),
+    // The `delivery` dimension is retired (skills are the only delivery
+    // surface now). Accepted-but-ignored here so a profile file written by
+    // an older rasen release still parses without error; normalization
+    // below never re-emits it.
+    delivery: z.unknown().optional(),
     workflows: z.array(z.string()),
   })
   .strict();
@@ -61,7 +65,6 @@ function validateProfileMembership(
 
 export interface ProfileDefinition {
   version: typeof PROFILE_DEFINITION_VERSION;
-  delivery: Delivery;
   workflows: string[];
 }
 
@@ -150,7 +153,6 @@ export function normalizeProfileDefinition(
   const expanded = resolveWorkflowSelection(catalog, definition.workflows);
   return {
     version: PROFILE_DEFINITION_VERSION,
-    delivery: definition.delivery,
     workflows: expanded.map((workflow) => workflow.id),
   };
 }
@@ -354,12 +356,10 @@ export function deleteNamedProfile(name: string): void {
 }
 
 export function getBuiltinProfileDefinition(
-  name: (typeof BUILTIN_PROFILE_NAMES)[number],
-  delivery: Delivery
+  name: (typeof BUILTIN_PROFILE_NAMES)[number]
 ): ProfileDefinition {
   return {
     version: PROFILE_DEFINITION_VERSION,
-    delivery,
     // Experts share the unified workflow id space (D1) — `full` names every
     // built-in expert, `core` names the quality-floor set.
     workflows: name === 'full'
@@ -404,21 +404,18 @@ export function listUserProfiles(): AvailableProfile[] {
   });
 }
 
-export function listAvailableProfiles(delivery: Delivery): AvailableProfile[] {
+export function listAvailableProfiles(): AvailableProfile[] {
   const builtIns = BUILTIN_PROFILE_NAMES.map((name) => ({
     name,
     builtIn: true,
-    definition: getBuiltinProfileDefinition(name, delivery),
+    definition: getBuiltinProfileDefinition(name),
   }));
   return [...builtIns, ...listUserProfiles()];
 }
 
-export function resolveProfileDefinition(name: string, delivery: Delivery): ProfileDefinition {
+export function resolveProfileDefinition(name: string): ProfileDefinition {
   if (BUILTIN_PROFILE_NAMES.includes(name as (typeof BUILTIN_PROFILE_NAMES)[number])) {
-    return getBuiltinProfileDefinition(
-      name as (typeof BUILTIN_PROFILE_NAMES)[number],
-      delivery
-    );
+    return getBuiltinProfileDefinition(name as (typeof BUILTIN_PROFILE_NAMES)[number]);
   }
   assertValidUserProfileName(name);
   return readNamedProfile(name);

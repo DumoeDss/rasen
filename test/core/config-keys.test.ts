@@ -17,7 +17,6 @@ describe('config-keys registry', () => {
   describe('validateConfigKeyPath', () => {
     it('accepts known global keys', () => {
       expect(validateConfigKeyPath('profile', 'global').valid).toBe(true);
-      expect(validateConfigKeyPath('delivery', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('workflows', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('language', 'global').valid).toBe(true);
       expect(validateConfigKeyPath('proactive', 'global').valid).toBe(true);
@@ -201,7 +200,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-    it('assigns exactly 9 global-only, 3 store+project, and 14 all-three keys', () => {
+    it('assigns exactly 7 global-only, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -209,9 +208,10 @@ describe('config-keys registry', () => {
       const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
 
       // Guards a future key from silently missing the store scope.
-      // 8 = the 7 machine-level keys from the store-scope re-scope plus
-      // ui.pinnedSpaces (spaces-page pins, deliberately global-only).
-      expect(globalOnly.length).toBe(8);
+      // 7 = the 6 machine-level keys from the store-scope re-scope plus
+      // ui.pinnedSpaces (spaces-page pins, deliberately global-only) —
+      // `delivery` was the 8th global-only key before it was retired.
+      expect(globalOnly.length).toBe(7);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
       // Five wildcard families: featureFlags (global-only, the 9th global-only

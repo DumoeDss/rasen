@@ -375,8 +375,19 @@ export function validateWorkflowDirectory(
       });
     }
   }
+  // The command surface is retired (skills are the only delivery format
+  // now). A manifest may still declare `command:` (an older user package),
+  // but it is silently ignored rather than rejected — no command file is
+  // ever generated from it. Noted at warning severity so it stays visible
+  // without failing validation.
   if (manifest.command?.enabled) {
-    diagnostics.push(...duplicateDiagnostics(manifest.command.tags, 'command.tags'));
+    diagnostics.push({
+      code: 'command_field_ignored',
+      severity: 'warning',
+      message: `Workflow "${manifest.id}" declares a "command:" block; the command surface is retired and this is ignored (skills are the only delivery format).`,
+      path: 'command',
+      sourcePath,
+    });
   }
 
   if (diagnostics.some((item) => item.severity === 'error')) {
@@ -405,18 +416,6 @@ export function validateWorkflowDirectory(
         metadata: parsedSkill.frontmatter.metadata,
       },
     },
-    command: manifest.command?.enabled
-      ? {
-          content: {
-            id: manifest.id,
-            name: manifest.command.name,
-            description: parsedSkill.frontmatter.description,
-            category: manifest.command.category,
-            tags: [...manifest.command.tags],
-            body: parsedSkill.instructions,
-          },
-        }
-      : undefined,
     requires: {
       workflows: [...manifest.requires.workflows],
       skills: [...manifest.requires.skills],

@@ -5,7 +5,7 @@
  * and code quality metrics. Supports change-scoped, general, and global
  * retrospective modes. Report saved to the Rasen change directory.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const RETRO_INSTRUCTIONS = `Engineering retrospective — analyze what shipped, patterns, and learnings.
@@ -24,9 +24,9 @@ Use when: "retro", "retrospective", "what did we ship?", "weekly retro", "global
 
 Parse the input to determine retro scope:
 
-- \`/rasen:retro <change-name>\` → **Change-scoped**: analyze a specific change
-- \`/rasen:retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
-- \`/rasen:retro global\` → **Global**: cross-project retrospective
+- \`rasen-retro <change-name>\` → **Change-scoped**: analyze a specific change
+- \`rasen-retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
+- \`rasen-retro global\` → **Global**: cross-project retrospective
 
 ### 2A. Change-Scoped Retro
 
@@ -162,8 +162,8 @@ After writing the report:
 
 ## Integration Notes
 
-- Change-scoped retro is most valuable after \`/rasen:ship\` completes
-- The retro report is consumed by \`/rasen:archive\` as part of the archive quality summary
+- Change-scoped retro is most valuable after \`rasen-ship\` completes
+- The retro report is consumed by \`rasen-archive-change\` as part of the archive quality summary
 - General retro can be run weekly as a habit — suggest it proactively at the end of a work week`;
 
 export function getRetroCommandSkillTemplate(): SkillTemplate {
@@ -174,15 +174,5 @@ export function getRetroCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxRetroCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Retro',
-    description: 'Engineering retrospective — analyze what shipped, patterns, and learnings',
-    category: 'Workflow',
-    tags: ['workflow', 'retrospective', 'analysis'],
-    content: RETRO_INSTRUCTIONS,
   };
 }

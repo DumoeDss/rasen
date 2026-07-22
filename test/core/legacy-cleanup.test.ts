@@ -18,8 +18,7 @@ import {
   LEGACY_CONFIG_FILES,
   LEGACY_SLASH_COMMAND_PATHS,
 } from '../../src/core/legacy-cleanup.js';
-import { OPENSPEC_MARKERS } from '../../src/core/config.js';
-import { CommandAdapterRegistry } from '../../src/core/command-generation/registry.js';
+import { OPENSPEC_MARKERS, AI_TOOLS } from '../../src/core/config.js';
 
 describe('legacy-cleanup', () => {
   let testDir: string;
@@ -517,12 +516,12 @@ ${OPENSPEC_MARKERS.end}`);
       });
     });
 
-    it('should only include legacy tool IDs that are present in the CommandAdapterRegistry', () => {
-      const registeredTools = new Set(CommandAdapterRegistry.getAll().map(adapter => adapter.toolId));
+    it('should only include legacy tool IDs that are known adapted tools', () => {
+      const knownTools = new Set(AI_TOOLS.filter((tool) => tool.skillsDir).map((tool) => tool.value));
 
-      // Verify all legacy map entries correspond to known adapters
+      // Verify all legacy map entries correspond to known tools
       for (const tool of Object.keys(LEGACY_SLASH_COMMAND_PATHS)) {
-        expect(registeredTools.has(tool)).toBe(true);
+        expect(knownTools.has(tool)).toBe(true);
       }
 
       // Pi was never a pre-1.0 legacy tool

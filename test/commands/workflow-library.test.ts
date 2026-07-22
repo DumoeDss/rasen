@@ -75,7 +75,7 @@ describe('workflow command', () => {
     expect(output.status).toEqual([]);
     expect(output.workflows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'apply', source: 'built-in', commandId: 'apply', kind: 'task' }),
+        expect.objectContaining({ id: 'apply', source: 'built-in', kind: 'task' }),
       ])
     );
   });
@@ -124,8 +124,8 @@ describe('workflow command', () => {
     await runWorkflowCommand(['list', '--json']);
     expect(lastJson().workflows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'review', source: 'built-in', commandId: null, kind: 'expert' }),
-        expect.objectContaining({ id: 'qa-only', source: 'built-in', commandId: null, kind: 'expert' }),
+        expect.objectContaining({ id: 'review', source: 'built-in', kind: 'expert' }),
+        expect.objectContaining({ id: 'qa-only', source: 'built-in', kind: 'expert' }),
       ])
     );
   });

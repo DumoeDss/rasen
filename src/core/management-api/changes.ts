@@ -91,7 +91,10 @@ export async function buildChangeSummary(
 ): Promise<ChangeSummary> {
   const changeDir = path.join(changesDir, name);
   const context = loadChangeContext(root, name);
-  const status = formatChangeStatus(context);
+  // `nextWorkflows` is never read by `ChangeSummary` below (review round 1
+  // m1) — skip its two uncached fs reads (`getGlobalConfig`,
+  // `loadWorkflowCatalog`) per change in this per-request board loop.
+  const status = formatChangeStatus(context, { computeNextWorkflows: false });
 
   const taskProgress = await getTaskProgressForChange(changesDir, name, root);
   const workDir = home ? home.workDir(name) : null;

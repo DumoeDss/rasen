@@ -605,5 +605,38 @@ rules:
       expect(proposalIdx).toBeLessThan(specsIdx);
       expect(specsIdx).toBeLessThan(tasksIdx);
     });
+
+    it('defaults to computing nextWorkflows', () => {
+      const changeDir = path.join(tempDir, 'rasen', 'changes', 'my-change');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.mkdirSync(path.join(changeDir, 'specs'), { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'proposal.md'), '# Proposal');
+      fs.writeFileSync(path.join(changeDir, 'specs', 'test.md'), '# Spec');
+      fs.writeFileSync(path.join(changeDir, 'design.md'), '# Design');
+      fs.writeFileSync(path.join(changeDir, 'tasks.md'), '# Tasks');
+
+      const context = loadChangeContext(tempDir, 'my-change');
+      const status = formatChangeStatus(context);
+
+      expect(status.isComplete).toBe(true);
+      expect(status.nextWorkflows).toEqual([{ workflow: 'apply', reason: expect.any(String) }]);
+    });
+
+    it('skips nextWorkflows resolution when computeNextWorkflows is false (review round 1 m1)', () => {
+      const changeDir = path.join(tempDir, 'rasen', 'changes', 'my-change');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.mkdirSync(path.join(changeDir, 'specs'), { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'proposal.md'), '# Proposal');
+      fs.writeFileSync(path.join(changeDir, 'specs', 'test.md'), '# Spec');
+      fs.writeFileSync(path.join(changeDir, 'design.md'), '# Design');
+      fs.writeFileSync(path.join(changeDir, 'tasks.md'), '# Tasks');
+
+      const context = loadChangeContext(tempDir, 'my-change');
+      const status = formatChangeStatus(context, { computeNextWorkflows: false });
+
+      // Still complete/correct on every other field - only nextWorkflows is skipped.
+      expect(status.isComplete).toBe(true);
+      expect(status.nextWorkflows).toEqual([]);
+    });
   });
 });

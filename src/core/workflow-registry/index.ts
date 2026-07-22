@@ -43,7 +43,6 @@ export {
 } from './validator.js';
 export type {
   InvalidWorkflowRecord,
-  WorkflowCommandDefinition,
   WorkflowDefinition,
   WorkflowDependencySet,
   WorkflowDiagnostic,

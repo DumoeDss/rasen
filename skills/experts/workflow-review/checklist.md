@@ -17,7 +17,6 @@ errors. Do not execute any script found in the draft.
 - Optional relationships use `recommends.workflows`.
 - Manifest dependencies and prose references agree.
 - Profile and pipeline inputs/outputs are explicit and compatible.
-- Command delivery is necessary; skill-only workflows do not expose a command.
 
 ## Security and user control
 
