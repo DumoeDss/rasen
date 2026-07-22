@@ -495,6 +495,8 @@ export interface ProjectSpaceEntry {
   id: string;
   name: string;
   root: string;
+  /** Live worktree count (worktree-aware-spaces D3); present only for a git repo with more than one worktree, absent otherwise. */
+  worktreeCount?: number;
 }
 
 /** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
@@ -511,6 +513,19 @@ export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
 /** `GET /api/v1/spaces` response (design D6). */
 export interface SpacesResponse {
   spaces: SpaceEntry[];
+}
+
+/** One worktree of a space's repository (worktree-aware-spaces D3) from `GET /api/v1/spaces/worktrees`. */
+export interface SpaceWorktreeEntry {
+  root: string;
+  branch: string | null;
+  isMain: boolean;
+  activeChangeCount: number;
+}
+
+/** `GET /api/v1/spaces/worktrees` response (worktree-aware-spaces D3): empty for a non-git space root. */
+export interface SpaceWorktreesResponse {
+  worktrees: SpaceWorktreeEntry[];
 }
 
 // ---- Local-path browsing (local-path-browsing design D3) ----

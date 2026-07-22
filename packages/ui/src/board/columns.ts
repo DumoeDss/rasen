@@ -309,16 +309,22 @@ export function sessionsForTask(
 
 /**
  * Whether a session `cwd` lies within a member `root` (design D4/D7). Both are
- * server-emitted canonical paths, so this is a plain path-prefix test guarded
- * at a segment boundary (so `/repo` never matches `/repo-two`), tolerant of
- * either separator since the OS that emitted them is not known here. This is a
- * path comparison, not a space-token transform — it does not touch the opaque
- * id rule.
+ * expected to be server-emitted canonical paths using one separator
+ * convention, but this normalizes both to `/` throughout (not just at the
+ * match boundary) before comparing, as defense-in-depth against a source that
+ * has not been canonicalized (worktree-aware-spaces review M1: `git worktree
+ * list --porcelain` roots are forward-slash even on Windows, while a
+ * `canonicalizeExistingPath` `cwd` is backslash there — mixing the two is the
+ * exact shape that produced a silent always-0 count). Guarded at a segment
+ * boundary (so `/repo` never matches `/repo-two`). This is a path comparison,
+ * not a space-token transform — it does not touch the opaque id rule.
  */
 export function isUnderRoot(cwd: string, root: string): boolean {
-  if (cwd === root) return true;
-  const base = root.endsWith('/') || root.endsWith('\\') ? root.slice(0, -1) : root;
-  return cwd.startsWith(`${base}/`) || cwd.startsWith(`${base}\\`);
+  const normalizedCwd = cwd.replace(/\\/g, '/');
+  const normalizedRoot = root.replace(/\\/g, '/');
+  if (normalizedCwd === normalizedRoot) return true;
+  const base = normalizedRoot.endsWith('/') ? normalizedRoot.slice(0, -1) : normalizedRoot;
+  return normalizedCwd.startsWith(`${base}/`);
 }
 
 /**

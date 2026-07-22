@@ -36,6 +36,13 @@ export interface MachineHomeHealth {
   entry?: { path: string; project_id: string; home: string; last_seen: string };
   /** Registered paths that no longer exist on disk (machine-wide, not just this project). */
   dangling: Array<{ path: string; home: string }>;
+  /**
+   * Worktree-duplicate registry entries (worktree-aware-spaces D5), machine-
+   * wide: a live worktree-keyed entry whose main checkout is itself registered
+   * under the same `projectId` — a legacy per-worktree entry `rasen doctor --gc`
+   * collapses onto the main entry. Read-only reporting; empty when none.
+   */
+  worktreeDuplicates: Array<{ path: string; home: string; mainRoot: string }>;
   /** Set when the registry could not be read at all (e.g. corrupt registry.json,
    * MAJOR-2) - `registered`/`dangling` above then reflect no data, not a
    * verified "not registered" fact. */
@@ -95,6 +102,8 @@ export interface InspectRelationshipsInput {
   machineHomeEntry?: { path: string; projectId: string; home: string; lastSeen: string };
   /** Dangling machine-registry entries, machine-wide. */
   danglingProjectEntries?: Array<{ path: string; home: string }>;
+  /** Worktree-duplicate machine-registry entries, machine-wide (worktree-aware-spaces D5). */
+  worktreeDuplicateEntries?: Array<{ path: string; home: string; mainRoot: string }>;
   /** Set when the machine registry could not be read (MAJOR-2). */
   machineHomeError?: { message: string; fix?: string };
   /** Migratable-legacy-ephemera counts (read-only scan; never computed for an unregistered project). */
@@ -196,6 +205,7 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
         }
       : {}),
     dangling: input.danglingProjectEntries ?? [],
+    worktreeDuplicates: input.worktreeDuplicateEntries ?? [],
     ...(input.machineHomeError ? { error: input.machineHomeError } : {}),
     ...(input.migratableEphemera && input.migratableEphemera.total > 0
       ? {

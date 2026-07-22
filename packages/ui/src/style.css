@@ -428,6 +428,31 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .member-chip--selected { color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .member-chip--selected:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
 
+/* Worktrees panel (worktree-aware-spaces D4): a sibling chip strip of the
+   member chips, one chip per worktree with per-worktree facts. */
+.worktree-panel { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+.worktree-chip {
+  display: inline-flex; align-items: baseline; gap: var(--space-2);
+  font-size: var(--text-xs); font-weight: 600; padding: 5px var(--space-3);
+  border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); box-shadow: var(--ring);
+}
+.worktree-chip--selected { color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.worktree-chip--selected:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
+.worktree-chip__branch { font-family: var(--font-mono); font-weight: 500; opacity: 0.85; }
+.worktree-chip__main {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  border-radius: var(--radius-pill); padding: 1px 6px; box-shadow: var(--ring);
+}
+.worktree-chip__changes { font-weight: 500; opacity: 0.85; }
+.worktree-chip__sessions { color: var(--accent); font-weight: 700; }
+.worktree-chip--selected .worktree-chip__sessions { color: var(--accent-on); }
+
+/* Worktree count badge on a multi-worktree project row (spaces-ui spec). */
+.space-row__worktrees {
+  font-size: var(--text-xs); font-weight: 600; color: var(--muted);
+  background: var(--surface-muted); border-radius: var(--radius-pill); padding: 2px var(--space-2);
+}
+
 /* ═══ 11. Task detail — two-column drilldown ════════════════════════════ */
 .task-detail__loading, .task-detail__not-found { color: var(--muted); }
 .task-detail__back { display: inline-block; font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-4); }

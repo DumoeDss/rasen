@@ -16,6 +16,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     listRuns: vi.fn(),
     listSessions: vi.fn(),
     listSpaces: vi.fn(),
+    listSpaceWorktrees: vi.fn(),
     // createChange is intentionally left as the real implementation (it goes
     // through the single `request()` seam over `fetch`) so the 401 test
     // below exercises the actual markUnauthorized() wiring rather than a
@@ -77,6 +78,10 @@ describe('BoardPage', () => {
     // change/run path unchanged; tests that care set their own values.
     (client.listSessions as any).mockResolvedValue({ sessions: [] });
     (client.listSpaces as any).mockResolvedValue({ spaces: [] });
+    // The worktrees panel is project-space chrome the board fetches on load
+    // (worktree-aware-spaces D4). Default to a single-worktree inventory so no
+    // panel renders in existing tests; worktree tests set their own values.
+    (client.listSpaceWorktrees as any).mockResolvedValue({ worktrees: [] });
   });
 
   afterEach(() => {
@@ -552,6 +557,155 @@ describe('BoardPage', () => {
       const filteredNames = columnNames().flat();
       expect(filteredNames).toContain('ui-redesign');
       expect(filteredNames).not.toContain('fix-login');
+    });
+  });
+
+  describe('worktrees panel (worktree-aware-spaces D4 / board-ui spec)', () => {
+    async function mountAtSpace(path: string) {
+      window.history.pushState({}, '', path);
+      await act(async () => {
+        render(
+          <LocationProvider>
+            <BoardPage />
+          </LocationProvider>,
+          container
+        );
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+    }
+
+    const twoWorktrees = {
+      worktrees: [
+        { root: '/repo/main', branch: 'main', isMain: true, activeChangeCount: 1 },
+        { root: '/repo/feat-x', branch: 'feat/x', isMain: false, activeChangeCount: 2 },
+      ],
+    };
+
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    it('renders a chip per worktree with facts and a live-session count, defaulting to the main checkout', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSpaceWorktrees as any).mockResolvedValue(twoWorktrees);
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          {
+            session: { id: 's1', kind: 'auto', task: 'work', cwd: '/repo/feat-x/sub', state: 'running', startedAt: 0, lastOutputAt: 0 },
+            runState: { kind: 'absent' },
+          },
+        ],
+      });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      const panel = container.querySelector('[data-testid="worktree-panel"]');
+      expect(panel).not.toBeNull();
+      const chips = Array.from(container.querySelectorAll('[data-testid="worktree-chip"]'));
+      expect(chips).toHaveLength(2);
+      // Facts: branch + active-change count on each chip.
+      expect(chips[1]!.textContent).toContain('feat/x');
+      expect(chips[1]!.textContent).toContain('2 changes');
+      // Default source is the main checkout — its chip is selected.
+      expect(chips[0]!.classList.contains('worktree-chip--selected')).toBe(true);
+      expect(chips[1]!.classList.contains('worktree-chip--selected')).toBe(false);
+      // The live session (cwd under /repo/feat-x) counts on the feat/x chip only.
+      expect(chips[1]!.querySelector('[data-testid="worktree-sessions"]')!.textContent).toContain('1');
+      expect(chips[0]!.querySelector('[data-testid="worktree-sessions"]')).toBeNull();
+      // Default data source: no `?wt=`, so changes/runs use the space selector.
+      expect(client.listChanges).toHaveBeenCalledWith('project:proj_x');
+    });
+
+    it('counts a live session under a worktree even when the session cwd and the worktree root use different path separators (Windows: canonical backslash cwd vs. raw git-porcelain forward-slash root)', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      // Worktree roots as raw `git worktree list --porcelain` emits them — forward
+      // slash even on Windows — the real cross-source shape review finding M1
+      // covers as defense-in-depth beyond the server-side canonicalization fix.
+      (client.listSpaceWorktrees as any).mockResolvedValue({
+        worktrees: [
+          { root: 'E:/repo/main', branch: 'main', isMain: true, activeChangeCount: 1 },
+          { root: 'E:/repo/feat-x', branch: 'feat/x', isMain: false, activeChangeCount: 2 },
+        ],
+      });
+      (client.listSessions as any).mockResolvedValue({
+        sessions: [
+          {
+            // Session cwd as `canonicalizeExistingPath` emits it on Windows: backslash.
+            session: { id: 's1', kind: 'auto', task: 'work', cwd: 'E:\\repo\\feat-x\\sub', state: 'running', startedAt: 0, lastOutputAt: 0 },
+            runState: { kind: 'absent' },
+          },
+        ],
+      });
+
+      await mountAtSpace('/p/proj_x/board');
+
+      const chips = Array.from(container.querySelectorAll('[data-testid="worktree-chip"]'));
+      expect(chips).toHaveLength(2);
+      // The live session (cwd under E:\repo\feat-x, i.e. E:/repo/feat-x) counts on
+      // the feat/x chip only, despite the separator mismatch between the two
+      // sources — this is the exact shape review finding M1 found always
+      // undercounts to 0 without separator-tolerant attribution.
+      expect(chips[1]!.querySelector('[data-testid="worktree-sessions"]')!.textContent).toContain('1');
+      expect(chips[0]!.querySelector('[data-testid="worktree-sessions"]')).toBeNull();
+    });
+
+    it('switching to a worktree re-scopes the board fetch via ?wt= without changing the space route prefix', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSpaceWorktrees as any).mockResolvedValue(twoWorktrees);
+
+      await mountAtSpace('/p/proj_x/board');
+      (client.listChanges as any).mockClear();
+
+      const chips = Array.from(container.querySelectorAll('[data-testid="worktree-chip"]'));
+      await act(async () => {
+        (chips[1] as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicrotasks();
+      });
+
+      // The route gained ?wt= but kept the project space prefix.
+      expect(window.location.pathname).toBe('/p/proj_x/board');
+      expect(decodeURIComponent(window.location.search)).toBe('?wt=/repo/feat-x');
+      // Changes now fetched with the worktree's own root selector.
+      expect(client.listChanges).toHaveBeenCalledWith('project:/repo/feat-x');
+      // Sessions stay space-wide.
+      expect(client.listSessions).toHaveBeenCalledWith('project:proj_x');
+    });
+
+    it('restores the selected worktree from ?wt= on reload', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSpaceWorktrees as any).mockResolvedValue(twoWorktrees);
+
+      await mountAtSpace('/p/proj_x/board?wt=%2Frepo%2Ffeat-x');
+
+      const chips = Array.from(container.querySelectorAll('[data-testid="worktree-chip"]'));
+      expect(chips[1]!.classList.contains('worktree-chip--selected')).toBe(true);
+      expect(chips[0]!.classList.contains('worktree-chip--selected')).toBe(false);
+      expect(client.listChanges).toHaveBeenCalledWith('project:/repo/feat-x');
+    });
+
+    it('renders no panel for a single-worktree project or a store space', async () => {
+      (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSpaceWorktrees as any).mockResolvedValue({
+        worktrees: [{ root: '/repo/main', branch: 'main', isMain: true, activeChangeCount: 0 }],
+      });
+
+      await mountAtSpace('/p/proj_x/board');
+      expect(container.querySelector('[data-testid="worktree-panel"]')).toBeNull();
+
+      window.history.pushState({}, '', '/');
+      container.innerHTML = '';
+      // A store space never fetches the worktree inventory.
+      (client.listSpaceWorktrees as any).mockClear();
+      await mountAtSpace('/s/store_x/board');
+      expect(container.querySelector('[data-testid="worktree-panel"]')).toBeNull();
+      expect(client.listSpaceWorktrees).not.toHaveBeenCalled();
     });
   });
 

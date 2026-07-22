@@ -25,6 +25,7 @@ import type {
   SessionDetailResponse,
   SessionsResponse,
   SpacesResponse,
+  SpaceWorktreesResponse,
   StatusResponse,
   SubmitChangeRequest,
   SubmitChangeResponse,
@@ -193,6 +194,15 @@ export function listArchive(space?: string): Promise<ArchiveResponse> {
 /** Every addressable planning space (planning-space-addressing design D6), for the space switcher. */
 export function listSpaces(): Promise<SpacesResponse> {
   return request<SpacesResponse>('/api/v1/spaces');
+}
+
+/**
+ * The live worktree inventory for a planning space (worktree-aware-spaces D3):
+ * each worktree's root, branch, main flag, and active-change count. Non-git
+ * space roots answer an empty inventory. No selector = launch-project fallback.
+ */
+export function listSpaceWorktrees(space?: string): Promise<SpaceWorktreesResponse> {
+  return request<SpaceWorktreesResponse>(`/api/v1/spaces/worktrees${spaceQuery(space)}`);
 }
 
 /**
