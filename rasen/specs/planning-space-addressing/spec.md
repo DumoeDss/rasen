@@ -114,7 +114,7 @@ The management API SHALL provide `GET /api/v1/spaces` returning every addressabl
 
 ### Requirement: Worktree inventory is derived live from git and never persisted
 
-The management API SHALL provide `GET /api/v1/spaces/worktrees` answering for a space selector (resolved with the same rules and error contract as every other space-parameterized endpoint): the live worktree inventory of the resolved space root, derived from `git worktree list` at read time. Each inventory entry SHALL report the worktree's absolute root, its checked-out branch (or that it is detached), whether it is the main checkout, and the count of active changes in that worktree's own planning directory using the same active-change definition as the changes listing. A resolved root that is not a git repository SHALL yield an empty inventory, not an error. The inventory SHALL never be persisted: answering the request writes no registry, config, or directory state, and a worktree added or removed on disk is reflected on the next read without any repair step.
+The management API SHALL provide `GET /api/v1/spaces/worktrees` answering for a space selector (resolved with the same rules and error contract as every other space-parameterized endpoint): the live worktree inventory of the resolved space root, derived from `git worktree list` at read time. Each inventory entry SHALL report the worktree's absolute root, its checked-out branch (or that it is detached), whether it is the main checkout, and the count of active changes in that worktree's own planning directory using the same active-change definition as the changes listing. A resolved root that is not a git repository SHALL yield an empty inventory, not an error. The inventory SHALL never be persisted: answering the request writes no registry, config, or directory state, and a worktree added or removed on disk is reflected on the next read without any repair step. The server MAY reuse a probe result across reads within a short process-local freshness window (in-memory only, dying with the process), provided a worktree addition or removal invalidates the reuse immediately — structural staleness is never acceptable, while branch or commit staleness within the window is.
 
 #### Scenario: Inventory lists main and linked worktrees with per-worktree facts
 
@@ -130,4 +130,9 @@ The management API SHALL provide `GET /api/v1/spaces/worktrees` answering for a 
 
 - **WHEN** a worktree is removed on disk after a client fetched an inventory that included it
 - **THEN** the next inventory read no longer lists it, and no registry or gc step was required
+
+#### Scenario: Repeated reads within the freshness window reuse one probe
+
+- **WHEN** multiple inventory reads for one space arrive within the server's short freshness window and no worktree was added or removed
+- **THEN** they are answered from one underlying git probe, and a worktree added or removed during the window is still reflected on the very next read
 
