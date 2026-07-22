@@ -13,7 +13,7 @@ import { pathIsDirectory } from '../file-state.js';
 import { readStorePointer } from '../project-config.js';
 import { readProjectRegistryState, type ProjectRegistryEntryState } from '../project-registry.js';
 import { listRegisteredStores } from '../store/registry.js';
-import { gitWorktreeList } from '../store/git.js';
+import { cachedGitWorktreeList } from '../store/worktree-inventory-cache.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type {
@@ -83,9 +83,11 @@ export async function handleSpaces(): Promise<SpacesResponse> {
   // One live worktree inventory per group, run concurrently: it both picks the
   // main-checkout row for a duplicate group and supplies the badge count. A
   // failure (non-git / git-unavailable) just omits the count. Read-only.
+  // Cached (TTL + worktree-add/remove mtime invalidation + in-flight
+  // coalescing): uncached, every page load spawned one git.exe per project.
   const projectSpaces = await Promise.all(
     [...groups.values()].map(async (group): Promise<ProjectSpaceEntry> => {
-      const inventory = await gitWorktreeList(group[0].root);
+      const inventory = await cachedGitWorktreeList(group[0].root);
       let chosen = group[0];
       if (inventory) {
         const main = inventory.find((worktree) => worktree.isMain);
@@ -153,7 +155,7 @@ export async function handleSpaces(): Promise<SpacesResponse> {
  * on disk, still normalizing separators.
  */
 export async function handleSpaceWorktrees(root: string): Promise<SpaceWorktreesResponse> {
-  const inventory = await gitWorktreeList(root);
+  const inventory = await cachedGitWorktreeList(root);
   if (!inventory) {
     return { worktrees: [] };
   }
