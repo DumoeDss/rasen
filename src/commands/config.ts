@@ -23,7 +23,11 @@ import {
   validateConfigValue,
   type ConfigScope,
 } from '../core/config-keys.js';
-import { resolveEffectiveConfig, type EffectiveConfigEntry } from '../core/effective-config.js';
+import {
+  resolveConfigStoreLayer,
+  resolveEffectiveConfig,
+  type EffectiveConfigEntry,
+} from '../core/effective-config.js';
 import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from '../core/project-config.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
@@ -129,12 +133,14 @@ function formatSetDisplayValue(value: unknown): string {
 }
 
 /** Non-TTY no-arg `rasen config`: the effective view, one line per registered key, then exit 0. */
-function printEffectiveConfigView(): void {
+async function printEffectiveConfigView(): Promise<void> {
   const locale = getCliLocale();
   const ui = getConfigEditorMessages(locale);
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
+  const storeLayer = await resolveConfigStoreLayer(projectRoot);
   const entries = resolveEffectiveConfig({
     projectRoot,
+    store: storeLayer,
     reporter: createConfigDiagnosticReporter(locale),
   });
 
@@ -176,7 +182,12 @@ function buildEditorChoice(
     };
   }
 
-  const isProjectOnly = definition.scopes.length === 1 && definition.scopes[0] === 'project';
+  // "Project-only" for the EDITOR's write targets means: settable at project
+  // scope but NOT global. The `store` scope is not a CLI write target (W1
+  // Non-Goal), so a store+project key (e.g. `schema`) is still edited at
+  // project scope, exactly like a project-only key.
+  const isProjectOnly =
+    definition.scopes.includes('project') && !definition.scopes.includes('global');
   if (isProjectOnly && !projectRoot) {
     return {
       value: definition.key,
@@ -199,8 +210,14 @@ async function editConfigEntry(
   const ui = getConfigEditorMessages(locale);
   const definition = entry.definition;
 
+  // The editor writes to global or project only — `store` is not a CLI write
+  // target in W1 (design Non-Goal). A key settable at BOTH global and project
+  // prompts for which; a project-settable-but-not-global key (project-only or
+  // store+project) writes to project; everything else writes to global.
+  const settableGlobal = definition.scopes.includes('global');
+  const settableProject = definition.scopes.includes('project');
   let scope: ConfigScope;
-  if (definition.scopes.length === 2 && projectRoot) {
+  if (settableGlobal && settableProject && projectRoot) {
     scope = await inquirer.select<ConfigScope>({
       message: ui.scopePrompt(definition.key),
       choices: [
@@ -208,7 +225,7 @@ async function editConfigEntry(
         { value: 'global', name: ui.globalScope },
       ],
     });
-  } else if (definition.scopes.includes('project') && projectRoot) {
+  } else if (settableProject && projectRoot) {
     scope = 'project';
   } else {
     scope = 'global';
@@ -302,11 +319,13 @@ async function runInteractiveConfigEditor(): Promise<void> {
   const ui = getConfigEditorMessages(locale);
 
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
+  const storeLayer = await resolveConfigStoreLayer(projectRoot);
 
   try {
     for (;;) {
       const entries = resolveEffectiveConfig({
         projectRoot,
+        store: storeLayer,
         reporter: createConfigDiagnosticReporter(locale),
       });
 
@@ -388,7 +407,7 @@ export function registerConfigCommand(program: Command): void {
       if (process.stdout.isTTY) {
         await runInteractiveConfigEditor();
       } else {
-        printEffectiveConfigView();
+        await printEffectiveConfigView();
       }
     });
 

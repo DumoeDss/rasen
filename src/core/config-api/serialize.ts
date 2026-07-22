@@ -46,7 +46,7 @@ export function serializeConfigEntry(entry: EffectiveConfigEntry): WireConfigEnt
   const { definition } = entry;
   const warnings: string[] = [];
 
-  for (const scope of ['global', 'project'] as const) {
+  for (const scope of ['global', 'store', 'project'] as const) {
     const scopeValue = entry.scopeValues[scope];
     if (scopeValue === undefined || !definition.scopes.includes(scope)) continue;
     const error = validateConfigValue(definition, scopeValue);

@@ -392,6 +392,8 @@ export type ModelSource =
   | 'agent'
   | 'project-role'
   | 'project-default'
+  | 'store-role'
+  | 'store-default'
   | 'global-role'
   | 'global-default'
   | 'default';
@@ -403,14 +405,19 @@ export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
 }
 
 /**
- * Project/global machine-config model layers, slotted below the pipeline
+ * Project/store/global machine-config model layers, slotted below the pipeline
  * `agents.<role>.model` role default and above the runtime's own default.
  * `roles` carries the per-role `models.roles.<role>` overrides at each
- * scope; `default`/`Default` name each scope's base `models.default`.
+ * scope; `default`/`Default` name each scope's base `models.default`. The
+ * store layer (`storeRoles`/`storeDefault`) sits between project and global,
+ * and applies only when the project inherits from a store (see
+ * `store-config-inheritance`).
  */
 export interface ModelConfigLayers {
   projectRoles?: Partial<Record<StageRole, string>>;
   projectDefault?: string;
+  storeRoles?: Partial<Record<StageRole, string>>;
+  storeDefault?: string;
   globalRoles?: Partial<Record<StageRole, string>>;
   globalDefault?: string;
 }
@@ -437,9 +444,11 @@ export function normalizeAgentRuntimeConfig(
  * 2. Pipeline `agents.<role>.model`.
  * 3. Project config `models.roles.<role>` (`modelLayers.projectRoles`).
  * 4. Project config `models.default` (`modelLayers.projectDefault`).
- * 5. Global config `models.roles.<role>` (`modelLayers.globalRoles`).
- * 6. Global config `models.default` (`modelLayers.globalDefault`).
- * 7. Runtime's own default (no model configured).
+ * 5. Store config `models.roles.<role>` (`modelLayers.storeRoles`).
+ * 6. Store config `models.default` (`modelLayers.storeDefault`).
+ * 7. Global config `models.roles.<role>` (`modelLayers.globalRoles`).
+ * 8. Global config `models.default` (`modelLayers.globalDefault`).
+ * 9. Runtime's own default (no model configured).
  *
  * A model id at any layer is an opaque string used as-is — no allow-list
  * rejection. `modelLayers` is optional so existing two-argument call sites
@@ -462,6 +471,7 @@ export function resolveStageRuntimeConfig(
     stage.effort !== undefined;
 
   const projectRoleModel = stage.role ? modelLayers?.projectRoles?.[stage.role] : undefined;
+  const storeRoleModel = stage.role ? modelLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleModel = stage.role ? modelLayers?.globalRoles?.[stage.role] : undefined;
 
   let model: string | undefined;
@@ -478,6 +488,12 @@ export function resolveStageRuntimeConfig(
   } else if (modelLayers?.projectDefault !== undefined) {
     model = modelLayers.projectDefault;
     modelSource = 'project-default';
+  } else if (storeRoleModel !== undefined) {
+    model = storeRoleModel;
+    modelSource = 'store-role';
+  } else if (modelLayers?.storeDefault !== undefined) {
+    model = modelLayers.storeDefault;
+    modelSource = 'store-default';
   } else if (globalRoleModel !== undefined) {
     model = globalRoleModel;
     modelSource = 'global-role';
@@ -539,6 +555,8 @@ export interface ResolvedStageHandoffConfig {
     | 'pipeline'
     | 'project-role'
     | 'project-config'
+    | 'store-role'
+    | 'store-config'
     | 'global-role'
     | 'global-config'
     | 'preset'
@@ -546,15 +564,19 @@ export interface ResolvedStageHandoffConfig {
 }
 
 /**
- * Project/global config-layer threshold values, slotted below pipeline
- * declarations and above the model-preset layer. `projectRoles`/`globalRoles`
- * carry the per-role `handoff.roles.<role>` overrides at each scope — a
- * role-specific value wins over that scope's scalar threshold.
+ * Project/store/global config-layer threshold values, slotted below pipeline
+ * declarations and above the model-preset layer. `projectRoles`/`storeRoles`/
+ * `globalRoles` carry the per-role `handoff.roles.<role>` overrides at each
+ * scope — a role-specific value wins over that scope's scalar threshold. The
+ * store layer sits between project and global, and applies only when the
+ * project inherits from a store (see `store-config-inheritance`).
  */
 export interface HandoffConfigLayers {
   projectThreshold?: ThresholdValue;
+  storeThreshold?: ThresholdValue;
   globalThreshold?: ThresholdValue;
   projectRoles?: Partial<Record<StageRole, ThresholdValue>>;
+  storeRoles?: Partial<Record<StageRole, ThresholdValue>>;
   globalRoles?: Partial<Record<StageRole, ThresholdValue>>;
 }
 
@@ -567,11 +589,13 @@ export interface HandoffConfigLayers {
  * 3. Pipeline-level `handoff`.
  * 4. Project config `handoff.roles[<stage role>]` — threshold ONLY.
  * 5. Project config `handoff.threshold` — threshold ONLY.
- * 6. Global config `handoff.roles[<stage role>]` — threshold ONLY.
- * 7. Global config `handoff.threshold` — threshold ONLY.
- * 8. Model preset (the suggested `handoffThreshold` of the preset matching the
+ * 6. Store config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 7. Store config `handoff.threshold` — threshold ONLY.
+ * 8. Global config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 9. Global config `handoff.threshold` — threshold ONLY.
+ * 10. Model preset (the suggested `handoffThreshold` of the preset matching the
  *    stage's resolved model, per `resolveStageRuntimeConfig`) — threshold ONLY.
- * 9. Built-in defaults.
+ * 11. Built-in defaults.
  *
  * `source` names the layer that supplied the resolved THRESHOLD specifically
  * (provenance-first, in this same precedence order), so callers can report
@@ -595,6 +619,7 @@ export function resolveStageHandoffConfig(
   const pipelineHandoff = pipeline.handoff;
   const roleThreshold = stage.role ? pipelineHandoff?.roles?.[stage.role] : undefined;
   const projectRoleThreshold = stage.role ? configLayers?.projectRoles?.[stage.role] : undefined;
+  const storeRoleThreshold = stage.role ? configLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleThreshold = stage.role ? configLayers?.globalRoles?.[stage.role] : undefined;
   const presetThreshold = resolveModelPreset(
     resolveStageRuntimeConfig(stage, pipeline, modelLayers).model
@@ -606,6 +631,8 @@ export function resolveStageHandoffConfig(
     pipelineHandoff?.threshold ??
     projectRoleThreshold ??
     configLayers?.projectThreshold ??
+    storeRoleThreshold ??
+    configLayers?.storeThreshold ??
     globalRoleThreshold ??
     configLayers?.globalThreshold ??
     presetThreshold ??
@@ -643,17 +670,21 @@ export function resolveStageHandoffConfig(
             ? 'project-role'
             : configLayers?.projectThreshold !== undefined
               ? 'project-config'
-              : globalRoleThreshold !== undefined
-                ? 'global-role'
-                : configLayers?.globalThreshold !== undefined
-                  ? 'global-config'
-                  : presetThreshold !== undefined
-                    ? 'preset'
-                    : hasFields(stageHandoff)
-                      ? 'stage'
-                      : hasFields(pipelineHandoff)
-                        ? 'pipeline'
-                        : 'default';
+              : storeRoleThreshold !== undefined
+                ? 'store-role'
+                : configLayers?.storeThreshold !== undefined
+                  ? 'store-config'
+                  : globalRoleThreshold !== undefined
+                    ? 'global-role'
+                    : configLayers?.globalThreshold !== undefined
+                      ? 'global-config'
+                      : presetThreshold !== undefined
+                        ? 'preset'
+                        : hasFields(stageHandoff)
+                          ? 'stage'
+                          : hasFields(pipelineHandoff)
+                            ? 'pipeline'
+                            : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
 }

@@ -1,5 +1,15 @@
 # rasen
 
+## Unreleased
+
+### Added
+
+- **Store configuration scope** — a store becomes a third configuration scope between project and global. The effective-config resolution chain is now `env > project > store > global > default` across every layered resolver (effective config, handoff thresholds, model config, autopilot gate/selection policy, pipeline stage handoff/model resolution, and the `rasen agent context` threshold probe), and every source vocabulary gains `store`. The config-key registry's store-capable keys (the `autopilot.*`, `handoff.*`, `models.*`, `schema`, and `archive.*` keys) are now settable in `store` scope, and the config HTTP API accepts `?space=store:<id>` addressing with `scope: "store"` writes.
+
+### Changed
+
+- **Behavior change — a `store:` pointer beside local planning now inherits configuration.** A project whose `rasen/config.yaml` declares `store: <id>` while keeping its own local planning shape (a `rasen/specs/` or `rasen/changes/` directory) previously warned that the declaration was *ignored*; it now means the project's planning stays local while its configuration inherits from that store (one hop, no transitivity). The root-selection notice wording changed accordingly (inheriting when the store is registered, an inactive-pointer warning when it is not). To keep the old effective values, remove the `store:` line or set the affected keys at project scope — the project layer always wins over the store layer.
+
 ## 0.1.4
 
 ### Added

@@ -28,7 +28,8 @@ export interface PipelineMessageValues {
   complete: undefined;
   recorded: undefined;
   bareWorkerLabel: undefined;
-  ignoredStorePointerWarning: { path: string; store: string };
+  inheritingStoreConfigNotice: { path: string; store: string };
+  inactiveStorePointerWarning: { path: string; store: string };
   selectedStoreRoot: { store: string; path: string };
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
@@ -116,7 +117,8 @@ export const PIPELINE_MESSAGE_KEYS = [
   'complete',
   'recorded',
   'bareWorkerLabel',
-  'ignoredStorePointerWarning',
+  'inheritingStoreConfigNotice',
+  'inactiveStorePointerWarning',
   'selectedStoreRoot',
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
@@ -275,8 +277,14 @@ export function formatPipelineRootSelectionNotice(
   locale: CliLocale = getCliLocale()
 ): string {
   const messages = getPipelineMessages(locale);
-  if (notice.kind === 'ignored-store-pointer') {
-    return messages.format('ignoredStorePointerWarning', {
+  if (notice.kind === 'inheriting-store-config') {
+    return messages.format('inheritingStoreConfigNotice', {
+      path: notice.filePath,
+      store: notice.storeId,
+    });
+  }
+  if (notice.kind === 'inactive-store-pointer') {
+    return messages.format('inactiveStorePointerWarning', {
       path: notice.filePath,
       store: notice.storeId,
     });

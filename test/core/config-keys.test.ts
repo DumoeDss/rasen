@@ -55,14 +55,30 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('autopilot.selection', 'global').valid).toBe(true);
     });
 
-    it('accepts the per-role handoff and model keys at both scopes', () => {
-      for (const scope of ['global', 'project'] as const) {
+    it('accepts the per-role handoff and model keys at all three scopes', () => {
+      for (const scope of ['global', 'store', 'project'] as const) {
         for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper']) {
           expect(validateConfigKeyPath(`handoff.roles.${role}`, scope).valid).toBe(true);
           expect(validateConfigKeyPath(`models.roles.${role}`, scope).valid).toBe(true);
         }
         expect(validateConfigKeyPath('models.default', scope).valid).toBe(true);
       }
+    });
+
+    it('accepts the store-capable keys at store scope', () => {
+      expect(validateConfigKeyPath('handoff.threshold', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('schema', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('archive.timing', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('archive.destination', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('autopilot.gates', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('autopilot.selection', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('models.default', 'store').valid).toBe(true);
+    });
+
+    it('rejects global-only keys and the featureFlags wildcard at store scope', () => {
+      expect(validateConfigKeyPath('profile', 'store').valid).toBe(false);
+      expect(validateConfigKeyPath('telemetry.enabled', 'store').valid).toBe(false);
+      expect(validateConfigKeyPath('featureFlags.someFlag', 'store').valid).toBe(false);
     });
 
     it('rejects unknown keys', () => {
@@ -157,15 +173,35 @@ describe('config-keys registry', () => {
     });
   });
 
+  describe('scope assignment', () => {
+    it('assigns exactly 8 global-only, 3 store+project, and 14 all-three keys', () => {
+      const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
+      const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
+      const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
+      const storeProject = nonWildcard.filter((def) => sorted(def) === 'project,store');
+      const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
+
+      // Guards a future key from silently missing the store scope.
+      expect(globalOnly.length).toBe(7);
+      expect(storeProject.length).toBe(3);
+      expect(allThree.length).toBe(14);
+      // Only featureFlags is a global-only wildcard; the 8th global-only key.
+      expect(CONFIG_KEY_REGISTRY.filter((def) => def.wildcard).length).toBe(1);
+    });
+  });
+
   describe('registry/schema round-trip consistency', () => {
     it('every non-wildcard registry key is accepted by its scope schema', () => {
       for (const def of CONFIG_KEY_REGISTRY) {
         if (def.wildcard) continue;
 
         for (const scope of def.scopes) {
+          // A store's config file is the same `rasen/config.yaml` shape a
+          // planning root uses, so store-scoped entries validate against the
+          // project config schema (design D4).
           const schema = scope === 'global' ? GlobalConfigSchema : ProjectConfigSchema;
           const skeleton: Record<string, unknown> = {};
-          if (scope === 'project') {
+          if (scope === 'project' || scope === 'store') {
             skeleton.schema = 'spec-driven';
           }
           setPath(skeleton, def.key, def.defaultValue === '' ? 'placeholder' : def.defaultValue);

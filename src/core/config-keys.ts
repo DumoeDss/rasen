@@ -16,7 +16,7 @@
 
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 
-export type ConfigScope = 'global' | 'project';
+export type ConfigScope = 'global' | 'store' | 'project';
 /**
  * 'threshold' is the dual-form handoff/reuse shape (see `ThresholdValue` in
  * src/core/model-presets.ts): a bare number in (0, 1], or the strict object
@@ -29,7 +29,7 @@ export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array'
 export interface ConfigKeyDefinition {
   /** Dot path, e.g. "handoff.threshold". For a wildcard entry, the family prefix (e.g. "featureFlags"). */
   key: string;
-  /** Scopes this key may be SET in. */
+  /** Scopes this key may be SET in (any subset of `global`, `store`, `project`). */
   scopes: ConfigScope[];
   type: ConfigValueType;
   /** Allowed values, required when type is 'enum'. */
@@ -174,7 +174,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   // ---- project scope ----
   {
     key: 'schema',
-    scopes: ['project'],
+    scopes: ['store', 'project'],
     type: 'string',
     defaultValue: '',
     description: 'The workflow schema this project uses (e.g. "spec-driven")',
@@ -182,7 +182,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'autopilot.gates',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'enum',
     enumValues: ['on', 'off'],
     defaultValue: 'on',
@@ -191,7 +191,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'autopilot.selection',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'enum',
     enumValues: ['classify', 'manual', 'compose'],
     defaultValue: 'manual',
@@ -200,7 +200,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'archive.timing',
-    scopes: ['project'],
+    scopes: ['store', 'project'],
     type: 'enum',
     enumValues: ['on-merge', 'in-ship'],
     defaultValue: 'on-merge',
@@ -209,7 +209,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'archive.destination',
-    scopes: ['project'],
+    scopes: ['store', 'project'],
     type: 'enum',
     enumValues: ['in-repo', 'external', 'prune'],
     defaultValue: 'in-repo',
@@ -219,7 +219,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   // ---- both scopes ----
   {
     key: 'handoff.threshold',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: 0.5,
     validate: validateThreshold,
@@ -229,7 +229,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.planner',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -238,7 +238,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.implementer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -247,7 +247,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.reviewer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -256,7 +256,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.fixer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -265,7 +265,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.shipper',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -274,7 +274,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.default',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -283,7 +283,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.planner',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -292,7 +292,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.implementer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -301,7 +301,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.reviewer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -310,7 +310,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.fixer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -319,7 +319,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.shipper',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,

@@ -4,11 +4,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 import {
+  resolveConfigStoreLayer,
   resolveEffectiveConfig,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
 } from '../../src/core/effective-config.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
+import { registerStore } from '../../src/core/store/registry.js';
 
 describe('effective-config', () => {
   let tempDir: string;
@@ -34,6 +36,12 @@ describe('effective-config', () => {
     const dir = path.join(projectRoot, 'rasen');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'config.yaml'), content);
+  }
+
+  /** A store's own config is the same `rasen/config.yaml` shape (design D2). */
+  function writeStoreConfig(storeRoot: string, content: string): string {
+    writeProjectConfig(storeRoot, content);
+    return storeRoot;
   }
 
   describe('resolveEffectiveConfig', () => {
@@ -126,6 +134,76 @@ describe('effective-config', () => {
       const entries = resolveEffectiveConfig();
       expect(entries.some((e) => e.definition.key === 'featureFlags')).toBe(false);
     });
+
+    it('project wins over store wins over global per key', () => {
+      saveGlobalConfig({ handoff: { threshold: 0.7 } } as never);
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'the-store'),
+        'schema: spec-driven\nhandoff:\n  threshold: 0.6\n'
+      );
+      const projectRoot = path.join(tempDir, 'member-project');
+      writeProjectConfig(projectRoot, 'schema: spec-driven\nhandoff:\n  threshold: 0.4\n');
+
+      const entries = resolveEffectiveConfig({
+        projectRoot,
+        store: { storeId: 'the-store', storeRoot },
+      });
+      const threshold = entries.find((e) => e.definition.key === 'handoff.threshold')!;
+
+      expect(threshold.value).toBe(0.4);
+      expect(threshold.source).toBe('project');
+      expect(threshold.scopeValues).toEqual({ global: 0.7, store: 0.6, project: 0.4 });
+    });
+
+    it('store value wins over global with source store when the project sets none', () => {
+      saveGlobalConfig({ models: { default: 'sonnet' } } as never);
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'model-store'),
+        'schema: spec-driven\nmodels:\n  default: opus\n'
+      );
+      const projectRoot = path.join(tempDir, 'model-member');
+      writeProjectConfig(projectRoot, 'schema: spec-driven\n');
+
+      const entries = resolveEffectiveConfig({
+        projectRoot,
+        store: { storeId: 'model-store', storeRoot },
+      });
+      const model = entries.find((e) => e.definition.key === 'models.default')!;
+
+      expect(model.value).toBe('opus');
+      expect(model.source).toBe('store');
+      expect(model.scopeValues.store).toBe('opus');
+    });
+
+    it('addresses a store root directly with the project layer absent', () => {
+      saveGlobalConfig({ handoff: { threshold: 0.7 } } as never);
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'direct-store'),
+        'schema: spec-driven\nhandoff:\n  threshold: 0.55\n'
+      );
+
+      const entries = resolveEffectiveConfig({ store: { storeId: 'direct-store', storeRoot } });
+      const threshold = entries.find((e) => e.definition.key === 'handoff.threshold')!;
+
+      expect(threshold.value).toBe(0.55);
+      expect(threshold.source).toBe('store');
+      expect(threshold.scopeValues.store).toBe(0.55);
+      expect(threshold.scopeValues.project).toBeUndefined();
+    });
+
+    it('never reads the store layer for a key that is not store-scoped', () => {
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'profile-store'),
+        'schema: spec-driven\nprofile: core\n'
+      );
+
+      const entries = resolveEffectiveConfig({ store: { storeId: 'profile-store', storeRoot } });
+      const profile = entries.find((e) => e.definition.key === 'profile')!;
+
+      // `profile` is global-only, so a store's `profile:` never contributes.
+      expect(profile.scopeValues.store).toBeUndefined();
+      expect(profile.source).toBe('default');
+    });
   });
 
   describe('resolveHandoffThresholdLayers', () => {
@@ -188,6 +266,16 @@ describe('effective-config', () => {
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('handoff.roles.reviewer'));
       warnSpy.mockRestore();
     });
+
+    it('populates the store threshold layers from a store root', () => {
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'handoff-store'),
+        'schema: spec-driven\nhandoff:\n  threshold: 0.45\n  roles:\n    reviewer: 0.7\n'
+      );
+      const layers = resolveHandoffThresholdLayers(null, storeRoot);
+      expect(layers.storeThreshold).toBe(0.45);
+      expect(layers.storeRoles).toEqual({ reviewer: 0.7 });
+    });
   });
 
   describe('resolveModelConfigLayers', () => {
@@ -238,6 +326,99 @@ describe('effective-config', () => {
       expect(layers.globalRoles).toEqual({ implementer: 'opus' });
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('models.roles.reviewer'));
       warnSpy.mockRestore();
+    });
+
+    it('populates the store model layers from a store root', () => {
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'model-layer-store'),
+        'schema: spec-driven\nmodels:\n  default: opus\n  roles:\n    reviewer: fable\n'
+      );
+      const layers = resolveModelConfigLayers(null, storeRoot);
+      expect(layers.storeDefault).toBe('opus');
+      expect(layers.storeRoles).toEqual({ reviewer: 'fable' });
+    });
+  });
+
+  describe('resolveConfigStoreLayer', () => {
+    let globalDataDir: string;
+
+    beforeEach(() => {
+      globalDataDir = path.join(tempDir, 'store-registry-data');
+      fs.mkdirSync(globalDataDir, { recursive: true });
+    });
+
+    function createPlanningRoot(dir: string, configContent: string): string {
+      fs.mkdirSync(path.join(dir, 'rasen', 'specs'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'rasen', 'config.yaml'), configContent);
+      return dir;
+    }
+
+    async function registerStoreAt(id: string): Promise<string> {
+      const root = createPlanningRoot(
+        path.join(tempDir, 'stores', id),
+        'schema: spec-driven\nhandoff:\n  threshold: 0.7\n'
+      );
+      await registerStore({ id, localPath: root, globalDataDir });
+      return root;
+    }
+
+    it('resolves the layer for a registered pointer beside local planning', async () => {
+      await registerStoreAt('team-store');
+      const projectRoot = createPlanningRoot(
+        path.join(tempDir, 'member-proj'),
+        'schema: spec-driven\nstore: team-store\n'
+      );
+      const layer = await resolveConfigStoreLayer(projectRoot, { globalDataDir });
+      expect(layer?.storeId).toBe('team-store');
+      expect(layer?.storeRoot).toBeTruthy();
+    });
+
+    it('returns null for a pointer with no local planning shape', async () => {
+      await registerStoreAt('team-store');
+      const pointerDir = path.join(tempDir, 'pointer-only');
+      fs.mkdirSync(path.join(pointerDir, 'rasen'), { recursive: true });
+      fs.writeFileSync(path.join(pointerDir, 'rasen', 'config.yaml'), 'store: team-store\n');
+      expect(await resolveConfigStoreLayer(pointerDir, { globalDataDir })).toBeNull();
+    });
+
+    it('returns null when there is no pointer', async () => {
+      const projectRoot = createPlanningRoot(
+        path.join(tempDir, 'no-pointer'),
+        'schema: spec-driven\n'
+      );
+      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toBeNull();
+    });
+
+    it('returns null for an unregistered store', async () => {
+      const projectRoot = createPlanningRoot(
+        path.join(tempDir, 'unregistered-member'),
+        'schema: spec-driven\nstore: nowhere\n'
+      );
+      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toBeNull();
+    });
+
+    it('returns null for a malformed pointer', async () => {
+      const projectRoot = createPlanningRoot(
+        path.join(tempDir, 'malformed-member'),
+        'schema: spec-driven\nstore: [a, b]\n'
+      );
+      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toBeNull();
+    });
+
+    it('returns null when the root IS a registered store with its own store field (no transitivity)', async () => {
+      const storeARoot = createPlanningRoot(
+        path.join(tempDir, 'stores', 'store-a'),
+        'schema: spec-driven\nstore: store-b\n'
+      );
+      await registerStore({ id: 'store-a', localPath: storeARoot, globalDataDir });
+      await registerStoreAt('store-b');
+      // Resolving store-a's OWN root: its `store: store-b` field is ignored.
+      expect(await resolveConfigStoreLayer(storeARoot, { globalDataDir })).toBeNull();
+    });
+
+    it('returns null when no projectRoot is given', async () => {
+      expect(await resolveConfigStoreLayer(null, { globalDataDir })).toBeNull();
+      expect(await resolveConfigStoreLayer(undefined, { globalDataDir })).toBeNull();
     });
   });
 });

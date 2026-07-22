@@ -795,6 +795,37 @@ describe('config command --scope project and promoted keys', () => {
     expect(printed.some((line) => line.includes('--help'))).toBe(true);
   });
 
+  it('renders an inherited store value with the store source label', async () => {
+    process.env.XDG_DATA_HOME = tempDir;
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = false;
+    const { registerStore, getGlobalDataDir } = await import('../../src/core/index.js');
+
+    const storeRoot = path.join(tempDir, 'the-store');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(storeRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nmodels:\n  default: opus\n'
+    );
+    await registerStore({ id: 'the-store', localPath: storeRoot, globalDataDir: getGlobalDataDir() });
+
+    const memberDir = path.join(tempDir, 'member');
+    fs.mkdirSync(path.join(memberDir, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(memberDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: the-store\n'
+    );
+    process.chdir(memberDir);
+
+    await runConfigCommand([]);
+
+    expect(process.exitCode).not.toBe(1);
+    const printed = consoleLogSpy.mock.calls.map(([line]) => String(line));
+    const modelLine = printed.find((line) => line.startsWith('models.default ='));
+    expect(modelLine).toBeDefined();
+    expect(modelLine).toContain('opus');
+    expect(modelLine).toContain('(store)');
+  });
+
   describe('reset/edit reject --scope project (M1)', () => {
     it('reset --scope project fails and does not touch the global config file', async () => {
       const { getGlobalConfigPath, saveGlobalConfig } = await import('../../src/core/global-config.js');

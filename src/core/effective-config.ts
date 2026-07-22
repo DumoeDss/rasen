@@ -14,7 +14,9 @@ import * as fs from 'node:fs';
 import { getNestedValue } from './config-schema.js';
 import { CONFIG_KEY_REGISTRY, type ConfigKeyDefinition } from './config-keys.js';
 import { getGlobalConfig, getGlobalConfigPath } from './global-config.js';
-import { readProjectConfig, type ProjectConfig } from './project-config.js';
+import { classifyOpenSpecDir, readProjectConfig, type ProjectConfig } from './project-config.js';
+import { listRegisteredStores, type RegisteredStoreEntry } from './store/registry.js';
+import type { StorePathOptions } from './store/foundation.js';
 import { isTelemetryEnvDisabled } from '../telemetry/index.js';
 import {
   thresholdSchema,
@@ -23,11 +25,93 @@ import {
   type ModelConfigLayers,
 } from './pipeline-registry/types.js';
 import { parseCliLocale } from '../utils/locale.js';
+import { FileSystemUtils } from '../utils/file-system.js';
+import * as path from 'node:path';
 import type { ConfigDiagnosticReporter } from './config-diagnostics.js';
 
 const STAGE_ROLES = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const satisfies readonly StageRole[];
 
-export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
+export type ConfigSource = 'default' | 'global' | 'store' | 'project' | 'env-override';
+
+/** The store contributing a project's inherited configuration layer (design D1). */
+export interface StoreConfigLayer {
+  storeId: string;
+  /** Canonical store root; its own `rasen/config.yaml` is the store layer. */
+  storeRoot: string;
+}
+
+/** Canonicalizes an existing path; falls back to `path.resolve` for a path not on disk. */
+function canonicalizeOrResolve(target: string): string {
+  try {
+    return FileSystemUtils.canonicalizeExistingPath(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/**
+ * True when `root` is itself one of the registered stores' roots (canonical,
+ * Windows-safe comparison). The no-transitivity guard shared by
+ * `resolveConfigStoreLayer` (rule 3 — a store root never inherits from its own
+ * `store:` field) and the root-selection notice, so the two can never disagree
+ * on the self-store case (design D5's notice/resolver-agree invariant).
+ */
+export function isRegisteredStoreRoot(
+  root: string,
+  stores: readonly RegisteredStoreEntry[]
+): boolean {
+  const canonicalRoot = canonicalizeOrResolve(root);
+  return stores.some(
+    (candidate) =>
+      candidate.type === 'store' && canonicalizeOrResolve(candidate.storeRoot) === canonicalRoot
+  );
+}
+
+/**
+ * Resolves the single store layer a project's configuration inherits from
+ * (design D1 of the store-config-scope change), or null when no inheritance
+ * edge is active. Rules, in order:
+ *  1. No `projectRoot` -> null.
+ *  2. `classifyOpenSpecDir(projectRoot)`: no local planning shape, no
+ *     `store:` pointer, or a malformed pointer -> null (a config-only pointer
+ *     repo needs no store layer — its root already resolves TO the store).
+ *  3. `projectRoot` is itself a registered store's root -> null. This makes
+ *     the no-transitivity rule mechanical (a store's own `store:` field is
+ *     ignored) and kills the self-pointing edge case.
+ *  4. The pointer names a registered store -> `{ storeId, storeRoot }`
+ *     (canonical); an unregistered store -> null (inheritance inactive).
+ *
+ * Async because the store registry read is async; the sync layer resolvers
+ * take the resolved store root/config as a parameter rather than repeating
+ * this read. Path comparisons are canonical (Windows-safe). `pathOptions`
+ * overrides the machine store-registry location for testing; it defaults to
+ * the real machine root.
+ */
+export async function resolveConfigStoreLayer(
+  projectRoot: string | null | undefined,
+  pathOptions: StorePathOptions = {}
+): Promise<StoreConfigLayer | null> {
+  if (!projectRoot) return null;
+
+  const { hasPlanningShape, pointer } = classifyOpenSpecDir(projectRoot);
+  if (!hasPlanningShape) return null;
+  if (pointer.malformed !== undefined || pointer.value === undefined) return null;
+
+  const stores = await listRegisteredStores(pathOptions);
+
+  // No-transitivity: a root that IS a registered store never inherits from
+  // its own `store:` declaration.
+  if (isRegisteredStoreRoot(projectRoot, stores)) {
+    return null;
+  }
+
+  const store = stores.find(
+    (candidate) => candidate.type === 'store' && candidate.id === pointer.value
+  );
+  if (!store) return null;
+
+  return { storeId: store.id, storeRoot: canonicalizeOrResolve(store.storeRoot) };
+}
 
 export interface EffectiveConfigEntry {
   definition: ConfigKeyDefinition;
@@ -36,12 +120,18 @@ export interface EffectiveConfigEntry {
   /** The highest-precedence layer that produced `value`. */
   source: ConfigSource;
   /** Raw per-layer values, before merge. */
-  scopeValues: { global?: unknown; project?: unknown };
+  scopeValues: { global?: unknown; store?: unknown; project?: unknown };
 }
 
 export interface ResolveEffectiveConfigOptions {
   /** Explicit project root; when omitted, only environment/global/default layers contribute. */
   projectRoot?: string;
+  /**
+   * The active store inheritance layer (design D1/D3): for a project context,
+   * the store it inherits from; for a store space, the store itself (with no
+   * `projectRoot`). Omitted or null means no store layer contributes.
+   */
+  store?: StoreConfigLayer | null;
   /** Optional locale-aware diagnostic sink supplied by a presentation layer. */
   reporter?: ConfigDiagnosticReporter;
 }
@@ -85,12 +175,17 @@ function readRawGlobalConfig(): Record<string, unknown> {
 }
 
 /**
- * Merges default + global + project + environment-override layers into
- * per-key effective values with source metadata, for every non-wildcard key
- * in the config-key registry. Precedence per key: env-override > project
- * (when project-scoped and a project root resolves) > global > default.
- * Pure and synchronous; safe to call with no project root (global-only
- * contexts resolve from environment, global, and default layers only).
+ * Merges default + global + store + project + environment-override layers
+ * into per-key effective values with source metadata, for every non-wildcard
+ * key in the config-key registry. Precedence per key: env-override > project
+ * (when project-scoped and a project root resolves) > store (when store-scoped
+ * and a store layer is active — see `resolveConfigStoreLayer`) > global >
+ * default. A layer contributes to a key only when the key's registry scopes
+ * include that layer's scope. Pure and synchronous; safe to call with no
+ * project root or store layer (global-only contexts resolve from environment,
+ * global, and default layers only). When a store space is addressed directly
+ * (`options.store` set with no `projectRoot`), the store's own config occupies
+ * the store layer and the project layer is empty (design D3).
  */
 export function resolveEffectiveConfig(
   options: ResolveEffectiveConfigOptions = {}
@@ -101,6 +196,13 @@ export function resolveEffectiveConfig(
     ? readProjectConfig(options.projectRoot, { reporter: options.reporter })
     : null;
   const projectConfigRecord = projectConfig as unknown as Record<string, unknown> | null;
+  // The store layer is the store's own `rasen/config.yaml`, read once and
+  // already resiliently validated by `readProjectConfig` (design D2) — no
+  // re-validation pass, unlike the raw global JSON read.
+  const storeConfig: ProjectConfig | null = options.store
+    ? readProjectConfig(options.store.storeRoot, { reporter: options.reporter })
+    : null;
+  const storeConfigRecord = storeConfig as unknown as Record<string, unknown> | null;
 
   const entries: EffectiveConfigEntry[] = [];
 
@@ -117,6 +219,10 @@ export function resolveEffectiveConfig(
     const mergedGlobalValue = definition.scopes.includes('global')
       ? getNestedValue(globalConfig, definition.key)
       : undefined;
+    const storeValue =
+      definition.scopes.includes('store') && storeConfigRecord
+        ? getNestedValue(storeConfigRecord, definition.key)
+        : undefined;
     const projectValue =
       definition.scopes.includes('project') && projectConfigRecord
         ? getNestedValue(projectConfigRecord, definition.key)
@@ -132,6 +238,9 @@ export function resolveEffectiveConfig(
     } else if (projectValue !== undefined) {
       value = projectValue;
       source = 'project';
+    } else if (storeValue !== undefined) {
+      value = storeValue;
+      source = 'store';
     } else if (rawGlobalValue !== undefined) {
       value = mergedGlobalValue;
       source = 'global';
@@ -144,18 +253,20 @@ export function resolveEffectiveConfig(
       definition,
       value,
       source,
-      scopeValues: { global: rawGlobalValue, project: projectValue },
+      scopeValues: { global: rawGlobalValue, store: storeValue, project: projectValue },
     });
   }
 
   return entries;
 }
 
-/** Threshold values from the project/global config layers, for `resolveStageHandoffConfig` and the `rasen agent context` probe. */
+/** Threshold values from the project/store/global config layers, for `resolveStageHandoffConfig` and the `rasen agent context` probe. */
 export interface HandoffThresholdLayers {
   projectThreshold?: ThresholdValue;
+  storeThreshold?: ThresholdValue;
   globalThreshold?: ThresholdValue;
   projectRoles?: Partial<Record<StageRole, ThresholdValue>>;
+  storeRoles?: Partial<Record<StageRole, ThresholdValue>>;
   globalRoles?: Partial<Record<StageRole, ThresholdValue>>;
 }
 
@@ -188,10 +299,12 @@ function validateGlobalHandoffRoles(
 }
 
 /**
- * Resolves the `handoff.threshold` project/global config layers, shared by
- * `resolveStageHandoffConfig` call sites (pipeline resolution) and
+ * Resolves the `handoff.threshold` project/store/global config layers, shared
+ * by `resolveStageHandoffConfig` call sites (pipeline resolution) and
  * `rasen agent context`'s threshold reporting, so the two consumers can
- * never drift on what "the configured threshold" means. Dual-form: a bare
+ * never drift on what "the configured threshold" means. The optional
+ * `storeRoot` (resolved via `resolveConfigStoreLayer`) contributes the store
+ * layer between project and global. Dual-form: a bare
  * fraction in (0, 1], or the absolute `{ remainingTokens: N }` headroom form
  * (validated via the same `thresholdSchema()` builder pipeline-registry
  * uses, so the two never drift on what a valid threshold looks like).
@@ -204,10 +317,15 @@ function validateGlobalHandoffRoles(
  * than silently reaching resolution as an unusable threshold.
  */
 export function resolveHandoffThresholdLayers(
-  projectRoot?: string | null
+  projectRoot?: string | null,
+  storeRoot?: string | null
 ): HandoffThresholdLayers {
   const globalConfig = getGlobalConfig();
   const projectConfig = projectRoot ? readProjectConfig(projectRoot) : null;
+  // The store config is the store root's own `rasen/config.yaml` — already
+  // resiliently validated by `readProjectConfig` (design D2), like the
+  // project layer, so it needs no re-validation pass.
+  const storeConfig = storeRoot ? readProjectConfig(storeRoot) : null;
 
   const rawGlobalThreshold = globalConfig.handoff?.threshold;
   let globalThreshold: ThresholdValue | undefined;
@@ -227,8 +345,10 @@ export function resolveHandoffThresholdLayers(
 
   return {
     projectThreshold: projectConfig?.handoff?.threshold,
+    storeThreshold: storeConfig?.handoff?.threshold,
     globalThreshold,
     projectRoles: projectConfig?.handoff?.roles,
+    storeRoles: storeConfig?.handoff?.roles,
     globalRoles: validateGlobalHandoffRoles(globalConfig.handoff?.roles),
   };
 }
@@ -267,20 +387,28 @@ function validateGlobalModelRoles(
 }
 
 /**
- * Resolves the `models.default`/`models.roles.<role>` project/global config
- * layers, sibling of `resolveHandoffThresholdLayers` for the per-agent model
- * axis. `readProjectConfig()` already drops invalid project model fields
+ * Resolves the `models.default`/`models.roles.<role>` project/store/global
+ * config layers, sibling of `resolveHandoffThresholdLayers` for the per-agent
+ * model axis. The optional `storeRoot` (resolved via `resolveConfigStoreLayer`)
+ * contributes the store layer between project and global.
+ * `readProjectConfig()` already drops invalid project/store model fields
  * resiliently (with a warning) during parsing; the global config's raw
  * `models` block (no schema gate on read) is re-validated here. A model id
  * at any layer is an opaque string used as-is — no allow-list rejection.
  */
-export function resolveModelConfigLayers(projectRoot?: string | null): ModelConfigLayers {
+export function resolveModelConfigLayers(
+  projectRoot?: string | null,
+  storeRoot?: string | null
+): ModelConfigLayers {
   const globalConfig = getGlobalConfig();
   const projectConfig = projectRoot ? readProjectConfig(projectRoot) : null;
+  const storeConfig = storeRoot ? readProjectConfig(storeRoot) : null;
 
   return {
     projectRoles: projectConfig?.models?.roles,
     projectDefault: projectConfig?.models?.default,
+    storeRoles: storeConfig?.models?.roles,
+    storeDefault: storeConfig?.models?.default,
     globalRoles: validateGlobalModelRoles(globalConfig.models?.roles),
     globalDefault: validateGlobalModelDefault(globalConfig.models?.default),
   };

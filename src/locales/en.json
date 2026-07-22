@@ -90,7 +90,8 @@
       "complete": "(complete)",
       "recorded": "recorded",
       "bareWorkerLabel": "role-only / bare label",
-      "ignoredStorePointerWarning": "Warning: {path} declares store '{store}', but this directory is a real Rasen root; the declaration is ignored.",
+      "inheritingStoreConfigNotice": "{path} declares store '{store}'; planning stays local and configuration inherits from that store.",
+      "inactiveStorePointerWarning": "Warning: {path} declares store '{store}', but no such store is registered; the declaration currently has no effect. Register it with rasen store register <path> --id {store}.",
       "selectedStoreRoot": "Using Rasen root: {store} ({path})",
       "selectedProjectRoot": "Using Rasen root: project {project} ({path})",
       "staleProfileWorkflowsWarning": "Warning: dropping unknown workflow id(s) from stored profile: {workflows}",
@@ -519,6 +520,7 @@
       "source": {
         "default": "default",
         "global": "global",
+        "store": "store",
         "project": "project",
         "env-override": "env-override"
       },

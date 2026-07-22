@@ -201,10 +201,10 @@ describe('declared store fallback (3.2)', () => {
     expect(fs.existsSync(path.join(subdir, 'rasen'))).toBe(false);
   });
 
-  it('keeps real-root stdout byte-identical when a pointer is present, with one warning', async () => {
+  it('keeps real-root stdout byte-identical when a pointer is present, with one notice', async () => {
     const realRepo = path.join(tempDir, 'real-repo');
     createOpenSpecRoot(realRepo);
-    const runs: Record<string, { stdout: string; warnings: number }> = {};
+    const runs: Record<string, { stdout: string; notices: number }> = {};
 
     for (const [label, config] of [
       ['without', 'schema: spec-driven\n'],
@@ -215,12 +215,15 @@ describe('declared store fallback (3.2)', () => {
       expect(result.exitCode).toBe(0);
       runs[label] = {
         stdout: result.stdout,
-        warnings: (result.stderr.match(/the declaration is ignored/g) ?? []).length,
+        // team-context is registered, so the both-present pointer now emits the
+        // inheriting-store-config notice (store-config-inheritance), not the old
+        // ignored-pointer warning.
+        notices: (result.stderr.match(/configuration inherits from that store/g) ?? []).length,
       };
     }
 
     expect(runs.with.stdout).toBe(runs.without.stdout);
-    expect(runs.without.warnings).toBe(0);
-    expect(runs.with.warnings).toBe(1);
+    expect(runs.without.notices).toBe(0);
+    expect(runs.with.notices).toBe(1);
   });
 });

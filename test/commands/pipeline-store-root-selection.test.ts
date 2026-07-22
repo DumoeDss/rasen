@@ -243,15 +243,17 @@ describe('pipeline command store root selection', () => {
   it.each([
     {
       locale: 'ja',
-      warning: 'でstore \'team-context\'が指定されていますが、このディレクトリは実体のあるRasenルートのため、この指定は無視されます。',
+      // team-context IS registered, so a `store:` pointer beside local planning
+      // now emits the inheriting-store-config notice (store-config-inheritance).
+      notice: "でstore 'team-context'が指定されています。プランニングはローカルのまま、設定はそのstoreから継承されます。",
     },
     {
       locale: 'zh-cn',
-      warning: " 声明了 Store 'team-context'，但此目录本身就是 Rasen 根目录；该声明已被忽略。",
+      notice: " 声明了 Store 'team-context'：规划保持本地，配置从该 Store 继承。",
     },
   ] as const)(
-    'localizes ignored store pointers and keeps JSON silent in $locale',
-    async ({ locale, warning }) => {
+    'localizes the inheriting store notice and keeps JSON silent in $locale',
+    async ({ locale, notice }) => {
       createOpenSpecRoot(appRepo);
       const configPath = path.join(appRepo, 'rasen', 'config.yaml');
       fs.writeFileSync(
@@ -266,7 +268,9 @@ describe('pipeline command store root selection', () => {
         env: localizedEnv,
       });
       expect(human.exitCode).toBe(0);
-      expect(human.stderr).toContain(`${configPath}${warning}`);
+      expect(human.stderr).toContain(`${configPath}${notice}`);
+      // No English leakage, and the old ignored-pointer wording is gone.
+      expect(human.stderr).not.toContain('configuration inherits from that store');
       expect(human.stderr).not.toContain('the declaration is ignored');
 
       const json = await runCLI(['pipeline', 'list', '--json'], {

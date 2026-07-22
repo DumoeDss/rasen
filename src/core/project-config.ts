@@ -1063,7 +1063,7 @@ export function resolveArchiveDestinationValue(
 /** The resolved autopilot gate policy plus which layer produced it. */
 export interface ResolvedGatePolicy {
   effective: AutopilotGatePolicy;
-  source: 'flag' | 'project' | 'global' | 'default';
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
 }
 
 /** Minimal shape of the global config's `autopilot` block, accepted so this module need not import `GlobalConfig` for one field. */
@@ -1077,17 +1077,21 @@ export interface AutopilotGlobalConfig {
 /**
  * Resolves the effective autopilot gate policy with precedence: the run
  * argument (`--no-gate`) first, then the project config default
- * (`autopilot.gates`), then the global config default (`autopilot.gates`),
- * then the built-in default (gates ON). Every consumer (the `/rasen:auto`
- * gate-policy resolution, run-state recording) MUST resolve through this
- * function so precedence is applied identically everywhere. An absent or
- * previously-dropped `autopilot.gates` value at either scope falls back to
- * the next layer without failing config parsing.
+ * (`autopilot.gates`), then the inherited store config default (when a store
+ * layer is active — see `store-config-inheritance`), then the global config
+ * default (`autopilot.gates`), then the built-in default (gates ON). Every
+ * consumer (the `/rasen:auto` gate-policy resolution, run-state recording)
+ * MUST resolve through this function so precedence is applied identically
+ * everywhere. An absent or previously-dropped `autopilot.gates` value at any
+ * scope falls back to the next layer without failing config parsing.
+ * `storeConfig` defaults to `undefined` so existing three-argument call sites
+ * (pre-dating the store layer) are unaffected.
  */
 export function resolveAutopilotGatePolicy(
   config: ProjectConfig | null | undefined,
   noGateFlag: boolean,
-  globalConfig?: AutopilotGlobalConfig | null
+  globalConfig?: AutopilotGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
 ): ResolvedGatePolicy {
   if (noGateFlag) {
     return { effective: 'off', source: 'flag' };
@@ -1095,6 +1099,10 @@ export function resolveAutopilotGatePolicy(
   const projectValue = config?.autopilot?.gates;
   if (projectValue === 'on' || projectValue === 'off') {
     return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.autopilot?.gates;
+  if (storeValue === 'on' || storeValue === 'off') {
+    return { effective: storeValue, source: 'store' };
   }
   const globalValue = globalConfig?.autopilot?.gates;
   if (globalValue === 'on' || globalValue === 'off') {
@@ -1110,7 +1118,7 @@ export function resolveAutopilotGatePolicy(
 /** The resolved autopilot pipeline-selection policy plus which layer produced it. */
 export interface ResolvedSelectionPolicy {
   effective: AutopilotSelectionPolicy;
-  source: 'flag' | 'project' | 'global' | 'default';
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
 }
 
 /**
@@ -1125,18 +1133,24 @@ export interface ResolvedSelectionPolicy {
  * everywhere. An absent or previously-dropped `autopilot.selection` value at
  * either scope falls back to the next layer without failing config parsing.
  * Mirrors `resolveAutopilotGatePolicy`'s shape (same source vocabulary) by
- * design — this is that axis's sibling. Kept as a single resolver (not split
- * by flag) so precedence lives in exactly one place; `autoComposeFlag`
- * defaults to `false` so existing call sites (pre-dating the `compose`
- * policy) are unaffected, and `globalConfig` defaults to `undefined` so
- * existing two/three-argument call sites (pre-dating the global layer) are
- * unaffected.
+ * design — this is that axis's sibling. Precedence: run flags first
+ * (`--auto-compose` ahead of `--auto-select`), then the project config, then
+ * the inherited store config (when a store layer is active — see
+ * `store-config-inheritance`), then the global config, then the built-in
+ * default (`manual`). Kept as a single resolver (not split by flag) so
+ * precedence lives in exactly one place; `autoComposeFlag` defaults to `false`
+ * so existing call sites (pre-dating the `compose` policy) are unaffected,
+ * `globalConfig` defaults to `undefined` so existing two/three-argument call
+ * sites (pre-dating the global layer) are unaffected, and `storeConfig`
+ * defaults to `undefined` so existing four-argument call sites (pre-dating
+ * the store layer) are unaffected.
  */
 export function resolveAutopilotSelectionPolicy(
   config: ProjectConfig | null | undefined,
   autoSelectFlag: boolean,
   autoComposeFlag: boolean = false,
-  globalConfig?: AutopilotGlobalConfig | null
+  globalConfig?: AutopilotGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
 ): ResolvedSelectionPolicy {
   if (autoComposeFlag) {
     return { effective: 'compose', source: 'flag' };
@@ -1147,6 +1161,10 @@ export function resolveAutopilotSelectionPolicy(
   const projectValue = config?.autopilot?.selection;
   if (projectValue === 'classify' || projectValue === 'manual' || projectValue === 'compose') {
     return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.autopilot?.selection;
+  if (storeValue === 'classify' || storeValue === 'manual' || storeValue === 'compose') {
+    return { effective: storeValue, source: 'store' };
   }
   const globalValue = globalConfig?.autopilot?.selection;
   if (globalValue === 'classify' || globalValue === 'manual' || globalValue === 'compose') {

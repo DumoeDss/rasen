@@ -14,16 +14,25 @@ import {
   NOT_SETTABLE_KEYS,
   type ConfigScope,
 } from '../config-keys.js';
-import { resolveEffectiveConfig } from '../effective-config.js';
+import {
+  resolveConfigStoreLayer,
+  resolveEffectiveConfig,
+  type ResolveEffectiveConfigOptions,
+  type StoreConfigLayer,
+} from '../effective-config.js';
 import { updateProjectConfigKey } from '../project-config.js';
 import { readProjectRegistryState } from '../project-registry.js';
 import { pathIsDirectory } from '../file-state.js';
 import { listPipelinesWithInfo, loadPipelineByName } from '../pipeline-registry/index.js';
-import { resolveProjectSelector } from './project-addressing.js';
+import { resolveProjectSelector, resolveSpaceSelector } from './project-addressing.js';
 import { serializeConfigEntry } from './serialize.js';
 import { writeGlobalConfigKeyMinimalDiff, GlobalConfigWriteError } from './global-write.js';
 import { serveStatic } from './static.js';
-import type { ProjectRef, WirePipeline } from './wire-types.js';
+import type { ProjectRef, StoreLayerRef, WirePipeline } from './wire-types.js';
+
+/** A write scope on the config API — the registry scopes plus nothing else. */
+type WriteScope = ConfigScope;
+const WRITE_SCOPES: readonly WriteScope[] = ['global', 'store', 'project'];
 
 export interface ConfigApiContext {
   /** Per-session bearer token minted at server startup (D5). */
@@ -158,6 +167,92 @@ async function resolveProjectContext(
   return { ok: true, root: resolved.root, ref: resolved.ref };
 }
 
+/**
+ * A resolved config context (design D6): either a project context (a project
+ * root, its ref, and the store layer it inherits — if any) or a store context
+ * (a store's own root addressed directly as a space). Every read and write
+ * endpoint resolves one of these from the optional `space`/`project`
+ * selectors.
+ */
+type ConfigContext =
+  | { kind: 'project'; root: string | undefined; ref: ProjectRef | null; storeLayer: StoreConfigLayer | null }
+  | { kind: 'store'; storeId: string; storeRoot: string };
+
+type ConfigContextResult = { ok: true; context: ConfigContext } | ProjectContextErr;
+
+/**
+ * Resolves the config context from the optional `space` and `project`
+ * selectors (design D6). Both present -> 400 `bad_request` (one addressing
+ * mode per request). `space` resolves via `resolveSpaceSelector` (its
+ * `invalid_space`/`space_not_found`/`space_unavailable` errors pass through):
+ * a store space becomes a store context; a project space behaves exactly like
+ * `?project=`. A bare `project` selector (or neither) resolves the project
+ * context and awaits `resolveConfigStoreLayer` so inheritance applies to every
+ * project-addressed read.
+ */
+async function resolveConfigContext(
+  projectSelector: string | undefined,
+  spaceSelector: string | undefined,
+  context: ConfigApiContext
+): Promise<ConfigContextResult> {
+  const hasProject = projectSelector !== undefined && projectSelector !== '';
+  const hasSpace = spaceSelector !== undefined && spaceSelector !== '';
+  if (hasProject && hasSpace) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'bad_request',
+      message: 'Pass either "project" or "space", not both.',
+      fix: 'Use one addressing mode per request.',
+    };
+  }
+
+  if (hasSpace) {
+    const resolved = await resolveSpaceSelector(spaceSelector!);
+    if (!resolved.ok) {
+      return { ok: false, status: resolved.status, code: resolved.code, message: resolved.message };
+    }
+    const space = resolved.space;
+    if (space.type === 'store') {
+      return { ok: true, context: { kind: 'store', storeId: space.id, storeRoot: space.root } };
+    }
+    const storeLayer = await resolveConfigStoreLayer(space.root);
+    return {
+      ok: true,
+      context: {
+        kind: 'project',
+        root: space.root,
+        ref: { projectId: space.id, name: space.name, root: space.root },
+        storeLayer,
+      },
+    };
+  }
+
+  const projectCtx = await resolveProjectContext(projectSelector, context);
+  if (!projectCtx.ok) return projectCtx;
+  const storeLayer = await resolveConfigStoreLayer(projectCtx.root);
+  return { ok: true, context: { kind: 'project', root: projectCtx.root, ref: projectCtx.ref, storeLayer } };
+}
+
+/** The `resolveEffectiveConfig` options a context resolves with (design D3). */
+function contextResolveOptions(context: ConfigContext): ResolveEffectiveConfigOptions {
+  if (context.kind === 'store') {
+    return { store: { storeId: context.storeId, storeRoot: context.storeRoot } };
+  }
+  return { projectRoot: context.root, store: context.storeLayer };
+}
+
+/** The store-layer reference reported in a response body (design D6). */
+function contextStoreRef(context: ConfigContext): StoreLayerRef | null {
+  if (context.kind === 'store') return { id: context.storeId, root: context.storeRoot };
+  return context.storeLayer ? { id: context.storeLayer.storeId, root: context.storeLayer.storeRoot } : null;
+}
+
+/** The project reference reported in a response body — null for a store context. */
+function contextProjectRef(context: ConfigContext): ProjectRef | null {
+  return context.kind === 'project' ? context.ref : null;
+}
+
 function firstQueryValue(url: URL, name: string): string | undefined {
   const value = url.searchParams.get(name);
   return value === null ? undefined : value;
@@ -172,13 +267,21 @@ async function handleListConfig(
   url: URL,
   context: ConfigApiContext
 ): Promise<void> {
-  const projectCtx = await resolveProjectContext(firstQueryValue(url, 'project'), context);
-  if (!projectCtx.ok) {
-    sendError(res, projectCtx.status, projectCtx.code, projectCtx.message, projectCtx.fix);
+  const ctx = await resolveConfigContext(
+    firstQueryValue(url, 'project'),
+    firstQueryValue(url, 'space'),
+    context
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
     return;
   }
-  const entries = resolveEffectiveConfig({ projectRoot: projectCtx.root }).map(serializeConfigEntry);
-  sendJson(res, 200, { project: projectCtx.ref, entries });
+  const entries = resolveEffectiveConfig(contextResolveOptions(ctx.context)).map(serializeConfigEntry);
+  sendJson(res, 200, {
+    project: contextProjectRef(ctx.context),
+    store: contextStoreRef(ctx.context),
+    entries,
+  });
 }
 
 async function handleGetConfigKey(
@@ -187,19 +290,23 @@ async function handleGetConfigKey(
   key: string,
   context: ConfigApiContext
 ): Promise<void> {
-  const projectCtx = await resolveProjectContext(firstQueryValue(url, 'project'), context);
-  if (!projectCtx.ok) {
-    sendError(res, projectCtx.status, projectCtx.code, projectCtx.message, projectCtx.fix);
+  const ctx = await resolveConfigContext(
+    firstQueryValue(url, 'project'),
+    firstQueryValue(url, 'space'),
+    context
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
     return;
   }
-  const entry = resolveEffectiveConfig({ projectRoot: projectCtx.root }).find(
+  const entry = resolveEffectiveConfig(contextResolveOptions(ctx.context)).find(
     (e) => e.definition.key === key
   );
   if (!entry) {
     sendError(res, 404, 'unknown_key', `Unknown configuration key "${key}".`);
     return;
   }
-  sendJson(res, 200, { entry: serializeConfigEntry(entry) });
+  sendJson(res, 200, { entry: serializeConfigEntry(entry), store: contextStoreRef(ctx.context) });
 }
 
 async function handleListProjects(res: http.ServerResponse): Promise<void> {
@@ -263,7 +370,7 @@ function validateWriteKey(
   res: http.ServerResponse
 ): { ok: true } | { ok: false } {
   const rawKeys = key.split('.');
-  if (rawKeys.length === 2 && findWildcardDefinition(rawKeys[0]!, scope)) {
+  if (rawKeys.length === 2 && WRITE_SCOPES.some((s) => findWildcardDefinition(rawKeys[0]!, s))) {
     sendError(
       res,
       400,
@@ -282,18 +389,20 @@ function validateWriteKey(
     }
     // Distinguish "this key doesn't exist at all" (404 unknown_key) from
     // "this key exists, just not in the scope you asked for" (400
-    // invalid_scope) — a real registry key like `repoMode` (global-only)
-    // PUT with scope: "project" is a plausible client mistake, not a typo'd
-    // key, and answering 404 for it is misleading (M3).
-    const otherScope: ConfigScope = scope === 'global' ? 'project' : 'global';
-    const otherScopeDefinition = findConfigKeyDefinition(key, otherScope);
-    if (otherScopeDefinition) {
+    // invalid_scope). With three scopes, the hint names EVERY scope the key
+    // IS settable in (registry lookup) rather than a binary other-scope
+    // guess — e.g. `handoff.threshold` rejected at scope "global"? no; but
+    // `profile` (global-only) PUT with scope "store" answers with `global`.
+    const settableScopes = WRITE_SCOPES.filter(
+      (candidate) => findConfigKeyDefinition(key, candidate) !== undefined
+    );
+    if (settableScopes.length > 0) {
       sendError(
         res,
         400,
         'invalid_scope',
-        `"${key}" is only settable in scope "${otherScope}", not "${scope}".`,
-        `Use scope: "${otherScope}" instead.`
+        `"${key}" is not settable in scope "${scope}"; it is settable in: ${settableScopes.join(', ')}.`,
+        `Use scope: ${settableScopes.map((s) => `"${s}"`).join(' or ')} instead.`
       );
     } else {
       sendError(res, 404, 'unknown_key', validation.reason ?? `Unknown configuration key "${key}".`);
@@ -306,9 +415,11 @@ function validateWriteKey(
 async function respondWithReResolvedEntry(
   res: http.ServerResponse,
   key: string,
-  projectRoot: string | undefined
+  context: ConfigContext
 ): Promise<void> {
-  const entry = resolveEffectiveConfig({ projectRoot }).find((e) => e.definition.key === key);
+  const entry = resolveEffectiveConfig(contextResolveOptions(context)).find(
+    (e) => e.definition.key === key
+  );
   if (!entry) {
     // Should not happen for any key that passed validateWriteKey (wildcard
     // leaves are rejected before a write is attempted), but fail loudly
@@ -316,7 +427,7 @@ async function respondWithReResolvedEntry(
     sendError(res, 500, 'internal_error', `"${key}" wrote successfully but could not be re-resolved.`);
     return;
   }
-  sendJson(res, 200, { entry: serializeConfigEntry(entry) });
+  sendJson(res, 200, { entry: serializeConfigEntry(entry), store: contextStoreRef(context) });
 }
 
 async function handlePutConfigKey(
@@ -340,10 +451,15 @@ async function handlePutConfigKey(
     sendError(res, 400, 'bad_request', 'Request body must be a JSON object.');
     return;
   }
-  const payload = body.value as { scope?: unknown; value?: unknown; project?: unknown };
+  const payload = body.value as {
+    scope?: unknown;
+    value?: unknown;
+    project?: unknown;
+    space?: unknown;
+  };
 
-  if (payload.scope !== 'global' && payload.scope !== 'project') {
-    sendError(res, 400, 'scope_required', 'Body must include "scope": "global" or "project".');
+  if (payload.scope !== 'global' && payload.scope !== 'store' && payload.scope !== 'project') {
+    sendError(res, 400, 'scope_required', 'Body must include "scope": "global", "store", or "project".');
     return;
   }
   const scope: ConfigScope = payload.scope;
@@ -370,35 +486,19 @@ async function handlePutConfigKey(
     sendError(res, 400, 'bad_request', 'Body field "project" must be a string when present.');
     return;
   }
-  const selector = firstQueryValue(url, 'project') ?? payload.project;
-  const projectCtx = await resolveProjectContext(selector, context);
-  if (!projectCtx.ok) {
-    sendError(res, projectCtx.status, projectCtx.code, projectCtx.message, projectCtx.fix);
+  if (payload.space !== undefined && typeof payload.space !== 'string') {
+    sendError(res, 400, 'bad_request', 'Body field "space" must be a string when present.');
+    return;
+  }
+  const projectSelector = firstQueryValue(url, 'project') ?? payload.project;
+  const spaceSelector = firstQueryValue(url, 'space') ?? payload.space;
+  const ctx = await resolveConfigContext(projectSelector, spaceSelector, context);
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
     return;
   }
 
-  if (scope === 'project') {
-    if (!projectCtx.root) {
-      sendError(
-        res,
-        400,
-        'project_required',
-        `Scope "project" requires a resolvable project; pass ?project=<id|root> or run "rasen config ui" inside a Rasen project.`
-      );
-      return;
-    }
-    try {
-      updateProjectConfigKey(projectCtx.root, key, value);
-    } catch (error) {
-      sendError(
-        res,
-        400,
-        'write_failed',
-        error instanceof Error ? error.message : String(error)
-      );
-      return;
-    }
-  } else {
+  if (scope === 'global') {
     try {
       writeGlobalConfigKeyMinimalDiff(key, value);
     } catch (error) {
@@ -413,9 +513,66 @@ async function handlePutConfigKey(
       }
       return;
     }
+  } else {
+    const target = resolveScopedWriteTarget(scope, ctx.context, res);
+    if (!target.ok) return;
+    try {
+      updateProjectConfigKey(target.root, key, value);
+    } catch (error) {
+      sendError(res, 400, 'write_failed', error instanceof Error ? error.message : String(error));
+      return;
+    }
   }
 
-  await respondWithReResolvedEntry(res, key, projectCtx.root);
+  await respondWithReResolvedEntry(res, key, ctx.context);
+}
+
+/**
+ * Resolves the file root a `store`- or `project`-scope write lands in, and
+ * rejects a scope/space mismatch (design D6): a `store` write requires a store
+ * context; a `project` write requires a project context with a resolvable
+ * root. Global writes are space-independent and never reach here.
+ */
+function resolveScopedWriteTarget(
+  scope: 'store' | 'project',
+  context: ConfigContext,
+  res: http.ServerResponse
+): { ok: true; root: string } | { ok: false } {
+  if (scope === 'store') {
+    if (context.kind !== 'store') {
+      sendError(
+        res,
+        400,
+        'invalid_scope',
+        'Scope "store" is only valid when addressing a store space.',
+        'Address the store space with `?space=store:<id>`.'
+      );
+      return { ok: false };
+    }
+    return { ok: true, root: context.storeRoot };
+  }
+
+  // scope === 'project'
+  if (context.kind === 'store') {
+    sendError(
+      res,
+      400,
+      'invalid_scope',
+      'Scope "project" is not valid when addressing a store space.',
+      'Use scope: "store" to edit the store\'s own values.'
+    );
+    return { ok: false };
+  }
+  if (!context.root) {
+    sendError(
+      res,
+      400,
+      'project_required',
+      `Scope "project" requires a resolvable project; pass ?project=<id|root> or run "rasen config ui" inside a Rasen project.`
+    );
+    return { ok: false };
+  }
+  return { ok: true, root: context.root };
 }
 
 async function handleDeleteConfigKey(
@@ -431,37 +588,25 @@ async function handleDeleteConfigKey(
   }
 
   const scopeParam = firstQueryValue(url, 'scope');
-  if (scopeParam !== 'global' && scopeParam !== 'project') {
-    sendError(res, 400, 'scope_required', 'Query must include "scope=global" or "scope=project".');
+  if (scopeParam !== 'global' && scopeParam !== 'store' && scopeParam !== 'project') {
+    sendError(res, 400, 'scope_required', 'Query must include "scope=global", "scope=store", or "scope=project".');
     return;
   }
   const scope: ConfigScope = scopeParam;
 
   if (!validateWriteKey(key, scope, res).ok) return;
 
-  const projectCtx = await resolveProjectContext(firstQueryValue(url, 'project'), context);
-  if (!projectCtx.ok) {
-    sendError(res, projectCtx.status, projectCtx.code, projectCtx.message, projectCtx.fix);
+  const ctx = await resolveConfigContext(
+    firstQueryValue(url, 'project'),
+    firstQueryValue(url, 'space'),
+    context
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
     return;
   }
 
-  if (scope === 'project') {
-    if (!projectCtx.root) {
-      sendError(
-        res,
-        400,
-        'project_required',
-        `Scope "project" requires a resolvable project; pass ?project=<id|root> or run "rasen config ui" inside a Rasen project.`
-      );
-      return;
-    }
-    try {
-      updateProjectConfigKey(projectCtx.root, key, undefined);
-    } catch (error) {
-      sendError(res, 400, 'write_failed', error instanceof Error ? error.message : String(error));
-      return;
-    }
-  } else {
+  if (scope === 'global') {
     try {
       writeGlobalConfigKeyMinimalDiff(key, undefined);
     } catch (error) {
@@ -476,9 +621,18 @@ async function handleDeleteConfigKey(
       }
       return;
     }
+  } else {
+    const target = resolveScopedWriteTarget(scope, ctx.context, res);
+    if (!target.ok) return;
+    try {
+      updateProjectConfigKey(target.root, key, undefined);
+    } catch (error) {
+      sendError(res, 400, 'write_failed', error instanceof Error ? error.message : String(error));
+      return;
+    }
   }
 
-  await respondWithReResolvedEntry(res, key, projectCtx.root);
+  await respondWithReResolvedEntry(res, key, ctx.context);
 }
 
 /** Builds the request handler for the config API server, closed over one session's context. */

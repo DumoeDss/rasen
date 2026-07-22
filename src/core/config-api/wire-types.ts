@@ -15,6 +15,16 @@ export interface ProjectRef {
   root: string;
 }
 
+/**
+ * The store contributing the store layer to a config read (design D6): the
+ * inherited store for a project context, or the addressed store's own root
+ * for a store context. `null` in a response when no store layer is active.
+ */
+export interface StoreLayerRef {
+  id: string;
+  root: string;
+}
+
 export interface WireConstraints {
   type: ConfigValueType;
   enumValues?: readonly string[];
@@ -46,7 +56,7 @@ export interface WireConfigEntry {
   definition: WireConfigKeyDefinition;
   value: unknown;
   source: ConfigSource;
-  scopeValues: { global?: unknown; project?: unknown };
+  scopeValues: { global?: unknown; store?: unknown; project?: unknown };
   /** Present only when a raw on-disk scope value fails registry validation; the API never rewrites the file to fix it. */
   warnings?: string[];
 }

@@ -411,6 +411,42 @@ stages:
         expect(result.model).toBeUndefined();
         expect(result.modelSource).toBe('default');
       });
+
+      it('the store base model applies below the project layer and above global', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeDefault: 'opus',
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('opus');
+        expect(result.modelSource).toBe('store-default');
+      });
+
+      it('a store per-role model beats the store base and the global layer', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeDefault: 'sonnet',
+          storeRoles: { reviewer: 'fable' },
+          globalRoles: { reviewer: 'opus' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('store-role');
+      });
+
+      it('project model config beats the store layer', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('project-role');
+      });
+
+      it('absent store fields change nothing', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('sonnet');
+        expect(result.modelSource).toBe('global-default');
+      });
     });
 
     it('should reject invalid runtime selection', () => {
@@ -1264,6 +1300,63 @@ stages:
         });
         expect(result.threshold).toEqual({ remainingTokens: 40_000 });
         expect(result.source).toBe('project-role');
+      });
+
+      it('the store config threshold applies below the project layer', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: 0.45,
+        });
+        expect(result.threshold).toBe(0.45);
+        expect(result.source).toBe('store-config');
+      });
+
+      it('a store per-role threshold beats the store scalar', () => {
+        const reviewerResult = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: 0.45,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(reviewerResult.threshold).toBe(0.7);
+        expect(reviewerResult.source).toBe('store-role');
+
+        const nonReviewerResult = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          storeThreshold: 0.45,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(nonReviewerResult.threshold).toBe(0.45);
+        expect(nonReviewerResult.source).toBe('store-config');
+      });
+
+      it('the project layer beats the store layer entirely', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('the store layer beats the global layer', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          storeRoles: { implementer: 0.8 },
+          globalRoles: { implementer: 0.6 },
+        });
+        expect(result.threshold).toBe(0.8);
+        expect(result.source).toBe('store-role');
+      });
+
+      it('the store layer accepts the absolute { remainingTokens } form', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: { remainingTokens: 45_000 },
+        });
+        expect(result.threshold).toEqual({ remainingTokens: 45_000 });
+        expect(result.source).toBe('store-config');
+      });
+
+      it('absent store fields never report a store source', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          globalThreshold: 0.65,
+        });
+        expect(result.source).toBe('global-config');
       });
     });
 

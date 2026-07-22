@@ -60,7 +60,11 @@ import {
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
-import { resolveHandoffThresholdLayers, resolveModelConfigLayers } from '../core/effective-config.js';
+import {
+  resolveConfigStoreLayer,
+  resolveHandoffThresholdLayers,
+  resolveModelConfigLayers,
+} from '../core/effective-config.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
@@ -250,8 +254,9 @@ export class PipelineCommand {
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const configLayers = resolveHandoffThresholdLayers(projectRoot);
-    const modelLayers = resolveModelConfigLayers(projectRoot);
+    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const stages: StageView[] = pipeline.stages.map((s) =>
       this.toStageView(s, pipeline, configLayers, modelLayers)
     );
@@ -297,7 +302,7 @@ export class PipelineCommand {
     const updates = this.runtimeUpdatesFromOptions(options);
 
     if (Object.keys(updates).length === 0) {
-      const result = this.toAgentsResult(normalizedName, pipeline, null, projectRoot);
+      const result = await this.toAgentsResult(normalizedName, pipeline, null, projectRoot);
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
         return;
@@ -308,7 +313,7 @@ export class PipelineCommand {
 
     const updatedPipeline = this.applyAgentRuntimeUpdates(pipeline, updates);
     const overridePath = this.writeProjectPipelineOverride(projectRoot, normalizedName, updatedPipeline);
-    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath, projectRoot);
+    const result = await this.toAgentsResult(normalizedName, updatedPipeline, overridePath, projectRoot);
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -786,18 +791,18 @@ export class PipelineCommand {
     return pipelinePath;
   }
 
-  private toAgentsResult(
+  private async toAgentsResult(
     name: string,
     pipeline: PipelineYaml,
     overridePath: string | null,
     projectRoot: string
-  ): {
+  ): Promise<{
     name: string;
     overridePath: string | null;
     agents: PipelineYaml['agents'];
     effectiveRoles: Record<StageRole, AgentRuntime>;
     stages: StageView[];
-  } {
+  }> {
     const effectiveRoles = Object.fromEntries(
       STAGE_ROLES.map((role) => [
         role,
@@ -805,8 +810,9 @@ export class PipelineCommand {
       ])
     ) as Record<StageRole, AgentRuntime>;
 
-    const configLayers = resolveHandoffThresholdLayers(projectRoot);
-    const modelLayers = resolveModelConfigLayers(projectRoot);
+    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     return {
       name,
       overridePath,
