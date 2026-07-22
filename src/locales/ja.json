@@ -888,5 +888,17 @@
   },
   "telemetry": {
     "notice": "お知らせ: Rasenは匿名の利用統計（コマンド、バージョン、OS、Node.jsバージョン、ランダムID）を独自のCloudflare Workerへ送信します。無効化: RASEN_TELEMETRY=0"
+  },
+  "workflowChain": {
+    "reasons": {
+      "continueAuthoring": "不足しているアーティファクトの作成が必要です。{workflow} で作成を続けてください。",
+      "readyForVerify": "すべてのタスクが完了しました。{workflow} を実行して実装を確認してください。",
+      "readyForApply": "すべての計画アーティファクトが完了しました。{workflow} で実装を開始してください。",
+      "entryToApply": "{workflow} を実行して続けてください。",
+      "exploreToPropose": "{workflow} でこれを変更に落とし込みましょう。",
+      "officeHoursToPropose": "{workflow} でこれを変更に落とし込みましょう。",
+      "skipAhead": "{original} はインストールされていないため、次は {workflow} です。"
+    },
+    "hint": "次のステップ: {workflow} — {reason}"
   }
 }

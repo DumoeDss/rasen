@@ -888,5 +888,17 @@
   },
   "telemetry": {
     "notice": "提示：Rasen 会将匿名使用统计（命令、版本、OS、Node.js 版本和随机 ID）发送到自己的 Cloudflare Worker。退出：RASEN_TELEMETRY=0"
+  },
+  "workflowChain": {
+    "reasons": {
+      "continueAuthoring": "仍有缺失的工件需要创建。请使用 {workflow} 继续编写。",
+      "readyForVerify": "所有任务已完成。运行 {workflow} 以检查实现。",
+      "readyForApply": "所有规划工件均已完成。使用 {workflow} 开始实现。",
+      "entryToApply": "运行 {workflow} 以继续。",
+      "exploreToPropose": "使用 {workflow} 将其转化为一个 change。",
+      "officeHoursToPropose": "使用 {workflow} 将其转化为一个 change。",
+      "skipAhead": "{original} 未安装，因此下一步是 {workflow}。"
+    },
+    "hint": "下一步：{workflow} — {reason}"
   }
 }

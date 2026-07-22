@@ -888,5 +888,17 @@
   },
   "telemetry": {
     "notice": "Note: Rasen sends anonymous usage stats (command, version, OS, Node version, and a random id) to its own Cloudflare Worker. Opt out: RASEN_TELEMETRY=0"
+  },
+  "workflowChain": {
+    "reasons": {
+      "continueAuthoring": "Missing artifacts still need to be created. Continue authoring with {workflow}.",
+      "readyForVerify": "All tasks are complete. Run {workflow} to check the implementation.",
+      "readyForApply": "All planning artifacts are complete. Start implementation with {workflow}.",
+      "entryToApply": "Continue by running {workflow}.",
+      "exploreToPropose": "Turn this into a change with {workflow}.",
+      "officeHoursToPropose": "Turn this into a change with {workflow}.",
+      "skipAhead": "{original} is not installed, so {workflow} is next."
+    },
+    "hint": "Next: {workflow} — {reason}"
   }
 }

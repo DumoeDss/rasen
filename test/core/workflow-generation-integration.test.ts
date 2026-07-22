@@ -109,8 +109,9 @@ describe('user workflow generation integration', () => {
     });
     expect(initializedFrontmatter.metadata.generatedBy).not.toBe('authored-source');
     expect(fs.readFileSync(sidecarPath, 'utf8')).toBe('checklist v1\n');
-    expect(fs.existsSync(commandPath)).toBe(true);
-    expect(fs.readFileSync(commandPath, 'utf8')).toContain('description: "true"');
+    // Skills-only delivery (command-generation retired): no command file is
+    // ever written, even for a workflow whose manifest opts into `command`.
+    expect(fs.existsSync(commandPath)).toBe(false);
     expect(readWorkflowArtifactLedger(project)?.workflows).toEqual(['team-delivery']);
 
     const installedSkill = path.join(getUserWorkflowsDir(), 'team-delivery', 'SKILL.md');
