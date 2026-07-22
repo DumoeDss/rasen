@@ -8,7 +8,6 @@
  */
 const LABELS: Record<string, string> = {
   profile: 'Profile',
-  delivery: 'Command delivery',
   workflows: 'Installed workflows',
   language: 'Language',
   featureFlags: 'Feature flags',
