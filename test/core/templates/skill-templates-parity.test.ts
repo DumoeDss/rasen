@@ -73,13 +73,13 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getVerifyEnhancedSkillTemplate: 'a4df1c8928150a14957b38352b3c1fab89a618d8a97a88dae5ba77d4e009a289',
   getShipCommandSkillTemplate: '67374b0b2b697501cd42789d024241a4fae0dae793711703a998c771f2b7ffc8',
   getRetroCommandSkillTemplate: '53eacb51d137ea9c79503ab51864c558cd7d040abd33e63bb04de8329883b170',
-  getAutoCommandSkillTemplate: '5180b5e41d93ffda6030b8fc7c4032afdfd63c884ba7df648a3000758c13b02b',
-  getReviewCycleSkillTemplate: 'c20a925950ddf4ffa05987d388990d91e13e6434e0e9fd23250b7631795e4356',
+  getAutoCommandSkillTemplate: '04195d840884f53e7548311e014900802cfebafac5b3cc47c936dc9f5cc5a727',
+  getReviewCycleSkillTemplate: 'c685ba2adde06b48da269200d8ace96597c8e55603167fdbd26e9b3f38d78967',
   getHandoffSkillTemplate: '2dd5358742c4771dbd5eca94526effe5a0f1868d8294e02cea08a8529cf4b7a9',
-  getGoalPlanSkillTemplate: '7f390a14a5bb3e7e5ec9e1de06fe4ab4c5b1357cbd74c3bc36090af699931d46',
+  getGoalPlanSkillTemplate: 'cf74e6ab19069d7c1d3545c216eabf0ad90d9b241f4a86c3635441b73458184c',
   getGoalIterateSkillTemplate: 'e76b7a1b238f8e412736b763d2aeefa0c881d800213cd01ce91a835c2da536f6',
   getGoalReportSkillTemplate: 'a48c1b6c75c5734e051a4aa707ee803c0af73fd2b74b18fb7212e531568a4bed',
-  getGoalCommandSkillTemplate: '48451ad616e8a1a6f1ad223a6b2f75a6dc5d1f1e07b43df7214d58a92875206f',
+  getGoalCommandSkillTemplate: '4be69d8ff92cf0a8d60e503e82a67e76155eff1c673120f2bcab463124aedb37',
   getHelpSkillTemplate: 'f45bbe71a1a337e3155d30950cc0f8ae77c6cf5c078aa6accc847220c91d0f2e',
   // Expert skill templates (inlined; see expert-template-inlining)
   getBenchmarkSkillTemplate: '8a38b79c63a4c429d1c22825d481db7f5ea3ab50e9f37ad27970e529c6abbbfd',
@@ -101,7 +101,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getReviewSkillTemplate: '208332231bceafa883316cc4f787edb4a93857f391f1829efd7c2f08a0e01fe1',
   getTddSkillTemplate: '5c4149303ad3b322d0500431b67d7a4c35af2e4071c56d2499ae8f511de989e1',
   getUnfreezeSkillTemplate: '6bedb3316477b441b7da2f82ee465ca0233a36cd46cbf2434a8f185b14126f87',
-  getWorkflowAuthorSkillTemplate: '44dd6e005524eac0e07aa9fbce67fcd839fdb9479b6e2ddb06a1b80cd21130be',
+  getWorkflowAuthorSkillTemplate: '59356ac89a56e9a3915df29050f0323be59b0d9a45a78db1b0082fd87deeafae',
   getWorkflowReviewSkillTemplate: 'a708138b0c17df357cb97b038fe74ec9c925bd4f67f57c71504d6e788c980363',
 };
 
@@ -121,13 +121,13 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-verify-enhanced': 'd5e3f30b5f03af6979ecb4d3ee6693984135aacac63d218eff2618b8db692d38',
   'rasen-ship': 'cc8e158cc3d3657fe0d531fd74129ce621e59ede1326cffb3e2a3a63e86d5b10',
   'rasen-retro': '458aa2ff649293a5e4c5b711e538d16b02e494e909ff6408ff99c28bb987ff73',
-  'rasen-auto': '52d9969b7350e2fe6c9fc06ae4ee211effde060e35f24ace3419d179ae576f98',
-  'rasen-review-cycle': 'f6746d9e3bde59daeccbfc3d43f69dc67ef133da2641a887da0694070d1eb05f',
+  'rasen-auto': '8edd872e2b470afe47e23cd712013bdd4663abdbdf5125d53a7a0fd698cd87bf',
+  'rasen-review-cycle': 'cf250cd53aabef7aef97dc5588f38481519554903be673e896a26bac79c66c4f',
   'rasen-handoff': '6327278c9f06d21b445ffb3a1cd8868994f9d6da3ab24ed86c3c743843d7eb99',
-  'rasen-goal-plan': '8e88a7ca5dd5cf866a154da94688f108b45614e6e8efcef9cd160352560d7d21',
+  'rasen-goal-plan': 'ef751463eb35fcf9d9d9c9692dc5a871a812f262f5209cd3912ab235cea987cf',
   'rasen-goal-iterate': '5f3affcb7a470b0e887c227173cb9179a4c8b415aa013a061839059fbf0af0f0',
   'rasen-goal-report': 'cd60a56882984b4babed00f611793b3e1448e54a2bdb94796f8ac06c17445acc',
-  'rasen-goal': '9587a87c24a5242ae1bf54ab44ee1048b0c0bb236def0241b86c42581ad05912',
+  'rasen-goal': '75c616c7602cc914da2cafa9f8424934dc130eb5d1d59560e6a72e496032e02a',
   'rasen-help': 'd4741dd2c9502d7fdb972d57b8d831d99414d4c138832f763c0bac5a01b5fcd6',
   // Expert skills (inlined; see expert-template-inlining)
   'rasen-benchmark': 'fe2afd87621432ab60b3baaa252d8e4d616e5bd0d8c9225903c61d7f77686c7e',
@@ -149,7 +149,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-review': '085ffaa479d47fd331845b6092daec476be379639b655b8b539a4bc27b733dd5',
   'rasen-tdd': '8d953757ae31296a628010b07d1f229d4c3d983e44836e3b70031aafcbb9a463',
   'rasen-unfreeze': 'ca727311494108d775f3f34f7c21ea104943e2e12f17f5c1051e3952cd5486e2',
-  'rasen-workflow-author': '8689649db6da6c28852716fe767255b49c1c8903654f32ac107cefd5950b2de3',
+  'rasen-workflow-author': 'd6b1ea3ef28fe93f06fa48c3e57b896b5c4d3ea60e1db34f51778aec1e257077',
   'rasen-workflow-review': '94e56651467d0687e1a20d1c425ab75795b0092eed608ecc52db1c9c6e232fd3',
 };
 

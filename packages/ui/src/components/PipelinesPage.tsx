@@ -302,7 +302,13 @@ function PipelineSection({
   onExport: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
-  const isBuiltIn = pipeline.provenance === 'built-in';
+  // Export AND delete are user-library-only in the CLI (`exportPipeline` /
+  // `deletePipeline` both refuse `source !== 'user'`), so the affordances gate on
+  // the resolved SOURCE LAYER, not provenance: a project-layer copy (provenance
+  // 'user' but sourceLayer 'project') is refused just like a built-in package.
+  const isUserLibrary = pipeline.sourceLayer === 'user';
+  const lockTitle =
+    pipeline.sourceLayer === 'package' ? 'Built-in — locked' : 'Project layer — locked (read-only here)';
   // Per-role runtime: a role's stages share one runtime, so read the effective
   // runtime off the first stage carrying each role (design D4).
   const roleStages = new Map<string, WirePipelineStage>();
@@ -321,18 +327,22 @@ function PipelineSection({
           {pipeline.sourceLayer}
         </span>
         <div class="pipeline-section__actions">
-          {/* Export is legitimate for built-ins too (fork / share); only delete is locked. */}
-          <button type="button" data-testid="pipeline-export" onClick={() => onExport(pipeline.name)}>
-            Export
-          </button>
-          {isBuiltIn ? (
-            <span class="pipeline-section__lock" data-testid="pipeline-lock" title="Built-in — delete locked">
+          {/* Only user-library pipelines expose export/delete; built-in (package)
+              and project-layer pipelines are locked — the CLI refuses both ops on
+              them, so surfacing either would be a dead 422. */}
+          {isUserLibrary ? (
+            <>
+              <button type="button" data-testid="pipeline-export" onClick={() => onExport(pipeline.name)}>
+                Export
+              </button>
+              <button type="button" data-testid="pipeline-delete" onClick={() => onDelete(pipeline.name)}>
+                Delete
+              </button>
+            </>
+          ) : (
+            <span class="pipeline-section__lock" data-testid="pipeline-lock" title={lockTitle}>
               locked
             </span>
-          ) : (
-            <button type="button" data-testid="pipeline-delete" onClick={() => onDelete(pipeline.name)}>
-              Delete
-            </button>
           )}
         </div>
       </div>
@@ -470,19 +480,6 @@ function StageGateControl({
   const key = `pipelines.${pipeline}.gates.${stage.id}`;
   const w = useInstanceWriter(key, scope, selector, onWrite);
   const eff = stage.effectiveGate;
-
-  // The always-pausing `'vet'` gate is outside the mask entirely (W5 boundary):
-  // never overridable, so it renders locked with no control.
-  if (stage.gate === 'vet' || eff.value === 'vet') {
-    return (
-      <div class="stage-control stage-control--gate" data-testid="stage-gate" data-pipeline={pipeline} data-stage={stage.id}>
-        <span class="stage-control__label">Gate</span>
-        <span class="stage-control__vet" data-testid="stage-gate-vet">
-          Always pauses (vet)
-        </span>
-      </div>
-    );
-  }
 
   const selectValue = isOverridden(eff.source) ? (eff.value === true ? 'on' : 'off') : 'inherit';
   return (

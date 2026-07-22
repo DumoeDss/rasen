@@ -15,12 +15,23 @@ The management server SHALL accept `POST /api/v1/changes` with a JSON body `{ na
 - **WHEN** the server was launched outside any Rasen project and a client sends `POST /api/v1/changes`
 - **THEN** the server responds 409 with error code `no_project` and no subprocess is spawned
 
-### Requirement: Whitelisted operations only, bounded by the slice boundary rule
-The submission bridge SHALL admit only operations from a data-driven whitelist. In this slice the whitelist SHALL contain exactly one operation: create-change. An operation is eligible for the whitelist only if it terminates deterministically in bounded time without LLM or network dependency, leaves no resident process behind, and has its result observable through existing read endpoints. Long-running agent commands (auto runs, goal runs, claudecode sessions) SHALL NOT be admitted by this capability; admitting them requires the session-supervision capability (slice 3) to modify this requirement explicitly.
+### Requirement: Whitelisted operations only, across the change, space, workflow, and pipeline bounded-CLI operations
 
-#### Scenario: Only the create-change operation exists
-- **WHEN** the submission bridge's whitelist is enumerated
-- **THEN** it contains exactly the create-change operation and no operation that spawns an agent session
+The management platform's CLI-spawn bridges SHALL admit only operations from a single data-driven whitelist. The bounded-CLI tier SHALL contain exactly twelve operations: create-change (change submission); create-project-space, register-store-space, and setup-store-space (space creation); import-workflow, init-workflow, export-workflow, and delete-workflow (workflow library mutation); and import-pipeline, init-pipeline, export-pipeline, and delete-pipeline (pipeline library mutation). An operation is eligible for the bounded-CLI tier only if it terminates deterministically in bounded time without LLM or network dependency, leaves no resident process behind, and has its result observable through existing read endpoints. Long-running agent commands (auto runs, goal runs, agent sessions) SHALL NOT be admitted to this tier; they remain exclusively the session-supervision capability's supervised tier. Each endpoint's handler SHALL admit only entries of its own operation set — the change-submission endpoint serves only create-change, the space-creation endpoint serves only the three space operations, the workflow mutation endpoint serves only the four workflow operations, and the pipeline mutation endpoint serves only the four pipeline operations.
+
+#### Scenario: The bounded tier enumerates exactly twelve operations
+
+- **WHEN** the whitelist's bounded-CLI tier is enumerated
+- **THEN** it contains exactly the twelve operations above and no operation that spawns an agent session
+
+#### Scenario: Endpoints cannot cross-admit operations
+
+- **WHEN** any bridge endpoint is asked to perform an operation belonging to another bridge's set (change, space, workflow, or pipeline)
+- **THEN** the request is not admitted — each bridge serves only its own operations
+
+#### Scenario: Agent commands remain excluded
+- **WHEN** the bounded-CLI tier is checked for any operation that launches an agent session
+- **THEN** no such operation is present; agent launches remain solely under the supervised tier's session endpoints
 
 ### Requirement: Pre-spawn input validation and injection posture
 The server SHALL validate submission input before spawning: the change name MUST satisfy the same kebab-case rule the CLI's change-name validation enforces, and the description MUST be non-empty, length-capped, and free of control characters other than tab (`\t`) and newline (`\n`), which are permitted since the description is natural multi-line proposal text. Invalid input SHALL be rejected with 400 and no subprocess. All values SHALL be passed as discrete argv elements (the description as a single `--proposal=<text>` token) so no client input is ever interpreted by a shell or parsed as an additional CLI option, regardless of embedded newlines.
@@ -86,3 +97,22 @@ When the subprocess exits non-zero, the server SHALL respond 422 with an error e
 - **WHEN** any response from `POST /api/v1/changes` is inspected
 - **THEN** it carries no `Access-Control-Allow-Origin` header
 
+### Requirement: Whitelisted operations, tiered by termination guarantee
+The submission bridge SHALL admit only operations from a data-driven whitelist. The whitelist SHALL be tiered:
+
+- **Bounded CLI tier** — operations that terminate deterministically in bounded time without LLM or network dependency, leave no resident process behind, and have their result observable through existing read endpoints. This tier SHALL contain exactly the twelve bounded operations enumerated by the "Whitelisted operations only, across the change, space, workflow, and pipeline bounded-CLI operations" requirement above.
+- **Supervised long-runner tier** — long-running agent operations, admissible only because the session-supervision capability replaces the bounded-termination guarantee with supervision guarantees: registry tracking, an overall duration cap, a no-output watchdog, and reliable process-tree termination. This tier SHALL contain exactly two operations: `auto` (the `/rasen:auto` pipeline) and `goal` (the `/rasen:goal` loop), admissible only via the session-supervision guarantees and served exclusively by the sessions endpoints — never by `POST /api/v1/changes`.
+
+Each tier's endpoint SHALL admit only entries of its own tier. Operations in neither tier SHALL NOT be reachable through any write endpoint.
+
+#### Scenario: Whitelist tiers are exact
+- **WHEN** the admission whitelist is enumerated
+- **THEN** the bounded CLI tier contains exactly the twelve enumerated operations, the supervised long-runner tier contains exactly auto and goal, and no other operation exists
+
+#### Scenario: Long-runner not launchable through the submission endpoint
+- **WHEN** a client attempts to invoke an auto or goal run via `POST /api/v1/changes`
+- **THEN** the request is rejected without spawning any agent session
+
+#### Scenario: Bounded operation not launchable through the sessions endpoint
+- **WHEN** a client sends `POST /api/v1/sessions` with `kind` set to create-change or any value outside the supervised long-runner tier
+- **THEN** the server responds 400 with a validation error and spawns nothing

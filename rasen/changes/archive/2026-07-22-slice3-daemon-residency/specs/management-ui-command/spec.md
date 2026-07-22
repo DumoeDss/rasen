@@ -1,6 +1,16 @@
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Public management platform launch command
+**Reason**: The direct launch-and-render-board command is superseded by the adopt-or-spawn daemon-residency model.
+**Migration**: `rasen ui` now adopts a running same-version daemon or spawns one, with the self-hosted foreground form preserved under `--no-daemon` — see the ADDED requirement.
+
+### Requirement: Clean shutdown
+**Reason**: The single foreground Ctrl-C shutdown is superseded by the daemon-residency split: a `rasen ui` exit leaves the daemon running, and only the self-hosted form reaps on Ctrl-C.
+**Migration**: UI exit no longer stops supervised sessions; the self-hosted (`--no-daemon`) form retains the prompt-shutdown behavior — see the ADDED requirement.
+
+## ADDED Requirements
+
+### Requirement: Public management platform launch command (adopt-or-spawn)
 The CLI SHALL provide a public top-level `rasen ui` command, listed in `rasen --help`, that reaches the management platform by adopting or spawning the resident daemon (per the daemon-residency capability's classification rules): it probes the daemon port, adopts a same-version daemon, replaces a stale one, spawns a fresh daemon when nothing listens, and fails with a clear reason — touching nothing — when a foreign process owns the port. On success it SHALL print a URL of the form `http://127.0.0.1:<port>/#token=<token>` (the daemon's port and token) landing on the board, and open it in the default browser unless `--no-open` is given. `rasen ui --no-daemon` SHALL instead start a self-hosted foreground server exactly as before residency existed: loopback, ephemeral port by default, `--port <n>` to pin it, per-invocation token, sessions supervised by this foreground process. `--port` SHALL apply to the self-hosted form; invalid values are rejected with a clear error and no server or daemon action.
 
 #### Scenario: Launch adopts a running daemon
@@ -27,7 +37,7 @@ The CLI SHALL provide a public top-level `rasen ui` command, listed in `rasen --
 - **WHEN** a user runs `rasen ui --no-daemon --port abc` or a port outside 0-65535
 - **THEN** the command exits non-zero with a clear error and starts no server
 
-### Requirement: Clean shutdown
+### Requirement: Clean shutdown under daemon residency
 Exiting `rasen ui` SHALL leave an adopted or spawned daemon — and every session it supervises — running; the command itself SHALL exit promptly once the URL is delivered. In `--no-daemon` (self-hosted) form, the server SHALL shut down promptly on SIGINT/SIGTERM, force-closing idle keep-alive connections so the CLI process exits without hanging, and SHALL reap its own supervised sessions per the session-supervision capability's owner-shutdown rule.
 
 #### Scenario: UI exit leaves the daemon running

@@ -89,16 +89,20 @@ The probe SHALL resolve the context-window limit per transcript kind: for Claude
 - **THEN** the CLI SHALL use that exact value as `limit` without consulting the model-preset registry
 - **AND** an explicit `--limit <n>` SHALL still override it, with `pct` and `remainingTokens` recomputed against `<n>`
 
-### Requirement: Handoff threshold reporting
-`rasen agent context` SHALL resolve the configured context-handoff threshold — project config `handoff.threshold` (when the working directory is inside a Rasen project), else global config `handoff.threshold`, else the built-in default 0.5 — and report it alongside the occupancy measurement: the resolved `threshold`, its source, and a `shouldHandoff` flag. The threshold SHALL accept the dual form (a bare fraction in (0, 1], or the absolute `{ remainingTokens: N }` headroom form); `shouldHandoff` compares the probe's measured occupancy against a fraction threshold (`pct >= threshold`) or its `remainingTokens` against an absolute threshold (`remainingTokens <= threshold.remainingTokens`). The probe is role-agnostic (it has no stage identity, so pipeline/stage/role and model-preset overrides do not apply) and SHALL remain a probe: the exit code stays 0 even when `shouldHandoff` is true.
+### Requirement: Handoff threshold reporting across config layers
+`rasen agent context` SHALL resolve the configured context-handoff threshold — project config `handoff.threshold` (when the working directory is inside a Rasen project), else the inherited store config `handoff.threshold` (when that project's configuration inherits from a store — see `store-config-inheritance`), else global config `handoff.threshold`, else the built-in default 0.5 — and report it alongside the occupancy measurement: the resolved `threshold`, its source (`project`, `store`, `global`, or `default`), and a `shouldHandoff` flag. The threshold SHALL accept the dual form (a bare fraction in (0, 1], or the absolute `{ remainingTokens: N }` headroom form); `shouldHandoff` compares the probe's measured occupancy against a fraction threshold (`pct >= threshold`) or its `remainingTokens` against an absolute threshold (`remainingTokens <= threshold.remainingTokens`). The probe is role-agnostic (it has no stage identity, so pipeline/stage/role and model-preset overrides do not apply) and SHALL remain a probe: the exit code stays 0 even when `shouldHandoff` is true.
 
 #### Scenario: JSON output includes threshold fields
 - **WHEN** `rasen agent context --json` measures 62% occupancy and the project config sets `handoff.threshold: 0.6`
 - **THEN** the JSON output includes the threshold 0.6, a source identifying the project config layer, and `shouldHandoff: true`
 - **AND** the exit code is 0
 
+#### Scenario: Store threshold applies when the project sets none
+- **WHEN** the probe runs inside a project whose configuration inherits from a store setting `handoff.threshold: 0.7`, and the project config sets no threshold
+- **THEN** the JSON output includes the threshold 0.7 with a source identifying the store config layer
+
 #### Scenario: JSON output reports the absolute threshold form
-- **WHEN** `rasen agent context --json` measures a probe with 50000 `remainingTokens` and the global config sets `handoff.threshold: { remainingTokens: 60000 }`
+- **WHEN** `rasen agent context --json` measures a probe with 50000 `remainingTokens` and the global config sets `handoff.threshold: { remainingTokens: 60000 }` with no project or store value
 - **THEN** the JSON output includes the threshold `{ remainingTokens: 60000 }`, a source identifying the global config layer, and `shouldHandoff: true` (measured `remainingTokens` is at or below the configured floor)
 - **AND** the exit code is 0
 

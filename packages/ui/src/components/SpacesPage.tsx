@@ -125,23 +125,27 @@ export function SpacesPage() {
   const needle = query.trim().toLowerCase();
   const all = spaces ?? [];
   const pinnedSet = new Set(pins);
+  const pinRank = new Map(pins.map((sel, i) => [sel, i] as const));
 
-  // Pinned first, in config order (only those matching a listed space, filtered
-  // by search); then non-pinned projects A-Z, then non-pinned stores A-Z.
-  const bySelector = new Map(all.map((s) => [selectorOf(s), s]));
-  const pinnedMatched = pins
-    .map((sel) => bySelector.get(sel))
-    .filter((s): s is SpaceEntry => s !== undefined && matchesQuery(s, needle));
-
-  const rest = all.filter((s) => !pinnedSet.has(selectorOf(s)) && matchesQuery(s, needle));
-  const projectsRest = rest
-    .filter((s): s is ProjectSpaceEntry => s.type === 'project')
+  // Order: pinned first (config order), then non-pinned projects A-Z, then
+  // non-pinned stores A-Z. Grouping is BY SELECTOR (for the pin flag and pin
+  // order), but rows are never collapsed: several entries can share one
+  // selector — git worktrees of one repo share a projectId — and each is kept
+  // as its own row (MAJOR-1). The stable sort preserves listing order among
+  // same-selector pinned rows. Rows are keyed by the row-unique `root` below,
+  // never by the selector, so a re-render (pin/search) cannot merge them.
+  const filtered = all.filter((s) => matchesQuery(s, needle));
+  const pinnedRows = filtered
+    .filter((s) => pinnedSet.has(selectorOf(s)))
+    .sort((a, b) => (pinRank.get(selectorOf(a)) ?? 0) - (pinRank.get(selectorOf(b)) ?? 0));
+  const projectsRest = filtered
+    .filter((s): s is ProjectSpaceEntry => s.type === 'project' && !pinnedSet.has(selectorOf(s)))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const storesRest = rest
-    .filter((s): s is StoreSpaceEntry => s.type === 'store')
+  const storesRest = filtered
+    .filter((s): s is StoreSpaceEntry => s.type === 'store' && !pinnedSet.has(selectorOf(s)))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const ordered: SpaceEntry[] = [...pinnedMatched, ...projectsRest, ...storesRest];
+  const ordered: SpaceEntry[] = [...pinnedRows, ...projectsRest, ...storesRest];
 
   const activeSpace = parseSpacePath(currentPath);
 
@@ -185,8 +189,13 @@ export function SpacesPage() {
             const selector = selectorOf(space);
             const pinned = pinnedSet.has(selector);
             const isActive = activeSpace?.selector === selector;
+            // Key by the row-unique root, NEVER the selector: git worktrees of
+            // one repo share a selector, and a selector key collapses them into
+            // one row on any re-render (MAJOR-1). Pin/active state stay
+            // selector-derived (a shared pin lights every worktree row of that
+            // project — acceptable, they share the pin).
             return (
-              <li key={selector} class="space-row" data-testid="space-row" data-selector={selector}>
+              <li key={space.root} class="space-row" data-testid="space-row" data-selector={selector}>
                 <a
                   class={`space-row__link${isActive ? ' space-row__link--active' : ''}`}
                   href={spaceHref(spaceOf(space), 'board')}

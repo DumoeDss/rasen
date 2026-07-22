@@ -10,9 +10,12 @@
 import type { ListConfigResponse, ListPipelinesResponse } from '../../src/api/types.js';
 
 /**
- * Two pipelines: a built-in `small-feature` (locked; a propose stage with no
+ * Three pipelines: a built-in `small-feature` (locked; a propose stage with no
  * override, an implement stage overridden at project scope on every axis, and a
- * `vet` stage outside the mask) and a user `my-flow` (export/delete affordances).
+ * `vet` stage outside the mask), a user-library `my-flow` (export/delete
+ * affordances), and a project-layer `forked-flow` (provenance 'user' but
+ * sourceLayer 'project' — locked, since the CLI refuses export AND delete on
+ * anything that is not user-library).
  */
 export const pipelinesFixture = {
   project: { projectId: 'proj_abc123', name: 'rasen', root: '/Users/dev/rasen' },
@@ -48,8 +51,8 @@ export const pipelinesFixture = {
           id: 'gate-review',
           role: 'reviewer',
           skill: 'rasen-review',
-          gate: 'vet',
-          effectiveGate: { value: 'vet', source: 'stage' },
+          gate: true,
+          effectiveGate: { value: true, source: 'stage' },
           effectiveModel: { value: null, source: 'default' },
           effectiveHandoff: { value: 0.5, source: 'default' },
           effectiveRuntime: { value: 'claude', source: 'default' },
@@ -61,6 +64,24 @@ export const pipelinesFixture = {
       description: 'A user pipeline',
       provenance: 'user',
       sourceLayer: 'user',
+      stages: [
+        {
+          id: 'build',
+          role: 'implementer',
+          skill: null,
+          gate: false,
+          effectiveGate: { value: false, source: 'stage' },
+          effectiveModel: { value: null, source: 'default' },
+          effectiveHandoff: { value: 0.5, source: 'default' },
+          effectiveRuntime: { value: 'claude', source: 'default' },
+        },
+      ],
+    },
+    {
+      name: 'forked-flow',
+      description: 'A project-layer pipeline (forked into the project)',
+      provenance: 'user',
+      sourceLayer: 'project',
       stages: [
         {
           id: 'build',

@@ -44,7 +44,6 @@ export interface PipelineMessageValues {
   thresholdTokensRemaining: { tokens: number };
   stageMetaRole: { role: string };
   stageMetaRequires: { requires: string };
-  stageMetaGateVet: undefined;
   stageMetaGate: undefined;
   stageMetaReviewLoop: { maximum: number };
   stageMetaGoalLoop: { gate: string; maximum: number; stall: number };
@@ -133,7 +132,6 @@ export const PIPELINE_MESSAGE_KEYS = [
   'thresholdTokensRemaining',
   'stageMetaRole',
   'stageMetaRequires',
-  'stageMetaGateVet',
   'stageMetaGate',
   'stageMetaReviewLoop',
   'stageMetaGoalLoop',

@@ -20,6 +20,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     getWorkflow: vi.fn(),
     validateWorkflow: vi.fn(),
     mutateWorkflow: vi.fn(),
+    listLocalPaths: vi.fn(),
   };
 });
 
@@ -66,6 +67,19 @@ function setInput(el: Element | null, value: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// The home listing the shared LocalPathPicker loads on mount (a folder and a
+// selectable .rasenpkg file). `home: true` so "Up" is disabled at the floor.
+const HOME_LISTING = {
+  path: '/home/user',
+  parent: null,
+  separator: '/',
+  home: true,
+  entries: [
+    { name: 'pkgs', isDir: true, isGitRepo: false },
+    { name: 'team-flow.rasenpkg', isDir: false, isGitRepo: false },
+  ],
+};
+
 describe('WorkflowsPage', () => {
   let container: HTMLElement;
 
@@ -74,6 +88,7 @@ describe('WorkflowsPage', () => {
     document.body.appendChild(container);
     (client.listWorkflows as any).mockResolvedValue(workflowsListFixture);
     (client.getWorkflow as any).mockResolvedValue(workflowDetailFixture);
+    (client.listLocalPaths as any).mockResolvedValue(HOME_LISTING);
   });
 
   afterEach(() => {
@@ -143,10 +158,10 @@ describe('WorkflowsPage', () => {
     expect(client.listWorkflows).toHaveBeenCalledTimes(2);
   });
 
-  it('offers an explicit overwrite retry when export is refused, resending with force', async () => {
+  it('exports to a folder picked through the local-path browser, offering an overwrite retry on refusal', async () => {
     (client.mutateWorkflow as any)
       .mockRejectedValueOnce(new ApiError(422, { error: { code: 'cli_error', message: 'Export destination already exists' } }))
-      .mockResolvedValueOnce({ workflow: { id: 'team-flow', path: '/out/team-flow.rasenpkg' } });
+      .mockResolvedValueOnce({ workflow: { id: 'team-flow', path: '/home/user/team-flow.rasenpkg' } });
 
     await mount(container);
     const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
@@ -154,10 +169,10 @@ describe('WorkflowsPage', () => {
     )!;
     await clickAndFlush(user.querySelector('[data-testid="workflow-export"]'));
 
-    await act(async () => {
-      setInput(container.querySelector('[data-testid="workflow-export-dir"]'), '/out');
-      await flushMicrotasks();
-    });
+    // The dialog drives the shared local-path browser (the MINOR-1 fix), which
+    // loaded the home listing → destination folder = /home/user, filename
+    // defaults to <id>.rasenpkg → /home/user/team-flow.rasenpkg.
+    expect(container.querySelector('[data-testid="path-picker"]')).not.toBeNull();
     await clickAndFlush(container.querySelector('[data-testid="workflow-export-submit"]'));
 
     // The refusal is shown and an overwrite retry offered.
@@ -169,28 +184,68 @@ describe('WorkflowsPage', () => {
     expect(client.mutateWorkflow).toHaveBeenLastCalledWith({
       op: 'export',
       id: 'team-flow',
-      path: '/out/team-flow.rasenpkg',
+      path: '/home/user/team-flow.rasenpkg',
       force: true,
     });
     expect(container.querySelector('[data-testid="workflow-export-result"]')).not.toBeNull();
   });
 
-  it('imports a picked package and refreshes the listing without a reload', async () => {
+  it('imports a .rasenpkg file picked through the local-path browser and refreshes without a reload', async () => {
     (client.mutateWorkflow as any).mockResolvedValue({ imported: ['new-flow'], reused: [], roots: ['new-flow'] });
 
     await mount(container);
     await clickAndFlush(container.querySelector('[data-testid="workflow-import"]'));
 
-    await act(async () => {
-      setInput(container.querySelector('[data-testid="workflow-import-path"]'), '/pkgs/new-flow.rasenpkg');
-      await flushMicrotasks();
-    });
+    // The browser lists files too; pick the .rasenpkg entry directly.
+    const fileEntry = Array.from(container.querySelectorAll('[data-testid="dir-entries"] button')).find((b) =>
+      b.textContent?.includes('team-flow.rasenpkg')
+    );
+    expect(fileEntry).toBeTruthy();
+    await clickAndFlush(fileEntry!);
+    expect(container.querySelector('[data-testid="workflow-import-source"]')!.textContent).toContain(
+      '/home/user/team-flow.rasenpkg'
+    );
     await clickAndFlush(container.querySelector('[data-testid="workflow-import-submit"]'));
 
-    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'import', path: '/pkgs/new-flow.rasenpkg' });
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'import', path: '/home/user/team-flow.rasenpkg' });
     expect(container.querySelector('[data-testid="workflow-import-result"]')!.textContent).toContain('new-flow');
     // Refetched after success (no full reload).
     expect(client.listWorkflows).toHaveBeenCalledTimes(2);
+  });
+
+  it('imports a draft directory via "use this folder" (browse-to-dir, no file wire needed)', async () => {
+    (client.mutateWorkflow as any).mockResolvedValue({ imported: ['draft-flow'], reused: [], roots: ['draft-flow'] });
+
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import"]'));
+
+    // Home listing loaded → current folder is /home/user; "use this folder"
+    // selects it as a draft-directory import source.
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import-use-dir"]'));
+    expect(container.querySelector('[data-testid="workflow-import-source"]')!.textContent).toContain('/home/user');
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import-submit"]'));
+
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'import', path: '/home/user' });
+  });
+
+  it('scaffolds a draft into a parent folder picked through the browser (output = parent/<id>)', async () => {
+    (client.mutateWorkflow as any).mockResolvedValue({ workflow: { id: 'my-flow', output: '/home/user/my-flow' } });
+
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="workflow-new"]'));
+
+    await act(async () => {
+      setInput(container.querySelector('[data-testid="workflow-init-id"]'), 'my-flow');
+      await flushMicrotasks();
+    });
+    // The picker loaded /home/user as the parent → preview shows the computed output.
+    expect(container.querySelector('[data-testid="workflow-init-output-preview"]')!.textContent).toContain(
+      '/home/user/my-flow'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="workflow-init-submit"]'));
+
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'init', id: 'my-flow', output: '/home/user/my-flow' });
+    expect(container.querySelector('[data-testid="workflow-init-result"]')!.textContent).toContain('/home/user/my-flow');
   });
 
   it('opens a detail view showing the four requires slots, files, and usage referrers', async () => {

@@ -325,10 +325,11 @@ export const StageSchema = z
     // Stage-level PAUSE gate (distinct from the goal-loop `loop.gate`
     // measure/evaluate discriminated union below, which configures the
     // iterate loop's stop condition — do not confuse the two). `true` pauses
-    // for human confirmation, `false` does not, and `'vet'` marks a gate that
-    // MUST always pause — never auto-approved by `--no-gate` or an
-    // `autopilot.gates: off` project default (autopilot-gate-policy).
-    gate: z.union([z.boolean(), z.literal('vet')]).default(false),
+    // for human confirmation, `false` does not. Every gate is individually
+    // controllable via `pipelines.<name>.gates.<stage>` (autopilot-gate-policy);
+    // a legacy `gate: 'vet'` spelling is coerced to `true` by the pipeline-level
+    // shim below (coerceLegacyVetGates).
+    gate: z.boolean().default(false),
     loop: StageLoopSchema.optional(),
     parallelGroup: z.string().optional(),
     // Freeform condition label, e.g. 'always', 'security-relevant',
@@ -360,9 +361,48 @@ export const StageSchema = z
   });
 
 /**
+ * Tracks which pipelines have already emitted the legacy `gate: 'vet'`
+ * deprecation warning this process, so the warning fires at most once per
+ * pipeline per process (same shape as other one-time warnings in the codebase).
+ */
+const warnedLegacyVetPipelines = new Set<string>();
+
+/**
+ * Legacy-coercion shim for the retired `gate: 'vet'` gate type (design D1).
+ *
+ * This is the ONLY place the `'vet'` literal is permitted to appear in `src/`
+ * (a source-tree guard test asserts it). A user pipeline YAML still carrying
+ * `gate: 'vet'` reads as `gate: true` with a single warning per pipeline per
+ * process — never a parse error, so existing user libraries keep loading. Every
+ * gate is now individually controllable via `pipelines.<name>.gates.<stage>`.
+ *
+ * Runs as a `z.preprocess` on the whole pipeline (rather than on the gate field)
+ * because the warning names the pipeline, which is not in scope at the stage.
+ */
+function coerceLegacyVetGates(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object') return raw;
+  const pipeline = raw as { name?: unknown; stages?: unknown };
+  if (!Array.isArray(pipeline.stages)) return raw;
+  const pipelineName = typeof pipeline.name === 'string' ? pipeline.name : '<unknown>';
+  for (const stage of pipeline.stages) {
+    if (stage === null || typeof stage !== 'object') continue;
+    const s = stage as { id?: unknown; gate?: unknown };
+    if (s.gate !== 'vet') continue;
+    s.gate = true;
+    if (warnedLegacyVetPipelines.has(pipelineName)) continue;
+    warnedLegacyVetPipelines.add(pipelineName);
+    const stageId = typeof s.id === 'string' ? s.id : '<stage>';
+    console.warn(
+      `Pipeline "${pipelineName}" stage "${stageId}" declares gate: 'vet', which is no longer a distinct gate type; reading it as gate: true — every gate is now individually controllable via pipelines.${pipelineName}.gates.${stageId}.`
+    );
+  }
+  return raw;
+}
+
+/**
  * Full pipeline YAML structure.
  */
-export const PipelineYamlSchema = z.object({
+export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
   name: z.string().min(1, { error: 'Pipeline name is required' }),
   description: z.string().optional(),
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
@@ -377,7 +417,7 @@ export const PipelineYamlSchema = z.object({
     "Marks a pipeline assembled by the autopilot LEAD; absent means human-authored. When 'composed', the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
   ),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
-});
+}));
 
 // Derived TypeScript types
 export type StageLoop = z.infer<typeof StageLoopSchema>;

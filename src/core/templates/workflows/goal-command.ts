@@ -54,7 +54,7 @@ Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
 rasen pipeline show <name> --json   # -> { name, description, buildOrder, stages }
 \`\`\`
 
-Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: 'vet'\` lets the user confirm a measure command before any round runs — this is the hard safety carve-out (autopilot-gate-policy): unlike an ordinary \`gate: true\` stage, it is NEVER auto-approved, even under \`--no-gate\` or an \`autopilot.gates: off\` project default.
+Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: true\` lets the user confirm a measure command before any round runs — it pauses by default (autopilot-gate-policy). It is an ordinary gate now: under \`--no-gate\` or an \`autopilot.gates: off\` base it is auto-approved and the measure command runs unattended for up to \`maxRounds\`; to keep the pause for this stage under an \`off\` base, set \`pipelines.<name>.gates.define-goal: on\`.
 
 ## 3. Execute the pipeline as the LEAD
 
@@ -89,7 +89,7 @@ satisfied | maxRounds-exhausted | in-progress
 
 ## Guardrails
 
-- Always pause at the define-goal gate — it is \`gate: 'vet'\`, so never skip human confirmation of the goal + gate even under \`--no-gate\`: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries).
+- Under the default gate policy, pause at the define-goal gate — confirm the goal + gate before any round runs: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries). It is an ordinary \`gate: true\`: under \`--no-gate\` or \`autopilot.gates: off\` it auto-approves and the measure command runs unattended, unless \`pipelines.<name>.gates.define-goal: on\` restores the pause.
 - Save run-state + goal-run.json so the loop is resumable.
 - Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command).
 - If the loop stalls (loopStallLimit consecutive no-progress rounds), run the Step H.5 escalation ladder before interrupting a human.`;

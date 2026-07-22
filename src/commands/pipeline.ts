@@ -125,9 +125,9 @@ interface StageView {
   role: Stage['role'] | null;
   requires: string[];
   /** The stage's declared gate value (from the pipeline definition), unmasked. */
-  gate: boolean | 'vet';
-  /** The effective gate after the mask (per-stage instance > autopilot.gates off > definition). `'vet'` always pauses, outside the mask. */
-  effectiveGate: boolean | 'vet';
+  gate: boolean;
+  /** The effective gate after the mask (per-stage instance > autopilot.gates off > definition). */
+  effectiveGate: boolean;
   /** The layer that decided the effective gate. */
   gateSource: MaskedGateSource;
   loop: Stage['loop'] | null;
@@ -990,8 +990,7 @@ export class PipelineCommand {
           requires: stage.requires.join(', '),
         }));
       }
-      if (stage.gate === 'vet') meta.push(messages.format('stageMetaGateVet'));
-      else if (stage.gate) meta.push(messages.format('stageMetaGate'));
+      if (stage.gate) meta.push(messages.format('stageMetaGate'));
       if (stage.loop) {
         if (stage.loop.kind === 'review-cycle') {
           meta.push(messages.format('stageMetaReviewLoop', {

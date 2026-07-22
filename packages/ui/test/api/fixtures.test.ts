@@ -98,7 +98,8 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
       expect(['built-in', 'user']).toContain(pipeline.provenance);
       expect(['project', 'user', 'package']).toContain(pipeline.sourceLayer);
       for (const stage of pipeline.stages) {
-        expect([false, true, 'vet']).toContain(stage.gate);
+        expect(typeof stage.gate).toBe('boolean');
+        expect(typeof stage.effectiveGate.value).toBe('boolean');
         expect(typeof stage.effectiveGate.source).toBe('string');
         expect(typeof stage.effectiveRuntime.source).toBe('string');
       }
@@ -107,10 +108,10 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     const impl = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'implement')!;
     expect(impl.effectiveModel.source).toBe('stage-override-project');
     expect(impl.effectiveRuntime.value).toBe('codex');
-    // The vet stage passes its declared gate through unmasked.
-    const vet = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'gate-review')!;
-    expect(vet.gate).toBe('vet');
-    expect(vet.effectiveGate.value).toBe('vet');
+    // The reviewer stage carries an ordinary boolean pause gate (the vet type is retired).
+    const review = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'gate-review')!;
+    expect(review.gate).toBe(true);
+    expect(review.effectiveGate.value).toBe(true);
   });
 
   it('archive fixture covers portfolio-grouped and container-less archived changes with dates', () => {

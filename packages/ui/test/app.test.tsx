@@ -105,6 +105,29 @@ describe('App routing', () => {
     expect(window.location.pathname).toBe('/p/proj_x/board');
   });
 
+  it('keeps the space-scoped nav on the space-agnostic /workflows route via the recent-space fallback', async () => {
+    // Visiting a space records it as recent; the agnostic route then falls
+    // back to it so the user is never stranded on /workflows.
+    localStorage.setItem('rasen.recentSpaces', JSON.stringify(['project:proj_x']));
+    try {
+      await mountAt(container, '/workflows');
+      expect(container.querySelector('nav a[href="/p/proj_x/board"]')).not.toBeNull();
+      expect(container.querySelector('nav a[href="/p/proj_x/config"]')).not.toBeNull();
+      expect(container.querySelector('nav a[href="/p/proj_x/pipelines"]')).not.toBeNull();
+      const workflowsLink = container.querySelector('nav a[href="/workflows"]');
+      expect(workflowsLink!.getAttribute('aria-current')).toBe('page');
+    } finally {
+      localStorage.removeItem('rasen.recentSpaces');
+    }
+  });
+
+  it('omits the space-scoped nav on /workflows only when no space was ever visited', async () => {
+    localStorage.removeItem('rasen.recentSpaces');
+    await mountAt(container, '/workflows');
+    expect(container.querySelector('nav a[href="/p/proj_x/board"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/workflows"]')).not.toBeNull();
+  });
+
   it('offers Board · Archive · Config nav within the space, with the active view indicated and no Sessions entry', async () => {
     await mountAt(container, '/p/proj_x/config');
     const boardLink = container.querySelector('nav a[href="/p/proj_x/board"]');

@@ -137,9 +137,8 @@ export function resolvePipelineStageOverrides(
  * The layer that decided a stage's effective gate after masking:
  *  - `stage-override-<scope>`: a `pipelines.<name>.gates.<stage>` instance won.
  *  - `autopilot-<baseSource>`: no instance, and an effective `autopilot.gates: off`
- *    at that base layer suppressed the ordinary gate.
- *  - `stage`: the stage definition's own `gate:` decided (base is `on`, or the
- *    stage carries the always-pausing `'vet'` gate, which is outside the mask).
+ *    at that base layer suppressed the gate.
+ *  - `stage`: the stage definition's own `gate:` decided (base is `on`).
  */
 export type MaskedGateSource =
   | 'stage-override-project'
@@ -151,9 +150,9 @@ export type MaskedGateSource =
   | 'autopilot-global'
   | 'stage';
 
-/** A stage's gate after the mask: `true` pauses, `false` auto-approves, `'vet'` always pauses. */
+/** A stage's gate after the mask: `true` pauses, `false` auto-approves. */
 export interface MaskedStageGate {
-  effective: boolean | 'vet';
+  effective: boolean;
   source: MaskedGateSource;
 }
 
@@ -166,20 +165,14 @@ export interface MaskedStageGate {
  *  2. Otherwise, an effective `autopilot.gates: off` base suppresses the gate.
  *  3. Otherwise the stage definition's own `gate:` value decides.
  *
- * A stage whose definition declares the always-pausing `'vet'` gate is returned
- * as-is, entirely outside the mask (never overridable or suppressible) — the W5
- * boundary; no `'vet'` handling changes here.
+ * No gate type is exempt from the mask: every stage's gate resolves through the
+ * three tiers above.
  */
 export function resolveMaskedStageGate(
-  declaredGate: boolean | 'vet',
+  declaredGate: boolean,
   gateOverride: StageOverride<'on' | 'off'> | undefined,
   basePolicy: ResolvedGatePolicy
 ): MaskedStageGate {
-  // The vet carve-out sits outside the mask entirely (W5 boundary).
-  if (declaredGate === 'vet') {
-    return { effective: 'vet', source: 'stage' };
-  }
-
   if (gateOverride !== undefined) {
     return {
       effective: gateOverride.value === 'on',
@@ -201,7 +194,7 @@ export interface EffectiveStageConfig {
   role: StageRole | null;
   skill: string | null;
   /** The stage's declared gate value, unmasked. */
-  declaredGate: boolean | 'vet';
+  declaredGate: boolean;
   gate: MaskedStageGate;
   model: { value: string | null; source: ModelSource };
   handoff: { threshold: ThresholdValue; source: ResolvedStageHandoffConfig['source'] };

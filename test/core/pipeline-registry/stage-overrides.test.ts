@@ -36,10 +36,10 @@ const PIPELINE = parsePipeline(
     '    role: implementer',
     '    skill: rasen-apply',
     '    model: sonnet',
-    '  - id: vet-stage',
+    '  - id: review-stage',
     '    role: reviewer',
     '    skill: rasen-review',
-    "    gate: vet",
+    '    gate: true',
   ].join('\n')
 );
 
@@ -111,10 +111,16 @@ describe('resolveMaskedStageGate', () => {
     expect(resolveMaskedStageGate(false, undefined, ON)).toEqual({ effective: false, source: 'stage' });
   });
 
-  it('a vet gate is outside the mask entirely — never overridable or suppressible', () => {
-    expect(resolveMaskedStageGate('vet', { value: 'off', scope: 'project' }, OFF_FLAG)).toEqual({
-      effective: 'vet',
-      source: 'stage',
+  it('no gate type is exempt from the mask — a per-stage instance decides any stage', () => {
+    // The vet type is retired: every gate resolves through the three tiers, so a
+    // per-stage `on` pierces an off base and a per-stage `off` silences a gate.
+    expect(resolveMaskedStageGate(true, { value: 'on', scope: 'project' }, OFF_FLAG)).toEqual({
+      effective: true,
+      source: 'stage-override-project',
+    });
+    expect(resolveMaskedStageGate(true, { value: 'off', scope: 'project' }, ON)).toEqual({
+      effective: false,
+      source: 'stage-override-project',
     });
   });
 });
@@ -172,9 +178,11 @@ describe('resolveEffectiveStage', () => {
     const apply = resolveEffectiveStage(stage('apply'), PIPELINE, { overrides, basePolicy: ON });
     expect(apply.model).toEqual({ value: 'fable', source: 'stage-override-store' });
 
-    const vet = resolveEffectiveStage(stage('vet-stage'), PIPELINE, { overrides, basePolicy: OFF_FLAG });
-    expect(vet.gate).toEqual({ effective: 'vet', source: 'stage' });
-    expect(vet.runtime).toEqual({ value: 'codex', source: 'stage-override-project' });
+    // The review stage carries no per-stage gate instance; under an off base its
+    // gate is suppressed like any other (no stage is exempt from the mask).
+    const review = resolveEffectiveStage(stage('review-stage'), PIPELINE, { overrides, basePolicy: OFF_FLAG });
+    expect(review.gate).toEqual({ effective: false, source: 'autopilot-flag' });
+    expect(review.runtime).toEqual({ value: 'codex', source: 'stage-override-project' });
   });
 
   it('with no overrides falls through cleanly (empty maps)', () => {

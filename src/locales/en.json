@@ -106,7 +106,6 @@
       "thresholdTokensRemaining": "{tokens} tokens remaining",
       "stageMetaRole": "role={role}",
       "stageMetaRequires": "requires=[{requires}]",
-      "stageMetaGateVet": "gate(vet)",
       "stageMetaGate": "gate",
       "stageMetaReviewLoop": "loop=review-cycle(max {maximum})",
       "stageMetaGoalLoop": "loop=goal[{gate}](max {maximum}, stall {stall})",

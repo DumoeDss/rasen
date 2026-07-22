@@ -100,7 +100,11 @@ describe('PipelinesPage', () => {
 
     expect(container.querySelector('[data-testid="pipelines-defaults"]')).not.toBeNull();
     const sections = [...container.querySelectorAll('[data-testid="pipeline-section"]')];
-    expect(sections.map((s) => s.getAttribute('data-pipeline'))).toEqual(['small-feature', 'my-flow']);
+    expect(sections.map((s) => s.getAttribute('data-pipeline'))).toEqual([
+      'small-feature',
+      'my-flow',
+      'forked-flow',
+    ]);
 
     // Provenance + source-layer badges.
     const builtIn = sections.find((s) => s.getAttribute('data-pipeline') === 'small-feature')!;
@@ -108,15 +112,24 @@ describe('PipelinesPage', () => {
     expect(builtIn.querySelector('[data-testid="pipeline-source-layer"]')!.textContent).toBe('package');
   });
 
-  it('locks delete on built-ins but keeps export; a user section offers both', async () => {
+  it('exposes export/delete only for user-library pipelines; built-in AND project-layer are locked', async () => {
     await mount(container);
-    const builtIn = stageSection(container, 'small-feature');
-    const user = stageSection(container, 'my-flow');
-    // Built-in: delete locked, but export stays available (fork / share is legitimate).
+    const builtIn = stageSection(container, 'small-feature'); // sourceLayer package
+    const user = stageSection(container, 'my-flow'); // sourceLayer user
+    const project = stageSection(container, 'forked-flow'); // sourceLayer project
+
+    // Built-in (package): locked, no export AND no delete — the CLI refuses both.
     expect(builtIn.querySelector('[data-testid="pipeline-lock"]')).not.toBeNull();
+    expect(builtIn.querySelector('[data-testid="pipeline-export"]')).toBeNull();
     expect(builtIn.querySelector('[data-testid="pipeline-delete"]')).toBeNull();
-    expect(builtIn.querySelector('[data-testid="pipeline-export"]')).not.toBeNull();
-    // User: both.
+
+    // Project-layer (provenance 'user' but sourceLayer 'project'): also locked —
+    // `exportPipeline`/`deletePipeline` both refuse `source !== 'user'`.
+    expect(project.querySelector('[data-testid="pipeline-lock"]')).not.toBeNull();
+    expect(project.querySelector('[data-testid="pipeline-export"]')).toBeNull();
+    expect(project.querySelector('[data-testid="pipeline-delete"]')).toBeNull();
+
+    // User-library: both offered.
     expect(user.querySelector('[data-testid="pipeline-export"]')).not.toBeNull();
     expect(user.querySelector('[data-testid="pipeline-delete"]')).not.toBeNull();
   });
@@ -160,11 +173,15 @@ describe('PipelinesPage', () => {
     expect((runtime.querySelector('[data-testid="role-runtime-select"]') as HTMLSelectElement).value).toBe('codex');
   });
 
-  it('renders the always-pausing vet gate locked, with no gate control', async () => {
+  it('renders every stage gate as an ordinary control — no vet lock remains', async () => {
     await mount(container);
     const gate = stageControl(container, 'stage-gate', 'small-feature', 'gate-review')!;
-    expect(gate.querySelector('[data-testid="stage-gate-vet"]')).not.toBeNull();
-    expect(gate.querySelector('[data-testid="stage-gate-select"]')).toBeNull();
+    // The vet type is retired: the reviewer stage's gate is an ordinary
+    // configurable control, not a locked always-pausing badge.
+    expect(gate.querySelector('[data-testid="stage-gate-vet"]')).toBeNull();
+    const select = gate.querySelector('[data-testid="stage-gate-select"]') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    expect(select.value).toBe('inherit');
   });
 
   it('imports a pipeline through the bridge and refreshes without a reload', async () => {
@@ -249,7 +266,11 @@ describe('Pipelines nav entry (Layout)', () => {
     expect(nav!.getAttribute('aria-current')).toBe('page');
   });
 
-  it('omits the Pipelines entry when no space is resolved (it is space-scoped)', async () => {
+  it('omits the Pipelines entry only when no space is resolved AND none was ever visited', async () => {
+    // The agnostic-route nav falls back to the most recent space, so the
+    // entry disappears only on a truly fresh session (no route space, no
+    // recency). Clear the recency other tests in this file recorded.
+    localStorage.removeItem('rasen.recentSpaces');
     await mountLayout('/'); // bootstrap: no space
     expect(container.querySelector('[data-testid="nav-pipelines"]')).toBeNull();
   });

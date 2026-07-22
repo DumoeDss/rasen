@@ -1084,24 +1084,23 @@ stages:
       expect(result.stdout).not.toContain('loop=review-cycle');
     });
 
-    // autopilot-gate-policy: define-goal's gate widened from true to 'vet'.
-    // --json reports the exact string value; the human table surfaces it
-    // distinctly as `gate(vet)` so an operator can tell it apart from an
-    // ordinary skippable gate at a glance.
-    it("reports define-goal gate as 'vet' in --json and renders gate(vet) in human-readable show", async () => {
+    // autopilot-gate-policy: the vet type is retired — define-goal is an
+    // ordinary gate: true reported as a boolean in --json and rendered as the
+    // plain `gate` label in the human table (no `gate(vet)` variant remains).
+    it('reports define-goal gate as a boolean true in --json and renders the plain gate label', async () => {
       const jsonResult = await runCLI(['pipeline', 'show', 'goal-loop-measure', '--json'], {
         cwd: testDir,
       });
       expect(jsonResult.exitCode).toBe(0);
       const json = JSON.parse(jsonResult.stdout.trim());
       const defineGoal = json.stages.find((s: any) => s.id === 'define-goal');
-      expect(defineGoal.gate).toBe('vet');
+      expect(defineGoal.gate).toBe(true);
       const ship = json.stages.find((s: any) => s.id === 'ship');
       expect(ship.gate).toBe(true);
 
       const humanResult = await runCLI(['pipeline', 'show', 'goal-loop-measure'], { cwd: testDir });
       expect(humanResult.exitCode).toBe(0);
-      expect(humanResult.stdout).toContain('gate(vet)');
+      expect(humanResult.stdout).not.toContain('gate(vet)');
     });
 
     // Regression guard: the goal-loop generalization must not have changed the

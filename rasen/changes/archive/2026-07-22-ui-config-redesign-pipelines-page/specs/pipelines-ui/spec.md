@@ -51,12 +51,12 @@ The Pipelines page SHALL open with a Defaults table presenting the base and per-
 
 ### Requirement: The pipeline library is managed from the page
 
-The page SHALL offer pipeline library actions through the pipelines API's CLI-backed bridge, never by the browser touching the filesystem: **init** (scaffold a draft to a picked output directory, success shows the draft path), **import** (a picked `.rasenpkg`, with an explicit overwrite retry when a same-name pipeline is already installed), **export** (picked destination and filename, explicit overwrite retry on an existing destination — offered for built-in and user pipelines alike, since exporting to fork or share is legitimate), **delete** (user pipelines only, behind confirmation; a referrer-guard refusal shows the CLI's message naming the referrers with a separately confirmed force option). Built-in pipelines SHALL present no delete affordance, but SHALL still offer export. Pipeline validation has no UI surface on this page — it stays the CLI path (`rasen pipeline validate`) and the Workflows page's concern; the pipelines mutation bridge admits only init/import/export/delete. Every failure SHALL surface the CLI's own error message verbatim, and the page SHALL prevent submitting a second mutation while one is in flight.
+The page SHALL offer pipeline library actions through the pipelines API's CLI-backed bridge, never by the browser touching the filesystem, and SHALL offer each action only where the CLI supports it: **init** (scaffold a draft to a picked output directory, success shows the draft path), **import** (a picked `.rasenpkg`, with an explicit overwrite retry when a same-name pipeline is already installed), **export** (user pipelines only — the CLI refuses to export a built-in or project pipeline; picked destination and filename, explicit overwrite retry on an existing destination), **delete** (user pipelines only, behind confirmation; a referrer-guard refusal shows the CLI's message naming the referrers with a separately confirmed force option). A pipeline the CLI will not export or delete — a built-in (package) pipeline or a project-layer pipeline, i.e. anything not resolved from the user library — SHALL therefore present neither a delete nor an export affordance and SHALL be visibly locked, so no action leads to a dead CLI refusal. Pipeline validation has no UI surface on this page — it stays the CLI path (`rasen pipeline validate`) and the Workflows page's concern; the pipelines mutation bridge admits only init/import/export/delete. Every failure SHALL surface the CLI's own error message verbatim, and the page SHALL prevent submitting a second mutation while one is in flight.
 
-#### Scenario: Built-ins lock delete but allow export
+#### Scenario: Non-user-library pipelines are locked
 
-- **WHEN** the user views a built-in pipeline
-- **THEN** no delete control is offered and the entry is visibly locked, while export remains available
+- **WHEN** the user views a pipeline that is not resolved from the user library (a built-in package pipeline or a project-layer pipeline)
+- **THEN** neither a delete nor an export control is offered and the entry is visibly locked, matching what the CLI will accept
 
 #### Scenario: Import conflict offers overwrite
 

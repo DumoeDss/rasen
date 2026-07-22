@@ -244,6 +244,28 @@ describe('ConfigEntryRow', () => {
     expect(Number(numberInputs[0].value)).toBeGreaterThan(0);
   });
 
+  it('renders "not set" (never "undefined") when the inherited default is undefined', () => {
+    // A models.* key has no built-in default; with no local/store/global value
+    // the inherited-from-default line must not leak the literal "undefined".
+    const noDefaultKey: WireConfigEntry = {
+      definition: {
+        key: 'models.default',
+        scopes: ['global', 'store', 'project'],
+        type: 'string',
+        defaultValue: undefined,
+        description: 'Base model for every agent role',
+        group: 'Workflow',
+        constraints: { type: 'string' },
+      },
+      value: '',
+      source: 'default',
+      scopeValues: {},
+    };
+    mount(noDefaultKey, container, { mode: 'local', spaceType: 'project' });
+    expect(container.textContent).toContain('Inherited from default: not set');
+    expect(container.textContent).not.toContain('Inherited from default: undefined');
+  });
+
   it('config-page-coherence: renders a models.* key as a text input with a datalist of known suggestions', () => {
     const modelKey: WireConfigEntry = {
       definition: {

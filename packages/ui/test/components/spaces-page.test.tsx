@@ -251,4 +251,55 @@ describe('SpacesPage', () => {
     // Stayed on the page — no navigation on failure.
     expect(window.location.pathname).toBe('/spaces');
   });
+
+  it('keeps every worktree row when spaces share a selector — no collapse on re-render or search (MAJOR-1)', async () => {
+    // Git worktrees of one repo share a projectId → one selector, many roots.
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const DUP = {
+      spaces: [
+        { type: 'project', id: 'shared', name: 'Worktree Alpha', root: '/repo/alpha' },
+        { type: 'project', id: 'shared', name: 'Worktree Beta', root: '/repo/beta' },
+        { type: 'project', id: 'other', name: 'Other', root: '/other' },
+      ],
+    };
+    (client.listSpaces as any).mockResolvedValue(DUP);
+    await mount(container);
+
+    const rowNames = () =>
+      Array.from(container.querySelectorAll('[data-testid="space-row"] .space-row__name')).map(
+        (n) => n.textContent
+      );
+
+    // All three rows present on mount (two share a selector).
+    expect(container.querySelectorAll('[data-testid="space-row"]').length).toBe(3);
+
+    // Re-render via PIN: pinning one worktree pins the shared selector (both
+    // worktree rows light their star — acceptable), and BOTH rows must survive.
+    const alphaRow = Array.from(container.querySelectorAll('[data-testid="space-row"]')).find((r) =>
+      r.textContent?.includes('Worktree Alpha')
+    )!;
+    await click(alphaRow.querySelector('[data-testid="pin-toggle"]'));
+    expect(container.querySelectorAll('[data-testid="space-row"]').length).toBe(3); // no collapse
+    expect(rowNames()).toEqual(expect.arrayContaining(['Worktree Alpha', 'Worktree Beta', 'Other']));
+
+    // Re-render via SEARCH: both worktree matches appear, not just one.
+    const search = container.querySelector('[data-testid="spaces-search"]') as HTMLInputElement;
+    await act(async () => {
+      search.value = 'worktree';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    const matches = rowNames();
+    expect(matches.length).toBe(2);
+    expect(matches).toEqual(expect.arrayContaining(['Worktree Alpha', 'Worktree Beta']));
+
+    // No preact duplicate-key warning was emitted during the re-renders.
+    const dupKeyWarning = consoleErrorSpy.mock.calls.some((args) =>
+      args.some((a) => typeof a === 'string' && /same key/i.test(a))
+    );
+    expect(dupKeyWarning).toBe(false);
+    consoleErrorSpy.mockRestore();
+  });
 });

@@ -146,7 +146,12 @@ export function SpaceSwitcher() {
           {projects.length > 0 && (
             <optgroup label="Projects">
               {projects.map((p) => (
-                <option key={`project:${p.id}`} value={`project:${p.id}`}>
+                // Keyed by the row-unique root, not the selector: worktrees of
+                // one repo share a selector, and `buildVisible` already dedupes
+                // options by selector, so a selector key is never row-unique
+                // (MAJOR-1). `value` stays the selector — navigation is
+                // selector-based.
+                <option key={p.root} value={`project:${p.id}`}>
                   {p.name}
                 </option>
               ))}
@@ -155,7 +160,7 @@ export function SpaceSwitcher() {
           {stores.length > 0 && (
             <optgroup label="Stores">
               {stores.map((s) => (
-                <option key={`store:${s.id}`} value={`store:${s.id}`}>
+                <option key={s.root} value={`store:${s.id}`}>
                   {s.name}
                 </option>
               ))}
