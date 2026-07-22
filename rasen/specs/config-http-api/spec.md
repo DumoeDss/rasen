@@ -159,25 +159,6 @@ The API server SHALL bind exclusively to the loopback interface (127.0.0.1) on a
 - **WHEN** a mutating request arrives without an `application/json` content type
 - **THEN** the request is rejected before any write
 
-### Requirement: Read-only pipelines inventory endpoint
-The CLI SHALL expose a read-only `GET /api/v1/pipelines` endpoint returning the available pipelines and, for each, the stages that carry a gate, so a client can render a gates inventory. Each pipeline SHALL report its `name`, `description`, and a `stages` list; each stage SHALL report its `id`, `role` (or null), `skill` (or null), and its gate value as `false`, `true`, or `'vet'`. The endpoint SHALL be GET-only (any other method yields 405) and SHALL draw its data from the same in-process pipeline registry loader the CLI uses, with no pipeline logic reimplemented in the handler. The endpoint SHALL require the session token exactly like the other `/api/` endpoints.
-
-#### Scenario: Pipelines endpoint returns gated-stage metadata
-- **WHEN** a client sends `GET /api/v1/pipelines` with a valid token
-- **THEN** the response lists each available pipeline with its stages, and each stage carries its `id`, `role`, `skill`, and gate value (`false`, `true`, or `'vet'`)
-
-#### Scenario: The vet gate is distinguishable in the response
-- **WHEN** a pipeline contains a stage marked `gate: 'vet'`
-- **THEN** that stage's gate value in the response is the string `'vet'`, distinct from an ordinary `true` gate, so a client can mark it as always-pausing
-
-#### Scenario: Non-GET methods are rejected
-- **WHEN** a client sends a `PUT`, `POST`, or `DELETE` to `/api/v1/pipelines`
-- **THEN** the response is 405 with error code `method_not_allowed` and no state changes
-
-#### Scenario: Token guard applies
-- **WHEN** a request to `/api/v1/pipelines` arrives without the session token or with an incorrect one
-- **THEN** the response is 401 with error code `unauthorized` and no handler logic runs
-
 ### Requirement: Wildcard family instances are first-class config API keys
 
 The config API SHALL serve wildcard family instances like ordinary keys. List responses SHALL include, in addition to the family template entries, one entry per family instance set in any contributing layer, each carrying its full instance key, effective value, source annotation, and raw per-scope values under the family's declared scopes. Single-key get SHALL accept a fully-qualified instance path: a set instance returns its resolved entry; a well-formed but unset instance returns the absent shape (no effective value from any layer) rather than an unknown-key error. Set and unset SHALL accept instance paths with an explicit scope, validating the path and value through the registry's family declarations before any write — a scope outside the family's declared scopes SHALL be rejected naming the scopes the family is settable in, and a malformed instance path SHALL be rejected naming the family's pattern. No family SHALL be excluded from API writes: `featureFlags.<name>` instances are settable through the API at their global scope like any other family instance.

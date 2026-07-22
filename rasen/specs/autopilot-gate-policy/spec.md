@@ -18,54 +18,44 @@ Define how the autopilot's ordinary human-confirmation gates (`gate: true`) reso
 - **WHEN** a user runs `/rasen:auto <task>` without `--no-gate` and no project gate default is set
 - **THEN** each `gate: true` stage pauses and waits for the human to Continue, Stop, or switch to Manual
 
-### Requirement: Gate policy resolves across project, store, and global configuration
+### Requirement: Gate policy is a mask over per-stage gate configuration
 
-A project SHALL be able to declare a default autopilot gate policy in `rasen/config.yaml` under an `autopilot.gates` key, a store SHALL be able to declare the same key in its own config for its inheriting member projects, and a machine SHALL be able to declare a default in the global config, with the values `on` (gates pause) or `off` (gates auto-approved). The effective policy SHALL resolve with precedence: the run argument (`--no-gate`) first, then the project config default, then the inherited store config default (when a store layer is active), then the global config default, then the built-in default of gates ON. The resolved policy's recorded source SHALL distinguish `flag`, `project`, `store`, `global`, and `default`. An absent or unrecognized `autopilot.gates` value at any scope SHALL fall back to the next layer without failing config parsing.
+An ordinary gate for a `(pipeline, stage)` SHALL resolve with three-tier precedence: (1) a `pipelines.<name>.gates.<stage>` configuration instance, itself resolving project over store over global, decides that stage outright; (2) otherwise, an effective `autopilot.gates: off` suppresses the gate; (3) otherwise the stage definition's own `gate:` value decides. The effective `autopilot.gates` base SHALL keep its existing resolution — the run argument (`--no-gate`) first, then project config, then the inherited store config (when a store layer is active), then global config, then the built-in default of `on` — with its recorded source distinguishing `flag`, `project`, `store`, `global`, and `default`, and an absent or unrecognized value at any scope falling through without failing config parsing. `autopilot.gates: on` therefore means the stage definitions are honoured, not that every stage gates. A stage whose definition declares the always-pausing `'vet'` gate SHALL be outside this mask entirely, per the vet requirement of this capability. Run-state SHALL record the resolved base policy and source exactly as before — per-stage instances resolve live at each gate, never frozen into run-state — and run-states recorded before per-stage configuration existed SHALL parse unchanged. The LEAD SHALL learn each stage's effective gate from the pipeline inspection surface (which reports mask-resolved effective gates) rather than combining layers itself.
 
-#### Scenario: Config default is honored without the flag
+#### Scenario: Per-stage on pierces an off base
 
-- **WHEN** `rasen/config.yaml` declares `autopilot.gates: off` and the user runs `/rasen:auto <task>` without `--no-gate`
-- **THEN** ordinary gates are auto-approved as if `--no-gate` were passed
+- **WHEN** `autopilot.gates: off` is effective and `pipelines.small-feature.gates.propose` is `on` at any scope
+- **THEN** the `propose` stage of `small-feature` pauses while every other ordinary gate in the run is auto-approved
 
-#### Scenario: Store default is honored when no project value is set
+#### Scenario: Per-stage off silences one stage under an on base
 
-- **WHEN** a project inherits configuration from a store whose config declares `autopilot.gates: off`, the project sets no `autopilot.gates`, and the user runs `/rasen:auto <task>` without `--no-gate`
-- **THEN** ordinary gates are auto-approved, and the resolved policy identifies the store config as its source
+- **WHEN** `autopilot.gates` resolves `on` and `pipelines.full-feature.gates.review` is `off` at project scope
+- **THEN** the `review` stage's ordinary gate is auto-approved while other gated stages still pause per their definitions
 
-#### Scenario: Project value wins over store and global
+#### Scenario: Per-stage instances rank project over store over global
 
-- **WHEN** the inherited store's config declares `autopilot.gates: off`, the global config declares `autopilot.gates: off`, and the project config declares `autopilot.gates: on`
-- **THEN** the effective policy is gates ON with source `project`
+- **WHEN** `pipelines.bug-fix.gates.apply` is `off` globally and `on` in the project's config
+- **THEN** the stage gates on — the project instance wins within tier one
 
-#### Scenario: Store value wins over global
+#### Scenario: Base resolution and sources are unchanged
 
-- **WHEN** the inherited store's config declares `autopilot.gates: on` and the global config declares `autopilot.gates: off`, with no project value and no flag
-- **THEN** the effective policy is gates ON with source `store`
+- **WHEN** no per-stage instance exists for a stage and the base resolves from flag, project, store, or global configuration
+- **THEN** the outcome and the recorded source (`flag`, `project`, `store`, `global`, or `default`) match the pre-mask behavior exactly, including `--no-gate` beating every config layer
 
-#### Scenario: Global default is honored when no project or store value is set
+#### Scenario: On means honour the definitions
 
-- **WHEN** the global config declares `autopilot.gates: off`, neither the project nor an active store layer sets `autopilot.gates`, and the user runs without `--no-gate`
-- **THEN** ordinary gates are auto-approved with the global config identified as the source
+- **WHEN** `autopilot.gates` resolves `on` and no per-stage instance exists
+- **THEN** exactly the stages whose definitions declare a gate pause, and ungated stages run through — identical to today
 
-#### Scenario: Run flag overrides config
+#### Scenario: Unrecognized values fall through
 
-- **WHEN** any combination of project, store, and global configs declare `autopilot.gates: on` and the user runs `/rasen:auto --no-gate <task>`
-- **THEN** ordinary gates are auto-approved (the run flag wins over every config layer)
+- **WHEN** `autopilot.gates` or a per-stage instance holds a value other than `on`/`off` in any scope
+- **THEN** parsing succeeds, the invalid value is ignored with a warning, and resolution falls to the next tier or layer
 
-#### Scenario: Absent config falls back to gates on
+#### Scenario: Recorded run-state stays compatible
 
-- **WHEN** no `autopilot.gates` key is present in the project, store, or global config and no `--no-gate` flag is passed
-- **THEN** the effective policy is gates ON and gate stages pause
-
-#### Scenario: Unrecognized config value does not break parsing
-
-- **WHEN** `autopilot.gates` holds a value other than `on` or `off` in any scope
-- **THEN** config parsing succeeds, the invalid value is ignored with a warning, and resolution falls through to the next layer
-
-#### Scenario: Recorded run-state accepts the store source
-
-- **WHEN** a run's gate policy resolved from the store layer is recorded in run-state and the run is later resumed
-- **THEN** the recorded `gatePolicy` with source `store` reads back without error, and run-states recorded before this capability existed still parse unchanged
+- **WHEN** a run's base gate policy resolved from the store layer is recorded and the run is later resumed after per-stage instances change
+- **THEN** the recorded `gatePolicy` with source `store` reads back without error, and the resumed run's gates reflect the live per-stage instances
 
 ### Requirement: Auto-approved gates are recorded and survive resume
 

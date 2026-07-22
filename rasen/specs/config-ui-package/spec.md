@@ -173,39 +173,24 @@ The editor's visual identity SHALL be delivered entirely by assets bundled into 
 - **WHEN** the package's dependencies are inspected after the restyle
 - **THEN** no new runtime dependency has been added and the build remains a pure static-asset front end
 
-### Requirement: The configuration page is organized into scope-filtered tabs
-The configuration page SHALL present its keys in tabs mapped from the registry's group metadata: General (Profile, Appearance, and Behavior groups), Project (Project and Archive groups), Privacy (Telemetry group), Advanced (the Advanced group), and — until the pipeline surface takes them over — a Workflow tab carrying the Workflow and Autopilot groups exactly as they render today, including the read-only gates inventory. A tab none of whose keys are visible in the active scope mode SHALL not be shown; a key whose group maps to no tab SHALL still be reachable in a trailing bucket rather than hidden. Each entry SHALL title on a human-readable label with its dot-path key as secondary text. Within the Workflow tab, the per-role tuning keys SHALL keep their existing controls: the base and per-role handoff thresholds as dual-form threshold controls, and the base and per-role model keys as text inputs offering known model-preset ids as non-binding suggestions with any typed id accepted.
+### Requirement: The configuration page is organized into four scope-filtered tabs
 
-#### Scenario: Tabs map the registry groups
+The configuration page SHALL present its keys in exactly four tabs mapped from the registry's group metadata: General (Profile, Appearance, and Behavior groups), Project (Project and Archive groups), Privacy (Telemetry group), and Advanced (the Advanced group). The Workflow, Autopilot, and Pipelines groups SHALL NOT render on the configuration page — their keys and family entries belong to the Pipelines page. A tab none of whose keys are visible in the active scope mode SHALL not be shown; a key whose group maps to no tab and is not claimed by another surface SHALL still be reachable in a trailing bucket rather than hidden. Each entry SHALL title on a human-readable label with its dot-path key as secondary text.
+
+#### Scenario: Four tabs, pipeline-surface groups absent
+
 - **WHEN** the configuration page loads
-- **THEN** the keys appear under General, Project, Privacy, Advanced, and Workflow tabs per their registry groups, each row titled on a readable label with the dot-path visible as secondary text
+- **THEN** it offers at most General, Project, Privacy, and Advanced tabs, and no key of the Workflow, Autopilot, or Pipelines groups renders anywhere on the page
 
 #### Scenario: Empty tab is absent
-- **WHEN** the active mode leaves a tab with no visible keys (for example Privacy in Local mode, since telemetry is global-only)
+
+- **WHEN** the active mode leaves a tab with no visible keys
 - **THEN** that tab is not offered until the mode changes
 
-#### Scenario: Workflow tab preserves the role-matrix controls
-- **WHEN** the page renders the Workflow tab
-- **THEN** the handoff threshold keys render as dual-form threshold controls, the model keys as suggestion-backed text inputs accepting any id, and the gates inventory renders read-only within the Autopilot group section
+#### Scenario: Unclaimed unmapped group stays reachable
 
-#### Scenario: Unmapped group stays reachable
-- **WHEN** an entry's group matches no tab mapping
+- **WHEN** an entry's group matches no tab mapping and no other surface claims it
 - **THEN** the entry still renders in a trailing bucket rather than disappearing
-
-### Requirement: The Autopilot group shows a read-only gates inventory
-The configuration page SHALL render, within the `Autopilot` group, a read-only gates inventory sourced from `GET /api/v1/pipelines`. The inventory SHALL show, per pipeline, the stages that act as gates, and SHALL mark every stage whose gate value is `'vet'` as always-pausing — a gate that cannot be disabled by an `autopilot.gates: off` default or a `--no-gate` run — distinctly from an ordinary `gate: true` stage. The inventory SHALL be display-only: it never writes configuration and offers no gate-editing controls.
-
-#### Scenario: Gates inventory lists gated stages per pipeline
-- **WHEN** the user views the `Autopilot` group
-- **THEN** a gates inventory lists each pipeline and its gated stages, fed by the pipelines endpoint
-
-#### Scenario: The vet gate is marked as always-pausing
-- **WHEN** the inventory renders a stage whose gate value is `'vet'`
-- **THEN** that stage is marked as always pausing and not disableable by gates-off, distinctly from ordinary gates
-
-#### Scenario: The inventory is read-only
-- **WHEN** the user interacts with the gates inventory
-- **THEN** no gate-editing control is offered and no configuration write is issued from it
 
 ### Requirement: Platform shell scoped to space-aware routing, layout, and API client
 The app SHALL provide a platform shell — client-side routing, an application layout with navigation and a dual-namespace space switcher, and a typed API client mirroring the served APIs' wire shapes — whose navigation offers the platform's views within the selected planning space: the board (the space home), an archive view, and the configuration page. The shell SHALL derive the active planning space from the URL (per the management-ui-shell capability) rather than from an in-memory selection store. The space switcher SHALL list registered projects and stores as two type-tagged groups and SHALL always address a real space — the shell SHALL NOT offer a "no space" / global-only shell state. The shell SHALL NOT provide a top-level Sessions page; live runs surface only through the header's running-run summary. Future task and archive modules extend the shell.
