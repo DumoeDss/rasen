@@ -423,3 +423,48 @@ export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
 export interface SpacesResponse {
   spaces: SpaceEntry[];
 }
+
+// ---- Local-path browsing (local-path-browsing design D3) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`GET /api/v1/local-paths`). Same hand-maintained-mirror discipline.
+
+/** One entry of an enumerated directory (design D3). */
+export interface LocalPathEntry {
+  name: string;
+  isDir: boolean;
+  /** True when the entry contains a `.git` directory OR a `.git` file (worktrees/submodules use a file). */
+  isGitRepo: boolean;
+}
+
+/** `GET /api/v1/local-paths` response (design D3). */
+export interface LocalPathsResponse {
+  /** The canonical absolute path enumerated. */
+  path: string;
+  /** The canonical parent path, or null at a filesystem root. */
+  parent: string | null;
+  /** The platform path separator. */
+  separator: string;
+  /** True only for the home start-point response (no `path` param supplied). */
+  home?: boolean;
+  entries: LocalPathEntry[];
+}
+
+// ---- Space creation (space-creation design D4) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`POST /api/v1/spaces`). On failure the thrown `ApiError.message` is the
+// CLI's own error text, verbatim.
+
+/** `POST /api/v1/spaces` request body (design D4). */
+export interface CreateSpaceRequest {
+  kind: 'project' | 'store';
+  /** An absolute filesystem path — the space's target directory. */
+  path: string;
+  /** Store id; required only for a fresh store (a directory with no `rasen/` root). */
+  id?: string;
+}
+
+/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
+export interface CreateSpaceResponse {
+  operation: 'init' | 'store-register' | 'store-setup';
+  space: SpaceEntry;
+}

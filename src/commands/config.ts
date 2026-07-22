@@ -182,6 +182,18 @@ function buildEditorChoice(
     };
   }
 
+  // `ui.pinnedSpaces` is the second-ever array key and, like `workflows`, has
+  // no interactive array prompt — render it as a disabled row pointing at the
+  // Spaces page rather than letting the editor try to prompt an array type.
+  if (definition.key === 'ui.pinnedSpaces') {
+    return {
+      value: '__pinnedSpaces__',
+      name: label,
+      description: ui.pinnedSpacesDescription,
+      disabled: ui.pinnedSpacesDisabled,
+    };
+  }
+
   // "Project-only" for the EDITOR's write targets means: settable at project
   // scope but NOT global. The `store` scope is not a CLI write target (W1
   // Non-Goal), so a store+project key (e.g. `schema`) is still edited at

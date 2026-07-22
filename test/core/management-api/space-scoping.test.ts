@@ -264,11 +264,24 @@ describe('management API space scoping (planning-space-addressing design D2/D6)'
       expect((res.json() as any).error.code).toBe('unauthorized');
     });
 
-    it('405s a non-GET on /api/v1/spaces', async () => {
+    it('admits POST on /api/v1/spaces to the creation bridge (space-creation), 405s PUT and DELETE', async () => {
       const h = await startServer();
-      const res = await req(h.port, { method: 'POST', path: '/api/v1/spaces', headers: authed() });
-      expect(res.status).toBe(405);
-      expect((res.json() as any).error.code).toBe('method_not_allowed');
+      // POST is now admitted (space-creation): a bad body reaches validation as
+      // a 400, proving it is routed to the bridge rather than method-rejected.
+      const post = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/spaces',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'banana', path: '/tmp/x' }),
+      });
+      expect(post.status).toBe(400);
+      expect((post.json() as any).error.code).toBe('invalid_input');
+
+      for (const method of ['PUT', 'DELETE']) {
+        const res = await req(h.port, { method, path: '/api/v1/spaces', headers: authed() });
+        expect(res.status, method).toBe(405);
+        expect((res.json() as any).error.code).toBe('method_not_allowed');
+      }
     });
 
     it('tolerates one trailing slash on /api/v1/spaces/', async () => {

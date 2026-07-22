@@ -527,6 +527,8 @@
       "environmentOverrideNote": " [environment variable takes precedence]",
       "workflowsDescription": "Use `rasen profile` to change workflows",
       "workflowsDisabled": "use `rasen profile`",
+      "pinnedSpacesDescription": "Pins are managed from the Spaces page in `rasen ui` (or `rasen config set ui.pinnedSpaces`)",
+      "pinnedSpacesDisabled": "manage from the Spaces page",
       "projectRequired": "requires a Rasen project",
       "projectScope": "Project (this repo)",
       "globalScope": "Global (this machine)",

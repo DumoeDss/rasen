@@ -76,6 +76,15 @@ export const GlobalConfigSchema = z
           .optional(),
       })
       .optional(),
+    // UI-managed preferences. Typed (rather than left to passthrough) so the
+    // registry round-trip test for `ui.pinnedSpaces` stays meaningful; still
+    // `.passthrough()` so a future UI key does not need a schema bump to persist.
+    ui: z
+      .object({
+        pinnedSpaces: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 

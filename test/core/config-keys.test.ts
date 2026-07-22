@@ -171,10 +171,34 @@ describe('config-keys registry', () => {
       const def = findConfigKeyDefinition('proactive', 'global')!;
       expect(validateConfigValue(def, 'yes')).toMatch(/boolean/);
     });
+
+    it('rejects a non-array value for ui.pinnedSpaces (the array type)', () => {
+      const def = findConfigKeyDefinition('ui.pinnedSpaces', 'global')!;
+      expect(validateConfigValue(def, 'project:api')).toMatch(/array/);
+      expect(validateConfigValue(def, { a: 1 })).toMatch(/array/);
+      expect(validateConfigValue(def, ['project:api', 'store:team'])).toBeNull();
+    });
+  });
+
+  describe('ui.pinnedSpaces (spaces-page pins key)', () => {
+    it('is a global-only array key with an empty-array default', () => {
+      expect(validateConfigKeyPath('ui.pinnedSpaces', 'global').valid).toBe(true);
+      expect(validateConfigKeyPath('ui.pinnedSpaces', 'project').valid).toBe(false);
+      const def = findConfigKeyDefinition('ui.pinnedSpaces', 'global')!;
+      expect(def.type).toBe('array');
+      expect(def.defaultValue).toEqual([]);
+    });
+
+    it('round-trips a selector array through the global config schema', () => {
+      const result = GlobalConfigSchema.safeParse({
+        ui: { pinnedSpaces: ['store:team-store', 'project:api'] },
+      });
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('scope assignment', () => {
-    it('assigns exactly 8 global-only, 3 store+project, and 14 all-three keys', () => {
+    it('assigns exactly 9 global-only, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -182,10 +206,12 @@ describe('config-keys registry', () => {
       const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
 
       // Guards a future key from silently missing the store scope.
-      expect(globalOnly.length).toBe(7);
+      // 8 = the 7 machine-level keys from the store-scope re-scope plus
+      // ui.pinnedSpaces (spaces-page pins, deliberately global-only).
+      expect(globalOnly.length).toBe(8);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
-      // Only featureFlags is a global-only wildcard; the 8th global-only key.
+      // Only featureFlags is a global-only wildcard; the 9th global-only key.
       expect(CONFIG_KEY_REGISTRY.filter((def) => def.wildcard).length).toBe(1);
     });
   });

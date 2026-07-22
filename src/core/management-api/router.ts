@@ -25,9 +25,11 @@ import {
   type LaunchSpaceResolution,
 } from './sessions.js';
 import { handleSpaces } from './spaces.js';
+import { handleLocalPaths } from './local-paths.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
 import { createChangeSubmitter } from './submit.js';
+import { createSpaceCreator } from './create-space.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
@@ -69,6 +71,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/runs',
   '/api/v1/sessions',
   '/api/v1/spaces',
+  '/api/v1/local-paths',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -113,7 +116,7 @@ function matchSessionIdPath(pathname: string): string | null {
   return rest;
 }
 
-/** Methods admitted per management path (design D1/D4): everywhere GETs, `/changes` and `/sessions` also POST, session-id paths also DELETE. */
+/** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
@@ -125,7 +128,9 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET' || method === 'POST';
   }
   if (method === 'GET') return true;
-  return pathname === '/api/v1/changes' && method === 'POST';
+  return (
+    (pathname === '/api/v1/changes' || pathname === '/api/v1/spaces') && method === 'POST'
+  );
 }
 
 type BodyReadResult =
@@ -226,6 +231,10 @@ export function createManagementRouter(
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
+
+  // One space creator per server instance (space-creation design D5): its own
+  // cap-1 concurrency, independent of change submission's cap.
+  const createSpace = createSpaceCreator();
 
   // One supervisor per server instance (design D4/task 2.4): its own
   // registry, its own concurrency cap, its own agent-CLI resolution cache.
@@ -387,8 +396,45 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/spaces' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await createSpace(body.value);
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/spaces') {
       sendJson(res, 200, await handleSpaces());
+      return;
+    }
+
+    if (pathname === '/api/v1/local-paths') {
+      const pathParam = url.searchParams.get('path') ?? undefined;
+      const result = await handleLocalPaths(pathParam);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
       return;
     }
 

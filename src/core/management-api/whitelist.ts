@@ -30,13 +30,17 @@ export interface SupervisedLongRunnerEntry {
 export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
 
 /**
- * The whitelist table. Bounded CLI tier SHALL contain exactly one entry
- * (`create-change`); supervised long-runner tier SHALL contain exactly two
- * (`auto`, `goal`) — both requirement-level exactness rules from
- * change-submission's spec.
+ * The whitelist table. Bounded CLI tier SHALL contain exactly four entries
+ * (`create-change` for change submission, plus `create-project-space`,
+ * `register-store-space`, and `setup-store-space` for space creation);
+ * supervised long-runner tier SHALL contain exactly two (`auto`, `goal`) —
+ * both requirement-level exactness rules from change-submission's spec.
  */
 export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze({
   'create-change': { tier: 'bounded-cli', op: 'create-change' },
+  'create-project-space': { tier: 'bounded-cli', op: 'create-project-space' },
+  'register-store-space': { tier: 'bounded-cli', op: 'register-store-space' },
+  'setup-store-space': { tier: 'bounded-cli', op: 'setup-store-space' },
   auto: {
     tier: 'supervised-long-runner',
     op: 'auto',

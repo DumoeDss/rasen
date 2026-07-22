@@ -326,6 +326,15 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     description: 'Per-role model override for the shipper role (wins over models.default at the same scope); any model id is accepted',
     group: 'Workflow',
   },
+  // ---- global scope (UI-managed) ----
+  {
+    key: 'ui.pinnedSpaces',
+    scopes: ['global'],
+    type: 'array',
+    defaultValue: [],
+    description: 'Pinned planning spaces as <type>:<id> selectors (managed from the Spaces page)',
+    group: 'Appearance',
+  },
 ];
 
 /** Looks up the exact (non-wildcard) registry entry for a key path settable in the given scope. */
