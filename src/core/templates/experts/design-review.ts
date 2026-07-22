@@ -1,6 +1,12 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE, CHROME_USE_SETUP, DESIGN_METHODOLOGY, TEST_BOOTSTRAP } from './_shared.js';
+import {
+  PREAMBLE,
+  CHROME_USE_SETUP,
+  DESIGN_METHODOLOGY,
+  TEST_BOOTSTRAP,
+  PROJECT_DOCS_DIR_RESOLUTION,
+} from './_shared.js';
 
 const BODY = `
 ${PREAMBLE}
@@ -208,10 +214,8 @@ After all fixes are applied:
 **Local:** \`.rasen/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:**
-\`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
-\`\`\`
-Write to \`~/.rasen/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+${PROJECT_DOCS_DIR_RESOLUTION}
+Write to \`$DOCS_DIR/{user}-{branch}-design-audit-{datetime}.md\`
 
 **Per-finding additions** (beyond standard design audit report):
 - Fix Status: verified / best-effort / reverted / deferred

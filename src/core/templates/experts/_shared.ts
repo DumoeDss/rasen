@@ -186,6 +186,24 @@ export const PREAMBLE_DIALOGUE = [
  */
 export const PREAMBLE_LITE = PREAMBLE_BASE;
 
+/**
+ * Resolves the project's registry-backed machine-local documents directory.
+ * Replaces the old `SLUG=$(basename ...) && mkdir -p ~/.rasen/projects/$SLUG`
+ * pattern: that ad-hoc directory name was never written to the project
+ * registry's `home` field, so `rasen doctor --gc` (which deletes any
+ * `projects/` subdirectory no registry entry references) treated it as an
+ * orphan and deleted it outright — including the design docs standalone
+ * office-hours/qa/design-review sessions had just written there. `rasen init`
+ * always registers the project before these skills can run, so `machineHome`
+ * is reliably present; the in-repo fallback only covers a corrupt/unreadable
+ * registry, and is never gc'd because gc only touches the global data dir.
+ */
+export const PROJECT_DOCS_DIR_RESOLUTION = `\`\`\`bash
+DOCS_DIR=$(rasen context --json 2>/dev/null | jq -r '.root.machineHome // empty')
+if [ -n "$DOCS_DIR" ]; then DOCS_DIR="$DOCS_DIR/design-docs"; else DOCS_DIR=".rasen/design-docs"; fi
+mkdir -p "$DOCS_DIR"
+\`\`\``;
+
 export const CHROME_USE_SETUP = `## SETUP (run this BEFORE any chrome-use command)
 
 chrome-use drives your everyday Chrome over the Chrome DevTools Protocol via a
@@ -911,10 +929,8 @@ Compare screenshots and observations across pages for:
 **Local:** \`.rasen/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:**
-\`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
-\`\`\`
-Write to: \`~/.rasen/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+${PROJECT_DOCS_DIR_RESOLUTION}
+Write to: \`$DOCS_DIR/{user}-{branch}-design-audit-{datetime}.md\`
 
 **Baseline:** Write \`design-baseline.json\` for regression mode:
 \`\`\`json
