@@ -786,7 +786,15 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   box-shadow: var(--ring), var(--shadow); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2);
 }
 .workflow-card--invalid { border-color: var(--danger); }
-.workflow-card__open { text-align: left; background: none; border: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+/* A bare title button: reset the base button's ring/shadow so the name is not
+   trapped in a bordered box; the whole card is the affordance. */
+.workflow-card__open {
+  text-align: left; background: none; border: none; box-shadow: none; padding: 0; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+}
+.workflow-card__open:hover:not(:disabled) { background: none; box-shadow: none; }
+.workflow-card__open:hover:not(:disabled) .workflow-card__name { color: var(--accent); }
+.workflow-card__open:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius); }
 .workflow-card__name { font-size: var(--text-base); font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .workflow-card__id { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); overflow-wrap: anywhere; }
 .workflow-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--muted); }
@@ -831,3 +839,170 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .workflow-dialog__result { font-size: var(--text-sm); color: var(--fg-2); display: flex; flex-direction: column; gap: var(--space-2); }
 .workflow-valid { color: var(--success-fg); font-weight: 600; }
 .workflow-invalid { color: var(--danger-fg); font-weight: 600; }
+
+/* ═══ 25. Pipelines page (pipelines-ui spec) ════════════════════════════════ */
+/* Layout/structure only — reuses the app tokens and idioms: panels = the
+   config-page card substrate, badges = config-source pills, dialogs = the
+   workflow-dialog overlay. */
+.pipelines-page {
+  max-width: var(--container-max); margin: 0 auto; padding: var(--space-6) var(--gutter);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.pipelines-page__error { margin: 0; color: var(--danger-fg); font-size: var(--text-sm); }
+.pipelines-page__no-space { color: var(--muted); padding: var(--space-8) var(--gutter); }
+.pipelines-page__toolbar {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.pipelines-page__title { font-size: var(--text-lg); }
+.pipelines-page__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.pipelines-page__mode { display: flex; gap: var(--space-2); }
+
+/* Defaults — a compact role matrix plus the two autopilot controls, all inside
+   one panel that fits roughly a screen. */
+.pipelines-defaults {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+  box-shadow: var(--ring), var(--shadow); padding: var(--space-5) var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.pipelines-defaults__title { font-size: var(--text-lg); }
+.pipelines-defaults__legend { margin: 0; color: var(--muted); font-size: var(--text-sm); max-width: 72ch; }
+
+.defaults-matrix { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.defaults-matrix thead th {
+  text-align: left; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--meta); padding: 0 var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.defaults-matrix tbody th, .defaults-matrix tbody td {
+  padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-soft); vertical-align: top;
+}
+.defaults-matrix tbody tr:last-child th, .defaults-matrix tbody tr:last-child td { border-bottom: none; }
+.defaults-matrix__role { text-align: left; font-weight: 600; color: var(--fg); white-space: nowrap; width: 1%; }
+.defaults-matrix__empty { color: var(--meta); }
+
+.defaults-cell { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.defaults-cell__input { min-width: 150px; }
+.defaults-cell__num { width: 8rem; }
+.defaults-cell__forms { display: inline-flex; gap: var(--space-3); }
+.defaults-cell__forms label {
+  display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--muted);
+}
+.defaults-cell__value {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2);
+  background: var(--surface-muted); border-radius: var(--radius); padding: 4px var(--space-2);
+}
+.defaults-cell__error { color: var(--danger-fg); font-size: var(--text-xs); font-weight: 600; flex-basis: 100%; }
+
+.pipelines-defaults__autopilot {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-3) var(--space-6);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-soft);
+}
+/* Autopilot reuses the full ConfigEntryRow; drop its own top divider/padding inside the grid. */
+.pipelines-defaults__autopilot .config-entry { border-top: none; padding: 0; }
+
+/* Per-pipeline sections. */
+.pipelines-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.pipeline-section {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+  box-shadow: var(--ring), var(--shadow); padding: var(--space-5) var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.pipeline-section__header { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.pipeline-section__name { font-size: var(--text-base); font-weight: 700; }
+.pipeline-section__provenance, .pipeline-section__source {
+  font-size: var(--text-xs); font-weight: 600; border-radius: var(--radius-pill); padding: 1px var(--space-2);
+}
+.pipeline-section__provenance { background: var(--accent-tint); color: var(--accent); }
+.pipeline-section__provenance--user { background: var(--success-bg); color: var(--success-fg); }
+.pipeline-section__source { background: var(--surface-muted); color: var(--muted); }
+.pipeline-section__actions { margin-left: auto; display: flex; gap: var(--space-2); align-items: center; }
+.pipeline-section__lock {
+  font-size: var(--text-xs); font-weight: 600; color: var(--meta);
+  background: var(--surface-muted); border-radius: var(--radius-pill); padding: 2px var(--space-2);
+}
+.pipeline-section__description { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+
+/* Build-order lane — horizontal chips; stage id and role badge stay distinct. */
+.pipeline-lane {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap;
+  gap: var(--space-2); align-items: center;
+}
+.pipeline-lane__stage {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  background: var(--surface-muted); border-radius: var(--radius-lg); padding: 4px var(--space-3);
+}
+.pipeline-lane__stage-id { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2); }
+.pipeline-lane__stage-role {
+  font-size: var(--text-xs); font-weight: 600; color: var(--accent);
+  background: var(--accent-tint); border-radius: var(--radius-pill); padding: 0 var(--space-2);
+}
+
+/* Runtimes — compact aligned block, one row per role. */
+.pipeline-runtimes { display: flex; flex-direction: column; gap: var(--space-2); }
+.pipeline-runtimes h4 {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--meta); margin: 0;
+}
+.role-runtime {
+  display: grid; grid-template-columns: minmax(96px, 140px) minmax(120px, 200px) auto;
+  align-items: center; gap: var(--space-2) var(--space-3);
+}
+.role-runtime__role { font-weight: 600; text-transform: capitalize; }
+.role-runtime__error { color: var(--danger-fg); font-size: var(--text-xs); grid-column: 1 / -1; }
+
+/* Per-stage override rows — an aligned grid; labels sit above compact controls. */
+.pipeline-stages { display: flex; flex-direction: column; gap: 0; }
+.stage-row {
+  display: grid; grid-template-columns: minmax(130px, 170px) 1fr 1.4fr 2fr;
+  gap: var(--space-3) var(--space-4); align-items: start;
+  padding: var(--space-3) 0; border-top: 1px solid var(--border-soft);
+}
+.stage-row:first-child { border-top: none; padding-top: 0; }
+.stage-row__id { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.stage-row__id > span:first-child { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg-2); }
+.stage-row__role {
+  font-size: var(--text-xs); font-weight: 600; color: var(--accent);
+  background: var(--accent-tint); border-radius: var(--radius-pill); padding: 0 var(--space-2);
+}
+.stage-control { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.stage-control__label {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--meta);
+}
+.stage-control input, .stage-control select { width: 100%; min-width: 0; }
+.stage-control__handoff-forms { display: inline-flex; gap: var(--space-3); flex-wrap: wrap; }
+.stage-control__handoff-forms label {
+  display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--muted);
+}
+.stage-control__effective { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2); }
+.stage-control__error { color: var(--danger-fg); font-size: var(--text-xs); font-weight: 600; }
+.stage-row__source, .role-runtime .stage-row__source {
+  align-self: flex-start; font-size: var(--text-xs); font-weight: 600; color: var(--muted);
+  background: var(--surface-muted); border-radius: var(--radius-pill); padding: 1px var(--space-2); white-space: nowrap;
+}
+.stage-row__source--override { background: var(--success-bg); color: var(--success-fg); }
+
+@media (max-width: 720px) {
+  .stage-row { grid-template-columns: 1fr; }
+  .role-runtime { grid-template-columns: 1fr; }
+}
+
+/* Pipeline library dialogs — the workflow-dialog overlay idiom. */
+.pipeline-dialog__overlay {
+  position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 10vh; background: color-mix(in oklab, var(--fg), transparent 55%); backdrop-filter: blur(2px);
+}
+.pipeline-dialog {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-pop); padding: var(--space-6); width: min(520px, calc(100vw - var(--space-8)));
+  max-height: 80vh; overflow: auto; display: flex; flex-direction: column; gap: var(--space-4);
+}
+.pipeline-dialog__title { font-size: var(--text-lg); }
+.pipeline-dialog__form { display: flex; flex-direction: column; gap: var(--space-4); }
+.pipeline-dialog__field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
+.pipeline-dialog__actions { display: flex; justify-content: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+.pipeline-dialog__dismiss { display: flex; justify-content: flex-end; }
+.pipeline-dialog__error { color: var(--danger-fg); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.pipeline-dialog__hint { color: var(--meta); font-size: var(--text-xs); }
+.pipeline-dialog__result { font-size: var(--text-sm); color: var(--fg-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.pipeline-dialog__mono { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; }
