@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /**
  * Component coverage for the Workflows page and its nav entry (workflows-ui
- * spec): provenance-grouped listing with kind chip / unused badge / built-in
- * lock and the invalid group; the built-in lock (no delete affordance); the
- * guarded-delete → force path; the export overwrite retry; import success
- * refreshing the listing without a reload; the always-rendered nav entry with
- * no resolved space; and the absence of any model / handoff / gate control.
- * The `satisfies` fixtures it imports are the `tsc` drift tripwire.
+ * spec): category-sectioned listing (driver / task / expert, internal behind
+ * the driver disclosure) with the unused badge, per-card provenance (source
+ * badge + built-in lock) inside a mixed section, and the invalid group; the
+ * built-in lock (no delete affordance); the guarded-delete → force path; the
+ * export overwrite retry; import success refreshing the listing without a
+ * reload; the always-rendered nav entry with no resolved space; and the absence
+ * of any model / handoff / gate control. The `satisfies` fixtures it imports are
+ * the `tsc` drift tripwire.
  */
 import { render } from 'preact';
 import { act } from 'preact/test-utils';
@@ -98,30 +100,123 @@ describe('WorkflowsPage', () => {
     vi.resetAllMocks();
   });
 
-  it('groups by provenance with kind chip, unused badge, built-in lock, and the invalid group', async () => {
+  it('lists workflows in category sections (driver, task, expert) with no per-card kind chip', async () => {
     await mount(container);
 
-    expect(container.querySelector('[data-testid="workflows-group-built-in"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="workflows-group-user"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="workflows-group-invalid"]')).not.toBeNull();
+    // Sections render in the user-specified order driver, task, expert; internal
+    // is collapsed by default so its list is not a top-level section in the DOM.
+    const sections = Array.from(
+      container.querySelectorAll('section[data-testid^="workflows-section-"]')
+    ).map((s) => s.getAttribute('data-testid'));
+    expect(sections).toEqual([
+      'workflows-section-driver',
+      'workflows-section-task',
+      'workflows-section-expert',
+    ]);
 
-    const cards = Array.from(container.querySelectorAll('[data-testid="workflow-card"]'));
-    expect(cards.map((c) => c.getAttribute('data-id')).sort()).toEqual(['review-cycle', 'team-flow']);
+    // The enclosing section conveys the category, so cards carry no kind chip.
+    expect(container.querySelector('[data-testid="workflow-kind"]')).toBeNull();
 
-    const userCard = cards.find((c) => c.getAttribute('data-id') === 'team-flow')!;
-    expect(userCard.querySelector('[data-testid="workflow-kind"]')!.textContent).toBe('task');
-    expect(userCard.querySelector('[data-testid="workflow-unused"]')).not.toBeNull();
+    // Every workflow sits under the section matching its kind.
+    const driver = container.querySelector('[data-testid="workflows-section-driver"]')!;
+    const task = container.querySelector('[data-testid="workflows-section-task"]')!;
+    const expert = container.querySelector('[data-testid="workflows-section-expert"]')!;
+    expect(driver.querySelector('[data-id="review-cycle"]')).not.toBeNull();
+    expect(driver.querySelector('[data-id="plan-build"]')).not.toBeNull();
+    expect(task.querySelector('[data-id="team-flow"]')).not.toBeNull();
+    expect(expert.querySelector('[data-id="deep-research"]')).not.toBeNull();
 
-    const builtInCard = cards.find((c) => c.getAttribute('data-id') === 'review-cycle')!;
+    // Provenance stays visible inside a mixed section: the built-in card carries
+    // the lock and its source, the user card shows its own source, both in driver.
+    const builtInCard = driver.querySelector('[data-id="review-cycle"]')!;
+    const userCard = driver.querySelector('[data-id="plan-build"]')!;
     expect(builtInCard.querySelector('[data-testid="workflow-lock"]')).not.toBeNull();
+    expect(builtInCard.getAttribute('data-source')).toBe('built-in');
+    expect(userCard.querySelector('[data-testid="workflow-lock"]')).toBeNull();
+    expect(userCard.getAttribute('data-source')).toBe('user');
+    expect(userCard.querySelector('.workflow-card__source')!.textContent).toBe('user');
+
+    // The unused marker still rides on the card (team-flow is unused).
+    expect(task.querySelector('[data-id="team-flow"] [data-testid="workflow-unused"]')).not.toBeNull();
     expect(builtInCard.querySelector('[data-testid="workflow-unused"]')).toBeNull();
+
+    // The invalid section still renders after the category sections.
+    expect(container.querySelector('[data-testid="workflows-group-invalid"]')).not.toBeNull();
+  });
+
+  it('omits a category section that has no workflows', async () => {
+    // A task-only library: the driver and expert sections must be absent.
+    (client.listWorkflows as any).mockResolvedValue({
+      workflows: [
+        {
+          id: 'solo-task',
+          source: 'user',
+          sourcePath: '/home/u/.rasen/workflows/solo-task',
+          digest: 'aa11bb22cc33dd44ee',
+          kind: 'task',
+          skillName: 'rasen-solo-task',
+          unused: false,
+        },
+      ],
+      invalid: [],
+      diagnostics: [],
+    });
+    await mount(container);
+
+    expect(container.querySelector('[data-testid="workflows-section-task"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="workflows-section-driver"]')).toBeNull();
+    expect(container.querySelector('[data-testid="workflows-section-expert"]')).toBeNull();
+    // No internal workflows and no driver → no disclosure toggle either.
+    expect(container.querySelector('[data-testid="workflows-internal-toggle"]')).toBeNull();
+  });
+
+  it('hides internal workflows behind the driver disclosure until the toggle is clicked', async () => {
+    await mount(container);
+
+    const driver = container.querySelector('[data-testid="workflows-section-driver"]')!;
+    const toggle = driver.querySelector('[data-testid="workflows-internal-toggle"]');
+    expect(toggle).not.toBeNull();
+    expect(toggle!.textContent).toContain('Show internal (1)');
+
+    // Collapsed by default: the internal card is not in the DOM at all.
+    expect(container.querySelector('[data-testid="workflows-section-internal"]')).toBeNull();
+    expect(container.querySelector('[data-id="resolve-deps"]')).toBeNull();
+
+    await clickAndFlush(toggle);
+
+    const internal = driver.querySelector('[data-testid="workflows-section-internal"]');
+    expect(internal).not.toBeNull();
+    expect(internal!.querySelector('[data-id="resolve-deps"]')).not.toBeNull();
+  });
+
+  it('omits the internal disclosure when the library has no internal workflows', async () => {
+    (client.listWorkflows as any).mockResolvedValue({
+      workflows: [
+        {
+          id: 'review-cycle',
+          source: 'built-in',
+          sourcePath: null,
+          digest: 'abcdef0123456789aa',
+          kind: 'driver',
+          skillName: 'rasen-review-cycle',
+          unused: false,
+        },
+      ],
+      invalid: [],
+      diagnostics: [],
+    });
+    await mount(container);
+
+    expect(container.querySelector('[data-testid="workflows-section-driver"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="workflows-internal-toggle"]')).toBeNull();
   });
 
   it('locks built-ins: no delete or export control on a built-in card, both on a user card', async () => {
     await mount(container);
-    const cards = Array.from(container.querySelectorAll('[data-testid="workflow-card"]'));
-    const builtIn = cards.find((c) => c.getAttribute('data-id') === 'review-cycle')!;
-    const user = cards.find((c) => c.getAttribute('data-id') === 'team-flow')!;
+    const driver = container.querySelector('[data-testid="workflows-section-driver"]')!;
+    const task = container.querySelector('[data-testid="workflows-section-task"]')!;
+    const builtIn = driver.querySelector('[data-id="review-cycle"]')!;
+    const user = task.querySelector('[data-id="team-flow"]')!;
 
     expect(builtIn.querySelector('[data-testid="workflow-delete"]')).toBeNull();
     expect(builtIn.querySelector('[data-testid="workflow-export"]')).toBeNull();
@@ -136,9 +231,9 @@ describe('WorkflowsPage', () => {
       .mockResolvedValueOnce({ deleted: 'team-flow', forcedReferrers: ['pipeline:user:my-pipe'] });
 
     await mount(container);
-    const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
-      (c) => c.getAttribute('data-id') === 'team-flow'
-    )!;
+    const user = container
+      .querySelector('[data-testid="workflows-section-task"]')!
+      .querySelector('[data-id="team-flow"]')!;
     await clickAndFlush(user.querySelector('[data-testid="workflow-delete"]'));
 
     // Confirm the delete → the CLI refusal is surfaced verbatim.
@@ -164,9 +259,9 @@ describe('WorkflowsPage', () => {
       .mockResolvedValueOnce({ workflow: { id: 'team-flow', path: '/home/user/team-flow.rasenpkg' } });
 
     await mount(container);
-    const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
-      (c) => c.getAttribute('data-id') === 'team-flow'
-    )!;
+    const user = container
+      .querySelector('[data-testid="workflows-section-task"]')!
+      .querySelector('[data-id="team-flow"]')!;
     await clickAndFlush(user.querySelector('[data-testid="workflow-export"]'));
 
     // The dialog drives the shared local-path browser (the MINOR-1 fix), which
@@ -250,9 +345,9 @@ describe('WorkflowsPage', () => {
 
   it('opens a detail view showing the four requires slots, files, and usage referrers', async () => {
     await mount(container);
-    const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
-      (c) => c.getAttribute('data-id') === 'team-flow'
-    )!;
+    const user = container
+      .querySelector('[data-testid="workflows-section-task"]')!
+      .querySelector('[data-id="team-flow"]')!;
     await clickAndFlush(user.querySelector('[data-testid="workflow-open"]'));
 
     const detail = container.querySelector('[data-testid="workflow-detail"]');
@@ -260,6 +355,18 @@ describe('WorkflowsPage', () => {
     expect(detail!.textContent).toContain('dep-a'); // requires.workflows
     expect(container.querySelector('[data-testid="workflow-detail-files"]')!.textContent).toContain('workflow.yaml');
     expect(container.querySelector('[data-testid="workflow-detail-usage"]')!.textContent).toContain('user:my-pipe');
+
+    // The facts list shows kind / source / skill / digest and, since the command
+    // surface retired, no "Command" row (guards the remnant from returning).
+    const facts = container.querySelector('.workflow-detail__facts')!;
+    expect(facts.textContent).toContain('Kind');
+    expect(facts.textContent).toContain('task');
+    expect(facts.textContent).toContain('Source');
+    expect(facts.textContent).toContain('user');
+    expect(facts.textContent).toContain('Skill');
+    expect(facts.textContent).toContain('rasen-team-flow');
+    expect(facts.textContent).toContain('Digest');
+    expect(facts.textContent).not.toContain('Command');
   });
 
   it('offers no model, handoff, or gate control anywhere on the page', async () => {

@@ -14,7 +14,7 @@ import type {
 /**
  * The Workflows page (workflows-ui spec). A space-agnostic `/workflows` route
  * giving the user-wide installable workflow library a complete management
- * surface: inspect (listing grouped by provenance + per-workflow detail),
+ * surface: inspect (listing in category sections + per-workflow detail),
  * grow (init draft, validate, import), share (export), retire (delete). Every
  * mutation goes through the CLI-backed bridge (`client.mutateWorkflow`) — the
  * browser never touches the filesystem — and every CLI failure surfaces
@@ -83,8 +83,16 @@ export function WorkflowsPage() {
 
   const workflows = data?.workflows ?? [];
   const invalid = data?.invalid ?? [];
-  const builtIns = workflows.filter((w) => w.source === 'built-in');
-  const userWorkflows = workflows.filter((w) => w.source === 'user');
+  // Presentation is now by category, not provenance: driver (hosting internal
+  // plumbing behind a disclosure), then task, then expert. Provenance stays
+  // visible per card via the source badge and built-in lock.
+  const drivers = workflows.filter((w) => w.kind === 'driver');
+  const internalWorkflows = workflows.filter((w) => w.kind === 'internal');
+  const tasks = workflows.filter((w) => w.kind === 'task');
+  const experts = workflows.filter((w) => w.kind === 'expert');
+
+  const onExport = (id: string) => setDialog({ kind: 'export', id });
+  const onDelete = (id: string) => setDialog({ kind: 'delete', id });
 
   return (
     <div class="workflows-page" data-testid="workflows-page">
@@ -104,21 +112,30 @@ export function WorkflowsPage() {
         </div>
       </div>
 
-      <WorkflowGroup
-        heading="Built-in"
-        testid="workflows-group-built-in"
-        entries={builtIns}
+      <WorkflowSection
+        heading="Driver"
+        testid="workflows-section-driver"
+        entries={drivers}
+        internal={internalWorkflows}
         onOpen={setSelectedId}
-        onExport={undefined}
-        onDelete={undefined}
+        onExport={onExport}
+        onDelete={onDelete}
       />
-      <WorkflowGroup
-        heading="User"
-        testid="workflows-group-user"
-        entries={userWorkflows}
+      <WorkflowSection
+        heading="Task"
+        testid="workflows-section-task"
+        entries={tasks}
         onOpen={setSelectedId}
-        onExport={(id) => setDialog({ kind: 'export', id })}
-        onDelete={(id) => setDialog({ kind: 'delete', id })}
+        onExport={onExport}
+        onDelete={onDelete}
+      />
+      <WorkflowSection
+        heading="Expert"
+        testid="workflows-section-expert"
+        entries={experts}
+        onOpen={setSelectedId}
+        onExport={onExport}
+        onDelete={onDelete}
       />
       {invalid.length > 0 && <InvalidGroup entries={invalid} />}
 
@@ -154,10 +171,11 @@ type Dialog =
 
 // ── Listing ────────────────────────────────────────────────────────────────
 
-function WorkflowGroup({
+function WorkflowSection({
   heading,
   testid,
   entries,
+  internal,
   onOpen,
   onExport,
   onDelete,
@@ -165,11 +183,16 @@ function WorkflowGroup({
   heading: string;
   testid: string;
   entries: WorkflowListEntry[];
+  /** Only the driver section passes internal-kind plumbing to nest behind a disclosure. */
+  internal?: WorkflowListEntry[];
   onOpen: (id: string) => void;
-  onExport?: (id: string) => void;
-  onDelete?: (id: string) => void;
+  onExport: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
-  if (entries.length === 0) return null;
+  const internalEntries = internal ?? [];
+  // An empty category renders no section; the driver section still appears if
+  // it has internal plumbing to host even when no top-level drivers exist.
+  if (entries.length === 0 && internalEntries.length === 0) return null;
   return (
     <section class="workflows-group" data-testid={testid}>
       <h3 class="workflows-group__heading">{heading}</h3>
@@ -180,7 +203,52 @@ function WorkflowGroup({
           </li>
         ))}
       </ul>
+      {internalEntries.length > 0 && (
+        <InternalDisclosure entries={internalEntries} onOpen={onOpen} onExport={onExport} onDelete={onDelete} />
+      )}
     </section>
+  );
+}
+
+/**
+ * Internal workflows are driver plumbing (dependencies drivers pull in), so
+ * they live inside the driver section behind a collapsed-by-default toggle,
+ * mirroring the CLI's `--all` gating of the same group. The open state is plain
+ * component state, not persisted.
+ */
+function InternalDisclosure({
+  entries,
+  onOpen,
+  onExport,
+  onDelete,
+}: {
+  entries: WorkflowListEntry[];
+  onOpen: (id: string) => void;
+  onExport: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div class="workflows-internal">
+      <button
+        type="button"
+        class="workflows-internal__toggle"
+        data-testid="workflows-internal-toggle"
+        aria-expanded={shown}
+        onClick={() => setShown((s) => !s)}
+      >
+        {shown ? `Hide internal (${entries.length})` : `Show internal (${entries.length})`}
+      </button>
+      {shown && (
+        <ul class="workflows-group__list" data-testid="workflows-section-internal">
+          {entries.map((entry) => (
+            <li key={entry.id}>
+              <WorkflowCard entry={entry} onOpen={onOpen} onExport={onExport} onDelete={onDelete} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -192,8 +260,8 @@ function WorkflowCard({
 }: {
   entry: WorkflowListEntry;
   onOpen: (id: string) => void;
-  onExport?: (id: string) => void;
-  onDelete?: (id: string) => void;
+  onExport: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const isBuiltIn = entry.source === 'built-in';
   return (
@@ -208,10 +276,8 @@ function WorkflowCard({
         <span class="workflow-card__id">{entry.id}</span>
       </button>
       <div class="workflow-card__meta">
-        <span class="workflow-card__kind" data-testid="workflow-kind">{entry.kind}</span>
         <span class="workflow-card__source">{isBuiltIn ? 'built-in' : 'user'}</span>
         <span class="workflow-card__digest" title={entry.digest}>{abbreviate(entry.digest)}</span>
-        {entry.commandId && <span class="workflow-card__command">/{entry.commandId}</span>}
         {entry.unused && (
           <span class="workflow-card__unused" data-testid="workflow-unused">unused</span>
         )}
@@ -221,21 +287,17 @@ function WorkflowCard({
           </span>
         )}
       </div>
-      {/* Built-ins are pre-validated and locked, so they carry no per-card
-          actions — validation lives in the toolbar's Validate… dialog. Only
-          user-library cards expose export / delete. */}
-      {(onExport || onDelete) && (
+      {/* Category sections mix provenance, so export / delete are gated per card
+          from the entry's source: only user-library cards expose them. Built-ins
+          are pre-validated and locked; validation lives in the toolbar dialog. */}
+      {!isBuiltIn && (
         <div class="workflow-card__actions">
-          {onExport && (
-            <button type="button" data-testid="workflow-export" onClick={() => onExport(entry.id)}>
-              Export
-            </button>
-          )}
-          {onDelete && (
-            <button type="button" data-testid="workflow-delete" onClick={() => onDelete(entry.id)}>
-              Delete
-            </button>
-          )}
+          <button type="button" data-testid="workflow-export" onClick={() => onExport(entry.id)}>
+            Export
+          </button>
+          <button type="button" data-testid="workflow-delete" onClick={() => onDelete(entry.id)}>
+            Delete
+          </button>
         </div>
       )}
     </div>
@@ -307,7 +369,6 @@ function WorkflowDetailPanel({ id, onClose }: { id: string; onClose: () => void 
               <dt>Kind</dt><dd>{detail.workflow.kind}</dd>
               <dt>Source</dt><dd>{detail.workflow.source}</dd>
               <dt>Skill</dt><dd>{detail.workflow.skill.name}</dd>
-              <dt>Command</dt><dd>{detail.workflow.command ? `/${detail.workflow.command.id}` : 'none'}</dd>
               <dt>Digest</dt><dd class="workflow-detail__mono">{detail.workflow.digest}</dd>
             </dl>
             <Slots label="Requires workflows" items={detail.workflow.requires.workflows} />

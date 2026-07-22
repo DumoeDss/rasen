@@ -600,7 +600,6 @@ export interface WorkflowListEntry {
   digest: string;
   kind: WorkflowKind;
   skillName: string;
-  commandId: string | null;
   unused: boolean;
 }
 
@@ -629,7 +628,6 @@ export interface WorkflowDefinitionWire {
   kind: WorkflowKind;
   digest: string;
   skill: { name: string; dirName: string; description: string };
-  command: { id: string; name: string; category: string; tags: string[] } | null;
   requires: WorkflowDependencySet;
   recommends: { workflows: string[] };
   files: { path: string; sha256: string }[];
