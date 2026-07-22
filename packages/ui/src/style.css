@@ -753,3 +753,69 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   padding: 8px var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2);
 }
 .theme-toggle:hover:not(:disabled) { color: var(--accent); box-shadow: var(--ring-hover), var(--shadow); background: var(--surface); }
+
+/* ═══ 24. Workflows page (workflows-ui spec) ════════════════════════════════ */
+/* Library management surface. Reuses the app's tokens and card/dialog idioms —
+   no new visual language: card = board-card substrate, badges = gates-inventory
+   pill, dialogs = new-change-dialog overlay. */
+.workflows-page { max-width: var(--container-max); margin: 0 auto; padding: var(--space-6) var(--gutter); }
+.workflows-page__loading, .workflows-page__error { padding: var(--space-6) var(--gutter); color: var(--muted); }
+.workflows-page__toolbar {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+  flex-wrap: wrap; margin-bottom: var(--space-5);
+}
+.workflows-page__title { font-size: var(--text-lg); }
+.workflows-page__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.workflows-group { margin-bottom: var(--space-6); }
+.workflows-group__heading { font-size: var(--text-sm); color: var(--meta); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--space-3); }
+.workflows-group__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.workflow-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--ring), var(--shadow); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2);
+}
+.workflow-card--invalid { border-color: var(--danger); }
+.workflow-card__open { text-align: left; background: none; border: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.workflow-card__name { font-size: var(--text-base); font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.workflow-card__id { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); overflow-wrap: anywhere; }
+.workflow-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--muted); }
+.workflow-card__kind, .workflow-card__unused, .workflow-card__lock {
+  font-size: var(--text-xs); font-weight: 600; border-radius: var(--radius-pill); padding: 1px var(--space-2);
+}
+.workflow-card__kind { background: var(--accent-tint); color: var(--accent); }
+.workflow-card__unused { background: var(--warn-bg); color: var(--warn-fg); }
+.workflow-card__lock { background: var(--surface-muted); color: var(--meta); }
+.workflow-card__digest, .workflow-card__command { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+.workflow-card__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-1); }
+.workflow-card__diagnostics { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.workflow-diagnostic { font-size: var(--text-xs); color: var(--muted); }
+.workflow-diagnostic--error { color: var(--danger-fg); }
+.workflow-diagnostic--warning { color: var(--warn-fg); }
+
+.workflow-detail__overlay, .workflow-dialog__overlay {
+  position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh;
+  background: color-mix(in oklab, var(--fg), transparent 55%); backdrop-filter: blur(2px);
+}
+.workflow-detail, .workflow-dialog {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-pop);
+  padding: var(--space-6); width: min(560px, calc(100vw - var(--space-8))); max-height: 80vh; overflow: auto;
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.workflow-detail__header, .workflow-dialog__dismiss { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.workflow-dialog__dismiss { justify-content: flex-end; }
+.workflow-detail__facts { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--space-3); font-size: var(--text-sm); }
+.workflow-detail__facts dt { color: var(--muted); font-weight: 600; }
+.workflow-detail__facts dd { margin: 0; color: var(--fg-2); overflow-wrap: anywhere; }
+.workflow-detail__mono { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.workflow-detail__slot { font-size: var(--text-sm); color: var(--fg-2); }
+.workflow-detail__slot-label { color: var(--muted); font-weight: 600; }
+.workflow-detail__files ul, .workflow-detail__usage ul { list-style: none; margin: var(--space-1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
+.workflow-detail__files h4, .workflow-detail__usage h4 { font-size: var(--text-sm); color: var(--meta); margin-bottom: var(--space-1); }
+.workflow-dialog__title { font-size: var(--text-lg); }
+.workflow-dialog__form { display: flex; flex-direction: column; gap: var(--space-4); }
+.workflow-dialog__field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
+.workflow-dialog__actions { display: flex; justify-content: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+.workflow-dialog__error { color: var(--danger-fg); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.workflow-dialog__hint { color: var(--meta); font-size: var(--text-xs); }
+.workflow-dialog__result { font-size: var(--text-sm); color: var(--fg-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.workflow-valid { color: var(--success-fg); font-weight: 600; }
+.workflow-invalid { color: var(--danger-fg); font-weight: 600; }

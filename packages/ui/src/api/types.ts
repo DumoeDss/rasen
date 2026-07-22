@@ -483,3 +483,130 @@ export interface CreateSpaceResponse {
   operation: 'init' | 'store-register' | 'store-setup';
   space: SpaceEntry;
 }
+
+// ---- Workflow library (workflow-http-api design D3/D4) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package.
+// Same hand-maintained-mirror discipline as the rest of this file: copied
+// field-for-field, pinned by the `satisfies` fixtures in `test/fixtures`.
+
+export type WorkflowSourceKind = 'built-in' | 'user';
+export type WorkflowKind = 'task' | 'driver' | 'internal' | 'expert';
+
+/** A validation/registry diagnostic (mirrors `WorkflowDiagnostic`). */
+export interface WorkflowDiagnostic {
+  code: string;
+  severity: 'error' | 'warning';
+  message: string;
+  path?: string;
+  sourcePath?: string;
+  details?: Record<string, string | number | boolean | string[]>;
+}
+
+/** A known consumer of a workflow (mirrors `WorkflowUsage`). */
+export interface WorkflowUsage {
+  kind: 'global-selection' | 'profile' | 'dependency' | 'pipeline' | 'ledger';
+  consumer: string;
+  path?: string;
+  hard: true;
+}
+
+/** The four dependency slots (mirrors `WorkflowDependencySet`). */
+export interface WorkflowDependencySet {
+  workflows: string[];
+  skills: string[];
+  pipelines: string[];
+  schemas: string[];
+}
+
+/** One valid catalog unit from `GET /api/v1/workflows`. */
+export interface WorkflowListEntry {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string | null;
+  digest: string;
+  kind: WorkflowKind;
+  skillName: string;
+  commandId: string | null;
+  unused: boolean;
+}
+
+/** One invalid user entry, reported rather than dropped. */
+export interface WorkflowInvalidEntry {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string;
+  valid: false;
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** `GET /api/v1/workflows` response. */
+export interface WorkflowListResponse {
+  workflows: WorkflowListEntry[];
+  invalid: WorkflowInvalidEntry[];
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** The full definition from `GET /api/v1/workflows/<id>` (mirrors `workflowDefinitionForJson`). */
+export interface WorkflowDefinitionWire {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string | null;
+  manifestVersion: number;
+  kind: WorkflowKind;
+  digest: string;
+  skill: { name: string; dirName: string; description: string };
+  command: { id: string; name: string; category: string; tags: string[] } | null;
+  requires: WorkflowDependencySet;
+  recommends: { workflows: string[] };
+  files: { path: string; sha256: string }[];
+}
+
+/** `GET /api/v1/workflows/<id>` response. */
+export interface WorkflowDetailResponse {
+  workflow: WorkflowDefinitionWire;
+  usage: WorkflowUsage[];
+}
+
+/** The validation verdict (mirrors `WorkflowValidationSummary`). */
+export interface WorkflowValidationSummary {
+  valid: boolean;
+  kind: 'installed' | 'directory' | 'package';
+  id?: string;
+  packageKind?: string;
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** `GET /api/v1/workflow-validation` response. */
+export interface WorkflowValidationResponse {
+  validation: WorkflowValidationSummary;
+}
+
+/** `POST /api/v1/workflows` request, discriminated by `op`. */
+export type WorkflowMutationRequest =
+  | { op: 'import'; path: string }
+  | { op: 'init'; id: string; output: string }
+  | { op: 'export'; id: string; path: string; force?: boolean }
+  | { op: 'delete'; id: string; force?: boolean };
+
+export interface WorkflowImportResponse {
+  imported: string[];
+  reused: string[];
+  roots?: string[];
+}
+export interface WorkflowInitResponse {
+  workflow: { id: string; output: string };
+}
+export interface WorkflowExportResponse {
+  workflow: { id: string; path: string };
+}
+export interface WorkflowDeleteResponse {
+  deleted: string;
+  forcedReferrers: string[];
+}
+
+/** `POST /api/v1/workflows` success response — one of the four op payloads. */
+export type WorkflowMutationResponse =
+  | WorkflowImportResponse
+  | WorkflowInitResponse
+  | WorkflowExportResponse
+  | WorkflowDeleteResponse;
