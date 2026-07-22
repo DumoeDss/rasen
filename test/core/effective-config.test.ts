@@ -206,6 +206,112 @@ describe('effective-config', () => {
     });
   });
 
+  describe('wildcard family instances (includeWildcards)', () => {
+    it('emits templates only when no instance is set, with no default value', () => {
+      const entries = resolveEffectiveConfig({ includeWildcards: true });
+      const wildcardEntries = entries.filter((e) => e.definition.wildcard);
+      // featureFlags + three pipelines families, each a template with no instanceKey.
+      const templates = wildcardEntries.filter((e) => e.instanceKey === undefined);
+      expect(templates.length).toBe(4);
+      expect(entries.some((e) => e.instanceKey !== undefined)).toBe(false);
+      const gatesTemplate = templates.find(
+        (e) => e.definition.key === 'pipelines.<name>.gates.<stage>'
+      )!;
+      expect(gatesTemplate.value).toBeUndefined();
+      expect(gatesTemplate.definition.defaultValue).toBeUndefined();
+    });
+
+    it('omits wildcard families entirely without the opt-in flag', () => {
+      const entries = resolveEffectiveConfig();
+      expect(entries.some((e) => e.definition.wildcard)).toBe(false);
+    });
+
+    it('surfaces a project-set instance with its instance key and source', () => {
+      const projectRoot = path.join(tempDir, 'inst-project');
+      writeProjectConfig(
+        projectRoot,
+        'schema: spec-driven\npipelines:\n  small-feature:\n    gates:\n      propose: on\n'
+      );
+      const entries = resolveEffectiveConfig({ projectRoot, includeWildcards: true });
+      const inst = entries.find(
+        (e) => e.instanceKey === 'pipelines.small-feature.gates.propose'
+      )!;
+      expect(inst).toBeDefined();
+      expect(inst.value).toBe('on');
+      expect(inst.source).toBe('project');
+      expect(inst.definition.key).toBe('pipelines.<name>.gates.<stage>');
+    });
+
+    it('resolves an instance across layers with project > store > global precedence', () => {
+      saveGlobalConfig({ pipelines: { 'small-feature': { gates: { propose: 'off' } } } } as never);
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'inst-store'),
+        'schema: spec-driven\npipelines:\n  small-feature:\n    gates:\n      propose: off\n'
+      );
+      const projectRoot = path.join(tempDir, 'inst-member');
+      writeProjectConfig(
+        projectRoot,
+        'schema: spec-driven\npipelines:\n  small-feature:\n    gates:\n      propose: on\n'
+      );
+
+      const entries = resolveEffectiveConfig({
+        projectRoot,
+        store: { storeId: 'inst-store', storeRoot },
+        includeWildcards: true,
+      });
+      const inst = entries.find(
+        (e) => e.instanceKey === 'pipelines.small-feature.gates.propose'
+      )!;
+      expect(inst.value).toBe('on');
+      expect(inst.source).toBe('project');
+      expect(inst.scopeValues).toEqual({ global: 'off', store: 'off', project: 'on' });
+    });
+
+    it('surfaces a store-layer instance when the project sets none', () => {
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'model-inst-store'),
+        'schema: spec-driven\npipelines:\n  bug-fix:\n    models:\n      review: opus\n'
+      );
+      const projectRoot = path.join(tempDir, 'model-inst-member');
+      writeProjectConfig(projectRoot, 'schema: spec-driven\n');
+
+      const entries = resolveEffectiveConfig({
+        projectRoot,
+        store: { storeId: 'model-inst-store', storeRoot },
+        includeWildcards: true,
+      });
+      const inst = entries.find(
+        (e) => e.instanceKey === 'pipelines.bug-fix.models.review'
+      )!;
+      expect(inst.value).toBe('opus');
+      expect(inst.source).toBe('store');
+      expect(inst.scopeValues.store).toBe('opus');
+    });
+
+    it('surfaces a global featureFlags instance through the general mechanism', () => {
+      saveGlobalConfig({ featureFlags: { myFlag: true } });
+      const entries = resolveEffectiveConfig({ includeWildcards: true });
+      const inst = entries.find((e) => e.instanceKey === 'featureFlags.myFlag')!;
+      expect(inst.value).toBe(true);
+      expect(inst.source).toBe('global');
+      expect(inst.definition.key).toBe('featureFlags');
+    });
+
+    it('drops an invalid on-disk global instance value with a warning, emitting no entry', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      saveGlobalConfig({ pipelines: { 'small-feature': { gates: { propose: 'maybe' } } } } as never);
+
+      const entries = resolveEffectiveConfig({ includeWildcards: true });
+      expect(entries.some((e) => e.instanceKey === 'pipelines.small-feature.gates.propose')).toBe(
+        false
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('pipelines.small-feature.gates.propose')
+      );
+      warnSpy.mockRestore();
+    });
+  });
+
   describe('resolveHandoffThresholdLayers', () => {
     it('reports project and global threshold layers independently', () => {
       saveGlobalConfig({ handoff: { threshold: 0.65 } } as never);

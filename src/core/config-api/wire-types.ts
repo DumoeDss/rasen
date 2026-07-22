@@ -57,6 +57,14 @@ export interface WireConfigEntry {
   value: unknown;
   source: ConfigSource;
   scopeValues: { global?: unknown; store?: unknown; project?: unknown };
+  /**
+   * The fully-qualified instance path for a wildcard family instance entry
+   * (e.g. `pipelines.small-feature.gates.propose`). Absent on fixed keys and
+   * on a family's template entry. Additive optional field — the UI mirror in
+   * `packages/ui/src/api/types.ts` does NOT carry it yet (it lands with the
+   * Pipelines-page consumer, keeping this change's touch-set disjoint).
+   */
+  instanceKey?: string;
   /** Present only when a raw on-disk scope value fails registry validation; the API never rewrites the file to fix it. */
   warnings?: string[];
 }

@@ -12,7 +12,12 @@
 import * as fs from 'node:fs';
 
 import { getNestedValue } from './config-schema.js';
-import { CONFIG_KEY_REGISTRY, type ConfigKeyDefinition } from './config-keys.js';
+import {
+  CONFIG_KEY_REGISTRY,
+  collectFamilyInstancePaths,
+  validateConfigValue,
+  type ConfigKeyDefinition,
+} from './config-keys.js';
 import { getGlobalConfig, getGlobalConfigPath } from './global-config.js';
 import { classifyOpenSpecDir, readProjectConfig, type ProjectConfig } from './project-config.js';
 import { listRegisteredStores, type RegisteredStoreEntry } from './store/registry.js';
@@ -121,6 +126,12 @@ export interface EffectiveConfigEntry {
   source: ConfigSource;
   /** Raw per-layer values, before merge. */
   scopeValues: { global?: unknown; store?: unknown; project?: unknown };
+  /**
+   * The fully-qualified instance path for a wildcard family instance entry
+   * (e.g. `pipelines.small-feature.gates.propose`). Absent on fixed keys and
+   * on a family's template entry — for those, `definition.key` is the identity.
+   */
+  instanceKey?: string;
 }
 
 export interface ResolveEffectiveConfigOptions {
@@ -134,6 +145,14 @@ export interface ResolveEffectiveConfigOptions {
   store?: StoreConfigLayer | null;
   /** Optional locale-aware diagnostic sink supplied by a presentation layer. */
   reporter?: ConfigDiagnosticReporter;
+  /**
+   * When true, wildcard families contribute entries: one template entry per
+   * family plus one entry per set instance (design D4). Default false keeps
+   * the CLI surfaces (the interactive editor and the non-TTY effective view)
+   * byte-identical — they never rendered family entries and still don't. The
+   * config HTTP API opts in so a client can read/write instances by path.
+   */
+  includeWildcards?: boolean;
 }
 
 /**
@@ -207,7 +226,21 @@ export function resolveEffectiveConfig(
   const entries: EffectiveConfigEntry[] = [];
 
   for (const definition of CONFIG_KEY_REGISTRY) {
-    if (definition.wildcard) continue; // no single "the" value for a key family
+    if (definition.wildcard) {
+      // A key family has no single "the" value. When the caller opts in
+      // (the config API), emit a template entry for the family plus one entry
+      // per set instance; otherwise skip it entirely, exactly as before.
+      if (!options.includeWildcards) continue;
+      entries.push(
+        ...resolveWildcardFamilyEntries(
+          definition,
+          rawGlobalConfig,
+          storeConfigRecord,
+          projectConfigRecord
+        )
+      );
+      continue;
+    }
 
     // `rawGlobalValue` decides whether the global layer contributed anything
     // (undefined = never set); `mergedGlobalValue` is the value to REPORT
@@ -254,6 +287,87 @@ export function resolveEffectiveConfig(
       value,
       source,
       scopeValues: { global: rawGlobalValue, store: storeValue, project: projectValue },
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Builds the effective-config entries for one wildcard family (design D4): a
+ * template entry (definition metadata, no effective value) followed by one
+ * entry per instance path set in any contributing layer the family's scopes
+ * admit. Instance paths are collected from the raw global config, the store
+ * layer, and the project layer (scope-gated), then each resolves through the
+ * standard `project > store > global` precedence (no env layer maps to a
+ * family instance). The global layer is raw JSON with no schema gate, so an
+ * invalid global leaf is re-validated and dropped with a warning; the store
+ * and project layers arrive already resiliently validated by
+ * `readProjectConfig`. An instance whose only value fails validation is not
+ * emitted (it is effectively unset).
+ */
+function resolveWildcardFamilyEntries(
+  definition: ConfigKeyDefinition,
+  rawGlobalConfig: Record<string, unknown>,
+  storeConfigRecord: Record<string, unknown> | null,
+  projectConfigRecord: Record<string, unknown> | null
+): EffectiveConfigEntry[] {
+  const entries: EffectiveConfigEntry[] = [];
+
+  // Template entry: what documents the family's existence when nothing is set.
+  entries.push({ definition, value: undefined, source: 'default', scopeValues: {} });
+
+  const usesGlobal = definition.scopes.includes('global');
+  const usesStore = definition.scopes.includes('store') && storeConfigRecord !== null;
+  const usesProject = definition.scopes.includes('project') && projectConfigRecord !== null;
+
+  const instancePaths = new Set<string>([
+    ...(usesGlobal ? collectFamilyInstancePaths(definition, rawGlobalConfig) : []),
+    ...(usesStore ? collectFamilyInstancePaths(definition, storeConfigRecord) : []),
+    ...(usesProject ? collectFamilyInstancePaths(definition, projectConfigRecord) : []),
+  ]);
+
+  for (const instanceKey of [...instancePaths].sort()) {
+    // The global layer is unvalidated on read; a bad leaf is dropped (warned),
+    // mirroring `validateGlobalHandoffRoles`. Store/project leaves were already
+    // dropped-if-invalid by `readProjectConfig`, so they are trusted as-is.
+    let globalValue: unknown;
+    if (usesGlobal) {
+      const raw = getNestedValue(rawGlobalConfig, instanceKey);
+      if (raw !== undefined) {
+        if (validateConfigValue(definition, raw) === null) {
+          globalValue = raw;
+        } else {
+          console.warn(
+            `Invalid '${instanceKey}' in the global config (${definition.description}); ignoring it.`
+          );
+        }
+      }
+    }
+    const storeValue = usesStore ? getNestedValue(storeConfigRecord!, instanceKey) : undefined;
+    const projectValue = usesProject ? getNestedValue(projectConfigRecord!, instanceKey) : undefined;
+
+    let value: unknown;
+    let source: ConfigSource;
+    if (projectValue !== undefined) {
+      value = projectValue;
+      source = 'project';
+    } else if (storeValue !== undefined) {
+      value = storeValue;
+      source = 'store';
+    } else if (globalValue !== undefined) {
+      value = globalValue;
+      source = 'global';
+    } else {
+      continue; // no valid value at any layer — effectively unset
+    }
+
+    entries.push({
+      definition,
+      value,
+      source,
+      instanceKey,
+      scopeValues: { global: globalValue, store: storeValue, project: projectValue },
     });
   }
 

@@ -20,6 +20,7 @@ import {
 } from '../core/config-schema.js';
 import {
   findConfigKeyDefinition,
+  findWildcardDefinition,
   validateConfigValue,
   type ConfigScope,
 } from '../core/config-keys.js';
@@ -563,13 +564,20 @@ export function registerConfigCommand(program: Command): void {
           // Project scope has no whole-object schema gate on the write path
           // (unlike global's validateConfig() below), so the registry's
           // per-key type/range check is the only pre-write validation —
-          // apply it here. Global scope skips it: `delivery` accepts legacy
-          // synonyms (commands/skills-first/commands-first) that the zod
-          // schema transforms on read but the registry's enum intentionally
-          // does not list (they are not the keys the editor should offer),
-          // so registry validation would wrongly reject them here.
+          // apply it here. A wildcard family instance (e.g.
+          // `pipelines.x.gates.propose`) resolves through the family matcher,
+          // since `findConfigKeyDefinition` only returns fixed keys; without
+          // this a junk instance value would write to config.yaml unchecked
+          // and be silently dropped on read. Global scope skips this whole
+          // block: `delivery` accepts legacy synonyms
+          // (commands/skills-first/commands-first) that the zod schema
+          // transforms on read but the registry's enum intentionally does not
+          // list, so registry validation would wrongly reject them there —
+          // and global's `validateConfig()` already gates wildcard values via
+          // the schema.
           if (scope === 'project') {
-            const definition = findConfigKeyDefinition(key, scope);
+            const definition =
+              findConfigKeyDefinition(key, scope) ?? findWildcardDefinition(key, scope);
             if (definition) {
               const valueError = validateConfigValue(definition, coercedValue);
               if (valueError) {

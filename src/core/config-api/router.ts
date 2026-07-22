@@ -7,13 +7,15 @@
 import type * as http from 'node:http';
 
 import {
+  classifyWildcardPath,
   findConfigKeyDefinition,
-  findWildcardDefinition,
   validateConfigKeyPath,
   validateConfigValue,
   NOT_SETTABLE_KEYS,
+  type ConfigKeyDefinition,
   type ConfigScope,
 } from '../config-keys.js';
+import type { EffectiveConfigEntry } from '../effective-config.js';
 import {
   resolveConfigStoreLayer,
   resolveEffectiveConfig,
@@ -234,12 +236,16 @@ async function resolveConfigContext(
   return { ok: true, context: { kind: 'project', root: projectCtx.root, ref: projectCtx.ref, storeLayer } };
 }
 
-/** The `resolveEffectiveConfig` options a context resolves with (design D3). */
+/**
+ * The `resolveEffectiveConfig` options a context resolves with (design D3).
+ * The API always opts into wildcard families so family template entries and
+ * set instances are first-class in every list/get/re-resolve response (D4/D5).
+ */
 function contextResolveOptions(context: ConfigContext): ResolveEffectiveConfigOptions {
   if (context.kind === 'store') {
-    return { store: { storeId: context.storeId, storeRoot: context.storeRoot } };
+    return { store: { storeId: context.storeId, storeRoot: context.storeRoot }, includeWildcards: true };
   }
-  return { projectRoot: context.root, store: context.storeLayer };
+  return { projectRoot: context.root, store: context.storeLayer, includeWildcards: true };
 }
 
 /** The store-layer reference reported in a response body (design D6). */
@@ -256,6 +262,40 @@ function contextProjectRef(context: ConfigContext): ProjectRef | null {
 function firstQueryValue(url: URL, name: string): string | undefined {
   const value = url.searchParams.get(name);
   return value === null ? undefined : value;
+}
+
+/**
+ * Finds the effective-config entry addressed by `key`. A wildcard family
+ * instance matches by its `instanceKey`; a fixed key (or a family template)
+ * matches by `definition.key`. The template guard (`instanceKey === undefined`)
+ * keeps a family's template entry from shadowing an instance whose path equals
+ * some other key.
+ */
+function findEntryByKey(
+  entries: EffectiveConfigEntry[],
+  key: string
+): EffectiveConfigEntry | undefined {
+  return entries.find(
+    (e) => e.instanceKey === key || (e.instanceKey === undefined && e.definition.key === key)
+  );
+}
+
+/**
+ * The "absent shape" entry for a well-formed but unset wildcard family
+ * instance path (design D5): a valid path returns no effective value rather
+ * than an unknown-key error. Returns null when `key` is not a well-formed
+ * family instance (the caller then answers unknown_key/404).
+ */
+function absentInstanceEntry(key: string): EffectiveConfigEntry | null {
+  const classification = classifyWildcardPath(key);
+  if (classification.kind !== 'match') return null;
+  return {
+    definition: classification.definition,
+    value: undefined,
+    source: 'default',
+    scopeValues: {},
+    instanceKey: key,
+  };
 }
 
 async function handleHealth(res: http.ServerResponse, context: ConfigApiContext): Promise<void> {
@@ -299,9 +339,8 @@ async function handleGetConfigKey(
     sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
     return;
   }
-  const entry = resolveEffectiveConfig(contextResolveOptions(ctx.context)).find(
-    (e) => e.definition.key === key
-  );
+  const entries = resolveEffectiveConfig(contextResolveOptions(ctx.context));
+  const entry = findEntryByKey(entries, key) ?? absentInstanceEntry(key);
   if (!entry) {
     sendError(res, 404, 'unknown_key', `Unknown configuration key "${key}".`);
     return;
@@ -363,22 +402,46 @@ async function handleListPipelines(
   sendJson(res, 200, { pipelines });
 }
 
-/** Shared key-path/value validation for PUT and DELETE (D3). */
+/**
+ * Shared key-path/value validation for PUT and DELETE (D3/D5). Resolves the
+ * registry definition (a fixed key or a wildcard family) the write targets so
+ * the caller validates the value against it. There is no wildcard carve-out:
+ * a family instance is an ordinary key — `featureFlags.<name>` included. A
+ * malformed instance path names the family's pattern; a valid instance in a
+ * scope the family does not admit names the settable scopes.
+ */
 function validateWriteKey(
   key: string,
   scope: ConfigScope,
   res: http.ServerResponse
-): { ok: true } | { ok: false } {
-  const rawKeys = key.split('.');
-  if (rawKeys.length === 2 && WRITE_SCOPES.some((s) => findWildcardDefinition(rawKeys[0]!, s))) {
+): { ok: true; definition: ConfigKeyDefinition } | { ok: false } {
+  const wildcard = classifyWildcardPath(key);
+  if (wildcard.kind === 'wrong_shape') {
+    sendError(res, 400, 'invalid_key', `"${key}" does not match the ${wildcard.definition.pattern} shape.`);
+    return { ok: false };
+  }
+  if (wildcard.kind === 'bad_placeholder') {
     sendError(
       res,
       400,
-      'not_supported',
-      `"${key}" (a featureFlags entry) is not exposed via the config API in v1.`,
-      `Use \`rasen config set --scope global ${key} <value>\` instead.`
+      'invalid_key',
+      `"${wildcard.segment}" is not a valid segment for ${wildcard.definition.pattern} (use letters, digits, hyphens, or underscores).`
     );
     return { ok: false };
+  }
+  if (wildcard.kind === 'match') {
+    const family = wildcard.definition;
+    if (!family.scopes.includes(scope)) {
+      sendError(
+        res,
+        400,
+        'invalid_scope',
+        `"${key}" is not settable in scope "${scope}"; it is settable in: ${family.scopes.join(', ')}.`,
+        `Use scope: ${family.scopes.map((s) => `"${s}"`).join(' or ')} instead.`
+      );
+      return { ok: false };
+    }
+    return { ok: true, definition: family };
   }
 
   const validation = validateConfigKeyPath(key, scope);
@@ -409,7 +472,7 @@ function validateWriteKey(
     }
     return { ok: false };
   }
-  return { ok: true };
+  return { ok: true, definition: findConfigKeyDefinition(key, scope)! };
 }
 
 async function respondWithReResolvedEntry(
@@ -417,13 +480,14 @@ async function respondWithReResolvedEntry(
   key: string,
   context: ConfigContext
 ): Promise<void> {
-  const entry = resolveEffectiveConfig(contextResolveOptions(context)).find(
-    (e) => e.definition.key === key
-  );
+  const entries = resolveEffectiveConfig(contextResolveOptions(context));
+  // A family instance whose last value was just unset resolves to nothing, so
+  // fall back to the absent shape rather than 500 (design D5: a valid instance
+  // path reads as absent, not an error).
+  const entry = findEntryByKey(entries, key) ?? absentInstanceEntry(key);
   if (!entry) {
-    // Should not happen for any key that passed validateWriteKey (wildcard
-    // leaves are rejected before a write is attempted), but fail loudly
-    // rather than silently returning nothing.
+    // Should not happen for any key that passed validateWriteKey, but fail
+    // loudly rather than silently returning nothing.
     sendError(res, 500, 'internal_error', `"${key}" wrote successfully but could not be re-resolved.`);
     return;
   }
@@ -470,10 +534,10 @@ async function handlePutConfigKey(
   }
   const value = payload.value;
 
-  if (!validateWriteKey(key, scope, res).ok) return;
+  const keyCheck = validateWriteKey(key, scope, res);
+  if (!keyCheck.ok) return;
 
-  const definition = findConfigKeyDefinition(key, scope)!;
-  const valueError = validateConfigValue(definition, value);
+  const valueError = validateConfigValue(keyCheck.definition, value);
   if (valueError) {
     sendError(res, 400, 'invalid_value', valueError);
     return;

@@ -70,6 +70,7 @@ export function serializeConfigEntry(entry: EffectiveConfigEntry): WireConfigEnt
     value: entry.value,
     source: entry.source,
     scopeValues: entry.scopeValues,
+    instanceKey: entry.instanceKey,
     warnings: warnings.length > 0 ? warnings : undefined,
   };
 }

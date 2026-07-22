@@ -839,6 +839,159 @@ describe('config-api router (integration, via real http server)', () => {
     });
   });
 
+  describe('wildcard family instances (config-key wildcard machinery)', () => {
+    const jsonAuthed = () => authed({ 'Content-Type': 'application/json' });
+
+    it('lists a project-set instance with its instance key and per-scope values', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\npipelines:\n  small-feature:\n    gates:\n      propose: on\n'
+      );
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/config', headers: authed() });
+      expect(res.status).toBe(200);
+      const inst = (res.json() as any).entries.find(
+        (e: any) => e.instanceKey === 'pipelines.small-feature.gates.propose'
+      );
+      expect(inst).toBeDefined();
+      expect(inst.value).toBe('on');
+      expect(inst.source).toBe('project');
+      expect(inst.scopeValues.project).toBe('on');
+      expect(inst.definition.wildcard).toBe(true);
+    });
+
+    it('writes and re-resolves a project-scope instance, then reads it back', async () => {
+      const h = await startServer();
+      const put = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'on' }),
+      });
+      expect(put.status).toBe(200);
+      const entry = (put.json() as any).entry;
+      expect(entry.value).toBe('on');
+      expect(entry.source).toBe('project');
+      expect(entry.instanceKey).toBe('pipelines.small-feature.gates.propose');
+      const yaml = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('propose: on');
+    });
+
+    it('lands a store-scope instance in the store config and lists it', async () => {
+      const storeRoot = await makeStore('team-store', 'schema: spec-driven\n');
+      const h = await startServer();
+      const put = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.bug-fix.models.review?space=store:team-store',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'store', value: 'fable' }),
+      });
+      expect(put.status).toBe(200);
+      expect((put.json() as any).entry.source).toBe('store');
+      const yaml = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('fable');
+    });
+
+    it('writes and lists a global-scope instance', async () => {
+      const h = await startServer();
+      const put = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.handoff.review',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'global', value: 0.6 }),
+      });
+      expect(put.status).toBe(200);
+      expect((put.json() as any).entry.value).toBe(0.6);
+      expect((put.json() as any).entry.source).toBe('global');
+    });
+
+    it('reverts an instance to the wider layer on DELETE', async () => {
+      const h = await startServer();
+      await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'global', value: 'off' }),
+      });
+      await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'on' }),
+      });
+      const del = await req(h.port, {
+        method: 'DELETE',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose?scope=project',
+        headers: jsonAuthed(),
+      });
+      expect(del.status).toBe(200);
+      const entry = (del.json() as any).entry;
+      expect(entry.value).toBe('off');
+      expect(entry.source).toBe('global');
+    });
+
+    it('makes featureFlags.<name> API-writable at global and rejects other scopes naming global', async () => {
+      const h = await startServer();
+      const ok = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/featureFlags.myFlag',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'global', value: true }),
+      });
+      expect(ok.status).toBe(200);
+      expect((ok.json() as any).entry.value).toBe(true);
+
+      const wrongScope = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/featureFlags.myFlag',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: true }),
+      });
+      expect(wrongScope.status).toBe(400);
+      const err = (wrongScope.json() as any).error;
+      expect(err.code).toBe('invalid_scope');
+      expect(err.message).toContain('global');
+    });
+
+    it('rejects a malformed instance path naming the family pattern', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'on' }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.message).toContain('pipelines.<name>.gates.<stage>');
+    });
+
+    it('rejects a bad instance value with invalid_value', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'maybe' }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_value');
+    });
+
+    it('reads a well-formed but unset instance as the absent shape, not unknown_key', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config/pipelines.small-feature.handoff.review',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const entry = (res.json() as any).entry;
+      expect(entry.instanceKey).toBe('pipelines.small-feature.handoff.review');
+      expect(entry.value).toBeUndefined();
+      expect(entry.scopeValues).toEqual({});
+    });
+  });
+
   describe('projects endpoint', () => {
     it('returns an empty list when the registry has never been written', async () => {
       const h = await startServer();
