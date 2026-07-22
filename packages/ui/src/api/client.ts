@@ -6,6 +6,7 @@
 import { getToken, markUnauthorized } from './token.js';
 import type {
   ApiErrorBody,
+  ArchiveResponse,
   ChangesResponse,
   ConfigScope,
   GetConfigKeyResponse,
@@ -18,9 +19,11 @@ import type {
   SessionActionResponse,
   SessionDetailResponse,
   SessionsResponse,
+  SpacesResponse,
   StatusResponse,
   SubmitChangeRequest,
   SubmitChangeResponse,
+  TaskDetailResponse,
   WriteConfigKeyResponse,
 } from './types.js';
 
@@ -89,8 +92,18 @@ async function request<T>(
   return body as T;
 }
 
+/** Config-api scoping (unchanged): the config endpoints stay on `?project=` (planning-space-addressing did not move config onto `?space=`). */
 function projectQuery(project?: string): string {
   return project ? `?project=${encodeURIComponent(project)}` : '';
+}
+
+/**
+ * Management-api space scoping (design.md D6): a `<type>:<id>` selector,
+ * URL-encoded once here at the single client seam. Omitting it sends no
+ * `space` param, preserving the server's launch-project fallback exactly.
+ */
+function spaceQuery(selector?: string): string {
+  return selector ? `?space=${encodeURIComponent(selector)}` : '';
 }
 
 export function health(): Promise<HealthResponse> {
@@ -137,12 +150,34 @@ export function getStatus(): Promise<StatusResponse> {
   return request<StatusResponse>('/api/v1/status');
 }
 
-export function listChanges(): Promise<ChangesResponse> {
-  return request<ChangesResponse>('/api/v1/changes');
+/** The active changes for the current planning space (design.md D6); no selector = launch-project fallback. */
+export function listChanges(space?: string): Promise<ChangesResponse> {
+  return request<ChangesResponse>(`/api/v1/changes${spaceQuery(space)}`);
 }
 
-export function listRuns(): Promise<RunsResponse> {
-  return request<RunsResponse>('/api/v1/runs');
+/** Per-change run state for the current planning space (design.md D6); no selector = launch-project fallback. */
+export function listRuns(space?: string): Promise<RunsResponse> {
+  return request<RunsResponse>(`/api/v1/runs${spaceQuery(space)}`);
+}
+
+/** The archived changes for the current planning space (ui-space-redesign-archive-page design D1/D6); no selector = launch-project fallback. */
+export function listArchive(space?: string): Promise<ArchiveResponse> {
+  return request<ArchiveResponse>(`/api/v1/archive${spaceQuery(space)}`);
+}
+
+/** Every addressable planning space (planning-space-addressing design D6), for the space switcher. */
+export function listSpaces(): Promise<SpacesResponse> {
+  return request<SpacesResponse>('/api/v1/spaces');
+}
+
+/**
+ * One Task's full roster — active + archived children and portfolio dependency
+ * hints (ui-space-redesign-task-detail design D1). The `id` is the polymorphic
+ * Task id (a portfolio container OR a bare change), used verbatim (only
+ * percent-encoded); no selector = launch-project fallback.
+ */
+export function getTaskDetail(id: string, space?: string): Promise<TaskDetailResponse> {
+  return request<TaskDetailResponse>(`/api/v1/tasks/${encodeURIComponent(id)}${spaceQuery(space)}`);
 }
 
 /**
@@ -176,8 +211,9 @@ export function deleteKey(
 // All four calls route through the single `request()` seam, same as every
 // other call in this file — auth headers and ApiError narrowing untouched.
 
-export function listSessions(): Promise<SessionsResponse> {
-  return request<SessionsResponse>('/api/v1/sessions');
+/** Sessions for the current planning space (design.md D6); no selector = launch-project fallback. */
+export function listSessions(space?: string): Promise<SessionsResponse> {
+  return request<SessionsResponse>(`/api/v1/sessions${spaceQuery(space)}`);
 }
 
 export function getSession(id: string): Promise<SessionDetailResponse> {

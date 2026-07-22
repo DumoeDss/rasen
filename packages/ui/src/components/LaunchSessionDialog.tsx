@@ -16,13 +16,19 @@ import type { SessionRecordWire } from '../api/types.js';
 export function LaunchSessionDialog({
   onCancel,
   onLaunched,
+  space,
+  changeName: changeNamePrefill,
 }: {
   onCancel: () => void;
   onLaunched: (session: SessionRecordWire) => void;
+  /** Optional planning-space selector; the launched run is attributed to it (design D4). */
+  space?: string;
+  /** Optional change-name prefill — a single Task's change (blank for a portfolio container). */
+  changeName?: string;
 }) {
   const [kind, setKind] = useState<'auto' | 'goal'>('auto');
   const [task, setTask] = useState('');
-  const [changeName, setChangeName] = useState('');
+  const [changeName, setChangeName] = useState(changeNamePrefill ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -40,6 +46,7 @@ export function LaunchSessionDialog({
         kind,
         task,
         changeName: changeName.trim().length > 0 ? changeName.trim() : undefined,
+        ...(space !== undefined ? { space } : {}),
       });
       onLaunched(result.session);
     } catch (err) {

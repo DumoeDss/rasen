@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import { validateChangeName } from '../../utils/change-utils.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import type { ProjectHome } from '../project-home.js';
+import { FileSystemUtils } from '../../utils/file-system.js';
 import { buildChangeRunEntry } from './runs.js';
 import { CONTROL_CHAR_PATTERN } from './submit.js';
 import {
@@ -18,6 +19,7 @@ import {
   OVERALL_TIMEOUT_CAP_MS,
   getSupervisedEntry,
 } from './whitelist.js';
+import type { SessionSpace } from './session-registry.js';
 import type { SessionSupervisor } from './supervisor.js';
 import type {
   LaunchSessionRequest,
@@ -33,6 +35,23 @@ const MAX_TASK_LENGTH = 10_000;
 export type SessionsResult =
   | { ok: true; status: number; response: unknown }
   | { ok: false; status: number; code: string; message: string };
+
+/**
+ * The launch-space resolution the router threads in (design D3): resolves the
+ * request's optional `space` selector (else the launch-project fallback) to a
+ * subprocess cwd root plus the frozen attribution to stamp on the record.
+ */
+export type LaunchSpaceResolution =
+  | { ok: true; root: string | undefined; attribution: SessionSpace | undefined }
+  | { ok: false; status: number; code: string; message: string };
+
+function canonicalizeOrResolve(target: string): string {
+  try {
+    return FileSystemUtils.canonicalizeExistingPath(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
 
 function validateTask(task: unknown): string | null {
   if (typeof task !== 'string' || task.length === 0) {
@@ -60,8 +79,8 @@ function toWire(record: import('./session-registry.js').SessionRecord): SessionR
  */
 export async function handleLaunchSession(
   supervisor: SessionSupervisor,
-  launchProjectRoot: string | null,
-  body: Partial<LaunchSessionRequest>
+  body: Partial<LaunchSessionRequest>,
+  resolveSpace: (selector: string | undefined) => Promise<LaunchSpaceResolution>
 ): Promise<SessionsResult> {
   const entry = getSupervisedEntry(body.kind);
   if (!entry) {
@@ -71,6 +90,10 @@ export async function handleLaunchSession(
   const taskError = validateTask(body.task);
   if (taskError) {
     return { ok: false, status: 400, code: 'invalid_input', message: taskError };
+  }
+
+  if (body.space !== undefined && typeof body.space !== 'string') {
+    return { ok: false, status: 400, code: 'invalid_input', message: 'space must be a string.' };
   }
 
   let changeName: string | undefined;
@@ -107,12 +130,21 @@ export async function handleLaunchSession(
     noOutputTimeoutMs = body.noOutputTimeoutMs;
   }
 
-  if (!launchProjectRoot) {
+  // Space resolution runs last among the pre-spawn steps: an unresolvable
+  // selector rejects the launch with the space error (spawning nothing), and
+  // a resolved space's root becomes the subprocess cwd + the frozen
+  // attribution (design D3). A missing selector falls back to the launch
+  // project; neither selector nor launch project is 409 no_project.
+  const space = await resolveSpace(typeof body.space === 'string' ? body.space : undefined);
+  if (!space.ok) {
+    return { ok: false, status: space.status, code: space.code, message: space.message };
+  }
+  if (!space.root) {
     return {
       ok: false,
       status: 409,
       code: 'no_project',
-      message: 'No Rasen project is available for this server; launch `rasen ui` inside a project.',
+      message: 'No Rasen project is available for this server; select a space or launch `rasen ui` inside a project.',
     };
   }
 
@@ -120,8 +152,9 @@ export async function handleLaunchSession(
     kind: entry.op as 'auto' | 'goal',
     skill: entry.skill,
     task: body.task as string,
-    cwd: launchProjectRoot,
+    cwd: space.root,
     ...(changeName !== undefined ? { changeName } : {}),
+    ...(space.attribution !== undefined ? { space: space.attribution } : {}),
     timeoutMs,
     noOutputTimeoutMs,
   });
@@ -133,23 +166,35 @@ export async function handleLaunchSession(
 }
 
 /**
- * `GET /api/v1/sessions` (design D4): registry records + a read-only
- * run-state join for any session carrying a `changeName`. Sessions without
- * one report `runState: { kind: 'absent' }`.
+ * `GET /api/v1/sessions` (design D3/D4): registry records, optionally filtered
+ * to a single space, with each listed session's run-state joined against its
+ * OWN recorded space root and that space's machine home (not the server's
+ * launch project). `filterRoot` (a canonical root) restricts the listing to
+ * sessions recorded in that space; when omitted, every session is returned
+ * (unattributed ones included, compat). A session without a recorded space or
+ * a `changeName` reports `runState: { kind: 'absent' }`.
  */
-export function handleListSessions(
+export async function handleListSessions(
   supervisor: SessionSupervisor,
-  launchProjectRoot: string | null,
-  home: ProjectHome | null
-): SessionsResponse {
-  const sessions: SessionListEntry[] = supervisor.list().map((record) => {
-    if (!record.changeName || !launchProjectRoot) {
-      return { session: toWire(record), runState: { kind: 'absent' } };
+  filterRoot: string | undefined,
+  resolveHomeForRoot: (root: string) => Promise<ProjectHome | null>
+): Promise<SessionsResponse> {
+  const sessions: SessionListEntry[] = [];
+  for (const record of supervisor.list()) {
+    if (filterRoot !== undefined) {
+      if (!record.space || canonicalizeOrResolve(record.space.root) !== filterRoot) {
+        continue;
+      }
     }
-    const changeDir = path.join(launchProjectRoot, WORKSPACE_DIR_NAME, 'changes', record.changeName);
+    if (!record.changeName || !record.space) {
+      sessions.push({ session: toWire(record), runState: { kind: 'absent' } });
+      continue;
+    }
+    const changeDir = path.join(record.space.root, WORKSPACE_DIR_NAME, 'changes', record.changeName);
+    const home = await resolveHomeForRoot(record.space.root);
     const workDir = home ? home.workDir(record.changeName) : null;
-    return { session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, workDir) };
-  });
+    sessions.push({ session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, workDir) });
+  }
   return { sessions };
 }
 

@@ -15,6 +15,9 @@ import * as crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
+import { deriveSpaceFromCwd, findQualifyingRootSync } from '../core/root-selection.js';
+import { classifyOpenSpecDir } from '../core/project-config.js';
+import { resolveProjectHome } from '../core/project-home.js';
 import { resolveLaunchProjectRef } from '../core/config-api/project-addressing.js';
 import { resolveUiPackageDir, UI_PACKAGE_NAME } from '../core/config-api/ui-package.js';
 import { startManagementServer } from '../core/management-api/server.js';
@@ -76,6 +79,42 @@ function openInBrowser(url: string): void {
   }
 }
 
+/**
+ * Resolves the `?space=` query for the launch URL from the cwd's planning
+ * space (management-ui-command spec / design D5): a project space is
+ * ensure-registered first (CLI-side write, the same registration any
+ * root-resolving command performs) so its emitted `project:<id>` selector
+ * resolves against the daemon; a pointer repo emits `store:<id>`. Returns the
+ * empty string (no parameter, launch unchanged) when the cwd yields no
+ * derivable space, or on any failure — a bad space resolution must never
+ * block the launch. Exported for direct launch-URL tests.
+ */
+export async function resolveLaunchSpaceQuery(cwd: string): Promise<string> {
+  try {
+    const root = findQualifyingRootSync(cwd);
+    if (root) {
+      const { hasPlanningShape } = classifyOpenSpecDir(root);
+      if (hasPlanningShape) {
+        // Ensure the project is registered with a usable id before deriving,
+        // so the emitted `project:<id>` always resolves. Best-effort: a
+        // config-less or unwritable root simply yields no space below.
+        try {
+          await resolveProjectHome(root, { ensure: true });
+        } catch {
+          // Fall through — derivation degrades to no space if identity is absent.
+        }
+      }
+    }
+    const space = await deriveSpaceFromCwd(cwd);
+    if (!space || space.id.length === 0) {
+      return '';
+    }
+    return `?space=${space.type}:${encodeURIComponent(space.id)}`;
+  } catch {
+    return '';
+  }
+}
+
 function validatePort(rawPort: string | undefined): number | undefined | { error: string } {
   if (rawPort === undefined) return undefined;
   const port = Number(rawPort);
@@ -119,12 +158,17 @@ export async function runUiLaunch(options: UiLaunchOptions, config: UiLaunchConf
   const { version } = require('../../package.json') as { version: string };
   const uiAssetsDir = resolveUiPackageDir();
 
+  // Resolve the cwd's planning space once, before either launch form emits a
+  // URL (design D5). Placed after port validation so a bad `--port` never
+  // triggers the ensure-registration write.
+  const spaceQuery = await resolveLaunchSpaceQuery(process.cwd());
+
   if (options.daemon === false) {
-    await runSelfHosted(options, config, port, version, uiAssetsDir);
+    await runSelfHosted(options, config, port, version, uiAssetsDir, spaceQuery);
     return;
   }
 
-  await runAdoptOrSpawn(options, config, version, uiAssetsDir);
+  await runAdoptOrSpawn(options, config, version, uiAssetsDir, spaceQuery);
 }
 
 /**
@@ -136,7 +180,8 @@ async function runAdoptOrSpawn(
   options: UiLaunchOptions,
   config: UiLaunchConfig,
   version: string,
-  uiAssetsDir: string | null
+  uiAssetsDir: string | null,
+  spaceQuery: string
 ): Promise<void> {
   const defaultPort = resolveDefaultDaemonPort();
   const stateHint = readDaemonState()?.port;
@@ -163,7 +208,7 @@ async function runAdoptOrSpawn(
       process.exitCode = 1;
       return;
     }
-    const url = `http://127.0.0.1:${probed.port}${config.entryPath}#token=${state.token}`;
+    const url = `http://127.0.0.1:${probed.port}${config.entryPath}${spaceQuery}#token=${state.token}`;
     printUrlAndOpen(url, config, uiAssetsDir, options.open);
     return;
   }
@@ -199,7 +244,7 @@ async function runAdoptOrSpawn(
     process.exitCode = 1;
     return;
   }
-  const url = `http://127.0.0.1:${spawned.port}${config.entryPath}#token=${state.token}`;
+  const url = `http://127.0.0.1:${spawned.port}${config.entryPath}${spaceQuery}#token=${state.token}`;
   printUrlAndOpen(url, config, uiAssetsDir, options.open);
 }
 
@@ -209,7 +254,8 @@ async function runSelfHosted(
   config: UiLaunchConfig,
   port: number | undefined,
   version: string,
-  uiAssetsDir: string | null
+  uiAssetsDir: string | null,
+  spaceQuery: string
 ): Promise<void> {
   const launchProjectRoot = findRepoPlanningRootSync(process.cwd());
   const launchProjectRef = await resolveLaunchProjectRef(launchProjectRoot);
@@ -232,7 +278,7 @@ async function runSelfHosted(
     return;
   }
 
-  const url = `http://127.0.0.1:${handle.port}${config.entryPath}#token=${token}`;
+  const url = `http://127.0.0.1:${handle.port}${config.entryPath}${spaceQuery}#token=${token}`;
   printUrlAndOpen(url, config, uiAssetsDir, options.open);
 
   let shuttingDown = false;

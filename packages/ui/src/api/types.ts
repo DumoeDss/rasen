@@ -149,6 +149,14 @@ export interface ChangeSummary {
   isComplete: boolean;
   taskProgress: ChangeTaskProgress;
   hasRunFiles: boolean;
+  /**
+   * Portfolio-container membership, filesystem-derived like `hasRunFiles`
+   * (ui-space-redesign-task-board spec): the longest sibling change directory
+   * `P` holding a `planning-context.md` such that this change's name equals
+   * `P` or begins with `P-`. Absent when the change is not part of any
+   * portfolio — the UI groups it as an implicit single-item Task.
+   */
+  portfolio?: string;
 }
 
 /**
@@ -165,6 +173,32 @@ export interface ChangeLoadError {
 export interface ChangesResponse {
   changes: ChangeSummary[];
   errors: ChangeLoadError[];
+}
+
+// ---- Archive listing (ui-space-redesign-archive-page design D1/D6) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`ArchivedChangeSummary`/`ArchiveResponse`). Same hand-maintained-mirror
+// discipline as the rest of this file: copied field-for-field, pinned by the
+// `satisfies ArchiveResponse` fixture in `test/fixtures/archive.ts`.
+
+/** One archived change as reported by `GET /api/v1/archive`. */
+export interface ArchivedChangeSummary {
+  /** The un-dated change name (the `YYYY-MM-DD-` prefix stripped). */
+  name: string;
+  /** The `YYYY-MM-DD` archive date. */
+  archivedAt: string;
+  /**
+   * Portfolio-container membership by the same longest-prefix rule the changes
+   * listing uses; absent when the archived change is under no container.
+   */
+  portfolio?: string;
+  /** Task-checkbox progress of the archived change. */
+  taskProgress: ChangeTaskProgress;
+}
+
+/** `GET /api/v1/archive` response. */
+export interface ArchiveResponse {
+  changes: ArchivedChangeSummary[];
 }
 
 export type StageStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'escalated';
@@ -211,6 +245,44 @@ export interface RunsResponse {
   runs: ChangeRunEntry[];
 }
 
+// ---- Task detail (ui-space-redesign-task-detail design D2) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`TaskChildDetail`/`TaskDetailResponse`). Same hand-maintained-mirror
+// discipline as the rest of this file: copied field-for-field, kept in sync by
+// hand, pinned by the `satisfies TaskDetailResponse` fixture in
+// `test/fixtures/task-detail.ts`.
+
+/** One constituent change of a Task, active or archived. */
+export interface TaskChildDetail {
+  /** The un-dated change name (archived children have their `YYYY-MM-DD-` prefix stripped). */
+  name: string;
+  /** Whether this child has been archived (⇒ shipped ⇒ done). */
+  archived: boolean;
+  /** `'YYYY-MM-DD'` archive date, present only for an archived child. */
+  archivedAt?: string;
+  /** Task-checkbox counts at child level (archived children have no `summary` but still carry counts). */
+  taskProgress: ChangeTaskProgress;
+  /** Best-effort parsed checklist items — a checklist for a single Task, a bar for portfolio children. */
+  tasks: { text: string; done: boolean }[];
+  /** The active child's lifecycle facts; `null` for an archived child (column forced `done`). */
+  summary: ChangeSummary | null;
+  /** The active child's run-state join; `null` for an archived child. */
+  run: ChangeRunEntry | null;
+  /** Sibling dependencies declared in `portfolio-run.json`; empty when none is recorded. */
+  dependsOn: string[];
+  /** This child's `portfolio-run.json` status, when a run state is recorded. */
+  portfolioStatus?: StageStatus;
+  /** An active child whose context failed to load (mirrors `/changes`' per-change error degradation). */
+  loadError?: string;
+}
+
+/** `GET /api/v1/tasks/:id` response: the Task, its roster, and task-level load errors. */
+export interface TaskDetailResponse {
+  task: { id: string; kind: 'portfolio' | 'single'; label: string };
+  children: TaskChildDetail[];
+  errors: ChangeLoadError[];
+}
+
 // ---- Change submission (platform-slice2-task-submission design D1) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root
 // package (`SubmitChangeRequest`/`SubmitChangeResponse`).
@@ -218,6 +290,8 @@ export interface RunsResponse {
 export interface SubmitChangeRequest {
   name: string;
   description: string;
+  /** Optional planning-space selector (`project:<id|root>` | `store:<id>`); omitted = launch project (planning-space-addressing design D1). */
+  space?: string;
 }
 
 export interface SubmitChangeResponse {
@@ -235,12 +309,25 @@ export interface SubmitChangeResponse {
 // rest of this file: copied field-for-field, kept in sync by hand, pinned
 // by `satisfies <ResponseType>` fixtures.
 
+/**
+ * A session's frozen planning-space attribution as sent over the wire
+ * (planning-space-addressing design D3). Mirrors `SessionSpaceWire`
+ * (management-api/wire-types.ts).
+ */
+export interface SessionSpaceWire {
+  type: 'project' | 'store';
+  id: string;
+  root: string;
+}
+
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
   id: string;
   kind: 'auto' | 'goal';
   task: string;
   cwd: string;
+  /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
+  space?: SessionSpaceWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';
@@ -265,6 +352,8 @@ export interface LaunchSessionRequest {
   kind: string;
   task: string;
   changeName?: string;
+  /** Optional planning-space selector (`project:<id|root>` | `store:<id>`); omitted = launch project (planning-space-addressing design D3). */
+  space?: string;
   timeoutMs?: number;
   noOutputTimeoutMs?: number;
 }
@@ -297,4 +386,40 @@ export interface SessionDetailResponse {
 /** `POST /api/v1/sessions` and `DELETE /api/v1/sessions/:id` response shape. */
 export interface SessionActionResponse {
   session: SessionRecordWire;
+}
+
+// ---- Spaces listing (planning-space-addressing design D6) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package (`GET /api/v1/spaces`). Same hand-maintained-mirror discipline as
+// the rest of this file.
+
+/** A store's member project (design D4): a pointer repo whose config `store:` currently names the store. */
+export interface SpaceMember {
+  projectId: string;
+  name: string;
+  root: string;
+}
+
+/** An in-repo project space (design D6). */
+export interface ProjectSpaceEntry {
+  type: 'project';
+  id: string;
+  name: string;
+  root: string;
+}
+
+/** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
+export interface StoreSpaceEntry {
+  type: 'store';
+  id: string;
+  name: string;
+  root: string;
+  members: SpaceMember[];
+}
+
+export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
+
+/** `GET /api/v1/spaces` response (design D6). */
+export interface SpacesResponse {
+  spaces: SpaceEntry[];
 }

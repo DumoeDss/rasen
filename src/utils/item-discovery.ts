@@ -1,7 +1,7 @@
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import path from 'path';
-import { resolveProjectHome } from '../core/project-home.js';
+import { resolveProjectHome, type ProjectHome } from '../core/project-home.js';
 
 export async function getActiveChangeIds(root: string = process.cwd()): Promise<string[]> {
   const changesPath = path.join(root, WORKSPACE_DIR_NAME, 'changes');
@@ -109,5 +109,49 @@ export async function getArchivedChangeIds(
     }
   }
   return union.sort();
+}
+
+/** `YYYY-MM-DD-<name>` archived-change directory name (as `getArchivedChangeIds` returns). */
+const ARCHIVED_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
+
+/**
+ * The three parts of an archived change's directory name. Shared by the
+ * task-detail and archive-listing handlers (ui-space-redesign-archive-page
+ * design D3) so both agree byte-for-byte on how an archived change's name and
+ * date are recovered from what `getArchivedChangeIds` reports.
+ */
+export interface ArchivedRef {
+  /** The dated directory name as `getArchivedChangeIds` returns it. */
+  dated: string;
+  /** The `YYYY-MM-DD` prefix. */
+  date: string;
+  /** The un-dated change name. */
+  name: string;
+}
+
+/** Splits a `YYYY-MM-DD-<name>` archived directory name into its {@link ArchivedRef} parts, or `null` when it does not match. */
+export function parseArchivedRef(dated: string): ArchivedRef | null {
+  const match = ARCHIVED_NAME_PATTERN.exec(dated);
+  if (!match) return null;
+  return { dated, date: match[1]!, name: match[2]! };
+}
+
+/**
+ * Resolves which archive directory actually holds a `dated` change
+ * (ui-space-redesign-archive-page design D3). `getArchivedChangeIds` unions
+ * the in-repo archive and the machine-home archive without saying which holds
+ * each id, so a reader that needs the on-disk location probes the in-repo dir
+ * first: returns `inRepoArchiveDir` when `<inRepoArchiveDir>/<dated>` exists or
+ * there is no home, otherwise the home's `archiveDir`. Read-only.
+ */
+export function resolveArchivedChangeDir(
+  inRepoArchiveDir: string,
+  home: ProjectHome | null,
+  dated: string
+): string {
+  if (!existsSync(path.join(inRepoArchiveDir, dated)) && home) {
+    return home.archiveDir;
+  }
+  return inRepoArchiveDir;
 }
 

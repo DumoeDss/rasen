@@ -9,19 +9,39 @@
 import type * as http from 'node:http';
 
 import type { ConfigApiContext } from '../config-api/router.js';
+import { resolveSpaceSelector } from '../config-api/project-addressing.js';
+import { deriveSpaceFromCwd } from '../root-selection.js';
 import type { ProjectHome } from '../project-home.js';
+import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
+import { handleArchive } from './archive.js';
 import { handleRuns } from './runs.js';
+import { handleTaskDetail } from './task-detail.js';
 import {
   handleGetSession,
   handleKillSession,
   handleLaunchSession,
   handleListSessions,
+  type LaunchSpaceResolution,
 } from './sessions.js';
+import { handleSpaces } from './spaces.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
 import { createChangeSubmitter } from './submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
+
+/** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
+type RequestSpaceResolution =
+  | { ok: true; root: string | undefined }
+  | { ok: false; status: number; code: string; message: string };
+
+function canonicalizeOrResolve(target: string): string {
+  try {
+    return FileSystemUtils.canonicalizeExistingPath(target);
+  } catch {
+    return target;
+  }
+}
 
 /** Same shape as the config API's context — one token, one launch project, one server. */
 export type ManagementApiContext = ConfigApiContext;
@@ -42,9 +62,36 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 const MAX_BODY_BYTES = 64 * 1024;
 
 /** The management endpoints with no path parameter, canonical (no trailing slash) form. */
-const MANAGEMENT_PATHS = new Set(['/api/v1/status', '/api/v1/changes', '/api/v1/runs', '/api/v1/sessions']);
+const MANAGEMENT_PATHS = new Set([
+  '/api/v1/status',
+  '/api/v1/changes',
+  '/api/v1/archive',
+  '/api/v1/runs',
+  '/api/v1/sessions',
+  '/api/v1/spaces',
+]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
+const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
+
+/**
+ * Matches `/api/v1/tasks/<id>` exactly one segment deep (mirrors
+ * `matchSessionIdPath`), returning the percent-decoded id. Unlike a session
+ * id, the id is a change/portfolio NAME, not a UUID — no format constraint is
+ * applied here (the handler validates it via `validateChangeName`); the check
+ * only rejects a missing or multi-segment suffix, which was never a "tasks
+ * path" to begin with and falls through to the rest of the server's routing.
+ */
+function matchTaskIdPath(pathname: string): string | null {
+  if (!pathname.startsWith(TASK_ID_PATH_PREFIX)) return null;
+  const rest = pathname.slice(TASK_ID_PATH_PREFIX.length);
+  if (rest.length === 0 || rest.includes('/')) return null;
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return null;
+  }
+}
 
 /** Session ids are server-minted `randomUUID()` values (design D2) — any RFC 4122 textual form is accepted, not just v4, since the format check exists to reject junk, not to pin a version. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -70,6 +117,9 @@ function matchSessionIdPath(pathname: string): string | null {
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
+  }
+  if (matchTaskIdPath(pathname) !== null) {
+    return method === 'GET';
   }
   if (pathname === '/api/v1/sessions') {
     return method === 'GET' || method === 'POST';
@@ -136,7 +186,11 @@ function stripOneTrailingSlash(pathname: string): string {
 /** Whether `pathname` (raw, as received) addresses a management endpoint (t1: tolerant of one trailing slash). */
 export function isManagementPath(pathname: string): boolean {
   const stripped = stripOneTrailingSlash(pathname);
-  return MANAGEMENT_PATHS.has(stripped) || matchSessionIdPath(stripped) !== null;
+  return (
+    MANAGEMENT_PATHS.has(stripped) ||
+    matchSessionIdPath(stripped) !== null ||
+    matchTaskIdPath(stripped) !== null
+  );
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -159,12 +213,14 @@ function isAuthorized(req: http.IncomingMessage, token: string): boolean {
  * Builds the request handler for the management route group, closed over
  * one session's context. The caller must have already established that
  * `pathname` satisfies `isManagementPath` and must pass the server-lifetime
- * resolved project home (design D5/m4) rather than letting this module
+ * per-space project-home resolver (planning-space-addressing design D2):
+ * `resolveHomeForRoot(root)` returns the read-only home for any resolved
+ * space root, cached per root by the server, rather than letting this module
  * re-resolve it per request.
  */
 export function createManagementRouter(
   context: ManagementApiContext,
-  resolveHome: () => Promise<ProjectHome | null>,
+  resolveHomeForRoot: (root: string | null) => Promise<ProjectHome | null>,
   options: ManagementRouterOptions = {}
 ): ManagementRouterHandle {
   // One submitter per server instance (design D3's cap-1 concurrency is
@@ -182,8 +238,51 @@ export function createManagementRouter(
     killGraceMs: options.sessionKillGraceMs,
   });
 
+  // Resolves a request's optional `space` selector to a planning-space root
+  // (design D2): an explicit selector resolves through the machine registries,
+  // an omitted one falls back to the launch project (byte-compat with
+  // pre-space clients). Read-only — resolution never mutates any registry.
+  const resolveRequestSpace = async (selector: string | undefined): Promise<RequestSpaceResolution> => {
+    if (!selector) {
+      return { ok: true, root: context.launchProjectRoot ?? undefined };
+    }
+    const resolved = await resolveSpaceSelector(selector);
+    if (!resolved.ok) return resolved;
+    return { ok: true, root: resolved.space.root };
+  };
+
+  // Session-launch space resolution (design D3): an explicit selector sets the
+  // cwd root and the frozen attribution verbatim; an omitted selector falls
+  // back to the launch project with the attribution derived from that cwd (or
+  // synthesized from the launch project ref when derivation finds no identity,
+  // preserving the pre-space run-state join for an unregistered launch project).
+  const resolveSessionSpace = async (selector: string | undefined): Promise<LaunchSpaceResolution> => {
+    if (selector) {
+      const resolved = await resolveSpaceSelector(selector);
+      if (!resolved.ok) return resolved;
+      return {
+        ok: true,
+        root: resolved.space.root,
+        attribution: { type: resolved.space.type, id: resolved.space.id, root: resolved.space.root },
+      };
+    }
+    const root = context.launchProjectRoot ?? undefined;
+    if (!root) {
+      return { ok: true, root: undefined, attribution: undefined };
+    }
+    const derived = await deriveSpaceFromCwd(root);
+    const attribution = derived ?? {
+      type: 'project' as const,
+      id: context.launchProjectRef?.projectId ?? '',
+      root: canonicalizeOrResolve(root),
+    };
+    return { ok: true, root, attribution };
+  };
+
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse, rawPathname: string): Promise<void> => {
     const pathname = stripOneTrailingSlash(rawPathname);
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const spaceSelector = url.searchParams.get('space') ?? undefined;
 
     if (!isAuthorized(req, context.token)) {
       sendError(res, 401, 'unauthorized', 'Missing or invalid bearer token.');
@@ -208,7 +307,24 @@ export function createManagementRouter(
         return;
       }
       const request = (body.value ?? {}) as Partial<SubmitChangeRequest>;
-      const result = await submitChange(request.name, request.description);
+      // Resolve the optional body `space` before spawning (change-submission
+      // spec: an unresolvable selector rejects the request before any
+      // subprocess exists); an omitted selector falls back to the launch
+      // project inside the submitter.
+      if (request.space !== undefined && typeof request.space !== 'string') {
+        sendError(res, 400, 'invalid_input', 'space must be a string.');
+        return;
+      }
+      let submitRoot: string | undefined;
+      if (typeof request.space === 'string' && request.space !== '') {
+        const resolvedSpace = await resolveRequestSpace(request.space);
+        if (!resolvedSpace.ok) {
+          sendError(res, resolvedSpace.status, resolvedSpace.code, resolvedSpace.message);
+          return;
+        }
+        submitRoot = resolvedSpace.root;
+      }
+      const result = await submitChange(request.name, request.description, submitRoot);
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
         res.end(
@@ -238,8 +354,55 @@ export function createManagementRouter(
     }
 
     if (pathname === '/api/v1/changes') {
-      const home = await resolveHome();
-      const result = await handleChanges(context.launchProjectRoot ?? undefined, home);
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const home = await resolveHomeForRoot(space.root ?? null);
+      const result = await handleChanges(space.root, home);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/archive') {
+      // Space-resolved exactly like `/changes`: explicit selector through the
+      // registries, omitted → launch-project fallback, no root → 400.
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const home = await resolveHomeForRoot(space.root ?? null);
+      const result = await handleArchive(space.root, home);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/spaces') {
+      sendJson(res, 200, await handleSpaces());
+      return;
+    }
+
+    const taskId = matchTaskIdPath(pathname);
+    if (taskId !== null && req.method === 'GET') {
+      // Space-resolved exactly like `/changes`: explicit selector through the
+      // registries, omitted → launch-project fallback, no root → 400.
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const home = await resolveHomeForRoot(space.root ?? null);
+      const result = await handleTaskDetail(space.root, home, taskId);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -256,7 +419,7 @@ export function createManagementRouter(
         return;
       }
       const request = (body.value ?? {}) as Partial<LaunchSessionRequest>;
-      const result = await handleLaunchSession(supervisor, context.launchProjectRoot ?? null, request);
+      const result = await handleLaunchSession(supervisor, request, resolveSessionSpace);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -266,8 +429,19 @@ export function createManagementRouter(
     }
 
     if (pathname === '/api/v1/sessions' && req.method === 'GET') {
-      const home = await resolveHome();
-      const response = handleListSessions(supervisor, context.launchProjectRoot ?? null, home);
+      // A `space` selector filters the listing to that space (design D3); an
+      // omitted selector returns every session (compat), so — unlike the
+      // data endpoints — there is no launch-project fallback here.
+      let filterRoot: string | undefined;
+      if (spaceSelector) {
+        const resolved = await resolveSpaceSelector(spaceSelector);
+        if (!resolved.ok) {
+          sendError(res, resolved.status, resolved.code, resolved.message);
+          return;
+        }
+        filterRoot = canonicalizeOrResolve(resolved.space.root);
+      }
+      const response = await handleListSessions(supervisor, filterRoot, (root) => resolveHomeForRoot(root));
       sendJson(res, 200, response);
       return;
     }
@@ -294,15 +468,20 @@ export function createManagementRouter(
     }
 
     if (pathname === '/api/v1/runs') {
-      // No launch project means no changes could exist to report runs for —
-      // an empty listing, not an error (unlike `/changes`, which requires a
-      // resolvable project to enumerate at all).
-      if (!context.launchProjectRoot) {
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      // No resolvable root (no selector and no launch project) means no
+      // changes could exist to report runs for — an empty listing, not an
+      // error (unlike `/changes`, which requires a resolvable project).
+      if (!space.root) {
         sendJson(res, 200, { runs: [] });
         return;
       }
-      const home = await resolveHome();
-      const runsResponse = await handleRuns(context.launchProjectRoot, home);
+      const home = await resolveHomeForRoot(space.root);
+      const runsResponse = await handleRuns(space.root, home);
       sendJson(res, 200, runsResponse);
       return;
     }

@@ -1,84 +1,69 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { ChangeLoadError, ChangeRunEntry, ChangeSummary, SessionRecordWire } from '../api/types.js';
-import { BOARD_COLUMNS, deriveColumn, type BoardColumn as BoardColumnId } from '../board/columns.js';
+import type {
+  ChangeLoadError,
+  ChangeRunEntry,
+  ChangeSummary,
+  SessionListEntry,
+  SpaceEntry,
+  SpaceMember,
+} from '../api/types.js';
+import {
+  BOARD_COLUMNS,
+  groupIntoTasks,
+  tasksForMember,
+  type BoardColumn as BoardColumnId,
+} from '../board/columns.js';
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
+import { MemberChips } from './MemberChips.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
-
-const SESSION_POLL_INTERVAL_MS = 3000;
-const LIVE_SESSION_STATES: SessionRecordWire['state'][] = ['starting', 'running', 'exiting'];
+import { spaceHref, useSpace } from '../store/use-space.js';
 
 /**
- * Compact running-sessions indicator (design.md D1/D3.3 of
- * `slice3-sessions-ui`): the board's reflection of the sessions surface —
- * a live count linking to `/sessions`, fed by the same list call the
- * Sessions page uses, re-polled only while at least one session was live
- * in the last response so idle boards skip the extra request.
+ * The Done column shows only the most recent N done Tasks, overflowing the rest
+ * into the Archive page (ui-space-redesign-archive-page design D5 / archive-ui
+ * spec). N is a UI tuning knob, not a contract — the spec says "a bounded
+ * number", not a specific value.
  */
-function LiveSessionsIndicator() {
-  const [liveCount, setLiveCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    function poll() {
-      client
-        .listSessions()
-        .then((res) => {
-          if (cancelled) return;
-          const count = res.sessions.filter((e) => LIVE_SESSION_STATES.includes(e.session.state)).length;
-          setLiveCount(count);
-          if (count > 0) {
-            timer = setTimeout(poll, SESSION_POLL_INTERVAL_MS);
-          }
-        })
-        .catch(() => {
-          // The board's primary content doesn't depend on this indicator —
-          // a failed sessions fetch just means nothing is shown, silently.
-        });
-    }
-
-    poll();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
-
-  if (!liveCount) return null;
-
-  return (
-    <a class="board-page__sessions-indicator" href="/sessions" data-testid="board-sessions-indicator">
-      {liveCount} live session{liveCount === 1 ? '' : 's'}
-    </a>
-  );
-}
+const DONE_COLUMN_LIMIT = 5;
 
 /**
- * The board page (design.md D7/D8 of `rasen-ui-slice1-readonly-api`): one
- * `listChanges` + `listRuns` call renders the whole board, grouped into
- * lifecycle columns by the pure `deriveColumn` function. Never shows
+ * The board page (ui-space-redesign-task-board design D6): three space-scoped
+ * calls — `listChanges` + `listRuns` + `listSessions` — render the whole
+ * board, scoped to the current route's planning space, grouped into Tasks
+ * (portfolio containers and implicit single-item bare changes) and placed into
+ * lifecycle columns by the pure `groupIntoTasks` / `deriveTaskColumn`
+ * functions. Live sessions drive the `⦿` indicator and, in a store space, the
+ * member-chip filter (session-provenance attribution). Never shows
  * placeholder/fabricated changes (board-ui spec) — loading/error/empty are
  * distinct explicit states.
  */
 export function BoardPage() {
+  const space = useSpace();
+  const selector = space?.selector;
   const [changes, setChanges] = useState<ChangeSummary[] | null>(null);
   const [loadErrors, setLoadErrors] = useState<ChangeLoadError[]>([]);
   const [runs, setRuns] = useState<ChangeRunEntry[]>([]);
+  const [sessions, setSessions] = useState<SessionListEntry[]>([]);
+  const [spaces, setSpaces] = useState<SpaceEntry[]>([]);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [highlightedName, setHighlightedName] = useState<string | null>(null);
+  // The selected member chip (a member's projectId), or null for the "All"
+  // rollup. Reset whenever the space changes so a stale member never carries
+  // across a space switch.
+  const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setPageError(null);
-    Promise.all([client.listChanges(), client.listRuns()])
-      .then(([changesRes, runsRes]) => {
+    setSelectedMember(null);
+    Promise.all([client.listChanges(selector), client.listRuns(selector), client.listSessions(selector)])
+      .then(([changesRes, runsRes, sessionsRes]) => {
         if (cancelled) return;
         setChanges(changesRes.changes);
         // `@atelierai/rasen-ui` is published/resolved independently of the
@@ -88,6 +73,7 @@ export function BoardPage() {
         // rather than crashing the whole board on `undefined.length`.
         setLoadErrors(changesRes.errors ?? []);
         setRuns(runsRes.runs);
+        setSessions(sessionsRes.sessions);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -103,7 +89,29 @@ export function BoardPage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshNonce]);
+  }, [refreshNonce, selector]);
+
+  // The member chip row is store-only chrome (design D4). Fetch the spaces
+  // listing best-effort — a failure just leaves the chip row empty rather than
+  // failing the board, and a project space never needs it.
+  useEffect(() => {
+    if (space?.type !== 'store') {
+      setSpaces([]);
+      return;
+    }
+    let cancelled = false;
+    client
+      .listSpaces()
+      .then((res) => {
+        if (!cancelled) setSpaces(res.spaces);
+      })
+      .catch(() => {
+        if (!cancelled) setSpaces([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [space?.type, space?.id, refreshNonce]);
 
   function refresh() {
     setHighlightedName(null);
@@ -160,20 +168,34 @@ export function BoardPage() {
           <button type="button" onClick={refresh}>
             Refresh
           </button>
-          <LiveSessionsIndicator />
         </div>
         {dialogOpen && (
-          <NewChangeDialog onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
+          <NewChangeDialog space={selector} onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
         )}
       </div>
     );
   }
 
   const runsByName = new Map(runs.map((r) => [r.name, r]));
+  const allTasks = groupIntoTasks(changes, runsByName, sessions);
+
+  // Member chips render only for a store space (design D4). The current
+  // store's members come from the spaces listing, matched by opaque id.
+  const storeMembers: SpaceMember[] =
+    space?.type === 'store'
+      ? (spaces.find((s) => s.type === 'store' && s.id === space.id) as
+          | { members: SpaceMember[] }
+          | undefined)?.members ?? []
+      : [];
+  const memberRoot =
+    selectedMember !== null
+      ? storeMembers.find((m) => m.projectId === selectedMember)?.root ?? null
+      : null;
+  const tasks = tasksForMember(allTasks, sessions, memberRoot);
+
   const grouped = new Map<BoardColumnId, BoardColumnEntry[]>(BOARD_COLUMNS.map((c) => [c.id, []]));
-  for (const change of changes) {
-    const { column, escalated } = deriveColumn(change, runsByName.get(change.name));
-    grouped.get(column)!.push({ change, escalated, highlighted: change.name === highlightedName });
+  for (const task of tasks) {
+    grouped.get(task.column)!.push({ task, highlighted: task.id === highlightedName });
   }
 
   return (
@@ -185,18 +207,46 @@ export function BoardPage() {
         <button type="button" onClick={refresh}>
           Refresh
         </button>
-        <LiveSessionsIndicator />
       </div>
+      {space?.type === 'store' && (
+        <MemberChips members={storeMembers} selected={selectedMember} onSelect={setSelectedMember} />
+      )}
       {brokenChanges}
       {changes.length > 0 && (
         <div class="board">
-          {BOARD_COLUMNS.map((col) => (
-            <BoardColumn key={col.id} label={col.label} entries={grouped.get(col.id) ?? []} />
-          ))}
+          {BOARD_COLUMNS.map((col) => {
+            const colEntries = grouped.get(col.id) ?? [];
+            // The Done column is bounded (design D5): show only the most recent
+            // N (the tail of the existing entry order — no new sort of live
+            // data) with an overflow link into the Archive page. Other columns
+            // are unaffected.
+            if (col.id === 'done' && colEntries.length > DONE_COLUMN_LIMIT) {
+              return (
+                <BoardColumn
+                  key={col.id}
+                  label={col.label}
+                  entries={colEntries.slice(-DONE_COLUMN_LIMIT)}
+                  space={space}
+                  footer={
+                    space && (
+                      <a
+                        class="board-column__overflow"
+                        data-testid="done-overflow"
+                        href={spaceHref(space, 'archive')}
+                      >
+                        View all in Archive →
+                      </a>
+                    )
+                  }
+                />
+              );
+            }
+            return <BoardColumn key={col.id} label={col.label} entries={colEntries} space={space} />;
+          })}
         </div>
       )}
       {dialogOpen && (
-        <NewChangeDialog onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
+        <NewChangeDialog space={selector} onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
       )}
     </div>
   );

@@ -13,9 +13,12 @@ import { ApiError } from '../api/client.js';
  * the form fields intact.
  */
 export function NewChangeDialog({
+  space,
   onCancel,
   onCreated,
 }: {
+  /** The board's current planning-space selector, forwarded so the new change lands in the viewed space (design D5). */
+  space?: string;
   onCancel: () => void;
   onCreated: (changeId: string) => void;
 }) {
@@ -30,7 +33,7 @@ export function NewChangeDialog({
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const result = await client.createChange({ name, description });
+      const result = await client.createChange({ name, description, ...(space ? { space } : {}) });
       onCreated(result.change.id);
     } catch (err) {
       // A 401 here already triggered the shared re-launch notice (the

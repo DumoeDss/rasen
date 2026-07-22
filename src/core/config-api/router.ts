@@ -17,6 +17,7 @@ import {
 import { resolveEffectiveConfig } from '../effective-config.js';
 import { updateProjectConfigKey } from '../project-config.js';
 import { readProjectRegistryState } from '../project-registry.js';
+import { pathIsDirectory } from '../file-state.js';
 import { listPipelinesWithInfo, loadPipelineByName } from '../pipeline-registry/index.js';
 import { resolveProjectSelector } from './project-addressing.js';
 import { serializeConfigEntry } from './serialize.js';
@@ -203,13 +204,19 @@ async function handleGetConfigKey(
 
 async function handleListProjects(res: http.ServerResponse): Promise<void> {
   const state = await readProjectRegistryState();
-  const projects: ProjectRef[] = state
-    ? Object.entries(state.projects).map(([root, entry]) => ({
-        projectId: entry.projectId,
-        name: entry.name,
-        root,
-      }))
-    : [];
+  // Registry entries whose root no longer exists on disk (deleted clones,
+  // leaked test temp dirs) are dead weight for a switcher UI — filter them
+  // here rather than surfacing them for the user to trip over. Read-only:
+  // actually pruning the registry stays `rasen doctor --gc`'s job.
+  const entries = state ? Object.entries(state.projects) : [];
+  const liveFlags = await Promise.all(entries.map(([root]) => pathIsDirectory(root)));
+  const projects: ProjectRef[] = entries
+    .filter((_, i) => liveFlags[i])
+    .map(([root, entry]) => ({
+      projectId: entry.projectId,
+      name: entry.name,
+      root,
+    }));
   sendJson(res, 200, { projects });
 }
 

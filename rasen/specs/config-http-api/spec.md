@@ -3,11 +3,9 @@
 ## Purpose
 
 This spec defines the localhost HTTP JSON API the CLI embeds to expose the unified configuration layer to a browser-based UI. It governs how configuration keys are listed, read, set, and unset over HTTP, how projects are addressed, and how the server is secured to loopback with a per-session token. All endpoint behavior draws from the in-process unified config layer with no configuration logic reimplemented in HTTP handlers.
-
 ## Requirements
-
 ### Requirement: Localhost config API endpoints
-The CLI SHALL embed a localhost HTTP JSON API, versioned under `/api/v1/`, exposing the unified configuration layer: a health probe, a list endpoint returning every registered configuration key with its definition metadata, effective value, source (`default` | `global` | `project` | `env-override`), and raw per-scope values; a single-key get; scope-explicit set and unset that return the re-resolved entry; and a registered-projects listing. All responses SHALL be JSON, and all endpoint data SHALL come from the unified config layer's in-process modules (effective-config resolution, the config-key registry, and the scope write paths) with no configuration logic reimplemented in HTTP handlers.
+The CLI SHALL embed a localhost HTTP JSON API, versioned under `/api/v1/`, exposing the unified configuration layer: a health probe, a list endpoint returning every registered configuration key with its definition metadata, effective value, source (`default` | `global` | `project` | `env-override`), and raw per-scope values; a single-key get; scope-explicit set and unset that return the re-resolved entry; and a registered-projects listing. The projects listing SHALL omit registry entries whose root directory no longer exists on disk (deleted clones, leaked temporary directories), so a switcher UI never offers a dead project; the filtering is read-only and never modifies the registry (pruning remains `rasen doctor --gc`'s job). All responses SHALL be JSON, and all endpoint data SHALL come from the unified config layer's in-process modules (effective-config resolution, the config-key registry, and the scope write paths) with no configuration logic reimplemented in HTTP handlers.
 
 #### Scenario: List returns effective entries with sources
 - **WHEN** a client sends `GET /api/v1/config` with a valid token
@@ -31,7 +29,12 @@ The CLI SHALL embed a localhost HTTP JSON API, versioned under `/api/v1/`, expos
 #### Scenario: Health and projects endpoints
 - **WHEN** a client sends `GET /api/v1/health` or `GET /api/v1/projects`
 - **THEN** health returns ok plus the CLI version and the launch project reference (or null)
-- **AND** projects returns the machine project registry's entries as `{ projectId, name, root }` references
+- **AND** projects returns the machine project registry's live entries as `{ projectId, name, root }` references
+
+#### Scenario: Dead project roots are hidden without registry writes
+- **WHEN** a registered project's root directory has been deleted from disk
+- **THEN** `GET /api/v1/projects` omits that entry
+- **AND** the registry file is left byte-for-byte unchanged by the request
 
 ### Requirement: Scope-explicit, registry-validated writes
 Every write (set or unset) SHALL require an explicit `scope` of `global` or `project`; a missing or invalid scope SHALL be rejected without any write. Writes in BOTH scopes SHALL validate the key path and value through the config-key registry (including the machine-managed not-settable keys) before touching any file, and global writes SHALL additionally pass global schema validation before saving. Errors SHALL use a uniform shape `{ error: { code, message, fix? } }`.
@@ -110,3 +113,4 @@ The CLI SHALL expose a read-only `GET /api/v1/pipelines` endpoint returning the 
 #### Scenario: Token guard applies
 - **WHEN** a request to `/api/v1/pipelines` arrives without the session token or with an incorrect one
 - **THEN** the response is 401 with error code `unauthorized` and no handler logic runs
+

@@ -3,25 +3,37 @@ import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { WireConfigEntry } from '../api/types.js';
 import { groupEntries } from '../config/grouping.js';
-import { useProjectState } from '../store/use-project-state.js';
+import { useSpace } from '../store/use-space.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
 import { GatesInventoryPanel } from './GatesInventoryPanel.js';
 
 /**
- * The config page (design.md D6): one `listConfig` call renders the whole
- * page, grouped by registry group; re-fetches whenever the selected project
- * changes.
+ * The config page (design.md D6; management-ui-shell design D6): one
+ * `listConfig` call renders the whole page, grouped by registry group,
+ * re-fetching whenever the route's planning space changes. Config still rides
+ * the config-api's own `?project=` param (child 1 did not move config onto
+ * `?space=`), so this stays a thin route-derived reader: for a project space
+ * it passes the project id exactly as before; for a store space, store-scoped
+ * config is deferred to the later Config redesign, so it renders an explicit
+ * notice rather than mis-addressing the store root as a project.
  */
 export function ConfigPage() {
-  const projectState = useProjectState();
+  const space = useSpace();
   const [entries, setEntries] = useState<WireConfigEntry[] | null>(null);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const projectId = projectState.selected?.projectId;
+  const isStoreSpace = space?.type === 'store';
+  const projectId = space?.type === 'project' ? space.id : undefined;
 
   useEffect(() => {
-    if (!projectState.loaded) return;
+    if (isStoreSpace) {
+      // Store-scoped config is deferred (design D6): nothing to fetch.
+      setEntries(null);
+      setPageError(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setPageError(null);
@@ -45,7 +57,7 @@ export function ConfigPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, projectState.loaded]);
+  }, [projectId, isStoreSpace]);
 
   function updateEntry(updated: WireConfigEntry) {
     setEntries((current) =>
@@ -55,22 +67,25 @@ export function ConfigPage() {
     );
   }
 
-  if (!projectState.loaded || loading) {
+  if (isStoreSpace) {
+    return (
+      <p class="config-page__store-deferred" data-testid="config-store-deferred">
+        Store configuration arrives with the Config redesign. Switch to a project space to edit
+        project-scoped configuration.
+      </p>
+    );
+  }
+
+  if (loading) {
     return <p>Loading configuration…</p>;
   }
 
   return (
     <div>
-      {!projectState.selected && (
-        <p class="config-page__no-project-hint">
-          No project selected — showing global configuration only. Select a project above to view
-          and edit project-scoped values.
-        </p>
-      )}
       {pageError && (
         <p class="config-page__error">
           {pageError.message}
-          {pageError.fix ? ` — ${pageError.fix}` : ''} Use the project switcher above.
+          {pageError.fix ? ` — ${pageError.fix}` : ''} Use the space switcher above.
         </p>
       )}
       {renderEntries()}
@@ -78,9 +93,9 @@ export function ConfigPage() {
   );
 
   function renderEntries() {
-    // A page-level error (design.md D6: "pointing at the project switcher")
-    // is a banner ABOVE the list, not a replacement for it — a single row's
-    // failed write must not hide every entry that already loaded (m4).
+    // A page-level error (design.md D6: "pointing at the switcher") is a
+    // banner ABOVE the list, not a replacement for it — a single row's failed
+    // write must not hide every entry that already loaded (m4).
     if (!entries) return null;
 
     const groups = groupEntries(entries);

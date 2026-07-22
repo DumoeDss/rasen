@@ -1,0 +1,26 @@
+## Why
+
+The redesign made Archive a first-class page in the navigation (Board · Archive · Config, decision #9), but the Archive slot still resolves to `ArchivePlaceholder` — the only placeholder left in the shell. A space's shipped work is invisible: there is nowhere to see what has been archived, when, and under which Task. The board's Done column, meanwhile, grows without bound because every done/archived Task lands there forever. This is the LAST child of the `ui-space-redesign` portfolio; it turns the placeholder into the real Archive page and gives the board a bounded Done column that overflows into it.
+
+## What Changes
+
+- **New read-only management endpoint `GET /api/v1/archive?space=<selector>`** listing the space's archived changes — each with its un-dated name, archive date (`YYYY-MM-DD`), portfolio-container membership (via the same longest-prefix rule the board uses), and task-checkbox progress. Distinct from child 4's `GET /api/v1/tasks/:id` (that reports one Task's archived children); this is the space-wide archive roster. Space-resolved exactly like `/changes` (explicit selector → registries, omitted → launch project, no resolvable root → 400). Mints nothing, writes nothing (real-source red line, decision #10).
+- **Shared archived-name/location helper extracted** to `src/utils/item-discovery.ts` (child 4 finding 2 / finding 23): the `YYYY-MM-DD-` prefix parse (`parseArchivedRef`) and the in-repo-then-machine-home archive-dir probe (`resolveArchivedChangeDir`). Child 4's `task-detail.ts` inline copies are refactored to call the shared helper — **behavior-preserving** (its shipped, reviewed logic is unchanged, just relocated) — and the new archive endpoint uses the same helper, so both agree byte-for-byte on how an archived change's name and disk location are resolved.
+- **Archive page replaces `ArchivePlaceholder`** behind the existing `/p|s/:id/archive` routes (component swap only — the route table's shape is child 2's and stays untouched, finding 9). It shows a **time-reverse-ordered** list of archived Tasks (archived changes grouped into Tasks by the same portfolio rule), a **search box** filtering by name (client-side over the fetched list — the corpus is small), and in a **store** space a **member filter** reusing child 3's member-chip / session-provenance model. Each archived Task links to its Task detail page (child 4's endpoint already serves archived-only Tasks).
+- **Done-column truncation on the board**: the Done column shows only the most recent N Tasks with a "View all in Archive →" footer linking to the Archive page (`spaceHref(space, 'archive')`). A small, contained edit to `BoardPage.tsx`'s Done rendering that does NOT touch the board-ui spec (its requirement lives in the new `archive-ui` capability, avoiding collision with child 2/3's board-ui deltas).
+- **`ArchivePlaceholder` retired** — the last placeholder. `Placeholders.tsx` is deleted (child 4 already retired `TaskDetailPlaceholder`); `app.tsx` imports the real `ArchivePage`.
+
+## Capabilities
+
+### New Capabilities
+- `archive-ui`: The Archive route page — a time-reverse list of archived Tasks behind the existing space-scoped `/…/archive` routes, name search, store-space member filter (with the documented session-provenance ceiling), and links to Task detail; plus the board's Done-column recent-N truncation with a "View all in Archive" overflow into this page.
+
+### Modified Capabilities
+- `management-http-api`: adds one requirement for the read-only `GET /api/v1/archive` space-wide archive-listing endpoint (archived changes with date, portfolio membership, task progress). Additive ADDED requirement — it does not touch the requirements child 1 (MODIFY "Changes listing…"), child 3 (ADDED "portfolio-container membership"), or child 4 (ADDED "Task roster endpoint") already carry in their unarchived deltas.
+
+## Impact
+
+- **New server**: `src/core/management-api/archive.ts` (archive-listing handler) + `ArchivedChangeSummary`/`ArchiveResponse` wire types in `management-api/wire-types.ts`; router wiring for `/api/v1/archive` (added to `MANAGEMENT_PATHS`, GET-only, space-resolved like `/changes`). `src/utils/item-discovery.ts` gains the exported `ArchivedRef`/`parseArchivedRef`/`resolveArchivedChangeDir` helper; `task-detail.ts` refactored to import them (behavior-preserving — deletes its inline `ARCHIVED_NAME_PATTERN`/`parseArchivedRef`/probe).
+- **New UI**: `packages/ui/src/components/ArchivePage.tsx` (replaces `ArchivePlaceholder`); `Placeholders.tsx` deleted and its import removed from `app.tsx`. New `client.listArchive(space)`; hand-mirrored `ArchivedChangeSummary`/`ArchiveResponse` in `api/types.ts` pinned by a `satisfies` fixture (no `as`). A pure `groupArchivedTasks` helper in `board/columns.ts` (+ tests). Done-column truncation edit in `BoardPage.tsx`.
+- **Reused unchanged**: `MemberChips.tsx` + `tasksForMember`/`isUnderRoot` (store member filter), `spaceHref`/`useSpace` (opaque-token space + links), `portfolioOf`/`findPortfolioContainers` (child 3/4 exports), `getArchivedChangeIds`/`getTaskProgressForChange`.
+- **No version bump; local-only ship; archive deferred to portfolio level.** No writes/mints on any new path (decision #10). Windows/pnpm; preact + preact-iso (no React).

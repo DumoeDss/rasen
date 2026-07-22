@@ -6,6 +6,7 @@ import { ensureCliBuilt, terminateActiveCliChildren } from './test/helpers/run-c
 import { cleanupTempPath } from './test/helpers/temp-cleanup.js';
 
 let machineRoot: string | undefined;
+let xdgDataNet: string | undefined;
 
 // Ensure the CLI bundle exists before tests execute, and install the
 // machine-root safety net (harden-adoption-and-test-isolation D4): every
@@ -25,10 +26,22 @@ export async function setup() {
   machineRoot = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-home-'));
   process.env.RASEN_HOME = machineRoot;
 
+  // Second net layer: many suites `delete process.env.RASEN_HOME` so their
+  // per-suite XDG_CONFIG_HOME isolation takes effect, but forget the DATA
+  // axis — getGlobalDataDir() (RASEN_HOME > XDG_DATA_HOME > ~/.rasen) then
+  // falls through to the developer's real ~/.rasen, leaking e.g. project
+  // registry writes (2000+ test entries were found in the real registry).
+  // With XDG_DATA_HOME also pointed at a run-scoped temp dir, deleting
+  // RASEN_HOME alone can never reach the real machine home. Suites that
+  // exercise XDG_DATA_HOME behavior set/delete it themselves and win.
+  xdgDataNet = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-xdg-data-'));
+  process.env.XDG_DATA_HOME = xdgDataNet;
+
   await ensureCliBuilt();
 }
 
 export async function teardown() {
   terminateActiveCliChildren();
   cleanupTempPath(machineRoot);
+  cleanupTempPath(xdgDataNet);
 }
