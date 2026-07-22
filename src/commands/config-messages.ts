@@ -42,6 +42,7 @@ export interface ConfigCommandMessages {
   fromCoreProfile: string;
   noneValue: string;
   invalidKey: (key: string, detail: string) => string;
+  retiredKey: (key: string) => string;
   listKeysGuidance: (command: string) => string;
   allowUnknownGuidance: string;
   errorWithDetail: (detail: string) => string;
@@ -109,6 +110,7 @@ export function getConfigCommandMessages(
     invalidScope: (scope) => format(raw.invalidScope, { scope }),
     projectNotFound: (workspace) => format(raw.projectNotFound, { workspace }),
     invalidKey: (key, detail) => format(raw.invalidKey, { key, detail }),
+    retiredKey: (key) => format(raw.retiredKey, { key }),
     listKeysGuidance: (command) => format(raw.listKeysGuidance, { command }),
     errorWithDetail: (detail) => format(raw.errorWithDetail, { detail }),
     invalidConfiguration: (detail) => format(raw.invalidConfiguration, { detail }),

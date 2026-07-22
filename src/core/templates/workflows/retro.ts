@@ -5,7 +5,7 @@
  * and code quality metrics. Supports change-scoped, general, and global
  * retrospective modes. Report saved to the Rasen change directory.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const RETRO_INSTRUCTIONS = `Engineering retrospective — analyze what shipped, patterns, and learnings.
@@ -174,15 +174,5 @@ export function getRetroCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxRetroCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Retro',
-    description: 'Engineering retrospective — analyze what shipped, patterns, and learnings',
-    category: 'Workflow',
-    tags: ['workflow', 'retrospective', 'analysis'],
-    content: RETRO_INSTRUCTIONS,
   };
 }

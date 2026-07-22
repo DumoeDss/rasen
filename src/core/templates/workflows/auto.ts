@@ -7,7 +7,7 @@
  * registry via the `rasen pipeline` CLI (classify / show / resume); the DAG
  * is not hard-coded here, and the orchestration playbook is registry-agnostic.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
@@ -176,15 +176,5 @@ export function getAutoCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxAutoCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Auto',
-    description: 'Autopilot mode — LEAD orchestrates role-isolated subagents to drive the full Rasen workflow end-to-end',
-    category: 'Workflow',
-    tags: ['workflow', 'autopilot', 'dispatch', 'orchestration'],
-    content: AUTO_INSTRUCTIONS,
   };
 }

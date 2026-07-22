@@ -6,7 +6,7 @@
  * convergence on a design or plan). Produces a design doc dual-written to
  * the Rasen change directory.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const OFFICE_HOURS_INSTRUCTIONS = `YC-style product validation — integrates /office-hours into the Rasen workflow.
@@ -112,15 +112,5 @@ export function getOfficeHoursCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxOfficeHoursCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Office Hours',
-    description: 'YC-style product validation — validate demand reality before building',
-    category: 'Workflow',
-    tags: ['workflow', 'validation', 'product'],
-    content: OFFICE_HOURS_INSTRUCTIONS,
   };
 }

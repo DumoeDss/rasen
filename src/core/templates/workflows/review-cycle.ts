@@ -10,7 +10,7 @@
  * with a Tier A `SendMessage` warm resume of the original reviewer — and
  * single-context is the explicit fallback (Tier C), not the baseline.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
@@ -91,16 +91,5 @@ export function getReviewCycleSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxReviewCycleCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Review Cycle',
-    description:
-      'Iterative review loop — review, triage, fix, re-review the delta, repeat until clean or escalate to a human',
-    category: 'Workflow',
-    tags: ['workflow', 'review', 'verification', 'iterative', 'orchestration'],
-    content: REVIEW_CYCLE_INSTRUCTIONS,
   };
 }

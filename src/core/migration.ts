@@ -6,8 +6,8 @@
  */
 
 import type { AIToolOption } from './config.js';
-import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig, type Delivery } from './global-config.js';
-import { CommandAdapterRegistry, getCommandFilePathCandidates } from './command-generation/index.js';
+import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig } from './global-config.js';
+import { getCommandFilePathCandidates } from './shared/retired-command-paths.js';
 import { WORKFLOW_TO_SKILL_DIR } from './profile-sync-drift.js';
 import { ALL_WORKFLOWS } from './profiles.js';
 import { resolveToolSkillsRoot } from './shared/index.js';
@@ -41,11 +41,13 @@ function scanInstalledWorkflowArtifacts(
       }
     }
 
-    const adapter = CommandAdapterRegistry.get(tool.value);
-    if (!adapter) continue;
-
+    // The command surface itself is retired, but a pre-existing install may
+    // still carry command files from before the retirement — detected here
+    // (via the frozen static path knowledge) purely so such a project is
+    // still recognized as "has this workflow installed" during one-time
+    // migration, not silently treated as a fresh/empty install.
     for (const workflowId of ALL_WORKFLOWS) {
-      for (const commandPath of getCommandFilePathCandidates(adapter, workflowId)) {
+      for (const commandPath of getCommandFilePathCandidates(tool.value, workflowId)) {
         const fullPath = path.isAbsolute(commandPath)
           ? commandPath
           : path.join(projectPath, commandPath);
@@ -71,15 +73,6 @@ function scanInstalledWorkflowArtifacts(
  */
 export function scanInstalledWorkflows(projectPath: string, tools: AIToolOption[]): string[] {
   return scanInstalledWorkflowArtifacts(projectPath, tools).workflows;
-}
-
-function inferDelivery(artifacts: InstalledWorkflowArtifacts): Delivery {
-  if (artifacts.hasCommands) {
-    // Commands-only installs (pre-profile era) heal to 'both': skills are
-    // restored on the next update rather than treated as data loss.
-    return 'both';
-  }
-  return 'skills';
 }
 
 /**
@@ -123,9 +116,6 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
   // Migrate: set profile to custom with detected workflows
   config.profile = 'custom';
   config.workflows = installedWorkflows;
-  if (rawConfig.delivery === undefined) {
-    config.delivery = inferDelivery(artifacts);
-  }
   saveGlobalConfig(config);
 
   console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows`);

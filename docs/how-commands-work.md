@@ -79,23 +79,20 @@ The intent is identical everywhere. The punctuation differs. Use the form that m
 | Cursor | `/rasen-propose`, `/rasen-apply` |
 | Windsurf | `/rasen-propose`, `/rasen-apply` |
 | GitHub Copilot (IDE) | `/rasen-propose`, `/rasen-apply` |
-| Kimi CLI | skill-style, e.g. `/rasen-propose` (no command adapter) |
-| Trae | skill-style, e.g. `/rasen-propose` (no command adapter) |
+| Kimi CLI | skill-style, e.g. `/rasen-propose` |
+| Trae | skill-style, e.g. `/rasen-propose` |
 
-Most tools use either the colon form (`/rasen:propose`) or the dash form (`/rasen-propose`). A few tools (ForgeCode, Kimi CLI, Mistral Vibe, Trae) get skills but no command adapter, so you invoke the skill by name instead of a slash command. The full per-tool list, including exactly which files get written where, lives in [Supported Tools](supported-tools.md).
+Most tools use either the colon form (`/rasen:propose`) or the dash form (`/rasen-propose`), driven by how that tool surfaces an installed skill. The full per-tool list, including exactly which files get written where, lives in [Supported Tools](supported-tools.md).
 
 When in doubt, type a slash in your AI chat and look at the autocomplete. Your tool will show you the form it expects.
 
-## How the commands got there: skills and commands
+## How the commands got there: skills
 
-When you run `rasen init` (or `rasen update`), rasen writes small files into your project so your AI tool can find the workflow. Depending on your tool and settings, these are **skills**, **commands**, or both.
+When you run `rasen init` (or `rasen update`), rasen writes small **skill** files into your project so your AI tool can find the workflow — for example `.claude/skills/rasen-*/SKILL.md`. Skills are the only delivery format now: a folder of instructions your assistant auto-detects, without a separate per-tool slash-command file.
 
-- **Skills** live in places like `.claude/skills/rasen-*/SKILL.md`. They're the emerging cross-tool standard: a folder of instructions your assistant auto-detects.
-- **Commands** live in places like `.claude/commands/rasen/<id>.md`. They're the older per-tool slash command files.
+You don't have to care about the file format. You just type the slash command and it works — your tool turns the skill into an invocable command using its own syntax. But knowing the skill files exist helps when something goes wrong: if your commands vanish, it usually means these files are missing or stale, and `rasen update` regenerates them.
 
-You don't have to care which one your tool uses. You just type the slash command and it works. But knowing these files exist helps when something goes wrong: if your commands vanish, it usually means these files are missing or stale, and `rasen update` regenerates them.
-
-See [Supported Tools](supported-tools.md) for the exact paths per tool, and [Migration Guide](migration-guide.md) for how skills replaced the older command-only approach.
+See [Supported Tools](supported-tools.md) for the exact paths per tool, and [Migration Guide](migration-guide.md) for how skills replaced the older command-file approach.
 
 ## Confirming it's installed
 
@@ -103,7 +100,7 @@ Quick checks, fastest first:
 
 1. **Type a slash in your AI chat.** Start typing `/rasen` and watch for autocomplete suggestions. If they appear, you're set.
 2. **Look for the files.** For Claude Code, check that `.claude/skills/` contains `rasen-*` folders. Other tools use their own directories ([Supported Tools](supported-tools.md) lists them).
-3. **Re-run setup.** From your project root, run `rasen update`. This regenerates the skill and command files for whatever tools you configured.
+3. **Re-run setup.** From your project root, run `rasen update`. This regenerates the skill files for whatever tools you configured.
 4. **Restart your assistant.** Many tools scan for skills and commands at startup, so a fresh window can be the missing step.
 
 ## Which commands do I even have?

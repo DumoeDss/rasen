@@ -669,7 +669,7 @@ AI:  Welcome to rasen!
 
 ## Command Syntax by AI Tool
 
-Different AI tools use slightly different command syntax. Use the format that matches your tool:
+Rasen installs a **skill** for every workflow — `.claude/skills/rasen-*/SKILL.md` and equivalents per tool — and no separate slash-command file is generated. Each AI tool that natively discovers project skills (Claude Code and 15+ others) surfaces that skill using its own invocation syntax:
 
 | Tool | Syntax Example |
 |------|----------------|
@@ -677,12 +677,10 @@ Different AI tools use slightly different command syntax. Use the format that ma
 | Cursor | `/rasen-propose`, `/rasen-apply` |
 | Windsurf | `/rasen-propose`, `/rasen-apply` |
 | Copilot (IDE) | `/rasen-propose`, `/rasen-apply` |
-| Kimi CLI | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` (no generated command files) |
-| Trae | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` (no generated command files) |
+| Kimi CLI | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` |
+| Trae | Skill-based invocations such as `/rasen-propose`, `/rasen-apply-change` |
 
-The intent is the same across tools, but how commands are surfaced can differ by integration.
-
-> **Note:** GitHub Copilot commands (`.github/prompts/*.prompt.md`) are only available in IDE extensions (VS Code, JetBrains, Visual Studio). GitHub Copilot CLI does not currently support custom prompt files — see [Supported Tools](supported-tools.md) for details and workarounds.
+The intent is the same across tools, but how a skill is surfaced can differ by integration — consult your tool's own docs if the syntax above doesn't match what you see.
 
 ---
 

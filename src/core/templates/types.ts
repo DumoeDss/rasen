@@ -13,10 +13,3 @@ export interface SkillTemplate {
   disableModelInvocation?: boolean;
 }
 
-export interface CommandTemplate {
-  name: string;
-  description: string;
-  category: string;
-  tags: string[];
-  content: string;
-}

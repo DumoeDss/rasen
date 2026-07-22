@@ -1,4 +1,3 @@
-import type { CommandContent } from '../command-generation/types.js';
 import type { SkillTemplate } from '../templates/types.js';
 
 export type WorkflowSourceKind = 'built-in' | 'user';
@@ -35,10 +34,6 @@ export interface WorkflowSkillDefinition {
   template: SkillTemplate;
 }
 
-export interface WorkflowCommandDefinition {
-  content: CommandContent;
-}
-
 /**
  * Shared read model for packaged and user-installed workflows.
  *
@@ -53,7 +48,6 @@ export interface WorkflowDefinition {
   manifestVersion: number;
   kind: WorkflowKind;
   skill: WorkflowSkillDefinition;
-  command?: WorkflowCommandDefinition;
   requires: WorkflowDependencySet;
   recommends: WorkflowRecommendations;
   files: WorkflowFileEntry[];

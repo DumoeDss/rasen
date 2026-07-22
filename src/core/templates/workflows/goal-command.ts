@@ -11,7 +11,7 @@
  * This mirrors how \`/rasen:auto\` classifies among full/small/bug-fix today; it
  * does NOT reimplement orchestration (it embeds the shared playbook).
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
@@ -103,16 +103,5 @@ export function getGoalCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxGoalCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Goal',
-    description:
-      'Goal-driven iteration — LEAD classifies and drives a measure | evaluate | research goal-loop pipeline to a gate condition or maxRounds',
-    category: 'Workflow',
-    tags: ['workflow', 'goal-loop', 'iteration', 'orchestration'],
-    content: GOAL_INSTRUCTIONS,
   };
 }

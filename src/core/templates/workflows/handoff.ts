@@ -8,7 +8,7 @@
  * concrete action. Session-level use is manual (`/rasen:handoff`); worker-level
  * use is driven by the orchestration playbook's handoff protocol (Step H).
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const HANDOFF_INSTRUCTIONS = `Write a handoff document — distill the current working context so a fresh agent can continue without replaying this conversation.
@@ -114,16 +114,5 @@ export function getHandoffSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxHandoffCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Handoff',
-    description:
-      'Write a handoff document distilling the current session or worker context so a fresh agent can continue the change',
-    category: 'Workflow',
-    tags: ['workflow', 'handoff', 'context', 'orchestration'],
-    content: HANDOFF_INSTRUCTIONS,
   };
 }

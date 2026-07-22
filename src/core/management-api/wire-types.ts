@@ -389,7 +389,6 @@ export interface WorkflowListEntry {
   digest: string;
   kind: WorkflowKind;
   skillName: string;
-  commandId: string | null;
   /** True only for a user workflow with no detected machine-level consumer (same marker `workflow list` computes). */
   unused: boolean;
 }

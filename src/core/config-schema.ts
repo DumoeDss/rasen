@@ -19,17 +19,12 @@ export const GlobalConfigSchema = z
       .enum(['full', 'core', 'custom'])
       .optional()
       .default('full'),
-    delivery: z
-      .enum(['both', 'skills'])
-      .or(
-        z
-          .enum(['commands', 'skills-first', 'commands-first'])
-          .transform((legacy) =>
-            legacy === 'skills-first' ? ('skills' as const) : ('both' as const)
-          )
-      )
-      .optional()
-      .default('both'),
+    // The `delivery` setting is retired (skills are the only delivery
+    // surface now). No field is declared for it here — the schema's
+    // `.passthrough()` lets any stored value (current or legacy) pass
+    // through unvalidated so a read/write never errors on it; the actual
+    // one-time notice + strip-on-write lives in global-config.ts's
+    // `getGlobalConfig` (the read seam every caller goes through).
     workflows: z
       .array(z.string())
       .optional(),
@@ -114,7 +109,6 @@ export type GlobalConfigType = z.infer<typeof GlobalConfigSchema>;
 export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
   profile: 'full',
-  delivery: 'both',
   language: 'auto',
 };
 

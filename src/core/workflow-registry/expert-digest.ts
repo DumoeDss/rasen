@@ -70,7 +70,7 @@ export function hashSidecarTree(sourceDir: string): HashedSidecarFile[] {
 
 /**
  * Digest preimage for `kind: 'expert'` definitions, distinct from
- * `digestBuiltIn` (skill+command) and `computeWorkflowDigest` (inline
+ * `digestBuiltIn` (skill) and `computeWorkflowDigest` (inline
  * `files[]`). Covers the inline template plus the hashed sidecar tree, so two
  * experts sharing a sidecar directory (`qa`/`qa-only`) still get distinct
  * digests because `id`/`dirName`/`template` differ.

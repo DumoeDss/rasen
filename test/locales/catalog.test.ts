@@ -124,10 +124,6 @@ describe('locale catalogs', () => {
     const catalog = getLocaleCatalog('zh-cn');
     const profile = catalog.profile.ui;
 
-    expect(formatLocaleMessage(profile.diffDelivery, {
-      before: 'both',
-      after: 'skills',
-    })).toBe('交付方式：both -> skills');
     expect(formatLocaleMessage(profile.diffProfile, {
       before: 'full',
       after: 'core',

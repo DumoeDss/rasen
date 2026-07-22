@@ -178,7 +178,7 @@ function resolveEnvOverride(definition: ConfigKeyDefinition): { value: unknown }
  * Reads the global config file exactly as written (no default-injection),
  * so `resolveEffectiveConfig` can tell "the user set this" apart from
  * "`getGlobalConfig()` filled in its own built-in default" — `getGlobalConfig()`
- * bakes defaults for a few fields (`profile`, `delivery`, `language`,
+ * bakes defaults for a few fields (`profile`, `language`,
  * `proactive`, `repoMode`) directly into its return value, which would otherwise make
  * those keys report source `global` even when never explicitly set. Missing
  * or unparseable files resolve to `{}` (same as "nothing set").

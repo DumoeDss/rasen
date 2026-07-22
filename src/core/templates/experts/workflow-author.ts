@@ -22,8 +22,8 @@ information that cannot be inferred from the repository or request:
 
 ## 2. Check the library and choose staging
 
-Run \`rasen workflow list --json\` and inspect workflow IDs, skill names, and
-command IDs before choosing a portable lowercase ID. Pick a writable staging
+Run \`rasen workflow list --json\` and inspect workflow IDs and skill names
+before choosing a portable lowercase ID. Pick a writable staging
 directory outside the final user-wide registry. Then scaffold explicitly:
 
 \`\`\`sh
@@ -66,7 +66,7 @@ Apply required findings in staging, then run
 Present:
 
 - the staged file tree;
-- workflow ID and skill/command identity;
+- workflow ID and skill identity;
 - required and recommended dependencies;
 - every declared script and its purpose;
 - the final validation result and content digest;

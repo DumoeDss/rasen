@@ -2,12 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 import {
   getSkillTemplates,
-  getCommandTemplates,
-  getCommandContents,
 } from '../../src/core/shared/skill-generation.js';
 import {
   getAutoCommandSkillTemplate,
-  getOpsxAutoCommandTemplate,
 } from '../../src/core/templates/skill-templates.js';
 
 describe('auto workflow (orchestrated autopilot)', () => {
@@ -18,23 +15,10 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skill?.dirName).toBe('rasen-auto');
       expect(skill?.template.name).toBe('rasen-auto');
     });
-
-    it('is registered as a command template (/rasen:auto)', () => {
-      const command = getCommandTemplates().find(c => c.id === 'auto-command');
-      expect(command).toBeDefined();
-      expect(command?.template.name).toBe('Rasen: Auto');
-      expect(command?.template.category).toBe('Workflow');
-      expect(getCommandContents().find(c => c.id === 'auto-command')).toBeDefined();
-    });
   });
 
   describe('instruction content', () => {
     const skillText = getAutoCommandSkillTemplate().instructions;
-    const commandText = getOpsxAutoCommandTemplate().content;
-
-    it('skill and command share the same instruction body', () => {
-      expect(commandText).toBe(skillText);
-    });
 
     it('drives the pipeline as the LEAD via the shared orchestration playbook', () => {
       expect(skillText).toContain('LEAD');

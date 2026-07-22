@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import fs from 'node:fs';
 import { promises as fsp } from 'node:fs';
 import { AI_TOOLS, type AIToolOption } from '../../src/core/config.js';
-import { CommandAdapterRegistry } from '../../src/core/command-generation/index.js';
+import { getRetiredCommandFilePath } from '../../src/core/shared/retired-command-paths.js';
 import { saveGlobalConfig, getGlobalConfigPath } from '../../src/core/global-config.js';
 import { migrateIfNeeded, scanInstalledWorkflows } from '../../src/core/migration.js';
 
@@ -25,11 +25,10 @@ async function writeSkill(projectPath: string, dirName: string): Promise<void> {
 }
 
 async function writeManagedCommand(projectPath: string, workflowId: string): Promise<void> {
-  const adapter = CommandAdapterRegistry.get('claude');
-  if (!adapter) {
-    throw new Error('Claude adapter not found');
+  const commandPath = getRetiredCommandFilePath('claude', workflowId);
+  if (!commandPath) {
+    throw new Error('Claude command path rule not found');
   }
-  const commandPath = adapter.getFilePath(workflowId);
   const fullPath = path.isAbsolute(commandPath)
     ? commandPath
     : path.join(projectPath, commandPath);
@@ -65,7 +64,7 @@ describe('migration', () => {
     await fsp.rm(configHome, { recursive: true, force: true });
   });
 
-  it('migrates to custom skills delivery when only managed skills are detected', async () => {
+  it('migrates to a custom profile when only managed skills are detected', async () => {
     await writeSkill(projectDir, 'rasen-explore');
     await writeSkill(projectDir, 'rasen-apply-change');
 
@@ -73,11 +72,10 @@ describe('migration', () => {
 
     const config = readRawConfig();
     expect(config.profile).toBe('custom');
-    expect(config.delivery).toBe('skills');
     expect(config.workflows).toEqual(['explore', 'apply']);
   });
 
-  it('migrates commands-only installs to both delivery (skills are healed back on the next update)', async () => {
+  it('migrates commands-only (pre-retirement) installs to a custom profile', async () => {
     await writeManagedCommand(projectDir, 'explore');
     await writeManagedCommand(projectDir, 'archive');
 
@@ -85,13 +83,10 @@ describe('migration', () => {
 
     const config = readRawConfig();
     expect(config.profile).toBe('custom');
-    // design D6: commands-only artifacts infer 'both', not 'commands' —
-    // skills are restored on the next update rather than treated as data loss.
-    expect(config.delivery).toBe('both');
     expect(config.workflows).toEqual(['explore', 'archive']);
   });
 
-  it('migrates to custom both delivery when managed skills and commands are detected', async () => {
+  it('migrates to a custom profile when managed skills and pre-retirement commands are both detected', async () => {
     await writeSkill(projectDir, 'rasen-explore');
     await writeManagedCommand(projectDir, 'apply');
 
@@ -99,7 +94,6 @@ describe('migration', () => {
 
     const config = readRawConfig();
     expect(config.profile).toBe('custom');
-    expect(config.delivery).toBe('both');
     expect(config.workflows).toEqual(['explore', 'apply']);
   });
 
@@ -107,7 +101,6 @@ describe('migration', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'core',
-      delivery: 'both',
     });
     await writeSkill(projectDir, 'rasen-explore');
 
@@ -115,15 +108,12 @@ describe('migration', () => {
 
     const config = readRawConfig();
     expect(config.profile).toBe('core');
-    expect(config.delivery).toBe('both');
     expect(config.workflows).toBeUndefined();
   });
 
-  it('preserves explicit delivery value during migration', async () => {
-    // Raw config has explicit delivery but no profile yet.
+  it('migrates when no profile is set yet regardless of other config', async () => {
     saveGlobalConfig({
       featureFlags: {},
-      delivery: 'both',
     });
     await writeSkill(projectDir, 'rasen-explore');
 
@@ -131,7 +121,6 @@ describe('migration', () => {
 
     const config = readRawConfig();
     expect(config.profile).toBe('custom');
-    expect(config.delivery).toBe('both');
     expect(config.workflows).toEqual(['explore']);
   });
 

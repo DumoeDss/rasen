@@ -133,12 +133,6 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
       bySkill.set(portablePathCollisionKey(name), { id: definition.id, kind });
     }
   }
-  const byCommand = new Map(
-    builtIns
-      .filter((definition) => definition.command)
-      .map((definition) => [definition.command!.content.id, definition])
-  );
-
   for (const candidate of candidates) {
     const collisionDiagnostics: WorkflowDiagnostic[] = [];
     const idCollision = byId.get(candidate.id);
@@ -163,17 +157,6 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
         sourcePath: candidate.sourcePath,
       });
     }
-    const commandId = candidate.command?.content.id;
-    const commandCollision = commandId ? byCommand.get(commandId) : undefined;
-    if (commandCollision) {
-      collisionDiagnostics.push({
-        code: 'command_id_collision',
-        severity: 'error',
-        message: `Command ID "${commandId}" collides with workflow "${commandCollision.id}"`,
-        path: 'command',
-        sourcePath: candidate.sourcePath,
-      });
-    }
     if (collisionDiagnostics.length > 0) {
       invalid.push(invalidRecord(candidate.id, candidate.sourcePath!, collisionDiagnostics));
       continue;
@@ -184,7 +167,6 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
     for (const name of new Set([candidate.skill.template.name, candidate.skill.dirName])) {
       bySkill.set(portablePathCollisionKey(name), { id: candidate.id, kind: 'workflow' });
     }
-    if (commandId) byCommand.set(commandId, candidate);
   }
 
   const expertNames = new Set(

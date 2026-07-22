@@ -195,22 +195,11 @@
   },
   "profile": {
     "prompt": {
-      "deliveryPickerMessage": "Delivery mode (how workflows are installed):",
       "workflowPickerMessage": "Select workflows to make available:",
       "workflowPickerInstructions": "Space to toggle, A to select/clear all, Enter to confirm",
       "currentSuffix": " [current]",
       "sourceUser": "user",
       "requiredBy": "required by {workflow}",
-      "delivery": {
-        "both": {
-          "name": "Both (skills + commands)",
-          "description": "Install workflows as both skills and slash commands"
-        },
-        "skills": {
-          "name": "Skills only",
-          "description": "Install workflows only as skills"
-        }
-      },
       "workflows": {
         "propose": {
           "name": "Propose change",
@@ -414,22 +403,12 @@
       "applyGuidance": "Config updated. Run `rasen update` in your projects to apply.",
       "interactiveRequired": "Interactive mode required. Use `rasen profile use <name>` or set config via environment/flags.",
       "currentSettingsHeading": "\nCurrent profile settings",
-      "deliveryLabel": "Delivery",
       "workflowsLabel": "Workflows",
-      "deliveryExplanation": "  Delivery = whether commands are installed alongside skills (skills are always installed)",
       "workflowsExplanation": "  Workflows = which actions are available (propose, explore, apply, etc.)",
       "configurePrompt": "What do you want to configure?",
       "actions": {
-        "both": {
-          "name": "Delivery and workflows",
-          "description": "Update install mode and available actions together"
-        },
-        "delivery": {
-          "name": "Delivery only",
-          "description": "Change where workflows are installed"
-        },
         "workflows": {
-          "name": "Workflows only",
+          "name": "Workflows",
           "description": "Change which workflow actions are available"
         },
         "keep": {
@@ -456,14 +435,13 @@
       "builtInCannotDelete": "Built-in profile \"{name}\" cannot be deleted.",
       "deleteProfile": "Delete profile \"{name}\"?",
       "profileDeleted": "Deleted profile \"{name}\". Current settings were not changed.",
-      "profileImported": "Imported profile \"{name}\" ({delivery}, {count} workflows).",
+      "profileImported": "Imported profile \"{name}\" ({count} workflows).",
       "useImportedProfile": "Run `rasen profile use {name}` to use it.",
       "destinationExists": "Destination already exists: {path}. Pass --force to overwrite it.",
       "overwriteFile": "Overwrite existing file \"{path}\"?",
       "profileExported": "Exported {subject} to {path}.",
       "namedProfileSettings": "profile \"{name}\"",
       "workflowSummary": "{count} selected ({profile})",
-      "diffDelivery": "delivery: {before} -> {after}",
       "diffProfile": "profile: {before} -> {after}",
       "diffWorkflowsAdded": "workflows: added {items}",
       "diffWorkflowsRemoved": "workflows: removed {items}",
@@ -490,7 +468,6 @@
   "config": {
     "descriptions": {
       "profile": "Workflow profile controlling which actions are available",
-      "delivery": "Whether commands are installed alongside skills (skills are always installed)",
       "workflows": "Explicit workflow selection (edit via `rasen profile`)",
       "language": "Language for interactive prompts and CLI help (`auto` detects the system locale)",
       "featureFlags": "Feature flag toggle (featureFlags.<name>)",
@@ -555,6 +532,7 @@
       "fromCoreProfile": "(from core profile)",
       "noneValue": "(none)",
       "invalidKey": "Error: Invalid configuration key \"{key}\".{detail}",
+      "retiredKey": "Note: the \"{key}\" setting has been retired and is no longer stored. Nothing was changed.",
       "listKeysGuidance": "Use \"{command}\" to see available keys.",
       "allowUnknownGuidance": "Pass --allow-unknown to bypass this check.",
       "errorWithDetail": "Error: {detail}",
@@ -580,7 +558,7 @@
       "unableToValidate": "Error: Unable to validate configuration - {detail}"
     },
     "diagnostics": {
-      "legacyDelivery": "Note: delivery mode '{legacy}' has been consolidated into '{delivery}' (skills are always installed). Your config has been updated.",
+      "deliveryRetired": "Note: the 'delivery' setting has been retired (skills are the only delivery surface now). Removing '{legacy}' from your config.",
       "invalidGlobalJson": "Warning: Invalid JSON in {path}, using defaults",
       "projectParseFailed": "Warning: could not parse {path} ({detail}); ignoring it.",
       "projectNotObject": "rasen/config.yaml is not a valid YAML object",

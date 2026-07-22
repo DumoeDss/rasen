@@ -118,7 +118,7 @@ describe('workflow directory validator', () => {
     expect(result.definition?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  it('loads command metadata and declared UTF-8 sidecars without executing scripts', () => {
+  it('accepts declared UTF-8 sidecars without executing scripts, ignoring a legacy command: block with a warning', () => {
     const parent = temporaryDirectory();
     const marker = path.join(parent, 'must-not-exist');
     const root = writeWorkflow(parent, 'release-check', {
@@ -130,11 +130,13 @@ describe('workflow directory validator', () => {
     const result = validateWorkflowDirectory(root);
 
     expect(result.valid).toBe(true);
-    expect(result.definition?.command?.content).toMatchObject({
-      id: 'release-check',
-      category: 'Workflow',
-      tags: ['workflow', 'custom'],
-    });
+    // The command surface is retired: a manifest's `command:` block is
+    // accepted (not rejected) but produces no `command` field on the
+    // definition — only a warning diagnostic.
+    expect(result.definition).not.toHaveProperty('command');
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'command_field_ignored', severity: 'warning' })
+    );
     expect(result.definition?.files.map((file) => file.path)).toEqual([
       'SKILL.md',
       'references/policy.md',

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Removed
+
+- **BREAKING (config surface): the `delivery` global-config setting is retired.** Skills are now the only workflow-delivery format; the entire slash-command-generation surface (`src/core/command-generation/`, 26 tool adapters, 19 command templates, the interactive delivery picker, and `config set delivery`) has been deleted. Any stored `delivery` value — current (`both`/`skills`) or legacy (`commands`/`commands-first`/`skills-first`) — is read without error, triggers a one-time retirement notice, and is stripped from the config on the next write. `config set delivery <x>` now emits a friendly no-op notice instead of erroring on an unknown key.
+
+### Changed
+
+- **Behavior change — `rasen init`/`rasen update` install skills only, no command files.** A fresh `init` leaves zero rasen command files anywhere; `update` unconditionally cleans up any pre-existing command files (all 19 built-in ids plus legacy `-command`/`opsx` path variants) from before the retirement, while never touching user-authored files. Every AI tool that natively discovers project skills (Claude Code and 15+ others) continues to surface `/rasen:*`-style invocations from the installed skill directories — no instructions-file index is injected for tools without native skill discovery.
+
 ### Added
 
 - **Store configuration scope** — a store becomes a third configuration scope between project and global. The effective-config resolution chain is now `env > project > store > global > default` across every layered resolver (effective config, handoff thresholds, model config, autopilot gate/selection policy, pipeline stage handoff/model resolution, and the `rasen agent context` threshold probe), and every source vocabulary gains `store`. The config-key registry's store-capable keys (the `autopilot.*`, `handoff.*`, `models.*`, `schema`, and `archive.*` keys) are now settable in `store` scope, and the config HTTP API accepts `?space=store:<id>` addressing with `scope: "store"` writes.

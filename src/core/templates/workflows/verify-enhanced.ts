@@ -5,7 +5,7 @@
  * with expert reviews (code review, security, QA, design review).
  * Auto-scales review depth based on change scope.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines Rasen completeness/correctness/consistency checks with expert reviews.
@@ -146,15 +146,5 @@ export function getVerifyEnhancedSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxVerifyEnhancedCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Verify Enhanced',
-    description: 'Enhanced verification — artifact checks + code review + security audit + browser QA + visual audit',
-    category: 'Workflow',
-    tags: ['workflow', 'verification', 'review', 'security', 'qa'],
-    content: VERIFY_ENHANCED_INSTRUCTIONS,
   };
 }

@@ -5,7 +5,7 @@
  * answers usage questions, and helps with configuration — layered
  * from first-run onboarding to pipeline extension.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getHelpSkillTemplate(): SkillTemplate {
@@ -134,14 +134,4 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 - Ground version/flag/state claims in actual CLI output; check \`--help\` before answering when unsure.
 - Keep answers short: the situation's flow, the one next action, and only the context needed to choose.
 - If the question reveals a missing or broken install, fix setup first (init/update/doctor) before routing to workflow commands.`;
-}
-
-export function getOpsxHelpCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Help',
-    description: 'Ask which Rasen command or flow fits your situation - from first-run onboarding to custom pipelines',
-    category: 'Workflow',
-    tags: ['workflow', 'help', 'guide', 'configuration'],
-    content: getHelpInstructions(),
-  };
 }

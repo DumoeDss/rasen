@@ -14,7 +14,7 @@
  * where that bookkeeping lands (in-repo move / external move / prune
  * delete) — identical branch to `/rasen:archive`'s bookkeeping step.
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver, optionally merge and deploy.
@@ -250,15 +250,5 @@ export function getShipCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxShipCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Ship',
-    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver',
-    category: 'Workflow',
-    tags: ['workflow', 'release', 'ship', 'deploy'],
-    content: SHIP_INSTRUCTIONS,
   };
 }

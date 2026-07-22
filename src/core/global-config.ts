@@ -32,47 +32,28 @@ const LEGACY_BRAND_DIR_NAME = 'openspec';
 
 // TypeScript types
 export type Profile = 'full' | 'core' | 'custom';
-export type Delivery = 'both' | 'skills';
 export type Language = CliLanguage;
-type LegacyDelivery = 'commands' | 'skills-first' | 'commands-first';
 export type RepoMode = 'solo' | 'collaborative';
-
-const LEGACY_DELIVERY_MAP: Record<LegacyDelivery, Delivery> = {
-  'skills-first': 'skills',
-  'commands': 'both',
-  'commands-first': 'both',
-};
-
-function isLegacyDelivery(value: unknown): value is LegacyDelivery {
-  return value === 'commands' || value === 'skills-first' || value === 'commands-first';
-}
 
 function isLanguage(value: unknown): value is Language {
   return value === 'auto' || SUPPORTED_CLI_LOCALES.some((locale) => locale === value);
 }
 
 /**
- * Normalizes a raw `delivery` value read from disk into the current 2-value
- * `Delivery` union. Recognized legacy values (`commands`, `skills-first`,
- * `commands-first`) map onto their consolidated equivalent; anything else
- * (unrecognized strings, undefined, garbage) falls back to the default
- * `'both'` without being treated as a legacy migration.
+ * Detects a retired `delivery` config value. The `delivery` setting itself
+ * has been retired (skills are the only delivery surface now) — this is no
+ * longer value normalization, just presence detection: ANY stored `delivery`
+ * key, current (`both`/`skills`) or legacy (`commands`/`skills-first`/
+ * `commands-first`), is retired the same way. Reading one must never error.
  */
-export function normalizeDelivery(raw: unknown): { delivery: Delivery; legacy?: LegacyDelivery } {
-  if (raw === 'both' || raw === 'skills') {
-    return { delivery: raw };
-  }
-  if (isLegacyDelivery(raw)) {
-    return { delivery: LEGACY_DELIVERY_MAP[raw], legacy: raw };
-  }
-  return { delivery: DEFAULT_CONFIG.delivery! };
+export function isRetiredDeliveryValue(raw: unknown): raw is unknown {
+  return raw !== undefined;
 }
 
 // TypeScript interfaces
 export interface GlobalConfig {
   featureFlags?: Record<string, boolean>;
   profile?: Profile;
-  delivery?: Delivery;
   workflows?: string[];
   language?: Language;
   proactive?: boolean;
@@ -173,7 +154,6 @@ export interface GlobalConfig {
 const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
   profile: 'full',
-  delivery: 'both',
   language: 'auto',
   proactive: true,
   repoMode: 'collaborative',
@@ -320,13 +300,12 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
         ...(parsed.featureFlags || {})
       }
     };
+    // The `delivery` setting is retired; never surface it, current or legacy.
+    delete (merged as Record<string, unknown>).delivery;
 
     // Schema evolution: apply defaults for new fields if not present in loaded config
     if (parsed.profile === undefined) {
       merged.profile = DEFAULT_CONFIG.profile;
-    }
-    if (parsed.delivery === undefined) {
-      merged.delivery = DEFAULT_CONFIG.delivery;
     }
     if (!isLanguage(parsed.language)) {
       merged.language = DEFAULT_CONFIG.language;
@@ -338,28 +317,25 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
       merged.repoMode = DEFAULT_CONFIG.repoMode;
     }
 
-    // Legacy delivery values (commands / skills-first / commands-first) are
-    // consolidated into the 2-value system: map, notify once, and persist so
-    // subsequent reads see the new value directly (no notice repeats).
-    if (parsed.delivery !== undefined) {
-      const { delivery, legacy } = normalizeDelivery(parsed.delivery);
-      merged.delivery = delivery;
-      if (legacy) {
-        reportConfigDiagnostic(
-          {
-            key: 'legacyDelivery',
-            values: { legacy, delivery },
-            fallback: `Note: delivery mode '${legacy}' has been consolidated into '${delivery}' (skills are always installed). Your config has been updated.`,
-            output: 'error',
-          },
-          options.reporter
-        );
-        if (options.persistMigrations !== false) {
-          try {
-            saveGlobalConfig({ ...merged, delivery });
-          } catch {
-            // Best-effort: persistence failure must not fail the read.
-          }
+    // Retired `delivery` key: any stored value (current or legacy) is read
+    // without error, reported once, and stripped on next write — it is never
+    // treated as a live setting again.
+    if (isRetiredDeliveryValue(parsed.delivery)) {
+      reportConfigDiagnostic(
+        {
+          key: 'deliveryRetired',
+          values: { legacy: String(parsed.delivery) },
+          fallback: `Note: the 'delivery' setting has been retired (skills are the only delivery surface now). Removing '${String(parsed.delivery)}' from your config.`,
+          output: 'error',
+        },
+        options.reporter
+      );
+      if (options.persistMigrations !== false) {
+        try {
+          const { delivery: _delivery, ...rest } = parsed as Record<string, unknown>;
+          saveGlobalConfig(rest as GlobalConfig);
+        } catch {
+          // Best-effort: persistence failure must not fail the read.
         }
       }
     }

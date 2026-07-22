@@ -24,10 +24,7 @@ export {
 
 export {
   type SkillTemplateEntry,
-  type CommandTemplateEntry,
   getSkillTemplates,
-  getCommandTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
 } from './skill-generation.js';

@@ -11,39 +11,21 @@ import {
   getFeedbackSkillTemplate,
   getNewChangeSkillTemplate,
   getOnboardSkillTemplate,
-  getOpsxApplyCommandTemplate,
-  getOpsxArchiveCommandTemplate,
-  getOpsxBulkArchiveCommandTemplate,
-  getOpsxContinueCommandTemplate,
-  getOpsxExploreCommandTemplate,
-  getOpsxNewCommandTemplate,
-  getOpsxOnboardCommandTemplate,
-  getOpsxSyncCommandTemplate,
-  getOpsxProposeCommandTemplate,
   getOpsxProposeSkillTemplate,
-  getOpsxVerifyCommandTemplate,
   getSyncSpecsSkillTemplate,
   getVerifyChangeSkillTemplate,
   // Workflow/orchestration templates (workflow-template-parity)
   getOfficeHoursCommandSkillTemplate,
-  getOpsxOfficeHoursCommandTemplate,
   getVerifyEnhancedSkillTemplate,
-  getOpsxVerifyEnhancedCommandTemplate,
   getShipCommandSkillTemplate,
-  getOpsxShipCommandTemplate,
   getRetroCommandSkillTemplate,
-  getOpsxRetroCommandTemplate,
   getAutoCommandSkillTemplate,
-  getOpsxAutoCommandTemplate,
   getReviewCycleSkillTemplate,
-  getOpsxReviewCycleCommandTemplate,
   getHandoffSkillTemplate,
-  getOpsxHandoffCommandTemplate,
   getGoalPlanSkillTemplate,
   getGoalIterateSkillTemplate,
   getGoalReportSkillTemplate,
   getGoalCommandSkillTemplate,
-  getOpsxGoalCommandTemplate,
   // Expert skill templates
   getBenchmarkSkillTemplate,
   getCarefulSkillTemplate,
@@ -69,7 +51,6 @@ import {
 } from '../../../src/core/templates/skill-templates.js';
 import {
   generateSkillContent,
-  getCommandContents,
   getSkillTemplates,
 } from '../../../src/core/shared/skill-generation.js';
 import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
@@ -81,41 +62,23 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getApplyChangeSkillTemplate: '1cfd3b818f1a4d3d81914f393b97dac582d682e578b75023c4248845e578e2f8',
   getSyncSpecsSkillTemplate: '8177beb0cf664241cdf3e6016c8cf7a75b4331c64c9804e7178d1ba1566c8334',
   getOnboardSkillTemplate: '675e763ede302fbcc84b42221ead2645114aad56cb3fce1f0155c5233d640cc0',
-  getOpsxExploreCommandTemplate: '30067ef509cf1c05d9f49469f5da26688f8da4a37c3fc6044f9a9b78926251dd',
-  getOpsxNewCommandTemplate: '89fe510f54d5c773da4b6ae548bff413d385ff842b0a26b8699673ef29fb759e',
-  getOpsxContinueCommandTemplate: '5ac9e223635e5df8ccf3443108473af69b468e30614afb792e6d02366045e69b',
-  getOpsxApplyCommandTemplate: '98480e2c0067990327203f63f7a98d9310e6c001f3f1652c970f42041fd1b1b3',
   getArchiveChangeSkillTemplate: 'd2d6885a9a98834251c05cb076f53b8cdc82c2382451e739930d5bea0c45a620',
   getBulkArchiveChangeSkillTemplate: 'b06a31635587c1091771d1328d2134113602db65e6fde0400bec53ee543394c0',
-  getOpsxSyncCommandTemplate: '710112fc225b93836f5fa01607eca23522e104ee811fa2d6d407df64021924d8',
   getVerifyChangeSkillTemplate: '6b6c48c46b7bb6bfa42d5033ab078abbc8e0db1e10802bca49ecb661692f7347',
-  getOpsxArchiveCommandTemplate: '7ffae70976aa185fab7cc0c8c77ec5a140474d6ecb1d1cf602bd3aac167c9871',
-  getOpsxOnboardCommandTemplate: 'ed24bb670ef8dd18f69a48a238c807e2bc73bd937479cefa131f56255c9b8c6e',
-  getOpsxBulkArchiveCommandTemplate: '18eee7f1056a6d4e86eb74aae67a7da3e3aa76d9838b730f8a27d3d35e01aa02',
-  getOpsxVerifyCommandTemplate: 'c3504a48f248d98411b9990e7ba61e53863e58b7435cc9e429adc37ed6601d71',
   getOpsxProposeSkillTemplate: '9ed74d2aa15be0540cb2c0d8586c0527d63c374155db3beb1336f8c9a0843f92',
-  getOpsxProposeCommandTemplate: '5830977f62823b35e416ffb37d1d84dc33c7b0980b7bdca0d04f41495690e06c',
   getFeedbackSkillTemplate: '6bfb7caffad631f807678c2b5d194fb0eb2ed0bc4cbb4bf432b5a3c160c6cc87',
   // Workflow/orchestration templates (workflow-template-parity)
   getOfficeHoursCommandSkillTemplate: 'eb28bb9620b4c23c6901389d0a29a711b99a51d9ee4ca605e93619a869b1b128',
-  getOpsxOfficeHoursCommandTemplate: '133749e872c34c8faf63be0dc1ce36a88f7c0fdb29e2860cbdd518e3a7c85aca',
   getVerifyEnhancedSkillTemplate: 'c8e0805ab156e6fe55ce88fdbfa39a6dc164fabdd3f40428e822483c2b8f95e9',
-  getOpsxVerifyEnhancedCommandTemplate: '1d4642f8de63144cd776425feb37764ec18091c27aab312eb2dd83d401246e92',
   getShipCommandSkillTemplate: '54a6c43264e24a4c5ba6d2581dfc483f500440fb3a5866dee8aff826598c9ab7',
-  getOpsxShipCommandTemplate: 'e86a6bf999bc2fd1f844c894dc5d67db5d844b534233f25ee4a6c0083fb205db',
   getRetroCommandSkillTemplate: '2292ca3e5d65f75d868efdfeca8bb2fe74c71385cb70c238b1afbdc5bb7e1f7d',
-  getOpsxRetroCommandTemplate: '9426c0176d7bbf3b201f7cfd8622af3d1c20c80111fd63803afb9c821e5d8cf2',
   getAutoCommandSkillTemplate: '55aec5323b3058aa3580965980b100536570823832dad727fff94323a8d7af98',
-  getOpsxAutoCommandTemplate: '26d204626bc95933c50c7de2ee067ac0f7985e57a7ae653e3f07b825c54aaf28',
   getReviewCycleSkillTemplate: 'c2814cbaed6a4608f7b4635f098f9355d92500afed99ca360adc498bd6112da5',
-  getOpsxReviewCycleCommandTemplate: '74354060da2e23d05eb530b26cf52933e5a4ac15522e27dae3bb98905c35241e',
   getHandoffSkillTemplate: '778ee83fbac47335377e836ec1bca918f1f32c38edc17ae59f6179d0deb67583',
-  getOpsxHandoffCommandTemplate: '894728d60c2121058652fd2b2f4c308547712ea70bd7a84be243739680cfb575',
   getGoalPlanSkillTemplate: '7f390a14a5bb3e7e5ec9e1de06fe4ab4c5b1357cbd74c3bc36090af699931d46',
   getGoalIterateSkillTemplate: 'e76b7a1b238f8e412736b763d2aeefa0c881d800213cd01ce91a835c2da536f6',
   getGoalReportSkillTemplate: 'a48c1b6c75c5734e051a4aa707ee803c0af73fd2b74b18fb7212e531568a4bed',
   getGoalCommandSkillTemplate: '04dc2d51336fb4ef540b77341ec3df5a133375b58329fd4d237a71c88a1fc057',
-  getOpsxGoalCommandTemplate: '4fb07cc420184b7957cab8dad39399976872240fdc16ef111976682230a7e932',
   // Expert skill templates (inlined; see expert-template-inlining)
   getBenchmarkSkillTemplate: '8a38b79c63a4c429d1c22825d481db7f5ea3ab50e9f37ad27970e529c6abbbfd',
   getCarefulSkillTemplate: 'e8d342630bb867799f6356252199ccd318ba546048d3d01eb3b287aeec4bb99a',
@@ -136,8 +99,8 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getReviewSkillTemplate: '208332231bceafa883316cc4f787edb4a93857f391f1829efd7c2f08a0e01fe1',
   getTddSkillTemplate: '5c4149303ad3b322d0500431b67d7a4c35af2e4071c56d2499ae8f511de989e1',
   getUnfreezeSkillTemplate: '6bedb3316477b441b7da2f82ee465ca0233a36cd46cbf2434a8f185b14126f87',
-  getWorkflowAuthorSkillTemplate: 'e72d7751bcad188276137aa81011699441336a0475a50248d9c4494a96faa1b8',
-  getWorkflowReviewSkillTemplate: 'c90d413d3245d0d0f83f2d58673e1af4e843fd1caf9b11b26df75d8119f00904',
+  getWorkflowAuthorSkillTemplate: '44dd6e005524eac0e07aa9fbce67fcd839fdb9479b6e2ddb06a1b80cd21130be',
+  getWorkflowReviewSkillTemplate: 'a708138b0c17df357cb97b038fe74ec9c925bd4f67f57c71504d6e788c980363',
 };
 
 const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
@@ -183,8 +146,8 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-review': '085ffaa479d47fd331845b6092daec476be379639b655b8b539a4bc27b733dd5',
   'rasen-tdd': '8d953757ae31296a628010b07d1f229d4c3d983e44836e3b70031aafcbb9a463',
   'rasen-unfreeze': 'ca727311494108d775f3f34f7c21ea104943e2e12f17f5c1051e3952cd5486e2',
-  'rasen-workflow-author': '511ae3346e956c0790d889b2fac7ad996c0efe6823a144e2a7114f327cd5a80e',
-  'rasen-workflow-review': '2f7a51d0a8ebf09e544f938e29a7804680e9e5964a1d70e33a531679538a0b75',
+  'rasen-workflow-author': '8689649db6da6c28852716fe767255b49c1c8903654f32ac107cefd5950b2de3',
+  'rasen-workflow-review': '94e56651467d0687e1a20d1c425ab75795b0092eed608ecc52db1c9c6e232fd3',
 };
 
 // Intentionally excludes getFeedbackSkillTemplate: this list only models templates
@@ -264,41 +227,23 @@ describe('skill templates split parity', () => {
       getApplyChangeSkillTemplate,
       getSyncSpecsSkillTemplate,
       getOnboardSkillTemplate,
-      getOpsxExploreCommandTemplate,
-      getOpsxNewCommandTemplate,
-      getOpsxContinueCommandTemplate,
-      getOpsxApplyCommandTemplate,
       getArchiveChangeSkillTemplate,
       getBulkArchiveChangeSkillTemplate,
-      getOpsxSyncCommandTemplate,
       getVerifyChangeSkillTemplate,
-      getOpsxArchiveCommandTemplate,
-      getOpsxOnboardCommandTemplate,
-      getOpsxBulkArchiveCommandTemplate,
-      getOpsxVerifyCommandTemplate,
       getOpsxProposeSkillTemplate,
-      getOpsxProposeCommandTemplate,
       getFeedbackSkillTemplate,
       // Workflow/orchestration templates (workflow-template-parity)
       getOfficeHoursCommandSkillTemplate,
-      getOpsxOfficeHoursCommandTemplate,
       getVerifyEnhancedSkillTemplate,
-      getOpsxVerifyEnhancedCommandTemplate,
       getShipCommandSkillTemplate,
-      getOpsxShipCommandTemplate,
       getRetroCommandSkillTemplate,
-      getOpsxRetroCommandTemplate,
       getAutoCommandSkillTemplate,
-      getOpsxAutoCommandTemplate,
       getReviewCycleSkillTemplate,
-      getOpsxReviewCycleCommandTemplate,
       getHandoffSkillTemplate,
-      getOpsxHandoffCommandTemplate,
       getGoalPlanSkillTemplate,
       getGoalIterateSkillTemplate,
       getGoalReportSkillTemplate,
       getGoalCommandSkillTemplate,
-      getOpsxGoalCommandTemplate,
       getBenchmarkSkillTemplate,
       getCarefulSkillTemplate,
       getChromeUseSkillTemplate,
@@ -350,13 +295,9 @@ describe('skill templates split parity', () => {
     }
   });
 
-  it('teaches store selection in every deployed rasen command template', () => {
-    for (const entry of getCommandContents()) {
-      expect(entry.body, entry.id).toContain(STORE_SELECTION_GUIDANCE);
-    }
-
-    // Feedback has no store-capable command and intentionally carries no
-    // store teaching; it ships outside both registries.
+  it('the feedback skill intentionally carries no store teaching', () => {
+    // Feedback has no store-capable workflow counterpart and intentionally
+    // carries no store teaching; it ships outside the deployed registry.
     expect(getFeedbackSkillTemplate().instructions).not.toContain('**Store selection:**');
   });
 
