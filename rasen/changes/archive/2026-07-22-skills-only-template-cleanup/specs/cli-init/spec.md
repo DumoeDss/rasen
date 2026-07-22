@@ -4,7 +4,7 @@
 
 All init success output, next-step hints, and generated artifact references SHALL use the rasen namespace: workflows are referenced by their canonical skill-directory name (`rasen-*`, e.g. `rasen-propose`), the workspace as `rasen/`, and skill directories as `rasen-*`. Next-step hints SHALL NOT use the `/rasen:*` colon form — project skills surface under the skill-directory name on every tool.
 
-#### Scenario: Success message references rasen skills
+#### Scenario: Success message references rasen commands
 
 - **WHEN** `rasen init` completes successfully
 - **THEN** the next-step hints reference workflows by their canonical `rasen-*` skill name and the `rasen/` workspace

@@ -23,7 +23,7 @@ The system SHALL support built-in `full` and `core` profiles, the current `custo
 
 ### Requirement: Drift detection evaluates the desired selection as its dependency closure
 
-Profile and delivery drift detection SHALL evaluate the desired workflow selection as its full dependency closure — the selection plus every expert required by a selected workflow's skill-dependency closure — before deciding whether an installed artifact is unexpected. Because a stored profile is intentionally not closure-expanded (a stored profile is not auto-expanded with closure-pulled experts) while installed experts are governed by the resolved profile plus dependency closure, the detector SHALL reconcile the two by closing the desired selection itself, using the same closure resolution as the install and removal seams. Consequently a closure-required expert that is present on disk SHALL NOT be reported as drift, and drift detection SHALL give the same result whether its caller passes the raw selection or an already-closure-resolved selection.
+Profile drift detection SHALL evaluate the desired workflow selection as its full dependency closure — the selection plus every expert required by a selected workflow's skill-dependency closure — before deciding whether an installed artifact is unexpected. Because a stored profile is intentionally not closure-expanded (a stored profile is not auto-expanded with closure-pulled experts) while installed experts are governed by the resolved profile plus dependency closure, the detector SHALL reconcile the two by closing the desired selection itself, using the same closure resolution as the install and removal seams. Consequently a closure-required expert that is present on disk SHALL NOT be reported as drift, and drift detection SHALL give the same result whether its caller passes the raw selection or an already-closure-resolved selection.
 
 #### Scenario: Closure-required expert on disk is not drift for a custom profile
 
@@ -182,7 +182,7 @@ Config changes SHALL NOT automatically propagate to projects.
 The existing `rasen update` command SHALL apply the current global config to a project. See `specs/cli-update/spec.md` for detailed update behavior.
 
 #### Scenario: Config changes require explicit project sync
-- **WHEN** user updates profile or delivery via `rasen profile`
+- **WHEN** user updates the profile or workflow selection via `rasen profile`
 - **THEN** the global config SHALL be updated immediately
 - **AND** project files SHALL remain unchanged until `rasen update` is run for that project
 
