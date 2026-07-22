@@ -13,7 +13,7 @@ User-authored content includes the `SKILL.md` frontmatter, description, instruct
 #### Scenario: Switching the CLI locale preserves user-authored content
 
 - **WHEN** a valid user workflow is installed with a user-authored name, description, instructions, command metadata, or sidecar content
-- **AND** the resolved CLI locale changes between English and Japanese
+- **AND** the resolved CLI locale changes among English, Japanese, and Simplified Chinese
 - **THEN** Rasen-owned labels, prompts, results, and diagnostics SHALL use the resolved locale
 - **AND** every user-authored workflow value SHALL remain in its original language
 - **AND** generated skill and command artifacts SHALL NOT change solely because the CLI locale changed
@@ -42,14 +42,19 @@ Workflow IDs, skill names, command IDs, dependency IDs, enum values, paths, dige
 
 ### Requirement: Rasen-owned workflow presentation is localized
 
-Rasen SHALL localize its own workflow-library help, option descriptions, prompts, result text, diagnostics, source labels, and built-in workflow presentation metadata through the English and Japanese locale catalogs.
+Rasen SHALL localize its own workflow-library help, option descriptions, prompts, result text, diagnostics, source labels, and built-in workflow presentation metadata through the English, Japanese, and Simplified Chinese locale catalogs.
 
 #### Scenario: User workflow appears in a localized picker
 
-- **WHEN** a user workflow is displayed in the profile picker
+- **WHEN** a user workflow is displayed in the profile picker under any supported CLI locale
 - **THEN** the picker prompt, instructions, dependency messages, and user-source label SHALL use the resolved CLI locale
 - **AND** the workflow's user-authored name and description SHALL be presented without translation
 - **AND** the picker MAY apply the bounded display-only truncation defined by the `profiles` specification without modifying the authored source
+
+#### Scenario: Workflow machine output remains locale-neutral
+
+- **WHEN** a workflow library command emits JSON under English, Japanese, or Simplified Chinese
+- **THEN** field names, IDs, source and kind enum values, paths, digests, diagnostic codes, and user-authored values SHALL be identical across locales
 
 ### Requirement: Workflow definitions carry a kind classification
 

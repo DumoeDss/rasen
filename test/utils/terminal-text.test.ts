@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   formatPickerDescription,
   resolveTerminalColumns,
+  resolveTerminalRows,
 } from '../../src/utils/terminal-text.js';
 
 const NEAR_LIMIT_DESCRIPTION_CODE_UNITS = 1024 * 1024 - 1;
@@ -135,6 +136,59 @@ describe('formatPickerDescription', () => {
     expect(formatPickerDescription('abcdef', 3)).toBe('ab\n..');
     expect(formatPickerDescription('abcdefg', 4)).toBe('abc\n...');
     expect(formatPickerDescription('日本語', 2)).toBe('.');
+  });
+});
+
+describe('resolveTerminalRows', () => {
+  it('prefers a positive integer rows property', () => {
+    expect(resolveTerminalRows({ rows: 24, getWindowSize: () => [80, 12] })).toBe(24);
+  });
+
+  it('falls back to the height from getWindowSize', () => {
+    expect(resolveTerminalRows({ getWindowSize: () => [80, 12] })).toBe(12);
+  });
+
+  it('returns undefined when terminal height is unavailable', () => {
+    expect(resolveTerminalRows({})).toBeUndefined();
+  });
+
+  it.each([NaN, Infinity, 0, -1, 12.5])(
+    'returns undefined for invalid rows %s',
+    (rows) => {
+      expect(resolveTerminalRows({ rows })).toBeUndefined();
+    }
+  );
+
+  it('falls back to getWindowSize when reading rows throws', () => {
+    const output = {
+      get rows(): number {
+        throw new Error('rows unavailable');
+      },
+      getWindowSize: (): [number, number] => [80, 24],
+    };
+
+    expect(resolveTerminalRows(output)).toBe(24);
+  });
+
+  it('returns undefined when both terminal row sources throw', () => {
+    const output = {
+      get rows(): number {
+        throw new Error('rows unavailable');
+      },
+      getWindowSize: (): [number, number] => {
+        throw new Error('window size unavailable');
+      },
+    };
+
+    expect(resolveTerminalRows(output)).toBeUndefined();
+  });
+
+  it('returns undefined when getWindowSize throws', () => {
+    expect(resolveTerminalRows({
+      getWindowSize: () => {
+        throw new Error('window size unavailable');
+      },
+    })).toBeUndefined();
   });
 });
 

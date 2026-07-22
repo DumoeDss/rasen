@@ -66,7 +66,7 @@ The system SHALL validate change names follow kebab-case conventions.
 - **THEN** validation returns `{ valid: false, error: "..." }`
 
 ### Requirement: Proposal seeding flag on new change
-`rasen new change` SHALL accept a `--proposal <text>` option that writes a minimal `proposal.md` into the created change directory, containing the change name as title and the provided text under a Why section, marked as a submission seed to be developed. A change created with `--proposal` SHALL therefore satisfy the workflow's active-change definition (`getActiveChangeIds`, which requires `proposal.md`) immediately after creation. The flag SHALL be independent of `--description` (which continues to seed `README.md` unchanged) and SHALL appear in the completions command registry and in both the `en` and `ja` locale catalogs.
+`rasen new change` SHALL accept a `--proposal <text>` option that writes a minimal `proposal.md` into the created change directory, containing the change name as title and the provided text under a Why section, marked as a submission seed to be developed. A change created with `--proposal` SHALL therefore satisfy the workflow's active-change definition (`getActiveChangeIds`, which requires `proposal.md`) immediately after creation. The flag SHALL be independent of `--description` (which continues to seed `README.md` unchanged) and SHALL appear in the completions command registry and in every supported CLI locale catalog (`en`, `ja`, and `zh-cn`).
 
 #### Scenario: Proposal seed makes the change active
 - **WHEN** `rasen new change my-feature --proposal "Add feature X"` succeeds
@@ -82,5 +82,6 @@ The system SHALL validate change names follow kebab-case conventions.
 
 #### Scenario: Flag is discoverable and localized
 - **WHEN** the completions command registry and locale catalogs are checked
-- **THEN** the `--proposal` flag has a registry entry under `new change` and description strings in both `en` and `ja` catalogs
+- **THEN** the `--proposal` flag has a registry entry under `new change` and a non-empty description in each supported locale catalog
+- **AND** adding any future command or flag SHALL require a description in every locale listed by the supported CLI locale contract
 

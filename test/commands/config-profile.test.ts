@@ -7,6 +7,7 @@ import { execSync } from 'node:child_process';
 
 import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
 import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
+import { setStdoutRows } from '../helpers/stdout.js';
 
 // The picker's choice list is workflows + experts + 2 group Separators
 // (design.md D6: experts are selectable alongside workflows, shown as a
@@ -30,6 +31,8 @@ vi.mock('@inquirer/prompts', async () => {
     confirm: vi.fn(),
   };
 });
+
+
 
 async function runConfigCommand(args: string[]): Promise<void> {
   const { registerConfigCommand } = await import('../../src/commands/config.js');
@@ -109,7 +112,7 @@ describe('config profile interactive flow', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let originalCwd: string;
   let originalTTY: boolean | undefined;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -172,7 +175,7 @@ describe('config profile interactive flow', () => {
 
     originalEnv = { ...process.env };
     originalCwd = process.cwd();
-    originalTTY = (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+    originalTTY = (process.stdout as unknown as { isTTY?: boolean }).isTTY;
     originalExitCode = process.exitCode;
 
     // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
@@ -182,7 +185,7 @@ describe('config profile interactive flow', () => {
     process.env.XDG_CONFIG_HOME = tempDir;
     process.env.RASEN_LANG = 'en';
     process.chdir(tempDir);
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -193,7 +196,7 @@ describe('config profile interactive flow', () => {
   afterEach(() => {
     process.env = originalEnv;
     process.chdir(originalCwd);
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = originalTTY;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = originalTTY;
     process.exitCode = originalExitCode;
     fs.rmSync(tempDir, { recursive: true, force: true });
 
@@ -246,30 +249,35 @@ describe('config profile interactive flow', () => {
 
   it('workflows-only action should not invoke delivery prompt', async () => {
     const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const { ALL_WORKFLOWS } = await import('../../src/core/profiles.js');
     const { select, checkbox } = await getPromptMocks();
+    const restoreRows = setStdoutRows(24);
 
     saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
 
-    await runConfigCommand(['profile']);
+    try {
+      await runConfigCommand(['profile']);
 
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(checkbox).toHaveBeenCalledTimes(1);
-    const checkboxCall = checkbox.mock.calls[0][0];
-    expect(checkboxCall.pageSize).toBe(PICKER_CHOICE_COUNT);
-    expect(checkboxCall.theme).toEqual({
-      icon: {
-        checked: '[x]',
-        unchecked: '[ ]',
-      },
-    });
-    const proposeChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'propose');
-    const onboardChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'onboard');
-    expect(proposeChoice.checked).toBe(true);
-    expect(onboardChoice.checked).toBe(false);
-    expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(checkbox).toHaveBeenCalledTimes(1);
+      const checkboxCall = checkbox.mock.calls[0][0];
+      expect(checkboxCall.pageSize).toBe(19);
+      expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+      expect(checkboxCall.theme).toEqual({
+        icon: {
+          checked: '[x]',
+          unchecked: '[ ]',
+        },
+      });
+      const proposeChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'propose');
+      const onboardChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'onboard');
+      expect(proposeChoice.checked).toBe(true);
+      expect(onboardChoice.checked).toBe(false);
+      expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
+    } finally {
+      restoreRows();
+    }
   });
 
   it('delivery picker should mark current option inline and offer only two choices', async () => {
