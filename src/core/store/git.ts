@@ -6,7 +6,23 @@ import { promisify } from 'node:util';
 import { StoreError } from './errors.js';
 
 const fs = nodeFs.promises;
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+
+/**
+ * Every git spawn goes through here so `windowsHide` is always set: the
+ * daemon is a console-less parent on Windows, and each console child (git)
+ * would otherwise flash a visible conhost window per probe — the space
+ * listing runs one inventory probe per project, so a board or Spaces load
+ * flashed a burst of windows. Same flag the daemon and session supervisor
+ * spawns already pass.
+ */
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { cwd?: string } = {}
+): Promise<{ stdout: string; stderr: string }> {
+  return execFilePromise(file, args, { ...options, windowsHide: true });
+}
 
 /**
  * Git mechanics for stores: repository detection, setup-time init and
