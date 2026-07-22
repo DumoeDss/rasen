@@ -24,7 +24,7 @@ import {
   handleListSessions,
   type LaunchSpaceResolution,
 } from './sessions.js';
-import { handleSpaces } from './spaces.js';
+import { handleSpaces, handleSpaceWorktrees } from './spaces.js';
 import { handleLocalPaths } from './local-paths.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
@@ -77,6 +77,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/runs',
   '/api/v1/sessions',
   '/api/v1/spaces',
+  '/api/v1/spaces/worktrees',
   '/api/v1/local-paths',
   '/api/v1/workflows',
   '/api/v1/workflow-validation',
@@ -495,6 +496,24 @@ export function createManagementRouter(
 
     if (pathname === '/api/v1/spaces') {
       sendJson(res, 200, await handleSpaces());
+      return;
+    }
+
+    if (pathname === '/api/v1/spaces/worktrees') {
+      // Space-resolved exactly like `/changes` (worktree-aware-spaces D3):
+      // explicit selector through the registries, omitted → launch-project
+      // fallback. A resolved-but-non-git root yields an empty inventory; no
+      // resolvable root at all likewise yields an empty inventory, never an error.
+      const space = await resolveRequestSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      if (!space.root) {
+        sendJson(res, 200, { worktrees: [] });
+        return;
+      }
+      sendJson(res, 200, await handleSpaceWorktrees(space.root));
       return;
     }
 

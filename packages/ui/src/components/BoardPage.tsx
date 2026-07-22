@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
@@ -8,6 +9,7 @@ import type {
   SessionListEntry,
   SpaceEntry,
   SpaceMember,
+  SpaceWorktreeEntry,
 } from '../api/types.js';
 import {
   BOARD_COLUMNS,
@@ -17,6 +19,7 @@ import {
 } from '../board/columns.js';
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
 import { MemberChips } from './MemberChips.js';
+import { WorktreePanel } from './WorktreePanel.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
 
@@ -42,11 +45,26 @@ const DONE_COLUMN_LIMIT = 5;
 export function BoardPage() {
   const space = useSpace();
   const selector = space?.selector;
+  // `query`/`path`/`route` are absent when mounted outside a LocationProvider
+  // (the launch-project fallback path some tests exercise); default them so the
+  // board still renders its no-space state.
+  const { path, query, route } = useLocation();
+  // The selected worktree's root (worktree-aware-spaces D4), carried in the
+  // board route's `?wt=` query so it survives a reload without changing the
+  // space identity. `null` (no `?wt=`) means the default source: the main
+  // checkout, which the project space selector already answers for.
+  const selectedWorktree = query?.wt || null;
+  // The data source for changes/runs: a selected worktree re-scopes to that
+  // worktree's own root selector; otherwise the space's own selector (main
+  // checkout). Sessions stay fetched space-wide (by `selector`) — attribution
+  // to a worktree is client-side (below), never a separate fetch.
+  const dataSelector = selectedWorktree ? `project:${selectedWorktree}` : selector;
   const [changes, setChanges] = useState<ChangeSummary[] | null>(null);
   const [loadErrors, setLoadErrors] = useState<ChangeLoadError[]>([]);
   const [runs, setRuns] = useState<ChangeRunEntry[]>([]);
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
   const [spaces, setSpaces] = useState<SpaceEntry[]>([]);
+  const [worktrees, setWorktrees] = useState<SpaceWorktreeEntry[]>([]);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -62,7 +80,7 @@ export function BoardPage() {
     setLoading(true);
     setPageError(null);
     setSelectedMember(null);
-    Promise.all([client.listChanges(selector), client.listRuns(selector), client.listSessions(selector)])
+    Promise.all([client.listChanges(dataSelector), client.listRuns(dataSelector), client.listSessions(selector)])
       .then(([changesRes, runsRes, sessionsRes]) => {
         if (cancelled) return;
         setChanges(changesRes.changes);
@@ -89,7 +107,31 @@ export function BoardPage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshNonce, selector]);
+  }, [refreshNonce, selector, dataSelector]);
+
+  // The worktrees panel is project-space chrome (worktree-aware-spaces D4).
+  // Fetch the live inventory best-effort — a failure (or a non-git / single-
+  // worktree root) just leaves the panel unrendered, never fails the board.
+  // Keyed on the space identity, not the data source, so switching worktrees
+  // does not re-probe the inventory.
+  useEffect(() => {
+    if (space?.type !== 'project') {
+      setWorktrees([]);
+      return;
+    }
+    let cancelled = false;
+    client
+      .listSpaceWorktrees(selector)
+      .then((res) => {
+        if (!cancelled) setWorktrees(res.worktrees);
+      })
+      .catch(() => {
+        if (!cancelled) setWorktrees([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [space?.type, space?.id, selector, refreshNonce]);
 
   // The member chip row is store-only chrome (design D4). Fetch the spaces
   // listing best-effort — a failure just leaves the chip row empty rather than
@@ -117,6 +159,27 @@ export function BoardPage() {
     setHighlightedName(null);
     setRefreshNonce((n) => n + 1);
   }
+
+  // Switch the board's data source to a worktree, carried in the `?wt=` query
+  // so it survives a reload while the space route prefix (and thus the space
+  // identity, pins, switcher) stays put. Selecting the main checkout (`null`)
+  // clears the query back to the default source.
+  function selectWorktree(root: string | null) {
+    route(root === null ? path : `${path}?wt=${encodeURIComponent(root)}`);
+  }
+
+  // The panel renders only for a project space whose repository has more than
+  // one worktree (worktree-aware-spaces D4); a single-worktree / non-git / store
+  // space shows the board exactly as before.
+  const worktreePanel =
+    space?.type === 'project' && worktrees.length >= 2 ? (
+      <WorktreePanel
+        worktrees={worktrees}
+        sessions={sessions}
+        selectedRoot={selectedWorktree}
+        onSelect={selectWorktree}
+      />
+    ) : null;
 
   function handleChangeCreated(changeId: string) {
     setDialogOpen(false);
@@ -160,6 +223,7 @@ export function BoardPage() {
   if (!changes || (changes.length === 0 && loadErrors.length === 0)) {
     return (
       <div class="board-page__empty">
+        {worktreePanel}
         <p>No active changes.</p>
         <div class="board-page__toolbar">
           <button type="button" onClick={() => setDialogOpen(true)}>
@@ -211,6 +275,7 @@ export function BoardPage() {
       {space?.type === 'store' && (
         <MemberChips members={storeMembers} selected={selectedMember} onSelect={setSelectedMember} />
       )}
+      {worktreePanel}
       {brokenChanges}
       {changes.length > 0 && (
         <div class="board">

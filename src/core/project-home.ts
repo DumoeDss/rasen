@@ -5,6 +5,7 @@ import {
   getProjectHomeDir,
   readProjectRegistryState,
   registerProject,
+  resolveRegistrationRoot,
   type ProjectMode,
   type ProjectPathOptions,
 } from './project-registry.js';
@@ -104,7 +105,16 @@ export async function resolveProjectHome(
 
     const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
     const state = await readProjectRegistryState(pathOptions);
-    const entry = state?.projects[canonicalPath];
+    // Path-exact first (a fallback-registered worktree entry is keyed at the
+    // worktree path), then a pierced-root retry (D1): a probe from a linked
+    // worktree finds the MAIN checkout's entry with no worktree-keyed entry.
+    let entry = state?.projects[canonicalPath];
+    if (!entry) {
+      const pierced = await resolveRegistrationRoot(canonicalPath);
+      if (pierced !== canonicalPath) {
+        entry = state?.projects[pierced];
+      }
+    }
     if (!entry) {
       return null;
     }
@@ -144,8 +154,15 @@ export async function touchProjectRegistry(
 
     const pathOptions: ProjectPathOptions =
       options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {};
-    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
-    const mode = deriveProjectMode(projectRoot);
+    // Self-heal targets the canonical (pierced) root (D1): a run inside a linked
+    // worktree refreshes the MAIN checkout's entry, deriving the entry key,
+    // name, and mode from the main checkout — never from the worktree's
+    // basename or a branch that happens to lack planning shape. The projectId
+    // still comes from the run's actual root config (branch-local but committed,
+    // so it is the shared identity).
+    const canonicalInput = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const canonicalPath = await resolveRegistrationRoot(canonicalInput);
+    const mode = deriveProjectMode(canonicalPath);
     const name = deriveProjectDisplayName(canonicalPath);
 
     const state = await readProjectRegistryState(pathOptions);

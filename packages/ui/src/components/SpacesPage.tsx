@@ -202,6 +202,11 @@ export function SpacesPage() {
                 >
                   <span class="space-row__name">{space.name}</span>
                   <span class="space-row__type">{space.type === 'store' ? 'Store' : 'Project'}</span>
+                  {space.type === 'project' && space.worktreeCount !== undefined && space.worktreeCount >= 2 && (
+                    <span class="space-row__worktrees" data-testid="worktree-badge">
+                      {space.worktreeCount} worktrees
+                    </span>
+                  )}
                   <span class="space-row__root">{space.root}</span>
                   {space.type === 'store' && space.members.length > 0 && (
                     <span class="space-row__members" data-testid="space-members">

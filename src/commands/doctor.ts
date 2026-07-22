@@ -20,6 +20,7 @@ import {
 import {
   findDanglingProjectEntries,
   findProjectRegistryEntry,
+  findWorktreeDuplicateEntries,
   gcProjectRegistry,
   type GcProjectRegistryResult,
 } from '../core/project-registry.js';
@@ -139,6 +140,14 @@ async function gatherHealth(
     input.danglingProjectEntries = danglingProjectEntries.map((dangling) => ({
       path: dangling.path,
       home: dangling.entry.home,
+    }));
+    // Worktree-duplicate reporting (worktree-aware-spaces D5): read-only, the
+    // registry section names legacy per-worktree entries and hints `--gc`.
+    const worktreeDuplicateEntries = await findWorktreeDuplicateEntries();
+    input.worktreeDuplicateEntries = worktreeDuplicateEntries.map((duplicate) => ({
+      path: duplicate.path,
+      home: duplicate.entry.home,
+      mainRoot: duplicate.mainRoot,
     }));
   } catch (error) {
     input.machineHomeError =
@@ -267,6 +276,13 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
     console.log(`  Dangling entries: ${health.machineHome.dangling.length}`);
     for (const dangling of health.machineHome.dangling) {
       console.log(`    - ${dangling.path} (home: ${dangling.home})`);
+    }
+    console.log('    Fix: rasen doctor --gc');
+  }
+  if (health.machineHome.worktreeDuplicates.length > 0) {
+    console.log(`  Worktree-duplicate entries: ${health.machineHome.worktreeDuplicates.length}`);
+    for (const duplicate of health.machineHome.worktreeDuplicates) {
+      console.log(`    - ${duplicate.path} (worktree of ${duplicate.mainRoot}, home: ${duplicate.home})`);
     }
     console.log('    Fix: rasen doctor --gc');
   }

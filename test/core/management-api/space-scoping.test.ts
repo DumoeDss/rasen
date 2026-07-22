@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -6,10 +8,15 @@ import * as os from 'node:os';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
-import { registerProject, getProjectRegistryPath } from '../../../src/core/project-registry.js';
+import {
+  getProjectRegistryPath,
+  registerProject,
+  updateProjectRegistryState,
+} from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
+import { isolatedGitEnv } from '../../helpers/store-git.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 const TOKEN = 'test-token-space-scoping';
@@ -289,6 +296,165 @@ describe('management API space scoping (planning-space-addressing design D2/D6)'
       const res = await req(h.port, { method: 'GET', path: '/api/v1/spaces/', headers: authed() });
       expect(res.status).toBe(200);
       expect(Array.isArray((res.json() as any).spaces)).toBe(true);
+    });
+  });
+
+  describe('worktree-aware spaces (worktree-aware-spaces D3)', () => {
+    /** A committed git repo with `rasen/` planning shape at `root`. */
+    function initRepoRoot(root: string, gitEnv: NodeJS.ProcessEnv): void {
+      createOpenSpecRoot(root);
+      execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+      execFileSync('git', ['add', '-A'], { cwd: root, env: gitEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: root, env: gitEnv, stdio: 'ignore' });
+    }
+
+    it('collapses legacy worktree-duplicate entries to one project row carrying the live worktree count', async () => {
+      const repoRoot = path.join(tempDir, 'wt-collapse-main');
+      const gitEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
+      initRepoRoot(repoRoot, gitEnv);
+
+      const wtA = path.join(tempDir, 'wt-collapse-a');
+      const wtB = path.join(tempDir, 'wt-collapse-b');
+      execFileSync('git', ['worktree', 'add', wtA], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+      execFileSync('git', ['worktree', 'add', wtB], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+
+      const { entry, canonicalPath } = await registerProject(
+        { projectRoot: repoRoot, projectId: 'wt-proj', mode: 'in-repo' },
+        { globalDataDir: dataDir }
+      );
+
+      // Seed two legacy worktree-keyed duplicates sharing the main entry's home.
+      await updateProjectRegistryState(
+        (current) => ({
+          version: 1,
+          projects: {
+            ...(current?.projects ?? {}),
+            [FileSystemUtils.canonicalizeExistingPath(wtA)]: { ...entry, name: 'wt-collapse-a', lastSeen: '2026-07-09T12:00:00.000Z' },
+            [FileSystemUtils.canonicalizeExistingPath(wtB)]: { ...entry, name: 'wt-collapse-b', lastSeen: '2026-07-09T12:00:00.000Z' },
+          },
+        }),
+        { globalDataDir: dataDir }
+      );
+
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/spaces', headers: authed() });
+      const spaces = (res.json() as any).spaces as any[];
+      const rows = spaces.filter((s) => s.type === 'project' && s.id === 'wt-proj');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].root).toBe(canonicalPath);
+      expect(rows[0].worktreeCount).toBe(3);
+
+      for (const wt of [wtA, wtB]) {
+        execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+      }
+    });
+
+    it('keeps independent clones (same projectId, distinct homes) as separate rows', async () => {
+      const cloneA = path.join(tempDir, 'clone-a');
+      const cloneB = path.join(tempDir, 'clone-b');
+      createOpenSpecRoot(cloneA);
+      createOpenSpecRoot(cloneB);
+      // Not git repos, so gitWorktreeList yields no inventory — but distinct
+      // homes keep them ungrouped regardless.
+      await registerProject({ projectRoot: cloneA, projectId: 'clone-proj', mode: 'in-repo' }, { globalDataDir: dataDir });
+      await registerProject({ projectRoot: cloneB, projectId: 'clone-proj', mode: 'in-repo' }, { globalDataDir: dataDir });
+
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/spaces', headers: authed() });
+      const spaces = (res.json() as any).spaces as any[];
+      const rows = spaces.filter((s) => s.type === 'project' && s.id === 'clone-proj');
+      expect(rows).toHaveLength(2);
+      expect(rows.every((r) => r.worktreeCount === undefined)).toBe(true);
+    });
+
+    it('serves the live worktree inventory with per-worktree active-change counts', async () => {
+      const repoRoot = path.join(tempDir, 'wt-inv-main');
+      const gitEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
+      initRepoRoot(repoRoot, gitEnv);
+
+      const worktreePath = path.join(tempDir, 'wt-inv-feat');
+      execFileSync('git', ['worktree', 'add', '-b', 'feat/x', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+      // Two active changes on the linked worktree, none on main.
+      writeChange(worktreePath, 'wt-change-1');
+      writeChange(worktreePath, 'wt-change-2');
+
+      await registerProject({ projectRoot: repoRoot, projectId: 'wt-inv-proj', mode: 'in-repo' }, { globalDataDir: dataDir });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/spaces/worktrees?space=project:wt-inv-proj',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const worktrees = (res.json() as any).worktrees as any[];
+      expect(worktrees).toHaveLength(2);
+      const main = worktrees.find((w) => w.isMain);
+      const linked = worktrees.find((w) => !w.isMain);
+      expect(main.activeChangeCount).toBe(0);
+      expect(linked.branch).toBe('feat/x');
+      expect(linked.activeChangeCount).toBe(2);
+      // Wire `root` is canonical platform form (review M1 fix, spaces.ts's
+      // canonicalizeOrResolve), not the raw git-porcelain value — guards
+      // against a future revert reintroducing the Windows separator mismatch.
+      expect(linked.root).toBe(FileSystemUtils.canonicalizeExistingPath(worktreePath));
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+    });
+
+    it('returns an empty inventory for a non-git space root', async () => {
+      const plain = path.join(tempDir, 'plain-proj');
+      createOpenSpecRoot(plain);
+      await registerProject({ projectRoot: plain, projectId: 'plain-proj-id', mode: 'in-repo' }, { globalDataDir: dataDir });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/spaces/worktrees?space=project:plain-proj-id',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      expect((res.json() as any).worktrees).toEqual([]);
+    });
+
+    it('resolves a worktree root path selector to the owning project without mutating the registry', async () => {
+      const repoRoot = path.join(tempDir, 'wt-sel-main');
+      const gitEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
+      initRepoRoot(repoRoot, gitEnv);
+      const worktreePath = path.join(tempDir, 'wt-sel-feat');
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+      writeChange(worktreePath, 'wt-sel-change');
+
+      await registerProject({ projectRoot: repoRoot, projectId: 'wt-sel-proj', mode: 'in-repo' }, { globalDataDir: dataDir });
+      const registryPath = getProjectRegistryPath({ globalDataDir: dataDir });
+      const before = fs.readFileSync(registryPath, 'utf-8');
+
+      const h = await startServer();
+      const selector = `project:${FileSystemUtils.canonicalizeExistingPath(worktreePath)}`;
+      const res = await req(h.port, {
+        method: 'GET',
+        path: `/api/v1/changes?space=${encodeURIComponent(selector)}`,
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      // The changes answered are the worktree's OWN branch-local changes.
+      const changes = (res.json() as any).changes as any[];
+      expect(changes.map((c) => c.name)).toContain('wt-sel-change');
+      // Read-only resolution: the registry is untouched.
+      expect(fs.readFileSync(registryPath, 'utf-8')).toBe(before);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+    });
+
+    it('guards the worktrees path: 401 without a token, 405 on POST', async () => {
+      const h = await startServer();
+      const noToken = await req(h.port, { method: 'GET', path: '/api/v1/spaces/worktrees' });
+      expect(noToken.status).toBe(401);
+      expect((noToken.json() as any).error.code).toBe('unauthorized');
+
+      const post = await req(h.port, { method: 'POST', path: '/api/v1/spaces/worktrees', headers: authed() });
+      expect(post.status).toBe(405);
+      expect((post.json() as any).error.code).toBe('method_not_allowed');
     });
   });
 });

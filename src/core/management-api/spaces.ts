@@ -13,8 +13,16 @@ import { pathIsDirectory } from '../file-state.js';
 import { readStorePointer } from '../project-config.js';
 import { readProjectRegistryState, type ProjectRegistryEntryState } from '../project-registry.js';
 import { listRegisteredStores } from '../store/registry.js';
+import { gitWorktreeList } from '../store/git.js';
+import { getActiveChangeIds } from '../../utils/item-discovery.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
-import type { SpaceEntry, SpaceMember, SpacesResponse } from './wire-types.js';
+import type {
+  ProjectSpaceEntry,
+  SpaceEntry,
+  SpaceMember,
+  SpacesResponse,
+  SpaceWorktreesResponse,
+} from './wire-types.js';
 
 function canonicalizeOrResolve(target: string): string {
   try {
@@ -50,12 +58,54 @@ export async function handleSpaces(): Promise<SpacesResponse> {
 
   const spaces: SpaceEntry[] = [];
 
+  // Live in-repo project entries (dead roots filtered; a store's own root
+  // presented as the store, never a project).
+  const liveInRepo: { root: string; entry: ProjectRegistryEntryState }[] = [];
   for (const [root, entry] of projectEntries) {
     if (entry.mode !== 'in-repo') continue;
     if (!(await pathIsDirectory(root))) continue;
     if (storeRootSet.has(canonicalizeOrResolve(root))) continue;
-    spaces.push({ type: 'project', id: entry.projectId, name: entry.name, root });
+    liveInRepo.push({ root, entry });
   }
+
+  // Collapse legacy worktree duplicates read-side (worktree-aware-spaces D3):
+  // group by (projectId, home) — worktree-shared entries share BOTH by
+  // construction, while independent clones share only projectId (distinct
+  // homes) and correctly stay separate rows. Insertion order is preserved.
+  const groups = new Map<string, { root: string; entry: ProjectRegistryEntryState }[]>();
+  for (const item of liveInRepo) {
+    const key = JSON.stringify([item.entry.projectId, item.entry.home]);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+
+  // One live worktree inventory per group, run concurrently: it both picks the
+  // main-checkout row for a duplicate group and supplies the badge count. A
+  // failure (non-git / git-unavailable) just omits the count. Read-only.
+  const projectSpaces = await Promise.all(
+    [...groups.values()].map(async (group): Promise<ProjectSpaceEntry> => {
+      const inventory = await gitWorktreeList(group[0].root);
+      let chosen = group[0];
+      if (inventory) {
+        const main = inventory.find((worktree) => worktree.isMain);
+        if (main) {
+          const canonicalMain = canonicalizeOrResolve(main.root);
+          const match = group.find((member) => canonicalizeOrResolve(member.root) === canonicalMain);
+          if (match) chosen = match;
+        }
+      }
+      const worktreeCount = inventory && inventory.length > 1 ? inventory.length : undefined;
+      return {
+        type: 'project',
+        id: chosen.entry.projectId,
+        name: chosen.entry.name,
+        root: chosen.root,
+        ...(worktreeCount !== undefined ? { worktreeCount } : {}),
+      };
+    })
+  );
+  spaces.push(...projectSpaces);
 
   for (const store of stores) {
     if (!(await pathIsDirectory(store.storeRoot))) continue;
@@ -81,4 +131,40 @@ export async function handleSpaces(): Promise<SpacesResponse> {
   }
 
   return { spaces };
+}
+
+/**
+ * `GET /api/v1/spaces/worktrees` handler (worktree-aware-spaces D3): the live
+ * worktree inventory of an already-resolved space `root`, derived from
+ * `git worktree list` at read time and never persisted. Each entry reports the
+ * worktree's root, branch (null when detached), the main-checkout flag, and the
+ * count of active changes in that worktree's OWN `rasen/changes` (same
+ * active-change definition as the changes listing — `proposal.md` present). A
+ * non-git root yields an empty inventory, not an error. Read-only throughout.
+ *
+ * `root` is canonicalized (`canonicalizeOrResolve`, not the raw porcelain
+ * value) so it matches the form every other wire root uses — notably session
+ * `cwd` (worktree-aware-spaces review M1: `git worktree list --porcelain`
+ * emits forward-slash paths even on Windows, while `canonicalizeExistingPath`
+ * elsewhere produces backslash paths there; comparing the two verbatim, as
+ * the board's live-session count and the `?wt=` selector round-trip both do,
+ * silently never matched). `canonicalizeOrResolve` degrades to a lexical
+ * `path.resolve` for a deleted/prunable worktree root that no longer exists
+ * on disk, still normalizing separators.
+ */
+export async function handleSpaceWorktrees(root: string): Promise<SpaceWorktreesResponse> {
+  const inventory = await gitWorktreeList(root);
+  if (!inventory) {
+    return { worktrees: [] };
+  }
+
+  const worktrees = await Promise.all(
+    inventory.map(async (worktree) => ({
+      root: canonicalizeOrResolve(worktree.root),
+      branch: worktree.branch,
+      isMain: worktree.isMain,
+      activeChangeCount: (await getActiveChangeIds(worktree.root)).length,
+    }))
+  );
+  return { worktrees };
 }
