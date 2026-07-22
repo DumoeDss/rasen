@@ -6,7 +6,6 @@ import { tabbedEntries } from '../config/grouping.js';
 import type { ConfigMode } from '../config/controls.js';
 import { useSpace } from '../store/use-space.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
-import { GatesInventoryPanel } from './GatesInventoryPanel.js';
 
 /**
  * The config page (design D1/D2/D7): one space-addressed `listConfig` call
@@ -130,7 +129,6 @@ export function ConfigPage() {
       {currentTab?.groups.map((group) => (
         <section key={group.group} class="config-group">
           <h2>{group.group}</h2>
-          {group.group === 'Autopilot' && <GatesInventoryPanel />}
           {group.entries.map((entry) => (
             <ConfigEntryRow
               key={entry.definition.key}

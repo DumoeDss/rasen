@@ -393,6 +393,22 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
       'Per-pipeline, per-stage context-handoff threshold override: a fraction in (0, 1], or an absolute { remainingTokens: N }',
     group: 'Pipelines',
   },
+  // The fourth `pipelines.*` family: per-ROLE (not per-stage) runtime override.
+  // `rasen pipeline agents` writes instances here instead of freezing a full
+  // pipeline YAML copy into the project — the effective runtime for a role
+  // resolves this instance (project > store > global) above the pipeline's
+  // declared `agents.<role>.runtime`. Enum claude | codex, no default.
+  {
+    key: 'pipelines.<name>.runtimes.<role>',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: ['claude', 'codex'],
+    wildcard: true,
+    pattern: 'pipelines.<name>.runtimes.<role>',
+    defaultValue: undefined,
+    description: 'Per-pipeline, per-role agent runtime override (claude | codex)',
+    group: 'Pipelines',
+  },
 ];
 
 /** Looks up the exact (non-wildcard) registry entry for a key path settable in the given scope. */

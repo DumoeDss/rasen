@@ -210,9 +210,10 @@ describe('effective-config', () => {
     it('emits templates only when no instance is set, with no default value', () => {
       const entries = resolveEffectiveConfig({ includeWildcards: true });
       const wildcardEntries = entries.filter((e) => e.definition.wildcard);
-      // featureFlags + three pipelines families, each a template with no instanceKey.
+      // featureFlags + four pipelines families (gates/models/handoff/runtimes),
+      // each a template with no instanceKey.
       const templates = wildcardEntries.filter((e) => e.instanceKey === undefined);
-      expect(templates.length).toBe(4);
+      expect(templates.length).toBe(5);
       expect(entries.some((e) => e.instanceKey !== undefined)).toBe(false);
       const gatesTemplate = templates.find(
         (e) => e.definition.key === 'pipelines.<name>.gates.<stage>'

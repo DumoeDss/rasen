@@ -1116,7 +1116,15 @@ stages:
   });
 
   describe('agents', () => {
-    it('writes a project-local override and switches role runtimes', async () => {
+    // The re-pointed `agents` writes `pipelines.<name>.runtimes.<role>` config
+    // instances via the standard config write path, which requires an existing
+    // rasen/config.yaml — never a frozen pipeline.yaml copy.
+    async function writeProjectConfig(): Promise<void> {
+      await fs.writeFile(path.join(testDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    }
+
+    it('writes runtime config instances (not a pipeline YAML copy) and switches role runtimes', async () => {
+      await writeProjectConfig();
       const result = await runCLI(
         ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--reviewer', 'codex', '--json'],
         { cwd: testDir }
@@ -1125,14 +1133,16 @@ stages:
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.name).toBe('small-feature');
-      expect(json.overridePath).toContain(path.join('rasen', 'pipelines', 'small-feature', 'pipeline.yaml'));
-      expect(json.agents.planner).toBe('codex');
-      expect(json.agents.reviewer).toBe('codex');
-      expect(json.effectiveRoles.planner).toBe('codex');
-      expect(json.effectiveRoles.implementer).toBe('claude');
+      expect(json.configPath).toContain(path.join('rasen', 'config.yaml'));
+      expect(json.effectiveRoles.planner).toEqual({ runtime: 'codex', source: 'config-project' });
+      expect(json.effectiveRoles.reviewer).toEqual({ runtime: 'codex', source: 'config-project' });
+      expect(json.effectiveRoles.implementer).toEqual({ runtime: 'claude', source: 'default' });
 
+      // Config instances were written, and NO pipeline definition file was created.
+      const configText = await fs.readFile(path.join(testDir, 'rasen', 'config.yaml'), 'utf-8');
+      expect(configText).toContain('codex');
       const overridePath = path.join(testDir, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml');
-      await expect(fs.stat(overridePath)).resolves.toBeDefined();
+      await expect(fs.stat(overridePath)).rejects.toBeDefined();
 
       const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], { cwd: testDir });
       expect(show.exitCode).toBe(0);
@@ -1142,11 +1152,25 @@ stages:
       const apply = shown.stages.find((s: any) => s.id === 'apply');
 
       expect(propose.runtime).toBe('codex');
-      expect(propose.runtimeSource).toBe('agent');
+      expect(propose.runtimeSource).toBe('stage-override-project');
       expect(verify.runtime).toBe('codex');
-      expect(verify.runtimeSource).toBe('agent');
+      expect(verify.runtimeSource).toBe('stage-override-project');
       expect(apply.runtime).toBe('claude');
       expect(apply.runtimeSource).toBe('default');
+    });
+
+    it('unsetting the runtime instance reverts the role to its declaration/default', async () => {
+      await writeProjectConfig();
+      await runCLI(['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--json'], { cwd: testDir });
+      // Remove the instance via `config unset` and confirm the role reverts.
+      const unset = await runCLI(
+        ['config', 'unset', 'pipelines.small-feature.runtimes.planner', '--scope', 'project'],
+        { cwd: testDir }
+      );
+      expect(unset.exitCode).toBe(0);
+      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--json'], { cwd: testDir });
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.effectiveRoles.planner).toEqual({ runtime: 'claude', source: 'default' });
     });
 
     it('prints current effective role runtimes when no updates are passed', async () => {
@@ -1154,13 +1178,13 @@ stages:
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
-      expect(json.overridePath).toBeNull();
+      expect(json.configPath).toBeNull();
       expect(json.effectiveRoles).toEqual({
-        planner: 'claude',
-        implementer: 'claude',
-        reviewer: 'claude',
-        fixer: 'claude',
-        shipper: 'claude',
+        planner: { runtime: 'claude', source: 'default' },
+        implementer: { runtime: 'claude', source: 'default' },
+        reviewer: { runtime: 'claude', source: 'default' },
+        fixer: { runtime: 'claude', source: 'default' },
+        shipper: { runtime: 'claude', source: 'default' },
       });
     });
 

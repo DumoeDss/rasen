@@ -17,9 +17,10 @@ import { parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
  *
  * The `Workflows` entry (workflows-ui spec) is space-agnostic and therefore
  * ALWAYS rendered — the installable library is user-wide, reachable from any
- * space or none. LEAD merge point: the Pipelines page (W3) adds a sibling
- * space-agnostic entry to this same nav — keep the addition minimal and
- * additive.
+ * space or none. The `Pipelines` entry (pipelines-ui spec), by contrast, is
+ * space-SCOPED (a pipeline's effective configuration resolves against the
+ * addressed space), so it sits inside the space-scoped block beside Config and
+ * only renders when a space is resolved.
  */
 export function Layout({ children }: { children: ComponentChildren }) {
   const { path } = useLocation();
@@ -46,6 +47,13 @@ export function Layout({ children }: { children: ComponentChildren }) {
                 </a>
                 <a href={spaceHref(space, 'config')} aria-current={section === 'config' ? 'page' : undefined}>
                   Config
+                </a>
+                <a
+                  href={spaceHref(space, 'pipelines')}
+                  data-testid="nav-pipelines"
+                  aria-current={section === 'pipelines' ? 'page' : undefined}
+                >
+                  Pipelines
                 </a>
               </>
             )}

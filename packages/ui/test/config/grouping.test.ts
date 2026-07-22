@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { groupEntries, tabbedEntries, OTHER_TAB } from '../../src/config/grouping.js';
+import { groupEntries, tabbedEntries, OTHER_TAB, TAB_MAP, EXCLUDED_GROUPS } from '../../src/config/grouping.js';
 import { configListFixture } from '../fixtures/config-list.js';
 import type { WireConfigEntry } from '../../src/api/types.js';
 
 const entries: WireConfigEntry[] = configListFixture.entries;
+
+describe('TAB_MAP', () => {
+  it('settles at exactly the four final tabs, none of them Workflow', () => {
+    expect(TAB_MAP.map((t) => t.tab)).toEqual(['General', 'Project', 'Privacy', 'Advanced']);
+  });
+
+  it('excludes the Workflow, Autopilot, and Pipelines groups (owned by the Pipelines page)', () => {
+    expect([...EXCLUDED_GROUPS].sort()).toEqual(['Autopilot', 'Pipelines', 'Workflow']);
+  });
+});
 
 describe('groupEntries', () => {
   it('groups entries by definition.group', () => {
@@ -37,51 +47,79 @@ describe('groupEntries', () => {
   });
 });
 
+/** A `schema`-like project/store-settable key in the non-excluded Project group. */
+const projectSchemaEntry: WireConfigEntry = {
+  ...entries[0]!,
+  definition: {
+    ...entries[0]!.definition,
+    key: 'schema',
+    group: 'Project',
+    scopes: ['store', 'project'],
+  },
+};
+
 describe('tabbedEntries', () => {
-  it('maps registry groups to tabs in tab order, filtered to the active mode (design D2)', () => {
-    // Global mode at a project space: every global-scoped key is visible.
+  it('maps registry groups to the final four tabs, filtered to the active mode (design D5)', () => {
+    // Global mode at a project space: every global-scoped key is visible, but
+    // the Workflow and Autopilot groups (handoff.threshold, autopilot.gates)
+    // are excluded — those keys are owned by the Pipelines page now.
     const tabs = tabbedEntries(entries, 'global', 'project');
     const names = tabs.map((t) => t.tab);
-    // Baseline fixture has Profile+Behavior (General), Telemetry (Privacy),
-    // Workflow+Autopilot (Workflow); no Project/Archive/Advanced entries.
-    expect(names).toEqual(['General', 'Privacy', 'Workflow']);
+    expect(names).toEqual(['General', 'Privacy']);
+    expect(names).not.toContain('Workflow');
+    expect(names).not.toContain('Autopilot');
 
     const general = tabs.find((t) => t.tab === 'General')!;
     expect(general.groups.map((g) => g.group)).toEqual(['Profile', 'Behavior']);
-    const workflow = tabs.find((t) => t.tab === 'Workflow')!;
-    // Workflow tab carries both the Workflow and Autopilot groups (interim, D2).
-    expect(workflow.groups.map((g) => g.group)).toEqual(['Workflow', 'Autopilot']);
   });
 
-  it('omits a tab whose keys are all filtered out by the active mode (Privacy in Local mode)', () => {
-    // Local mode at a project space: only the project-settable keys survive
-    // (handoff.threshold + autopilot.gates); the global-only Telemetry,
-    // Profile, and Behavior keys disappear, so Privacy and General are absent.
-    const tabs = tabbedEntries(entries, 'local', 'project');
-    const names = tabs.map((t) => t.tab);
-    expect(names).toContain('Workflow');
-    expect(names).not.toContain('Privacy');
-    expect(names).not.toContain('General');
-  });
-
-  it('routes an unmapped group into the trailing Other bucket rather than hiding it', () => {
-    const withUnmapped: WireConfigEntry[] = [
+  it('never renders the excluded Workflow / Autopilot / Pipelines groups (design D5)', () => {
+    const withPipelines: WireConfigEntry[] = [
       ...entries,
       {
         ...entries[0]!,
         definition: { ...entries[0]!.definition, key: 'pipelines.x.gates.y', group: 'Pipelines', scopes: ['global'] },
       },
     ];
+    const tabs = tabbedEntries(withPipelines, 'global', 'project');
+    const renderedGroups = tabs.flatMap((t) => t.groups.map((g) => g.group));
+    expect(renderedGroups).not.toContain('Workflow');
+    expect(renderedGroups).not.toContain('Autopilot');
+    expect(renderedGroups).not.toContain('Pipelines');
+    // Excluded groups never fall into the trailing Other bucket either.
+    expect(tabs.find((t) => t.tab === OTHER_TAB)).toBeUndefined();
+  });
+
+  it('omits a tab whose keys are all filtered out by the active mode (Privacy in Local mode)', () => {
+    // Local mode at a project space: only project-settable, non-excluded keys
+    // survive — `schema` (Project); the global-only Telemetry/Profile/Behavior
+    // keys and the excluded Workflow/Autopilot keys disappear.
+    const tabs = tabbedEntries([...entries, projectSchemaEntry], 'local', 'project');
+    const names = tabs.map((t) => t.tab);
+    expect(names).toEqual(['Project']);
+    expect(names).not.toContain('Privacy');
+    expect(names).not.toContain('General');
+    expect(names).not.toContain('Workflow');
+  });
+
+  it('routes a genuinely unmapped, non-excluded group into the trailing Other bucket', () => {
+    const withUnmapped: WireConfigEntry[] = [
+      ...entries,
+      {
+        ...entries[0]!,
+        definition: { ...entries[0]!.definition, key: 'zzz.custom', group: 'Zeta', scopes: ['global'] },
+      },
+    ];
     const tabs = tabbedEntries(withUnmapped, 'global', 'project');
     const other = tabs.find((t) => t.tab === OTHER_TAB);
     expect(other).toBeDefined();
     expect(tabs[tabs.length - 1]!.tab).toBe(OTHER_TAB); // trailing
-    expect(other!.groups.some((g) => g.group === 'Pipelines')).toBe(true);
+    expect(other!.groups.some((g) => g.group === 'Zeta')).toBe(true);
   });
 
   it('does not assert registry key counts (portfolio rule) — a store space still tabs its own keys', () => {
-    const tabs = tabbedEntries(entries, 'local', 'store');
-    // handoff.threshold (store-settable) lands under Workflow; autopilot.gates too.
-    expect(tabs.map((t) => t.tab)).toContain('Workflow');
+    const tabs = tabbedEntries([...entries, projectSchemaEntry], 'local', 'store');
+    // `schema` (store-settable, Project group) lands under Project.
+    expect(tabs.map((t) => t.tab)).toContain('Project');
   });
 });

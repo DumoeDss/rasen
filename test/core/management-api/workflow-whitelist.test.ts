@@ -7,17 +7,18 @@ import {
 } from '../../../src/core/management-api/whitelist.js';
 
 /**
- * Whitelist coverage for the workflow-library bounded-cli ops (change-submission
- * delta: "Whitelisted operations only, across the change, space, and workflow
- * bounded-CLI operations").
+ * Whitelist coverage for the workflow- and pipeline-library bounded-cli ops
+ * (change-submission delta: "Whitelisted operations only, across the change,
+ * space, workflow, and pipeline bounded-CLI operations").
  *
  * COUNT: the change-submission delta enumerates the bounded tier as exactly
- * EIGHT ops (create-change + three space ops + four workflow ops). The space
- * ops landed with the sibling spaces-page change; the merged table is whole
- * here, so the exact-eight assertion below pins it.
+ * TWELVE ops (create-change + three space ops + four workflow ops + four
+ * pipeline ops). The pipeline ops landed with the pipelines-page change; the
+ * merged table is whole here, so the exact-twelve assertion below pins it.
  */
 describe('workflow-library bounded-cli whitelist ops', () => {
   const WORKFLOW_OPS = ['import-workflow', 'init-workflow', 'export-workflow', 'delete-workflow'] as const;
+  const PIPELINE_OPS = ['import-pipeline', 'init-pipeline', 'export-pipeline', 'delete-pipeline'] as const;
 
   const boundedOps = Object.values(WHITELIST)
     .filter((entry) => entry.tier === 'bounded-cli')
@@ -30,7 +31,13 @@ describe('workflow-library bounded-cli whitelist ops', () => {
     expect(boundedOps).toContain('create-change');
   });
 
-  it('pins the merged bounded-cli tier to exactly the eight enumerated ops', () => {
+  it('registers all four pipeline ops in the bounded-cli tier', () => {
+    for (const op of PIPELINE_OPS) {
+      expect(boundedOps, op).toContain(op);
+    }
+  });
+
+  it('pins the merged bounded-cli tier to exactly the twelve enumerated ops', () => {
     expect([...boundedOps].sort()).toEqual(
       [
         'create-change',
@@ -41,6 +48,10 @@ describe('workflow-library bounded-cli whitelist ops', () => {
         'init-workflow',
         'export-workflow',
         'delete-workflow',
+        'import-pipeline',
+        'init-pipeline',
+        'export-pipeline',
+        'delete-pipeline',
       ].sort(),
     );
   });

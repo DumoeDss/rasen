@@ -13,9 +13,6 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/client.js')>();
   return { ...actual, listConfig: vi.fn(), putKey: vi.fn(), deleteKey: vi.fn() };
 });
-vi.mock('../../src/components/GatesInventoryPanel.js', () => ({
-  GatesInventoryPanel: () => <div data-testid="gates-inventory" />,
-}));
 
 import { LocationProvider } from 'preact-iso';
 import { ConfigPage } from '../../src/components/ConfigPage.js';
@@ -81,26 +78,31 @@ describe('ConfigPage', () => {
     expect(container.querySelector('[data-testid="config-store-deferred"]')).toBeNull();
   });
 
-  it('filters tabs by mode: Local hides the global-only Privacy tab; Global reveals it — no reload', async () => {
+  it('never renders the Workflow/Autopilot tabs or their keys; Global still reveals Privacy — no reload', async () => {
     (client.listConfig as any).mockResolvedValue(configListFixture);
     await mountAt(container, '/p/proj_x/config');
 
-    // Default Local mode at a project space: only project-settable keys →
-    // Workflow tab only; Privacy (telemetry, global-only) is omitted.
-    const tabNames = () =>
-      [...container.querySelector('[data-testid="config-tabs"]')!.querySelectorAll('button')].map(
-        (b) => b.textContent
-      );
-    expect(tabNames()).toContain('Workflow');
-    expect(tabNames()).not.toContain('Privacy');
+    const tabNames = () => {
+      const el = container.querySelector('[data-testid="config-tabs"]');
+      return el ? [...el.querySelectorAll('button')].map((b) => b.textContent) : [];
+    };
+    // The interim Workflow tab is gone; the Autopilot group no longer renders
+    // here either — those keys are owned by the Pipelines page.
+    expect(tabNames()).not.toContain('Workflow');
+    expect(tabNames()).not.toContain('Autopilot');
 
     await act(async () => {
       clickChip(container, 'Global').click();
       await flushMicrotasks();
     });
-    // Global mode reveals every global-scoped key → Privacy now present.
+    // Global mode reveals the global-scoped, non-excluded keys → Privacy + General.
     expect(tabNames()).toContain('Privacy');
     expect(tabNames()).toContain('General');
+    expect(tabNames()).not.toContain('Workflow');
+    expect(tabNames()).not.toContain('Autopilot');
+    // The excluded keys never render as rows in either mode.
+    expect(container.querySelector('[data-key="autopilot.gates"]')).toBeNull();
+    expect(container.querySelector('[data-key="handoff.threshold"]')).toBeNull();
     // Re-filter happened without re-fetching.
     expect(client.listConfig).toHaveBeenCalledTimes(1);
   });

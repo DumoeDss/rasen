@@ -284,27 +284,27 @@ describe('pipeline command store root selection', () => {
     30_000
   );
 
-  it('agents writes the project override under the store root, where validate sees it', async () => {
+  it('agents writes a runtime config instance under the store root (no YAML copy)', async () => {
     const result = await runCLI(
       ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--store', 'team-context', '--json'],
       { cwd: appRepo, env }
     );
     expect(result.exitCode).toBe(0);
     const json = parseJson(result);
-    expect(json.effectiveRoles.planner).toBe('codex');
+    // `--store` resolves the store's own root, whose config is written project-scope
+    // (the CLI-in-store-root asymmetry), so the source reports config-project.
+    expect(json.effectiveRoles.planner).toEqual({ runtime: 'codex', source: 'config-project' });
+    expect(json.configPath).toContain(path.join(storeRoot, 'rasen', 'config.yaml'));
 
-    // The override landed under the STORE root, not the cwd.
-    const overridePath = path.join(
-      storeRoot,
-      'rasen',
-      'pipelines',
-      'small-feature',
-      'pipeline.yaml'
-    );
-    expect(fs.existsSync(overridePath)).toBe(true);
+    // The instance landed in the STORE root's config, not a frozen pipeline copy,
+    // and not under the cwd.
+    const storeConfig = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+    expect(storeConfig).toContain('codex');
+    const overridePath = path.join(storeRoot, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml');
+    expect(fs.existsSync(overridePath)).toBe(false);
     expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
 
-    // A root-aware validate of the store sees the override as a valid pipeline.
+    // The store's built-in small-feature still validates (nothing was forked).
     const validate = await runCLI(
       ['validate', '--pipelines', '--store', 'team-context', '--json'],
       { cwd: appRepo, env }
@@ -314,5 +314,28 @@ describe('pipeline command store root selection', () => {
     const smallFeature = validateJson.items.find((i: any) => i.id === 'small-feature');
     expect(smallFeature).toBeDefined();
     expect(smallFeature.valid).toBe(true);
+  });
+
+  it('a pre-existing frozen pipeline copy still resolves with a project source badge (no migration)', async () => {
+    // A legacy frozen copy written by the OLD `agents` behavior stays untouched
+    // and keeps winning as the store's project-layer definition.
+    writeStorePipeline(
+      'small-feature',
+      'name: small-feature\ndescription: frozen\nagents:\n  planner: codex\nstages:\n  - id: propose\n    role: planner\n    skill: rasen-propose\n'
+    );
+    const show = await runCLI(
+      ['pipeline', 'show', 'small-feature', '--store', 'team-context', '--json'],
+      { cwd: appRepo, env }
+    );
+    expect(show.exitCode).toBe(0);
+    const shown = parseJson(show);
+    const propose = shown.stages.find((s: any) => s.id === 'propose');
+    // The frozen copy's declared agents.planner runtime resolves (source 'agent'),
+    // and the copy still exists — no automatic deletion or rewrite.
+    expect(propose.runtime).toBe('codex');
+    expect(propose.runtimeSource).toBe('agent');
+    expect(
+      fs.existsSync(path.join(storeRoot, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml'))
+    ).toBe(true);
   });
 });

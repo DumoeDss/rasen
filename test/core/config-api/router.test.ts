@@ -203,8 +203,8 @@ describe('config-api router (integration, via real http server)', () => {
     });
   });
 
-  describe('pipelines inventory (config-page-coherence)', () => {
-    it('returns gated-stage metadata for a valid token, with vet distinguishable', async () => {
+  describe('pipelines inventory (pipeline-http-api)', () => {
+    it('returns declared + effective per-stage metadata, provenance, with vet distinguishable', async () => {
       const h = await startServer();
       const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
       expect(res.status).toBe(200);
@@ -214,23 +214,86 @@ describe('config-api router (integration, via real http server)', () => {
       const bugFix = body.pipelines.find((p: any) => p.name === 'bug-fix');
       expect(bugFix).toBeDefined();
       expect(typeof bugFix.description).toBe('string');
+      // Built-in pipelines report built-in provenance from the package layer.
+      expect(bugFix.provenance).toBe('built-in');
+      expect(bugFix.sourceLayer).toBe('package');
+
       const propose = bugFix.stages.find((s: any) => s.id === 'propose');
       expect(propose).toMatchObject({ id: 'propose', role: 'planner', skill: 'rasen-propose', gate: true });
+      // Each stage carries effective values with sources (no config → definition/default).
+      expect(propose.effectiveGate).toEqual({ value: true, source: 'stage' });
+      expect(propose.effectiveRuntime).toEqual({ value: 'claude', source: 'default' });
+      expect(propose.effectiveModel).toHaveProperty('source');
+      expect(propose.effectiveHandoff).toHaveProperty('source');
 
       const goalLoop = body.pipelines.find((p: any) => p.name === 'goal-loop-measure');
       if (goalLoop) {
         const defineGoal = goalLoop.stages.find((s: any) => s.id === 'define-goal');
         expect(defineGoal.gate).toBe('vet');
+        // A vet gate is outside the mask — always pausing regardless of policy.
+        expect(defineGoal.effectiveGate.value).toBe('vet');
       }
     });
 
-    it('rejects non-GET methods with 405 and no state change', async () => {
+    it('reflects the gate mask in effective gates: off base + per-stage on pierces it', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: off\npipelines:\n  bug-fix:\n    gates:\n      propose: on\n'
+      );
       const h = await startServer();
-      for (const method of ['PUT', 'POST', 'DELETE']) {
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
+      const body = res.json() as any;
+      const bugFix = body.pipelines.find((p: any) => p.name === 'bug-fix');
+      const propose = bugFix.stages.find((s: any) => s.id === 'propose');
+      // The per-stage `on` instance pierces the `off` base.
+      expect(propose.effectiveGate).toEqual({ value: true, source: 'stage-override-project' });
+      // Every other ordinary gated stage reports off, naming the base layer.
+      const otherGated = bugFix.stages.find(
+        (s: any) => s.id !== 'propose' && s.gate === true
+      );
+      if (otherGated) {
+        expect(otherGated.effectiveGate.value).toBe(false);
+        expect(otherGated.effectiveGate.source).toBe('autopilot-project');
+      }
+    });
+
+    it('rejects PUT and DELETE with 405 (POST is the mutation bridge)', async () => {
+      const h = await startServer();
+      for (const method of ['PUT', 'DELETE']) {
         const res = await req(h.port, { method, path: '/api/v1/pipelines', headers: authed() });
         expect(res.status).toBe(405);
         expect((res.json() as any).error.code).toBe('method_not_allowed');
       }
+    });
+
+    it('POST rejects an unknown op with 400 spawning nothing', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'nonsense' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('POST rejects a relative path / option-shaped name before any spawn', async () => {
+      const h = await startServer();
+      const relative = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'import', path: 'relative/pkg.rasenpkg' }),
+      });
+      expect(relative.status).toBe(400);
+
+      const optionName = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'delete', name: '--force' }),
+      });
+      expect(optionName.status).toBe(400);
     });
 
     it('requires the session token', async () => {

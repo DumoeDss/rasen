@@ -66,6 +66,13 @@ export interface WireConfigEntry {
   value: unknown;
   source: ConfigSource;
   scopeValues: { global?: unknown; store?: unknown; project?: unknown };
+  /**
+   * The fully-qualified instance path for a wildcard family instance entry
+   * (e.g. `pipelines.small-feature.gates.propose`). Absent on fixed keys and
+   * on a family's template entry. Mirrors `instanceKey` in the CLI's
+   * wire-types.ts — the Pipelines page (this change) is its first consumer.
+   */
+  instanceKey?: string;
   /** Present only when a raw on-disk scope value fails registry validation. */
   warnings?: string[];
 }
@@ -109,27 +116,95 @@ export interface GetConfigKeyResponse {
 export type WriteConfigKeyResponse = GetConfigKeyResponse;
 
 /**
- * A trimmed projection of a pipeline stage for the read-only gates inventory
- * (design.md D5/D6 of `config-page-coherence`). `gate: 'vet'` marks a stage
- * that ALWAYS pauses, distinct from an ordinary `gate: true`.
+ * A threshold value (mirrors `ThresholdValue` in the CLI's model-presets.ts): a
+ * bare fraction of the context window in (0, 1], or an absolute
+ * `{ remainingTokens: N }` headroom. A bare number is ALWAYS a fraction.
+ */
+export type ThresholdValue = number | { remainingTokens: number };
+
+/**
+ * An effective per-stage value plus the scope-qualified layer that supplied it
+ * (`GET /api/v1/pipelines`; mirrors `WireEffectiveValue<T>` in the CLI's
+ * wire-types.ts). `source` is a free-form scope-qualified label
+ * (e.g. `stage-override-project`, `store`, `definition`, `default`) rendered
+ * verbatim — the UI never re-derives resolution.
+ */
+export interface WireEffectiveValue<T> {
+  value: T;
+  source: string;
+}
+
+/**
+ * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
+ * declared identity and its declared `gate` value (`false` | `true` | `'vet'`,
+ * where `'vet'` marks an always-pausing stage distinct from an ordinary
+ * `true`), it reports each EFFECTIVE per-stage value — gate (after the mask),
+ * model, handoff threshold, and runtime — with the layer that supplied it, so
+ * the UI renders resolution without reimplementing it.
  */
 export interface WirePipelineStage {
   id: string;
   role: string | null;
   skill: string | null;
+  /** The declared gate value from the pipeline definition, unmasked. */
   gate: false | true | 'vet';
+  /** The effective gate after the mask: `true` pauses, `false` auto-approves, `'vet'` always pauses. */
+  effectiveGate: WireEffectiveValue<boolean | 'vet'>;
+  effectiveModel: WireEffectiveValue<string | null>;
+  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
+  effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
 }
 
-/** A pipeline's identity plus its stage list, for `GET /api/v1/pipelines`. */
+/**
+ * A pipeline's identity, provenance, and per-stage effective configuration for
+ * `GET /api/v1/pipelines`. `provenance` marks a built-in versus a user pipeline;
+ * `sourceLayer` names the layer the definition resolved from.
+ */
 export interface WirePipeline {
   name: string;
   description: string;
+  provenance: 'built-in' | 'user';
+  sourceLayer: 'project' | 'user' | 'package';
   stages: WirePipelineStage[];
 }
 
+/** `GET /api/v1/pipelines` response: the addressed space's resolved pipelines. */
 export interface ListPipelinesResponse {
+  project: ProjectRef | null;
+  /** The store layer contributing to this read; null when no store layer is active. */
+  store: StoreLayerRef | null;
   pipelines: WirePipeline[];
 }
+
+/** `POST /api/v1/pipelines` request body, discriminated by `op` (pipeline-http-api design D6). */
+export type PipelineMutationRequest =
+  | { op: 'import'; path: string; force?: boolean }
+  | { op: 'init'; name: string; output: string }
+  | { op: 'export'; name: string; path: string; force?: boolean }
+  | { op: 'delete'; name: string; force?: boolean };
+
+export interface PipelineImportResponse {
+  path: string;
+  imported: string[];
+  digests: Record<string, string>;
+}
+export interface PipelineInitResponse {
+  pipeline: { name: string; output: string };
+}
+export interface PipelineExportResponse {
+  pipeline: { name: string; path: string };
+}
+export interface PipelineDeleteResponse {
+  deleted: string;
+  forcedReferrers: string[];
+}
+
+/** `POST /api/v1/pipelines` success response — one of the four op payloads. */
+export type PipelineMutationResponse =
+  | PipelineImportResponse
+  | PipelineInitResponse
+  | PipelineExportResponse
+  | PipelineDeleteResponse;
 
 // ---- Management API mirror (rasen-ui-slice1-readonly-api design.md D7) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root

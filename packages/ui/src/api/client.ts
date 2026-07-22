@@ -18,6 +18,8 @@ import type {
   ListPipelinesResponse,
   ListProjectsResponse,
   LocalPathsResponse,
+  PipelineMutationRequest,
+  PipelineMutationResponse,
   RunsResponse,
   SessionActionResponse,
   SessionDetailResponse,
@@ -124,9 +126,26 @@ export function listConfig(space?: string): Promise<ListConfigResponse> {
   return request<ListConfigResponse>(`/api/v1/config${spaceQuery(space)}`);
 }
 
-/** Read-only gates inventory (D5/D6): the available pipelines and their gate-carrying stages. */
-export function listPipelines(): Promise<ListPipelinesResponse> {
-  return request<ListPipelinesResponse>('/api/v1/pipelines');
+/**
+ * The addressed space's resolved pipelines (pipeline-http-api): each stage's
+ * declared gate plus its effective gate/model/handoff/runtime with a
+ * scope-qualified source. No selector = launch-project fallback.
+ */
+export function listPipelines(space?: string): Promise<ListPipelinesResponse> {
+  return request<ListPipelinesResponse>(`/api/v1/pipelines${spaceQuery(space)}`);
+}
+
+/**
+ * Run a pipeline-library mutation through the CLI-backed bridge (import / init /
+ * export / delete). On failure the thrown `ApiError.message` is the CLI's own
+ * error text, verbatim.
+ */
+export function mutatePipeline(body: PipelineMutationRequest): Promise<PipelineMutationResponse> {
+  return request<PipelineMutationResponse>('/api/v1/pipelines', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 export function getKey(key: string, space?: string): Promise<GetConfigKeyResponse> {

@@ -151,12 +151,13 @@ export interface GlobalConfig {
     pinnedSpaces?: string[];
   };
   /**
-   * Per-pipeline, per-stage configuration overrides, keyed by pipeline name.
-   * The three inner records mirror the `pipelines.<name>.{gates,models,handoff}.<stage>`
-   * config-key families (an unset instance is absent, never defaulted). This
-   * `pipelines` block shares nothing with the `rasen/pipelines/` directory
-   * namespace — it is config data keyed by pipeline name, not stored pipeline
-   * definitions.
+   * Per-pipeline configuration overrides, keyed by pipeline name. The inner
+   * records mirror the `pipelines.<name>.{gates,models,handoff}.<stage>` and
+   * `pipelines.<name>.runtimes.<role>` config-key families (an unset instance
+   * is absent, never defaulted). `gates`/`models`/`handoff` are keyed by stage;
+   * `runtimes` is keyed by role. This `pipelines` block shares nothing with the
+   * `rasen/pipelines/` directory namespace — it is config data keyed by pipeline
+   * name, not stored pipeline definitions.
    */
   pipelines?: Record<
     string,
@@ -164,6 +165,7 @@ export interface GlobalConfig {
       gates?: Record<string, 'on' | 'off'>;
       models?: Record<string, string>;
       handoff?: Record<string, ThresholdValue>;
+      runtimes?: Record<string, 'claude' | 'codex'>;
     }
   >;
 }

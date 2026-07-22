@@ -16,6 +16,7 @@ import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
 import { archiveFixture } from '../fixtures/archive.js';
+import { pipelinesFixture } from '../fixtures/pipelines.js';
 
 export { configListFixture, projectsListFixture, healthFixture, errorsFixture };
 export { sessionDetailFixture, sessionsListFixture };
@@ -89,6 +90,27 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     expect(sessionDetailFixture.session.id).toBe('sess-live-with-progress');
     expect(typeof sessionDetailFixture.tails.stdout).toBe('string');
     expect(typeof sessionDetailFixture.tails.stderr).toBe('string');
+  });
+
+  it('pipelines fixture reports per-stage effective values with sources (pipeline-http-api mirror drift alarm)', () => {
+    expect(pipelinesFixture.pipelines.length).toBeGreaterThan(0);
+    for (const pipeline of pipelinesFixture.pipelines) {
+      expect(['built-in', 'user']).toContain(pipeline.provenance);
+      expect(['project', 'user', 'package']).toContain(pipeline.sourceLayer);
+      for (const stage of pipeline.stages) {
+        expect([false, true, 'vet']).toContain(stage.gate);
+        expect(typeof stage.effectiveGate.source).toBe('string');
+        expect(typeof stage.effectiveRuntime.source).toBe('string');
+      }
+    }
+    // A built-in with a project-scope override on every axis of one stage.
+    const impl = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'implement')!;
+    expect(impl.effectiveModel.source).toBe('stage-override-project');
+    expect(impl.effectiveRuntime.value).toBe('codex');
+    // The vet stage passes its declared gate through unmasked.
+    const vet = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'gate-review')!;
+    expect(vet.gate).toBe('vet');
+    expect(vet.effectiveGate.value).toBe('vet');
   });
 
   it('archive fixture covers portfolio-grouped and container-less archived changes with dates', () => {

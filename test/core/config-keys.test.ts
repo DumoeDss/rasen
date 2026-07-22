@@ -214,10 +214,11 @@ describe('config-keys registry', () => {
       expect(globalOnly.length).toBe(8);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
-      // Four wildcard families: featureFlags (global-only, the 9th global-only
-      // key) plus the three all-three-scope pipelines.* families.
+      // Five wildcard families: featureFlags (global-only, the 9th global-only
+      // key) plus the four all-three-scope pipelines.* families
+      // (gates/models/handoff per stage, runtimes per role).
       const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);
-      expect(wildcards.length).toBe(4);
+      expect(wildcards.length).toBe(5);
       // featureFlags is the sole global-only wildcard; the pipelines families
       // are settable in all three scopes.
       expect(wildcards.filter((def) => def.scopes.join(',') === 'global').length).toBe(1);
@@ -257,6 +258,7 @@ describe('config-keys registry', () => {
         { instance: { pipelines: { p: { models: { s: 'fable' } } } } },
         { instance: { pipelines: { p: { handoff: { s: 0.6 } } } } },
         { instance: { pipelines: { p: { handoff: { s: { remainingTokens: 60_000 } } } } } },
+        { instance: { pipelines: { p: { runtimes: { reviewer: 'codex' } } } } },
       ];
       for (const { instance } of cases) {
         // global JSON schema
@@ -276,6 +278,7 @@ describe('wildcard config key families', () => {
     { pattern: 'pipelines.<name>.gates.<stage>', instance: 'pipelines.small-feature.gates.propose', valid: 'on', invalid: 'maybe' },
     { pattern: 'pipelines.<name>.models.<stage>', instance: 'pipelines.bug-fix.models.review', valid: 'fable', invalid: '' },
     { pattern: 'pipelines.<name>.handoff.<stage>', instance: 'pipelines.goal-loop.handoff.measure', valid: 0.6, invalid: 1.5 },
+    { pattern: 'pipelines.<name>.runtimes.<role>', instance: 'pipelines.small-feature.runtimes.reviewer', valid: 'codex', invalid: 'gpt' },
   ] as const;
 
   describe('valid instances validate in all three scopes', () => {

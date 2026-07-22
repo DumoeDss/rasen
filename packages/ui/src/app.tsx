@@ -9,6 +9,7 @@ import { ArchivePage } from './components/ArchivePage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
 import { SpacesPage } from './components/SpacesPage.js';
 import { WorkflowsPage } from './components/WorkflowsPage.js';
+import { PipelinesPage } from './components/PipelinesPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
 
@@ -59,6 +60,8 @@ export function App() {
           <Route path="/s/:storeId/board" component={BoardPage} />
           <Route path="/p/:projectId/config" component={ConfigPage} />
           <Route path="/s/:storeId/config" component={ConfigPage} />
+          <Route path="/p/:projectId/pipelines" component={PipelinesPage} />
+          <Route path="/s/:storeId/pipelines" component={PipelinesPage} />
           <Route path="/p/:projectId/archive" component={ArchivePage} />
           <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />

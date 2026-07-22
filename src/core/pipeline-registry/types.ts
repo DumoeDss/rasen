@@ -386,8 +386,34 @@ export type VerifyPolicy = z.infer<typeof VerifyPolicySchema>;
 export type Stage = z.infer<typeof StageSchema>;
 export type PipelineYaml = z.infer<typeof PipelineYamlSchema>;
 
+/** The config scope a per-stage/per-role override was supplied from. */
+export type StageOverrideScope = 'project' | 'store' | 'global';
+
+/** A per-stage/per-role override value plus the scope-qualified layer that decided it. */
+export interface StageOverride<T> {
+  value: T;
+  scope: StageOverrideScope;
+}
+
+/**
+ * The per-stage/per-role configuration top layer for a single stage (design D2
+ * of `ui-config-redesign-pipelines-page`): the `pipelines.<name>.models.<stage>`,
+ * `pipelines.<name>.handoff.<stage>`, and `pipelines.<name>.runtimes.<role>`
+ * instances resolved for THIS stage, each sitting ABOVE the stage-level YAML
+ * value. All fields optional — an absent field means "no override", and the
+ * chain below resolves byte-identically to before this layer existed.
+ */
+export interface StageConfigOverrides {
+  model?: StageOverride<string>;
+  handoff?: StageOverride<ThresholdValue>;
+  runtime?: StageOverride<'claude' | 'codex'>;
+}
+
 /** Provenance of the MODEL field specifically — tracked separately from `source` (which names the runtime/session/sandbox/effort provenance) because the two can differ: e.g. a stage with only `runtime` overridden still resolves its model from machine config. */
 export type ModelSource =
+  | 'stage-override-project'
+  | 'stage-override-store'
+  | 'stage-override-global'
   | 'stage'
   | 'agent'
   | 'project-role'
@@ -398,10 +424,21 @@ export type ModelSource =
   | 'global-default'
   | 'default';
 
+/** Provenance of the resolved `runtime` field specifically — a per-role config instance tops the pipeline declaration and default. */
+export type RuntimeSource =
+  | 'stage-override-project'
+  | 'stage-override-store'
+  | 'stage-override-global'
+  | 'stage'
+  | 'agent'
+  | 'default';
+
 export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
   source: 'stage' | 'agent' | 'default';
   /** Provenance of the resolved `model` field; always present, independent of `source`. */
   modelSource: ModelSource;
+  /** Provenance of the resolved `runtime` field; always present, independent of `source`. Equals `source` when no runtime override applies. */
+  runtimeSource: RuntimeSource;
 }
 
 /**
@@ -458,7 +495,8 @@ export function normalizeAgentRuntimeConfig(
 export function resolveStageRuntimeConfig(
   stage: Stage,
   pipeline: PipelineYaml,
-  modelLayers?: ModelConfigLayers
+  modelLayers?: ModelConfigLayers,
+  stageOverrides?: StageConfigOverrides
 ): ResolvedStageRuntimeConfig {
   const roleDefault = stage.role
     ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
@@ -474,9 +512,18 @@ export function resolveStageRuntimeConfig(
   const storeRoleModel = stage.role ? modelLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleModel = stage.role ? modelLayers?.globalRoles?.[stage.role] : undefined;
 
+  // The per-stage runtime family instance tops the runtime field's resolution;
+  // absent, `runtimeSource` mirrors the bundle `source` (byte-identical).
+  const runtimeOverride = stageOverrides?.runtime;
+  const runtimeSourceFor = (base: 'stage' | 'agent' | 'default'): RuntimeSource =>
+    runtimeOverride ? (`stage-override-${runtimeOverride.scope}` as RuntimeSource) : base;
+
   let model: string | undefined;
   let modelSource: ModelSource;
-  if (stage.model !== undefined) {
+  if (stageOverrides?.model !== undefined) {
+    model = stageOverrides.model.value;
+    modelSource = `stage-override-${stageOverrides.model.scope}` as ModelSource;
+  } else if (stage.model !== undefined) {
     model = stage.model;
     modelSource = 'stage';
   } else if (roleDefault?.model !== undefined) {
@@ -507,30 +554,34 @@ export function resolveStageRuntimeConfig(
 
   if (stageHasOverride) {
     return {
-      runtime: stage.runtime ?? roleDefault?.runtime ?? 'claude',
+      runtime: runtimeOverride?.value ?? stage.runtime ?? roleDefault?.runtime ?? 'claude',
       sessionReuse: stage.sessionReuse ?? roleDefault?.sessionReuse,
       sandbox: stage.sandbox ?? roleDefault?.sandbox,
       model,
       effort: stage.effort ?? roleDefault?.effort,
       source: 'stage',
       modelSource,
+      runtimeSource: runtimeSourceFor('stage'),
     };
   }
 
   if (roleDefault) {
     return {
       ...roleDefault,
+      runtime: runtimeOverride?.value ?? roleDefault.runtime,
       model,
       source: 'agent',
       modelSource,
+      runtimeSource: runtimeSourceFor('agent'),
     };
   }
 
   return {
-    runtime: 'claude',
+    runtime: runtimeOverride?.value ?? 'claude',
     model,
     source: 'default',
     modelSource,
+    runtimeSource: runtimeSourceFor('default'),
   };
 }
 
@@ -550,6 +601,9 @@ export interface ResolvedStageHandoffConfig {
   maxRelays: number;
   stallLimit: number;
   source:
+    | 'stage-override-project'
+    | 'stage-override-store'
+    | 'stage-override-global'
     | 'stage'
     | 'role'
     | 'pipeline'
@@ -613,7 +667,8 @@ export function resolveStageHandoffConfig(
   stage: Stage,
   pipeline: PipelineYaml,
   configLayers?: HandoffConfigLayers,
-  modelLayers?: ModelConfigLayers
+  modelLayers?: ModelConfigLayers,
+  stageOverrides?: StageConfigOverrides
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
@@ -621,11 +676,17 @@ export function resolveStageHandoffConfig(
   const projectRoleThreshold = stage.role ? configLayers?.projectRoles?.[stage.role] : undefined;
   const storeRoleThreshold = stage.role ? configLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleThreshold = stage.role ? configLayers?.globalRoles?.[stage.role] : undefined;
+  // The preset keys off the stage's RESOLVED model, so a per-stage model
+  // override must feed the preset lookup too (pass the full override set).
   const presetThreshold = resolveModelPreset(
-    resolveStageRuntimeConfig(stage, pipeline, modelLayers).model
+    resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides).model
   )?.handoffThreshold;
 
+  // A `pipelines.<name>.handoff.<stage>` instance tops the threshold chain.
+  const overrideThreshold = stageOverrides?.handoff?.value;
+
   const threshold =
+    overrideThreshold ??
     stageHandoff?.threshold ??
     roleThreshold ??
     pipelineHandoff?.threshold ??
@@ -660,7 +721,9 @@ export function resolveStageHandoffConfig(
   // back to whichever layer configured maxRelays/stallLimit, preserving the
   // pre-preset behavior for that edge.
   const source: ResolvedStageHandoffConfig['source'] =
-    stageHandoff?.threshold !== undefined
+    overrideThreshold !== undefined
+      ? (`stage-override-${stageOverrides!.handoff!.scope}` as ResolvedStageHandoffConfig['source'])
+      : stageHandoff?.threshold !== undefined
       ? 'stage'
       : roleThreshold !== undefined
         ? 'role'

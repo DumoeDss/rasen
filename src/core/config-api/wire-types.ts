@@ -7,6 +7,7 @@
  */
 import type { ConfigScope, ConfigValueType } from '../config-keys.js';
 import type { ConfigSource } from '../effective-config.js';
+import type { ThresholdValue } from '../pipeline-registry/index.js';
 
 /** `{ projectId, name, root }` — a registered project, or the server's launch project. */
 export interface ProjectRef {
@@ -74,22 +75,49 @@ export interface ApiErrorBody {
   error: { code: string; message: string; fix?: string };
 }
 
+/** An effective value plus the scope-qualified layer that supplied it (`GET /api/v1/pipelines`). */
+export interface WireEffectiveValue<T> {
+  value: T;
+  source: string;
+}
+
 /**
- * A trimmed projection of a pipeline stage for the read-only gates inventory
- * (D5 of `config-page-coherence`) — only what a gates panel needs, not the
- * CLI's full `StageView` (no runtime/handoff/model detail). `gate: 'vet'`
- * marks a stage that ALWAYS pauses, distinct from an ordinary `gate: true`.
+ * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
+ * declared identity and its declared `gate` value (`false` | `true` | `'vet'`,
+ * where `'vet'` marks an always-pausing stage distinct from an ordinary
+ * `true`), it reports each EFFECTIVE per-stage value — gate (after the mask),
+ * model, handoff threshold, and runtime — with the layer that supplied it, so
+ * the UI renders resolution without reimplementing it.
  */
 export interface WirePipelineStage {
   id: string;
   role: string | null;
   skill: string | null;
+  /** The declared gate value from the pipeline definition, unmasked. */
   gate: false | true | 'vet';
+  /** The effective gate after the mask: `true` pauses, `false` auto-approves, `'vet'` always pauses. */
+  effectiveGate: WireEffectiveValue<boolean | 'vet'>;
+  effectiveModel: WireEffectiveValue<string | null>;
+  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
+  effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
 }
 
-/** A pipeline's identity plus its gate-carrying stage list, for `GET /api/v1/pipelines`. */
+/**
+ * A pipeline's identity, provenance, and per-stage effective configuration for
+ * `GET /api/v1/pipelines`. `provenance` marks a built-in versus a user pipeline;
+ * `sourceLayer` names the layer the definition resolved from.
+ */
 export interface WirePipeline {
   name: string;
   description: string;
+  provenance: 'built-in' | 'user';
+  sourceLayer: 'project' | 'user' | 'package';
   stages: WirePipelineStage[];
 }
+
+/** The `op` discriminated request body for `POST /api/v1/pipelines`. */
+export type PipelineMutationRequest =
+  | { op: 'import'; path: string; force?: boolean }
+  | { op: 'init'; name: string; output: string }
+  | { op: 'export'; name: string; path: string; force?: boolean }
+  | { op: 'delete'; name: string; force?: boolean };

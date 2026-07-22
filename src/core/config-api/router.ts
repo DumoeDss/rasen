@@ -22,10 +22,27 @@ import {
   type ResolveEffectiveConfigOptions,
   type StoreConfigLayer,
 } from '../effective-config.js';
-import { updateProjectConfigKey } from '../project-config.js';
+import {
+  readProjectConfig,
+  resolveAutopilotGatePolicy,
+  updateProjectConfigKey,
+  type ResolvedGatePolicy,
+} from '../project-config.js';
+import { getGlobalConfig } from '../global-config.js';
+import {
+  resolveHandoffThresholdLayers,
+  resolveModelConfigLayers,
+} from '../effective-config.js';
 import { readProjectRegistryState } from '../project-registry.js';
 import { pathIsDirectory } from '../file-state.js';
-import { listPipelinesWithInfo, loadPipelineByName } from '../pipeline-registry/index.js';
+import {
+  listPipelinesWithInfo,
+  loadPipelineByName,
+  resolvePipelineStageOverrides,
+  resolveEffectiveStage,
+  type EffectiveStageInputs,
+} from '../pipeline-registry/index.js';
+import { createPipelineSubmitter } from '../management-api/pipeline-submit.js';
 import { resolveProjectSelector, resolveSpaceSelector } from './project-addressing.js';
 import { serializeConfigEntry } from './serialize.js';
 import { writeGlobalConfigKeyMinimalDiff, GlobalConfigWriteError } from './global-write.js';
@@ -367,39 +384,119 @@ async function handleListProjects(res: http.ServerResponse): Promise<void> {
 }
 
 /**
- * Read-only gates inventory (D5): reuses the same in-process pipeline
- * registry loader the CLI uses (`listPipelinesWithInfo` +
- * `loadPipelineByName`), resolved against the server's launch project root
- * — no pipeline logic reimplemented here. A pipeline that fails to (re)load
- * between the listing and load calls (e.g. deleted mid-request) is skipped
- * rather than failing the whole response.
+ * The per-root resolution bundle a space's pipelines resolve their effective
+ * per-stage values against. Derived from a resolved config context so the
+ * pipeline registry root, the config-family instance layer, the model/handoff
+ * layers, and the autopilot.gates mask base all address the SAME space (design
+ * D1): a store space resolves the store's own root as both the pipeline
+ * registry root and the store config layer; a project space uses its root with
+ * the inherited store layer.
+ */
+interface PipelineResolutionBundle {
+  pipelineRoot: string | undefined;
+  effOptions: ResolveEffectiveConfigOptions;
+  inputsBase: Omit<EffectiveStageInputs, 'overrides'>;
+}
+
+function pipelineResolutionBundle(context: ConfigContext): PipelineResolutionBundle {
+  const globalConfig = getGlobalConfig();
+  if (context.kind === 'store') {
+    const { storeId, storeRoot } = context;
+    // A store space reads the store's own config as the store layer (mirroring
+    // resolveEffectiveConfig's store context), so model/handoff/base sources
+    // report `store` consistently with the family-instance sources.
+    const storeConfig = readProjectConfig(storeRoot);
+    const basePolicy = resolveAutopilotGatePolicy(null, false, globalConfig, storeConfig);
+    return {
+      pipelineRoot: storeRoot,
+      effOptions: { store: { storeId, storeRoot } },
+      inputsBase: {
+        basePolicy,
+        configLayers: resolveHandoffThresholdLayers(undefined, storeRoot),
+        modelLayers: resolveModelConfigLayers(undefined, storeRoot),
+      },
+    };
+  }
+
+  const root = context.root;
+  const storeLayer = context.storeLayer;
+  const storeRoot = storeLayer?.storeRoot;
+  const projectConfig = root ? readProjectConfig(root) : null;
+  const storeConfig = storeRoot ? readProjectConfig(storeRoot) : null;
+  const basePolicy = resolveAutopilotGatePolicy(projectConfig, false, globalConfig, storeConfig);
+  return {
+    pipelineRoot: root,
+    effOptions: { projectRoot: root, store: storeLayer },
+    inputsBase: {
+      basePolicy,
+      configLayers: resolveHandoffThresholdLayers(root, storeRoot),
+      modelLayers: resolveModelConfigLayers(root, storeRoot),
+    },
+  };
+}
+
+/**
+ * Pipelines inventory endpoint (pipeline-http-api): the pipelines available to
+ * the addressed space, each stage reporting its declared gate PLUS its effective
+ * gate/model/handoff/runtime with the layer that supplied each — computed
+ * through the same in-process resolvers `rasen pipeline show` uses
+ * (`resolvePipelineStageOverrides` + `resolveEffectiveStage`), no resolution
+ * reimplemented here. A pipeline that fails to (re)load between the listing and
+ * load calls (e.g. deleted mid-request) is skipped rather than failing the whole
+ * response.
  */
 async function handleListPipelines(
   res: http.ServerResponse,
+  url: URL,
   context: ConfigApiContext
 ): Promise<void> {
-  const projectRoot = context.launchProjectRoot ?? undefined;
-  const infos = listPipelinesWithInfo(projectRoot);
+  const ctx = await resolveConfigContext(
+    firstQueryValue(url, 'project'),
+    firstQueryValue(url, 'space'),
+    context
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
+    return;
+  }
+
+  const bundle = pipelineResolutionBundle(ctx.context);
+  const infos = listPipelinesWithInfo(bundle.pipelineRoot);
   const pipelines: WirePipeline[] = [];
   for (const info of infos) {
     let pipeline;
     try {
-      pipeline = loadPipelineByName(info.name, projectRoot);
+      pipeline = loadPipelineByName(info.name, bundle.pipelineRoot);
     } catch {
       continue;
     }
+    const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
+    const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
     pipelines.push({
       name: pipeline.name,
       description: pipeline.description ?? '',
-      stages: pipeline.stages.map((stage) => ({
-        id: stage.id,
-        role: stage.role ?? null,
-        skill: stage.skill ?? null,
-        gate: stage.gate,
-      })),
+      provenance: info.source === 'package' ? 'built-in' : 'user',
+      sourceLayer: info.source,
+      stages: pipeline.stages.map((stage) => {
+        const eff = resolveEffectiveStage(stage, pipeline, inputs);
+        return {
+          id: eff.id,
+          role: eff.role,
+          skill: eff.skill,
+          gate: eff.declaredGate,
+          effectiveGate: { value: eff.gate.effective, source: eff.gate.source },
+          effectiveModel: { value: eff.model.value, source: eff.model.source },
+          effectiveHandoff: { value: eff.handoff.threshold, source: eff.handoff.source },
+          effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
+        };
+      }),
     });
   }
-  sendJson(res, 200, { pipelines });
+  sendJson(res, 200, {
+    project: contextProjectRef(ctx.context),
+    store: contextStoreRef(ctx.context),
+    pipelines,
+  });
 }
 
 /**
@@ -703,6 +800,13 @@ async function handleDeleteConfigKey(
 export function createRouter(
   context: ConfigApiContext
 ): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> {
+  // The pipeline-library mutation bridge (pipeline-http-api design D6): its own
+  // cap-1 concurrency, admitting only the four pipeline bounded-cli ops through
+  // the shared admission whitelist. GET /api/v1/pipelines stays this router's
+  // read handler; POST rides this bridge (the whole path stays in config-api so
+  // the read contract is unmoved).
+  const submitPipeline = createPipelineSubmitter(context);
+
   return async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const pathname = url.pathname;
@@ -736,11 +840,38 @@ export function createRouter(
     }
 
     if (pathname === '/api/v1/pipelines') {
-      if (req.method !== 'GET') {
-        sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on /api/v1/pipelines.`);
+      if (req.method === 'GET') {
+        await handleListPipelines(res, url, context);
         return;
       }
-      await handleListPipelines(res, context);
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (!body.ok) {
+          sendError(res, body.status, body.code, body.message);
+          return;
+        }
+        // The bridge guards and admits its own input (unknown op → 400,
+        // relative path / option-shaped name → 400, all before any spawn).
+        const result = await submitPipeline(body.value ?? {});
+        if (!result.ok) {
+          res.writeHead(result.status, JSON_HEADERS);
+          res.end(
+            JSON.stringify({
+              error: {
+                code: result.code,
+                message: result.message,
+                ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+                ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              },
+            })
+          );
+          return;
+        }
+        sendJson(res, result.status, result.response);
+        return;
+      }
+      // PUT/DELETE (and any other method) on the path are rejected (design D6).
+      sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on /api/v1/pipelines.`);
       return;
     }
 

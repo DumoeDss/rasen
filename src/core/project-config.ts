@@ -157,13 +157,15 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Per-agent model configuration'),
 
-  // Optional: per-pipeline, per-stage config overrides keyed by pipeline name
-  // — the planning-root storage side of the
-  // `pipelines.<name>.{gates,models,handoff}.<stage>` config-key families,
-  // serving both the project and (a store root's own) store layers. Inner
-  // objects `.passthrough()` so an unknown sub-key survives the schema; the
-  // resilient parser below drops invalid leaves with a warning. Shares nothing
-  // with the `rasen/pipelines/` directory namespace.
+  // Optional: per-pipeline config overrides keyed by pipeline name — the
+  // planning-root storage side of the
+  // `pipelines.<name>.{gates,models,handoff}.<stage>` and
+  // `pipelines.<name>.runtimes.<role>` config-key families, serving both the
+  // project and (a store root's own) store layers. `gates`/`models`/`handoff`
+  // are keyed by stage; `runtimes` by role. Inner objects `.passthrough()` so
+  // an unknown sub-key survives the schema; the resilient parser below drops
+  // invalid leaves with a warning. Shares nothing with the `rasen/pipelines/`
+  // directory namespace.
   pipelines: z
     .record(
       z.string(),
@@ -172,11 +174,12 @@ export const ProjectConfigSchema = z.object({
           gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
           models: z.record(z.string(), z.string().min(1)).optional(),
           handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+          runtimes: z.record(z.string(), z.enum(['claude', 'codex'])).optional(),
         })
         .passthrough()
     )
     .optional()
-    .describe('Per-pipeline, per-stage config overrides keyed by pipeline name'),
+    .describe('Per-pipeline config overrides keyed by pipeline name'),
 });
 
 /** Valid `archive.timing` values. */
@@ -337,9 +340,9 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
     const entry: PipelineEntry = {};
 
     for (const [axis, axisRaw] of Object.entries(pipelineRaw as Record<string, unknown>)) {
-      if (axis !== 'gates' && axis !== 'models' && axis !== 'handoff') {
+      if (axis !== 'gates' && axis !== 'models' && axis !== 'handoff' && axis !== 'runtimes') {
         console.warn(
-          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, or handoff); ignoring it.`
+          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, handoff, or runtimes); ignoring it.`
         );
         continue;
       }
@@ -351,17 +354,22 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
       const gates: Record<string, 'on' | 'off'> = {};
       const models: Record<string, string> = {};
       const handoff: Record<string, ThresholdValue> = {};
-      for (const [stage, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
-        const label = `pipelines.${pipelineName}.${axis}.${stage}`;
+      const runtimes: Record<string, 'claude' | 'codex'> = {};
+      // `gates`/`models`/`handoff` leaves are keyed by stage; `runtimes` by role.
+      for (const [leafKey, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
+        const label = `pipelines.${pipelineName}.${axis}.${leafKey}`;
         if (axis === 'gates') {
-          if (leaf === 'on' || leaf === 'off') gates[stage] = leaf;
+          if (leaf === 'on' || leaf === 'off') gates[leafKey] = leaf;
           else console.warn(`Invalid '${label}' field in config (must be 'on' or 'off')`);
         } else if (axis === 'models') {
-          if (typeof leaf === 'string' && leaf.length > 0) models[stage] = leaf;
+          if (typeof leaf === 'string' && leaf.length > 0) models[leafKey] = leaf;
           else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
+        } else if (axis === 'runtimes') {
+          if (leaf === 'claude' || leaf === 'codex') runtimes[leafKey] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be 'claude' or 'codex')`);
         } else {
           const parsed = thresholdSchema('threshold').safeParse(leaf);
-          if (parsed.success) handoff[stage] = parsed.data;
+          if (parsed.success) handoff[leafKey] = parsed.data;
           else
             console.warn(
               `Invalid '${label}' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
@@ -371,6 +379,7 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
       if (axis === 'gates' && Object.keys(gates).length > 0) entry.gates = gates;
       if (axis === 'models' && Object.keys(models).length > 0) entry.models = models;
       if (axis === 'handoff' && Object.keys(handoff).length > 0) entry.handoff = handoff;
+      if (axis === 'runtimes' && Object.keys(runtimes).length > 0) entry.runtimes = runtimes;
     }
 
     if (Object.keys(entry).length > 0) result[pipelineName] = entry;

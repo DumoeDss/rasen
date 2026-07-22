@@ -50,18 +50,26 @@ export function groupEntries(entries: WireConfigEntry[]): GroupedEntries[] {
 
 /**
  * The tab layout (design D2): registry groups mapped to page tabs, in tab
- * order. The `Workflow` tab is interim — it carries the Workflow and Autopilot
- * groups (with the gates inventory) exactly as they render today, until W3
- * moves them to the pipeline surface. Any registry group not named here falls
- * into the trailing {@link OTHER_TAB} bucket so no key can silently vanish.
+ * order. The config page settles at exactly these four tabs — the interim
+ * Workflow tab is gone. The Workflow, Autopilot, and Pipelines groups no longer
+ * render here at all (see {@link EXCLUDED_GROUPS}): those keys are owned by the
+ * Pipelines page. Any OTHER registry group not named here still falls into the
+ * trailing {@link OTHER_TAB} bucket so no key can silently vanish.
  */
 export const TAB_MAP: ReadonlyArray<{ tab: string; groups: readonly string[] }> = [
   { tab: 'General', groups: ['Profile', 'Appearance', 'Behavior'] },
   { tab: 'Project', groups: ['Project', 'Archive'] },
   { tab: 'Privacy', groups: ['Telemetry'] },
   { tab: 'Advanced', groups: ['Advanced'] },
-  { tab: 'Workflow', groups: ['Workflow', 'Autopilot'] },
 ];
+
+/**
+ * Registry groups the config page deliberately does NOT render (design D5): the
+ * Pipelines page claims them (the role-matrix Defaults table + per-pipeline
+ * gate/model/handoff/runtime overrides). Excluded before the trailing bucket so
+ * they don't reappear there.
+ */
+export const EXCLUDED_GROUPS: ReadonlySet<string> = new Set(['Workflow', 'Autopilot', 'Pipelines']);
 
 /** The trailing bucket tab for any registry group not claimed by {@link TAB_MAP}. */
 export const OTHER_TAB = 'Other';
@@ -98,7 +106,9 @@ export function tabbedEntries(
     if (tabGroups.length > 0) tabs.push({ tab, groups: tabGroups });
   }
 
-  const unmapped = visible.filter((e) => !MAPPED_GROUPS.has(e.definition.group));
+  const unmapped = visible.filter(
+    (e) => !MAPPED_GROUPS.has(e.definition.group) && !EXCLUDED_GROUPS.has(e.definition.group)
+  );
   if (unmapped.length > 0) {
     tabs.push({ tab: OTHER_TAB, groups: groupEntries(unmapped) });
   }
