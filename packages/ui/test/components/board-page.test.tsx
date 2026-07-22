@@ -689,6 +689,49 @@ describe('BoardPage', () => {
       expect(client.listChanges).toHaveBeenCalledWith('project:/repo/feat-x');
     });
 
+    it('switching keeps the previous board visible and marks it refreshing instead of wiping to the loading state', async () => {
+      const baseChange = {
+        schemaName: 'spec-driven',
+        artifacts: [],
+        applyReady: false,
+        isComplete: false,
+        taskProgress: { total: 2, completed: 0 },
+        hasRunFiles: false,
+      };
+      let releaseSecond!: (value: unknown) => void;
+      (client.listChanges as any)
+        .mockResolvedValueOnce({ changes: [{ ...baseChange, name: 'main-change' }], errors: [] })
+        .mockImplementationOnce(() => new Promise((resolve) => (releaseSecond = resolve)));
+      (client.listRuns as any).mockResolvedValue({ runs: [] });
+      (client.listSpaceWorktrees as any).mockResolvedValue(twoWorktrees);
+
+      await mountAtSpace('/p/proj_x/board');
+      expect(container.textContent).toContain('main-change');
+
+      const chips = Array.from(container.querySelectorAll('[data-testid="worktree-chip"]'));
+      await act(async () => {
+        (chips[1] as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicrotasks();
+      });
+
+      // Refetch pending: the old board stays visible and is marked refreshing —
+      // no full-page loading wipe (that state is reserved for first load and
+      // space switches).
+      expect(container.querySelector('.board-page__loading')).toBeNull();
+      expect(container.textContent).toContain('main-change');
+      expect(container.querySelector('[data-refreshing]')).not.toBeNull();
+
+      await act(async () => {
+        releaseSecond({ changes: [{ ...baseChange, name: 'wt-only-change' }], errors: [] });
+        await flushMicrotasks();
+      });
+
+      // New source's data replaced the old board; the refreshing mark cleared.
+      expect(container.textContent).toContain('wt-only-change');
+      expect(container.textContent).not.toContain('main-change');
+      expect(container.querySelector('[data-refreshing]')).toBeNull();
+    });
+
     it('renders no panel for a single-worktree project or a store space', async () => {
       (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
       (client.listRuns as any).mockResolvedValue({ runs: [] });
