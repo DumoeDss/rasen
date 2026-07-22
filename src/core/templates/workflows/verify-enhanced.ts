@@ -90,7 +90,7 @@ VERIFY VERDICT: <CLEAN|BLOCKED> — Blocker:<n> Major:<n> Minor:<n> Trivial:<n>
 
 The verdict is **CLEAN if and only if no Blocker and no Major is open** (the review-cycle termination invariant); otherwise **BLOCKED**. This standardizes the vocabulary and the pass rule only; it does not by itself enforce an archive refusal.
 
-**Test-evidence block (only when tests ran).** If verification executed the project's test or gate suite, record a fingerprinted test-evidence block into the report(s) so \`/rasen:ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
+**Test-evidence block (only when tests ran).** If verification executed the project's test or gate suite, record a fingerprinted test-evidence block into the report(s) so \`rasen-ship\`'s evidence-based test-skip gate can honor it — the same schema \`review-cycle-report.md\` records:
 
 \`\`\`
 TEST EVIDENCE
@@ -135,8 +135,8 @@ Display a summary with pass/fail status for each stage:
 
 - This command coexists with the original \`rasen-verify-change\` skill (pure artifact consistency check)
 - The enhanced version adds expert review layers on top of artifact checks
-- Reports written to the work directory are consumed by \`/rasen:retro\` and \`/rasen:archive\`
-- \`/rasen:ship\` checks for verification reports before proceeding`;
+- Reports written to the work directory are consumed by \`rasen-retro\` and \`rasen-archive-change\`
+- \`rasen-ship\` checks for verification reports before proceeding`;
 
 export function getVerifyEnhancedSkillTemplate(): SkillTemplate {
   return {

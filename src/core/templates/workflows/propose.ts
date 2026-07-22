@@ -18,13 +18,13 @@ I'll create a change with artifacts:
 - design.md (how)
 - tasks.md (implementation steps)
 
-When ready to implement, run /rasen:apply
+When ready to implement, run rasen-apply-change
 
 ---
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult \`/codebase-design\` (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`rasen status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
+**Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult the \`rasen-codebase-design\` skill (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`rasen status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
 
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
 
@@ -58,7 +58,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    Office-hours may already have produced a design/validation doc for this topic. Before drafting, look for it in TWO locations, both resolved from the status JSON (do NOT hardcode \`rasen/...\` paths):
    - **(a) Active-change case:** \`office-hours-design.md\` inside \`changeRoot\`.
-   - **(b) No-active-change case:** \`<change-name>.md\` in the \`office-hours\` directory alongside the changes directory (derive it from \`planningHome.changesDir\` — the \`office-hours\` sibling of that changes dir). This is discoverable because \`/office-hours\` derives its filename slug the SAME way \`/rasen:propose\` derives a change name, so when the change name matches the topic slug the file lines up.
+   - **(b) No-active-change case:** \`<change-name>.md\` in the \`office-hours\` directory alongside the changes directory (derive it from \`planningHome.changesDir\` — the \`office-hours\` sibling of that changes dir). This is discoverable because \`/office-hours\` derives its filename slug the SAME way \`rasen-propose\` derives a change name, so when the change name matches the topic slug the file lines up.
 
    If either file is found, READ it and incorporate its findings/decisions (problem framing, demand evidence, chosen approach, premises) into the proposal, naming office-hours as the source context. If neither exists, proceed normally — office-hours is optional input, not a precondition. (Best-effort: if the change name differs from the office-hours slug the sibling-dir file won't be found; the user may point you at it.)
 
@@ -105,7 +105,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run \`/rasen:apply\` or ask me to implement to start working on the tasks."
+- Prompt: "Run \`rasen-apply-change\` or ask me to implement to start working on the tasks."
 
 **Artifact Creation Guidelines**
 

@@ -24,9 +24,9 @@ Use when: "retro", "retrospective", "what did we ship?", "weekly retro", "global
 
 Parse the input to determine retro scope:
 
-- \`/rasen:retro <change-name>\` → **Change-scoped**: analyze a specific change
-- \`/rasen:retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
-- \`/rasen:retro global\` → **Global**: cross-project retrospective
+- \`rasen-retro <change-name>\` → **Change-scoped**: analyze a specific change
+- \`rasen-retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
+- \`rasen-retro global\` → **Global**: cross-project retrospective
 
 ### 2A. Change-Scoped Retro
 
@@ -162,8 +162,8 @@ After writing the report:
 
 ## Integration Notes
 
-- Change-scoped retro is most valuable after \`/rasen:ship\` completes
-- The retro report is consumed by \`/rasen:archive\` as part of the archive quality summary
+- Change-scoped retro is most valuable after \`rasen-ship\` completes
+- The retro report is consumed by \`rasen-archive-change\` as part of the archive quality summary
 - General retro can be run weekly as a habit — suggest it proactively at the end of a work week`;
 
 export function getRetroCommandSkillTemplate(): SkillTemplate {

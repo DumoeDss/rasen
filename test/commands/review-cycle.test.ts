@@ -150,9 +150,9 @@ describe('review-cycle workflow', () => {
       expect(skillText).toContain('run-state');
     });
 
-    it('shares the playbook with /rasen:auto (it is auto\'s loop stage)', () => {
+    it('shares the playbook with rasen-auto (it is auto\'s loop stage)', () => {
       expect(skillText.toLowerCase()).toContain('shares the orchestration playbook with');
-      expect(skillText).toContain('/rasen:auto');
+      expect(skillText).toContain('rasen-auto');
     });
   });
 

@@ -118,6 +118,6 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
   config.workflows = installedWorkflows;
   saveGlobalConfig(config);
 
-  console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows`);
-  console.log("New in this version: /rasen:propose. Try 'rasen profile use core' for the streamlined experience.");
+  console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows (${installedWorkflows.join(', ')})`);
+  console.log("New in this version: the rasen-propose skill (combines new + ff). Try 'rasen config profile core' for the streamlined 4-workflow experience.");
 }

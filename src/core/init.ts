@@ -1,7 +1,7 @@
 /**
  * Init Command
  *
- * Sets up Rasen with Agent Skills and /rasen:* slash commands.
+ * Sets up Rasen with Agent Skills (invoked by their canonical rasen-* skill name).
  * This is the unified setup command that replaces both the old init and experimental commands.
  */
 
@@ -924,10 +924,10 @@ export class InitCommand {
     console.log();
     if (activeWorkflows.includes('propose')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /rasen:propose "your idea"');
+      console.log('  Start your first change: run the rasen-propose skill with "your idea"');
     } else if (activeWorkflows.includes('new')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /rasen:new "your idea"');
+      console.log('  Start your first change: run the rasen-new-change skill with "your idea"');
     } else {
       console.log("Done. Run 'rasen profile' to configure your workflows.");
     }

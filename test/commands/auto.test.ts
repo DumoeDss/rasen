@@ -34,7 +34,7 @@ describe('auto workflow (orchestrated autopilot)', () => {
     it('pre-flight offers automatic session relay alongside continue/manual', () => {
       expect(skillText).toContain('automatic relay now');
       expect(skillText).toContain('Step H.7');
-      expect(skillText).toContain('/rasen:handoff');
+      expect(skillText).toContain('rasen-handoff');
     });
 
     it('defaults to the small-feature pipeline (no auto-escalation)', () => {

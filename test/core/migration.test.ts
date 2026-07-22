@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
 import os from 'os';
 import { randomUUID } from 'crypto';
@@ -73,6 +73,22 @@ describe('migration', () => {
     const config = readRawConfig();
     expect(config.profile).toBe('custom');
     expect(config.workflows).toEqual(['explore', 'apply']);
+  });
+
+  it('prints the migration message with the canonical rasen-propose skill name and the detected workflow list, not the retired /rasen: colon form', async () => {
+    await writeSkill(projectDir, 'rasen-explore');
+    await writeSkill(projectDir, 'rasen-apply-change');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    migrateIfNeeded(projectDir, [ensureClaudeTool()]);
+    const messages = logSpy.mock.calls.map((call) => call[0]);
+    logSpy.mockRestore();
+
+    expect(messages).toContain('Migrated: custom profile with 2 workflows (explore, apply)');
+    expect(messages).toContain(
+      "New in this version: the rasen-propose skill (combines new + ff). Try 'rasen config profile core' for the streamlined 4-workflow experience."
+    );
+    expect(messages.join('\n')).not.toContain('/rasen:');
   });
 
   it('migrates commands-only (pre-retirement) installs to a custom profile', async () => {

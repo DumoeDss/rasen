@@ -50,7 +50,7 @@ ${STORE_SELECTION_GUIDANCE}
    **If all artifacts are complete (\`isComplete: true\`)**:
    - Congratulate the user
    - Show final status including the schema used
-   - Suggest: "All artifacts created! Next: implement with \`/rasen:apply\`." Archive is a later, post-implementation step — do NOT offer it as an immediate co-equal option before implementation.
+   - Suggest: "All artifacts created!" then relay the response's \`nextWorkflows\` (each entry named by this tool's invocation for that skill) as the next action; if none was returned this turn, run \`rasen status --change "<name>" --json\` to obtain them. Archive is a later, post-implementation step — do NOT offer it as an immediate co-equal option before implementation.
    - STOP
 
    ---

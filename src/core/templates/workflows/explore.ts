@@ -206,7 +206,7 @@ You: [reads codebase]
 
 **User is stuck mid-implementation:**
 \`\`\`
-User: /rasen:explore add-auth-system
+User: rasen-explore add-auth-system
       The OAuth integration is more complex than expected
 
 You: [reads change artifacts]
@@ -283,13 +283,13 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 ## Prototype to Settle a Stuck Question
 
-When a design question is stuck and only building will settle it, you may reach for \`/prototype\` — a throwaway probe that answers the question with running code. Capture the *answer* in the change directory (\`design.md\` Decisions or a change-directory sidecar), then delete the prototype code afterward. This stays within explore's "capture, don't implement" stance: the artifact is the decision, not the code.
+When a design question is stuck and only building will settle it, you may reach for the \`rasen-prototype\` skill — a throwaway probe that answers the question with running code. Capture the *answer* in the change directory (\`design.md\` Decisions or a change-directory sidecar), then delete the prototype code afterward. This stays within explore's "capture, don't implement" stance: the artifact is the decision, not the code.
 
 ---
 
 ## Guardrails
 
-- **Don't implement** - Never write code or implement features. Creating Rasen artifacts is fine, writing application code is not. The single exception is a throwaway \`/prototype\` probe (see "Prototype to Settle a Stuck Question") — and its code MUST be deleted once the answer is captured.
+- **Don't implement** - Never write code or implement features. Creating Rasen artifacts is fine, writing application code is not. The single exception is a throwaway \`rasen-prototype\` probe (see "Prototype to Settle a Stuck Question") — and its code MUST be deleted once the answer is captured.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally

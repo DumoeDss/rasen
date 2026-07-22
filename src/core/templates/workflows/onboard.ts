@@ -37,7 +37,7 @@ rasen --version 2>&1 || echo "CLI_NOT_INSTALLED"
 \`\`\`
 
 **If CLI not installed:**
-> Rasen CLI is not installed. Install it first, then come back to \`/rasen:onboard\`.
+> Rasen CLI is not installed. Install it first, then come back to \`rasen-onboard\`.
 
 Stop here if not installed.
 
@@ -164,7 +164,7 @@ Spend 1-2 minutes investigating the relevant code:
 │   [Optional: ASCII diagram if helpful]  │
 └─────────────────────────────────────────┘
 
-Explore mode (\`/rasen:explore\`) is for this kind of thinking—investigating before implementing. You can use it anytime you need to think through a problem.
+Explore mode (\`rasen-explore\`) is for this kind of thinking—investigating before implementing. You can use it anytime you need to think through a problem.
 
 Now let's create a change to hold our work.
 \`\`\`
@@ -480,24 +480,24 @@ This same rhythm works for any size change—a small fix or a major feature.
 
  | Command           | What it does                               |
  |-------------------|--------------------------------------------|
- | \`/rasen:propose\` | Create a change and generate all artifacts |
- | \`/rasen:explore\` | Think through problems before/during work  |
- | \`/rasen:apply\`   | Implement tasks from a change              |
- | \`/rasen:archive\` | Archive a completed change                 |
+ | \`rasen-propose\` | Create a change and generate all artifacts |
+ | \`rasen-explore\` | Think through problems before/during work  |
+ | \`rasen-apply-change\`   | Implement tasks from a change              |
+ | \`rasen-archive-change\` | Archive a completed change                 |
 
 **Additional commands:**
 
  | Command            | What it does                                             |
  |--------------------|----------------------------------------------------------|
- | \`/rasen:new\`      | Start a new change, step through artifacts one at a time |
- | \`/rasen:continue\` | Continue working on an existing change                   |
- | \`/rasen:verify\`   | Verify implementation matches artifacts                  |
+ | \`rasen-new-change\`      | Start a new change, step through artifacts one at a time |
+ | \`rasen-continue-change\` | Continue working on an existing change                   |
+ | \`rasen-verify-change\`   | Verify implementation matches artifacts                  |
 
 ---
 
 ## What's Next?
 
-Try \`/rasen:propose\` on something you actually want to build. You've got the rhythm now!
+Try \`rasen-propose\` on something you actually want to build. You've got the rhythm now!
 \`\`\`
 
 ---
@@ -512,8 +512,8 @@ If the user says they need to stop, want to pause, or seem disengaged:
 No problem! Your change is saved at the \`changeRoot\` reported by \`rasen status --change "<name>" --json\`.
 
 To pick up where we left off later:
-- \`/rasen:continue <name>\` - Resume artifact creation
-- \`/rasen:apply <name>\` - Jump to implementation (if tasks exist)
+- \`rasen-continue-change <name>\` - Resume artifact creation
+- \`rasen-apply-change <name>\` - Jump to implementation (if tasks exist)
 
 The work won't be lost. Come back whenever you're ready.
 \`\`\`
@@ -531,20 +531,20 @@ If the user says they just want to see the commands or skip the tutorial:
 
  | Command                  | What it does                               |
  |--------------------------|--------------------------------------------|
- | \`/rasen:propose <name>\` | Create a change and generate all artifacts |
- | \`/rasen:explore\`        | Think through problems (no code changes)   |
- | \`/rasen:apply <name>\`   | Implement tasks                            |
- | \`/rasen:archive <name>\` | Archive when done                          |
+ | \`rasen-propose <name>\` | Create a change and generate all artifacts |
+ | \`rasen-explore\`        | Think through problems (no code changes)   |
+ | \`rasen-apply-change <name>\`   | Implement tasks                            |
+ | \`rasen-archive-change <name>\` | Archive when done                          |
 
 **Additional commands:**
 
  | Command                   | What it does                        |
  |---------------------------|-------------------------------------|
- | \`/rasen:new <name>\`      | Start a new change, step by step    |
- | \`/rasen:continue <name>\` | Continue an existing change         |
- | \`/rasen:verify <name>\`   | Verify implementation               |
+ | \`rasen-new-change <name>\`      | Start a new change, step by step    |
+ | \`rasen-continue-change <name>\` | Continue an existing change         |
+ | \`rasen-verify-change <name>\`   | Verify implementation               |
 
-Try \`/rasen:propose\` to start your first change.
+Try \`rasen-propose\` to start your first change.
 \`\`\`
 
 Exit gracefully.

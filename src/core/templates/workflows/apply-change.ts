@@ -15,7 +15,7 @@ export function getApplyChangeSkillTemplate(): SkillTemplate {
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Implementation disciplines (optional):** For test-first work, consult \`/tdd\` — agree the seams up front, drive red→green, and keep only the tests worth keeping. For changes touching destructive operations (\`rm -rf\`, \`DROP TABLE\`, force-push), consult \`/careful\` before running them. These are conditional references, not required steps; don't inline the expert bodies.
+**Implementation disciplines (optional):** For test-first work, consult the \`rasen-tdd\` skill — agree the seams up front, drive red→green, and keep only the tests worth keeping. For changes touching destructive operations (\`rm -rf\`, \`DROP TABLE\`, force-push), consult the \`rasen-careful\` skill before running them. These are conditional references, not required steps; don't inline the expert bodies.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
@@ -28,7 +28,7 @@ ${STORE_SELECTION_GUIDANCE}
    - Auto-select if only one active change exists
    - If ambiguous, run \`rasen list --json\` to get available changes and use the **AskUserQuestion tool** to let the user select
 
-   Always announce: "Using change: <name>" and how to override (e.g., \`/rasen:apply <other>\`).
+   Always announce: "Using change: <name>" and how to override (e.g., \`rasen-apply-change <other>\`).
 
 2. **Check status to understand the schema**
    \`\`\`bash
@@ -53,7 +53,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    **Handle states:**
    - If \`state: "blocked"\` (missing artifacts): show message, suggest using rasen-continue-change
-   - If \`state: "all_done"\`: congratulate, then steer to verify + ship (\`/rasen:verify\` → \`/rasen:ship\`); name archive only as the post-delivery step, NOT the immediate next step
+   - If \`state: "all_done"\`: congratulate, then relay the response's \`nextWorkflows\` (each entry named by this tool's invocation for that skill) as the next action. Do NOT hardcode a specific downstream workflow as a literal.
    - Otherwise: proceed to implementation
 
 4. **Read context files**
@@ -91,7 +91,7 @@ ${STORE_SELECTION_GUIDANCE}
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: steer to \`/rasen:verify\` then \`/rasen:ship\`; mention archive only as the post-delivery step
+   - If all done: relay the \`nextWorkflows\` from step 3's response as the next action. If you have not run a \`nextWorkflows\`-bearing command this turn, run \`rasen status --change "<name>" --json\` to obtain them.
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -122,7 +122,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Next: verify (\`/rasen:verify\`) then ship (\`/rasen:ship\`). Archive comes after delivery.
+All tasks complete! Next: <relay each nextWorkflows entry here as "<workflow> — <reason>">. If none were returned this turn, run \`rasen status --change "<name>" --json\` to obtain them.
 \`\`\`
 
 **Output On Pause (Issue Encountered)**

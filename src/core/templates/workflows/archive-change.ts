@@ -96,7 +96,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 3.5. **Check verification verdict (HARD GATE)**
 
-   Read \`verification-report.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`/rasen:verify\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
+   Read \`verification-report.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`rasen-verify-change\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
    - \`VERIFY VERDICT: BLOCKED\` → HARD GATE: REFUSE to archive by default; proceed only on an explicit, blocker-naming user override (e.g. "Archive anyway despite BLOCKED verification"); REFUSE outright non-interactively.
    - \`VERIFY VERDICT: CLEAN\` → no verification-related gate; proceed.
    - No \`verification-report.md\` → do NOT hard-gate on verification absence (a change may legitimately archive without a formal verify pass); a soft note at most.

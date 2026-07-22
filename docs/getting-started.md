@@ -5,9 +5,9 @@ This guide explains how rasen works after you've installed and initialized it. F
 > **Where do I type these commands?** Two places, and mixing them up is the most common early stumble.
 >
 > - `rasen ...` commands (like `rasen init`) run in your **terminal**.
-> - `/rasen:...` commands (like `/rasen:propose`) run in your **AI assistant's chat**, the same box where you'd ask it to write code.
+> - Skills (like `rasen-propose`) run in your **AI assistant's chat**, the same box where you'd ask it to write code.
 >
-> There's no separate "interactive mode" to start. You just type the slash command in chat and your assistant takes it from there. Full explanation: [How Commands Work](how-commands-work.md).
+> There's no separate "interactive mode" to start. You just invoke the skill by name in chat and your assistant takes it from there. Full explanation: [How Commands Work](how-commands-work.md).
 
 ## Your First Five Minutes
 
@@ -16,15 +16,15 @@ The whole loop, with each step labeled by where it happens:
 ```text
 TERMINAL   $ npm install -g @atelierai/rasen@latest
 TERMINAL   $ cd your-project && rasen init
-AI CHAT      /rasen:explore                    (optional: think it through first)
-AI CHAT      /rasen:propose add-dark-mode      (AI drafts the plan; you review it)
-AI CHAT      /rasen:apply                      (AI builds it)
-AI CHAT      /rasen:archive                    (specs updated, change filed away)
+AI CHAT      rasen-explore                    (optional: think it through first)
+AI CHAT      rasen-propose add-dark-mode      (AI drafts the plan; you review it)
+AI CHAT      rasen-apply-change                      (AI builds it)
+AI CHAT      rasen-archive-change                    (specs updated, change filed away)
 ```
 
 Two terminal steps to set up, then you live in chat. The rest of this guide unpacks what each step does and what you'll see.
 
-> **Not sure what to build yet? Start with `/rasen:explore`.** It's a no-stakes thinking partner that reads your codebase, weighs options, and sharpens a fuzzy idea into a concrete plan, all before any artifact or code exists. When the picture is clear, it hands off to `/rasen:propose`. This is the single best habit for working with an AI that will otherwise confidently build the wrong thing. See the [Explore guide](explore.md).
+> **Not sure what to build yet? Start with `rasen-explore`.** It's a no-stakes thinking partner that reads your codebase, weighs options, and sharpens a fuzzy idea into a concrete plan, all before any artifact or code exists. When the picture is clear, it hands off to `rasen-propose`. This is the single best habit for working with an AI that will otherwise confidently build the wrong thing. See the [Explore guide](explore.md).
 
 ## How It Works
 
@@ -33,16 +33,16 @@ Rasen is an autonomous harness: you supply the intent, and it drives the change 
 **Quick path (core command set):**
 
 ```text
-/rasen:explore ──► /rasen:propose ──► /rasen:apply ──► /rasen:sync ──► /rasen:archive
+rasen-explore ──► rasen-propose ──► rasen-apply-change ──► rasen-sync-specs ──► rasen-archive-change
    (optional)
 ```
 
-Start with `/rasen:explore` when you're figuring out what to do, or jump straight to `/rasen:propose` when you already know. Explore ships in both the default `full` profile and the slimmed-down `core` profile, so it's there unless you've picked a `custom` profile that leaves it out.
+Start with `rasen-explore` when you're figuring out what to do, or jump straight to `rasen-propose` when you already know. Explore ships in both the default `full` profile and the slimmed-down `core` profile, so it's there unless you've picked a `custom` profile that leaves it out.
 
 **Expanded path (step-by-step artifact control):**
 
 ```text
-/rasen:new ──► /rasen:continue ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
+rasen-new-change ──► rasen-continue-change ──► rasen-apply-change ──► rasen-verify-change ──► rasen-archive-change
 ```
 
 The default global profile is `full`, which installs every workflow command — you already have both paths above available. If you'd rather slim down to the essentials (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and then `rasen update`.
@@ -150,7 +150,7 @@ Let's walk through adding dark mode to an application.
 ### 1. Start the Change (Default)
 
 ```text
-You: /rasen:propose add-dark-mode
+You: rasen-propose add-dark-mode
 
 AI:  Created rasen/changes/add-dark-mode/
      ✓ proposal.md — why we're doing this, what's changing
@@ -160,7 +160,7 @@ AI:  Created rasen/changes/add-dark-mode/
      Ready for implementation!
 ```
 
-If you've enabled the expanded workflow profile, you can also do this as two steps: `/rasen:new` then `/rasen:continue` incrementally.
+If you've enabled the expanded workflow profile, you can also do this as two steps: `rasen-new-change` then `rasen-continue-change` incrementally.
 
 ### 2. What Gets Created
 
@@ -228,7 +228,7 @@ The system SHALL allow users to choose between light and dark themes.
 ### 3. Implement
 
 ```
-You: /rasen:apply
+You: rasen-apply-change
 
 AI:  Working through tasks...
      ✓ 1.1 Created ThemeContext with light/dark state
@@ -244,7 +244,7 @@ During implementation, if you discover the design needs adjustment, just update 
 ### 4. Archive
 
 ```
-You: /rasen:archive
+You: rasen-archive-change
 
 AI:  Archiving add-dark-mode...
      ✓ Merged specs into rasen/specs/ui/spec.md
@@ -274,7 +274,7 @@ rasen view
 
 ## Next Steps
 
-- [Explore First](explore.md) - Use `/rasen:explore` to think through an idea before you commit
+- [Explore First](explore.md) - Use `rasen-explore` to think through an idea before you commit
 - [Reviewing a Change](reviewing-changes.md) - What to check in the plan the AI drafts, before any code
 - [Writing Good Specs](writing-specs.md) - What a strong requirement and scenario look like
 - [Using Rasen in an Existing Project](existing-projects.md) - Start on a large brownfield codebase

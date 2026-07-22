@@ -178,7 +178,7 @@ describe('handoff workflow', () => {
       const autoText = getAutoCommandSkillTemplate().instructions;
       expect(autoText).toContain('## 0. Pre-flight context probe (once, non-blocking)');
       expect(autoText).toContain('rasen agent context --latest --json');
-      expect(autoText).toContain('/rasen:handoff');
+      expect(autoText).toContain('rasen-handoff');
     });
 
     it('auto pre-flight offers the three-way relay choice', () => {
