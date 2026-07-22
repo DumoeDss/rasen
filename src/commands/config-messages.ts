@@ -9,10 +9,12 @@ import type {
 
 export interface ConfigEditorMessages {
   unsetValue: string;
-  source: Record<'default' | 'global' | 'project' | 'env-override', string>;
+  source: Record<'default' | 'global' | 'store' | 'project' | 'env-override', string>;
   environmentOverrideNote: string;
   workflowsDescription: string;
   workflowsDisabled: string;
+  pinnedSpacesDescription: string;
+  pinnedSpacesDisabled: string;
   projectRequired: string;
   scopePrompt: (key: string) => string;
   projectScope: string;

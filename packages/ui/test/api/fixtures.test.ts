@@ -15,15 +15,18 @@ import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
+import { archiveFixture } from '../fixtures/archive.js';
+import { pipelinesFixture } from '../fixtures/pipelines.js';
 
 export { configListFixture, projectsListFixture, healthFixture, errorsFixture };
 export { sessionDetailFixture, sessionsListFixture };
+export { archiveFixture };
 
 describe('fixture ↔ mirror-type drift tripwire', () => {
   it('config-list fixture has plausible entries', () => {
     expect(configListFixture.entries.length).toBeGreaterThan(0);
     for (const entry of configListFixture.entries) {
-      expect(['default', 'global', 'project', 'env-override']).toContain(entry.source);
+      expect(['default', 'global', 'store', 'project', 'env-override']).toContain(entry.source);
       expect(['boolean', 'number', 'string', 'enum', 'array', 'threshold']).toContain(
         entry.definition.type
       );
@@ -87,5 +90,38 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     expect(sessionDetailFixture.session.id).toBe('sess-live-with-progress');
     expect(typeof sessionDetailFixture.tails.stdout).toBe('string');
     expect(typeof sessionDetailFixture.tails.stderr).toBe('string');
+  });
+
+  it('pipelines fixture reports per-stage effective values with sources (pipeline-http-api mirror drift alarm)', () => {
+    expect(pipelinesFixture.pipelines.length).toBeGreaterThan(0);
+    for (const pipeline of pipelinesFixture.pipelines) {
+      expect(['built-in', 'user']).toContain(pipeline.provenance);
+      expect(['project', 'user', 'package']).toContain(pipeline.sourceLayer);
+      for (const stage of pipeline.stages) {
+        expect(typeof stage.gate).toBe('boolean');
+        expect(typeof stage.effectiveGate.value).toBe('boolean');
+        expect(typeof stage.effectiveGate.source).toBe('string');
+        expect(typeof stage.effectiveRuntime.source).toBe('string');
+      }
+    }
+    // A built-in with a project-scope override on every axis of one stage.
+    const impl = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'implement')!;
+    expect(impl.effectiveModel.source).toBe('stage-override-project');
+    expect(impl.effectiveRuntime.value).toBe('codex');
+    // The reviewer stage carries an ordinary boolean pause gate (the vet type is retired).
+    const review = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'gate-review')!;
+    expect(review.gate).toBe(true);
+    expect(review.effectiveGate.value).toBe(true);
+  });
+
+  it('archive fixture covers portfolio-grouped and container-less archived changes with dates', () => {
+    expect(archiveFixture.changes.length).toBeGreaterThan(0);
+    for (const change of archiveFixture.changes) {
+      expect(typeof change.name).toBe('string');
+      expect(change.archivedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    // At least one change is under a portfolio container and at least one is not.
+    expect(archiveFixture.changes.some((c) => c.portfolio !== undefined)).toBe(true);
+    expect(archiveFixture.changes.some((c) => c.portfolio === undefined)).toBe(true);
   });
 });

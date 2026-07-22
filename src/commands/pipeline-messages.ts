@@ -28,7 +28,8 @@ export interface PipelineMessageValues {
   complete: undefined;
   recorded: undefined;
   bareWorkerLabel: undefined;
-  ignoredStorePointerWarning: { path: string; store: string };
+  inheritingStoreConfigNotice: { path: string; store: string };
+  inactiveStorePointerWarning: { path: string; store: string };
   selectedStoreRoot: { store: string; path: string };
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
@@ -43,7 +44,6 @@ export interface PipelineMessageValues {
   thresholdTokensRemaining: { tokens: number };
   stageMetaRole: { role: string };
   stageMetaRequires: { requires: string };
-  stageMetaGateVet: undefined;
   stageMetaGate: undefined;
   stageMetaReviewLoop: { maximum: number };
   stageMetaGoalLoop: { gate: string; maximum: number; stall: number };
@@ -116,7 +116,8 @@ export const PIPELINE_MESSAGE_KEYS = [
   'complete',
   'recorded',
   'bareWorkerLabel',
-  'ignoredStorePointerWarning',
+  'inheritingStoreConfigNotice',
+  'inactiveStorePointerWarning',
   'selectedStoreRoot',
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
@@ -131,7 +132,6 @@ export const PIPELINE_MESSAGE_KEYS = [
   'thresholdTokensRemaining',
   'stageMetaRole',
   'stageMetaRequires',
-  'stageMetaGateVet',
   'stageMetaGate',
   'stageMetaReviewLoop',
   'stageMetaGoalLoop',
@@ -275,8 +275,14 @@ export function formatPipelineRootSelectionNotice(
   locale: CliLocale = getCliLocale()
 ): string {
   const messages = getPipelineMessages(locale);
-  if (notice.kind === 'ignored-store-pointer') {
-    return messages.format('ignoredStorePointerWarning', {
+  if (notice.kind === 'inheriting-store-config') {
+    return messages.format('inheritingStoreConfigNotice', {
+      path: notice.filePath,
+      store: notice.storeId,
+    });
+  }
+  if (notice.kind === 'inactive-store-pointer') {
+    return messages.format('inactiveStorePointerWarning', {
       path: notice.filePath,
       store: notice.storeId,
     });

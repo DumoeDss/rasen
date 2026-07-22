@@ -95,6 +95,29 @@ describe('pipeline messages', () => {
     }, expected.locale)).toBe(expected.stale);
   });
 
+  it('formats the inheriting-store-config and inactive-store-pointer notices', () => {
+    const inheriting = formatPipelineRootSelectionNotice(
+      { kind: 'inheriting-store-config', filePath: '/repo/rasen/config.yaml', storeId: 'team-store' },
+      'en'
+    );
+    expect(inheriting).toContain("declares store 'team-store'");
+    expect(inheriting).toContain('configuration inherits from that store');
+
+    const inactive = formatPipelineRootSelectionNotice(
+      { kind: 'inactive-store-pointer', filePath: '/repo/rasen/config.yaml', storeId: 'team-store' },
+      'en'
+    );
+    expect(inactive).toContain('no such store is registered');
+    expect(inactive).toContain('rasen store register');
+
+    // zh-cn renders both without falling back to English.
+    const inheritingZh = formatPipelineRootSelectionNotice(
+      { kind: 'inheriting-store-config', filePath: '/repo/rasen/config.yaml', storeId: 'team-store' },
+      'zh-cn'
+    );
+    expect(inheritingZh).toContain('配置从该 Store 继承');
+  });
+
   it.each(CASES)('formats typed command errors in $locale', (expected) => {
     const error = pipelineMessageError(
       'pipelineIdCollision',

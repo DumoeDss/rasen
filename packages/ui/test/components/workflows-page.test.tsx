@@ -1,0 +1,324 @@
+// @vitest-environment jsdom
+/**
+ * Component coverage for the Workflows page and its nav entry (workflows-ui
+ * spec): provenance-grouped listing with kind chip / unused badge / built-in
+ * lock and the invalid group; the built-in lock (no delete affordance); the
+ * guarded-delete → force path; the export overwrite retry; import success
+ * refreshing the listing without a reload; the always-rendered nav entry with
+ * no resolved space; and the absence of any model / handoff / gate control.
+ * The `satisfies` fixtures it imports are the `tsc` drift tripwire.
+ */
+import { render } from 'preact';
+import { act } from 'preact/test-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../src/api/client.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/client.js')>();
+  return {
+    ...actual,
+    listWorkflows: vi.fn(),
+    getWorkflow: vi.fn(),
+    validateWorkflow: vi.fn(),
+    mutateWorkflow: vi.fn(),
+    listLocalPaths: vi.fn(),
+  };
+});
+
+import { LocationProvider } from 'preact-iso';
+import { WorkflowsPage } from '../../src/components/WorkflowsPage.js';
+import { Layout } from '../../src/components/Layout.js';
+import * as client from '../../src/api/client.js';
+import { ApiError } from '../../src/api/client.js';
+import { workflowsListFixture, workflowDetailFixture } from '../fixtures/workflows.js';
+
+async function flushMicrotasks(times = 10): Promise<void> {
+  for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+async function mount(container: HTMLElement, path = '/workflows'): Promise<void> {
+  window.history.pushState({}, '', path);
+  await act(async () => {
+    render(
+      <LocationProvider>
+        <WorkflowsPage />
+      </LocationProvider>,
+      container
+    );
+  });
+  await act(async () => {
+    await flushMicrotasks();
+  });
+}
+
+function click(el: Element | null): void {
+  (el as HTMLElement).click();
+}
+
+async function clickAndFlush(el: Element | null): Promise<void> {
+  await act(async () => {
+    click(el);
+    await flushMicrotasks();
+  });
+}
+
+function setInput(el: Element | null, value: string): void {
+  const input = el as HTMLInputElement;
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// The home listing the shared LocalPathPicker loads on mount (a folder and a
+// selectable .rasenpkg file). `home: true` so "Up" is disabled at the floor.
+const HOME_LISTING = {
+  path: '/home/user',
+  parent: null,
+  separator: '/',
+  home: true,
+  entries: [
+    { name: 'pkgs', isDir: true, isGitRepo: false },
+    { name: 'team-flow.rasenpkg', isDir: false, isGitRepo: false },
+  ],
+};
+
+describe('WorkflowsPage', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    (client.listWorkflows as any).mockResolvedValue(workflowsListFixture);
+    (client.getWorkflow as any).mockResolvedValue(workflowDetailFixture);
+    (client.listLocalPaths as any).mockResolvedValue(HOME_LISTING);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.pushState({}, '', '/');
+    vi.resetAllMocks();
+  });
+
+  it('groups by provenance with kind chip, unused badge, built-in lock, and the invalid group', async () => {
+    await mount(container);
+
+    expect(container.querySelector('[data-testid="workflows-group-built-in"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="workflows-group-user"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="workflows-group-invalid"]')).not.toBeNull();
+
+    const cards = Array.from(container.querySelectorAll('[data-testid="workflow-card"]'));
+    expect(cards.map((c) => c.getAttribute('data-id')).sort()).toEqual(['review-cycle', 'team-flow']);
+
+    const userCard = cards.find((c) => c.getAttribute('data-id') === 'team-flow')!;
+    expect(userCard.querySelector('[data-testid="workflow-kind"]')!.textContent).toBe('task');
+    expect(userCard.querySelector('[data-testid="workflow-unused"]')).not.toBeNull();
+
+    const builtInCard = cards.find((c) => c.getAttribute('data-id') === 'review-cycle')!;
+    expect(builtInCard.querySelector('[data-testid="workflow-lock"]')).not.toBeNull();
+    expect(builtInCard.querySelector('[data-testid="workflow-unused"]')).toBeNull();
+  });
+
+  it('locks built-ins: no delete or export control on a built-in card, both on a user card', async () => {
+    await mount(container);
+    const cards = Array.from(container.querySelectorAll('[data-testid="workflow-card"]'));
+    const builtIn = cards.find((c) => c.getAttribute('data-id') === 'review-cycle')!;
+    const user = cards.find((c) => c.getAttribute('data-id') === 'team-flow')!;
+
+    expect(builtIn.querySelector('[data-testid="workflow-delete"]')).toBeNull();
+    expect(builtIn.querySelector('[data-testid="workflow-export"]')).toBeNull();
+    expect(user.querySelector('[data-testid="workflow-delete"]')).not.toBeNull();
+    expect(user.querySelector('[data-testid="workflow-export"]')).not.toBeNull();
+  });
+
+  it('surfaces a guarded-delete refusal verbatim then deletes only after an explicit force confirmation', async () => {
+    const refusal = 'Workflow "team-flow" is still referenced by pipeline:user:my-pipe';
+    (client.mutateWorkflow as any)
+      .mockRejectedValueOnce(new ApiError(422, { error: { code: 'cli_error', message: refusal } }))
+      .mockResolvedValueOnce({ deleted: 'team-flow', forcedReferrers: ['pipeline:user:my-pipe'] });
+
+    await mount(container);
+    const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
+      (c) => c.getAttribute('data-id') === 'team-flow'
+    )!;
+    await clickAndFlush(user.querySelector('[data-testid="workflow-delete"]'));
+
+    // Confirm the delete → the CLI refusal is surfaced verbatim.
+    await clickAndFlush(container.querySelector('[data-testid="workflow-delete-confirm"]'));
+    const refusalEl = container.querySelector('[data-testid="workflow-delete-refusal"]');
+    expect(refusalEl!.textContent).toBe(refusal);
+
+    // A single "force" click only reveals the second confirmation — no delete yet.
+    await clickAndFlush(container.querySelector('[data-testid="workflow-delete-force"]'));
+    expect(client.mutateWorkflow).toHaveBeenCalledTimes(1);
+
+    // The second explicit confirmation issues the forced delete and refreshes.
+    await clickAndFlush(container.querySelector('[data-testid="workflow-delete-force-confirm"]'));
+    expect(client.mutateWorkflow).toHaveBeenCalledTimes(2);
+    expect(client.mutateWorkflow).toHaveBeenLastCalledWith({ op: 'delete', id: 'team-flow', force: true });
+    // Listing re-fetched after the successful mutation (refresh without reload).
+    expect(client.listWorkflows).toHaveBeenCalledTimes(2);
+  });
+
+  it('exports to a folder picked through the local-path browser, offering an overwrite retry on refusal', async () => {
+    (client.mutateWorkflow as any)
+      .mockRejectedValueOnce(new ApiError(422, { error: { code: 'cli_error', message: 'Export destination already exists' } }))
+      .mockResolvedValueOnce({ workflow: { id: 'team-flow', path: '/home/user/team-flow.rasenpkg' } });
+
+    await mount(container);
+    const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
+      (c) => c.getAttribute('data-id') === 'team-flow'
+    )!;
+    await clickAndFlush(user.querySelector('[data-testid="workflow-export"]'));
+
+    // The dialog drives the shared local-path browser (the MINOR-1 fix), which
+    // loaded the home listing → destination folder = /home/user, filename
+    // defaults to <id>.rasenpkg → /home/user/team-flow.rasenpkg.
+    expect(container.querySelector('[data-testid="path-picker"]')).not.toBeNull();
+    await clickAndFlush(container.querySelector('[data-testid="workflow-export-submit"]'));
+
+    // The refusal is shown and an overwrite retry offered.
+    expect(container.querySelector('[data-testid="workflow-dialog-error"]')!.textContent).toContain('already exists');
+    const overwrite = container.querySelector('[data-testid="workflow-export-overwrite"]');
+    expect(overwrite).not.toBeNull();
+
+    await clickAndFlush(overwrite);
+    expect(client.mutateWorkflow).toHaveBeenLastCalledWith({
+      op: 'export',
+      id: 'team-flow',
+      path: '/home/user/team-flow.rasenpkg',
+      force: true,
+    });
+    expect(container.querySelector('[data-testid="workflow-export-result"]')).not.toBeNull();
+  });
+
+  it('imports a .rasenpkg file picked through the local-path browser and refreshes without a reload', async () => {
+    (client.mutateWorkflow as any).mockResolvedValue({ imported: ['new-flow'], reused: [], roots: ['new-flow'] });
+
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import"]'));
+
+    // The browser lists files too; pick the .rasenpkg entry directly.
+    const fileEntry = Array.from(container.querySelectorAll('[data-testid="dir-entries"] button')).find((b) =>
+      b.textContent?.includes('team-flow.rasenpkg')
+    );
+    expect(fileEntry).toBeTruthy();
+    await clickAndFlush(fileEntry!);
+    expect(container.querySelector('[data-testid="workflow-import-source"]')!.textContent).toContain(
+      '/home/user/team-flow.rasenpkg'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import-submit"]'));
+
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'import', path: '/home/user/team-flow.rasenpkg' });
+    expect(container.querySelector('[data-testid="workflow-import-result"]')!.textContent).toContain('new-flow');
+    // Refetched after success (no full reload).
+    expect(client.listWorkflows).toHaveBeenCalledTimes(2);
+  });
+
+  it('imports a draft directory via "use this folder" (browse-to-dir, no file wire needed)', async () => {
+    (client.mutateWorkflow as any).mockResolvedValue({ imported: ['draft-flow'], reused: [], roots: ['draft-flow'] });
+
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import"]'));
+
+    // Home listing loaded → current folder is /home/user; "use this folder"
+    // selects it as a draft-directory import source.
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import-use-dir"]'));
+    expect(container.querySelector('[data-testid="workflow-import-source"]')!.textContent).toContain('/home/user');
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import-submit"]'));
+
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'import', path: '/home/user' });
+  });
+
+  it('scaffolds a draft into a parent folder picked through the browser (output = parent/<id>)', async () => {
+    (client.mutateWorkflow as any).mockResolvedValue({ workflow: { id: 'my-flow', output: '/home/user/my-flow' } });
+
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="workflow-new"]'));
+
+    await act(async () => {
+      setInput(container.querySelector('[data-testid="workflow-init-id"]'), 'my-flow');
+      await flushMicrotasks();
+    });
+    // The picker loaded /home/user as the parent → preview shows the computed output.
+    expect(container.querySelector('[data-testid="workflow-init-output-preview"]')!.textContent).toContain(
+      '/home/user/my-flow'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="workflow-init-submit"]'));
+
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'init', id: 'my-flow', output: '/home/user/my-flow' });
+    expect(container.querySelector('[data-testid="workflow-init-result"]')!.textContent).toContain('/home/user/my-flow');
+  });
+
+  it('opens a detail view showing the four requires slots, files, and usage referrers', async () => {
+    await mount(container);
+    const user = Array.from(container.querySelectorAll('[data-testid="workflow-card"]')).find(
+      (c) => c.getAttribute('data-id') === 'team-flow'
+    )!;
+    await clickAndFlush(user.querySelector('[data-testid="workflow-open"]'));
+
+    const detail = container.querySelector('[data-testid="workflow-detail"]');
+    expect(detail).not.toBeNull();
+    expect(detail!.textContent).toContain('dep-a'); // requires.workflows
+    expect(container.querySelector('[data-testid="workflow-detail-files"]')!.textContent).toContain('workflow.yaml');
+    expect(container.querySelector('[data-testid="workflow-detail-usage"]')!.textContent).toContain('user:my-pipe');
+  });
+
+  it('offers no model, handoff, or gate control anywhere on the page', async () => {
+    await mount(container);
+    // Library management only (Fork 4B rejected). No such controls or labels.
+    expect(container.querySelector('select')).toBeNull();
+    expect(container.querySelector('[data-testid*="model"]')).toBeNull();
+    expect(container.querySelector('[data-testid*="handoff"]')).toBeNull();
+    expect(container.querySelector('[data-testid*="gate"]')).toBeNull();
+    expect(container.textContent!.toLowerCase()).not.toContain('handoff');
+  });
+});
+
+describe('Workflows nav entry (Layout)', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.pushState({}, '', '/');
+  });
+
+  it('renders the Workflows entry even with no resolved space', async () => {
+    window.history.pushState({}, '', '/'); // bootstrap: no /p or /s prefix
+    await act(async () => {
+      render(
+        <LocationProvider>
+          <Layout>
+            <div />
+          </Layout>
+        </LocationProvider>,
+        container
+      );
+    });
+    const nav = container.querySelector('[data-testid="nav-workflows"]');
+    expect(nav).not.toBeNull();
+    expect(nav!.getAttribute('href')).toBe('/workflows');
+    // Space-scoped links are absent with no space resolved.
+    expect(Array.from(container.querySelectorAll('nav a')).map((a) => a.textContent)).toEqual(['Workflows']);
+  });
+
+  it('marks the Workflows entry active on the /workflows route', async () => {
+    window.history.pushState({}, '', '/workflows');
+    await act(async () => {
+      render(
+        <LocationProvider>
+          <Layout>
+            <div />
+          </Layout>
+        </LocationProvider>,
+        container
+      );
+    });
+    const nav = container.querySelector('[data-testid="nav-workflows"]');
+    expect(nav!.getAttribute('aria-current')).toBe('page');
+  });
+});

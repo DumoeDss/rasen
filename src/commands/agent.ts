@@ -63,7 +63,7 @@ export class AgentCommand {
       return;
     }
 
-    const handoff = resolveHandoffThresholdReport(result.pct, result.remainingTokens);
+    const handoff = await resolveHandoffThresholdReport(result.pct, result.remainingTokens);
 
     if (options.json) {
       console.log(JSON.stringify(this.toJson(result, handoff)));

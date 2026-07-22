@@ -525,6 +525,7 @@ describe('InitCommand', () => {
 describe('InitCommand - profile and detection features', () => {
   let testDir: string;
   let configTempDir: string;
+  let dataTempDir: string;
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(async () => {
@@ -539,6 +540,13 @@ describe('InitCommand - profile and detection features', () => {
     configTempDir = path.join(os.tmpdir(), `openspec-config-test-${Date.now()}`);
     await fs.mkdir(configTempDir, { recursive: true });
     process.env.XDG_CONFIG_HOME = configTempDir;
+    // Isolate the global data dir too: with RASEN_HOME cleared above, init's
+    // project registration would otherwise fall through to the developer's
+    // real ~/.rasen project registry (getGlobalDataDir: RASEN_HOME >
+    // XDG_DATA_HOME > ~/.rasen).
+    dataTempDir = path.join(os.tmpdir(), `openspec-data-profile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.mkdir(dataTempDir, { recursive: true });
+    process.env.XDG_DATA_HOME = dataTempDir;
     vi.spyOn(console, 'log').mockImplementation(() => {});
     confirmMock.mockReset();
     confirmMock.mockResolvedValue(true);
@@ -550,6 +558,7 @@ describe('InitCommand - profile and detection features', () => {
     process.env = originalEnv;
     await fs.rm(testDir, { recursive: true, force: true });
     await fs.rm(configTempDir, { recursive: true, force: true });
+    await fs.rm(dataTempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
 

@@ -106,6 +106,66 @@ export async function getTaskProgressForChange(
   return countSingleTopLevelTasksFile(changeDir);
 }
 
+export interface TaskItem {
+  text: string;
+  done: boolean;
+}
+
+/**
+ * Parses a checklist file's markdown into ordered `{ text, done }` items —
+ * the same `- [ ]` / `- [x]` recognition {@link countTasksFromContent} uses,
+ * but capturing each item's trailing text alongside its checkbox. The text
+ * is everything after the `[ ]`/`[x]` marker, trimmed.
+ */
+export function listTaskItemsFromContent(content: string): TaskItem[] {
+  const items: TaskItem[] = [];
+  for (const line of content.split('\n')) {
+    if (!TASK_PATTERN.test(line)) continue;
+    const done = COMPLETED_TASK_PATTERN.test(line);
+    const text = line.replace(/^[-*]\s+\[[\sx]\]\s?/i, '').trim();
+    items.push({ text, done });
+  }
+  return items;
+}
+
+/**
+ * The parsed task checklist for a change — every `{ text, done }` item across
+ * the change's tracked-tasks files. Resolves the tracked-tasks artifact the
+ * same way {@link getTaskProgressForChange} does (the artifact's `generates`
+ * glob via `resolveArtifactOutputs`, falling back to a single top-level
+ * `tasks.md`), so item parsing agrees with the counts. Never throws — a
+ * missing or unreadable file yields `[]`.
+ */
+export async function listTaskItemsForChange(
+  changesDir: string,
+  changeName: string,
+  projectRoot: string
+): Promise<TaskItem[]> {
+  const changeDir = path.join(changesDir, changeName);
+
+  const generates = resolveTrackedTasksGlob(changeDir, projectRoot);
+  if (generates) {
+    const files = resolveArtifactOutputs(changeDir, generates);
+    if (files.length > 0) {
+      const items: TaskItem[] = [];
+      for (const file of files) {
+        try {
+          items.push(...listTaskItemsFromContent(await fs.readFile(file, 'utf-8')));
+        } catch {
+          // Swallow files that vanish between glob and read, as the count path does.
+        }
+      }
+      return items;
+    }
+  }
+
+  try {
+    return listTaskItemsFromContent(await fs.readFile(path.join(changeDir, 'tasks.md'), 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
 export function formatTaskStatus(progress: TaskProgress): string {
   if (progress.total === 0) return 'No tasks';
   if (progress.completed === progress.total) return '✓ Complete';

@@ -1,25 +1,32 @@
 import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
-import { ProjectSwitcher } from './ProjectSwitcher.js';
+import { SpaceSwitcher } from './SpaceSwitcher.js';
+import { RunningSessionsMenu } from './RunningSessionsMenu.js';
+import { ThemeToggle } from './ThemeToggle.js';
+import { parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 
 /**
- * App layout (design D4 of `rasen-ui-unify-management-surface`; nav
- * extended by design D1 of `slice3-sessions-ui`): header (platform title,
- * nav, project switcher) + content area. Navigation offers Board (the
- * platform home, `/`), Config (`/config`), and Sessions (`/sessions`), with
- * the active view indicated; the board is also reachable at `/board` but the
- * nav link points at `/` so the active check treats both routes as "Board".
+ * App layout (management-ui-shell design D7; config-ui-package spec): header
+ * (platform title, space-scoped nav, running-run summary, space switcher) +
+ * content area. Navigation offers Board · Archive · Config for the current
+ * planning space, built from the space prefix in the URL, with active
+ * detection relative to that prefix. There is no Sessions entry — live runs
+ * surface through the running-run summary. When no space is resolved yet (the
+ * `/` bootstrap or the empty state) the space-scoped controls are omitted; the
+ * switcher still renders so the user can pick a space.
+ *
+ * The `Workflows` entry (workflows-ui spec) is space-agnostic and therefore
+ * ALWAYS rendered — the installable library is user-wide, reachable from any
+ * space or none. The `Pipelines` entry (pipelines-ui spec), by contrast, is
+ * space-SCOPED (a pipeline's effective configuration resolves against the
+ * addressed space), so it sits inside the space-scoped block beside Config and
+ * only renders when a space is resolved.
  */
-/** Exact match or a `/`-bounded prefix — `/config` is active but a future `/configx` would not be. */
-function isActivePath(url: string, base: string): boolean {
-  return url === base || url.startsWith(`${base}/`);
-}
-
 export function Layout({ children }: { children: ComponentChildren }) {
-  const { url } = useLocation();
-  const isBoard = url === '/' || isActivePath(url, '/board');
-  const isConfig = isActivePath(url, '/config');
-  const isSessions = isActivePath(url, '/sessions');
+  const { path } = useLocation();
+  const space = parseSpacePath(path);
+  const section = spaceSection(path);
+  const onWorkflows = path.startsWith('/workflows');
 
   return (
     <div class="app-shell">
@@ -27,20 +34,39 @@ export function Layout({ children }: { children: ComponentChildren }) {
         <div class="app-header__inner">
           <h1>Rasen</h1>
           <nav>
-            <a href="/" aria-current={isBoard ? 'page' : undefined}>
-              Board
-            </a>
-            <a href="/config" aria-current={isConfig ? 'page' : undefined}>
-              Config
-            </a>
-            <a href="/sessions" aria-current={isSessions ? 'page' : undefined}>
-              Sessions
+            {space && (
+              <>
+                <a href={spaceHref(space, 'board')} aria-current={section === 'board' ? 'page' : undefined}>
+                  Board
+                </a>
+                <a
+                  href={spaceHref(space, 'archive')}
+                  aria-current={section === 'archive' ? 'page' : undefined}
+                >
+                  Archive
+                </a>
+                <a href={spaceHref(space, 'config')} aria-current={section === 'config' ? 'page' : undefined}>
+                  Config
+                </a>
+                <a
+                  href={spaceHref(space, 'pipelines')}
+                  data-testid="nav-pipelines"
+                  aria-current={section === 'pipelines' ? 'page' : undefined}
+                >
+                  Pipelines
+                </a>
+              </>
+            )}
+            <a href="/workflows" data-testid="nav-workflows" aria-current={onWorkflows ? 'page' : undefined}>
+              Workflows
             </a>
           </nav>
-          <ProjectSwitcher />
+          {space && <RunningSessionsMenu />}
+          <SpaceSwitcher />
         </div>
       </header>
       <main class="app-content">{children}</main>
+      <ThemeToggle />
     </div>
   );
 }

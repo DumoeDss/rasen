@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 
 import {
   CONFIG_KEY_REGISTRY,
+  classifyWildcardPath,
+  collectFamilyInstancePaths,
   findConfigKeyDefinition,
+  findWildcardDefinition,
   validateConfigKeyPath,
   validateConfigValue,
 } from '../../src/core/config-keys.js';
@@ -55,14 +58,30 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('autopilot.selection', 'global').valid).toBe(true);
     });
 
-    it('accepts the per-role handoff and model keys at both scopes', () => {
-      for (const scope of ['global', 'project'] as const) {
+    it('accepts the per-role handoff and model keys at all three scopes', () => {
+      for (const scope of ['global', 'store', 'project'] as const) {
         for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper']) {
           expect(validateConfigKeyPath(`handoff.roles.${role}`, scope).valid).toBe(true);
           expect(validateConfigKeyPath(`models.roles.${role}`, scope).valid).toBe(true);
         }
         expect(validateConfigKeyPath('models.default', scope).valid).toBe(true);
       }
+    });
+
+    it('accepts the store-capable keys at store scope', () => {
+      expect(validateConfigKeyPath('handoff.threshold', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('schema', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('archive.timing', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('archive.destination', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('autopilot.gates', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('autopilot.selection', 'store').valid).toBe(true);
+      expect(validateConfigKeyPath('models.default', 'store').valid).toBe(true);
+    });
+
+    it('rejects global-only keys and the featureFlags wildcard at store scope', () => {
+      expect(validateConfigKeyPath('profile', 'store').valid).toBe(false);
+      expect(validateConfigKeyPath('telemetry.enabled', 'store').valid).toBe(false);
+      expect(validateConfigKeyPath('featureFlags.someFlag', 'store').valid).toBe(false);
     });
 
     it('rejects unknown keys', () => {
@@ -155,6 +174,55 @@ describe('config-keys registry', () => {
       const def = findConfigKeyDefinition('proactive', 'global')!;
       expect(validateConfigValue(def, 'yes')).toMatch(/boolean/);
     });
+
+    it('rejects a non-array value for ui.pinnedSpaces (the array type)', () => {
+      const def = findConfigKeyDefinition('ui.pinnedSpaces', 'global')!;
+      expect(validateConfigValue(def, 'project:api')).toMatch(/array/);
+      expect(validateConfigValue(def, { a: 1 })).toMatch(/array/);
+      expect(validateConfigValue(def, ['project:api', 'store:team'])).toBeNull();
+    });
+  });
+
+  describe('ui.pinnedSpaces (spaces-page pins key)', () => {
+    it('is a global-only array key with an empty-array default', () => {
+      expect(validateConfigKeyPath('ui.pinnedSpaces', 'global').valid).toBe(true);
+      expect(validateConfigKeyPath('ui.pinnedSpaces', 'project').valid).toBe(false);
+      const def = findConfigKeyDefinition('ui.pinnedSpaces', 'global')!;
+      expect(def.type).toBe('array');
+      expect(def.defaultValue).toEqual([]);
+    });
+
+    it('round-trips a selector array through the global config schema', () => {
+      const result = GlobalConfigSchema.safeParse({
+        ui: { pinnedSpaces: ['store:team-store', 'project:api'] },
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('scope assignment', () => {
+    it('assigns exactly 9 global-only, 3 store+project, and 14 all-three keys', () => {
+      const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
+      const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
+      const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
+      const storeProject = nonWildcard.filter((def) => sorted(def) === 'project,store');
+      const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
+
+      // Guards a future key from silently missing the store scope.
+      // 8 = the 7 machine-level keys from the store-scope re-scope plus
+      // ui.pinnedSpaces (spaces-page pins, deliberately global-only).
+      expect(globalOnly.length).toBe(8);
+      expect(storeProject.length).toBe(3);
+      expect(allThree.length).toBe(14);
+      // Five wildcard families: featureFlags (global-only, the 9th global-only
+      // key) plus the four all-three-scope pipelines.* families
+      // (gates/models/handoff per stage, runtimes per role).
+      const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);
+      expect(wildcards.length).toBe(5);
+      // featureFlags is the sole global-only wildcard; the pipelines families
+      // are settable in all three scopes.
+      expect(wildcards.filter((def) => def.scopes.join(',') === 'global').length).toBe(1);
+    });
   });
 
   describe('registry/schema round-trip consistency', () => {
@@ -163,9 +231,12 @@ describe('config-keys registry', () => {
         if (def.wildcard) continue;
 
         for (const scope of def.scopes) {
+          // A store's config file is the same `rasen/config.yaml` shape a
+          // planning root uses, so store-scoped entries validate against the
+          // project config schema (design D4).
           const schema = scope === 'global' ? GlobalConfigSchema : ProjectConfigSchema;
           const skeleton: Record<string, unknown> = {};
-          if (scope === 'project') {
+          if (scope === 'project' || scope === 'store') {
             skeleton.schema = 'spec-driven';
           }
           setPath(skeleton, def.key, def.defaultValue === '' ? 'placeholder' : def.defaultValue);
@@ -179,6 +250,121 @@ describe('config-keys registry', () => {
           ).toBe(true);
         }
       }
+    });
+
+    it('a set instance of each pipelines family round-trips through every declared scope schema', () => {
+      const cases = [
+        { instance: { pipelines: { p: { gates: { s: 'on' } } } } },
+        { instance: { pipelines: { p: { models: { s: 'fable' } } } } },
+        { instance: { pipelines: { p: { handoff: { s: 0.6 } } } } },
+        { instance: { pipelines: { p: { handoff: { s: { remainingTokens: 60_000 } } } } } },
+        { instance: { pipelines: { p: { runtimes: { reviewer: 'codex' } } } } },
+      ];
+      for (const { instance } of cases) {
+        // global JSON schema
+        expect(GlobalConfigSchema.safeParse(instance).success).toBe(true);
+        // planning-root YAML schema (store + project layers share it), which
+        // requires a `schema` field.
+        expect(
+          ProjectConfigSchema.safeParse({ schema: 'spec-driven', ...instance }).success
+        ).toBe(true);
+      }
+    });
+  });
+});
+
+describe('wildcard config key families', () => {
+  const PIPELINE_FAMILIES = [
+    { pattern: 'pipelines.<name>.gates.<stage>', instance: 'pipelines.small-feature.gates.propose', valid: 'on', invalid: 'maybe' },
+    { pattern: 'pipelines.<name>.models.<stage>', instance: 'pipelines.bug-fix.models.review', valid: 'fable', invalid: '' },
+    { pattern: 'pipelines.<name>.handoff.<stage>', instance: 'pipelines.goal-loop.handoff.measure', valid: 0.6, invalid: 1.5 },
+    { pattern: 'pipelines.<name>.runtimes.<role>', instance: 'pipelines.small-feature.runtimes.reviewer', valid: 'codex', invalid: 'gpt' },
+  ] as const;
+
+  describe('valid instances validate in all three scopes', () => {
+    for (const family of PIPELINE_FAMILIES) {
+      it(`${family.pattern} accepts a well-formed instance at global/store/project`, () => {
+        for (const scope of ['global', 'store', 'project'] as const) {
+          expect(validateConfigKeyPath(family.instance, scope).valid).toBe(true);
+          const def = findWildcardDefinition(family.instance, scope)!;
+          expect(def).toBeDefined();
+          expect(def.pattern).toBe(family.pattern);
+          expect(validateConfigValue(def, family.valid)).toBeNull();
+          expect(validateConfigValue(def, family.invalid)).not.toBeNull();
+        }
+      });
+    }
+  });
+
+  it('rejects a wrong-shape family path naming the pattern', () => {
+    const missingStage = validateConfigKeyPath('pipelines.small-feature.gates', 'global');
+    expect(missingStage.valid).toBe(false);
+    expect(missingStage.reason).toContain('pipelines.<name>.gates.<stage>');
+
+    const extraSegment = validateConfigKeyPath('pipelines.small-feature.gates.propose.extra', 'project');
+    expect(extraSegment.valid).toBe(false);
+    expect(extraSegment.reason).toContain('pipelines.<name>.gates.<stage>');
+  });
+
+  it('rejects a bad placeholder charset naming the pattern', () => {
+    const result = validateConfigKeyPath('pipelines.bad!name.gates.propose', 'global');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('pipelines.<name>.gates.<stage>');
+  });
+
+  it('accepts an unknown referent structurally (no pipeline/stage existence check)', () => {
+    expect(validateConfigKeyPath('pipelines.no-such-pipeline.models.no-such-stage', 'global').valid).toBe(true);
+  });
+
+  it('rejects the dual-form threshold out of range but accepts both valid forms', () => {
+    const def = findWildcardDefinition('pipelines.bug-fix.handoff.review', 'store')!;
+    expect(validateConfigValue(def, 0.6)).toBeNull();
+    expect(validateConfigValue(def, { remainingTokens: 60_000 })).toBeNull();
+    expect(validateConfigValue(def, 1.5)).toMatch(/\(0, 1\]/);
+  });
+
+  it('classifies scope-independently for the API router', () => {
+    expect(classifyWildcardPath('pipelines.x.gates.propose').kind).toBe('match');
+    expect(classifyWildcardPath('pipelines.x.gates').kind).toBe('wrong_shape');
+    expect(classifyWildcardPath('pipelines.x!.gates.propose').kind).toBe('bad_placeholder');
+    expect(classifyWildcardPath('not.a.family').kind).toBe('none');
+  });
+
+  describe('featureFlags is unchanged through the general mechanism', () => {
+    it('accepts a boolean at global scope and rejects a non-boolean', () => {
+      expect(validateConfigKeyPath('featureFlags.someFlag', 'global').valid).toBe(true);
+      const def = findWildcardDefinition('featureFlags.someFlag', 'global')!;
+      expect(def.key).toBe('featureFlags');
+      expect(validateConfigValue(def, true)).toBeNull();
+      expect(validateConfigValue(def, 'yes')).toMatch(/boolean/);
+    });
+
+    it('rejects a third segment and rejects the store scope', () => {
+      expect(validateConfigKeyPath('featureFlags.someFlag.extra', 'global').valid).toBe(false);
+      expect(validateConfigKeyPath('featureFlags.someFlag', 'store').valid).toBe(false);
+      expect(validateConfigKeyPath('featureFlags.someFlag', 'project').valid).toBe(false);
+    });
+  });
+
+  describe('collectFamilyInstancePaths', () => {
+    it('enumerates every set instance under the family literal structure', () => {
+      const def = findWildcardDefinition('pipelines.x.gates.y', 'global')!;
+      const record = {
+        pipelines: {
+          'small-feature': { gates: { propose: 'on', review: 'off' } },
+          'bug-fix': { gates: { implement: 'on' }, models: { review: 'fable' } },
+        },
+      };
+      expect(collectFamilyInstancePaths(def, record).sort()).toEqual([
+        'pipelines.bug-fix.gates.implement',
+        'pipelines.small-feature.gates.propose',
+        'pipelines.small-feature.gates.review',
+      ]);
+    });
+
+    it('returns [] for an absent block', () => {
+      const def = findWildcardDefinition('pipelines.x.models.y', 'global')!;
+      expect(collectFamilyInstancePaths(def, {})).toEqual([]);
     });
   });
 });

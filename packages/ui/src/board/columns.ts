@@ -6,7 +6,13 @@
  * facts (`applyReady`, `taskProgress`, run state); this derives the board's
  * four lifecycle columns from those facts.
  */
-import type { ChangeRunEntry, ChangeSummary } from '../api/types.js';
+import type {
+  ArchivedChangeSummary,
+  ChangeRunEntry,
+  ChangeSummary,
+  SessionListEntry,
+  SessionRecordWire,
+} from '../api/types.js';
 
 export type BoardColumn = 'planning' | 'ready' | 'in-progress' | 'done';
 
@@ -77,3 +83,271 @@ export const BOARD_COLUMNS: { id: BoardColumn; label: string }[] = [
   { id: 'in-progress', label: 'In Progress' },
   { id: 'done', label: 'Done' },
 ];
+
+// ---- Tasks (ui-space-redesign-task-board design D1/D2/D3) ----
+// The board's unit of intent is the Task, not the raw change: a portfolio
+// container groups its child changes into one Task; a change with no
+// container is an implicit single-item Task. Grouping, column placement, and
+// live-run derivation stay UI-side (the same "column assignment is UI policy"
+// precedent as `deriveColumn`); the one fact the UI cannot compute — portfolio
+// membership — arrives on `ChangeSummary.portfolio` from the server.
+
+/** A live session is one still in flight (design D3) — the only signal that means "running now", unlike persisted run files. */
+export const LIVE_SESSION_STATES: readonly SessionRecordWire['state'][] = ['starting', 'running', 'exiting'];
+
+export interface Task {
+  /** The portfolio container name, or the bare change's own name. */
+  id: string;
+  /** Same as `id` for this child (child 4 may enrich a portfolio label from its parent dir). */
+  label: string;
+  kind: 'portfolio' | 'single';
+  /** The Task's constituent changes: ≥1; a single Task has exactly one. */
+  children: ChangeSummary[];
+  /** Derived lifecycle column (design D2), never a persisted status. */
+  column: BoardColumn;
+  /** OR of each child's run escalation — rendered as a badge, never a fifth column. */
+  escalated: boolean;
+  /** Portfolio: done vs on-board children ("N/M changes"). Single: the change's own task checkboxes ("N/M tasks"). */
+  progress: { done: number; total: number };
+  /** The current stage of a live session targeting a child (design D3); absent when nothing is running for the Task. */
+  liveStage?: string;
+}
+
+/**
+ * Aggregates a Task's column from its children (design D2), running the
+ * existing per-change {@link deriveColumn} and combining by precedence:
+ * any child In Progress → In Progress; else any Ready → Ready; else any
+ * Planning → Planning; else (every child Done) → Done. `escalated` is the OR
+ * of each child's escalation. A single-item Task degenerates to its one
+ * change's column. Pure — no DOM, no fetch — exactly like `deriveColumn`.
+ */
+export function deriveTaskColumn(
+  children: ChangeSummary[],
+  runsByName: Map<string, ChangeRunEntry>
+): DerivedColumn {
+  let hasInProgress = false;
+  let hasReady = false;
+  let hasPlanning = false;
+  let escalated = false;
+  for (const child of children) {
+    const derived = deriveColumn(child, runsByName.get(child.name));
+    escalated = escalated || derived.escalated;
+    if (derived.column === 'in-progress') hasInProgress = true;
+    else if (derived.column === 'ready') hasReady = true;
+    else if (derived.column === 'planning') hasPlanning = true;
+  }
+  const column: BoardColumn = hasInProgress
+    ? 'in-progress'
+    : hasReady
+      ? 'ready'
+      : hasPlanning
+        ? 'planning'
+        : 'done';
+  return { column, escalated };
+}
+
+/** The current stage of a live session (design D3): its pipeline and in-progress stage from the joined run-state, or the raw task text when no run-state is available. */
+export function sessionStage(entry: SessionListEntry): string {
+  const { runState } = entry;
+  if (runState.kind === 'ok' && runState.autoRun.kind === 'ok') {
+    const { pipeline, stages } = runState.autoRun.state;
+    const active = stages
+      ? Object.entries(stages).find(([, s]) => s.status === 'in_progress')?.[0]
+      : undefined;
+    return active ? `${pipeline} · ${active}` : pipeline;
+  }
+  return entry.session.task;
+}
+
+/**
+ * Groups a space's active changes into Tasks (design D1), preserving each
+ * Task's first-appearance order. Changes sharing a `portfolio` value collapse
+ * into one portfolio Task (id/label = the container name); a change with no
+ * `portfolio` becomes an implicit single-item Task (id/label = its name).
+ * Each Task's column comes from {@link deriveTaskColumn}, its progress from
+ * child-change completion (portfolio) or task-checkbox counts (single), and
+ * its `liveStage`/`⦿` from a live session targeting one of its children.
+ */
+export function groupIntoTasks(
+  changes: ChangeSummary[],
+  runsByName: Map<string, ChangeRunEntry>,
+  sessions: SessionListEntry[]
+): Task[] {
+  const order: string[] = [];
+  const childrenById = new Map<string, ChangeSummary[]>();
+  for (const change of changes) {
+    const id = change.portfolio ?? change.name;
+    let group = childrenById.get(id);
+    if (!group) {
+      group = [];
+      childrenById.set(id, group);
+      order.push(id);
+    }
+    group.push(change);
+  }
+
+  // change name → owning Task id, for session-provenance mapping.
+  const taskIdByChange = new Map<string, string>();
+  for (const [id, children] of childrenById) {
+    for (const child of children) taskIdByChange.set(child.name, id);
+  }
+
+  // First live session targeting each Task sets its stage (design D3).
+  const liveStageByTask = new Map<string, string>();
+  for (const entry of sessions) {
+    if (!LIVE_SESSION_STATES.includes(entry.session.state)) continue;
+    const changeName = entry.session.changeName;
+    if (!changeName) continue; // a changeName-less auto session maps to no Task
+    const taskId = taskIdByChange.get(changeName);
+    if (taskId && !liveStageByTask.has(taskId)) liveStageByTask.set(taskId, sessionStage(entry));
+  }
+
+  return order.map((id) => {
+    const children = childrenById.get(id)!;
+    const kind: Task['kind'] = children[0]!.portfolio ? 'portfolio' : 'single';
+    const { column, escalated } = deriveTaskColumn(children, runsByName);
+    const progress =
+      kind === 'portfolio'
+        ? {
+            done: children.filter(
+              (c) => deriveColumn(c, runsByName.get(c.name)).column === 'done'
+            ).length,
+            total: children.length,
+          }
+        : { done: children[0]!.taskProgress.completed, total: children[0]!.taskProgress.total };
+    const liveStage = liveStageByTask.get(id);
+    return {
+      id,
+      label: id,
+      kind,
+      children,
+      column,
+      escalated,
+      progress,
+      ...(liveStage !== undefined ? { liveStage } : {}),
+    };
+  });
+}
+
+/**
+ * An archived Task: a group of archived changes collapsed by the same
+ * portfolio rule the board uses (ui-space-redesign-archive-page design D4).
+ * Distinct from {@link Task} — it has no lifecycle column (archived ⇒ done),
+ * only a `name`-bearing child list (so {@link tasksForMember} can attribute it
+ * by session provenance) and the most-recent archive date for sort/display.
+ */
+export interface ArchivedTask {
+  /** The portfolio container name, or the bare change's own name. */
+  id: string;
+  /** Same as `id` (kept for parity with {@link Task}). */
+  label: string;
+  /** Same as `id`; the display name and the Task-detail route segment. */
+  name: string;
+  kind: 'portfolio' | 'single';
+  /** The Task's archived constituent changes: ≥1. */
+  children: ArchivedChangeSummary[];
+  /** The most recent archive date among the children (`YYYY-MM-DD`), for time-reverse sort + display. */
+  archivedAt: string;
+}
+
+/**
+ * Groups a space's archived changes into archived Tasks (design D4),
+ * preserving first-appearance order — the same collapse `groupIntoTasks` does
+ * for active changes: changes sharing a `portfolio` value fold into one
+ * portfolio Task (id = the container name), a change with no `portfolio`
+ * becomes its own single-item Task. Each Task carries the max archive date of
+ * its children so the page can sort time-reverse. Pure — no DOM, no fetch.
+ */
+export function groupArchivedTasks(changes: ArchivedChangeSummary[]): ArchivedTask[] {
+  const order: string[] = [];
+  const childrenById = new Map<string, ArchivedChangeSummary[]>();
+  for (const change of changes) {
+    const id = change.portfolio ?? change.name;
+    let group = childrenById.get(id);
+    if (!group) {
+      group = [];
+      childrenById.set(id, group);
+      order.push(id);
+    }
+    group.push(change);
+  }
+
+  return order.map((id) => {
+    const children = childrenById.get(id)!;
+    const kind: ArchivedTask['kind'] = children[0]!.portfolio ? 'portfolio' : 'single';
+    // Dates are `YYYY-MM-DD`, so lexicographic max is chronological max.
+    const archivedAt = children.reduce(
+      (max, c) => (c.archivedAt > max ? c.archivedAt : max),
+      children[0]!.archivedAt
+    );
+    return { id, label: id, name: id, kind, children, archivedAt };
+  });
+}
+
+/**
+ * Splits a space's sessions into those belonging to a Task — whose linked
+ * `changeName` is one of the Task's children — partitioned into `live` and
+ * `ended`, with live ordered first (ui-space-redesign-task-detail design D4).
+ * A session without a `changeName`, or one linked to a change outside this
+ * Task, is excluded. Pure — the session→Task mapping stays in this tested
+ * module rather than being reinvented in the detail component.
+ */
+export function sessionsForTask(
+  sessions: SessionListEntry[],
+  childNames: Set<string>
+): { live: SessionListEntry[]; ended: SessionListEntry[] } {
+  const live: SessionListEntry[] = [];
+  const ended: SessionListEntry[] = [];
+  for (const entry of sessions) {
+    const changeName = entry.session.changeName;
+    if (changeName === undefined || !childNames.has(changeName)) continue;
+    if (LIVE_SESSION_STATES.includes(entry.session.state)) live.push(entry);
+    else ended.push(entry);
+  }
+  return { live, ended };
+}
+
+/**
+ * Whether a session `cwd` lies within a member `root` (design D4/D7). Both are
+ * server-emitted canonical paths, so this is a plain path-prefix test guarded
+ * at a segment boundary (so `/repo` never matches `/repo-two`), tolerant of
+ * either separator since the OS that emitted them is not known here. This is a
+ * path comparison, not a space-token transform — it does not touch the opaque
+ * id rule.
+ */
+export function isUnderRoot(cwd: string, root: string): boolean {
+  if (cwd === root) return true;
+  const base = root.endsWith('/') || root.endsWith('\\') ? root.slice(0, -1) : root;
+  return cwd.startsWith(`${base}/`) || cwd.startsWith(`${base}\\`);
+}
+
+/**
+ * Narrows a Task list to those attributed to a member by session provenance
+ * (design D4): a Task is kept when it has a session — live or listed —
+ * targeting one of its children whose `cwd` is under `memberRoot`. `null`
+ * (the "All" chip) returns every Task unchanged. A Task no session has ever
+ * run for is attributed to no member and so appears only under "All" — the
+ * documented ceiling, since the disk records no change→member link.
+ *
+ * Generic over the Task shape (runtime logic unchanged): it reads only each
+ * task's `children[].name`, so both a live {@link Task} and an
+ * {@link ArchivedTask} reuse it — the archive page attributes archived Tasks
+ * the same way the board attributes live ones (ui-space-redesign-archive-page
+ * design D4).
+ */
+export function tasksForMember<T extends { children: { name: string }[] }>(
+  tasks: T[],
+  sessions: SessionListEntry[],
+  memberRoot: string | null
+): T[] {
+  if (memberRoot === null) return tasks;
+  return tasks.filter((task) => {
+    const childNames = new Set(task.children.map((c) => c.name));
+    return sessions.some(
+      (e) =>
+        e.session.changeName !== undefined &&
+        childNames.has(e.session.changeName) &&
+        isUnderRoot(e.session.cwd, memberRoot)
+    );
+  });
+}

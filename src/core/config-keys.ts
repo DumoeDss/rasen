@@ -16,7 +16,7 @@
 
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 
-export type ConfigScope = 'global' | 'project';
+export type ConfigScope = 'global' | 'store' | 'project';
 /**
  * 'threshold' is the dual-form handoff/reuse shape (see `ThresholdValue` in
  * src/core/model-presets.ts): a bare number in (0, 1], or the strict object
@@ -27,9 +27,14 @@ export type ConfigScope = 'global' | 'project';
 export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array' | 'threshold';
 
 export interface ConfigKeyDefinition {
-  /** Dot path, e.g. "handoff.threshold". For a wildcard entry, the family prefix (e.g. "featureFlags"). */
+  /**
+   * Dot path, e.g. "handoff.threshold". For a wildcard entry this is the
+   * family's identity as seen on the wire: `featureFlags` keeps its bare
+   * `featureFlags` key for backward wire compatibility, while the newer
+   * families use their full `pattern` string (no compatibility to preserve).
+   */
   key: string;
-  /** Scopes this key may be SET in. */
+  /** Scopes this key may be SET in (any subset of `global`, `store`, `project`). */
   scopes: ConfigScope[];
   type: ConfigValueType;
   /** Allowed values, required when type is 'enum'. */
@@ -40,15 +45,27 @@ export interface ConfigKeyDefinition {
   defaultValue: unknown;
   /** One-liner for the editor and error messages. */
   description: string;
-  /** Editor grouping, e.g. "Workflow", "Autopilot", "Telemetry". */
+  /** Editor grouping, e.g. "Workflow", "Autopilot", "Telemetry", "Pipelines". */
   group: string;
   /**
-   * True for a key FAMILY matched by prefix rather than an exact path
-   * (only `featureFlags`, matching `featureFlags.<name>`). Wildcard entries
-   * are excluded from generic exact-path lookups and from
-   * `resolveEffectiveConfig()` (there is no single "the" featureFlags value).
+   * True for a key FAMILY matched by a fixed-shape `pattern` rather than an
+   * exact path (`featureFlags.<name>`, `pipelines.<name>.gates.<stage>`, …).
+   * Wildcard entries are excluded from generic exact-path lookups; effective
+   * resolution emits a template entry for the family plus one entry per set
+   * instance (there is no single "the" value for a family).
    */
   wildcard?: boolean;
+  /**
+   * For a wildcard family: the canonical fixed-shape dot-path template with
+   * literal and `<placeholder>` segments (e.g. `featureFlags.<name>`,
+   * `pipelines.<name>.gates.<stage>`). A key path matches the family when its
+   * segment count equals the pattern's and every literal segment matches
+   * exactly; each `<placeholder>` segment accepts a conservative identifier
+   * (letters, digits, hyphen, underscore) and is NOT checked against the
+   * existence of any pipeline, stage, or other referent. Required on every
+   * wildcard entry.
+   */
+  pattern?: string;
 }
 
 /** Keys that live in the same config blocks as registry keys but are machine-managed, never CLI-settable. */
@@ -142,6 +159,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     scopes: ['global'],
     type: 'boolean',
     wildcard: true,
+    pattern: 'featureFlags.<name>',
     defaultValue: false,
     description: 'Feature flag toggle (featureFlags.<name>)',
     group: 'Advanced',
@@ -174,7 +192,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   // ---- project scope ----
   {
     key: 'schema',
-    scopes: ['project'],
+    scopes: ['store', 'project'],
     type: 'string',
     defaultValue: '',
     description: 'The workflow schema this project uses (e.g. "spec-driven")',
@@ -182,7 +200,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'autopilot.gates',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'enum',
     enumValues: ['on', 'off'],
     defaultValue: 'on',
@@ -191,7 +209,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'autopilot.selection',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'enum',
     enumValues: ['classify', 'manual', 'compose'],
     defaultValue: 'manual',
@@ -200,7 +218,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'archive.timing',
-    scopes: ['project'],
+    scopes: ['store', 'project'],
     type: 'enum',
     enumValues: ['on-merge', 'in-ship'],
     defaultValue: 'on-merge',
@@ -209,7 +227,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'archive.destination',
-    scopes: ['project'],
+    scopes: ['store', 'project'],
     type: 'enum',
     enumValues: ['in-repo', 'external', 'prune'],
     defaultValue: 'in-repo',
@@ -219,7 +237,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   // ---- both scopes ----
   {
     key: 'handoff.threshold',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: 0.5,
     validate: validateThreshold,
@@ -229,7 +247,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.planner',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -238,7 +256,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.implementer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -247,7 +265,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.reviewer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -256,7 +274,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.fixer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -265,7 +283,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'handoff.roles.shipper',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'threshold',
     defaultValue: undefined,
     validate: validateThreshold,
@@ -274,7 +292,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.default',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -283,7 +301,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.planner',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -292,7 +310,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.implementer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -301,7 +319,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.reviewer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -310,7 +328,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.fixer',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
@@ -319,12 +337,77 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'models.roles.shipper',
-    scopes: ['global', 'project'],
+    scopes: ['global', 'store', 'project'],
     type: 'string',
     defaultValue: undefined,
     validate: validateModelId,
     description: 'Per-role model override for the shipper role (wins over models.default at the same scope); any model id is accepted',
     group: 'Workflow',
+  },
+  // ---- global scope (UI-managed) ----
+  {
+    key: 'ui.pinnedSpaces',
+    scopes: ['global'],
+    type: 'array',
+    defaultValue: [],
+    description: 'Pinned planning spaces as <type>:<id> selectors (managed from the Spaces page)',
+    group: 'Appearance',
+  },
+  // ---- Pipelines families (per-pipeline, per-stage overrides) ----
+  // Wildcard families whose instances (e.g. `pipelines.small-feature.gates.propose`)
+  // are settable at global/store/project scope with NO default: an unset
+  // instance is absent, not defaulted, so a consumer can distinguish "no
+  // override" from any concrete value. No consumer reads these yet — this
+  // registry surface is the machinery a later Pipelines page consumes.
+  {
+    key: 'pipelines.<name>.gates.<stage>',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: ['on', 'off'],
+    wildcard: true,
+    pattern: 'pipelines.<name>.gates.<stage>',
+    defaultValue: undefined,
+    description: 'Per-pipeline, per-stage gate override (on | off)',
+    group: 'Pipelines',
+  },
+  {
+    key: 'pipelines.<name>.models.<stage>',
+    scopes: ['global', 'store', 'project'],
+    type: 'string',
+    wildcard: true,
+    pattern: 'pipelines.<name>.models.<stage>',
+    validate: validateModelId,
+    defaultValue: undefined,
+    description: 'Per-pipeline, per-stage model override (any non-empty model id)',
+    group: 'Pipelines',
+  },
+  {
+    key: 'pipelines.<name>.handoff.<stage>',
+    scopes: ['global', 'store', 'project'],
+    type: 'threshold',
+    wildcard: true,
+    pattern: 'pipelines.<name>.handoff.<stage>',
+    validate: validateThreshold,
+    defaultValue: undefined,
+    description:
+      'Per-pipeline, per-stage context-handoff threshold override: a fraction in (0, 1], or an absolute { remainingTokens: N }',
+    group: 'Pipelines',
+  },
+  // The fourth `pipelines.*` family: per-ROLE (not per-stage) runtime override.
+  // `rasen pipeline agents` writes instances here instead of freezing a full
+  // pipeline YAML copy into the project — the effective runtime for a role
+  // resolves this instance (project > store > global) above the pipeline's
+  // declared `agents.<role>.runtime`. Enum claude | codex, no default.
+  {
+    key: 'pipelines.<name>.runtimes.<role>',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: ['claude', 'codex'],
+    wildcard: true,
+    pattern: 'pipelines.<name>.runtimes.<role>',
+    defaultValue: undefined,
+    description: 'Per-pipeline, per-role agent runtime override (claude | codex)',
+    group: 'Pipelines',
   },
 ];
 
@@ -338,22 +421,159 @@ export function findConfigKeyDefinition(
   );
 }
 
-/** The wildcard family definition matching `featureFlags.<name>`, if the scope supports it. */
-export function findWildcardDefinition(
-  rootKey: string,
-  scope: ConfigScope
-): ConfigKeyDefinition | undefined {
-  return CONFIG_KEY_REGISTRY.find(
-    (def) => def.wildcard && def.key === rootKey && def.scopes.includes(scope)
+/** Conservative identifier charset every `<placeholder>` segment must satisfy. */
+const PLACEHOLDER_VALUE_RE = /^[A-Za-z0-9_-]+$/;
+
+interface PatternSegment {
+  /** The literal text this segment must equal, or null when it is a placeholder. */
+  literal: string | null;
+}
+
+/** Splits a family pattern into literal/placeholder segments (`<name>` → placeholder). */
+function parseFamilyPattern(pattern: string): PatternSegment[] {
+  return pattern.split('.').map((segment) =>
+    /^<.+>$/.test(segment) ? { literal: null } : { literal: segment }
   );
 }
 
 /**
- * Validate a key path against the registry for the given scope. Delegates to
- * the registry for exact matches; preserves the `featureFlags.<name>`
- * wildcard special-case (global scope only, exactly two segments). Callers
- * that want the global `--allow-unknown` escape hatch apply it themselves —
- * this function always enforces registry membership.
+ * Classifies a key path against the wildcard families, optionally gated to
+ * families settable in `scope` (omit `scope` to consider every family
+ * regardless of scope — the config API routes by shape first, then checks
+ * scope separately so it can name the settable scopes). Outcomes:
+ *  - `match`: segment count and every literal segment match a family, and
+ *    every placeholder is a valid identifier — a settable instance path.
+ *  - `bad_placeholder`: shape matches a family but a placeholder segment
+ *    contains a character outside the identifier charset.
+ *  - `wrong_shape`: the path's literal segments identify a family (its root
+ *    literal and every literal present at a shared index match) but the
+ *    segment count or a trailing/missing segment does not fit the pattern.
+ *  - `none`: the path belongs to no wildcard family.
+ */
+export type WildcardClassification =
+  | { kind: 'match'; definition: ConfigKeyDefinition }
+  | { kind: 'bad_placeholder'; definition: ConfigKeyDefinition; segment: string }
+  | { kind: 'wrong_shape'; definition: ConfigKeyDefinition }
+  | { kind: 'none' };
+
+export function classifyWildcardPath(
+  keyPath: string,
+  scope?: ConfigScope
+): WildcardClassification {
+  const segments = keyPath.split('.');
+  const families = CONFIG_KEY_REGISTRY.filter(
+    (def) => def.wildcard && def.pattern && (scope === undefined || def.scopes.includes(scope))
+  );
+
+  // First pass: an exact-shape match (segment count + every literal equal).
+  for (const def of families) {
+    const patternSegs = parseFamilyPattern(def.pattern!);
+    if (patternSegs.length !== segments.length) continue;
+    const literalsMatch = patternSegs.every(
+      (seg, i) => seg.literal === null || seg.literal === segments[i]
+    );
+    if (!literalsMatch) continue;
+    const badPlaceholder = patternSegs.findIndex(
+      (seg, i) => seg.literal === null && !PLACEHOLDER_VALUE_RE.test(segments[i]!)
+    );
+    if (badPlaceholder !== -1) {
+      return { kind: 'bad_placeholder', definition: def, segment: segments[badPlaceholder]! };
+    }
+    return { kind: 'match', definition: def };
+  }
+
+  // Second pass: the path did not fit any pattern's shape, but its literal
+  // segments may still identify the family it was reaching for — pick the
+  // family with the most matching literals (its root literal must match, and
+  // no literal present at a shared index may disagree).
+  let bestDef: ConfigKeyDefinition | undefined;
+  let bestScore = 0;
+  for (const def of families) {
+    const patternSegs = parseFamilyPattern(def.pattern!);
+    if (patternSegs[0].literal === null || patternSegs[0].literal !== segments[0]) continue;
+    let score = 0;
+    let disqualified = false;
+    const overlap = Math.min(patternSegs.length, segments.length);
+    for (let i = 0; i < overlap; i++) {
+      if (patternSegs[i].literal === null) continue;
+      if (patternSegs[i].literal === segments[i]) score += 1;
+      else {
+        disqualified = true;
+        break;
+      }
+    }
+    if (!disqualified && score > bestScore) {
+      bestScore = score;
+      bestDef = def;
+    }
+  }
+  if (bestDef) {
+    return { kind: 'wrong_shape', definition: bestDef };
+  }
+
+  return { kind: 'none' };
+}
+
+/**
+ * The wildcard family a fully-shaped, valid instance path matches in `scope`,
+ * or undefined. Placeholder charset and value are validated by
+ * `validateConfigKeyPath`/`validateConfigValue`, not here.
+ */
+export function findWildcardDefinition(
+  keyPath: string,
+  scope: ConfigScope
+): ConfigKeyDefinition | undefined {
+  const classification = classifyWildcardPath(keyPath, scope);
+  return classification.kind === 'match' ? classification.definition : undefined;
+}
+
+/**
+ * Enumerates the full dot-path of every instance of `def`'s family that is
+ * SET in `record` — walking the fixed literal structure and treating each
+ * `<placeholder>` segment as "every key present at this level". Only descends
+ * through plain objects; a leaf reached at the end of the pattern yields its
+ * path regardless of the leaf's value type (value validity is the caller's
+ * concern). Returns `[]` for a non-wildcard entry, an absent block, or a
+ * record whose shape does not reach the pattern's depth.
+ */
+export function collectFamilyInstancePaths(
+  def: ConfigKeyDefinition,
+  record: Record<string, unknown> | null | undefined
+): string[] {
+  if (!def.wildcard || !def.pattern || !record) return [];
+  const patternSegs = parseFamilyPattern(def.pattern);
+
+  const paths: string[] = [];
+  const walk = (node: unknown, depth: number, prefix: string[]): void => {
+    if (depth === patternSegs.length) {
+      paths.push(prefix.join('.'));
+      return;
+    }
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) return;
+    const seg = patternSegs[depth];
+    const obj = node as Record<string, unknown>;
+    if (seg.literal !== null) {
+      if (seg.literal in obj) walk(obj[seg.literal], depth + 1, [...prefix, seg.literal]);
+    } else {
+      for (const key of Object.keys(obj)) {
+        // A placeholder still has to be a well-formed identifier to count as a
+        // real instance; a stray key with odd characters is not enumerated.
+        if (!PLACEHOLDER_VALUE_RE.test(key)) continue;
+        walk(obj[key], depth + 1, [...prefix, key]);
+      }
+    }
+  };
+  walk(record, 0, []);
+  return paths;
+}
+
+/**
+ * Validate a key path against the registry for the given scope. A wildcard
+ * family instance validates structurally (segment shape + placeholder
+ * charset) against its family; a fixed key must match a registry entry
+ * settable in the scope. Callers that want the global `--allow-unknown`
+ * escape hatch apply it themselves — this function always enforces registry
+ * membership.
  */
 export function validateConfigKeyPath(
   keyPath: string,
@@ -369,16 +589,21 @@ export function validateConfigKeyPath(
     return { valid: false, reason: `"${keyPath}" is machine-managed and not settable` };
   }
 
-  const rootKey = rawKeys[0];
-  const wildcardDef = findWildcardDefinition(rootKey, scope);
-  if (wildcardDef) {
-    if (rawKeys.length !== 2) {
-      return {
-        valid: false,
-        reason: `${rootKey} values are booleans and do not support nested keys`,
-      };
-    }
+  const wildcard = classifyWildcardPath(keyPath, scope);
+  if (wildcard.kind === 'match') {
     return { valid: true };
+  }
+  if (wildcard.kind === 'bad_placeholder') {
+    return {
+      valid: false,
+      reason: `"${wildcard.segment}" is not a valid segment for ${wildcard.definition.pattern} (use letters, digits, hyphens, or underscores)`,
+    };
+  }
+  if (wildcard.kind === 'wrong_shape') {
+    return {
+      valid: false,
+      reason: `"${keyPath}" does not match the ${wildcard.definition.pattern} shape`,
+    };
   }
 
   const def = findConfigKeyDefinition(keyPath, scope);

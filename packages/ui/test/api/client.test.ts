@@ -51,23 +51,25 @@ describe('api client', () => {
     expect(url).toBe('/api/v1/config/proactive');
   });
 
-  it('sets Content-Type: application/json on DELETE and puts scope in the query string', async () => {
+  it('sets Content-Type: application/json on DELETE and puts scope + space in the query string', async () => {
     (fetch as any).mockResolvedValueOnce(
-      jsonResponse(200, { entry: configListFixture.entries[1] })
+      jsonResponse(200, { entry: configListFixture.entries[1], store: null })
     );
-    await client.deleteKey('proactive', 'project', 'proj_abc123');
+    await client.deleteKey('proactive', 'project', 'project:proj_abc123');
     const [url, init] = (fetch as any).mock.calls[0];
     expect(init.method).toBe('DELETE');
     expect(init.headers['Content-Type']).toBe('application/json');
     expect(url).toContain('scope=project');
-    expect(url).toContain('project=proj_abc123');
+    // The config client moved wholesale onto ?space= (W2 design D7).
+    expect(url).toContain('space=project%3Aproj_abc123');
+    expect(url).not.toContain('project=proj_abc123');
   });
 
-  it('appends ?project= on reads when a project is given', async () => {
+  it('appends ?space= on config reads when a space selector is given (W2 design D7)', async () => {
     (fetch as any).mockResolvedValueOnce(jsonResponse(200, configListFixture));
-    await client.listConfig('proj_abc123');
+    await client.listConfig('project:proj_abc123');
     const [url] = (fetch as any).mock.calls[0];
-    expect(url).toBe('/api/v1/config?project=proj_abc123');
+    expect(url).toBe('/api/v1/config?space=project%3Aproj_abc123');
   });
 
   it('returns typed data for listProjects', async () => {
@@ -204,6 +206,57 @@ describe('api client', () => {
       await expect(client.launchSession({ kind: 'auto', task: 'x' })).rejects.toMatchObject({
         code: 'agent_cli_unavailable',
       });
+    });
+  });
+
+  describe('space scoping (management-ui-shell design D6)', () => {
+    it('threads the space selector as ?space= on listChanges/listRuns/listSessions', async () => {
+      // A fresh Response per call — a Response body can only be read once.
+      (fetch as any).mockImplementation(() => Promise.resolve(jsonResponse(200, { changes: [], errors: [] })));
+      await client.listChanges('project:proj_abc123');
+      await client.listRuns('store:my-store');
+      await client.listSessions('project:proj_abc123');
+      const urls = (fetch as any).mock.calls.map((c: unknown[]) => c[0]);
+      // encodeURIComponent leaves the id verbatim but escapes the `:` separator.
+      expect(urls[0]).toBe('/api/v1/changes?space=project%3Aproj_abc123');
+      expect(urls[1]).toBe('/api/v1/runs?space=store%3Amy-store');
+      expect(urls[2]).toBe('/api/v1/sessions?space=project%3Aproj_abc123');
+    });
+
+    it('omits ?space= entirely when no selector is given (preserving the launch-project fallback)', async () => {
+      (fetch as any).mockImplementation(() => Promise.resolve(jsonResponse(200, { changes: [], errors: [] })));
+      await client.listChanges();
+      await client.listRuns();
+      await client.listSessions();
+      const urls = (fetch as any).mock.calls.map((c: unknown[]) => c[0]);
+      expect(urls[0]).toBe('/api/v1/changes');
+      expect(urls[1]).toBe('/api/v1/runs');
+      expect(urls[2]).toBe('/api/v1/sessions');
+    });
+
+    it('carries the space selector in the launchSession body, not the query', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, { session: sessionsListFixture.sessions[2]!.session })
+      );
+      await client.launchSession({ kind: 'auto', task: 'do a thing', space: 'store:my-store' });
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions'); // no query
+      expect(JSON.parse(init.body)).toEqual({ kind: 'auto', task: 'do a thing', space: 'store:my-store' });
+    });
+
+    it('keeps the opaque id byte-for-byte (mixed case / separators) inside the query', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, { changes: [], errors: [] }));
+      await client.listChanges('project:Proj_Mixed-Case.v2');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toContain('Proj_Mixed-Case.v2'); // no lowercasing / canonicalization
+    });
+
+    it('listSpaces GETs /api/v1/spaces', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, { spaces: [] }));
+      await client.listSpaces();
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/spaces');
+      expect(init.method).toBeUndefined();
     });
   });
 });

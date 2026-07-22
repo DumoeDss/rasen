@@ -20,11 +20,26 @@ export type TerminationReason =
   | 'server-shutdown'
   | 'spawn-error';
 
+/**
+ * The planning space a session is attributed to (planning-space-addressing
+ * design D3), frozen at launch from the session's cwd (or the explicitly
+ * selected launch space). Structurally identical to `DerivedSpace`
+ * (root-selection.ts); redeclared here so the session registry stays
+ * dependency-light.
+ */
+export interface SessionSpace {
+  type: 'project' | 'store';
+  id: string;
+  root: string;
+}
+
 export interface SessionRecord {
   id: string;
   kind: SessionKind;
   task: string;
   cwd: string;
+  /** Planning space this session belongs to (design D3), frozen at launch. Absent when the cwd yields no derivable space. */
+  space?: SessionSpace;
   pid?: number;
   /** The claude CLI's own session id, parsed best-effort from the stream-json `init` event — observability only, never the registry key. */
   agentSessionId?: string;
@@ -48,6 +63,7 @@ export interface SessionRegistry {
     task: string;
     cwd: string;
     changeName?: string;
+    space?: SessionSpace;
   }): SessionRecord;
   get(id: string): SessionRecord | undefined;
   list(): SessionRecord[];
@@ -106,6 +122,7 @@ export function createSessionRegistry(): SessionRegistry {
         startedAt: now,
         lastOutputAt: now,
         ...(input.changeName !== undefined ? { changeName: input.changeName } : {}),
+        ...(input.space !== undefined ? { space: input.space } : {}),
       };
       records.set(record.id, record);
       return copy(record);

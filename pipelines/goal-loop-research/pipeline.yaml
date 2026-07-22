@@ -13,7 +13,7 @@ stages:
     skill: rasen-goal-plan
     role: planner
     requires: []
-    gate: vet
+    gate: true
 
   - id: iterate
     skill: rasen-goal-iterate

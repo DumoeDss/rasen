@@ -39,8 +39,11 @@ import {
   legacyWorkspaceGuidance,
   type PlanningHome,
 } from './planning-home.js';
-import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
+import { classifyOpenSpecDir, readProjectConfig, storePointerProblem } from './project-config.js';
 import { touchProjectRegistry } from './project-home.js';
+import { findProjectRegistryEntry } from './project-registry.js';
+import { listRegisteredStores } from './store/registry.js';
+import { isRegisteredStoreRoot } from './effective-config.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 
 export type OpenSpecRootSource = 'store' | 'declared' | 'nearest' | 'implicit';
@@ -75,7 +78,12 @@ export interface ResolvedOpenSpecRoot {
 
 export type RootSelectionNotice =
   | {
-    kind: 'ignored-store-pointer';
+    kind: 'inheriting-store-config';
+    filePath: string;
+    storeId: string;
+  }
+  | {
+    kind: 'inactive-store-pointer';
     filePath: string;
     storeId: string;
   }
@@ -89,9 +97,16 @@ export type RootSelectionNotice =
 export type RootSelectionReporter = (notice: RootSelectionNotice) => void;
 
 function defaultRootSelectionReporter(notice: RootSelectionNotice): void {
-  if (notice.kind === 'ignored-store-pointer') {
+  if (notice.kind === 'inheriting-store-config') {
     console.error(
-      `Warning: ${notice.filePath} declares store '${notice.storeId}', but this directory is a real Rasen root; the declaration is ignored.`
+      `${notice.filePath} declares store '${notice.storeId}'; planning stays local and configuration inherits from that store.`
+    );
+    return;
+  }
+
+  if (notice.kind === 'inactive-store-pointer') {
+    console.error(
+      `Warning: ${notice.filePath} declares store '${notice.storeId}', but no such store is registered; the declaration currently has no effect. Register it with rasen store register <path> --id ${notice.storeId}.`
     );
     return;
   }
@@ -329,7 +344,7 @@ export async function inspectRegisteredStore(
  * make $HOME a phantom root that captures every command under the
  * home tree.
  */
-function findQualifyingRootSync(startPath: string): string | null {
+export function findQualifyingRootSync(startPath: string): string | null {
   let candidate = findRepoPlanningRootSync(startPath);
   while (candidate) {
     const { hasPlanningShape, pointer } = classifyOpenSpecDir(candidate);
@@ -345,6 +360,80 @@ function findQualifyingRootSync(startPath: string): string | null {
   return null;
 }
 
+/** Canonicalizes an existing path; falls back to `path.resolve` for a path that does not exist on disk (a stale registered root). */
+function canonicalizeOrResolve(target: string): string {
+  try {
+    return FileSystemUtils.canonicalizeExistingPath(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/**
+ * A planning space derived from a working directory (planning-space-addressing
+ * design D5). `{ type, id, root }` — the shared shape frozen on session records
+ * and emitted by `rasen ui` as a `?space=<type>:<id>` selector. `root` is
+ * canonical.
+ */
+export interface DerivedSpace {
+  type: 'project' | 'store';
+  id: string;
+  root: string;
+}
+
+export interface DeriveSpaceOptions {
+  /** Test/DI override for the machine registries; defaults to getGlobalDataDir(). */
+  globalDataDir?: string;
+}
+
+/**
+ * The one shared cwd→space derivation (design D5), read-only, used by both
+ * `rasen ui` (URL emission) and session space attribution: the nearest
+ * qualifying `rasen/` root wins; a root with planning shape is that repo's
+ * project space (its registry entry id, else its config `projectId`); a
+ * config-only root whose `store:` pointer names a registered store is that
+ * store's space (id = pointer value, root = registered store root); a
+ * malformed pointer, an unregistered store, or a planning root with no
+ * resolvable identity yields no space (callers degrade rather than fail).
+ * Never mutates any registry, config, or directory.
+ */
+export async function deriveSpaceFromCwd(
+  startPath: string,
+  options: DeriveSpaceOptions = {}
+): Promise<DerivedSpace | null> {
+  const pathOptions = options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {};
+
+  const root = findQualifyingRootSync(startPath);
+  if (!root) return null;
+
+  const { hasPlanningShape, pointer } = classifyOpenSpecDir(root);
+
+  if (hasPlanningShape) {
+    const registryEntry = await findProjectRegistryEntry(root, pathOptions);
+    if (registryEntry) {
+      return { type: 'project', id: registryEntry.entry.projectId, root: registryEntry.canonicalPath };
+    }
+    const projectId = readProjectConfig(root)?.projectId;
+    if (projectId) {
+      return { type: 'project', id: projectId, root: canonicalizeOrResolve(root) };
+    }
+    // Planning-shaped but no resolvable identity (never registered, no minted
+    // projectId): no space id to emit or filter by — degrade to no space.
+    return null;
+  }
+
+  // Config-only root: a well-formed `store:` pointer to a registered store
+  // attributes to that store's space; anything else degrades to no space.
+  if (pointer.value !== undefined && pointer.malformed === undefined) {
+    const stores = await listRegisteredStores(pathOptions);
+    const store = stores.find((candidate) => candidate.type === 'store' && candidate.id === pointer.value);
+    if (store) {
+      return { type: 'store', id: store.id, root: canonicalizeOrResolve(store.storeRoot) };
+    }
+  }
+  return null;
+}
+
 async function resolveNearestOrDeclaredRoot(
   nearestRoot: string,
   globalDataDir?: string,
@@ -353,12 +442,32 @@ async function resolveNearestOrDeclaredRoot(
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(nearestRoot);
 
   if (hasPlanningShape) {
+    // A well-formed `store:` pointer beside local planning declares
+    // configuration inheritance (store-config-inheritance): planning stays
+    // local (this root still wins), but the notice reports whether the named
+    // store is registered — inheriting when it is, inactive when it is not.
+    // The notice must not claim inheritance that will not happen, so it is
+    // gated on the SAME facts resolveConfigStoreLayer uses:
+    //  - the root is itself a registered store -> no-transitivity (rule 3), a
+    //    store root never inherits, so the pointer is inert; stay silent
+    //    (matching the resolver's null result — the spec is silent on the
+    //    store-pointing-at-a-store case) rather than claiming inheritance.
+    //  - otherwise: named store registered -> inheriting; unregistered ->
+    //    inactive-pointer warning.
+    // A malformed pointer stays silent (value undefined in that branch).
     if (pointer.value !== undefined && pointer.filePath !== null) {
-      reportRootSelectionNotice(reporter, {
-        kind: 'ignored-store-pointer',
-        filePath: pointer.filePath,
-        storeId: pointer.value,
-      });
+      const pathOptions = globalDataDir ? { globalDataDir } : {};
+      const stores = await listRegisteredStores(pathOptions);
+      if (!isRegisteredStoreRoot(nearestRoot, stores)) {
+        const registered = stores.some(
+          (candidate) => candidate.type === 'store' && candidate.id === pointer.value
+        );
+        reportRootSelectionNotice(reporter, {
+          kind: registered ? 'inheriting-store-config' : 'inactive-store-pointer',
+          filePath: pointer.filePath,
+          storeId: pointer.value,
+        });
+      }
     }
     return makeRoot(nearestRoot, 'nearest');
   }

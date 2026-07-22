@@ -1188,6 +1188,53 @@ rules:
         )
       ).toEqual({ effective: 'off', source: 'flag' });
     });
+
+    it('honors a store default when no project value is set (store beats global)', () => {
+      expect(
+        resolveAutopilotGatePolicy(null, false, { autopilot: { gates: 'off' } }, {
+          schema: 'spec-driven',
+          autopilot: { gates: 'on' },
+        })
+      ).toEqual({ effective: 'on', source: 'store' });
+    });
+
+    it('project value wins over the store value', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          { schema: 'spec-driven', autopilot: { gates: 'on' } },
+          false,
+          null,
+          { schema: 'spec-driven', autopilot: { gates: 'off' } }
+        )
+      ).toEqual({ effective: 'on', source: 'project' });
+    });
+
+    it('the run flag wins over a store value', () => {
+      expect(
+        resolveAutopilotGatePolicy(null, true, null, {
+          schema: 'spec-driven',
+          autopilot: { gates: 'on' },
+        })
+      ).toEqual({ effective: 'off', source: 'flag' });
+    });
+
+    it('an invalid store value falls through to the global layer', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          null,
+          false,
+          { autopilot: { gates: 'off' } },
+          { schema: 'spec-driven', autopilot: { gates: 'bogus' as never } }
+        )
+      ).toEqual({ effective: 'off', source: 'global' });
+    });
+
+    it('an absent storeConfig behaves exactly as the three-argument form', () => {
+      expect(resolveAutopilotGatePolicy(null, false, { autopilot: { gates: 'off' } }, null)).toEqual({
+        effective: 'off',
+        source: 'global',
+      });
+    });
   });
 
   describe('autopilot.selection parsing', () => {
@@ -1394,6 +1441,54 @@ rules:
           { autopilot: { selection: 'manual' } }
         )
       ).toEqual({ effective: 'classify', source: 'flag' });
+    });
+
+    it('honors a store default when no project value is set (store beats global)', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, false, false, { autopilot: { selection: 'classify' } }, {
+          schema: 'spec-driven',
+          autopilot: { selection: 'compose' },
+        })
+      ).toEqual({ effective: 'compose', source: 'store' });
+    });
+
+    it('project value wins over the store value', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false,
+          false,
+          null,
+          { schema: 'spec-driven', autopilot: { selection: 'classify' } }
+        )
+      ).toEqual({ effective: 'manual', source: 'project' });
+    });
+
+    it('the run flag wins over a store value', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, true, false, null, {
+          schema: 'spec-driven',
+          autopilot: { selection: 'manual' },
+        })
+      ).toEqual({ effective: 'classify', source: 'flag' });
+    });
+
+    it('an invalid store value falls through to the global layer', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          null,
+          false,
+          false,
+          { autopilot: { selection: 'classify' } },
+          { schema: 'spec-driven', autopilot: { selection: 'bogus' as never } }
+        )
+      ).toEqual({ effective: 'classify', source: 'global' });
+    });
+
+    it('an absent storeConfig behaves exactly as the four-argument form', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, false, false, { autopilot: { selection: 'classify' } }, null)
+      ).toEqual({ effective: 'classify', source: 'global' });
     });
   });
 

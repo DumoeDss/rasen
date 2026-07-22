@@ -131,7 +131,10 @@ describe('ui command', () => {
       expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
       expect(startManagementServerMock).not.toHaveBeenCalled();
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=adopted-token$/m);
+      // The URL may carry a `?space=` selector derived from the cwd (the repo
+      // is itself a Rasen project); the launch behavior under test is
+      // unaffected either way.
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/[^#\n]*#token=adopted-token$/m);
     });
 
     it('spawns a daemon when nothing listens and prints its URL', async () => {
@@ -143,7 +146,7 @@ describe('ui command', () => {
 
       expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=spawned-token$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/[^#\n]*#token=spawned-token$/m);
     });
 
     it('review round 1 M1: replaces a stale-version daemon — kills it by its reported pid, waits for the port to free, then spawns fresh', async () => {
@@ -157,7 +160,7 @@ describe('ui command', () => {
       expect(killIdentifiedDaemonAndWaitFreeMock).toHaveBeenCalledWith(9999, 8791);
       expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/#token=replaced-token$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/[^#\n]*#token=replaced-token$/m);
     });
 
     it('review round 1 M1: fails, without spawning, when the stale daemon\'s port cannot be freed in time', async () => {
@@ -202,7 +205,7 @@ describe('ui command', () => {
 
       expect(startManagementServerMock).toHaveBeenCalledTimes(1);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/#token=[0-9a-f]{64}$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/[^#\n]*#token=[0-9a-f]{64}$/m);
       expect(spawnMock).toHaveBeenCalledTimes(1);
     });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parsePipeline,
   validatePipelineSkills,
@@ -61,12 +61,13 @@ stages:
       expect(stage.verifyPolicy).toBeUndefined();
     });
 
-    // autopilot-gate-policy: the stage gate widens from boolean to
-    // boolean | 'vet'. This is a DIFFERENT field from the goal-loop
-    // `loop.gate` measure/evaluate union tested below — do not confuse them.
-    describe('gate: boolean | vet (autopilot-gate-policy)', () => {
-      const stageYaml = (gate: string) => `
-name: gate-test
+    // autopilot-gate-policy: the stage gate is a plain boolean. This is a
+    // DIFFERENT field from the goal-loop `loop.gate` measure/evaluate union
+    // tested below — do not confuse them. The retired `gate: 'vet'` spelling
+    // is coerced to `true` by the legacy shim (see the coercion tests).
+    describe('gate: boolean (autopilot-gate-policy)', () => {
+      const stageYaml = (gate: string, name = 'gate-test') => `
+name: ${name}
 stages:
   - id: only
     skill: rasen-propose
@@ -83,11 +84,6 @@ stages:
         expect(pipeline.stages[0].gate).toBe(false);
       });
 
-      it("parses gate: 'vet'", () => {
-        const pipeline = parsePipeline(stageYaml('vet'));
-        expect(pipeline.stages[0].gate).toBe('vet');
-      });
-
       it('defaults to false when gate is omitted', () => {
         const yaml = `
 name: gate-omitted
@@ -101,6 +97,45 @@ stages:
 
       it('rejects an invalid gate value', () => {
         expect(() => parsePipeline(stageYaml('maybe'))).toThrow();
+      });
+    });
+
+    // autopilot-gate-policy "Legacy vet gate values read as ordinary gates":
+    // the retired `gate: 'vet'` type is no longer a distinct value; a user YAML
+    // still carrying it reads as `gate: true` with a single warning per pipeline
+    // per process, never a parse error, so existing libraries keep loading.
+    describe("legacy gate: 'vet' coercion (autopilot-gate-policy)", () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      const vetYaml = (name: string) => `
+name: ${name}
+stages:
+  - id: define-goal
+    skill: rasen-goal-plan
+    gate: vet
+`;
+
+      it("coerces gate: 'vet' to true instead of erroring", () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const pipeline = parsePipeline(vetYaml('legacy-coerce-basic'));
+        expect(pipeline.stages[0].gate).toBe(true);
+      });
+
+      it('warns exactly once per pipeline per process even when loaded twice', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const yaml = vetYaml('legacy-coerce-once');
+        parsePipeline(yaml);
+        parsePipeline(yaml);
+        const vetWarnings = warn.mock.calls.filter(([msg]) =>
+          typeof msg === 'string' && msg.includes("gate: 'vet'")
+        );
+        expect(vetWarnings).toHaveLength(1);
+        // The warning names the pipeline, the stage, and the per-stage key.
+        expect(vetWarnings[0][0]).toContain('legacy-coerce-once');
+        expect(vetWarnings[0][0]).toContain('define-goal');
+        expect(vetWarnings[0][0]).toContain('pipelines.legacy-coerce-once.gates.define-goal');
       });
     });
 
@@ -410,6 +445,42 @@ stages:
         const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline);
         expect(result.model).toBeUndefined();
         expect(result.modelSource).toBe('default');
+      });
+
+      it('the store base model applies below the project layer and above global', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeDefault: 'opus',
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('opus');
+        expect(result.modelSource).toBe('store-default');
+      });
+
+      it('a store per-role model beats the store base and the global layer', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeDefault: 'sonnet',
+          storeRoles: { reviewer: 'fable' },
+          globalRoles: { reviewer: 'opus' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('store-role');
+      });
+
+      it('project model config beats the store layer', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('project-role');
+      });
+
+      it('absent store fields change nothing', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('sonnet');
+        expect(result.modelSource).toBe('global-default');
       });
     });
 
@@ -1264,6 +1335,63 @@ stages:
         });
         expect(result.threshold).toEqual({ remainingTokens: 40_000 });
         expect(result.source).toBe('project-role');
+      });
+
+      it('the store config threshold applies below the project layer', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: 0.45,
+        });
+        expect(result.threshold).toBe(0.45);
+        expect(result.source).toBe('store-config');
+      });
+
+      it('a store per-role threshold beats the store scalar', () => {
+        const reviewerResult = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: 0.45,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(reviewerResult.threshold).toBe(0.7);
+        expect(reviewerResult.source).toBe('store-role');
+
+        const nonReviewerResult = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          storeThreshold: 0.45,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(nonReviewerResult.threshold).toBe(0.45);
+        expect(nonReviewerResult.source).toBe('store-config');
+      });
+
+      it('the project layer beats the store layer entirely', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('the store layer beats the global layer', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          storeRoles: { implementer: 0.8 },
+          globalRoles: { implementer: 0.6 },
+        });
+        expect(result.threshold).toBe(0.8);
+        expect(result.source).toBe('store-role');
+      });
+
+      it('the store layer accepts the absolute { remainingTokens } form', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: { remainingTokens: 45_000 },
+        });
+        expect(result.threshold).toEqual({ remainingTokens: 45_000 });
+        expect(result.source).toBe('store-config');
+      });
+
+      it('absent store fields never report a store source', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          globalThreshold: 0.65,
+        });
+        expect(result.source).toBe('global-config');
       });
     });
 
