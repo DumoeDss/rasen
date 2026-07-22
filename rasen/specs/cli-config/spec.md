@@ -199,29 +199,20 @@ The config command SHALL open the config file in the user's editor.
 
 ### Requirement: Profile Configuration Flow
 
-The `rasen config profile` command SHALL provide an action-first interactive flow that allows users to modify delivery and workflow settings independently.
+The `rasen config profile` command SHALL provide an action-first interactive flow that allows users to modify workflow settings. Delivery is retired and SHALL NOT appear as a configurable option.
 
 #### Scenario: Current profile summary appears first
 
 - **WHEN** user runs `rasen config profile` in an interactive terminal
 - **THEN** display a current-state header with:
-  - current delivery value
   - workflow count with profile label (core or custom)
 
 #### Scenario: Action-first menu offers skippable paths
 
 - **WHEN** user runs `rasen config profile` interactively
 - **THEN** the first prompt SHALL offer:
-  - `Change delivery + workflows`
-  - `Change delivery only`
-  - `Change workflows only`
+  - `Change workflows`
   - `Keep current settings (exit)`
-
-#### Scenario: Delivery prompt marks current selection
-
-- **WHEN** delivery selection is shown in `rasen config profile`
-- **THEN** the currently configured delivery option SHALL include `[current]` in its label
-- **AND** that value SHALL be preselected by default
 
 #### Scenario: No-op exits without saving or apply prompt
 
@@ -233,7 +224,7 @@ The `rasen config profile` command SHALL provide an action-first interactive flo
 #### Scenario: No-op warns when current project is out of sync
 
 - **WHEN** `rasen config profile` exits with `No config changes.` inside a Rasen project
-- **AND** project files are out of sync with the current global profile/delivery
+- **AND** project files are out of sync with the current global profile
 - **THEN** display a non-blocking warning that global config is not yet applied to this project
 - **AND** include guidance to run `rasen update` to sync project files
 
@@ -256,7 +247,7 @@ The config command SHALL use camelCase keys matching the JSON structure.
 
 ### Requirement: Schema Validation
 
-The config command SHALL validate configuration writes against the config schema using zod, while rejecting unknown keys for `config set` unless explicitly overridden. Retired delivery values remain valid input and are consolidated rather than rejected.
+The config command SHALL validate configuration writes against the config schema using zod, while rejecting unknown keys for `config set` unless explicitly overridden. The retired `delivery` key SHALL be handled gracefully — writing it does not crash and does not persist a delivery value — and a stored delivery value SHALL never block a whole-file validation.
 
 #### Scenario: Unknown key rejected by default
 
@@ -278,17 +269,19 @@ The config command SHALL validate configuration writes against the config schema
 - **AND** do not modify the config file
 - **AND** exit with code 1
 
-#### Scenario: Legacy delivery value accepted and consolidated
+#### Scenario: Setting the retired delivery key is a graceful no-op
 
-- **WHEN** user executes `rasen config set delivery commands-first` (or `commands`, or `skills-first`)
-- **THEN** validation SHALL NOT reject the value
-- **AND** the effective delivery on the next read SHALL be the consolidated value (`both` for `commands`/`commands-first`, `skills` for `skills-first`), accompanied by the one-time consolidation notice
+- **WHEN** user executes `rasen config set delivery <any-value>` (a current or legacy value such as `both`, `skills`, `commands`, `commands-first`, or `skills-first`)
+- **THEN** the command SHALL NOT crash with a raw unknown-key error
+- **AND** it SHALL emit the retirement notice explaining that commands have been consolidated into skills and the delivery setting has been retired
+- **AND** it SHALL NOT persist a `delivery` value to the config
 
-#### Scenario: Config edits with a legacy delivery value present still validate
+#### Scenario: Config edits with a retired delivery value present still validate
 
-- **WHEN** the config file contains a retired delivery value
+- **WHEN** the config file contains a leftover `delivery` value
 - **AND** user executes a `rasen config set` or `rasen config edit` operation on an unrelated key
-- **THEN** whole-file validation SHALL succeed (the legacy delivery value does not block the write)
+- **THEN** whole-file validation SHALL succeed (the leftover delivery value does not block the write)
+- **AND** the retired `delivery` key SHALL be removed from the file as part of the write
 
 ### Requirement: Reserved Scope Flag
 

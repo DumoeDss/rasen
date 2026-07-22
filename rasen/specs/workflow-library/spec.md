@@ -4,6 +4,20 @@
 
 Define the ownership and localization boundary for installable user workflows in the user-wide workflow library.
 ## Requirements
+
+### Requirement: Workflow definitions carry no command surface
+The command delivery surface is retired. A built-in or user-authored workflow definition SHALL NOT carry a `command` field, and no command template SHALL be registered for any workflow. A user-authored workflow package that still contains command content SHALL be accepted on install with that content ignored, rather than rejected.
+
+#### Scenario: No built-in workflow registers a command template
+- **WHEN** the built-in workflow definitions are enumerated
+- **THEN** no definition SHALL expose a `command` field
+- **AND** no command template SHALL be produced for any built-in workflow
+
+#### Scenario: User package command content is ignored, not rejected
+- **WHEN** a user-authored workflow package that still contains command content is installed
+- **THEN** the install SHALL succeed
+- **AND** the command content SHALL be ignored (only the skill surface is installed)
+
 ### Requirement: CLI locale does not rewrite user-authored workflow content
 
 Rasen SHALL treat user-authored workflow content as a single source authored in the user's chosen language. Locale resolution SHALL apply only to Rasen-owned presentation and SHALL NOT translate, replace, or select locale variants for user-authored workflow content.
@@ -296,7 +310,7 @@ An expert that is referenced by any selected workflow's dependency closure SHALL
 
 ### Requirement: The `ff` workflow is not a built-in
 
-The built-in workflow set SHALL NOT include a workflow with id `ff`. The `propose` workflow is the canonical entry point for generating a change and all its artifacts in one step; no built-in adapter, skill template, or command template for `ff` SHALL be registered.
+The built-in workflow set SHALL NOT include a workflow with id `ff`. The `propose` workflow is the canonical entry point for generating a change and all its artifacts in one step; no built-in adapter or skill template for `ff` SHALL be registered.
 
 #### Scenario: ff absent from the built-in registry
 

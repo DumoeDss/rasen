@@ -7,8 +7,8 @@ Fuses the three methodology experts (`codebase-design`, `tdd`, `prototype`) into
 The `/rasen:apply` workflow template SHALL mention `/tdd` as an optional test-first implementation discipline and `/careful` for changes touching destructive operations, as conditional references without inlining their bodies.
 
 #### Scenario: Apply template names the implementation disciplines
-- **WHEN** the generated `/rasen:apply` skill and command templates are inspected
-- **THEN** each SHALL reference `/tdd` as an implementation option and `/careful` for destructive-operation-heavy work
+- **WHEN** the generated `/rasen:apply` skill template is inspected
+- **THEN** it SHALL reference `/tdd` as an implementation option and `/careful` for destructive-operation-heavy work
 - **AND** SHALL NOT contain an inlined copy of either expert's body
 
 ### Requirement: Explore references the prototype discipline
@@ -17,13 +17,13 @@ The `/rasen:explore` workflow template SHALL reference `/prototype` as the way t
 
 #### Scenario: Explore template names prototype
 
-- **WHEN** the generated `/rasen:explore` skill and command templates are inspected
-- **THEN** each SHALL reference `/prototype` for settling a stuck design question
+- **WHEN** the generated `/rasen:explore` skill template is inspected
+- **THEN** it SHALL reference `/prototype` for settling a stuck design question
 - **AND** SHALL instruct capturing the answer in the change directory and deleting the throwaway code
 
 #### Scenario: Explore guardrail carve-out stays consistent with the prototype reference
 
-- **WHEN** the Guardrails section of the generated `/rasen:explore` skill and command templates is inspected
+- **WHEN** the Guardrails section of the generated `/rasen:explore` skill template is inspected
 - **THEN** the "Don't implement" guardrail SHALL name the throwaway `/prototype` probe as its only exception
 - **AND** SHALL require the probe's code to be deleted once the answer is captured
 
@@ -74,8 +74,8 @@ The `/rasen:propose` workflow template SHALL reference `/codebase-design` as a c
 
 #### Scenario: Propose template names the design methodology expert
 
-- **WHEN** the generated `/rasen:propose` skill and command templates are inspected
-- **THEN** each SHALL reference `/codebase-design` as a conditional consultation for design-dense changes
+- **WHEN** the generated `/rasen:propose` skill template is inspected
+- **THEN** it SHALL reference `/codebase-design` as a conditional consultation for design-dense changes
 - **AND** SHALL NOT reference `/domain-modeling`
 - **AND** SHALL NOT contain an inlined copy of the expert's body
 
