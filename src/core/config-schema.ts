@@ -76,6 +76,33 @@ export const GlobalConfigSchema = z
           .optional(),
       })
       .optional(),
+    // UI-managed preferences. Typed (rather than left to passthrough) so the
+    // registry round-trip test for `ui.pinnedSpaces` stays meaningful; still
+    // `.passthrough()` so a future UI key does not need a schema bump to persist.
+    ui: z
+      .object({
+        pinnedSpaces: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+    // Per-pipeline, per-stage config overrides keyed by pipeline name — the
+    // storage side of the `pipelines.<name>.{gates,models,handoff}.<stage>`
+    // config-key families. Inner objects are `.passthrough()` so a hand-edited
+    // unknown sub-key never hard-fails a whole-config write (the resilient
+    // read path warns and drops it). Shares nothing with the `rasen/pipelines/`
+    // directory namespace.
+    pipelines: z
+      .record(
+        z.string(),
+        z
+          .object({
+            gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
+            models: z.record(z.string(), z.string().min(1)).optional(),
+            handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+          })
+          .passthrough()
+      )
+      .optional(),
   })
   .passthrough();
 

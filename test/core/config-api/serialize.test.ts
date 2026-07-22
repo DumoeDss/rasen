@@ -5,7 +5,7 @@ import { findConfigKeyDefinition } from '../../../src/core/config-keys.js';
 import type { EffectiveConfigEntry } from '../../../src/core/effective-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
 
-function entryFor(key: string, scope: 'global' | 'project', overrides: Partial<EffectiveConfigEntry> = {}): EffectiveConfigEntry {
+function entryFor(key: string, scope: 'global' | 'store' | 'project', overrides: Partial<EffectiveConfigEntry> = {}): EffectiveConfigEntry {
   const definition = findConfigKeyDefinition(key, scope)!;
   return {
     definition,
@@ -88,6 +88,17 @@ describe('serializeConfigEntry', () => {
     });
     const wire = serializeConfigEntry(entry);
     expect(wire.warnings).toEqual([expect.stringContaining('Invalid project value on disk for "handoff.threshold"')]);
+  });
+
+  it('surfaces a warning for an invalid on-disk store value', () => {
+    const entry = entryFor('handoff.threshold', 'store', {
+      value: 5,
+      source: 'store',
+      scopeValues: { store: 5 },
+    });
+    const wire = serializeConfigEntry(entry);
+    expect(wire.value).toBe(5); // never clamped or rewritten
+    expect(wire.warnings).toEqual([expect.stringContaining('Invalid store value on disk for "handoff.threshold"')]);
   });
 
   it('ignores a scope value the definition does not support', () => {

@@ -20,10 +20,15 @@ import {
 } from '../core/config-schema.js';
 import {
   findConfigKeyDefinition,
+  findWildcardDefinition,
   validateConfigValue,
   type ConfigScope,
 } from '../core/config-keys.js';
-import { resolveEffectiveConfig, type EffectiveConfigEntry } from '../core/effective-config.js';
+import {
+  resolveConfigStoreLayer,
+  resolveEffectiveConfig,
+  type EffectiveConfigEntry,
+} from '../core/effective-config.js';
 import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from '../core/project-config.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
@@ -129,12 +134,14 @@ function formatSetDisplayValue(value: unknown): string {
 }
 
 /** Non-TTY no-arg `rasen config`: the effective view, one line per registered key, then exit 0. */
-function printEffectiveConfigView(): void {
+async function printEffectiveConfigView(): Promise<void> {
   const locale = getCliLocale();
   const ui = getConfigEditorMessages(locale);
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
+  const storeLayer = await resolveConfigStoreLayer(projectRoot);
   const entries = resolveEffectiveConfig({
     projectRoot,
+    store: storeLayer,
     reporter: createConfigDiagnosticReporter(locale),
   });
 
@@ -176,7 +183,24 @@ function buildEditorChoice(
     };
   }
 
-  const isProjectOnly = definition.scopes.length === 1 && definition.scopes[0] === 'project';
+  // `ui.pinnedSpaces` is the second-ever array key and, like `workflows`, has
+  // no interactive array prompt — render it as a disabled row pointing at the
+  // Spaces page rather than letting the editor try to prompt an array type.
+  if (definition.key === 'ui.pinnedSpaces') {
+    return {
+      value: '__pinnedSpaces__',
+      name: label,
+      description: ui.pinnedSpacesDescription,
+      disabled: ui.pinnedSpacesDisabled,
+    };
+  }
+
+  // "Project-only" for the EDITOR's write targets means: settable at project
+  // scope but NOT global. The `store` scope is not a CLI write target (W1
+  // Non-Goal), so a store+project key (e.g. `schema`) is still edited at
+  // project scope, exactly like a project-only key.
+  const isProjectOnly =
+    definition.scopes.includes('project') && !definition.scopes.includes('global');
   if (isProjectOnly && !projectRoot) {
     return {
       value: definition.key,
@@ -199,8 +223,14 @@ async function editConfigEntry(
   const ui = getConfigEditorMessages(locale);
   const definition = entry.definition;
 
+  // The editor writes to global or project only — `store` is not a CLI write
+  // target in W1 (design Non-Goal). A key settable at BOTH global and project
+  // prompts for which; a project-settable-but-not-global key (project-only or
+  // store+project) writes to project; everything else writes to global.
+  const settableGlobal = definition.scopes.includes('global');
+  const settableProject = definition.scopes.includes('project');
   let scope: ConfigScope;
-  if (definition.scopes.length === 2 && projectRoot) {
+  if (settableGlobal && settableProject && projectRoot) {
     scope = await inquirer.select<ConfigScope>({
       message: ui.scopePrompt(definition.key),
       choices: [
@@ -208,7 +238,7 @@ async function editConfigEntry(
         { value: 'global', name: ui.globalScope },
       ],
     });
-  } else if (definition.scopes.includes('project') && projectRoot) {
+  } else if (settableProject && projectRoot) {
     scope = 'project';
   } else {
     scope = 'global';
@@ -302,11 +332,13 @@ async function runInteractiveConfigEditor(): Promise<void> {
   const ui = getConfigEditorMessages(locale);
 
   const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
+  const storeLayer = await resolveConfigStoreLayer(projectRoot);
 
   try {
     for (;;) {
       const entries = resolveEffectiveConfig({
         projectRoot,
+        store: storeLayer,
         reporter: createConfigDiagnosticReporter(locale),
       });
 
@@ -388,7 +420,7 @@ export function registerConfigCommand(program: Command): void {
       if (process.stdout.isTTY) {
         await runInteractiveConfigEditor();
       } else {
-        printEffectiveConfigView();
+        await printEffectiveConfigView();
       }
     });
 
@@ -532,13 +564,20 @@ export function registerConfigCommand(program: Command): void {
           // Project scope has no whole-object schema gate on the write path
           // (unlike global's validateConfig() below), so the registry's
           // per-key type/range check is the only pre-write validation —
-          // apply it here. Global scope skips it: `delivery` accepts legacy
-          // synonyms (commands/skills-first/commands-first) that the zod
-          // schema transforms on read but the registry's enum intentionally
-          // does not list (they are not the keys the editor should offer),
-          // so registry validation would wrongly reject them here.
+          // apply it here. A wildcard family instance (e.g.
+          // `pipelines.x.gates.propose`) resolves through the family matcher,
+          // since `findConfigKeyDefinition` only returns fixed keys; without
+          // this a junk instance value would write to config.yaml unchecked
+          // and be silently dropped on read. Global scope skips this whole
+          // block: `delivery` accepts legacy synonyms
+          // (commands/skills-first/commands-first) that the zod schema
+          // transforms on read but the registry's enum intentionally does not
+          // list, so registry validation would wrongly reject them there —
+          // and global's `validateConfig()` already gates wildcard values via
+          // the schema.
           if (scope === 'project') {
-            const definition = findConfigKeyDefinition(key, scope);
+            const definition =
+              findConfigKeyDefinition(key, scope) ?? findWildcardDefinition(key, scope);
             if (definition) {
               const valueError = validateConfigValue(definition, coercedValue);
               if (valueError) {

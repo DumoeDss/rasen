@@ -51,23 +51,25 @@ describe('api client', () => {
     expect(url).toBe('/api/v1/config/proactive');
   });
 
-  it('sets Content-Type: application/json on DELETE and puts scope in the query string', async () => {
+  it('sets Content-Type: application/json on DELETE and puts scope + space in the query string', async () => {
     (fetch as any).mockResolvedValueOnce(
-      jsonResponse(200, { entry: configListFixture.entries[1] })
+      jsonResponse(200, { entry: configListFixture.entries[1], store: null })
     );
-    await client.deleteKey('proactive', 'project', 'proj_abc123');
+    await client.deleteKey('proactive', 'project', 'project:proj_abc123');
     const [url, init] = (fetch as any).mock.calls[0];
     expect(init.method).toBe('DELETE');
     expect(init.headers['Content-Type']).toBe('application/json');
     expect(url).toContain('scope=project');
-    expect(url).toContain('project=proj_abc123');
+    // The config client moved wholesale onto ?space= (W2 design D7).
+    expect(url).toContain('space=project%3Aproj_abc123');
+    expect(url).not.toContain('project=proj_abc123');
   });
 
-  it('appends ?project= on reads when a project is given', async () => {
+  it('appends ?space= on config reads when a space selector is given (W2 design D7)', async () => {
     (fetch as any).mockResolvedValueOnce(jsonResponse(200, configListFixture));
-    await client.listConfig('proj_abc123');
+    await client.listConfig('project:proj_abc123');
     const [url] = (fetch as any).mock.calls[0];
-    expect(url).toBe('/api/v1/config?project=proj_abc123');
+    expect(url).toBe('/api/v1/config?space=project%3Aproj_abc123');
   });
 
   it('returns typed data for listProjects', async () => {

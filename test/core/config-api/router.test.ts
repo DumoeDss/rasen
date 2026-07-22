@@ -8,6 +8,8 @@ import { startConfigApiServer, type ConfigApiServerHandle } from '../../../src/c
 import type { ConfigApiContext } from '../../../src/core/config-api/router.js';
 import { getGlobalConfigPath } from '../../../src/core/global-config.js';
 import { registerProject } from '../../../src/core/project-registry.js';
+import { registerStore } from '../../../src/core/store/registry.js';
+import { getGlobalDataDir } from '../../../src/core/index.js';
 
 const TOKEN = 'test-token-abc123';
 
@@ -58,6 +60,18 @@ describe('config-api router (integration, via real http server)', () => {
   let otherProjectRoot: string;
   let originalEnv: NodeJS.ProcessEnv;
   let handle: ConfigApiServerHandle;
+  let storeRoots: string[] = [];
+
+  /** Creates a registered store (planning root + config) in the machine data dir the server reads. */
+  async function makeStore(id: string, configContent: string): Promise<string> {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `rasen-config-api-store-${id}-`));
+    fs.mkdirSync(path.join(root, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'rasen', 'changes', 'archive'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), configContent);
+    await registerStore({ id, localPath: root, globalDataDir: getGlobalDataDir() });
+    storeRoots.push(root);
+    return root;
+  }
 
   async function startServer(overrides: Partial<ConfigApiContext> = {}): Promise<ConfigApiServerHandle> {
     const context: ConfigApiContext = {
@@ -91,6 +105,7 @@ describe('config-api router (integration, via real http server)', () => {
     process.env.XDG_CONFIG_HOME = tempConfigHome;
     process.env.XDG_DATA_HOME = tempConfigHome;
     delete process.env.RASEN_LANG;
+    storeRoots = [];
   });
 
   afterEach(async () => {
@@ -99,6 +114,7 @@ describe('config-api router (integration, via real http server)', () => {
     fs.rmSync(tempConfigHome, { recursive: true, force: true });
     fs.rmSync(projectRoot, { recursive: true, force: true });
     fs.rmSync(otherProjectRoot, { recursive: true, force: true });
+    for (const root of storeRoots) fs.rmSync(root, { recursive: true, force: true });
   });
 
   describe('auth', () => {
@@ -187,8 +203,8 @@ describe('config-api router (integration, via real http server)', () => {
     });
   });
 
-  describe('pipelines inventory (config-page-coherence)', () => {
-    it('returns gated-stage metadata for a valid token, with vet distinguishable', async () => {
+  describe('pipelines inventory (pipeline-http-api)', () => {
+    it('returns declared + effective per-stage metadata, provenance, with boolean gates', async () => {
       const h = await startServer();
       const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
       expect(res.status).toBe(200);
@@ -198,23 +214,91 @@ describe('config-api router (integration, via real http server)', () => {
       const bugFix = body.pipelines.find((p: any) => p.name === 'bug-fix');
       expect(bugFix).toBeDefined();
       expect(typeof bugFix.description).toBe('string');
+      // Built-in pipelines report built-in provenance from the package layer.
+      expect(bugFix.provenance).toBe('built-in');
+      expect(bugFix.sourceLayer).toBe('package');
+
       const propose = bugFix.stages.find((s: any) => s.id === 'propose');
       expect(propose).toMatchObject({ id: 'propose', role: 'planner', skill: 'rasen-propose', gate: true });
+      // Each stage carries effective values with sources (no config → definition/default).
+      expect(propose.effectiveGate).toEqual({ value: true, source: 'stage' });
+      expect(propose.effectiveRuntime).toEqual({ value: 'claude', source: 'default' });
+      expect(propose.effectiveModel).toHaveProperty('source');
+      expect(propose.effectiveHandoff).toHaveProperty('source');
 
       const goalLoop = body.pipelines.find((p: any) => p.name === 'goal-loop-measure');
       if (goalLoop) {
         const defineGoal = goalLoop.stages.find((s: any) => s.id === 'define-goal');
-        expect(defineGoal.gate).toBe('vet');
+        // The vet type is retired: define-goal is an ordinary gate: true, and
+        // every stage's declared/effective gate is a boolean.
+        expect(defineGoal.gate).toBe(true);
+        expect(defineGoal.effectiveGate.value).toBe(true);
+        for (const stage of goalLoop.stages) {
+          expect(typeof stage.gate).toBe('boolean');
+          expect(typeof stage.effectiveGate.value).toBe('boolean');
+        }
       }
     });
 
-    it('rejects non-GET methods with 405 and no state change', async () => {
+    it('reflects the gate mask in effective gates: off base + per-stage on pierces it', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nautopilot:\n  gates: off\npipelines:\n  bug-fix:\n    gates:\n      propose: on\n'
+      );
       const h = await startServer();
-      for (const method of ['PUT', 'POST', 'DELETE']) {
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
+      const body = res.json() as any;
+      const bugFix = body.pipelines.find((p: any) => p.name === 'bug-fix');
+      const propose = bugFix.stages.find((s: any) => s.id === 'propose');
+      // The per-stage `on` instance pierces the `off` base.
+      expect(propose.effectiveGate).toEqual({ value: true, source: 'stage-override-project' });
+      // Every other ordinary gated stage reports off, naming the base layer.
+      const otherGated = bugFix.stages.find(
+        (s: any) => s.id !== 'propose' && s.gate === true
+      );
+      if (otherGated) {
+        expect(otherGated.effectiveGate.value).toBe(false);
+        expect(otherGated.effectiveGate.source).toBe('autopilot-project');
+      }
+    });
+
+    it('rejects PUT and DELETE with 405 (POST is the mutation bridge)', async () => {
+      const h = await startServer();
+      for (const method of ['PUT', 'DELETE']) {
         const res = await req(h.port, { method, path: '/api/v1/pipelines', headers: authed() });
         expect(res.status).toBe(405);
         expect((res.json() as any).error.code).toBe('method_not_allowed');
       }
+    });
+
+    it('POST rejects an unknown op with 400 spawning nothing', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'nonsense' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('POST rejects a relative path / option-shaped name before any spawn', async () => {
+      const h = await startServer();
+      const relative = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'import', path: 'relative/pkg.rasenpkg' }),
+      });
+      expect(relative.status).toBe(400);
+
+      const optionName = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'delete', name: '--force' }),
+      });
+      expect(optionName.status).toBe(400);
     });
 
     it('requires the session token', async () => {
@@ -597,6 +681,382 @@ describe('config-api router (integration, via real http server)', () => {
       expect(res.status).toBe(200);
       const otherYaml = fs.readFileSync(path.join(otherProjectRoot, 'rasen', 'config.yaml'), 'utf-8');
       expect(otherYaml).toContain('threshold: 0.8');
+    });
+  });
+
+  describe('store scope + space addressing (store-config-scope)', () => {
+    it('lists a store space with store values and a store ref, no project layer', async () => {
+      await makeStore('team-store', 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n');
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?space=store:team-store',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.project).toBeNull();
+      expect(body.store.id).toBe('team-store');
+      expect(typeof body.store.root).toBe('string');
+      const threshold = body.entries.find((e: any) => e.definition.key === 'handoff.threshold');
+      expect(threshold.value).toBe(0.6);
+      expect(threshold.source).toBe('store');
+      expect(threshold.scopeValues.store).toBe(0.6);
+      expect(threshold.scopeValues.project).toBeUndefined();
+    });
+
+    it('surfaces the inherited store layer to a plain ?project= read', async () => {
+      const storeRoot = await makeStore('team-store', 'schema: spec-driven\nmodels:\n  default: opus\n');
+      const memberRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-api-member-'));
+      storeRoots.push(memberRoot);
+      fs.mkdirSync(path.join(memberRoot, 'rasen', 'specs'), { recursive: true });
+      fs.writeFileSync(
+        path.join(memberRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: team-store\n'
+      );
+      await registerProject({ projectRoot: memberRoot, projectId: 'member', mode: 'in-repo' });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?project=member',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.store.id).toBe('team-store');
+      const model = body.entries.find((e: any) => e.definition.key === 'models.default');
+      expect(model.scopeValues.store).toBe('opus');
+      expect(model.value).toBe('opus');
+      expect(model.source).toBe('store');
+      void storeRoot;
+    });
+
+    it('reports a null store ref and no store values for a no-pointer project', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/config', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.store).toBeNull();
+      expect(body.entries.every((e: any) => e.scopeValues.store === undefined)).toBe(true);
+    });
+
+    it('treats space=project: as equivalent to ?project=', async () => {
+      const memberRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-api-member2-'));
+      storeRoots.push(memberRoot);
+      fs.mkdirSync(path.join(memberRoot, 'rasen', 'specs'), { recursive: true });
+      fs.writeFileSync(path.join(memberRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await registerProject({ projectRoot: memberRoot, projectId: 'member2', mode: 'in-repo' });
+
+      const h = await startServer();
+      const viaProject = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?project=member2',
+        headers: authed(),
+      });
+      const viaSpace = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?space=project:member2',
+        headers: authed(),
+      });
+      expect(viaSpace.status).toBe(200);
+      expect((viaSpace.json() as any).entries).toEqual((viaProject.json() as any).entries);
+      expect((viaSpace.json() as any).store).toEqual((viaProject.json() as any).store);
+    });
+
+    it('rejects a request carrying both project and space selectors with 400', async () => {
+      await makeStore('team-store', 'schema: spec-driven\n');
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?project=member&space=store:team-store',
+        headers: authed(),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('bad_request');
+    });
+
+    it('lands a store-scope write in the store\'s own config, comment-preserving, source store', async () => {
+      const storeRoot = await makeStore('team-store', '# team config\nschema: spec-driven\n');
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/handoff.threshold?space=store:team-store',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'store', value: 0.45 }),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.entry.value).toBe(0.45);
+      expect(body.entry.source).toBe('store');
+      const yaml = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('threshold: 0.45');
+      expect(yaml).toContain('# team config');
+    });
+
+    it('rejects a store-scope write addressed at a project with 400 invalid_scope', async () => {
+      const memberRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-api-member3-'));
+      storeRoots.push(memberRoot);
+      fs.mkdirSync(path.join(memberRoot, 'rasen', 'specs'), { recursive: true });
+      fs.writeFileSync(path.join(memberRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await registerProject({ projectRoot: memberRoot, projectId: 'member3', mode: 'in-repo' });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/handoff.threshold?project=member3',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'store', value: 0.45 }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_scope');
+      const yaml = fs.readFileSync(path.join(memberRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).not.toContain('threshold');
+    });
+
+    it('rejects a project-scope write addressed at a store space with 400 invalid_scope', async () => {
+      const storeRoot = await makeStore('team-store', 'schema: spec-driven\n');
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/handoff.threshold?space=store:team-store',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'project', value: 0.4 }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_scope');
+      const yaml = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).not.toContain('threshold');
+    });
+
+    it('names the settable scopes when a global-only key is written at store scope', async () => {
+      await makeStore('team-store', 'schema: spec-driven\n');
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/profile?space=store:team-store',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'store', value: 'core' }),
+      });
+      expect(res.status).toBe(400);
+      const err = (res.json() as any).error;
+      expect(err.code).toBe('invalid_scope');
+      expect(err.message).toContain('global');
+    });
+
+    it('unsets a store value, reverting to the global layer', async () => {
+      const storeRoot = await makeStore('team-store', 'schema: spec-driven\nmodels:\n  default: opus\n');
+      const h = await startServer();
+      await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/models.default',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'global', value: 'sonnet' }),
+      });
+      const res = await req(h.port, {
+        method: 'DELETE',
+        path: '/api/v1/config/models.default?space=store:team-store&scope=store',
+        headers: authed({ 'Content-Type': 'application/json' }),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.entry.value).toBe('sonnet');
+      expect(body.entry.source).toBe('global');
+      const yaml = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).not.toContain('opus');
+    });
+
+    it('drops an invalid on-disk store value without rewriting the file', async () => {
+      // readProjectConfig resiliently drops a schema-invalid store value during
+      // parse (design D2), so the store layer never contributes it — and the
+      // API never rewrites the file to "fix" it.
+      const storeRoot = await makeStore('team-store', 'schema: spec-driven\nhandoff:\n  threshold: 5\n');
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?space=store:team-store',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const threshold = (res.json() as any).entries.find(
+        (e: any) => e.definition.key === 'handoff.threshold'
+      );
+      expect(threshold.scopeValues.store).toBeUndefined();
+      expect(threshold.source).toBe('default');
+      const yaml = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('threshold: 5');
+    });
+
+    it('matches the management space-selector error vocabulary', async () => {
+      const h = await startServer();
+      const noPrefix = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?space=team-store',
+        headers: authed(),
+      });
+      expect(noPrefix.status).toBe(400);
+      expect((noPrefix.json() as any).error.code).toBe('invalid_space');
+
+      const missing = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config?space=store:does-not-exist',
+        headers: authed(),
+      });
+      expect(missing.status).toBe(404);
+      expect((missing.json() as any).error.code).toBe('space_not_found');
+    });
+  });
+
+  describe('wildcard family instances (config-key wildcard machinery)', () => {
+    const jsonAuthed = () => authed({ 'Content-Type': 'application/json' });
+
+    it('lists a project-set instance with its instance key and per-scope values', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\npipelines:\n  small-feature:\n    gates:\n      propose: on\n'
+      );
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/config', headers: authed() });
+      expect(res.status).toBe(200);
+      const inst = (res.json() as any).entries.find(
+        (e: any) => e.instanceKey === 'pipelines.small-feature.gates.propose'
+      );
+      expect(inst).toBeDefined();
+      expect(inst.value).toBe('on');
+      expect(inst.source).toBe('project');
+      expect(inst.scopeValues.project).toBe('on');
+      expect(inst.definition.wildcard).toBe(true);
+    });
+
+    it('writes and re-resolves a project-scope instance, then reads it back', async () => {
+      const h = await startServer();
+      const put = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'on' }),
+      });
+      expect(put.status).toBe(200);
+      const entry = (put.json() as any).entry;
+      expect(entry.value).toBe('on');
+      expect(entry.source).toBe('project');
+      expect(entry.instanceKey).toBe('pipelines.small-feature.gates.propose');
+      const yaml = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('propose: on');
+    });
+
+    it('lands a store-scope instance in the store config and lists it', async () => {
+      const storeRoot = await makeStore('team-store', 'schema: spec-driven\n');
+      const h = await startServer();
+      const put = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.bug-fix.models.review?space=store:team-store',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'store', value: 'fable' }),
+      });
+      expect(put.status).toBe(200);
+      expect((put.json() as any).entry.source).toBe('store');
+      const yaml = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+      expect(yaml).toContain('fable');
+    });
+
+    it('writes and lists a global-scope instance', async () => {
+      const h = await startServer();
+      const put = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.handoff.review',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'global', value: 0.6 }),
+      });
+      expect(put.status).toBe(200);
+      expect((put.json() as any).entry.value).toBe(0.6);
+      expect((put.json() as any).entry.source).toBe('global');
+    });
+
+    it('reverts an instance to the wider layer on DELETE', async () => {
+      const h = await startServer();
+      await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'global', value: 'off' }),
+      });
+      await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'on' }),
+      });
+      const del = await req(h.port, {
+        method: 'DELETE',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose?scope=project',
+        headers: jsonAuthed(),
+      });
+      expect(del.status).toBe(200);
+      const entry = (del.json() as any).entry;
+      expect(entry.value).toBe('off');
+      expect(entry.source).toBe('global');
+    });
+
+    it('makes featureFlags.<name> API-writable at global and rejects other scopes naming global', async () => {
+      const h = await startServer();
+      const ok = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/featureFlags.myFlag',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'global', value: true }),
+      });
+      expect(ok.status).toBe(200);
+      expect((ok.json() as any).entry.value).toBe(true);
+
+      const wrongScope = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/featureFlags.myFlag',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: true }),
+      });
+      expect(wrongScope.status).toBe(400);
+      const err = (wrongScope.json() as any).error;
+      expect(err.code).toBe('invalid_scope');
+      expect(err.message).toContain('global');
+    });
+
+    it('rejects a malformed instance path naming the family pattern', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'on' }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.message).toContain('pipelines.<name>.gates.<stage>');
+    });
+
+    it('rejects a bad instance value with invalid_value', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'PUT',
+        path: '/api/v1/config/pipelines.small-feature.gates.propose',
+        headers: jsonAuthed(),
+        body: JSON.stringify({ scope: 'project', value: 'maybe' }),
+      });
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_value');
+    });
+
+    it('reads a well-formed but unset instance as the absent shape, not unknown_key', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/config/pipelines.small-feature.handoff.review',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const entry = (res.json() as any).entry;
+      expect(entry.instanceKey).toBe('pipelines.small-feature.handoff.review');
+      expect(entry.value).toBeUndefined();
+      expect(entry.scopeValues).toEqual({});
     });
   });
 

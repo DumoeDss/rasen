@@ -325,10 +325,11 @@ export const StageSchema = z
     // Stage-level PAUSE gate (distinct from the goal-loop `loop.gate`
     // measure/evaluate discriminated union below, which configures the
     // iterate loop's stop condition — do not confuse the two). `true` pauses
-    // for human confirmation, `false` does not, and `'vet'` marks a gate that
-    // MUST always pause — never auto-approved by `--no-gate` or an
-    // `autopilot.gates: off` project default (autopilot-gate-policy).
-    gate: z.union([z.boolean(), z.literal('vet')]).default(false),
+    // for human confirmation, `false` does not. Every gate is individually
+    // controllable via `pipelines.<name>.gates.<stage>` (autopilot-gate-policy);
+    // a legacy `gate: 'vet'` spelling is coerced to `true` by the pipeline-level
+    // shim below (coerceLegacyVetGates).
+    gate: z.boolean().default(false),
     loop: StageLoopSchema.optional(),
     parallelGroup: z.string().optional(),
     // Freeform condition label, e.g. 'always', 'security-relevant',
@@ -360,9 +361,48 @@ export const StageSchema = z
   });
 
 /**
+ * Tracks which pipelines have already emitted the legacy `gate: 'vet'`
+ * deprecation warning this process, so the warning fires at most once per
+ * pipeline per process (same shape as other one-time warnings in the codebase).
+ */
+const warnedLegacyVetPipelines = new Set<string>();
+
+/**
+ * Legacy-coercion shim for the retired `gate: 'vet'` gate type (design D1).
+ *
+ * This is the ONLY place the `'vet'` literal is permitted to appear in `src/`
+ * (a source-tree guard test asserts it). A user pipeline YAML still carrying
+ * `gate: 'vet'` reads as `gate: true` with a single warning per pipeline per
+ * process — never a parse error, so existing user libraries keep loading. Every
+ * gate is now individually controllable via `pipelines.<name>.gates.<stage>`.
+ *
+ * Runs as a `z.preprocess` on the whole pipeline (rather than on the gate field)
+ * because the warning names the pipeline, which is not in scope at the stage.
+ */
+function coerceLegacyVetGates(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object') return raw;
+  const pipeline = raw as { name?: unknown; stages?: unknown };
+  if (!Array.isArray(pipeline.stages)) return raw;
+  const pipelineName = typeof pipeline.name === 'string' ? pipeline.name : '<unknown>';
+  for (const stage of pipeline.stages) {
+    if (stage === null || typeof stage !== 'object') continue;
+    const s = stage as { id?: unknown; gate?: unknown };
+    if (s.gate !== 'vet') continue;
+    s.gate = true;
+    if (warnedLegacyVetPipelines.has(pipelineName)) continue;
+    warnedLegacyVetPipelines.add(pipelineName);
+    const stageId = typeof s.id === 'string' ? s.id : '<stage>';
+    console.warn(
+      `Pipeline "${pipelineName}" stage "${stageId}" declares gate: 'vet', which is no longer a distinct gate type; reading it as gate: true — every gate is now individually controllable via pipelines.${pipelineName}.gates.${stageId}.`
+    );
+  }
+  return raw;
+}
+
+/**
  * Full pipeline YAML structure.
  */
-export const PipelineYamlSchema = z.object({
+export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
   name: z.string().min(1, { error: 'Pipeline name is required' }),
   description: z.string().optional(),
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
@@ -377,7 +417,7 @@ export const PipelineYamlSchema = z.object({
     "Marks a pipeline assembled by the autopilot LEAD; absent means human-authored. When 'composed', the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
   ),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
-});
+}));
 
 // Derived TypeScript types
 export type StageLoop = z.infer<typeof StageLoopSchema>;
@@ -386,31 +426,75 @@ export type VerifyPolicy = z.infer<typeof VerifyPolicySchema>;
 export type Stage = z.infer<typeof StageSchema>;
 export type PipelineYaml = z.infer<typeof PipelineYamlSchema>;
 
+/** The config scope a per-stage/per-role override was supplied from. */
+export type StageOverrideScope = 'project' | 'store' | 'global';
+
+/** A per-stage/per-role override value plus the scope-qualified layer that decided it. */
+export interface StageOverride<T> {
+  value: T;
+  scope: StageOverrideScope;
+}
+
+/**
+ * The per-stage/per-role configuration top layer for a single stage (design D2
+ * of `ui-config-redesign-pipelines-page`): the `pipelines.<name>.models.<stage>`,
+ * `pipelines.<name>.handoff.<stage>`, and `pipelines.<name>.runtimes.<role>`
+ * instances resolved for THIS stage, each sitting ABOVE the stage-level YAML
+ * value. All fields optional — an absent field means "no override", and the
+ * chain below resolves byte-identically to before this layer existed.
+ */
+export interface StageConfigOverrides {
+  model?: StageOverride<string>;
+  handoff?: StageOverride<ThresholdValue>;
+  runtime?: StageOverride<'claude' | 'codex'>;
+}
+
 /** Provenance of the MODEL field specifically — tracked separately from `source` (which names the runtime/session/sandbox/effort provenance) because the two can differ: e.g. a stage with only `runtime` overridden still resolves its model from machine config. */
 export type ModelSource =
+  | 'stage-override-project'
+  | 'stage-override-store'
+  | 'stage-override-global'
   | 'stage'
   | 'agent'
   | 'project-role'
   | 'project-default'
+  | 'store-role'
+  | 'store-default'
   | 'global-role'
   | 'global-default'
+  | 'default';
+
+/** Provenance of the resolved `runtime` field specifically — a per-role config instance tops the pipeline declaration and default. */
+export type RuntimeSource =
+  | 'stage-override-project'
+  | 'stage-override-store'
+  | 'stage-override-global'
+  | 'stage'
+  | 'agent'
   | 'default';
 
 export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
   source: 'stage' | 'agent' | 'default';
   /** Provenance of the resolved `model` field; always present, independent of `source`. */
   modelSource: ModelSource;
+  /** Provenance of the resolved `runtime` field; always present, independent of `source`. Equals `source` when no runtime override applies. */
+  runtimeSource: RuntimeSource;
 }
 
 /**
- * Project/global machine-config model layers, slotted below the pipeline
+ * Project/store/global machine-config model layers, slotted below the pipeline
  * `agents.<role>.model` role default and above the runtime's own default.
  * `roles` carries the per-role `models.roles.<role>` overrides at each
- * scope; `default`/`Default` name each scope's base `models.default`.
+ * scope; `default`/`Default` name each scope's base `models.default`. The
+ * store layer (`storeRoles`/`storeDefault`) sits between project and global,
+ * and applies only when the project inherits from a store (see
+ * `store-config-inheritance`).
  */
 export interface ModelConfigLayers {
   projectRoles?: Partial<Record<StageRole, string>>;
   projectDefault?: string;
+  storeRoles?: Partial<Record<StageRole, string>>;
+  storeDefault?: string;
   globalRoles?: Partial<Record<StageRole, string>>;
   globalDefault?: string;
 }
@@ -437,9 +521,11 @@ export function normalizeAgentRuntimeConfig(
  * 2. Pipeline `agents.<role>.model`.
  * 3. Project config `models.roles.<role>` (`modelLayers.projectRoles`).
  * 4. Project config `models.default` (`modelLayers.projectDefault`).
- * 5. Global config `models.roles.<role>` (`modelLayers.globalRoles`).
- * 6. Global config `models.default` (`modelLayers.globalDefault`).
- * 7. Runtime's own default (no model configured).
+ * 5. Store config `models.roles.<role>` (`modelLayers.storeRoles`).
+ * 6. Store config `models.default` (`modelLayers.storeDefault`).
+ * 7. Global config `models.roles.<role>` (`modelLayers.globalRoles`).
+ * 8. Global config `models.default` (`modelLayers.globalDefault`).
+ * 9. Runtime's own default (no model configured).
  *
  * A model id at any layer is an opaque string used as-is — no allow-list
  * rejection. `modelLayers` is optional so existing two-argument call sites
@@ -449,7 +535,8 @@ export function normalizeAgentRuntimeConfig(
 export function resolveStageRuntimeConfig(
   stage: Stage,
   pipeline: PipelineYaml,
-  modelLayers?: ModelConfigLayers
+  modelLayers?: ModelConfigLayers,
+  stageOverrides?: StageConfigOverrides
 ): ResolvedStageRuntimeConfig {
   const roleDefault = stage.role
     ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
@@ -462,11 +549,21 @@ export function resolveStageRuntimeConfig(
     stage.effort !== undefined;
 
   const projectRoleModel = stage.role ? modelLayers?.projectRoles?.[stage.role] : undefined;
+  const storeRoleModel = stage.role ? modelLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleModel = stage.role ? modelLayers?.globalRoles?.[stage.role] : undefined;
+
+  // The per-stage runtime family instance tops the runtime field's resolution;
+  // absent, `runtimeSource` mirrors the bundle `source` (byte-identical).
+  const runtimeOverride = stageOverrides?.runtime;
+  const runtimeSourceFor = (base: 'stage' | 'agent' | 'default'): RuntimeSource =>
+    runtimeOverride ? (`stage-override-${runtimeOverride.scope}` as RuntimeSource) : base;
 
   let model: string | undefined;
   let modelSource: ModelSource;
-  if (stage.model !== undefined) {
+  if (stageOverrides?.model !== undefined) {
+    model = stageOverrides.model.value;
+    modelSource = `stage-override-${stageOverrides.model.scope}` as ModelSource;
+  } else if (stage.model !== undefined) {
     model = stage.model;
     modelSource = 'stage';
   } else if (roleDefault?.model !== undefined) {
@@ -478,6 +575,12 @@ export function resolveStageRuntimeConfig(
   } else if (modelLayers?.projectDefault !== undefined) {
     model = modelLayers.projectDefault;
     modelSource = 'project-default';
+  } else if (storeRoleModel !== undefined) {
+    model = storeRoleModel;
+    modelSource = 'store-role';
+  } else if (modelLayers?.storeDefault !== undefined) {
+    model = modelLayers.storeDefault;
+    modelSource = 'store-default';
   } else if (globalRoleModel !== undefined) {
     model = globalRoleModel;
     modelSource = 'global-role';
@@ -491,30 +594,34 @@ export function resolveStageRuntimeConfig(
 
   if (stageHasOverride) {
     return {
-      runtime: stage.runtime ?? roleDefault?.runtime ?? 'claude',
+      runtime: runtimeOverride?.value ?? stage.runtime ?? roleDefault?.runtime ?? 'claude',
       sessionReuse: stage.sessionReuse ?? roleDefault?.sessionReuse,
       sandbox: stage.sandbox ?? roleDefault?.sandbox,
       model,
       effort: stage.effort ?? roleDefault?.effort,
       source: 'stage',
       modelSource,
+      runtimeSource: runtimeSourceFor('stage'),
     };
   }
 
   if (roleDefault) {
     return {
       ...roleDefault,
+      runtime: runtimeOverride?.value ?? roleDefault.runtime,
       model,
       source: 'agent',
       modelSource,
+      runtimeSource: runtimeSourceFor('agent'),
     };
   }
 
   return {
-    runtime: 'claude',
+    runtime: runtimeOverride?.value ?? 'claude',
     model,
     source: 'default',
     modelSource,
+    runtimeSource: runtimeSourceFor('default'),
   };
 }
 
@@ -534,11 +641,16 @@ export interface ResolvedStageHandoffConfig {
   maxRelays: number;
   stallLimit: number;
   source:
+    | 'stage-override-project'
+    | 'stage-override-store'
+    | 'stage-override-global'
     | 'stage'
     | 'role'
     | 'pipeline'
     | 'project-role'
     | 'project-config'
+    | 'store-role'
+    | 'store-config'
     | 'global-role'
     | 'global-config'
     | 'preset'
@@ -546,15 +658,19 @@ export interface ResolvedStageHandoffConfig {
 }
 
 /**
- * Project/global config-layer threshold values, slotted below pipeline
- * declarations and above the model-preset layer. `projectRoles`/`globalRoles`
- * carry the per-role `handoff.roles.<role>` overrides at each scope — a
- * role-specific value wins over that scope's scalar threshold.
+ * Project/store/global config-layer threshold values, slotted below pipeline
+ * declarations and above the model-preset layer. `projectRoles`/`storeRoles`/
+ * `globalRoles` carry the per-role `handoff.roles.<role>` overrides at each
+ * scope — a role-specific value wins over that scope's scalar threshold. The
+ * store layer sits between project and global, and applies only when the
+ * project inherits from a store (see `store-config-inheritance`).
  */
 export interface HandoffConfigLayers {
   projectThreshold?: ThresholdValue;
+  storeThreshold?: ThresholdValue;
   globalThreshold?: ThresholdValue;
   projectRoles?: Partial<Record<StageRole, ThresholdValue>>;
+  storeRoles?: Partial<Record<StageRole, ThresholdValue>>;
   globalRoles?: Partial<Record<StageRole, ThresholdValue>>;
 }
 
@@ -567,11 +683,13 @@ export interface HandoffConfigLayers {
  * 3. Pipeline-level `handoff`.
  * 4. Project config `handoff.roles[<stage role>]` — threshold ONLY.
  * 5. Project config `handoff.threshold` — threshold ONLY.
- * 6. Global config `handoff.roles[<stage role>]` — threshold ONLY.
- * 7. Global config `handoff.threshold` — threshold ONLY.
- * 8. Model preset (the suggested `handoffThreshold` of the preset matching the
+ * 6. Store config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 7. Store config `handoff.threshold` — threshold ONLY.
+ * 8. Global config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 9. Global config `handoff.threshold` — threshold ONLY.
+ * 10. Model preset (the suggested `handoffThreshold` of the preset matching the
  *    stage's resolved model, per `resolveStageRuntimeConfig`) — threshold ONLY.
- * 9. Built-in defaults.
+ * 11. Built-in defaults.
  *
  * `source` names the layer that supplied the resolved THRESHOLD specifically
  * (provenance-first, in this same precedence order), so callers can report
@@ -589,23 +707,33 @@ export function resolveStageHandoffConfig(
   stage: Stage,
   pipeline: PipelineYaml,
   configLayers?: HandoffConfigLayers,
-  modelLayers?: ModelConfigLayers
+  modelLayers?: ModelConfigLayers,
+  stageOverrides?: StageConfigOverrides
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
   const roleThreshold = stage.role ? pipelineHandoff?.roles?.[stage.role] : undefined;
   const projectRoleThreshold = stage.role ? configLayers?.projectRoles?.[stage.role] : undefined;
+  const storeRoleThreshold = stage.role ? configLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleThreshold = stage.role ? configLayers?.globalRoles?.[stage.role] : undefined;
+  // The preset keys off the stage's RESOLVED model, so a per-stage model
+  // override must feed the preset lookup too (pass the full override set).
   const presetThreshold = resolveModelPreset(
-    resolveStageRuntimeConfig(stage, pipeline, modelLayers).model
+    resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides).model
   )?.handoffThreshold;
 
+  // A `pipelines.<name>.handoff.<stage>` instance tops the threshold chain.
+  const overrideThreshold = stageOverrides?.handoff?.value;
+
   const threshold =
+    overrideThreshold ??
     stageHandoff?.threshold ??
     roleThreshold ??
     pipelineHandoff?.threshold ??
     projectRoleThreshold ??
     configLayers?.projectThreshold ??
+    storeRoleThreshold ??
+    configLayers?.storeThreshold ??
     globalRoleThreshold ??
     configLayers?.globalThreshold ??
     presetThreshold ??
@@ -633,7 +761,9 @@ export function resolveStageHandoffConfig(
   // back to whichever layer configured maxRelays/stallLimit, preserving the
   // pre-preset behavior for that edge.
   const source: ResolvedStageHandoffConfig['source'] =
-    stageHandoff?.threshold !== undefined
+    overrideThreshold !== undefined
+      ? (`stage-override-${stageOverrides!.handoff!.scope}` as ResolvedStageHandoffConfig['source'])
+      : stageHandoff?.threshold !== undefined
       ? 'stage'
       : roleThreshold !== undefined
         ? 'role'
@@ -643,17 +773,21 @@ export function resolveStageHandoffConfig(
             ? 'project-role'
             : configLayers?.projectThreshold !== undefined
               ? 'project-config'
-              : globalRoleThreshold !== undefined
-                ? 'global-role'
-                : configLayers?.globalThreshold !== undefined
-                  ? 'global-config'
-                  : presetThreshold !== undefined
-                    ? 'preset'
-                    : hasFields(stageHandoff)
-                      ? 'stage'
-                      : hasFields(pipelineHandoff)
-                        ? 'pipeline'
-                        : 'default';
+              : storeRoleThreshold !== undefined
+                ? 'store-role'
+                : configLayers?.storeThreshold !== undefined
+                  ? 'store-config'
+                  : globalRoleThreshold !== undefined
+                    ? 'global-role'
+                    : configLayers?.globalThreshold !== undefined
+                      ? 'global-config'
+                      : presetThreshold !== undefined
+                        ? 'preset'
+                        : hasFields(stageHandoff)
+                          ? 'stage'
+                          : hasFields(pipelineHandoff)
+                            ? 'pipeline'
+                            : 'default';
 
   return { threshold, maxRelays, stallLimit, source };
 }

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/api/client.js', () => ({
   listSpaces: vi.fn(),
+  getKey: vi.fn(),
 }));
 
 import { SpaceSwitcher } from '../../src/components/SpaceSwitcher.js';
@@ -52,11 +53,15 @@ describe('SpaceSwitcher', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    // Recency lives in localStorage; clear it so ordering is deterministic.
+    localStorage.clear();
+    (client.getKey as any).mockResolvedValue({ entry: { value: [] } });
   });
 
   afterEach(() => {
     document.body.removeChild(container);
     vi.resetAllMocks();
+    localStorage.clear();
     window.history.replaceState({}, '', '/');
   });
 
@@ -110,5 +115,63 @@ describe('SpaceSwitcher', () => {
     expect(container.querySelector('[data-testid="space-switcher-empty"]')).not.toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(container.textContent).toContain('rasen ui');
+  });
+
+  // 12 project spaces, well past the cap of 8.
+  const MANY = {
+    spaces: Array.from({ length: 12 }, (_, i) => {
+      const id = `proj-${String(i + 1).padStart(2, '0')}`;
+      return { type: 'project', id, name: id, root: `/${id}` };
+    }),
+  };
+
+  function spaceOptions(select: HTMLSelectElement): HTMLOptionElement[] {
+    return Array.from(select.querySelectorAll('option')).filter((o) => o.value !== '__all__' && o.value !== '');
+  }
+
+  it('caps the switcher at 8 space entries even with far more spaces registered', async () => {
+    (client.listSpaces as any).mockResolvedValue(MANY);
+    await mountAt(container, '/p/proj-01/board');
+    const select = container.querySelector('select') as HTMLSelectElement;
+    expect(spaceOptions(select).length).toBe(8);
+    // The escape hatch is always present.
+    expect(container.querySelector('[data-testid="space-switcher-all"]')).not.toBeNull();
+  });
+
+  it('includes a pinned space even when it would otherwise fall outside the cap', async () => {
+    (client.listSpaces as any).mockResolvedValue(MANY);
+    (client.getKey as any).mockResolvedValue({ entry: { value: ['project:proj-12'] } });
+    await mountAt(container, '/p/proj-01/board');
+    const select = container.querySelector('select') as HTMLSelectElement;
+    const values = spaceOptions(select).map((o) => o.value);
+    expect(values).toContain('project:proj-12'); // pinned → included
+    expect(values.length).toBe(8);
+    // A non-pinned alphabetically-late space was cut to make room.
+    expect(values).not.toContain('project:proj-11');
+  });
+
+  it('always includes the current space even when it is outside the cap', async () => {
+    (client.listSpaces as any).mockResolvedValue(MANY);
+    await mountAt(container, '/p/proj-12/board');
+    const select = container.querySelector('select') as HTMLSelectElement;
+    const values = spaceOptions(select).map((o) => o.value);
+    expect(values).toContain('project:proj-12');
+    expect(select.value).toBe('project:proj-12');
+  });
+
+  it('routes to /spaces via "All spaces…" without changing the current space', async () => {
+    (client.listSpaces as any).mockResolvedValue(SPACES);
+    await mountAt(container, '/p/proj_a/config');
+
+    const select = container.querySelector('select') as HTMLSelectElement;
+    await act(async () => {
+      select.value = '__all__';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(window.location.pathname).toBe('/spaces');
   });
 });

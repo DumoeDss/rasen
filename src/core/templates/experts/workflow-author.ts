@@ -114,9 +114,11 @@ Author \`pipeline.yaml\` with only the fields the pipeline needs:
   intended dispatch path; the pipeline execution preflight will refuse to run
   a codex stage on a machine without the codex CLI, so document that
   requirement for whoever installs the pipeline.
-- \`gate\` — \`true\`/\`false\`/\`'vet'\` for a human-confirmation pause before the
-  stage; \`'vet'\` cannot be auto-approved by \`--no-gate\` or an autopilot
-  gate-off default.
+- \`gate\` — \`true\`/\`false\` for a human-confirmation pause before the stage
+  (\`true\` pauses by default). Every gate is individually controllable via
+  \`pipelines.<name>.gates.<stage>\`, so under \`--no-gate\` or an autopilot
+  gate-off base a \`true\` gate is auto-approved unless a per-stage \`on\`
+  instance restores the pause.
 - \`loop\` — attaches a review-cycle or goal-loop shape to the stage; only add
   it when the stage genuinely iterates.
 

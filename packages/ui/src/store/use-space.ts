@@ -26,7 +26,7 @@ export interface Space {
 }
 
 /** Sections a space switch preserves; anything else (e.g. task detail) falls back to the board. */
-const SWITCHABLE_SECTIONS = new Set(['board', 'config', 'archive']);
+const SWITCHABLE_SECTIONS = new Set(['board', 'config', 'archive', 'pipelines']);
 
 const URL_PREFIX: Record<SpaceType, string> = { project: 'p', store: 's' };
 

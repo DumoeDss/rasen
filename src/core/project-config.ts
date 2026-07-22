@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
 import { isKebabId } from './id.js';
-import { thresholdSchema } from './pipeline-registry/types.js';
+import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
   reportConfigDiagnostic,
   type ConfigDiagnostic,
@@ -156,6 +156,30 @@ export const ProjectConfigSchema = z.object({
     })
     .optional()
     .describe('Per-agent model configuration'),
+
+  // Optional: per-pipeline config overrides keyed by pipeline name — the
+  // planning-root storage side of the
+  // `pipelines.<name>.{gates,models,handoff}.<stage>` and
+  // `pipelines.<name>.runtimes.<role>` config-key families, serving both the
+  // project and (a store root's own) store layers. `gates`/`models`/`handoff`
+  // are keyed by stage; `runtimes` by role. Inner objects `.passthrough()` so
+  // an unknown sub-key survives the schema; the resilient parser below drops
+  // invalid leaves with a warning. Shares nothing with the `rasen/pipelines/`
+  // directory namespace.
+  pipelines: z
+    .record(
+      z.string(),
+      z
+        .object({
+          gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
+          models: z.record(z.string(), z.string().min(1)).optional(),
+          handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+          runtimes: z.record(z.string(), z.enum(['claude', 'codex'])).optional(),
+        })
+        .passthrough()
+    )
+    .optional()
+    .describe('Per-pipeline config overrides keyed by pipeline name'),
 });
 
 /** Valid `archive.timing` values. */
@@ -288,6 +312,80 @@ function parseDeclarationList(
     );
   }
   return byId.size > 0 ? [...byId.values()] : undefined;
+}
+
+/**
+ * Resilient parser for the `pipelines:` block (a map keyed by pipeline name of
+ * `gates`/`models`/`handoff` per-stage records). Mirrors the field-by-field
+ * drop-with-warning discipline of the blocks above: a non-map pipeline entry,
+ * an unknown or non-map axis, or an invalid per-stage leaf is dropped while
+ * valid siblings survive. `gates` leaves must be `on`/`off`, `models` leaves a
+ * non-empty string, `handoff` leaves the dual-form threshold. Returns
+ * undefined when nothing valid remains.
+ */
+function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    console.warn(`Invalid 'pipelines' field in config (must be an object)`);
+    return undefined;
+  }
+
+  type PipelineEntry = NonNullable<ProjectConfig['pipelines']>[string];
+  const result: NonNullable<ProjectConfig['pipelines']> = {};
+
+  for (const [pipelineName, pipelineRaw] of Object.entries(raw as Record<string, unknown>)) {
+    if (!pipelineRaw || typeof pipelineRaw !== 'object' || Array.isArray(pipelineRaw)) {
+      console.warn(`Invalid 'pipelines.${pipelineName}' field in config (must be an object)`);
+      continue;
+    }
+    const entry: PipelineEntry = {};
+
+    for (const [axis, axisRaw] of Object.entries(pipelineRaw as Record<string, unknown>)) {
+      if (axis !== 'gates' && axis !== 'models' && axis !== 'handoff' && axis !== 'runtimes') {
+        console.warn(
+          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, handoff, or runtimes); ignoring it.`
+        );
+        continue;
+      }
+      if (!axisRaw || typeof axisRaw !== 'object' || Array.isArray(axisRaw)) {
+        console.warn(`Invalid 'pipelines.${pipelineName}.${axis}' field in config (must be an object)`);
+        continue;
+      }
+
+      const gates: Record<string, 'on' | 'off'> = {};
+      const models: Record<string, string> = {};
+      const handoff: Record<string, ThresholdValue> = {};
+      const runtimes: Record<string, 'claude' | 'codex'> = {};
+      // `gates`/`models`/`handoff` leaves are keyed by stage; `runtimes` by role.
+      for (const [leafKey, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
+        const label = `pipelines.${pipelineName}.${axis}.${leafKey}`;
+        if (axis === 'gates') {
+          if (leaf === 'on' || leaf === 'off') gates[leafKey] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be 'on' or 'off')`);
+        } else if (axis === 'models') {
+          if (typeof leaf === 'string' && leaf.length > 0) models[leafKey] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
+        } else if (axis === 'runtimes') {
+          if (leaf === 'claude' || leaf === 'codex') runtimes[leafKey] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be 'claude' or 'codex')`);
+        } else {
+          const parsed = thresholdSchema('threshold').safeParse(leaf);
+          if (parsed.success) handoff[leafKey] = parsed.data;
+          else
+            console.warn(
+              `Invalid '${label}' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            );
+        }
+      }
+      if (axis === 'gates' && Object.keys(gates).length > 0) entry.gates = gates;
+      if (axis === 'models' && Object.keys(models).length > 0) entry.models = models;
+      if (axis === 'handoff' && Object.keys(handoff).length > 0) entry.handoff = handoff;
+      if (axis === 'runtimes' && Object.keys(runtimes).length > 0) entry.runtimes = runtimes;
+    }
+
+    if (Object.keys(entry).length > 0) result[pipelineName] = entry;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the references index
@@ -746,6 +844,20 @@ function parseProjectConfigContent(
       }
     }
 
+    // Parse pipelines field: an optional map keyed by pipeline name, each
+    // value an optional map of `gates`/`models`/`handoff` per-stage records —
+    // the storage side of the `pipelines.<name>.{gates,models,handoff}.<stage>`
+    // config-key families. Resilient like every block above: a non-map, an
+    // invalid axis, or an invalid per-stage leaf is dropped with a warning
+    // while valid siblings survive. Unknown axes (not gates/models/handoff)
+    // are ignored with a warning, never a hard error.
+    if (raw.pipelines !== undefined) {
+      const pipelines = parsePipelinesBlock(raw.pipelines);
+      if (pipelines) {
+        config.pipelines = pipelines;
+      }
+    }
+
   // Return partial config even if some fields failed
   return Object.keys(config).length > 0 ? (config as ProjectConfig) : null;
 }
@@ -1063,7 +1175,7 @@ export function resolveArchiveDestinationValue(
 /** The resolved autopilot gate policy plus which layer produced it. */
 export interface ResolvedGatePolicy {
   effective: AutopilotGatePolicy;
-  source: 'flag' | 'project' | 'global' | 'default';
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
 }
 
 /** Minimal shape of the global config's `autopilot` block, accepted so this module need not import `GlobalConfig` for one field. */
@@ -1077,17 +1189,21 @@ export interface AutopilotGlobalConfig {
 /**
  * Resolves the effective autopilot gate policy with precedence: the run
  * argument (`--no-gate`) first, then the project config default
- * (`autopilot.gates`), then the global config default (`autopilot.gates`),
- * then the built-in default (gates ON). Every consumer (the `/rasen:auto`
- * gate-policy resolution, run-state recording) MUST resolve through this
- * function so precedence is applied identically everywhere. An absent or
- * previously-dropped `autopilot.gates` value at either scope falls back to
- * the next layer without failing config parsing.
+ * (`autopilot.gates`), then the inherited store config default (when a store
+ * layer is active — see `store-config-inheritance`), then the global config
+ * default (`autopilot.gates`), then the built-in default (gates ON). Every
+ * consumer (the `/rasen:auto` gate-policy resolution, run-state recording)
+ * MUST resolve through this function so precedence is applied identically
+ * everywhere. An absent or previously-dropped `autopilot.gates` value at any
+ * scope falls back to the next layer without failing config parsing.
+ * `storeConfig` defaults to `undefined` so existing three-argument call sites
+ * (pre-dating the store layer) are unaffected.
  */
 export function resolveAutopilotGatePolicy(
   config: ProjectConfig | null | undefined,
   noGateFlag: boolean,
-  globalConfig?: AutopilotGlobalConfig | null
+  globalConfig?: AutopilotGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
 ): ResolvedGatePolicy {
   if (noGateFlag) {
     return { effective: 'off', source: 'flag' };
@@ -1095,6 +1211,10 @@ export function resolveAutopilotGatePolicy(
   const projectValue = config?.autopilot?.gates;
   if (projectValue === 'on' || projectValue === 'off') {
     return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.autopilot?.gates;
+  if (storeValue === 'on' || storeValue === 'off') {
+    return { effective: storeValue, source: 'store' };
   }
   const globalValue = globalConfig?.autopilot?.gates;
   if (globalValue === 'on' || globalValue === 'off') {
@@ -1110,7 +1230,7 @@ export function resolveAutopilotGatePolicy(
 /** The resolved autopilot pipeline-selection policy plus which layer produced it. */
 export interface ResolvedSelectionPolicy {
   effective: AutopilotSelectionPolicy;
-  source: 'flag' | 'project' | 'global' | 'default';
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
 }
 
 /**
@@ -1125,18 +1245,24 @@ export interface ResolvedSelectionPolicy {
  * everywhere. An absent or previously-dropped `autopilot.selection` value at
  * either scope falls back to the next layer without failing config parsing.
  * Mirrors `resolveAutopilotGatePolicy`'s shape (same source vocabulary) by
- * design — this is that axis's sibling. Kept as a single resolver (not split
- * by flag) so precedence lives in exactly one place; `autoComposeFlag`
- * defaults to `false` so existing call sites (pre-dating the `compose`
- * policy) are unaffected, and `globalConfig` defaults to `undefined` so
- * existing two/three-argument call sites (pre-dating the global layer) are
- * unaffected.
+ * design — this is that axis's sibling. Precedence: run flags first
+ * (`--auto-compose` ahead of `--auto-select`), then the project config, then
+ * the inherited store config (when a store layer is active — see
+ * `store-config-inheritance`), then the global config, then the built-in
+ * default (`manual`). Kept as a single resolver (not split by flag) so
+ * precedence lives in exactly one place; `autoComposeFlag` defaults to `false`
+ * so existing call sites (pre-dating the `compose` policy) are unaffected,
+ * `globalConfig` defaults to `undefined` so existing two/three-argument call
+ * sites (pre-dating the global layer) are unaffected, and `storeConfig`
+ * defaults to `undefined` so existing four-argument call sites (pre-dating
+ * the store layer) are unaffected.
  */
 export function resolveAutopilotSelectionPolicy(
   config: ProjectConfig | null | undefined,
   autoSelectFlag: boolean,
   autoComposeFlag: boolean = false,
-  globalConfig?: AutopilotGlobalConfig | null
+  globalConfig?: AutopilotGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
 ): ResolvedSelectionPolicy {
   if (autoComposeFlag) {
     return { effective: 'compose', source: 'flag' };
@@ -1147,6 +1273,10 @@ export function resolveAutopilotSelectionPolicy(
   const projectValue = config?.autopilot?.selection;
   if (projectValue === 'classify' || projectValue === 'manual' || projectValue === 'compose') {
     return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.autopilot?.selection;
+  if (storeValue === 'classify' || storeValue === 'manual' || storeValue === 'compose') {
+    return { effective: storeValue, source: 'store' };
   }
   const globalValue = globalConfig?.autopilot?.selection;
   if (globalValue === 'classify' || globalValue === 'manual' || globalValue === 'compose') {

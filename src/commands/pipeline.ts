@@ -13,7 +13,6 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { stringify as stringifyYaml } from 'yaml';
 import {
   AgentRuntimeSchema,
   StageRoleSchema,
@@ -21,7 +20,6 @@ import {
   listPipelines,
   listPipelinesWithInfo,
   PipelineGraph,
-  parsePipeline,
   readRunStateDetailed,
   resolveRunStateLocation,
   completedStages,
@@ -38,12 +36,13 @@ import {
   interruptedChildren,
   escalatedChildren,
   isPortfolioComplete,
-  getProjectPipelinesDir,
   resolveChildPipelineName,
   mapLegacySkillId,
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
+  resolvePipelineStageOverrides,
+  resolveMaskedStageGate,
   normalizeAgentRuntimeConfig,
   validatePipelineForExecution,
   type AgentRuntime,
@@ -54,13 +53,33 @@ import {
   type HandoffConfigLayers,
   type ModelConfigLayers,
   type ModelSource,
+  type RuntimeSource,
+  type StageConfigOverrides,
+  type PipelineStageOverrides,
+  type MaskedGateSource,
   type ResolvedReuseConfig,
   type ThresholdValue,
   type RunStateWorker,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
-import { resolveHandoffThresholdLayers, resolveModelConfigLayers } from '../core/effective-config.js';
+import {
+  resolveConfigStoreLayer,
+  resolveHandoffThresholdLayers,
+  resolveModelConfigLayers,
+} from '../core/effective-config.js';
+import { getGlobalConfig } from '../core/global-config.js';
+import {
+  readProjectConfig,
+  resolveAutopilotGatePolicy,
+  updateProjectConfigKey,
+  type ResolvedGatePolicy,
+} from '../core/project-config.js';
+import {
+  findWildcardDefinition,
+  validateConfigKeyPath,
+  validateConfigValue,
+} from '../core/config-keys.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
@@ -105,20 +124,34 @@ interface StageView {
   childPipeline: string | null;
   role: Stage['role'] | null;
   requires: string[];
-  gate: boolean | 'vet';
+  /** The stage's declared gate value (from the pipeline definition), unmasked. */
+  gate: boolean;
+  /** The effective gate after the mask (per-stage instance > autopilot.gates off > definition). */
+  effectiveGate: boolean;
+  /** The layer that decided the effective gate. */
+  gateSource: MaskedGateSource;
   loop: Stage['loop'] | null;
   parallelGroup: string | null;
   condition: string | null;
   leadReview: boolean;
   verifyPolicy: Stage['verifyPolicy'] | null;
   runtime: 'claude' | 'codex';
-  runtimeSource: 'stage' | 'agent' | 'default';
+  runtimeSource: RuntimeSource;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
   modelSource: ModelSource;
   effort: string | null;
   handoff: ResolvedStageHandoffConfig;
+}
+
+/** The layer that supplied a role's effective runtime for `pipeline agents` reads. */
+type RoleRuntimeSource = 'config-project' | 'config-store' | 'config-global' | 'declaration' | 'default';
+
+/** A role's effective runtime plus the layer that supplied it (`pipeline agents` reporting). */
+interface ResolvedRoleRuntime {
+  runtime: AgentRuntime;
+  source: RoleRuntimeSource;
 }
 
 // Keyword heuristics for `classify`. Matched against the lowercased task string.
@@ -250,10 +283,16 @@ export class PipelineCommand {
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const configLayers = resolveHandoffThresholdLayers(projectRoot);
-    const modelLayers = resolveModelConfigLayers(projectRoot);
+    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const overrides = resolvePipelineStageOverrides(pipeline.name, {
+      projectRoot,
+      store: storeLayer,
+    });
+    const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
     const stages: StageView[] = pipeline.stages.map((s) =>
-      this.toStageView(s, pipeline, configLayers, modelLayers)
+      this.toStageView(s, pipeline, configLayers, modelLayers, overrides, basePolicy)
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
 
@@ -284,9 +323,11 @@ export class PipelineCommand {
   /**
    * Show or update role-level Claude/Codex runtime defaults for a pipeline.
    *
-   * Updates are written as a project-local pipeline override, so package and
-   * user-level definitions stay untouched while registry precedence makes the
-   * new choices effective for this project.
+   * Updates persist as `pipelines.<name>.runtimes.<role>` configuration
+   * instances written to the resolved root's `rasen/config.yaml` (project-scope
+   * semantics; `--store <id>` resolves the store's own root and writes there) —
+   * NEVER a frozen pipeline-definition copy. Registry precedence makes the new
+   * choices effective; upstream changes to the built-in pipeline keep applying.
    */
   async agents(name: string, options: PipelineAgentsOptions = {}): Promise<void> {
     const root = await this.resolveRoot(options);
@@ -296,19 +337,14 @@ export class PipelineCommand {
     const pipeline = this.loadPipelineOrExplain(normalizedName, projectRoot);
     const updates = this.runtimeUpdatesFromOptions(options);
 
-    if (Object.keys(updates).length === 0) {
-      const result = this.toAgentsResult(normalizedName, pipeline, null, projectRoot);
-      if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-      this.printAgentsDetail(result, getPipelineMessages());
-      return;
+    let configPath: string | null = null;
+    if (Object.keys(updates).length > 0) {
+      configPath = this.writeRuntimeInstances(projectRoot, pipeline.name, updates);
     }
 
-    const updatedPipeline = this.applyAgentRuntimeUpdates(pipeline, updates);
-    const overridePath = this.writeProjectPipelineOverride(projectRoot, normalizedName, updatedPipeline);
-    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath, projectRoot);
+    // Reads report the runtimes as RESOLVED from configuration (including the
+    // instances just written), not from a mutated pipeline object.
+    const result = await this.toAgentsResult(pipeline.name, pipeline, configPath, projectRoot);
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -316,6 +352,37 @@ export class PipelineCommand {
     }
 
     this.printAgentsDetail(result, getPipelineMessages());
+  }
+
+  /**
+   * Persists per-role runtime updates as `pipelines.<name>.runtimes.<role>`
+   * configuration instances at `projectRoot` through the standard config write
+   * path, validating each key/value against the registry family first. Returns
+   * the config file written to. Throws with the config write path's own guidance
+   * (e.g. a config-less root) — never writes a pipeline definition file.
+   */
+  private writeRuntimeInstances(
+    projectRoot: string,
+    name: string,
+    updates: Partial<Record<StageRole, AgentRuntime>>
+  ): string {
+    let configPath = '';
+    for (const role of STAGE_ROLES) {
+      const runtime = updates[role];
+      if (!runtime) continue;
+      const key = `pipelines.${name}.runtimes.${role}`;
+      const keyValidation = validateConfigKeyPath(key, 'project');
+      if (!keyValidation.valid) {
+        throw pipelineMessageError('invalidRuntime', { runtime, role });
+      }
+      const definition = findWildcardDefinition(key, 'project');
+      if (!definition || validateConfigValue(definition, runtime) !== null) {
+        throw pipelineMessageError('invalidRuntime', { runtime, role });
+      }
+      const written = updateProjectConfigKey(projectRoot, key, runtime);
+      configPath = written.configPath;
+    }
+    return configPath;
   }
 
   /**
@@ -740,79 +807,66 @@ export class PipelineCommand {
     return updates;
   }
 
-  private applyAgentRuntimeUpdates(
+  private async toAgentsResult(
+    name: string,
     pipeline: PipelineYaml,
-    updates: Partial<Record<StageRole, AgentRuntime>>
-  ): PipelineYaml {
-    const agents: PipelineYaml['agents'] = { ...(pipeline.agents ?? {}) };
+    configPath: string | null,
+    projectRoot: string
+  ): Promise<{
+    name: string;
+    configPath: string | null;
+    agents: PipelineYaml['agents'];
+    effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
+    stages: StageView[];
+  }> {
+    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
+    const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
 
-    for (const role of STAGE_ROLES) {
-      const runtime = updates[role];
-      if (!runtime) continue;
-
-      const existing = pipeline.agents?.[role];
-      if (existing && typeof existing !== 'string') {
-        agents[role] = {
-          ...normalizeAgentRuntimeConfig(existing),
-          runtime,
-        };
-      } else {
-        agents[role] = runtime;
-      }
-    }
+    // Effective runtime per role: family instance (project > store > global) >
+    // pipeline `agents.<role>.runtime` declaration > default (claude).
+    const effectiveRoles = Object.fromEntries(
+      STAGE_ROLES.map((role): [StageRole, ResolvedRoleRuntime] => {
+        const override = overrides.runtimes.get(role);
+        if (override) {
+          return [role, { runtime: override.value, source: `config-${override.scope}` }];
+        }
+        const declared = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
+        if (declared) {
+          return [role, { runtime: declared, source: 'declaration' }];
+        }
+        return [role, { runtime: 'claude', source: 'default' }];
+      })
+    ) as Record<StageRole, ResolvedRoleRuntime>;
 
     return {
-      ...pipeline,
-      agents,
+      name,
+      configPath,
+      agents: pipeline.agents ?? {},
+      effectiveRoles,
+      stages: pipeline.stages.map((s) =>
+        this.toStageView(s, pipeline, configLayers, modelLayers, overrides, basePolicy)
+      ),
     };
   }
 
-  private writeProjectPipelineOverride(
-    projectRoot: string,
-    name: string,
-    pipeline: PipelineYaml
-  ): string {
-    const pipelineDir = path.join(getProjectPipelinesDir(projectRoot), name);
-    const pipelinePath = path.join(pipelineDir, 'pipeline.yaml');
-    const yaml = stringifyYaml(pipeline, { lineWidth: 0 });
-
-    // Parse before writing so a serialization bug never leaves an invalid
-    // override in front of the package/user pipeline.
-    parsePipeline(yaml);
-
-    fs.mkdirSync(pipelineDir, { recursive: true });
-    fs.writeFileSync(pipelinePath, yaml, 'utf-8');
-
-    return pipelinePath;
-  }
-
-  private toAgentsResult(
-    name: string,
-    pipeline: PipelineYaml,
-    overridePath: string | null,
-    projectRoot: string
-  ): {
-    name: string;
-    overridePath: string | null;
-    agents: PipelineYaml['agents'];
-    effectiveRoles: Record<StageRole, AgentRuntime>;
-    stages: StageView[];
-  } {
-    const effectiveRoles = Object.fromEntries(
-      STAGE_ROLES.map((role) => [
-        role,
-        normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ?? 'claude',
-      ])
-    ) as Record<StageRole, AgentRuntime>;
-
-    const configLayers = resolveHandoffThresholdLayers(projectRoot);
-    const modelLayers = resolveModelConfigLayers(projectRoot);
+  /**
+   * The per-stage/per-role config top layer for one stage, drawn from the
+   * pipeline's resolved override maps: model/handoff by stage id, runtime by
+   * role. Absent maps (no config context) yield an all-undefined set, so the
+   * resolvers fall through to their existing chains byte-identically.
+   */
+  private stageConfigOverrides(
+    stage: Stage,
+    overrides?: PipelineStageOverrides
+  ): StageConfigOverrides {
+    if (!overrides) return {};
     return {
-      name,
-      overridePath,
-      agents: pipeline.agents ?? {},
-      effectiveRoles,
-      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers, modelLayers)),
+      model: overrides.models.get(stage.id),
+      handoff: overrides.handoff.get(stage.id),
+      runtime: stage.role ? overrides.runtimes.get(stage.role) : undefined,
     };
   }
 
@@ -820,9 +874,16 @@ export class PipelineCommand {
     stage: Stage,
     pipeline: PipelineYaml,
     configLayers?: HandoffConfigLayers,
-    modelLayers?: ModelConfigLayers
+    modelLayers?: ModelConfigLayers,
+    overrides?: PipelineStageOverrides,
+    basePolicy?: ResolvedGatePolicy
   ): StageView {
-    const runtime = resolveStageRuntimeConfig(stage, pipeline, modelLayers);
+    const stageOverrides = this.stageConfigOverrides(stage, overrides);
+    const runtime = resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides);
+    // The mask needs a base policy; without one (no config context) fall back to
+    // the built-in "gates on" default so effective equals the declared gate.
+    const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
+    const maskedGate = resolveMaskedStageGate(stage.gate, overrides?.gates.get(stage.id), policy);
     return {
       id: stage.id,
       kind: stage.kind,
@@ -833,20 +894,39 @@ export class PipelineCommand {
       role: stage.role ?? null,
       requires: stage.requires,
       gate: stage.gate,
+      effectiveGate: maskedGate.effective,
+      gateSource: maskedGate.source,
       loop: stage.loop ?? null,
       parallelGroup: stage.parallelGroup ?? null,
       condition: stage.condition ?? null,
       leadReview: stage.leadReview,
       verifyPolicy: stage.verifyPolicy ?? null,
       runtime: runtime.runtime,
-      runtimeSource: runtime.source,
+      runtimeSource: runtime.runtimeSource,
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
       modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
-      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers, modelLayers),
+      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers, modelLayers, stageOverrides),
     };
+  }
+
+  /**
+   * Resolves the effective `autopilot.gates` base policy for a root (the mask
+   * base). `noGateFlag` is false — `pipeline show`/`agents` are inspection, not
+   * a run — so the base resolves purely from project/store/global config.
+   */
+  private resolveBaseGatePolicy(
+    projectRoot: string,
+    storeRoot: string | null | undefined
+  ): ResolvedGatePolicy {
+    return resolveAutopilotGatePolicy(
+      readProjectConfig(projectRoot),
+      false,
+      getGlobalConfig(),
+      storeRoot ? readProjectConfig(storeRoot) : null
+    );
   }
 
   private printPipelineTable(
@@ -910,8 +990,7 @@ export class PipelineCommand {
           requires: stage.requires.join(', '),
         }));
       }
-      if (stage.gate === 'vet') meta.push(messages.format('stageMetaGateVet'));
-      else if (stage.gate) meta.push(messages.format('stageMetaGate'));
+      if (stage.gate) meta.push(messages.format('stageMetaGate'));
       if (stage.loop) {
         if (stage.loop.kind === 'review-cycle') {
           meta.push(messages.format('stageMetaReviewLoop', {
@@ -979,22 +1058,22 @@ export class PipelineCommand {
   private printAgentsDetail(
     result: {
       name: string;
-      overridePath: string | null;
-      effectiveRoles: Record<StageRole, AgentRuntime>;
+      configPath: string | null;
+      effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
       stages: StageView[];
     },
     messages: PipelineMessages
   ): void {
     console.log(messages.format('pipelineLabel', { name: result.name }));
-    if (result.overridePath) {
-      console.log(messages.format('projectOverrideLabel', { path: result.overridePath }));
+    if (result.configPath) {
+      console.log(messages.format('projectOverrideLabel', { path: result.configPath }));
     }
     console.log();
     console.log(messages.format('roleRuntimesHeading'));
     for (const role of STAGE_ROLES) {
       console.log(messages.format('agentRoleLine', {
         role,
-        runtime: result.effectiveRoles[role],
+        runtime: result.effectiveRoles[role].runtime,
       }));
     }
     console.log();

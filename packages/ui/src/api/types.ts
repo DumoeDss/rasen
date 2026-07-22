@@ -13,14 +13,25 @@
  * is a bug in this mirror, not a sanctioned protocol change.
  */
 
-export type ConfigScope = 'global' | 'project';
+export type ConfigScope = 'global' | 'store' | 'project';
 export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array' | 'threshold';
-export type ConfigSource = 'default' | 'global' | 'project' | 'env-override';
+export type ConfigSource = 'default' | 'global' | 'store' | 'project' | 'env-override';
 
 /** A registered project, or the server's launch project. */
 export interface ProjectRef {
   projectId: string;
   name: string;
+  root: string;
+}
+
+/**
+ * The store contributing the store layer to a config read (W1 design D6,
+ * mirrored from `StoreLayerRef` in the CLI's wire-types.ts): the inherited
+ * store for a project context, or the addressed store's own root for a store
+ * context. `null` in a response when no store layer is active.
+ */
+export interface StoreLayerRef {
+  id: string;
   root: string;
 }
 
@@ -54,7 +65,14 @@ export interface WireConfigEntry {
   definition: WireConfigKeyDefinition;
   value: unknown;
   source: ConfigSource;
-  scopeValues: { global?: unknown; project?: unknown };
+  scopeValues: { global?: unknown; store?: unknown; project?: unknown };
+  /**
+   * The fully-qualified instance path for a wildcard family instance entry
+   * (e.g. `pipelines.small-feature.gates.propose`). Absent on fixed keys and
+   * on a family's template entry. Mirrors `instanceKey` in the CLI's
+   * wire-types.ts — the Pipelines page (this change) is its first consumer.
+   */
+  instanceKey?: string;
   /** Present only when a raw on-disk scope value fails registry validation. */
   warnings?: string[];
 }
@@ -83,38 +101,109 @@ export interface ListProjectsResponse {
 
 export interface ListConfigResponse {
   project: ProjectRef | null;
+  /** The store layer contributing to this read (W1 design D6): the inherited store at a project space, the addressed store at a store space, or null. */
+  store: StoreLayerRef | null;
   entries: WireConfigEntry[];
 }
 
 export interface GetConfigKeyResponse {
   entry: WireConfigEntry;
+  /** The store layer contributing to this read (W1 design D6); null when no store layer is active. */
+  store: StoreLayerRef | null;
 }
 
 /** PUT and DELETE both respond with the re-resolved entry. */
 export type WriteConfigKeyResponse = GetConfigKeyResponse;
 
 /**
- * A trimmed projection of a pipeline stage for the read-only gates inventory
- * (design.md D5/D6 of `config-page-coherence`). `gate: 'vet'` marks a stage
- * that ALWAYS pauses, distinct from an ordinary `gate: true`.
+ * A threshold value (mirrors `ThresholdValue` in the CLI's model-presets.ts): a
+ * bare fraction of the context window in (0, 1], or an absolute
+ * `{ remainingTokens: N }` headroom. A bare number is ALWAYS a fraction.
+ */
+export type ThresholdValue = number | { remainingTokens: number };
+
+/**
+ * An effective per-stage value plus the scope-qualified layer that supplied it
+ * (`GET /api/v1/pipelines`; mirrors `WireEffectiveValue<T>` in the CLI's
+ * wire-types.ts). `source` is a free-form scope-qualified label
+ * (e.g. `stage-override-project`, `store`, `definition`, `default`) rendered
+ * verbatim — the UI never re-derives resolution.
+ */
+export interface WireEffectiveValue<T> {
+  value: T;
+  source: string;
+}
+
+/**
+ * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
+ * declared identity and its declared `gate` value (a boolean), it reports each
+ * EFFECTIVE per-stage value — gate (after the mask), model, handoff threshold,
+ * and runtime — with the layer that supplied it, so the UI renders resolution
+ * without reimplementing it.
  */
 export interface WirePipelineStage {
   id: string;
   role: string | null;
   skill: string | null;
-  gate: false | true | 'vet';
+  /** The declared gate value from the pipeline definition, unmasked. */
+  gate: boolean;
+  /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
+  effectiveGate: WireEffectiveValue<boolean>;
+  effectiveModel: WireEffectiveValue<string | null>;
+  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
+  effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
 }
 
-/** A pipeline's identity plus its stage list, for `GET /api/v1/pipelines`. */
+/**
+ * A pipeline's identity, provenance, and per-stage effective configuration for
+ * `GET /api/v1/pipelines`. `provenance` marks a built-in versus a user pipeline;
+ * `sourceLayer` names the layer the definition resolved from.
+ */
 export interface WirePipeline {
   name: string;
   description: string;
+  provenance: 'built-in' | 'user';
+  sourceLayer: 'project' | 'user' | 'package';
   stages: WirePipelineStage[];
 }
 
+/** `GET /api/v1/pipelines` response: the addressed space's resolved pipelines. */
 export interface ListPipelinesResponse {
+  project: ProjectRef | null;
+  /** The store layer contributing to this read; null when no store layer is active. */
+  store: StoreLayerRef | null;
   pipelines: WirePipeline[];
 }
+
+/** `POST /api/v1/pipelines` request body, discriminated by `op` (pipeline-http-api design D6). */
+export type PipelineMutationRequest =
+  | { op: 'import'; path: string; force?: boolean }
+  | { op: 'init'; name: string; output: string }
+  | { op: 'export'; name: string; path: string; force?: boolean }
+  | { op: 'delete'; name: string; force?: boolean };
+
+export interface PipelineImportResponse {
+  path: string;
+  imported: string[];
+  digests: Record<string, string>;
+}
+export interface PipelineInitResponse {
+  pipeline: { name: string; output: string };
+}
+export interface PipelineExportResponse {
+  pipeline: { name: string; path: string };
+}
+export interface PipelineDeleteResponse {
+  deleted: string;
+  forcedReferrers: string[];
+}
+
+/** `POST /api/v1/pipelines` success response — one of the four op payloads. */
+export type PipelineMutationResponse =
+  | PipelineImportResponse
+  | PipelineInitResponse
+  | PipelineExportResponse
+  | PipelineDeleteResponse;
 
 // ---- Management API mirror (rasen-ui-slice1-readonly-api design.md D7) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root
@@ -423,3 +512,175 @@ export type SpaceEntry = ProjectSpaceEntry | StoreSpaceEntry;
 export interface SpacesResponse {
   spaces: SpaceEntry[];
 }
+
+// ---- Local-path browsing (local-path-browsing design D3) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`GET /api/v1/local-paths`). Same hand-maintained-mirror discipline.
+
+/** One entry of an enumerated directory (design D3). */
+export interface LocalPathEntry {
+  name: string;
+  isDir: boolean;
+  /** True when the entry contains a `.git` directory OR a `.git` file (worktrees/submodules use a file). */
+  isGitRepo: boolean;
+}
+
+/** `GET /api/v1/local-paths` response (design D3). */
+export interface LocalPathsResponse {
+  /** The canonical absolute path enumerated. */
+  path: string;
+  /** The canonical parent path, or null at a filesystem root. */
+  parent: string | null;
+  /** The platform path separator. */
+  separator: string;
+  /** True only for the home start-point response (no `path` param supplied). */
+  home?: boolean;
+  entries: LocalPathEntry[];
+}
+
+// ---- Space creation (space-creation design D4) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package
+// (`POST /api/v1/spaces`). On failure the thrown `ApiError.message` is the
+// CLI's own error text, verbatim.
+
+/** `POST /api/v1/spaces` request body (design D4). */
+export interface CreateSpaceRequest {
+  kind: 'project' | 'store';
+  /** An absolute filesystem path — the space's target directory. */
+  path: string;
+  /** Store id; required only for a fresh store (a directory with no `rasen/` root). */
+  id?: string;
+}
+
+/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
+export interface CreateSpaceResponse {
+  operation: 'init' | 'store-register' | 'store-setup';
+  space: SpaceEntry;
+}
+
+// ---- Workflow library (workflow-http-api design D3/D4) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root package.
+// Same hand-maintained-mirror discipline as the rest of this file: copied
+// field-for-field, pinned by the `satisfies` fixtures in `test/fixtures`.
+
+export type WorkflowSourceKind = 'built-in' | 'user';
+export type WorkflowKind = 'task' | 'driver' | 'internal' | 'expert';
+
+/** A validation/registry diagnostic (mirrors `WorkflowDiagnostic`). */
+export interface WorkflowDiagnostic {
+  code: string;
+  severity: 'error' | 'warning';
+  message: string;
+  path?: string;
+  sourcePath?: string;
+  details?: Record<string, string | number | boolean | string[]>;
+}
+
+/** A known consumer of a workflow (mirrors `WorkflowUsage`). */
+export interface WorkflowUsage {
+  kind: 'global-selection' | 'profile' | 'dependency' | 'pipeline' | 'ledger';
+  consumer: string;
+  path?: string;
+  hard: true;
+}
+
+/** The four dependency slots (mirrors `WorkflowDependencySet`). */
+export interface WorkflowDependencySet {
+  workflows: string[];
+  skills: string[];
+  pipelines: string[];
+  schemas: string[];
+}
+
+/** One valid catalog unit from `GET /api/v1/workflows`. */
+export interface WorkflowListEntry {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string | null;
+  digest: string;
+  kind: WorkflowKind;
+  skillName: string;
+  commandId: string | null;
+  unused: boolean;
+}
+
+/** One invalid user entry, reported rather than dropped. */
+export interface WorkflowInvalidEntry {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string;
+  valid: false;
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** `GET /api/v1/workflows` response. */
+export interface WorkflowListResponse {
+  workflows: WorkflowListEntry[];
+  invalid: WorkflowInvalidEntry[];
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** The full definition from `GET /api/v1/workflows/<id>` (mirrors `workflowDefinitionForJson`). */
+export interface WorkflowDefinitionWire {
+  id: string;
+  source: WorkflowSourceKind;
+  sourcePath: string | null;
+  manifestVersion: number;
+  kind: WorkflowKind;
+  digest: string;
+  skill: { name: string; dirName: string; description: string };
+  command: { id: string; name: string; category: string; tags: string[] } | null;
+  requires: WorkflowDependencySet;
+  recommends: { workflows: string[] };
+  files: { path: string; sha256: string }[];
+}
+
+/** `GET /api/v1/workflows/<id>` response. */
+export interface WorkflowDetailResponse {
+  workflow: WorkflowDefinitionWire;
+  usage: WorkflowUsage[];
+}
+
+/** The validation verdict (mirrors `WorkflowValidationSummary`). */
+export interface WorkflowValidationSummary {
+  valid: boolean;
+  kind: 'installed' | 'directory' | 'package';
+  id?: string;
+  packageKind?: string;
+  diagnostics: WorkflowDiagnostic[];
+}
+
+/** `GET /api/v1/workflow-validation` response. */
+export interface WorkflowValidationResponse {
+  validation: WorkflowValidationSummary;
+}
+
+/** `POST /api/v1/workflows` request, discriminated by `op`. */
+export type WorkflowMutationRequest =
+  | { op: 'import'; path: string }
+  | { op: 'init'; id: string; output: string }
+  | { op: 'export'; id: string; path: string; force?: boolean }
+  | { op: 'delete'; id: string; force?: boolean };
+
+export interface WorkflowImportResponse {
+  imported: string[];
+  reused: string[];
+  roots?: string[];
+}
+export interface WorkflowInitResponse {
+  workflow: { id: string; output: string };
+}
+export interface WorkflowExportResponse {
+  workflow: { id: string; path: string };
+}
+export interface WorkflowDeleteResponse {
+  deleted: string;
+  forcedReferrers: string[];
+}
+
+/** `POST /api/v1/workflows` success response — one of the four op payloads. */
+export type WorkflowMutationResponse =
+  | WorkflowImportResponse
+  | WorkflowInitResponse
+  | WorkflowExportResponse
+  | WorkflowDeleteResponse;

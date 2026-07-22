@@ -34,6 +34,10 @@ export {
   type HandoffConfigLayers,
   type ModelConfigLayers,
   type ModelSource,
+  type RuntimeSource,
+  type StageOverride,
+  type StageOverrideScope,
+  type StageConfigOverrides,
   type ResolvedReuseConfig,
   type HandoffConfig,
   type ReuseConfig,
@@ -60,6 +64,20 @@ export {
   type PipelineExecutionSkillSets,
   type PipelineExecutionOptions,
 } from './execution-validation.js';
+
+// Per-pipeline stage-override resolver + gate mask (config top layer)
+export {
+  bucketPipelineStageOverrides,
+  resolvePipelineStageOverrides,
+  resolveMaskedStageGate,
+  resolveEffectiveStage,
+  stageConfigOverridesFor,
+  type PipelineStageOverrides,
+  type MaskedStageGate,
+  type MaskedGateSource,
+  type EffectiveStageConfig,
+  type EffectiveStageInputs,
+} from './stage-overrides.js';
 
 // Graph operations
 export { PipelineGraph } from './graph.js';

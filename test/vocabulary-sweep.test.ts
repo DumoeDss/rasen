@@ -19,6 +19,33 @@ const SWEEP_ROOTS = ['src', 'test', 'docs', 'scripts', '.codex'];
 // separator class covers the hyphen, underscore, fused, and spaced forms.
 const FORBIDDEN_PATTERN = new RegExp('context' + '[-_ ]?store', 'i');
 
+// Exact identifiers that legitimately contain the swept substring but are NOT
+// the retired store noun-command vocabulary. W1 (store-as-config-scope,
+// ratified) reintroduces the store as a CONFIG SCOPE on live surfaces:
+// `contextStoreRef` is the config API's response field naming the store that
+// supplies a config layer (config-api/router.ts). Allow exactly this token;
+// every other reintroduction of the retired vocabulary is still caught,
+// because stripping only this literal leaves any real offender matching. (The
+// forbidden forms are never written out here so this file stays clean under
+// its own sweep — same discipline as the concatenated pattern above.)
+const ALLOWED_IDENTIFIERS = ['contextStoreRef'];
+
+/**
+ * A line carries the retired vocabulary only if it still matches after every
+ * allowlisted identifier is removed — so `contextStoreRef` passes while a real
+ * reintroduction on the same or any other line is still flagged.
+ */
+function carriesRetiredVocabulary(line: string): boolean {
+  if (!FORBIDDEN_PATTERN.test(line)) {
+    return false;
+  }
+  let residual = line;
+  for (const allowed of ALLOWED_IDENTIFIERS) {
+    residual = residual.split(allowed).join('');
+  }
+  return FORBIDDEN_PATTERN.test(residual);
+}
+
 // Fork note: historical analysis docs may cite the retired vocabulary when
 // documenting the upstream transition itself (names and upstream paths are
 // quoted verbatim there). Exempt them explicitly instead of rewording history.
@@ -71,7 +98,7 @@ describe('vocabulary sweep', () => {
         }
         const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
         lines.forEach((line, index) => {
-          if (FORBIDDEN_PATTERN.test(line)) {
+          if (carriesRetiredVocabulary(line)) {
             offenders.push(
               `${path.relative(REPO_ROOT, filePath)}:${index + 1}: ${line.trim()}`
             );
