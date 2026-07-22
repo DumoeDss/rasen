@@ -18,19 +18,19 @@ Define how the autopilot's ordinary human-confirmation gates (`gate: true`) reso
 - **WHEN** a user runs `/rasen:auto <task>` without `--no-gate` and no project gate default is set
 - **THEN** each `gate: true` stage pauses and waits for the human to Continue, Stop, or switch to Manual
 
-### Requirement: Gate policy is a mask over per-stage gate configuration
+### Requirement: Gate policy is a mask over every stage gate
 
-An ordinary gate for a `(pipeline, stage)` SHALL resolve with three-tier precedence: (1) a `pipelines.<name>.gates.<stage>` configuration instance, itself resolving project over store over global, decides that stage outright; (2) otherwise, an effective `autopilot.gates: off` suppresses the gate; (3) otherwise the stage definition's own `gate:` value decides. The effective `autopilot.gates` base SHALL keep its existing resolution — the run argument (`--no-gate`) first, then project config, then the inherited store config (when a store layer is active), then global config, then the built-in default of `on` — with its recorded source distinguishing `flag`, `project`, `store`, `global`, and `default`, and an absent or unrecognized value at any scope falling through without failing config parsing. `autopilot.gates: on` therefore means the stage definitions are honoured, not that every stage gates. A stage whose definition declares the always-pausing `'vet'` gate SHALL be outside this mask entirely, per the vet requirement of this capability. Run-state SHALL record the resolved base policy and source exactly as before — per-stage instances resolve live at each gate, never frozen into run-state — and run-states recorded before per-stage configuration existed SHALL parse unchanged. The LEAD SHALL learn each stage's effective gate from the pipeline inspection surface (which reports mask-resolved effective gates) rather than combining layers itself.
+The gate for a `(pipeline, stage)` SHALL resolve with three-tier precedence: (1) a `pipelines.<name>.gates.<stage>` configuration instance, itself resolving project over store over global, decides that stage outright; (2) otherwise, an effective `autopilot.gates: off` suppresses the gate; (3) otherwise the stage definition's own `gate:` value decides. The effective `autopilot.gates` base SHALL keep its existing resolution — the run argument (`--no-gate`) first, then project config, then the inherited store config (when a store layer is active), then global config, then the built-in default of `on` — with its recorded source distinguishing `flag`, `project`, `store`, `global`, and `default`, and an absent or unrecognized value at any scope falling through without failing config parsing. `autopilot.gates: on` therefore means the stage definitions are honoured, not that every stage gates. Run-state SHALL record the resolved base policy and source exactly as before — per-stage instances resolve live at each gate, never frozen into run-state — and run-states recorded before per-stage configuration existed SHALL parse unchanged. The LEAD SHALL learn each stage's effective gate from the pipeline inspection surface (which reports mask-resolved effective gates) rather than combining layers itself.
 
 #### Scenario: Per-stage on pierces an off base
 
-- **WHEN** `autopilot.gates: off` is effective and `pipelines.small-feature.gates.propose` is `on` at any scope
-- **THEN** the `propose` stage of `small-feature` pauses while every other ordinary gate in the run is auto-approved
+- **WHEN** `autopilot.gates: off` is effective and `pipelines.goal-loop-measure.gates.define-goal` is `on` at any scope
+- **THEN** the `define-goal` stage pauses while every other gate in the run is auto-approved
 
 #### Scenario: Per-stage off silences one stage under an on base
 
 - **WHEN** `autopilot.gates` resolves `on` and `pipelines.full-feature.gates.review` is `off` at project scope
-- **THEN** the `review` stage's ordinary gate is auto-approved while other gated stages still pause per their definitions
+- **THEN** the `review` stage's gate is auto-approved while other gated stages still pause per their definitions
 
 #### Scenario: Per-stage instances rank project over store over global
 
@@ -40,12 +40,17 @@ An ordinary gate for a `(pipeline, stage)` SHALL resolve with three-tier precede
 #### Scenario: Base resolution and sources are unchanged
 
 - **WHEN** no per-stage instance exists for a stage and the base resolves from flag, project, store, or global configuration
-- **THEN** the outcome and the recorded source (`flag`, `project`, `store`, `global`, or `default`) match the pre-mask behavior exactly, including `--no-gate` beating every config layer
+- **THEN** the outcome and the recorded source (`flag`, `project`, `store`, `global`, or `default`) match the prior behavior exactly, including `--no-gate` beating every config layer
 
 #### Scenario: On means honour the definitions
 
 - **WHEN** `autopilot.gates` resolves `on` and no per-stage instance exists
-- **THEN** exactly the stages whose definitions declare a gate pause, and ungated stages run through — identical to today
+- **THEN** exactly the stages whose definitions declare a gate pause, and ungated stages run through
+
+#### Scenario: No stage is exempt from the mask
+
+- **WHEN** a goal-loop pipeline runs under `--no-gate` with no per-stage instance set
+- **THEN** every gate in the run, including `define-goal`, is auto-approved — no gate type exists that the mask cannot control
 
 #### Scenario: Unrecognized values fall through
 
@@ -72,31 +77,21 @@ An auto-approved gate SHALL be recorded in the change's run-state with an explic
 - **WHEN** a run started with `--no-gate` is resumed later without re-passing the flag
 - **THEN** the resumed run reads the gate policy from run-state and continues to auto-approve ordinary gates
 
-### Requirement: A vet gate is never auto-approved
+### Requirement: Legacy vet gate values read as ordinary gates
 
-A pipeline stage SHALL be able to mark its gate as `gate: 'vet'` to indicate a human MUST vet the stage. A `vet` gate SHALL always pause for human confirmation and SHALL never be auto-approved by `--no-gate` or by an `autopilot.gates: off` project default. This precedence SHALL also hold for a decomposed portfolio's child-pipeline gates: a parent `--no-gate` directive auto-approves ordinary child gates but never a child `vet` gate.
-
-#### Scenario: Vet gate pauses even under --no-gate
-
-- **WHEN** a pipeline has a stage marked `gate: 'vet'` and the user runs `/rasen:auto --no-gate <task>`
-- **THEN** the `vet` stage still pauses and waits for explicit human confirmation before proceeding
-
-#### Scenario: Goal-loop define-goal is vetted before any round
-
-- **WHEN** a goal-loop pipeline runs under `--no-gate` and its `define-goal` stage is marked `gate: 'vet'`
-- **THEN** the human still confirms the goal and the measure/evaluate configuration (including any arbitrary-shell measure command) before the first iterate round runs
-
-#### Scenario: Child vet gate is not skipped by parent directive
-
-- **WHEN** a decomposed run under `--no-gate` produces child pipelines that contain a `gate: 'vet'` stage
-- **THEN** the parent auto-approve directive applies to ordinary child gates but the child `vet` gate still pauses
-
-### Requirement: Existing boolean gate configuration parses unchanged
-
-Widening the stage `gate` field to accept `'vet'` SHALL be backward compatible: existing pipeline YAML using `gate: true`, `gate: false`, or omitting `gate` SHALL parse and behave exactly as before, and the pipeline inspection output (`rasen pipeline show`) SHALL continue to report each stage's gate value.
+Boolean and absent gate declarations SHALL keep their exact meaning: `gate: true` pauses, `gate: false` and an omitted `gate` do not. A pipeline YAML stage declaring the legacy `gate: 'vet'` SHALL parse successfully as `gate: true`, with a warning emitted at most once per pipeline per process naming the pipeline and stage and pointing at `pipelines.<name>.gates.<stage>` as the per-stage control — never a parse error, so existing user libraries keep loading. The built-in pipeline definitions SHALL contain no `'vet'` gate. Pipeline inspection output SHALL report every stage's gate as a boolean.
 
 #### Scenario: Boolean and absent gates are unchanged
 
 - **WHEN** a pipeline YAML stage sets `gate: true`, `gate: false`, or omits `gate`
-- **THEN** the stage parses successfully with its existing meaning (pause, no-pause, and default no-pause respectively)
-- **AND** `rasen pipeline show --json` reports the stage's gate value (`true`, `false`, or `'vet'`) without error
+- **THEN** the stage parses with its existing meaning (pause, no-pause, and default no-pause respectively) and inspection reports the boolean value
+
+#### Scenario: Legacy vet coerces with a one-time warning
+
+- **WHEN** a user pipeline YAML stage still declares `gate: vet` and the pipeline is loaded twice in one process
+- **THEN** the stage parses as `gate: true`, exactly one warning names the pipeline, the stage, and the per-stage configuration key, and no error is raised
+
+#### Scenario: Built-ins carry no vet gate
+
+- **WHEN** the built-in pipeline definitions are enumerated
+- **THEN** no stage declares `'vet'`; the goal-loop `define-goal` stages declare `gate: true`

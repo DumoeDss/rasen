@@ -209,3 +209,27 @@ The app SHALL provide a platform shell — client-side routing, an application l
 - **WHEN** the shell resolves the active space
 - **THEN** it addresses a concrete project or store from the URL, and offers no "no project / global only" shell state; when no space is registered it shows a hint to run `rasen ui` inside a Rasen project
 
+### Requirement: Telemetry payload disclosure on the Privacy surface
+
+Beside the `telemetry.enabled` entry, the configuration page SHALL offer a help affordance disclosing exactly what an enabled telemetry setting sends: the five fields of the actual payload, verbatim — the command name, the CLI version, an anonymous randomly generated UUID, the operating system platform, and the Node.js version — with no field omitted and none added. The disclosure SHALL also state that the key is global-only (one setting for the machine) and that environment opt-outs (`RASEN_TELEMETRY=0`, `DO_NOT_TRACK=1`, and CI environments) always win over the configured value. The disclosure is informational only: it never changes the setting, and its field list SHALL be kept in lockstep with the sending code so the two cannot drift silently.
+
+#### Scenario: The five fields are listed verbatim
+
+- **WHEN** the user opens the telemetry help affordance
+- **THEN** it lists exactly the command name, the CLI version, an anonymous random UUID, the OS platform, and the Node.js version as the payload — nothing more, nothing less
+
+#### Scenario: Scope and environment precedence are stated
+
+- **WHEN** the disclosure renders
+- **THEN** it states the key is global-only and that the environment opt-outs always override the configured value
+
+#### Scenario: Disclosure cannot drift from the payload
+
+- **WHEN** the test suite runs
+- **THEN** a test pins the disclosed field list against the telemetry sending code's actual payload fields, failing on any drift in either direction
+
+#### Scenario: Disclosure changes nothing
+
+- **WHEN** the user opens and closes the disclosure
+- **THEN** no configuration write is issued and the toggle's value is unchanged
+
