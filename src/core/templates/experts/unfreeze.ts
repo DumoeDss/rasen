@@ -26,7 +26,7 @@ run \`/freeze\` again.
 
 export function getUnfreezeSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:unfreeze',
+    name: 'rasen-unfreeze',
     description: 'Clear the freeze boundary — lift the edit restriction set by freeze or guard',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

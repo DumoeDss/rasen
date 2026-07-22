@@ -1,7 +1,7 @@
 # opsx-auto-command Specification
 
 ## Purpose
-Provide the `/rasen:auto` autopilot command — task-complexity classification, pipeline selection (full-feature / small-feature / bug-fix), gated pause points, expert selection, and DAG-state resume — driving the Rasen workflow end-to-end.
+Provide the `/rasen-auto` autopilot command — task-complexity classification, pipeline selection (full-feature / small-feature / bug-fix), gated pause points, expert selection, and DAG-state resume — driving the Rasen workflow end-to-end.
 ## Requirements
 ### Requirement: Auto Skill and Command Templates
 
@@ -26,7 +26,7 @@ The auto command SHALL classify the task and select a pipeline from the pipeline
 
 #### Scenario: Classification selects a registry pipeline
 
-- **WHEN** the user invokes `/rasen:auto` with a task description
+- **WHEN** the user invokes `/rasen-auto` with a task description
 - **THEN** auto SHALL classify the task (e.g. via `rasen pipeline classify "<task>" --json`) to a pipeline name resolved from the registry (`full-feature`, `small-feature`, `bug-fix`, or any user/project-defined pipeline)
 - **AND** under the `classify` selection policy SHALL adopt that suggestion as the starting choice, while under the `manual` policy it remains advisory
 - **AND** SHALL display the classification and allow the user to override it before proceeding
@@ -121,7 +121,7 @@ On invocation, auto SHALL determine where to resume from the change's artifacts 
 
 #### Scenario: Resume from run-state
 
-- **WHEN** `/rasen:auto` is invoked for an existing change
+- **WHEN** `/rasen-auto` is invoked for an existing change
 - **THEN** auto SHALL determine the next incomplete stage (e.g. via `rasen pipeline resume <change> --json`) using artifact presence plus the run-state record
 - **AND** SHALL resume from that stage rather than restarting
 
@@ -173,22 +173,22 @@ Auto SHALL support an optional gate by which the LEAD reviews the propose output
 
 ### Requirement: Decompose 是 Auto 的条件性首步
 
-`/rasen:auto` SHALL 把 decompose 阶段作为它的第一步来评估，并根据任务本身（而非某个独立命令）决定执行还是跳过。当任务是单个内聚、可 review 的切片时，LEAD SHALL 跳过 decompose，并像今天未拆分的流水线那样在一个 change 上继续。当任务包含多个相互独立的交付物、若干彼此不同的能力、或大到无法作为单个 diff 来 review 的范围时，LEAD SHALL 执行 decompose 并扇出。
+`/rasen-auto` SHALL 把 decompose 阶段作为它的第一步来评估，并根据任务本身（而非某个独立命令）决定执行还是跳过。当任务是单个内聚、可 review 的切片时，LEAD SHALL 跳过 decompose，并像今天未拆分的流水线那样在一个 change 上继续。当任务包含多个相互独立的交付物、若干彼此不同的能力、或大到无法作为单个 diff 来 review 的范围时，LEAD SHALL 执行 decompose 并扇出。
 
 #### Scenario: 单个内聚任务跳过 decompose
 
-- **WHEN** 针对一个单个内聚 change 运行 `/rasen:auto <task>`
+- **WHEN** 针对一个单个内聚 change 运行 `/rasen-auto <task>`
 - **THEN** LEAD SHALL 把 decompose 阶段记录为已跳过
 - **AND** SHALL 在一个 change 上运行其余阶段，相对今天无行为变化
 
 #### Scenario: 大型多交付物任务执行 decompose
 
-- **WHEN** 针对一个跨多个相互独立交付物的任务运行 `/rasen:auto <task>`
+- **WHEN** 针对一个跨多个相互独立交付物的任务运行 `/rasen-auto <task>`
 - **THEN** LEAD SHALL 执行 decompose 阶段并产出一份拆分方案
 
 ### Requirement: LEAD 自审拆分方案（默认无人类 gate）
 
-当 decompose 被执行时，`/rasen:auto` SHALL 让 LEAD 自审拆分方案（子 change、依赖 DAG，以及串行/并行执行计划）并自动继续；它 SHALL NOT 在默认情况下要求人类批准。仅当 LEAD 无法产出一份安全方案时，它 SHALL 升级给人类。用户 MAY 仍随时中断。
+当 decompose 被执行时，`/rasen-auto` SHALL 让 LEAD 自审拆分方案（子 change、依赖 DAG，以及串行/并行执行计划）并自动继续；它 SHALL NOT 在默认情况下要求人类批准。仅当 LEAD 无法产出一份安全方案时，它 SHALL 升级给人类。用户 MAY 仍随时中断。
 
 #### Scenario: LEAD 自审并在无人类批准下继续
 
@@ -207,11 +207,11 @@ Auto SHALL support an optional gate by which the LEAD reviews the propose output
 
 ### Requirement: Auto 的组合恢复
 
-当 `/rasen:auto` 在一个已拆分的父 change 上被重新调用时，它 SHALL 从组合运行状态恢复该组合，而非重新开始——按依赖顺序继续未完成的子 change，并且不重新运行已完成的子 change。
+当 `/rasen-auto` 在一个已拆分的父 change 上被重新调用时，它 SHALL 从组合运行状态恢复该组合，而非重新开始——按依赖顺序继续未完成的子 change，并且不重新运行已完成的子 change。
 
 #### Scenario: 恢复继续该组合
 
-- **WHEN** `/rasen:auto` 在一个已有组合运行状态的父 change 上被重新调用
+- **WHEN** `/rasen-auto` 在一个已有组合运行状态的父 change 上被重新调用
 - **THEN** LEAD SHALL 从下一个（些）可运行子 change 恢复，且 SHALL NOT 重新运行已完成的子 change
 
 ### Requirement: verifyPolicy Values Are Defined

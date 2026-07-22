@@ -7,17 +7,17 @@ Rasen is an **autonomous harness**: you describe the intent — a goal, a bug, a
 If you read nothing else, read these two pages:
 
 1. [Getting Started](getting-started.md): install, initialize, and ship your first change.
-2. [How Commands Work](how-commands-work.md): where you actually type `/rasen:propose` (hint: in your AI chat, not the terminal). This trips up almost everyone once.
+2. [How Commands Work](how-commands-work.md): where you actually type `/rasen-propose` (hint: in your AI chat, not the terminal). This trips up almost everyone once.
 
 That second one matters more than it looks. Rasen has two halves: a command line tool you run in your terminal, and slash commands you give to your AI assistant. Knowing which is which saves you the most common moment of confusion.
 
-> **The best habit to build first: when you're not sure what to build, start with `/rasen:explore`.** It's a no-stakes thinking partner that reads your code, weighs options, and sharpens a fuzzy idea into a concrete plan before any artifact or code exists. The [Explore First](explore.md) guide makes the case.
+> **The best habit to build first: when you're not sure what to build, start with `/rasen-explore`.** It's a no-stakes thinking partner that reads your code, weighs options, and sharpens a fuzzy idea into a concrete plan before any artifact or code exists. The [Explore First](explore.md) guide makes the case.
 
 ## Pick your path
 
 **I'm brand new.** Start with [Getting Started](getting-started.md), then skim the [Core Concepts at a Glance](overview.md). When something feels mysterious, the [FAQ](faq.md) and [Glossary](glossary.md) are nearby.
 
-**I have a problem but not a plan.** This is the common case, and it has a dedicated answer: [Explore First](explore.md). Use `/rasen:explore` to think it through with the AI before committing to anything.
+**I have a problem but not a plan.** This is the common case, and it has a dedicated answer: [Explore First](explore.md). Use `/rasen-explore` to think it through with the AI before committing to anything.
 
 **I have a big existing codebase.** You don't document all of it. [Using Rasen in an Existing Project](existing-projects.md) shows how to start on real, brownfield code without boiling the ocean.
 
@@ -42,7 +42,7 @@ That second one matters more than it looks. Rasen has two halves: a command line
 | Doc | What it gives you |
 |-----|-------------------|
 | [Getting Started](getting-started.md) | Install, initialize, and run your first change end to end |
-| [Explore First](explore.md) | Use `/rasen:explore` to think through an idea before you commit |
+| [Explore First](explore.md) | Use `/rasen-explore` to think through an idea before you commit |
 | [How Commands Work](how-commands-work.md) | Where slash commands run, what "interactive mode" means, terminal vs chat |
 | [Core Concepts at a Glance](overview.md) | The whole mental model on one page: specs, changes, deltas, archive |
 | [Installation](installation.md) | npm, pnpm, yarn, bun, Nix, and how to verify it worked |
@@ -52,14 +52,14 @@ That second one matters more than it looks. Rasen has two halves: a command line
 | Doc | What it gives you |
 |-----|-------------------|
 | [Workflows](workflows.md) | Common patterns and when to reach for each command |
-| [Autopilot Policies](autopilot.md) | Opt-in autonomy for `/rasen:auto`: `--no-gate`, `--auto-select`, composed pipelines |
+| [Autopilot Policies](autopilot.md) | Opt-in autonomy for `/rasen-auto`: `--no-gate`, `--auto-select`, composed pipelines |
 | [Examples & Recipes](examples.md) | Full walkthroughs of real changes, copy-pasteable |
 | [Writing Good Specs](writing-specs.md) | What a strong requirement and scenario look like, and how to right-size a change |
 | [Reviewing a Change](reviewing-changes.md) | The two-minute pass on a drafted plan before any code is written |
 | [Rasen on a Team](team-workflow.md) | How changes fit branches, pull requests, and review |
 | [Using Rasen in an Existing Project](existing-projects.md) | Adopting rasen on a large brownfield codebase |
 | [Editing & Iterating on a Change](editing-changes.md) | Update artifacts, go back, reconcile manual edits |
-| [Commands](commands.md) | Reference for every `/rasen:*` slash command |
+| [Commands](commands.md) | Reference for every `/rasen-*` slash command |
 | [CLI](cli.md) | Reference for every `rasen` terminal command |
 
 ### Understand it deeply
@@ -98,13 +98,13 @@ That second one matters more than it looks. Rasen has two halves: a command line
 ```text
 1. Install        npm install -g @atelierai/rasen@latest
 2. Initialize     cd your-project && rasen init
-3. Explore        (in your AI chat)  /rasen:explore           ← optional, but a great habit
-4. Propose        (in your AI chat)  /rasen:propose add-dark-mode
-5. Build          (in your AI chat)  /rasen:apply
-6. Archive        (in your AI chat)  /rasen:archive
+3. Explore        (in your AI chat)  /rasen-explore           ← optional, but a great habit
+4. Propose        (in your AI chat)  /rasen-propose add-dark-mode
+5. Build          (in your AI chat)  /rasen-apply-change
+6. Archive        (in your AI chat)  /rasen-archive-change
 ```
 
-Steps 1 and 2 happen in your terminal. The rest happen in your AI assistant's chat. That split is the one thing worth memorizing, and [How Commands Work](how-commands-work.md) explains exactly why. Step 3 is optional, but starting with `/rasen:explore` when you're unsure is the habit most worth forming.
+Steps 1 and 2 happen in your terminal. The rest happen in your AI assistant's chat. That split is the one thing worth memorizing, and [How Commands Work](how-commands-work.md) explains exactly why. Step 3 is optional, but starting with `/rasen-explore` when you're unsure is the habit most worth forming.
 
 ## Where else to get help
 

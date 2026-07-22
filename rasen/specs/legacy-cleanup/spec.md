@@ -130,7 +130,7 @@ The system SHALL preserve project.md and display a migration hint instead of del
 - **GIVEN** project.md may contain user-written project documentation
 - **AND** config.yaml's context field serves the same purpose (auto-injected into artifacts)
 - **WHEN** displaying the migration hint
-- **THEN** users can migrate manually or use `/rasen:explore` to get AI assistance
+- **THEN** users can migrate manually or use `/rasen-explore` to get AI assistance
 
 ### Requirement: Cleanup reporting
 
@@ -143,7 +143,7 @@ The system SHALL report what was cleaned up.
   ```
   Cleaned up legacy files:
     ✓ Removed OpenSpec markers from CLAUDE.md
-    ✓ Removed .claude/commands/openspec/ (replaced by /rasen:*)
+    ✓ Removed .claude/commands/openspec/ (replaced by /rasen-*)
     ✓ Removed openspec/AGENTS.md (no longer needed)
   ```
 - **AND IF** `openspec/project.md` exists

@@ -381,7 +381,7 @@ export class ArchiveCommand {
             destination === 'prune'
               ? ' Note: for destination \'prune\', --yes here only confirms the merge — the deletion itself still requires --confirm-prune (or the interactive prompt) separately.'
               : '';
-          const fix = `Use the archive skill (/rasen:archive), which checks the PR's merge state, or rerun with --yes after confirming the merge yourself.${pruneNote}`;
+          const fix = `Use the archive skill (/rasen-archive-change), which checks the PR's merge state, or rerun with --yes after confirming the merge yourself.${pruneNote}`;
           if (json) {
             throw new ArchiveBlockedError('archive_merge_confirmation_required', message, fix);
           }

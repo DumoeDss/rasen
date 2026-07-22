@@ -67,14 +67,14 @@ export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze
   auto: {
     tier: 'supervised-long-runner',
     op: 'auto',
-    skill: '/rasen:auto',
+    skill: '/rasen-auto',
     defaultTimeoutMs: OVERALL_TIMEOUT_DEFAULT_MS,
     defaultNoOutputTimeoutMs: NO_OUTPUT_TIMEOUT_DEFAULT_MS,
   },
   goal: {
     tier: 'supervised-long-runner',
     op: 'goal',
-    skill: '/rasen:goal',
+    skill: '/rasen-goal',
     defaultTimeoutMs: OVERALL_TIMEOUT_DEFAULT_MS,
     defaultNoOutputTimeoutMs: NO_OUTPUT_TIMEOUT_DEFAULT_MS,
   },

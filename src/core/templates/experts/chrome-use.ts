@@ -123,7 +123,7 @@ output file so the user can actually see it — otherwise the screenshot is invi
 
 export function getChromeUseSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:chrome-use',
+    name: 'rasen-chrome-use',
     description: 'Browser QA via CDP — drive the real Chrome browser through a local proxy for DOM snapshots, clicks, network capture, screenshots, and responsive audits',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

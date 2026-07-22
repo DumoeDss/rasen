@@ -93,7 +93,7 @@ describe.skipIf(!IS_WINDOWS)('spawnAgentCli command-injection hardening (Windows
   for (const { name, task } of ATTACKS) {
     it(`does not execute injected commands and delivers the task intact: ${name}`, async () => {
       const supervisor = makeSupervisor();
-      const skill = '/rasen:auto';
+      const skill = '/rasen-auto';
       const result = await supervisor.launch({
         kind: 'auto',
         skill,
@@ -139,7 +139,7 @@ describe.skipIf(!IS_WINDOWS)('spawnAgentCli command-injection hardening (Windows
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       // Combines a newline with an injection break-out to prove the reject
       // fires before any spawn (neither truncation nor injection can occur).
       task: `first line\nsecond line" & echo INJECTED>${CANARY} & rem "`,
@@ -189,7 +189,7 @@ describe.skipIf(IS_WINDOWS)('POSIX accepts multi-line task text (no Windows shim
 
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       // MODE token still parses (\S+ stops at the newline); the rest is a
       // legitimate multi-line prompt that POSIX carries literally.
       task: 'MODE=fast-exit first line\nsecond line with & | > metachars\nthird line',

@@ -67,6 +67,6 @@ Generated workflow skill bodies and the CLI's next-step output SHALL reference o
 - **AND** the guard's whitelist SHALL cover only frozen expert dispatched-contract content carried from `_shared.ts` and historical/archive documents
 
 #### Scenario: Methodology and cross-workflow references named by skill
-- **WHEN** a workflow skill body references a methodology expert or another workflow (e.g. formerly `consult /tdd`, or `/rasen:apply <other>`)
+- **WHEN** a workflow skill body references a methodology expert or another workflow (e.g. formerly `consult /tdd`, or `/rasen-apply-change <other>`)
 - **THEN** it SHALL name the canonical skill (`rasen-tdd`, `rasen-apply-change`) rather than a bare-slash or colon command
 

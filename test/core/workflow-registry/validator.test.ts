@@ -402,7 +402,7 @@ describe('user workflow registry', () => {
     writeWorkflow(workflowsDir, 'team-base', { requiresWorkflows: ['apply'] });
     writeWorkflow(workflowsDir, 'team-release', {
       requiresWorkflows: ['team-base'],
-      requiresSkills: ['rasen:review'],
+      requiresSkills: ['rasen-review'],
       recommends: ['not-installed'],
     });
 

@@ -37,9 +37,9 @@ rasen init --tools claude,cursor
 
 ## 命令没有出现
 
-如果 `/rasen:propose`（或你的工具里的等价命令）不出现，或没有任何反应，按以下清单依次排查。它们按“最快能检查”的顺序排列。
+如果 `/rasen-propose`（或你的工具里的等价命令）不出现，或没有任何反应，按以下清单依次排查。它们按“最快能检查”的顺序排列。
 
-1. **你可能找错了地方。** 斜杠命令是在你的 AI 助手的聊天里输入的，而不是终端里。如果你把 `/rasen:propose` 输进了 shell，那就是问题所在。参见[命令是如何工作的](how-commands-work.md)。
+1. **你可能找错了地方。** 斜杠命令是在你的 AI 助手的聊天里输入的，而不是终端里。如果你把 `/rasen-propose` 输进了 shell，那就是问题所在。参见[命令是如何工作的](how-commands-work.md)。
 
 2. **重新生成文件。** 在你的项目根目录下：
 
@@ -65,7 +65,7 @@ rasen init --tools claude,cursor
 
 ```bash
 rasen list                    # see active changes
-/rasen:apply add-dark-mode        # name the change in chat
+/rasen-apply-change add-dark-mode        # name the change in chat
 ```
 
 同时确认你处在正确的项目目录里。
@@ -99,7 +99,7 @@ AI 没有足够的上下文。几个杠杆会有帮助：
 - 在 `rasen/config.yaml` 中添加项目上下文，这样你的技术栈和约定会被注入每一次请求。参见[自定义](customization.md#项目配置)。
 - 添加按产物分类的 `rules:`，用于只在（比如说）specs 上生效的指导。
 - 在提出变更时给出更详细的描述。
-- 使用扩展的 `/rasen:continue`，一次创建一个产物并逐一评审，而不是一次性全部生成。
+- 使用扩展的 `/rasen-continue-change`，一次创建一个产物并逐一评审，而不是一次性全部生成。
 
 ### 归档无法完成，或警告任务未完成
 

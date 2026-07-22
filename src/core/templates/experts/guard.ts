@@ -49,7 +49,7 @@ See \`/freeze\` for how edit boundary enforcement works.
 
 export function getGuardSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:guard',
+    name: 'rasen-guard',
     description: 'Full safety mode — destructive-command guardrails plus an edit boundary in one switch',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

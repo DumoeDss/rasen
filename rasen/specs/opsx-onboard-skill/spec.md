@@ -1,15 +1,15 @@
 # opsx-onboard-skill Specification
 
 ## Purpose
-Define `/rasen:onboard` behavior for guiding users through an end-to-end Rasen workflow on their real codebase.
+Define `/rasen-onboard` behavior for guiding users through an end-to-end Rasen workflow on their real codebase.
 ## Requirements
 ### Requirement: Rasen Onboard Skill
 
-The system SHALL provide an `/rasen:onboard` skill that guides users through their first complete Rasen workflow cycle with narration and real codebase work.
+The system SHALL provide an `/rasen-onboard` skill that guides users through their first complete Rasen workflow cycle with narration and real codebase work.
 
 #### Scenario: Skill invocation
 
-- **WHEN** user invokes `/rasen:onboard`
+- **WHEN** user invokes `/rasen-onboard`
 - **THEN** agent checks if Rasen is initialized
 - **AND** if not initialized, prompts user to run `rasen init` first
 - **AND** if initialized, proceeds with onboarding flow
@@ -53,7 +53,7 @@ The skill SHALL briefly demonstrate explore mode before creating a change.
 #### Scenario: Brief explore demonstration
 
 - **WHEN** task is selected
-- **THEN** agent briefly demonstrates `/rasen:explore` by investigating relevant code
+- **THEN** agent briefly demonstrates `/rasen-explore` by investigating relevant code
 - **AND** explains explore mode is for thinking before doing
 - **AND** keeps this phase short (not a full exploration session)
 - **AND** transitions to change creation
@@ -143,8 +143,8 @@ The skill SHALL conclude with a recap and command reference. The command referen
 - **WHEN** onboarding is complete
 - **THEN** agent summarizes the workflow phases completed
 - **AND** emphasizes this rhythm works for any size change
-- **AND** provides command reference table (/rasen:explore, /rasen:new, /rasen:continue, /rasen:apply, /rasen:verify, /rasen:archive)
-- **AND** suggests next actions (try /rasen:new or /rasen:propose on something)
+- **AND** provides command reference table (/rasen-explore, /rasen-new-change, /rasen-continue-change, /rasen-apply-change, /rasen-verify-change, /rasen-archive-change)
+- **AND** suggests next actions (try /rasen-new-change or /rasen-propose on something)
 
 ### Requirement: Graceful Exit Handling
 
@@ -155,14 +155,14 @@ The skill SHALL handle users who want to stop mid-way.
 - **WHEN** user indicates they want to stop during onboarding
 - **THEN** agent acknowledges gracefully
 - **AND** notes that the in-progress change is saved
-- **AND** explains how to continue later with `/rasen:continue <name>`
+- **AND** explains how to continue later with `/rasen-continue-change <name>`
 - **AND** exits without pressure
 
 #### Scenario: User wants quick reference only
 
 - **WHEN** user says they just want to see the commands
 - **THEN** agent provides command cheat sheet
-- **AND** exits gracefully with encouragement to try `/rasen:new`
+- **AND** exits gracefully with encouragement to try `/rasen-new-change`
 
 ### Requirement: PAUSE points answer a user question then resume
 

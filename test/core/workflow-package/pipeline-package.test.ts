@@ -77,7 +77,7 @@ describe('.rasenpkg pipeline kind', () => {
             '    role: implementer',
             '    requires: []',
             '  - id: verify',
-            '    skill: rasen:review',
+            '    skill: rasen-review',
             '    role: reviewer',
             '    requires: [apply]',
             '',

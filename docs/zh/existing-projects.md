@@ -16,10 +16,10 @@ $ rasen init          # adds openspec/ and your AI tool's commands
 然后，在你的 AI 聊天里：
 
 ```text
-/rasen:explore            # optional: have the AI read the area you'll touch
-/rasen:propose <a real, small change you actually need>
-/rasen:apply
-/rasen:archive
+/rasen-explore            # optional: have the AI read the area you'll touch
+/rasen-propose <a real, small change you actually need>
+/rasen-apply-change
+/rasen-archive-change
 ```
 
 现在你的规格精确描述了那次变更所触及的系统部分，仅此而已。这是正确的。其余那 8 万行代码你不必再操心。
@@ -38,10 +38,10 @@ OpenSpec 的变更以**增量（delta）**的形式编写：`ADDED`、`MODIFIED`
 
 挑一个小而真实的东西。不是玩具，也不是重写。一个你这周本来就要做的变更。小的初次变更能让你在低风险下学会这套工作流。
 
-**第 1 步：让 AI 阅读相关区域。** 这正是 `/rasen:explore` 在不熟悉或庞大的代码库上发挥价值的地方。把它指向你即将触及的部分，让它在提出任何建议之前先摸清现状是如何运作的。
+**第 1 步：让 AI 阅读相关区域。** 这正是 `/rasen-explore` 在不熟悉或庞大的代码库上发挥价值的地方。把它指向你即将触及的部分，让它在提出任何建议之前先摸清现状是如何运作的。
 
 ```text
-You: /rasen:explore
+You: /rasen-explore
 
 AI:  What would you like to explore?
 
@@ -59,14 +59,14 @@ AI:  Let me trace it... [reads the router, middleware stack, and config]
 **第 2 步：提出变更。** 提案及其增量规格只捕获这一次变更。
 
 ```text
-You: /rasen:propose add-api-rate-limiting
+You: /rasen-propose add-api-rate-limiting
 ```
 
-**第 3 步：构建并归档**，使用 `/rasen:apply` 和 `/rasen:archive`，和任何变更一样。归档之后，你就拥有了一份关于限流行为的真实规格，它诞生于一次你本来就要做的变更。
+**第 3 步：构建并归档**，使用 `/rasen-apply-change` 和 `/rasen-archive-change`，和任何变更一样。归档之后，你就拥有了一份关于限流行为的真实规格，它诞生于一次你本来就要做的变更。
 
 ## 想要一次带讲解的导览？用 onboard
 
-如果你更愿意看着整个循环在你自己的代码上、带着讲解地完整发生一遍，扩展命令 `/rasen:onboard` 正是为此而生：它会扫描你的代码库，找出一处小而安全的改进，然后带着你走完提出、构建和归档，并解释每一步。
+如果你更愿意看着整个循环在你自己的代码上、带着讲解地完整发生一遍，扩展命令 `/rasen-onboard` 正是为此而生：它会扫描你的代码库，找出一处小而安全的改进，然后带着你走完提出、构建和归档，并解释每一步。
 
 先开启扩展命令：
 
@@ -78,10 +78,10 @@ $ rasen update              # apply them to this project
 然后在聊天里：
 
 ```text
-/rasen:onboard
+/rasen-onboard
 ```
 
-这是在真实项目上最温和的入门方式，而且它最终会留给你一个真实的（小的）变更，你可以保留也可以丢弃。参见[命令：`/rasen:onboard`](commands.md#opsxonboard)。
+这是在真实项目上最温和的入门方式，而且它最终会留给你一个真实的（小的）变更，你可以保留也可以丢弃。参见[命令：`/rasen-onboard`](commands.md#opsxonboard)。
 
 ## “但我已经有需求文档了”
 
@@ -92,12 +92,12 @@ $ rasen update              # apply them to this project
 坦白的原因是：OpenSpec 的规格刻意以行为为先，并以变更为范围。一份 40 页的 PRD 是另一种产物，承担另一种职责。强行做一次性的批量转换，往往会产出一份庞大、过时、没人信任的规格。让规格从真实的变更中长出来，才能保持准确。
 
 ```text
-You: /rasen:explore
+You: /rasen-explore
 You: Here's the section of our PRD about checkout. I'm implementing the
      "guest checkout" requirement next.
      [paste the relevant requirement]
 AI:  [reads it, asks clarifying questions, then helps scope a change]
-You: /rasen:propose add-guest-checkout
+You: /rasen-propose add-guest-checkout
 ```
 
 ## 在大型代码库中组织规格

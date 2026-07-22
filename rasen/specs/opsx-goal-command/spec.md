@@ -1,7 +1,7 @@
 # opsx-goal-command Specification
 
 ## Purpose
-Define the `/rasen:goal` command and its backing skill templates — the single user-facing entry to the goal-loop family, LEAD classification and explicit override semantics, and the three goal-loop skill templates (plan, iterate, report) registered through the existing generation pipeline.
+Define the `/rasen-goal` command and its backing skill templates — the single user-facing entry to the goal-loop family, LEAD classification and explicit override semantics, and the three goal-loop skill templates (plan, iterate, report) registered through the existing generation pipeline.
 
 ## Requirements
 ### Requirement: Goal Command and Skill Templates
@@ -11,9 +11,9 @@ The system SHALL provide a `rasen-goal` SkillTemplate and a `Rasen: Goal` Comman
 #### Scenario: Templates export and register
 
 - **WHEN** the template files are loaded
-- **THEN** the goal command module SHALL export a SkillTemplate named `rasen-goal` and a CommandTemplate for `/rasen:goal`
+- **THEN** the goal command module SHALL export a SkillTemplate named `rasen-goal`, invoked as `/rasen-goal`
 - **AND** the three skill modules SHALL export `SkillTemplate`s named `rasen-goal-plan`, `rasen-goal-iterate`, and `rasen-goal-report`
-- **AND** all four SHALL be registered in `getSkillTemplates()` and the command in `getCommandTemplates()` in `src/core/shared/skill-generation.ts`, and re-exported from `src/core/templates/skill-templates.ts`
+- **AND** all four SHALL be registered in `getSkillTemplates()` in `src/core/shared/skill-generation.ts`, and re-exported from `src/core/templates/skill-templates.ts`
 
 #### Scenario: Goal-plan skill produces a goal plan, not a proposal
 
@@ -36,11 +36,11 @@ The system SHALL provide a `rasen-goal` SkillTemplate and a `Rasen: Goal` Comman
 
 ### Requirement: LEAD Classifies and Selects a Backend Pipeline
 
-The `/rasen:goal` command SHALL present a single user-facing entry. The LEAD SHALL run its pre-flight and classify the task, selecting ONE backend pipeline from `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`. Classification keywords SHALL be suggestions only (an explicit selector always wins): score/latency/optimize/lighthouse/benchmark/p99/memory/throughput → measure; rubric/quality/clean/standard/refactor-quality → evaluate; research/investigate/write report or brief/autoresearch/literature → research.
+The `/rasen-goal` command SHALL present a single user-facing entry. The LEAD SHALL run its pre-flight and classify the task, selecting ONE backend pipeline from `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`. Classification keywords SHALL be suggestions only (an explicit selector always wins): score/latency/optimize/lighthouse/benchmark/p99/memory/throughput → measure; rubric/quality/clean/standard/refactor-quality → evaluate; research/investigate/write report or brief/autoresearch/literature → research.
 
 #### Scenario: Single entry with LEAD classification
 
-- **WHEN** a user runs `/rasen:goal <task>` with no selector
+- **WHEN** a user runs `/rasen-goal <task>` with no selector
 - **THEN** the LEAD SHALL classify the task and select one backend pipeline
 - **AND** SHALL display the chosen pipeline and let the user change it before proceeding
 
@@ -52,17 +52,17 @@ The `/rasen:goal` command SHALL present a single user-facing entry. The LEAD SHA
 
 ### Requirement: Explicit Override Wins
 
-An explicit pipeline selection SHALL always override LEAD classification. The user MAY select the backend directly with a leading selector token (`/rasen:goal measure|evaluate|research <task>`) or with `--pipeline goal-loop-<variant>`.
+An explicit pipeline selection SHALL always override LEAD classification. The user MAY select the backend directly with a leading selector token (`/rasen-goal measure|evaluate|research <task>`) or with `--pipeline goal-loop-<variant>`.
 
 #### Scenario: Selector token overrides classification
 
-- **WHEN** `/rasen:goal measure <task>` is invoked
+- **WHEN** `/rasen-goal measure <task>` is invoked
 - **THEN** the LEAD SHALL select the `goal-loop-measure` pipeline regardless of its own classification suggestion
 - **AND** SHALL strip the selector token; the rest is the task description
 
 #### Scenario: Pipeline flag overrides classification
 
-- **WHEN** `/rasen:goal --pipeline goal-loop-research <task>` is invoked
+- **WHEN** `/rasen-goal --pipeline goal-loop-research <task>` is invoked
 - **THEN** the LEAD SHALL select the `goal-loop-research` pipeline
 - **AND** explicit selection SHALL win over both classification and the default
 
@@ -85,11 +85,11 @@ The goal-loop family SHALL be first-class registered workflows so that `rasen up
 #### Scenario: Goal command ID is registered
 
 - **WHEN** the system enumerates the command template IDs it creates
-- **THEN** the list SHALL include `goal-command`, so the `/rasen:goal` command payload is generated and detected
+- **THEN** the list SHALL include `goal-command`, so the `/rasen-goal` command payload is generated and detected
 
 #### Scenario: rasen update installs the goal family under the full profile
 
 - **WHEN** `rasen update` runs in a project configured with the `full` profile and `both` delivery
 - **THEN** the four skill directories `rasen-goal-plan`, `rasen-goal-iterate`, `rasen-goal-report`, and `rasen-goal` SHALL be present after the run
-- **AND** the `/rasen:goal` command payload SHALL be present after the run
+- **AND** the `/rasen-goal` command payload SHALL be present after the run
 - **AND** each goal skill directory SHALL be located under the project's skills directory using platform-appropriate path joining (no assumption of a forward-slash separator)

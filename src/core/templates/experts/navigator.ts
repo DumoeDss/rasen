@@ -62,7 +62,7 @@ Off the main flow — reach for each by name when its situation comes up.
 
 export function getNavigatorSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:navigator',
+    name: 'rasen-navigator',
     description: 'A map of this repo\'s skills and Rasen workflows and when to reach for each.',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     disableModelInvocation: true,

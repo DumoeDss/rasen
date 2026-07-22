@@ -157,58 +157,58 @@ rules:
 
 | 命令 | 功能 |
 |---------|--------------|
-| `/rasen:propose` | 一步创建变更并生成规划产物（默认快捷路径） |
-| `/rasen:explore` | 思考想法、调查问题、澄清需求 |
-| `/rasen:new` | 创建新的变更脚手架（扩展工作流） |
-| `/rasen:continue` | 创建下一个产物（扩展工作流） |
-| `/rasen:apply` | 实现任务，按需更新产物 |
-| `/rasen:verify` | 根据产物验证实现（扩展工作流） |
-| `/rasen:sync` | 将增量规格同步到主分支（默认工作流，可选） |
-| `/rasen:archive` | 完成后归档 |
-| `/rasen:bulk-archive` | 批量归档已完成的变更（扩展工作流） |
-| `/rasen:onboard` | 端到端变更的引导式演练（扩展工作流） |
+| `/rasen-propose` | 一步创建变更并生成规划产物（默认快捷路径） |
+| `/rasen-explore` | 思考想法、调查问题、澄清需求 |
+| `/rasen-new-change` | 创建新的变更脚手架（扩展工作流） |
+| `/rasen-continue-change` | 创建下一个产物（扩展工作流） |
+| `/rasen-apply-change` | 实现任务，按需更新产物 |
+| `/rasen-verify-change` | 根据产物验证实现（扩展工作流） |
+| `/rasen-sync-specs` | 将增量规格同步到主分支（默认工作流，可选） |
+| `/rasen-archive-change` | 完成后归档 |
+| `/rasen-bulk-archive-change` | 批量归档已完成的变更（扩展工作流） |
+| `/rasen-onboard` | 端到端变更的引导式演练（扩展工作流） |
 
 ## 使用方法
 
 ### 探索想法
 ```
-/rasen:explore
+/rasen-explore
 ```
-思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/rasen:propose`（默认）或 `/rasen:new`/`/rasen:continue`（扩展）。
+思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/rasen-propose`（默认）或 `/rasen-new-change`/`/rasen-continue-change`（扩展）。
 
 ### 开始新的变更
 ```
-/rasen:propose
+/rasen-propose
 ```
 创建变更并生成实现前所需的规划产物。
 
 如果你启用了扩展工作流，也可以使用：
 
 ```text
-/rasen:new        # scaffold only
-/rasen:continue   # create one artifact at a time
+/rasen-new-change        # scaffold only
+/rasen-continue-change   # create one artifact at a time
 ```
 
 ### 创建产物
 ```
-/rasen:continue
+/rasen-continue-change
 ```
 根据依赖关系显示哪些产物可以创建，然后创建一个。反复使用以逐步构建你的变更。
 
 ### 实现（灵活的部分）
 ```
-/rasen:apply
+/rasen-apply-change
 ```
-逐步完成任务，逐一勾选。如果你同时处理多个变更，可以运行 `/rasen:apply <name>`；否则系统会从对话中推断，如果无法判断则会提示你选择。
+逐步完成任务，逐一勾选。如果你同时处理多个变更，可以运行 `/rasen-apply-change <name>`；否则系统会从对话中推断，如果无法判断则会提示你选择。
 
 ### 收尾
 ```
-/rasen:archive   # Move to archive when done (prompts to sync specs if needed)
+/rasen-archive-change   # Move to archive when done (prompts to sync specs if needed)
 ```
 
-### 目标驱动迭代（`/rasen:goal`）
+### 目标驱动迭代（`/rasen-goal`）
 
-`/rasen:auto` 假设产物是一份代码变更文档（propose → apply → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**：把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。`/rasen:goal` 就是给这类任务用的入口。它重复 **修改 → 判定**，直到闸门达标或轮次上限。
+`/rasen-auto` 假设产物是一份代码变更文档（propose → apply → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**：把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。`/rasen-goal` 就是给这类任务用的入口。它重复 **修改 → 判定**，直到闸门达标或轮次上限。
 
 你只看到一个命令。LEAD 据任务分类，选**恰好一条**后端 pipeline（显式覆盖总赢）：
 
@@ -218,7 +218,7 @@ rules:
 | `evaluate` —— `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | 一个 fresh reviewer worker 判 `{satisfied, gaps}` | ship → archive |
 | `research` —— `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | 一个 fresh reviewer worker | report（无 ship）|
 
-流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/rasen:goal` 与 `/rasen:auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
+流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/rasen-goal` 与 `/rasen-auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
 
 ## 何时更新 vs. 重新开始
 
@@ -308,7 +308,7 @@ rules:
 
 ## 有什么不同？
 
-| | 传统工作流 (`/openspec:proposal`) | OPSX (`/rasen:*`) |
+| | 传统工作流 (`/openspec:proposal`) | OPSX (`/rasen-*`) |
 |---|---|---|
 | **结构** | 一个大的提案文档 | 具有依赖关系的离散产物 |
 | **工作流** | 线性阶段：规划 → 实现 → 归档 | 灵活操作——随时执行任何操作 |
@@ -491,7 +491,7 @@ rules:
 **OPSX** —— 代理查询丰富的上下文：
 
 ```
-  User: "/rasen:continue"
+  User: "/rasen-continue-change"
            │
            ▼
   ┌──────────────────────────────────────────────────────────────────────────┐
@@ -548,7 +548,7 @@ rules:
 **OPSX** —— 自然迭代：
 
 ```
-  /rasen:new ───► /rasen:continue ───► /rasen:apply ───► /rasen:archive
+  /rasen-new-change ───► /rasen-continue-change ───► /rasen-apply-change ───► /rasen-archive-change
       │                │                  │
       │                │                  ├── "The design is wrong"
       │                │                  │
@@ -557,7 +557,7 @@ rules:
       │                │            and continue!
       │                │                  │
       │                │                  ▼
-      │                │         /rasen:apply picks up
+      │                │         /rasen-apply-change picks up
       │                │         where you left off
       │                │
       │                └── Creates ONE artifact, shows what's unlocked
@@ -653,9 +653,9 @@ rasen schema validate my-workflow
 
 ## 提示
 
-- 使用 `/rasen:explore` 在正式提交变更前思考想法
-- 当你清楚想要什么时使用 `/rasen:propose`，探索时使用 `/rasen:new`/`/rasen:continue`
-- 在 `/rasen:apply` 期间，如果发现问题——修改产物，然后继续
+- 使用 `/rasen-explore` 在正式提交变更前思考想法
+- 当你清楚想要什么时使用 `/rasen-propose`，探索时使用 `/rasen-new-change`/`/rasen-continue-change`
+- 在 `/rasen-apply-change` 期间，如果发现问题——修改产物，然后继续
 - 任务通过 `tasks.md` 中的复选框跟踪进度
 - 随时检查状态：`rasen status --change "name"`
 

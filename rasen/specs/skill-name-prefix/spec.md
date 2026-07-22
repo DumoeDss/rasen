@@ -1,7 +1,7 @@
 # skill-name-prefix Specification
 
 ## Purpose
-Standardize expert skill naming: `rasen:` skill names and `rasen-` dirNames, with the metadata author field updated.
+Standardize expert skill naming: every skill's `name` equals its `rasen-` dirName (unified hyphen form), with the metadata author field updated.
 ## Requirements
 ### Requirement: Metadata author field updated
 

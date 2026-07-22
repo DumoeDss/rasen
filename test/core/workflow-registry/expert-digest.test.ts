@@ -9,7 +9,7 @@ import { getBuiltInExpertDefinitions } from '../../../src/core/workflow-registry
 
 describe('expert digest preimage', () => {
   it('is deterministic and distinct from the workflow digest formats', () => {
-    const template = { name: 'rasen:sample', description: 'sample', instructions: 'do it' };
+    const template = { name: 'rasen-sample', description: 'sample', instructions: 'do it' };
     const a = digestExpert('sample', 'rasen-sample', template, [
       { path: 'references/notes.md', sha256: 'sha256:aaaa' },
     ]);
@@ -21,7 +21,7 @@ describe('expert digest preimage', () => {
   });
 
   it('changes when the template, dirName, id, or sidecar hashes change', () => {
-    const template = { name: 'rasen:sample', description: 'sample', instructions: 'do it' };
+    const template = { name: 'rasen-sample', description: 'sample', instructions: 'do it' };
     const base = digestExpert('sample', 'rasen-sample', template, []);
 
     expect(digestExpert('sample-2', 'rasen-sample', template, [])).not.toBe(base);

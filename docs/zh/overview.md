@@ -49,14 +49,14 @@ proposal ──► specs ──► design ──► tasks ──► implement
 在默认配置下，你的一天长这样：可选地先想一遍；然后一条命令起草计划，你读它，下一条构建它，最后一条把它归档。
 
 ```text
-/rasen:explore                   →  （可选）先和 AI 一起想透
-/rasen:propose add-dark-mode     →  AI 起草提案、规格、设计、任务
+/rasen-explore                   →  （可选）先和 AI 一起想透
+/rasen-propose add-dark-mode     →  AI 起草提案、规格、设计、任务
         （你阅读并调整计划）
-/rasen:apply                     →  AI 构建它，逐项勾掉任务
-/rasen:archive                   →  规格更新，变更归档
+/rasen-apply-change                     →  AI 构建它，逐项勾掉任务
+/rasen-archive-change                   →  规格更新，变更归档
 ```
 
-**拿不准时，先从探索开始。** `/rasen:explore` 是一个零成本的思考伙伴：它读你的代码、摆出各种选项，在任何产物存在之前，就把一个模糊的想法变成具体的计划。它是对付那种“否则就会从一个含糊提示里胡乱构建出*某个东西*的 AI”的最佳解药。已经确切知道你想要什么？那就直接跳到 `/rasen:propose`。无论哪种，explore 都随默认 profile 一起提供，所以它总在那儿。参见 [探索指南](explore.md)。
+**拿不准时，先从探索开始。** `/rasen-explore` 是一个零成本的思考伙伴：它读你的代码、摆出各种选项，在任何产物存在之前，就把一个模糊的想法变成具体的计划。它是对付那种“否则就会从一个含糊提示里胡乱构建出*某个东西*的 AI”的最佳解药。已经确切知道你想要什么？那就直接跳到 `/rasen-propose`。无论哪种，explore 都随默认 profile 一起提供，所以它总在那儿。参见 [探索指南](explore.md)。
 
 上面这些都是斜杠命令，在你 AI 助手的聊天里输入。而配置（`rasen init`）在你的终端里进行。如果这种分工对你来说很陌生，先读 [命令是如何工作的](how-commands-work.md)；它是最常见的困惑点。
 

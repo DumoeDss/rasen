@@ -1,6 +1,6 @@
 # Autopilot 策略:gate、选型与组合式 pipeline
 
-`/rasen:auto` 有三条 **opt-in 策略轴**,控制 LEAD 的自主决定权限。三条全部默认关闭——不带 flag、不写配置时,autopilot 的行为与 [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-一条命令跑完整个工作流opsxauto) 所述完全一致:gate 停顿等确认、pipeline 缺省 `small-feature`、classify 仅作建议。
+`/rasen-auto` 有三条 **opt-in 策略轴**,控制 LEAD 的自主决定权限。三条全部默认关闭——不带 flag、不写配置时,autopilot 的行为与 [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-一条命令跑完整个工作流opsxauto) 所述完全一致:gate 停顿等确认、pipeline 缺省 `small-feature`、classify 仅作建议。
 
 | 策略轴 | 运行参数 | 配置键(项目 `rasen/config.yaml` 与全局配置均可) | 取值 | 内建默认 |
 |---|---|---|---|---|
@@ -12,7 +12,7 @@
 解析后的策略在**运行开始时连同来源一起展示**(如 `Gate policy: off (--no-gate)` / `Selection policy: classify (project)`),opt-in 的运行绝不对自己的行为方式保持沉默。
 
 ```
-/rasen:auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
+/rasen-auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
             [--review-plan] [--planner claude|codex] [... 其他角色参数] <任务>
 ```
 
@@ -51,7 +51,7 @@
 
 ### 显式选择永远最高
 
-`--pipeline <name>` 或开头的已知 pipeline 名(`/rasen:auto full-feature <任务>`)位于整条策略轴**之上**:存在显式选择时不咨询 classify,`--auto-select` / `--auto-compose` 均不生效。配置默认同样被显式选择压过。
+`--pipeline <name>` 或开头的已知 pipeline 名(`/rasen-auto full-feature <任务>`)位于整条策略轴**之上**:存在显式选择时不咨询 classify,`--auto-select` / `--auto-compose` 均不生效。配置默认同样被显式选择压过。
 
 ### 为什么没有置信度分数?
 
@@ -99,7 +99,7 @@ autopilot:
 完全无人值守的一发入魂,允许组合:
 
 ```
-/rasen:auto --no-gate --auto-compose 给 webhook API 实现限流
+/rasen-auto --no-gate --auto-compose 给 webhook API 实现限流
 ```
 
 无人值守运行仍会停下来的情形:**vet gate**(永远)、ship 时未解决的 **Blocker/Major 发现**(发现门不是停顿门——永不豁免)、以及编排阶梯的升级呈报(见 playbook 的 Step H)。

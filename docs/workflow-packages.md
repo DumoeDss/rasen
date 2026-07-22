@@ -25,7 +25,8 @@ error in format version 1.
 
 Portable workflow IDs, user skill names, and command IDs must match
 `^[a-z0-9][a-z0-9-]{0,63}$`. References to always-installed expert skills use
-their catalog names, including the existing `rasen:<name>` namespace. File paths
+their catalog names — the `rasen-<name>` skill directory name; the retired
+`rasen:<name>` colon form is still accepted for backward compatibility. File paths
 are NFC-normalized relative POSIX paths.
 They must not contain backslashes, empty segments, `.` or `..`, NUL, Windows
 device names, or segments ending in a dot or space. Case-fold and NFC aliases
@@ -51,7 +52,7 @@ files:
     - scripts/check-release.sh
 requires:
   workflows: [apply]
-  skills: [rasen:review]
+  skills: [rasen-review]
 recommends:
   workflows: [verify-enhanced-command]
 ```
@@ -209,13 +210,13 @@ by the active profile reports `pipeline_skill_disabled` and blocks execution.
 
 ## AI authoring and review
 
-The always-installed `rasen:workflow-author` expert follows this sequence:
+The always-installed `rasen-workflow-author` expert follows this sequence:
 
 1. define purpose, trigger, inputs, output, completion, and prohibited actions;
 2. inspect `rasen workflow list --json` and scaffold in a writable staging path;
 3. author the minimal manifest, skill, and declared sidecars;
 4. run static validation until it has no errors;
-5. request an independent `rasen:workflow-review` semantic review;
+5. request an independent `rasen-workflow-review` semantic review;
 6. fix findings and statically validate again;
 7. show the tree, scripts, dependencies, digest, and remaining risks;
 8. import only after the user asks for installation.
@@ -249,8 +250,8 @@ The mitigations available today are:
   validate` check manifest shape, path safety, stage-DAG acyclicity, and
   (for pipelines) decompose recursion bounds and skill references, before
   install and again before each execution (`validatePipelineForExecution`).
-- **Author/review experts** — `rasen:workflow-author` and
-  `rasen:workflow-review` (covering both workflows and pipelines) give a
+- **Author/review experts** — `rasen-workflow-author` and
+  `rasen-workflow-review` (covering both workflows and pipelines) give a
   structured authoring and independent-review pass before anyone imports.
 
 There is no signature system and no marketplace. Provenance is whatever the
@@ -266,7 +267,7 @@ State the limits honestly, not just the mitigations:
   manifest/pipeline shape parses and its declared references resolve; it does
   not simulate what an agent following the instructions would do.
 - **Review is a mitigation, not a guarantee.** A passing
-  `rasen:workflow-review` pass raises the bar against careless or naive
+  `rasen-workflow-review` pass raises the bar against careless or naive
   authoring; it is not an attestation, a signature, or proof of safety, and a
   reviewer can miss an adversarially crafted package.
 - **No signatures, no marketplace.** Anyone can author and distribute a

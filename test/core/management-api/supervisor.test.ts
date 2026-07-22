@@ -78,7 +78,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit do the thing',
       cwd,
       timeoutMs: 5000,
@@ -102,7 +102,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit x',
       cwd,
       timeoutMs: 5000,
@@ -119,7 +119,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=garbage-init x',
       cwd,
       timeoutMs: 5000,
@@ -139,7 +139,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'goal',
-      skill: '/rasen:goal',
+      skill: '/rasen-goal',
       task: 'MODE=nonzero-exit x',
       cwd,
       timeoutMs: 5000,
@@ -159,7 +159,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ killGraceMs: 150 });
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=sigterm-resistant x',
       cwd,
       timeoutMs: 60_000,
@@ -196,7 +196,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit x',
       cwd,
       timeoutMs: 5000,
@@ -224,7 +224,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ killGraceMs: 100 });
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=idle-after-init x',
       cwd,
       timeoutMs: 60_000,
@@ -246,7 +246,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       // Fixture emits a line every 20ms for ~60ms then exits — each line
       // should reset a 150ms no-output timer, so the watchdog never fires;
       // the session ends on its own (reason exit), not no-output-timeout.
@@ -270,7 +270,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ killGraceMs: 100 });
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=idle-after-init x',
       cwd,
       timeoutMs: 200,
@@ -291,7 +291,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=stream-then-exit x',
       cwd,
       timeoutMs: 5000,
@@ -316,7 +316,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ maxConcurrent: 1, killGraceMs: 100 });
     const first = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=idle-after-init x',
       cwd,
       timeoutMs: 60_000,
@@ -326,7 +326,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     const second = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=idle-after-init y',
       cwd,
       timeoutMs: 60_000,
@@ -359,7 +359,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
       Array.from({ length: attempts }, (_, i) =>
         supervisor.launch({
           kind: 'auto',
-          skill: '/rasen:auto',
+          skill: '/rasen-auto',
           task: `MODE=idle-after-init concurrent-${i}`,
           cwd,
           timeoutMs: 60_000,
@@ -387,7 +387,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ killGraceMs: 150 });
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=sigterm-resistant x',
       cwd,
       timeoutMs: 60_000,
@@ -430,7 +430,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ maxConcurrent: 1, killGraceMs: 300 });
     const first = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=sigterm-resistant x',
       cwd,
       timeoutMs: 60_000,
@@ -446,7 +446,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     // SIGTERM) — a second launch must still see busy.
     const second = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit y',
       cwd,
       timeoutMs: 5000,
@@ -460,7 +460,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     const third = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit z',
       cwd,
       timeoutMs: 5000,
@@ -477,7 +477,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     });
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'anything',
       cwd,
       timeoutMs: 5000,
@@ -495,7 +495,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const supervisor = makeSupervisor({ maxConcurrent: 3, killGraceMs: 150 });
     const a = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=idle-after-init a',
       cwd,
       timeoutMs: 60_000,
@@ -503,7 +503,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     });
     const b = await supervisor.launch({
       kind: 'goal',
-      skill: '/rasen:goal',
+      skill: '/rasen-goal',
       task: 'MODE=idle-after-init b',
       cwd,
       timeoutMs: 60_000,
@@ -536,7 +536,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit racing-shutdown',
       cwd,
       timeoutMs: 5000,
@@ -573,7 +573,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     const result = await supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit x',
       cwd,
       timeoutMs: 5000,
@@ -612,7 +612,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     const launchPromise = supervisor.launch({
       kind: 'auto',
-      skill: '/rasen:auto',
+      skill: '/rasen-auto',
       task: 'MODE=fast-exit should never actually spawn',
       cwd,
       timeoutMs: 5000,
@@ -672,7 +672,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
       const result = await supervisor.launch({
         kind: 'auto',
-        skill: '/rasen:auto',
+        skill: '/rasen-auto',
         task: 'MODE=fast-exit x',
         cwd,
         timeoutMs: 5000,

@@ -17,7 +17,7 @@ The `verify-change` workflow (`src/core/templates/workflows/verify-change.ts`, b
 
 ### Requirement: ship pre-flight consumes the verification report file
 
-The `ship` workflow (`src/core/templates/workflows/ship.ts`) pre-flight verification check SHALL accept `verification-report.md` as verification evidence alongside `review-report.md`, `review-cycle-report.md`, and the other expert `*-report.md` files, looking in the change's work directory first and the change directory as fallback, so that running `/rasen:verify` satisfies the gate with no orphan consumer.
+The `ship` workflow (`src/core/templates/workflows/ship.ts`) pre-flight verification check SHALL accept `verification-report.md` as verification evidence alongside `review-report.md`, `review-cycle-report.md`, and the other expert `*-report.md` files, looking in the change's work directory first and the change directory as fallback, so that running `/rasen-verify-change` satisfies the gate with no orphan consumer.
 
 #### Scenario: ship recognizes verify-change output as evidence
 

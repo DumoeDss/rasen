@@ -1,6 +1,6 @@
 # Autopilot Policies: Gates, Selection, and Composed Pipelines
 
-`/rasen:auto` has three **opt-in policy axes** that control how much the LEAD decides on its own. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-run-the-entire-workflow-with-one-command-opsxauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
+`/rasen-auto` has three **opt-in policy axes** that control how much the LEAD decides on its own. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-run-the-entire-workflow-with-one-command-opsxauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
 
 | Axis | Run flag | Config key (project `rasen/config.yaml` AND global config) | Values | Built-in default |
 |---|---|---|---|---|
@@ -12,7 +12,7 @@ Precedence on every axis: **run flag > project config > global config > built-in
 The resolved policies are **displayed at run start with their source** (e.g. `Gate policy: off (--no-gate)` / `Selection policy: classify (project)`), so an opted-in run is never silent about how it will behave.
 
 ```
-/rasen:auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
+/rasen-auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
             [--review-plan] [--planner claude|codex] [... other role flags] <task>
 ```
 
@@ -51,7 +51,7 @@ With `--auto-select` (or `autopilot.selection: classify`), the LEAD **adopts** t
 
 ### Explicit selection always wins
 
-`--pipeline <name>` or a leading known-pipeline token (`/rasen:auto full-feature <task>`) sits **above** the whole policy axis: when present, classification is not consulted and `--auto-select` / `--auto-compose` have no effect. This holds for config defaults too.
+`--pipeline <name>` or a leading known-pipeline token (`/rasen-auto full-feature <task>`) sits **above** the whole policy axis: when present, classification is not consulted and `--auto-select` / `--auto-compose` have no effect. This holds for config defaults too.
 
 ### Why no confidence score?
 
@@ -99,7 +99,7 @@ autopilot:
 Fully unattended one-shot, composition allowed:
 
 ```
-/rasen:auto --no-gate --auto-compose implement rate limiting for the webhook API
+/rasen-auto --no-gate --auto-compose implement rate limiting for the webhook API
 ```
 
 What still stops an unattended run: **vet gates** (always), open **Blocker/Major findings** at ship (the finding gate is not a pause gate — it is never waived), and escalations from the orchestration ladder (see the playbook's Step H).

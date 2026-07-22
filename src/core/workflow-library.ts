@@ -12,6 +12,7 @@ import {
   type FileLockErrorKind,
 } from './file-state.js';
 import { getGlobalConfigDir, getGlobalDataDir } from './global-config.js';
+import { mapLegacySkillId } from './pipeline-registry/legacy-skill.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
   createWorkflowPackage,
@@ -408,7 +409,14 @@ function collectPipelineUsage(
     const pipelinePath = path.join(baseDir, entry.name, 'pipeline.yaml');
     if (!fs.existsSync(pipelinePath)) continue;
     for (const skillName of new Set(workflowIdsFromYamlFile(pipelinePath))) {
-      const id = workflowIdBySkillName.get(skillName);
+      let id = workflowIdBySkillName.get(skillName);
+      if (!id) {
+        // Pre-sweep pipelines may carry a retired colon-form or upstream-namespace
+        // stage skill; resolve it to the current hyphen identity so its usage still
+        // attributes to the depended-on workflow.
+        const mapped = mapLegacySkillId(skillName);
+        if (mapped) id = workflowIdBySkillName.get(mapped);
+      }
       if (!id) continue;
       addWorkflowUsage(usageByWorkflowId, id, {
         kind: 'pipeline',
@@ -478,12 +486,13 @@ export function createWorkflowUsageContext(
     }
   }
 
-  // requires.skills references a skill identity (colon `template.name` or
-  // hyphen `dirName` form — both appear in the wild, e.g. built-in
-  // verify-enhanced-command/auto-command/review-cycle use the hyphen form), not
-  // a workflow ID, so resolve through both identities before recording usage.
-  // Scanned across every source (not just `user`) so a built-in workflow's
-  // requires.skills (e.g. review-cycle -> rasen-review) protects the expert it
+  // requires.skills references a skill identity — now the unified hyphen form
+  // (`template.name === dirName`), though pre-sweep user assets may still carry a
+  // retired colon-form or upstream-namespace identity (resolved via the legacy
+  // fallback below) — not a workflow ID, so resolve through both registered
+  // identities before recording usage. Scanned across every source (not just
+  // `user`) so a built-in workflow's requires.skills (e.g. review-cycle ->
+  // rasen-review) protects the expert it
   // depends on.
   const skillIdentityToWorkflowId = new Map<string, string>();
   for (const definition of catalog.definitions) {
@@ -493,7 +502,14 @@ export function createWorkflowUsageContext(
   }
   for (const candidate of catalog.definitions) {
     for (const skillName of new Set(candidate.requires.skills)) {
-      const id = skillIdentityToWorkflowId.get(portablePathCollisionKey(skillName));
+      let id = skillIdentityToWorkflowId.get(portablePathCollisionKey(skillName));
+      if (!id) {
+        // A pre-sweep asset may reference a retired colon-form or upstream-namespace
+        // skill identity that no longer registers directly; map it to the current
+        // hyphen identity before giving up on the dependency.
+        const mapped = mapLegacySkillId(skillName);
+        if (mapped) id = skillIdentityToWorkflowId.get(portablePathCollisionKey(mapped));
+      }
       if (!id) continue;
       addWorkflowUsage(usageByWorkflowId, id, {
         kind: 'dependency',

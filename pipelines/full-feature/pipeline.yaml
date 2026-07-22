@@ -24,42 +24,42 @@ stages:
     gate: true
 
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: always
 
   - id: cso
-    skill: rasen:cso
+    skill: rasen-cso
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: security-relevant
 
   - id: benchmark
-    skill: rasen:benchmark
+    skill: rasen-benchmark
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: performance-sensitive
 
   - id: design-review
-    skill: rasen:design-review
+    skill: rasen-design-review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa
-    skill: rasen:qa
+    skill: rasen-qa
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa-only
-    skill: rasen:qa-only
+    skill: rasen-qa-only
     role: reviewer
     requires: [apply]
     parallelGroup: experts

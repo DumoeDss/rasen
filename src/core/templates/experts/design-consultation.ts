@@ -356,7 +356,7 @@ List all decisions. Flag any that used agent defaults without explicit user conf
 
 export function getDesignConsultationSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:design-consultation',
+    name: 'rasen-design-consultation',
     description: 'Collaborative design consultation — extract, discuss, and lock in the project design system through guided dialogue',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

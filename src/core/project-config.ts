@@ -1192,7 +1192,7 @@ export interface AutopilotGlobalConfig {
  * (`autopilot.gates`), then the inherited store config default (when a store
  * layer is active — see `store-config-inheritance`), then the global config
  * default (`autopilot.gates`), then the built-in default (gates ON). Every
- * consumer (the `/rasen:auto` gate-policy resolution, run-state recording)
+ * consumer (the `/rasen-auto` gate-policy resolution, run-state recording)
  * MUST resolve through this function so precedence is applied identically
  * everywhere. An absent or previously-dropped `autopilot.gates` value at any
  * scope falls back to the next layer without failing config parsing.
@@ -1240,7 +1240,7 @@ export interface ResolvedSelectionPolicy {
  * composition permitted on no-fit — see `autopilot-composed-pipelines`) —
  * then the project config default (`autopilot.selection`), then the global
  * config default (`autopilot.selection`), then the built-in default
- * (`manual`). Every consumer (the `/rasen:auto` selection-policy resolution)
+ * (`manual`). Every consumer (the `/rasen-auto` selection-policy resolution)
  * MUST resolve through this function so precedence is applied identically
  * everywhere. An absent or previously-dropped `autopilot.selection` value at
  * either scope falls back to the next layer without failing config parsing.

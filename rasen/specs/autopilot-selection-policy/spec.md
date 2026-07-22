@@ -1,26 +1,26 @@
 # autopilot-selection-policy Specification
 
 ## Purpose
-Governs how `/rasen:auto` selects a pipeline when the user names none: an opt-in `autopilot.selection` policy (`--auto-select` flag or config) that lets the LEAD adopt the `rasen pipeline classify` suggestion as its decision instead of always defaulting to `small-feature`, with explicit selection always taking precedence and the built-in default (`manual`) preserving pre-existing behavior.
+Governs how `/rasen-auto` selects a pipeline when the user names none: an opt-in `autopilot.selection` policy (`--auto-select` flag or config) that lets the LEAD adopt the `rasen pipeline classify` suggestion as its decision instead of always defaulting to `small-feature`, with explicit selection always taking precedence and the built-in default (`manual`) preserving pre-existing behavior.
 
 ## Requirements
 ### Requirement: Opt-in automatic pipeline selection across project, store, and global configuration
 
-`/rasen:auto` SHALL accept an `--auto-select` argument and an `--auto-compose` argument, and a default selection policy SHALL be declarable under an `autopilot.selection` key in the project config, in an inheriting store's config, and in the global config, with the values `classify` (the LEAD adopts the classification suggestion), `compose` (classify-first, with composition permitted when no registered pipeline fits — see `autopilot-composed-pipelines`), or `manual` (today's behavior: default `small-feature`, classification advisory-only). The effective policy SHALL resolve with precedence: the run arguments first — `--auto-compose` ahead of `--auto-select` when both are present — then the project config default, then the inherited store config default (when a store layer is active), then the global config default, then the built-in default of `manual`. An absent or unrecognized `autopilot.selection` value at any scope SHALL fall back to the next layer without failing config parsing, and the resolved policy SHALL be displayed at run start with its source (`flag`, `project`, `store`, `global`, or `default`) so an opted-in run is never silent about how it will pick a pipeline.
+`/rasen-auto` SHALL accept an `--auto-select` argument and an `--auto-compose` argument, and a default selection policy SHALL be declarable under an `autopilot.selection` key in the project config, in an inheriting store's config, and in the global config, with the values `classify` (the LEAD adopts the classification suggestion), `compose` (classify-first, with composition permitted when no registered pipeline fits — see `autopilot-composed-pipelines`), or `manual` (today's behavior: default `small-feature`, classification advisory-only). The effective policy SHALL resolve with precedence: the run arguments first — `--auto-compose` ahead of `--auto-select` when both are present — then the project config default, then the inherited store config default (when a store layer is active), then the global config default, then the built-in default of `manual`. An absent or unrecognized `autopilot.selection` value at any scope SHALL fall back to the next layer without failing config parsing, and the resolved policy SHALL be displayed at run start with its source (`flag`, `project`, `store`, `global`, or `default`) so an opted-in run is never silent about how it will pick a pipeline.
 
 #### Scenario: Flag opts in for a single run
 
-- **WHEN** a user runs `/rasen:auto --auto-select <task>` with no explicit pipeline selector
+- **WHEN** a user runs `/rasen-auto --auto-select <task>` with no explicit pipeline selector
 - **THEN** the effective selection policy is `classify` (source: flag) and the LEAD adopts the classification suggestion as the starting pipeline choice
 
 #### Scenario: Compose flag wins when both flags are present
 
-- **WHEN** a user runs `/rasen:auto --auto-compose --auto-select <task>`
+- **WHEN** a user runs `/rasen-auto --auto-compose --auto-select <task>`
 - **THEN** the effective policy is `compose` (the superset policy wins; classification still runs first under it)
 
 #### Scenario: Config default is honored without the flag
 
-- **WHEN** `rasen/config.yaml` declares `autopilot.selection: classify` and the user runs `/rasen:auto <task>` without a selection flag or explicit selector
+- **WHEN** `rasen/config.yaml` declares `autopilot.selection: classify` and the user runs `/rasen-auto <task>` without a selection flag or explicit selector
 - **THEN** the LEAD adopts the classification suggestion as if `--auto-select` were passed
 
 #### Scenario: Store default is honored when no project value is set
@@ -45,7 +45,7 @@ Governs how `/rasen:auto` selects a pipeline when the user names none: an opt-in
 
 #### Scenario: Run flag overrides config
 
-- **WHEN** any config layer declares `autopilot.selection: manual` and the user runs `/rasen:auto --auto-select <task>`
+- **WHEN** any config layer declares `autopilot.selection: manual` and the user runs `/rasen-auto --auto-select <task>`
 - **THEN** the effective policy is `classify` (the run flag wins over every config layer)
 
 #### Scenario: Default off leaves selection unchanged
@@ -64,12 +64,12 @@ An explicit pipeline selection — `--pipeline <name>` or a leading known-pipeli
 
 #### Scenario: Explicit selector beats the flag
 
-- **WHEN** a user runs `/rasen:auto --auto-select --pipeline full-feature <task>`
+- **WHEN** a user runs `/rasen-auto --auto-select --pipeline full-feature <task>`
 - **THEN** the pipeline is `full-feature` and the classification suggestion is not consulted
 
 #### Scenario: Explicit selector beats the config default
 
-- **WHEN** `rasen/config.yaml` declares `autopilot.selection: classify` and the user invokes `/rasen:auto bug-fix <task>` with `bug-fix` as a known pipeline name
+- **WHEN** `rasen/config.yaml` declares `autopilot.selection: classify` and the user invokes `/rasen-auto bug-fix <task>` with `bug-fix` as a known pipeline name
 - **THEN** the pipeline is `bug-fix`, the selector token is stripped from the task description, and classification is not consulted
 
 ### Requirement: Adopted classification is displayed and remains user-changeable

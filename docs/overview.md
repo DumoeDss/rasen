@@ -49,14 +49,14 @@ Two folders. `specs/` is what's true. `changes/` is what you're proposing. Archi
 In the default setup, your day looks like this. Optionally think it through first; then one command drafts the plan, you read it, the next builds it, and the last files it away.
 
 ```text
-/rasen:explore                   →  (optional) think it through with the AI first
-/rasen:propose add-dark-mode     →  AI drafts proposal, specs, design, tasks
+/rasen-explore                   →  (optional) think it through with the AI first
+/rasen-propose add-dark-mode     →  AI drafts proposal, specs, design, tasks
         (you read and adjust the plan)
-/rasen:apply                     →  AI builds it, checking off tasks
-/rasen:archive                   →  specs updated, change archived
+/rasen-apply-change                     →  AI builds it, checking off tasks
+/rasen-archive-change                   →  specs updated, change archived
 ```
 
-**When in doubt, start by exploring.** `/rasen:explore` is a no-stakes thinking partner: it reads your code, lays out options, and turns a fuzzy idea into a concrete plan before any artifact exists. It's the best antidote to an AI that will otherwise build *something* from a vague prompt. Already know exactly what you want? Skip straight to `/rasen:propose`. Either way, explore ships in the default profile, so it's always there. See the [Explore guide](explore.md).
+**When in doubt, start by exploring.** `/rasen-explore` is a no-stakes thinking partner: it reads your code, lays out options, and turns a fuzzy idea into a concrete plan before any artifact exists. It's the best antidote to an AI that will otherwise build *something* from a vague prompt. Already know exactly what you want? Skip straight to `/rasen-propose`. Either way, explore ships in the default profile, so it's always there. See the [Explore guide](explore.md).
 
 Those are slash commands, typed in your AI assistant's chat. Setup (`rasen init`) happens in your terminal. If that split is new to you, read [How Commands Work](how-commands-work.md) first; it's the most common point of confusion.
 

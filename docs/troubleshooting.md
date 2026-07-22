@@ -37,9 +37,9 @@ The full list of tool IDs is in [Supported Tools](supported-tools.md). Use `--to
 
 ## Commands don't show up
 
-If `/rasen:propose` (or your tool's equivalent) doesn't appear or doesn't do anything, work down this list. They're ordered fastest-to-check first.
+If `/rasen-propose` (or your tool's equivalent) doesn't appear or doesn't do anything, work down this list. They're ordered fastest-to-check first.
 
-1. **You may be in the wrong place.** Slash commands go in your AI assistant's chat, not your terminal. If you typed `/rasen:propose` into your shell, that's the issue. See [How Commands Work](how-commands-work.md).
+1. **You may be in the wrong place.** Slash commands go in your AI assistant's chat, not your terminal. If you typed `/rasen-propose` into your shell, that's the issue. See [How Commands Work](how-commands-work.md).
 
 2. **Regenerate the files.** From your project root:
 
@@ -65,7 +65,7 @@ The command couldn't tell which change you meant. Name it explicitly, or check w
 
 ```bash
 rasen list                    # see active changes
-/rasen:apply add-dark-mode        # name the change in chat
+/rasen-apply-change add-dark-mode        # name the change in chat
 ```
 
 Also confirm you're in the right project directory.
@@ -99,7 +99,7 @@ The AI didn't have enough context. A few levers help:
 - Add project context in `rasen/config.yaml` so your stack and conventions are injected into every request. See [Customization](customization.md#project-configuration).
 - Add per-artifact `rules:` for guidance that only applies to, say, specs.
 - Give a more detailed description when you propose.
-- Use the expanded `/rasen:continue` to create one artifact at a time and review each, instead of generating them all at once.
+- Use the expanded `/rasen-continue-change` to create one artifact at a time and review each, instead of generating them all at once.
 
 ### Archive won't finish, or warns about incomplete tasks
 

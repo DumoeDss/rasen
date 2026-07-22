@@ -1,7 +1,7 @@
 /**
  * Claude Code project settings helpers.
  *
- * Rasen's orchestrated `/rasen:auto` and `/rasen:review-cycle` reach their full
+ * Rasen's orchestrated `/rasen-auto` and `/rasen-review-cycle` reach their full
  * (Tier A) behavior — the LEAD re-engaging a worker via `SendMessage` by its
  * `agentId` — only when Claude Code's experimental agent-teams flag is on.
  * agent-teams enables agentId-based re-engagement IN GENERAL; it does NOT

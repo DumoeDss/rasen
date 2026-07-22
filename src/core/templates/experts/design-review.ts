@@ -253,7 +253,7 @@ If the repo has a \`TODOS.md\`:
 
 export function getDesignReviewSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:design-review',
+    name: 'rasen-design-review',
     description: 'Design audit, fix, and verify — browser-based review grading visual hierarchy, typography, color, responsiveness, and AI-slop across pages',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

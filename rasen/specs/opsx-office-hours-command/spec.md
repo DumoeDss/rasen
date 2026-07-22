@@ -1,7 +1,7 @@
 # opsx-office-hours-command Specification
 
 ## Purpose
-Provide the `/rasen:office-hours` command for YC-style product validation in Startup and Builder modes, dual-writing output that propose consumes downstream.
+Provide the `/rasen-office-hours-command` command for YC-style product validation in Startup and Builder modes, dual-writing output that propose consumes downstream.
 ## Requirements
 ### Requirement: Office-Hours Skill and Command Templates
 
@@ -35,24 +35,24 @@ Output SHALL be dual-written: the project-scoped default location (`~/.rasen/pro
 
 - **WHEN** office-hours completes
 - **AND** no active change exists
-- **THEN** the output SHALL go to `rasen/office-hours/<topic-slug>.md`, where `<topic-slug>` is a kebab-case slug derived from the session topic (the same way `/rasen:propose` derives a change name)
+- **THEN** the output SHALL go to `rasen/office-hours/<topic-slug>.md`, where `<topic-slug>` is a kebab-case slug derived from the session topic (the same way `/rasen-propose` derives a change name)
 - **AND** the filename SHALL NOT be a single fixed name, so that separate validation sessions do not overwrite one another
 - **AND** if the derived filename already exists for an unrelated topic, the agent SHALL disambiguate with a short suffix rather than overwriting
 
 ### Requirement: Downstream Consumption by Propose
 
-The `/rasen:propose` command SHALL auto-detect and consume `office-hours-design.md` as context when it exists.
+The `/rasen-propose` command SHALL auto-detect and consume `office-hours-design.md` as context when it exists.
 
 #### Scenario: Propose detects office-hours output
 
-- **WHEN** user invokes `/rasen:propose` for a change
+- **WHEN** user invokes `/rasen-propose` for a change
 - **AND** `rasen/changes/<name>/office-hours-design.md` exists in the change directory
 - **THEN** the propose command SHALL automatically read and incorporate the office-hours design as input context
 - **AND** the generated proposal SHALL reference insights from the office-hours session
 
 #### Scenario: Propose without office-hours output
 
-- **WHEN** user invokes `/rasen:propose` for a change
+- **WHEN** user invokes `/rasen-propose` for a change
 - **AND** no `office-hours-design.md` exists in the change directory
 - **THEN** the propose command SHALL proceed normally without office-hours context
 
@@ -96,18 +96,18 @@ The skill SHALL route sessions to one of two products: the Diagnosis product (si
 
 #### Scenario: Diagnosis product invocation
 
-- **WHEN** agent executes `/rasen:office-hours` and the request routes to the Diagnosis product
+- **WHEN** agent executes `/rasen-office-hours-command` and the request routes to the Diagnosis product
 - **THEN** the agent SHALL walk the user through six forcing questions covering demand reality, status quo, target user, wedge, observation, and future-fit
 - **AND** each question SHALL require a substantive answer before proceeding
 
 #### Scenario: Design product invocation
 
-- **WHEN** agent executes `/rasen:office-hours` and the request routes to the Design product
+- **WHEN** agent executes `/rasen-office-hours-command` and the request routes to the Design product
 - **THEN** the agent SHALL run the fork-scan procedure for the session's topics, asking weight-bearing forks before delivering any stance
 - **AND** SHALL converge to a single design document once the discussion settles
 
 #### Scenario: Product routing prompt
 
-- **WHEN** agent executes `/rasen:office-hours` and the opening message does not unambiguously indicate which product the user wants
+- **WHEN** agent executes `/rasen-office-hours-command` and the opening message does not unambiguously indicate which product the user wants
 - **THEN** the agent SHALL prompt the user with a goal question and map the answer to a product (Diagnosis or Design), not to a named mode
 

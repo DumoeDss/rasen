@@ -1,7 +1,7 @@
 # remove-parallel-lifecycle-skills Specification
 
 ## Purpose
-Removes the ten gstack parallel-lifecycle expert skills (`autoplan`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `land-and-deploy`, `setup-deploy`, `canary`, `ship`, `retro`, `document-release`) whose responsibilities were absorbed into the `/rasen:auto`, `/rasen:ship`, and `/rasen:retro` workflow templates, and ensures no wiring, generated docs, curated skill-check lists, catalogs, navigator sections, or installed directories retain residue of the removed skills.
+Removes the ten gstack parallel-lifecycle expert skills (`autoplan`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `land-and-deploy`, `setup-deploy`, `canary`, `ship`, `retro`, `document-release`) whose responsibilities were absorbed into the `/rasen-auto`, `/rasen-ship`, and `/rasen-retro` workflow templates, and ensures no wiring, generated docs, curated skill-check lists, catalogs, navigator sections, or installed directories retain residue of the removed skills.
 
 ## Requirements
 ### Requirement: Parallel-lifecycle experts are removed

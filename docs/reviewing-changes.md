@@ -9,12 +9,12 @@ The bet is simple: catching a wrong turn in a one-paragraph plan is nearly free.
 There are exactly two:
 
 ```
-/rasen:propose ──► REVIEW THE PLAN ──► /rasen:apply ──► REVIEW THE CODE ──► /rasen:archive
-                  (before any code)                    (/rasen:verify)
+/rasen-propose ──► REVIEW THE PLAN ──► /rasen-apply-change ──► REVIEW THE CODE ──► /rasen-archive-change
+                  (before any code)                    (/rasen-verify-change)
 ```
 
-1. **After `/rasen:propose`**, before `/rasen:apply` — read the plan while it's still just words.
-2. **After building**, with `/rasen:verify` — check that the code actually did what the plan said.
+1. **After `/rasen-propose`**, before `/rasen-apply-change` — read the plan while it's still just words.
+2. **After building**, with `/rasen-verify-change` — check that the code actually did what the plan said.
 
 The first review is the one that saves you the most, and the one people skip. This page spends most of its time there.
 
@@ -97,7 +97,7 @@ Then re-read the part you changed. Re-draft until it's a plan you'd sign your na
 
 ## After the code: verify
 
-Once the work is built, `/rasen:verify` is your second review. It re-reads the artifacts and the code and reports mismatches across three dimensions:
+Once the work is built, `/rasen-verify-change` is your second review. It re-reads the artifacts and the code and reports mismatches across three dimensions:
 
 | Dimension | What it checks |
 |-----------|----------------|
@@ -106,7 +106,7 @@ Once the work is built, `/rasen:verify` is your second review. It re-reads the a
 | **Coherence** | Design decisions actually show up in the code |
 
 ```
-You: /rasen:verify
+You: /rasen-verify-change
 
 AI:  Verifying add-dark-mode...
 
@@ -118,7 +118,7 @@ AI:  Verifying add-dark-mode...
 
 It flags issues as CRITICAL, WARNING, or SUGGESTION, and it does **not** block archiving — it surfaces the gaps and leaves the call to you. This is the difference between "did the AI write code" and "did it build what we agreed."
 
-`/rasen:verify` is in the expanded profile. If you don't have it, turn it on with `rasen config profile` (then `rasen update`), or just re-read the change and the diff yourself.
+`/rasen-verify-change` is in the expanded profile. If you don't have it, turn it on with `rasen config profile` (then `rasen update`), or just re-read the change and the diff yourself.
 
 ## Right-size the review
 
@@ -134,7 +134,7 @@ Not every change earns the full pass. A one-file typo fix deserves a twenty-seco
 - [ ] Tasks map to requirements; nothing is mysterious or out of scope.
 - [ ] I'd be comfortable if the AI built exactly this and nothing more.
 
-If all seven pass, run `/rasen:apply` with confidence. If any fail, that's not a setback — it's the two minutes doing its job.
+If all seven pass, run `/rasen-apply-change` with confidence. If any fail, that's not a setback — it's the two minutes doing its job.
 
 ## Where to go next
 

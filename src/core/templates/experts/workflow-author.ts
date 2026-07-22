@@ -53,7 +53,7 @@ reported and either resolved or explicitly explained; never hide them.
 
 ## 5. Independent semantic review
 
-Invoke \`rasen:workflow-review\` on the validated staging directory. When
+Invoke \`rasen-workflow-review\` on the validated staging directory. When
 multi-agent execution is available, dispatch a reviewer that did not author the
 draft. Otherwise perform a clearly separated second pass using the review
 checklist. Static validity does not replace this review.
@@ -141,7 +141,7 @@ executable prompt content, not sandboxed data.
 
 export function getWorkflowAuthorSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:workflow-author',
+    name: 'rasen-workflow-author',
     description: 'Author installable workflows and pipelines safely — stage, statically validate, independently review, and import only with user approval',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

@@ -19,17 +19,17 @@ The workflow that works well maps a change onto a branch and a pull request:
 ```
 git switch -c add-dark-mode        start a branch, as usual
    │
-/rasen:propose add-dark-mode        draft the plan (proposal + specs + tasks)
+/rasen-propose add-dark-mode        draft the plan (proposal + specs + tasks)
    │
 REVIEW THE PLAN                    you read it before any code — see Reviewing a Change
    │
-/rasen:apply                        build it; artifacts + code change together
+/rasen-apply-change                        build it; artifacts + code change together
    │
 git commit && open a PR            the PR contains the spec delta AND the code
    │
 teammate reviews, merges
    │
-/rasen:archive                      fold the delta into specs/, move the change to archive/
+/rasen-archive-change                      fold the delta into specs/, move the change to archive/
 ```
 
 The plan and the code live side by side in the same branch, so your teammates review both together, and six months later the archived spec still explains why the code looks the way it does.
@@ -53,7 +53,7 @@ Archiving folds a change's deltas into your main `rasen/specs/` and moves the ch
 - **Archive after the PR merges (recommended).** The branch carries the active change; once it's merged to your main branch, archive there (often a tiny follow-up commit or a scheduled cleanup). This keeps the shared `specs/` moving forward only with work that actually shipped.
 - **Archive inside the PR.** Simpler for small teams: the same PR that adds the code also syncs and archives. The tradeoff is that your `specs/` diff and your code diff land together, which can make the PR noisier.
 
-Pick one and be consistent. Either way, `/rasen:archive` checks that tasks are complete and offers to sync first, so nothing merges half-finished by accident.
+Pick one and be consistent. Either way, `/rasen-archive-change` checks that tasks are complete and offers to sync first, so nothing merges half-finished by accident.
 
 ## Two people, parallel changes
 

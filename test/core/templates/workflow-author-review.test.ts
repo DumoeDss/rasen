@@ -36,7 +36,7 @@ describe('workflow author and review expert skills', () => {
     expect(instructions).toContain('rasen workflow list --json');
     expect(instructions).toContain('rasen workflow init <id> --output');
     expect(instructions).toContain('rasen workflow validate <staging-path> --json');
-    expect(instructions).toContain('rasen:workflow-review');
+    expect(instructions).toContain('rasen-workflow-review');
     expect(instructions).toContain('Only after the user asks to install');
     expect(instructions).toContain('rasen workflow import <staging-path>');
     expect(instructions).toContain('Never edit the user-wide workflow registry directly');
