@@ -1,25 +1,13 @@
-# pipeline-handoff-config Specification
+# pipeline-handoff-config Delta Specification
 
-## Purpose
-Adds an optional `handoff` configuration block to pipeline definitions at both pipeline and stage level — `threshold`, per-role overrides, `maxRelays`, and `stallLimit` — with a defined resolution order and validation. This lets a pipeline declare when workers should hand off and how many relays are allowed, and surfaces the resolved config together with run-state handoff records.
+## REMOVED Requirements
 
-## Requirements
-### Requirement: Handoff configuration block
-Pipeline definitions SHALL accept an optional `handoff` block at pipeline level and at stage level, carrying `threshold`, `roles` (per-role threshold overrides), `maxRelays`, and `stallLimit`. Every threshold value (pipeline-level, per-role, stage-level) SHALL accept two forms: a bare number, which is ALWAYS a fraction of the context window in (0, 1], or the object `{ remainingTokens: <positive integer> }`, an absolute required-headroom threshold in tokens. No bare number SHALL ever be interpreted as a token count.
+### Requirement: Handoff config resolution order
 
-#### Scenario: Valid handoff config parses
-- **WHEN** a pipeline.yaml declares `handoff: { threshold: 0.5, roles: { reviewer: 0.65 }, maxRelays: 3, stallLimit: 2 }` and a stage declares `handoff: { threshold: 0.7, maxRelays: 5 }`
-- **THEN** `rasen validate <name> --type pipeline` SHALL pass
-- **AND** `rasen pipeline show <name> --json` SHALL expose the resolved handoff config
+**Reason**: The machine-config portion of the chain gains a store scope between project and global (`store-role` and `store-config` layers). Replaced by "Handoff config resolution order with a store configuration layer".
+**Migration**: Pipelines and projects without an active store layer resolve identically; the two new source values appear only where inheritance is active.
 
-#### Scenario: Absolute threshold form parses
-- **WHEN** a pipeline.yaml declares `handoff: { threshold: { remainingTokens: 60000 }, roles: { implementer: { remainingTokens: 40000 } } }` or a stage declares `handoff: { threshold: { remainingTokens: 60000 } }`
-- **THEN** `rasen validate <name> --type pipeline` SHALL pass
-- **AND** `rasen pipeline show <name> --json` SHALL expose the resolved threshold as the `{ remainingTokens }` object
-
-#### Scenario: Invalid handoff config rejected
-- **WHEN** a pipeline.yaml declares a bare-number `threshold` outside (0, 1], a `remainingTokens` that is not a positive integer, an unknown key inside a threshold object, or a non-positive `maxRelays`/`stallLimit`
-- **THEN** validation SHALL fail with an actionable message
+## ADDED Requirements
 
 ### Requirement: Handoff config resolution order with a store configuration layer
 
@@ -82,17 +70,3 @@ The effective handoff config for a stage SHALL resolve as: stage-level `handoff`
 
 - **WHEN** neither the pipeline nor the stage declares `handoff` and no config layer sets any scalar or per-role `handoff` threshold
 - **THEN** the resolved config SHALL be the built-in defaults
-
-### Requirement: Run-state handoff records
-The run-state reader SHALL accept optional `sessionHandoff` (top level, including an optional generation number `n`) and per-stage `handoffs[]` records, and `rasen pipeline resume` SHALL report them.
-
-#### Scenario: Resume surfaces handoff pointers
-- **WHEN** `auto-run.json` contains a `sessionHandoff` and a stage with `handoffs[]`
-- **THEN** `rasen pipeline resume <change> --json` SHALL include the session handoff record and, per stage, the latest handoff document path
-- **AND** run-states without these fields SHALL parse exactly as before
-
-#### Scenario: Session handoff generation surfaces on resume
-- **WHEN** `auto-run.json` contains a `sessionHandoff` with `n`
-- **THEN** `rasen pipeline resume <change> --json` SHALL include `n` in the session handoff record
-- **AND** a `sessionHandoff` without `n` SHALL parse as before and be treated as generation 1
-

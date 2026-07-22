@@ -1,9 +1,13 @@
-# config-resolution Specification
+# config-resolution Delta Specification
 
-## Purpose
-Defines an in-process resolution function that merges configuration layers (environment override, project config, global config, built-in defaults) into per-key effective values with source metadata, reusable by CLI and non-CLI consumers alike.
+## REMOVED Requirements
 
-## Requirements
+### Requirement: Effective configuration resolution
+
+**Reason**: Superseded by three-layer resolution — the chain gains a store layer between project and global, sources and raw per-layer values gain `store`, and resolution can address a store root directly. Replaced by "Effective configuration resolution across global, store, and project layers".
+**Migration**: Consumers keep calling the same in-process resolution function; entries additionally carry a `store` source possibility and a raw store-layer value where inheritance is active.
+
+## ADDED Requirements
 
 ### Requirement: Effective configuration resolution across global, store, and project layers
 
@@ -44,14 +48,3 @@ The system SHALL provide an in-process resolution function (`resolveEffectiveCon
 
 - **WHEN** resolution runs without a project root or store layer (e.g. outside any Rasen root)
 - **THEN** each key resolves from environment, global, and default layers only, and the call succeeds
-
-### Requirement: Reusable module boundary
-The resolution function SHALL be a pure in-process module in `src/core/` accepting an explicit optional project root, so that non-CLI consumers (the planned local config HTTP API) can reuse it without invoking command-layer code.
-
-#### Scenario: Explicit project root parameter
-- **WHEN** a caller passes `{ projectRoot: <path> }` for a project other than the current working directory
-- **THEN** project-layer values are read from that project's `rasen/config.yaml`
-
-#### Scenario: Command layer renders, does not compute
-- **WHEN** the interactive config editor or the effective-config listing displays values and sources
-- **THEN** the displayed data comes from `resolveEffectiveConfig()` output rather than a separate merge implementation

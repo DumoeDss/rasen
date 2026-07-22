@@ -1,9 +1,13 @@
-# config-key-registry Specification
+# config-key-registry Delta Specification
 
-## Purpose
-Defines a single declarative registry of every CLI-settable configuration key — its path, scopes, type, constraints, default, description, and display group — so that `config set`/`unset`, the interactive editor, and effective-config resolution all derive their key knowledge from one source and cannot drift from the parse schemas.
+## REMOVED Requirements
 
-## Requirements
+### Requirement: Declarative registry of settable configuration keys
+
+**Reason**: The scope vocabulary grows from two scopes (`global`, `project`) to three (`global`, `store`, `project`); every project-capable key becomes store-capable. Replaced by "Declarative registry of settable configuration keys across three scopes".
+**Migration**: All existing global/project scope declarations and validations behave identically; the `store` scope is additive.
+
+## ADDED Requirements
 
 ### Requirement: Declarative registry of settable configuration keys across three scopes
 
