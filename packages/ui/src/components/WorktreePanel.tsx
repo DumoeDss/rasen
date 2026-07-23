@@ -34,33 +34,36 @@ export function WorktreePanel({
 }) {
   return (
     <div class="worktree-panel" role="group" aria-label="Switch worktree" data-testid="worktree-panel">
-      {worktrees.map((worktree) => {
-        const selected = worktree.isMain
-          ? selectedRoot === null || selectedRoot === worktree.root
-          : selectedRoot === worktree.root;
-        const liveSessions = sessions.filter((entry) => isUnderRoot(entry.session.cwd, worktree.root)).length;
-        return (
-          <button
-            key={worktree.root}
-            type="button"
-            class={`worktree-chip${selected ? ' worktree-chip--selected' : ''}`}
-            aria-pressed={selected}
-            data-testid="worktree-chip"
-            title={worktree.root}
-            onClick={() => onSelect(worktree.isMain ? null : worktree.root)}
-          >
-            <span class="worktree-chip__label">{pathTail(worktree.root)}</span>
-            <span class="worktree-chip__branch">{worktree.branch ?? 'detached'}</span>
-            {worktree.isMain && <span class="worktree-chip__main">main</span>}
-            <span class="worktree-chip__changes">{worktree.activeChangeCount} changes</span>
-            {liveSessions > 0 && (
-              <span class="worktree-chip__sessions" data-testid="worktree-sessions">
-                ⦿ {liveSessions}
-              </span>
-            )}
-          </button>
-        );
-      })}
+      <span class="worktree-panel__eyebrow">Worktrees</span>
+      <div class="worktree-panel__strip">
+        {worktrees.map((worktree) => {
+          const selected = worktree.isMain
+            ? selectedRoot === null || selectedRoot === worktree.root
+            : selectedRoot === worktree.root;
+          const liveSessions = sessions.filter((entry) => isUnderRoot(entry.session.cwd, worktree.root)).length;
+          return (
+            <button
+              key={worktree.root}
+              type="button"
+              class={`worktree-chip${selected ? ' worktree-chip--selected' : ''}`}
+              aria-pressed={selected}
+              data-testid="worktree-chip"
+              title={worktree.root}
+              onClick={() => onSelect(worktree.isMain ? null : worktree.root)}
+            >
+              <span class="worktree-chip__label">{pathTail(worktree.root)}</span>
+              <span class="worktree-chip__branch">{worktree.branch ?? 'detached'}</span>
+              {worktree.isMain && <span class="worktree-chip__main">MAIN</span>}
+              <span class="worktree-chip__changes">{worktree.activeChangeCount} changes</span>
+              {liveSessions > 0 && (
+                <span class="worktree-chip__sessions" data-testid="worktree-sessions">
+                  ⦿ {liveSessions}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

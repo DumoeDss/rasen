@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  isPipelineCanvasPath,
   parseSelector,
   parseSpacePath,
   spaceHref,
@@ -81,6 +82,30 @@ describe('opaque-token round-trip (design D5)', () => {
     });
     expect(parseSelector('bogus')).toBeNull();
     expect(parseSelector('project:')).toBeNull();
+  });
+});
+
+describe('isPipelineCanvasPath', () => {
+  it('is true for a space-prefixed pipeline canvas route (with a name segment)', () => {
+    expect(isPipelineCanvasPath('/p/proj_x/pipelines/small-feature')).toBe(true);
+    expect(isPipelineCanvasPath('/s/my-store/pipelines/my-flow')).toBe(true);
+  });
+
+  it('is false for the pipelines list page (no name segment)', () => {
+    expect(isPipelineCanvasPath('/p/proj_x/pipelines')).toBe(false);
+    expect(isPipelineCanvasPath('/s/my-store/pipelines/')).toBe(false);
+  });
+
+  it('is false for any non-pipeline or non-space route', () => {
+    expect(isPipelineCanvasPath('/p/proj_x/board')).toBe(false);
+    expect(isPipelineCanvasPath('/p/proj_x/config')).toBe(false);
+    expect(isPipelineCanvasPath('/workflows')).toBe(false);
+    expect(isPipelineCanvasPath('/')).toBe(false);
+    expect(isPipelineCanvasPath(undefined)).toBe(false);
+  });
+
+  it('tolerates an encoded name segment', () => {
+    expect(isPipelineCanvasPath('/p/proj_x/pipelines/a%20b')).toBe(true);
   });
 });
 

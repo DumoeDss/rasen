@@ -78,10 +78,10 @@ export function NewChangeDialog({
           </p>
         )}
         <div class="new-change-dialog__actions">
-          <button type="button" onClick={onCancel} disabled={submitting}>
+          <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" disabled={submitting}>
+          <button type="submit" class="btn--primary" disabled={submitting}>
             {submitting ? 'Submitting…' : 'Create'}
           </button>
         </div>

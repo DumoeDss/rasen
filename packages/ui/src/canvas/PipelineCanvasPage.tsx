@@ -85,6 +85,12 @@ export function PipelineCanvasPage() {
   const [catalogLoading, setCatalogLoading] = useState(false);
 
   const [issues, setIssues] = useState<PipelineValidationIssue[]>([]);
+  // The last validation's outcome, shown as an always-visible result chip beside
+  // the Validate/Save controls (pipelines-ui spec). Reset to null on any draft
+  // edit so a stale "No issues" can never present against a newer draft.
+  const [lastValidation, setLastValidation] = useState<
+    { errorCount: number; warningCount: number; clean: boolean } | null
+  >(null);
   const [saveState, setSaveState] = useState<SaveState>({ status: 'idle' });
   // A ref mirror of "a save is in flight" — the `disabled` attribute on the
   // Save/Overwrite/Retry buttons only reflects `saveState` after the next
@@ -172,6 +178,23 @@ export function PipelineCanvasPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [mode, dirty]);
 
+  // Any draft mutation invalidates the previous validation result (spec:
+  // editing after a validation clears the previous result so it never goes
+  // stale). Clears the chip, the issue list/drawer, AND the per-node issue
+  // badges together (m1) — a partial clear would leave the drawer and glowing
+  // nodes asserting stale findings against a newer draft.
+  function markDraftChanged() {
+    setLastValidation(null);
+    setIssues([]);
+    setFlowNodes((nodes) =>
+      nodes.map((n) =>
+        n.type === 'stage' && n.data.issueSeverity
+          ? { ...n, data: { ...n.data, issueSeverity: undefined } }
+          : n
+      )
+    );
+  }
+
   function recomputeFlow(def: WirePipelineDefinition) {
     const { nodes, edges } = draftToGraph(def);
     const laidOut = layoutGraph(nodes, edges).map((n) =>
@@ -187,6 +210,7 @@ export function PipelineCanvasPage() {
     setMode('edit');
     setSelectedStageId(null);
     setIssues([]);
+    setLastValidation(null);
     setSaveState({ status: 'idle' });
     recomputeFlow(seed);
   }
@@ -215,6 +239,7 @@ export function PipelineCanvasPage() {
     setLoadedDefinition(null);
     setSelectedStageId(null);
     setIssues([]);
+    setLastValidation(null);
     setSaveState({ status: 'idle' });
   }
 
@@ -247,6 +272,9 @@ export function PipelineCanvasPage() {
       const res = await client.validatePipeline(def, selector);
       setIssues(res.issues);
       applyIssueMarkers(res.issues, def);
+      const errorCount = res.issues.filter((i) => i.severity === 'error').length;
+      const warningCount = res.issues.filter((i) => i.severity === 'warning').length;
+      setLastValidation({ errorCount, warningCount, clean: res.issues.length === 0 });
       return res;
     } catch (err) {
       setSaveState({ status: 'error', message: err instanceof ApiError ? err.message : 'Validation failed.' });
@@ -274,11 +302,18 @@ export function PipelineCanvasPage() {
       setSaveState({ status: 'saving' });
       const validation = await runValidate(withOrigin);
       if (!validation) {
-        setSaveState({ status: 'idle' });
+        // runValidate already surfaced the validation-API failure as
+        // saveState = error (M1): do NOT clobber it back to idle, or the Save
+        // path goes silent when the server hiccups — the spec requires save
+        // feedback to always be visible.
         return;
       }
-      if (validation.issues.some((i) => i.severity === 'error')) {
-        setSaveState({ status: 'blocked', message: 'Fix the blocking issues before saving.' });
+      const blockingCount = validation.issues.filter((i) => i.severity === 'error').length;
+      if (blockingCount > 0) {
+        setSaveState({
+          status: 'blocked',
+          message: `${blockingCount} blocking issue${blockingCount === 1 ? '' : 's'} below — fix ${blockingCount === 1 ? 'it' : 'them'} before saving.`,
+        });
         return;
       }
       try {
@@ -318,6 +353,7 @@ export function PipelineCanvasPage() {
     }
     setDraft(addRequire(draft, connection.source, connection.target));
     setFlowEdges((eds) => addEdge({ ...connection, id: `${connection.source}->${connection.target}` }, eds));
+    markDraftChanged();
   }
 
   function onNodesChange(changes: NodeChange[]) {
@@ -330,6 +366,7 @@ export function PipelineCanvasPage() {
       const removedIds = new Set(removed.map((c) => (c as { id: string }).id));
       setFlowEdges((eds) => eds.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)));
       if (selectedStageId && removedIds.has(selectedStageId)) setSelectedStageId(null);
+      markDraftChanged();
     }
   }
 
@@ -342,6 +379,7 @@ export function PipelineCanvasPage() {
         if (edge) nextDraft = removeRequire(nextDraft, edge.source, edge.target);
       }
       setDraft(nextDraft);
+      markDraftChanged();
     }
     setFlowEdges((eds) => applyEdgeChanges(changes, eds));
   }
@@ -383,12 +421,14 @@ export function PipelineCanvasPage() {
       },
     };
     setFlowNodes((nodes) => [...nodes, newNode]);
+    markDraftChanged();
   }
 
   function patchStage(id: string, patch: Partial<WirePipelineDefinitionStage>) {
     if (!draft) return;
     const nextDraft = updateStageFields(draft, id, patch);
     setDraft(nextDraft);
+    markDraftChanged();
     if ('parallelGroup' in patch) {
       // Structural edit — group membership changed, re-run auto-layout so
       // group containers stay truthful (design D4).
@@ -419,6 +459,7 @@ export function PipelineCanvasPage() {
     if (!draft || !selectedStageId) return;
     const nextDraft = renameStage(draft, selectedStageId, newId);
     setDraft(nextDraft);
+    markDraftChanged();
     setFlowNodes((nodes) =>
       nodes.map((n) =>
         n.id === selectedStageId && n.type === 'stage' ? { ...n, id: newId, data: { ...n.data, id: newId } } : n
@@ -594,9 +635,12 @@ export function PipelineCanvasPage() {
               data-testid="pipeline-canvas-description"
               placeholder="Description"
               value={draft.description ?? ''}
-              onInput={(e) => setDraft({ ...draft, description: (e.target as HTMLInputElement).value || undefined })}
+              onInput={(e) => {
+                setDraft({ ...draft, description: (e.target as HTMLInputElement).value || undefined });
+                markDraftChanged();
+              }}
             />
-            <button type="button" data-testid="pipeline-canvas-relayout" onClick={relayout}>
+            <button type="button" class="btn--ghost" data-testid="pipeline-canvas-relayout" onClick={relayout}>
               Re-layout
             </button>
             <button type="button" data-testid="pipeline-canvas-validate" onClick={handleValidate}>
@@ -604,15 +648,30 @@ export function PipelineCanvasPage() {
             </button>
             <button
               type="button"
+              class="btn--primary"
               data-testid="pipeline-canvas-save"
               disabled={isSaving}
               onClick={() => handleSave(false)}
             >
               {saveState.status === 'saving' ? 'Saving…' : 'Save'}
             </button>
-            <button type="button" data-testid="pipeline-canvas-discard" onClick={discard}>
+            <button type="button" class="btn--ghost" data-testid="pipeline-canvas-discard" onClick={discard}>
               Discard
             </button>
+            {lastValidation && (
+              <span
+                class={`pipeline-canvas__validation pipeline-canvas__validation--${lastValidation.clean ? 'clean' : lastValidation.errorCount > 0 ? 'error' : 'warning'}`}
+                data-testid="pipeline-canvas-validation-result"
+                role="status"
+              >
+                {lastValidation.clean
+                  ? '✓ No issues'
+                  : `✕ ${lastValidation.errorCount} error${lastValidation.errorCount === 1 ? '' : 's'}` +
+                    (lastValidation.warningCount > 0
+                      ? ` · ${lastValidation.warningCount} warning${lastValidation.warningCount === 1 ? '' : 's'}`
+                      : '')}
+              </span>
+            )}
           </>
         )}
       </div>
@@ -712,25 +771,44 @@ export function PipelineCanvasPage() {
       <div class="pipeline-canvas__body">
         {editable && <PalettePanel skills={catalog?.skills ?? null} loading={catalogLoading} />}
 
-        <div class="pipeline-canvas__flow" data-testid="pipeline-canvas-flow">
-          {toast && (
-            <div class="pipeline-canvas__toast" data-testid="pipeline-canvas-toast">
-              {toast}
-            </div>
-          )}
-          <ReactFlowProvider>
-            <CanvasFlow
-              nodes={mode === 'view' ? viewFlowNodes(detail) : flowNodes}
-              edges={mode === 'view' ? viewFlowEdges(detail) : flowEdges}
-              editable={editable}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeClick={onNodeClick}
-              onPaneClick={onPaneClick}
-              onDropStage={onDropStage}
+        {/* The flow and the issues drawer share one vertical column so the
+            drawer is a bottom panel of the canvas, always on-screen inside the
+            viewport-locked page (pipelines-ui spec). */}
+        <div class="pipeline-canvas__flow-column">
+          <div class="pipeline-canvas__flow" data-testid="pipeline-canvas-flow">
+            {toast && (
+              <div class="pipeline-canvas__toast" data-testid="pipeline-canvas-toast">
+                {toast}
+              </div>
+            )}
+            <ReactFlowProvider>
+              <CanvasFlow
+                nodes={mode === 'view' ? viewFlowNodes(detail) : flowNodes}
+                edges={mode === 'view' ? viewFlowEdges(detail) : flowEdges}
+                editable={editable}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={onNodeClick}
+                onPaneClick={onPaneClick}
+                onDropStage={onDropStage}
+              />
+            </ReactFlowProvider>
+          </div>
+
+          {editable && draft && issues.length > 0 && (
+            <IssuesDrawer
+              issues={issues}
+              draft={draft}
+              onSelectStage={(id) => setSelectedStageId(id)}
+              onDismiss={() => {
+                setIssues([]);
+                // Don't orphan the blocked-save message (which points "below")
+                // once its issue list is gone (m2).
+                if (saveState.status === 'blocked') setSaveState({ status: 'idle' });
+              }}
             />
-          </ReactFlowProvider>
+          )}
         </div>
 
         {editable && selectedStage && (
@@ -753,10 +831,6 @@ export function PipelineCanvasPage() {
           />
         )}
       </div>
-
-      {editable && draft && issues.length > 0 && (
-        <IssuesDrawer issues={issues} draft={draft} onSelectStage={(id) => setSelectedStageId(id)} />
-      )}
     </div>
   );
 }
@@ -815,6 +889,7 @@ function CanvasFlow({
       nodes={nodes}
       edges={edges}
       nodeTypes={stageNodeTypes}
+      proOptions={{ hideAttribution: true }}
       fitView
       nodesDraggable={!editable ? false : undefined}
       nodesConnectable={!editable ? false : undefined}

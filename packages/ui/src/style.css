@@ -213,16 +213,99 @@ button:hover:not(:disabled) { box-shadow: var(--ring-hover); background: color-m
 button:active:not(:disabled) { transform: translateY(0.5px); }
 button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 
-.btn--primary,
-.board-page__toolbar button:first-of-type {
+.btn--primary {
   color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent);
 }
-.btn--primary:hover:not(:disabled),
-.board-page__toolbar button:first-of-type:hover:not(:disabled) {
+.btn--primary:hover:not(:disabled) {
   background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover);
 }
-.btn--primary:active:not(:disabled),
-.board-page__toolbar button:first-of-type:active:not(:disabled) { background: var(--accent-active); }
+.btn--primary:active:not(:disabled) { background: var(--accent-active); }
+
+/* Ghost — no fill, no ring: a quiet action (Refresh, Close, per-card actions).
+   Muted text warming to the accent on hover; the whole affordance is the label. */
+.btn--ghost {
+  color: var(--muted); background: none; box-shadow: none;
+}
+.btn--ghost:hover:not(:disabled) { color: var(--accent); background: var(--surface-warm); box-shadow: none; }
+.btn--ghost:active:not(:disabled) { background: var(--surface-muted); }
+.btn--ghost:focus-visible { box-shadow: var(--focus-ring); }
+
+/* Danger — reserved for destructive confirmations (kill run, force delete). */
+.btn--danger {
+  color: var(--danger-fg); background: var(--danger-bg); box-shadow: 0 0 0 1px color-mix(in oklab, var(--danger), transparent 68%);
+}
+.btn--danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger-bg), var(--danger) 12%);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--danger), transparent 45%);
+}
+.btn--danger:active:not(:disabled) { background: color-mix(in oklab, var(--danger-bg), var(--danger) 20%); }
+
+/* ═══ 4b. Component system — shared page-header, switch, value display ════
+ * A small cross-page contract (ui-component-system spec). Every rule consumes
+ * only tokens, so both schemes and the CRT variant inherit correct colors.
+ * ─────────────────────────────────────────────────────────────────── */
+
+/* Page header — serif title left, page-level actions right, one baseline row. */
+.page-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5);
+}
+.page-header__title { font-size: var(--text-xl); }
+.page-header__actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* Switch — a token-built track/thumb on a `role="switch"` button. */
+.ui-switch {
+  --switch-w: 40px; --switch-h: 22px; --switch-pad: 3px;
+  position: relative; flex-shrink: 0;
+  width: var(--switch-w); height: var(--switch-h); padding: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-warm); box-shadow: var(--ring);
+  transition: background-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
+  cursor: pointer;
+}
+.ui-switch:hover:not(:disabled) { background: color-mix(in oklab, var(--surface-warm), var(--fg) 6%); box-shadow: var(--ring-hover); }
+.ui-switch--on { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ui-switch--on:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
+.ui-switch:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
+.ui-switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-switch__thumb {
+  position: absolute; top: var(--switch-pad); left: var(--switch-pad);
+  width: calc(var(--switch-h) - 2 * var(--switch-pad));
+  height: calc(var(--switch-h) - 2 * var(--switch-pad));
+  border-radius: var(--radius-pill); background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: transform var(--motion-fast) var(--ease);
+}
+.ui-switch--on .ui-switch__thumb {
+  transform: translateX(calc(var(--switch-w) - var(--switch-h)));
+  background: var(--accent-on);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-switch, .ui-switch__thumb { transition: none; }
+}
+
+/* Value display — arrays as chips, objects as labeled fields, all readable. */
+.value-display { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: 100%; }
+.value-display--empty { color: var(--meta); font-style: italic; }
+.value-display--primitive { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg-2); overflow-wrap: anywhere; }
+.value-display__chips { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
+.value-display__chip {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2);
+  background: var(--surface-muted); border-radius: var(--radius); padding: 1px var(--space-2);
+  overflow-wrap: anywhere;
+}
+.value-display__toggle {
+  font-size: var(--text-xs); font-weight: 600; padding: 1px var(--space-2);
+  border-radius: var(--radius); box-shadow: none;
+}
+.value-display__field {
+  display: inline-flex; align-items: baseline; gap: var(--space-1);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--surface-muted); border-radius: var(--radius); padding: 2px var(--space-2);
+}
+.value-display__field-key { color: var(--meta); }
+.value-display__field-key::after { content: ':'; }
+.value-display__field-value { color: var(--fg-2); }
 
 /* ═══ 5. App shell — header, nav, content ═══════════════════════════════ */
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
@@ -256,6 +339,15 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   padding: var(--space-8) var(--gutter) var(--space-12); flex: 1;
 }
 .app-content > p:only-child { color: var(--meta); }
+
+/* Canvas route (pipelines-ui spec): a viewport-locked content area — the page
+   itself never scrolls; the editor's side panels scroll within their own
+   bounds and the flow fills the remainder. Only this route is locked. */
+.app-content--canvas {
+  max-width: none; height: calc(100vh - 60px);
+  padding: var(--space-4) var(--gutter);
+  display: flex; flex-direction: column; overflow: hidden;
+}
 
 /* ═══ 6. Space switcher — labeled warm control ══════════════════════════ */
 .space-switcher { font-size: var(--text-sm); min-width: 0; }
@@ -298,16 +390,11 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .running-sessions-menu__stage { grid-column: 1 / -1; font-size: var(--text-xs); color: var(--accent); font-weight: 600; }
 
 /* ═══ 8. Board — kanban of lifecycle columns ═══════════════════════════ */
-.board-page__toolbar {
-  display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3);
-  margin-bottom: var(--space-5);
-}
 .board-page__error, .board-page__empty, .board-page__loading { color: var(--muted); }
 .board-page__error, .board-page__empty {
   display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4);
   padding: var(--space-12) 0;
 }
-.board-page__empty .board-page__toolbar { justify-content: flex-start; margin-top: var(--space-2); }
 .board-page__broken { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-6); }
 
 .board {
@@ -386,7 +473,6 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 @media (prefers-reduced-motion: reduce) { .task-card__live::first-letter { animation: none; } }
 
 /* ═══ 9. Archive — a warm, scannable ledger ═════════════════════════════ */
-.archive-page__toolbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-5); }
 .archive-page__search { flex: 1; max-width: 360px; }
 .archive-page__loading, .archive-page__no-matches { color: var(--muted); }
 .archive-page__error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); color: var(--muted); }
@@ -428,19 +514,31 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .member-chip--selected { color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .member-chip--selected:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
 
-/* Worktrees panel (worktree-aware-spaces D4): a sibling chip strip of the
-   member chips, one chip per worktree with per-worktree facts. */
-.worktree-panel { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
-.worktree-chip {
-  display: inline-flex; align-items: baseline; gap: var(--space-2);
-  font-size: var(--text-xs); font-weight: 600; padding: 5px var(--space-3);
-  border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); box-shadow: var(--ring);
+/* Worktrees panel (worktree-aware-spaces D4 / board-ui spec): one labeled,
+   structured control group — an eyebrow over a single aligned strip of
+   uniform-height chips, each presenting its facts in a fixed order (name ·
+   branch · MAIN · N changes · ⦿ live). Absent facts collapse without breaking
+   the shared height. */
+.worktree-panel { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-5); }
+.worktree-panel__eyebrow {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--meta);
 }
+.worktree-panel__strip { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); }
+.worktree-chip {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  min-height: 30px; font-size: var(--text-xs); font-weight: 600; padding: 4px var(--space-3);
+  border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); box-shadow: var(--ring);
+  transition: box-shadow var(--motion-fast) var(--ease), background-color var(--motion-fast) var(--ease);
+}
+.worktree-chip:hover:not(:disabled) { box-shadow: var(--ring-hover); }
 .worktree-chip--selected { color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .worktree-chip--selected:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
+.worktree-chip__label { font-weight: 700; color: var(--fg); }
+.worktree-chip--selected .worktree-chip__label { color: var(--accent-on); }
 .worktree-chip__branch { font-family: var(--font-mono); font-weight: 500; opacity: 0.85; }
 .worktree-chip__main {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
   border-radius: var(--radius-pill); padding: 1px 6px; box-shadow: var(--ring);
 }
 .worktree-chip__changes { font-weight: 500; opacity: 0.85; }
@@ -493,7 +591,37 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .task-detail__child-deps { font-family: var(--font-mono); }
 .task-detail__child-error { color: var(--danger-fg); font-size: var(--text-sm); margin: var(--space-1) 0 0; }
 .task-detail__checklist { margin: var(--space-2) 0 0; padding-left: var(--space-5); color: var(--muted); font-size: var(--text-sm); }
-.task-detail__sessions-toolbar { display: flex; justify-content: flex-start; margin-bottom: var(--space-1); }
+.task-detail__sessions-toolbar { display: flex; justify-content: flex-start; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+
+/* Single-change checklist card (task-detail-ui spec): progress summary header +
+   a thin progress bar, open items always listed, completed items behind a
+   disclosure. Tokens only. */
+.task-checklist {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.task-checklist__header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.task-checklist__label { font-size: var(--text-sm); font-weight: 700; color: var(--fg); }
+.task-checklist__count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); }
+.task-checklist__progress {
+  height: 6px; border-radius: var(--radius-pill); background: var(--surface-muted); overflow: hidden;
+}
+.task-checklist__progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width var(--motion-fast) var(--ease); }
+@media (prefers-reduced-motion: reduce) { .task-checklist__progress-fill { transition: none; } }
+.task-checklist__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.task-checklist__list--done { margin-top: var(--space-2); }
+.task-checklist__item { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.task-checklist__item--done { color: var(--muted); }
+.task-checklist__box { flex-shrink: 0; font-size: var(--text-sm); }
+.task-checklist__item--open .task-checklist__box { color: var(--accent); }
+.task-checklist__item--done .task-checklist__box { color: var(--success-fg); }
+.task-checklist__text code {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--surface-muted); border-radius: var(--radius); padding: 1px 5px; overflow-wrap: anywhere;
+}
+.task-checklist__completed { display: flex; flex-direction: column; }
+.task-checklist__disclosure { align-self: flex-start; font-size: var(--text-xs); font-weight: 600; padding: 2px var(--space-2); box-shadow: none; }
 .task-detail__error, .task-detail__load-error { color: var(--danger-fg); font-size: var(--text-sm); }
 .task-detail__load-errors { display: flex; flex-direction: column; gap: var(--space-2); }
 .task-detail__no-deps { color: var(--meta); }
@@ -805,20 +933,25 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
    pill, dialogs = new-change-dialog overlay. */
 .workflows-page { max-width: var(--container-max); margin: 0 auto; padding: var(--space-6) var(--gutter); }
 .workflows-page__loading, .workflows-page__error { padding: var(--space-6) var(--gutter); color: var(--muted); }
-.workflows-page__toolbar {
-  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
-  flex-wrap: wrap; margin-bottom: var(--space-5);
-}
-.workflows-page__title { font-size: var(--text-lg); }
-.workflows-page__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .workflows-group { margin-bottom: var(--space-6); }
 .workflows-group__heading { font-size: var(--text-sm); color: var(--meta); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--space-3); }
-.workflows-group__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.workflows-group__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-items: stretch; }
+/* Each grid cell is a flex column so its card fills the row-equalized height. */
+.workflows-group__list > li { display: flex; }
 .workflow-card {
+  flex: 1; width: 100%;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   box-shadow: var(--ring), var(--shadow); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2);
 }
 .workflow-card--invalid { border-color: var(--danger); }
+/* Uniform anatomy: header (title/id + corner switch), meta, footer pinned. */
+.workflow-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.workflow-card__header .workflow-card__open { flex: 1; min-width: 0; }
+.workflow-card__state {
+  font-size: var(--text-xs); font-weight: 600; color: var(--muted);
+  background: var(--surface-muted); border-radius: var(--radius-pill); padding: 1px var(--space-2);
+}
+.workflow-card__enablement-required { font-size: var(--text-xs); color: var(--meta); }
 /* A bare title button: reset the base button's ring/shadow so the name is not
    trapped in a bordered box; the whole card is the affordance. */
 .workflow-card__open {
@@ -837,7 +970,7 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .workflow-card__unused { background: var(--warn-bg); color: var(--warn-fg); }
 .workflow-card__lock { background: var(--surface-muted); color: var(--meta); }
 .workflow-card__digest { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
-.workflow-card__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-1); }
+.workflow-card__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: auto; padding-top: var(--space-2); }
 .workflows-internal { margin-top: var(--space-3); }
 .workflows-internal__toggle {
   background: none; border: none; box-shadow: none; padding: 0; cursor: pointer;
@@ -890,12 +1023,6 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 }
 .pipelines-page__error { margin: 0; color: var(--danger-fg); font-size: var(--text-sm); }
 .pipelines-page__no-space { color: var(--muted); padding: var(--space-8) var(--gutter); }
-.pipelines-page__toolbar {
-  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.pipelines-page__title { font-size: var(--text-lg); }
-.pipelines-page__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .pipelines-page__mode { display: flex; gap: var(--space-2); }
 
 /* Defaults — a compact role matrix plus the two autopilot controls, all inside
@@ -962,6 +1089,20 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   background: var(--surface-muted); border-radius: var(--radius-pill); padding: 2px var(--space-2);
 }
 .pipeline-section__description { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+
+/* Configure disclosure — the per-pipeline config (runtimes + stage overrides)
+   collapses behind this so the list reads as a library (pipelines-ui spec). */
+.pipeline-section__configure {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-sm); font-weight: 600; padding: 4px var(--space-3); box-shadow: none;
+}
+.pipeline-section__chevron { display: inline-block; transition: transform var(--motion-fast) var(--ease); }
+.pipeline-section__chevron--open { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .pipeline-section__chevron { transition: none; } }
+.pipeline-section__config {
+  display: flex; flex-direction: column; gap: var(--space-4);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-soft);
+}
 
 /* Build-order lane — horizontal chips; stage id and role badge stay distinct. */
 .pipeline-lane {
@@ -1047,8 +1188,10 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .pipeline-dialog__result { font-size: var(--text-sm); color: var(--fg-2); display: flex; flex-direction: column; gap: var(--space-2); }
 .pipeline-dialog__mono { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; }
 
-/* Pipeline graph canvas (pipeline-canvas-view) — read-only DAG view. */
-.pipeline-canvas { display: flex; flex-direction: column; gap: var(--space-4); height: 100%; }
+/* Pipeline graph canvas (pipeline-canvas-view) — read-only DAG view. Inside the
+   viewport-locked canvas route it fills the content area; the flow body
+   (`.pipeline-canvas__body`) takes the remaining height and its panels scroll. */
+.pipeline-canvas { display: flex; flex-direction: column; gap: var(--space-4); flex: 1; min-height: 0; }
 .pipeline-canvas__header { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .pipeline-canvas__back { color: var(--muted); font-size: var(--text-sm); text-decoration: none; }
 .pipeline-canvas__back:hover { color: var(--fg); }
@@ -1058,7 +1201,7 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   background: var(--surface-muted); border-radius: var(--radius-pill); padding: 2px var(--space-2);
 }
 .pipeline-canvas__flow {
-  flex: 1; min-height: 480px; height: 70vh; border: 1px solid var(--border);
+  flex: 1; min-height: 0; position: relative; border: 1px solid var(--border);
   border-radius: var(--radius-lg); background: var(--surface);
 }
 .pipeline-canvas__loading, .pipeline-canvas__no-space { color: var(--muted); }
@@ -1097,30 +1240,30 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 
 /* Pipeline canvas editor (pipeline-canvas-edit) — palette, stage panel, issues drawer, dirty guards. */
 .stage-node--issue-error { border-color: var(--danger-fg); box-shadow: 0 0 0 2px var(--danger-fg); }
-.stage-node--issue-warning { border-color: var(--warning-fg, #b45309); box-shadow: 0 0 0 2px var(--warning-fg, #b45309); }
+.stage-node--issue-warning { border-color: var(--warn-fg); box-shadow: 0 0 0 2px var(--warn-fg); }
 .stage-node__issue-badge {
   position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;
   color: #fff;
 }
 .stage-node__issue-badge--error { background: var(--danger-fg); }
-.stage-node__issue-badge--warning { background: var(--warning-fg, #b45309); }
+.stage-node__issue-badge--warning { background: var(--warn-fg); }
 
 .pipeline-canvas__dirty-chip {
-  font-size: var(--text-xs); font-weight: 600; color: var(--warning-fg, #b45309);
+  font-size: var(--text-xs); font-weight: 600; color: var(--warn-fg);
   background: var(--surface-muted); border-radius: var(--radius-pill); padding: 2px var(--space-2);
 }
 .pipeline-canvas__description-input {
   flex: 1; min-width: 160px; font-size: var(--text-sm); padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
 }
 .pipeline-canvas__save-message { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
 .pipeline-canvas__save-message--error { color: var(--danger-fg); }
-.pipeline-canvas__save-message--warning { color: var(--warning-fg, #b45309); }
+.pipeline-canvas__save-message--warning { color: var(--warn-fg); }
 .pipeline-canvas__save-message--success { color: var(--accent); }
 .pipeline-canvas__confirm {
   display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3);
-  border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-muted);
+  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-muted);
 }
 .pipeline-canvas__dialog-overlay {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); display: flex;
@@ -1135,7 +1278,7 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .pipeline-canvas__toast {
   position: absolute; top: var(--space-3); left: 50%; transform: translateX(-50%);
   background: var(--danger-fg); color: #fff; padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 600; z-index: 10;
+  border-radius: var(--radius); font-size: var(--text-sm); font-weight: 600; z-index: 10;
 }
 .pipeline-canvas__body { display: flex; gap: var(--space-4); flex: 1; min-height: 0; }
 .pipeline-canvas__body .pipeline-canvas__flow { flex: 1; }
@@ -1149,7 +1292,7 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .palette-panel__loading, .palette-panel__empty { color: var(--muted); font-size: var(--text-sm); }
 .palette-panel__list { display: flex; flex-direction: column; gap: var(--space-2); }
 .palette-card {
-  border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: var(--space-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius); padding: var(--space-2);
   cursor: grab; font-size: var(--text-sm); display: flex; flex-direction: column; gap: 2px;
 }
 .palette-card--disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1166,19 +1309,49 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .stage-panel__close { background: none; border: none; cursor: pointer; font-size: var(--text-sm); }
 .stage-panel__field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
 .stage-panel__field--checkbox { flex-direction: row; align-items: center; }
-.stage-panel__field--issue-error { outline: 2px solid var(--danger-fg); border-radius: var(--radius-md); padding: var(--space-1); }
-.stage-panel__field--issue-warning { outline: 2px solid var(--warning-fg, #b45309); border-radius: var(--radius-md); padding: var(--space-1); }
-.stage-panel__json { font-size: var(--text-xs); background: var(--surface-muted); padding: var(--space-2); border-radius: var(--radius-md); overflow-x: auto; }
+.stage-panel__field--issue-error { outline: 2px solid var(--danger-fg); border-radius: var(--radius); padding: var(--space-1); }
+.stage-panel__field--issue-warning { outline: 2px solid var(--warn-fg); border-radius: var(--radius); padding: var(--space-1); }
+.stage-panel__json { font-size: var(--text-xs); background: var(--surface-muted); padding: var(--space-2); border-radius: var(--radius); overflow-x: auto; }
+
+/* The flow and its issues drawer share a vertical column; the drawer is a
+   bottom panel with its own scroll so it stays on-screen (pipelines-ui spec). */
+.pipeline-canvas__flow-column { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+
+/* Always-visible validation result chip beside the Validate/Save controls. */
+.pipeline-canvas__validation {
+  font-size: var(--text-xs); font-weight: 700; border-radius: var(--radius-pill);
+  padding: 2px var(--space-3); white-space: nowrap;
+}
+.pipeline-canvas__validation--clean { color: var(--success-fg); background: var(--success-bg); }
+.pipeline-canvas__validation--warning { color: var(--warn-fg); background: var(--warn-bg); }
+.pipeline-canvas__validation--error { color: var(--danger-fg); background: var(--danger-bg); }
 
 .issues-drawer {
+  flex-shrink: 0; max-height: 32%; overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); background: var(--surface);
 }
-.issues-drawer__title { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.issues-drawer__header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.issues-drawer__dismiss { padding: 0 var(--space-2); box-shadow: none; font-size: var(--text-sm); }
+.issues-drawer__title { margin: 0; font-size: var(--text-sm); }
 .issues-drawer__list { display: flex; flex-direction: column; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .issues-drawer__item { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
 .issues-drawer__severity { font-weight: 700; text-transform: uppercase; font-size: var(--text-xs); }
 .issues-drawer__item--error .issues-drawer__severity { color: var(--danger-fg); }
-.issues-drawer__item--warning .issues-drawer__severity { color: var(--warning-fg, #b45309); }
+.issues-drawer__item--warning .issues-drawer__severity { color: var(--warn-fg); }
 .issues-drawer__message { flex: 1; }
 .issues-drawer__select { color: var(--accent); background: none; border: none; cursor: pointer; font-weight: 600; }
 .issues-drawer__path { color: var(--meta); font-size: var(--text-xs); }
+
+/* React Flow controls (pipelines-ui spec: canvas controls legible + unbranded).
+   RF ships its own white-background control CSS, so icons are illegible against
+   it in dark theme. Override with tokens after the RF stylesheet import (which
+   rides the canvas chunk) so both schemes get legible icons and a visible hover.
+   The attribution is hidden via proOptions; this display:none is belt-and-braces. */
+.react-flow__controls { box-shadow: var(--shadow); border-radius: var(--radius); overflow: hidden; }
+.react-flow__controls-button {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  fill: var(--fg-2); color: var(--fg-2);
+}
+.react-flow__controls-button:hover { background: var(--surface-warm); }
+.react-flow__controls-button svg { fill: currentColor; }
+.react-flow__attribution { display: none; }

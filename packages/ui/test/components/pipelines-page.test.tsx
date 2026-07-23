@@ -74,6 +74,12 @@ function stageControl(container: HTMLElement, testid: string, pipeline: string, 
   ) ?? null;
 }
 
+/** Expands a pipeline's collapsed-by-default Configure disclosure so its per-stage/per-role controls render. */
+async function expandConfig(container: HTMLElement, pipeline: string): Promise<void> {
+  const section = stageSection(container, pipeline);
+  await clickAndFlush(section.querySelector('[data-testid="pipeline-configure"]'));
+}
+
 describe('PipelinesPage', () => {
   let container: HTMLElement;
 
@@ -143,7 +149,9 @@ describe('PipelinesPage', () => {
     await changeValue(autopilotRow.querySelector('select'), 'off');
     expect(client.putKey).toHaveBeenCalledWith('autopilot.gates', { scope: 'project', value: 'off' }, 'project:proj_x');
 
-    // 2) the propose stage gate → on (a per-stage family instance).
+    // 2) the propose stage gate → on (a per-stage family instance), reached by
+    // expanding the pipeline's Configure disclosure first.
+    await expandConfig(container, 'small-feature');
     const gate = stageControl(container, 'stage-gate', 'small-feature', 'propose');
     await changeValue(gate!.querySelector('[data-testid="stage-gate-select"]'), 'on');
     expect(client.putKey).toHaveBeenCalledWith(
@@ -157,6 +165,7 @@ describe('PipelinesPage', () => {
 
   it('renders a per-stage override with its scope-qualified source and inherits via delete', async () => {
     await mount(container);
+    await expandConfig(container, 'small-feature');
     const model = stageControl(container, 'stage-model', 'small-feature', 'implement')!;
     // Effective model came from a project-scope instance → override source badge.
     expect((model.querySelector('[data-testid="stage-model-input"]') as HTMLInputElement).value).toBe('opus-4');
@@ -175,6 +184,7 @@ describe('PipelinesPage', () => {
 
   it('renders every stage gate as an ordinary control — no vet lock remains', async () => {
     await mount(container);
+    await expandConfig(container, 'small-feature');
     const gate = stageControl(container, 'stage-gate', 'small-feature', 'gate-review')!;
     // The vet type is retired: the reviewer stage's gate is an ordinary
     // configurable control, not a locked always-pausing badge.
@@ -223,9 +233,36 @@ describe('PipelinesPage', () => {
     expect(client.listPipelines).not.toHaveBeenCalled();
   });
 
+  it('offers exactly one creation entry (New pipeline) besides Import — no scaffold-to-disk dialog', async () => {
+    await mount(container);
+    // The single creation entry is the canvas-first "New pipeline"; the old
+    // scaffold-to-disk init entry is gone.
+    expect(container.querySelector('[data-testid="pipeline-new"]')!.textContent).toContain('New pipeline');
+    expect(container.querySelector('[data-testid="pipeline-init-name"]')).toBeNull();
+    // Opening it starts the name-first canvas assembly flow.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-new"]'));
+    expect(container.querySelector('[data-testid="pipeline-assemble-name"]')).not.toBeNull();
+  });
+
+  it('collapses per-pipeline configuration behind the Configure disclosure until expanded', async () => {
+    await mount(container);
+    const section = stageSection(container, 'small-feature');
+    // The scannable summary is always present.
+    expect(section.querySelector('[data-testid="pipeline-lane"]')).not.toBeNull();
+    // Config controls are hidden until the disclosure is expanded.
+    expect(section.querySelector('[data-testid="pipeline-config"]')).toBeNull();
+    expect(section.querySelector('[data-testid="stage-gate-select"]')).toBeNull();
+    const toggle = section.querySelector('[data-testid="pipeline-configure"]')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await expandConfig(container, 'small-feature');
+    const expanded = stageSection(container, 'small-feature');
+    expect(expanded.querySelector('[data-testid="pipeline-config"]')).not.toBeNull();
+    expect(expanded.querySelector('[data-testid="stage-gate-select"]')).not.toBeNull();
+  });
+
   it('rejects a malformed name and, once valid, navigates to the graph route in edit mode (pipeline-canvas-edit)', async () => {
     await mount(container);
-    await clickAndFlush(container.querySelector('[data-testid="pipeline-assemble"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-new"]'));
     const nameInput = container.querySelector('[data-testid="pipeline-assemble-name"]') as HTMLInputElement;
 
     await act(async () => {
@@ -287,6 +324,15 @@ describe('Pipelines nav entry (Layout)', () => {
     expect(nav).not.toBeNull();
     expect(nav!.getAttribute('href')).toBe('/p/proj_x/pipelines');
     expect(nav!.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('locks the content area to the viewport on a pipeline canvas route, but not on the list route', async () => {
+    await mountLayout('/p/proj_x/pipelines/small-feature');
+    expect(container.querySelector('main')!.classList.contains('app-content--canvas')).toBe(true);
+
+    render(null, container);
+    await mountLayout('/p/proj_x/pipelines');
+    expect(container.querySelector('main')!.classList.contains('app-content--canvas')).toBe(false);
   });
 
   it('omits the Pipelines entry only when no space is resolved AND none was ever visited', async () => {

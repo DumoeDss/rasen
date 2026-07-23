@@ -9,6 +9,7 @@ import type {
 } from '../api/types.js';
 import { groupArchivedTasks, tasksForMember, type ArchivedTask } from '../board/columns.js';
 import { MemberChips } from './MemberChips.js';
+import { PageHeader } from './ui/PageHeader.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
 
 /**
@@ -146,20 +147,25 @@ export function ArchivePage() {
 
   return (
     <div class="archive-page" data-testid="archive-page">
-      <div class="archive-page__toolbar">
-        <input
-          type="search"
-          class="archive-page__search"
-          placeholder="Search by name…"
-          aria-label="Search archived Tasks by name"
-          data-testid="archive-search"
-          value={query}
-          onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-        />
-        <button type="button" onClick={refresh}>
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Archive"
+        actions={
+          <>
+            <input
+              type="search"
+              class="archive-page__search"
+              placeholder="Search by name…"
+              aria-label="Search archived Tasks by name"
+              data-testid="archive-search"
+              value={query}
+              onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+            />
+            <button type="button" class="btn--ghost" onClick={refresh}>
+              Refresh
+            </button>
+          </>
+        }
+      />
       {space?.type === 'store' && (
         <MemberChips members={storeMembers} selected={selectedMember} onSelect={setSelectedMember} />
       )}

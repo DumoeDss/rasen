@@ -476,7 +476,10 @@ describe('WorkflowsPage per-space enablement (space-workflow-enablement)', () =>
 
     const planBuildCard = container.querySelector('[data-id="plan-build"]')!;
     const toggle = planBuildCard.querySelector('[data-testid="workflow-enablement-toggle"]')!;
-    expect(toggle.textContent).toContain('Enable here');
+    // The enablement control is a switch reflecting the enabled state.
+    expect(toggle.getAttribute('role')).toBe('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(container.textContent).not.toContain('Disable here');
 
     await clickAndFlush(toggle);
 
@@ -486,7 +489,7 @@ describe('WorkflowsPage per-space enablement (space-workflow-enablement)', () =>
       id: 'plan-build',
     });
     const updatedCard = container.querySelector('[data-id="plan-build"]')!;
-    expect(updatedCard.querySelector('[data-testid="workflow-enablement-toggle"]')!.textContent).toContain('Disable here');
+    expect(updatedCard.querySelector('[data-testid="workflow-enablement-toggle"]')!.getAttribute('aria-checked')).toBe('true');
   });
 
   it('shows the override banner with a reset that takes effect only after explicit confirmation', async () => {
@@ -509,14 +512,18 @@ describe('WorkflowsPage per-space enablement (space-workflow-enablement)', () =>
     expect(container.querySelector('[data-testid="workflows-enablement-mode"]')!.textContent).toContain('follows the user-wide profile');
   });
 
-  it('a closure-required unit shows no disable toggle', async () => {
+  it('a closure-required unit shows a visibly inert (disabled) switch with the required reason', async () => {
     (client.getWorkflowEnablement as any).mockResolvedValue(enablementProfileFixture);
     await mount(container);
     await pickSpace();
 
     const deepResearchCard = container.querySelector('[data-id="deep-research"]')!;
     expect(deepResearchCard.querySelector('[data-testid="workflow-enablement-required"]')).not.toBeNull();
-    expect(deepResearchCard.querySelector('[data-testid="workflow-enablement-toggle"]')).toBeNull();
+    // The switch-position affordance is present but inert — no toggle possible.
+    const sw = deepResearchCard.querySelector('[data-testid="workflow-enablement-toggle"]') as HTMLButtonElement;
+    expect(sw).not.toBeNull();
+    expect(sw.getAttribute('role')).toBe('switch');
+    expect(sw.disabled).toBe(true);
   });
 });
 

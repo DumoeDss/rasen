@@ -21,6 +21,7 @@ import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
 import { MemberChips } from './MemberChips.js';
 import { WorktreePanel } from './WorktreePanel.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
+import { PageHeader } from './ui/PageHeader.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
 
 /**
@@ -237,16 +238,26 @@ export function BoardPage() {
 
   if (!changes || (changes.length === 0 && loadErrors.length === 0)) {
     return (
-      <div class="board-page__empty">
-        {worktreePanel}
-        <p>No active changes.</p>
-        <div class="board-page__toolbar">
-          <button type="button" onClick={() => setDialogOpen(true)}>
-            New change
-          </button>
-          <button type="button" onClick={refresh}>
-            Refresh
-          </button>
+      <div class="board-page">
+        {/* The header stays outside `__empty` so it keeps the shared header
+            contract (right-aligned actions, normal tone) instead of inheriting
+            the empty state's muted, centered, padded-down presentation (m5). */}
+        <PageHeader
+          title="Board"
+          actions={
+            <>
+              <button type="button" class="btn--primary" onClick={() => setDialogOpen(true)}>
+                New change
+              </button>
+              <button type="button" class="btn--ghost" onClick={refresh}>
+                Refresh
+              </button>
+            </>
+          }
+        />
+        <div class="board-page__empty">
+          {worktreePanel}
+          <p>No active changes.</p>
         </div>
         {dialogOpen && (
           <NewChangeDialog space={selector} onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
@@ -283,14 +294,19 @@ export function BoardPage() {
       aria-busy={refreshing}
       data-refreshing={refreshing ? 'true' : undefined}
     >
-      <div class="board-page__toolbar">
-        <button type="button" onClick={() => setDialogOpen(true)}>
-          New change
-        </button>
-        <button type="button" onClick={refresh}>
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Board"
+        actions={
+          <>
+            <button type="button" class="btn--primary" onClick={() => setDialogOpen(true)}>
+              New change
+            </button>
+            <button type="button" class="btn--ghost" onClick={refresh}>
+              Refresh
+            </button>
+          </>
+        }
+      />
       {space?.type === 'store' && (
         <MemberChips members={storeMembers} selected={selectedMember} onSelect={setSelectedMember} />
       )}

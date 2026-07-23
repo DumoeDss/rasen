@@ -3,6 +3,8 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import { LocalPathPicker } from './LocalPathPicker.js';
+import { PageHeader } from './ui/PageHeader.js';
+import { Switch } from './ui/Switch.js';
 import type {
   ProjectSpaceEntry,
   WorkflowDetailResponse,
@@ -99,21 +101,25 @@ export function WorkflowsPage() {
 
   return (
     <div class="workflows-page" data-testid="workflows-page">
-      <div class="workflows-page__toolbar">
-        <h2 class="workflows-page__title">Workflows</h2>
-        <div class="workflows-page__actions">
-          <button type="button" data-testid="workflow-new" onClick={() => setDialog({ kind: 'init' })}>
-            New draft
-          </button>
-          <button type="button" data-testid="workflow-import" onClick={() => setDialog({ kind: 'import' })}>
-            Import…
-          </button>
-          <button type="button" data-testid="workflow-validate-standalone" onClick={() => setDialog({ kind: 'validate' })}>
-            Validate…
-          </button>
-          <button type="button" data-testid="workflow-refresh" onClick={refresh}>Refresh</button>
-        </div>
-      </div>
+      <PageHeader
+        title="Workflows"
+        actions={
+          <>
+            <button type="button" class="btn--primary" data-testid="workflow-new" onClick={() => setDialog({ kind: 'init' })}>
+              New draft
+            </button>
+            <button type="button" data-testid="workflow-import" onClick={() => setDialog({ kind: 'import' })}>
+              Import…
+            </button>
+            <button type="button" data-testid="workflow-validate-standalone" onClick={() => setDialog({ kind: 'validate' })}>
+              Validate…
+            </button>
+            <button type="button" class="btn--ghost" data-testid="workflow-refresh" onClick={refresh}>
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       <EnablementControls>
         {(enablement) => (
@@ -479,15 +485,20 @@ function WorkflowCard({
   const unit = enablement?.unitsById.get(entry.id);
   return (
     <div class="workflow-card" data-testid="workflow-card" data-id={entry.id} data-source={entry.source}>
-      <button
-        type="button"
-        class="workflow-card__open"
-        data-testid="workflow-open"
-        onClick={() => onOpen(entry.id)}
-      >
-        <span class="workflow-card__name">{entry.title ?? entry.skillName}</span>
-        <span class="workflow-card__id">{entry.id}</span>
-      </button>
+      <div class="workflow-card__header">
+        <button
+          type="button"
+          class="workflow-card__open"
+          data-testid="workflow-open"
+          onClick={() => onOpen(entry.id)}
+        >
+          <span class="workflow-card__name">{entry.title ?? entry.skillName}</span>
+          <span class="workflow-card__id">{entry.id}</span>
+        </button>
+        {/* Per-space enablement is a corner switch (workflows-ui spec), shown
+            only when a space is picked and this unit is toggleable. */}
+        {unit && <WorkflowEnablementSwitch unit={unit} enablement={enablement!} />}
+      </div>
       <div class="workflow-card__meta">
         <span class="workflow-card__source">{isBuiltIn ? 'built-in' : 'user'}</span>
         <span class="workflow-card__digest" title={entry.digest}>{abbreviate(entry.digest)}</span>
@@ -499,59 +510,70 @@ function WorkflowCard({
             locked
           </span>
         )}
+        {unit && (
+          <span class="workflow-card__state" data-testid="workflow-enablement-state">
+            {unit.enabled ? 'Enabled' : 'Disabled'}
+            {unit.installed ? ' · installed' : ''}
+          </span>
+        )}
+        {unit?.requiredByClosure && (
+          <span class="workflow-card__enablement-required" data-testid="workflow-enablement-required">
+            Required by an enabled workflow
+          </span>
+        )}
       </div>
       {/* Category sections mix provenance, so export / delete are gated per card
           from the entry's source: only user-library cards expose them. Built-ins
-          are pre-validated and locked; validation lives in the toolbar dialog. */}
+          are pre-validated and locked; validation lives in the toolbar dialog.
+          Pinned to a consistent footer position via margin-top:auto. */}
       {!isBuiltIn && (
         <div class="workflow-card__actions">
-          <button type="button" data-testid="workflow-export" onClick={() => onExport(entry.id)}>
+          <button type="button" class="btn--ghost" data-testid="workflow-export" onClick={() => onExport(entry.id)}>
             Export
           </button>
-          <button type="button" data-testid="workflow-delete" onClick={() => onDelete(entry.id)}>
+          <button type="button" class="btn--ghost" data-testid="workflow-delete" onClick={() => onDelete(entry.id)}>
             Delete
           </button>
         </div>
       )}
-      {unit && <WorkflowEnablementBadge unit={unit} enablement={enablement!} />}
     </div>
   );
 }
 
 /**
- * The per-card enablement affordance for the picked space (workflows-ui
- * spec): shows enabled/installed state and a toggle, EXCEPT for a unit
- * enabled only because an enabled workflow's dependency closure requires it
- * — that unit shows "required by an enabled workflow" instead, since a
- * disable there would be immediately undone by the next apply.
+ * The per-card enablement affordance for the picked space (workflows-ui spec):
+ * a corner switch reflecting the enabled state. A unit enabled only because an
+ * enabled workflow's dependency closure requires it renders the switch visibly
+ * inert (disabled) with the reason available — a disable there would be
+ * immediately undone by the next apply (the existing no-toggle contract).
  */
-function WorkflowEnablementBadge({
+function WorkflowEnablementSwitch({
   unit,
   enablement,
 }: {
   unit: WorkflowEnablementUnit;
   enablement: EnablementContext;
 }) {
+  if (unit.requiredByClosure) {
+    return (
+      <Switch
+        checked={unit.enabled}
+        disabled
+        label={`${unit.id} enablement`}
+        title="Required by an enabled workflow"
+        testid="workflow-enablement-toggle"
+        onToggle={() => {}}
+      />
+    );
+  }
   return (
-    <div class="workflow-card__enablement" data-testid="workflow-enablement">
-      <span data-testid="workflow-enablement-state">
-        {unit.enabled ? 'Enabled' : 'Disabled'} in this space{unit.installed ? ' (installed)' : ''}
-      </span>
-      {unit.requiredByClosure ? (
-        <span class="workflow-card__enablement-required" data-testid="workflow-enablement-required">
-          Required by an enabled workflow
-        </span>
-      ) : (
-        <button
-          type="button"
-          data-testid="workflow-enablement-toggle"
-          disabled={enablement.mutating}
-          onClick={() => enablement.onToggle(unit.id, unit.enabled)}
-        >
-          {unit.enabled ? 'Disable here' : 'Enable here'}
-        </button>
-      )}
-    </div>
+    <Switch
+      checked={unit.enabled}
+      disabled={enablement.mutating}
+      label={`${unit.enabled ? 'Disable' : 'Enable'} ${unit.id} in this space`}
+      testid="workflow-enablement-toggle"
+      onToggle={() => enablement.onToggle(unit.id, unit.enabled)}
+    />
   );
 }
 
@@ -610,7 +632,7 @@ function WorkflowDetailPanel({ id, onClose }: { id: string; onClose: () => void 
       <div class="workflow-detail" role="dialog" aria-label={`Workflow ${id}`}>
         <div class="workflow-detail__header">
           <h3>{id}</h3>
-          <button type="button" data-testid="workflow-detail-close" onClick={onClose}>Close</button>
+          <button type="button" class="btn--ghost" data-testid="workflow-detail-close" onClick={onClose}>Close</button>
         </div>
         {error && <p class="workflow-detail__error" role="alert">{error}</p>}
         {!detail && !error && <p>Loading…</p>}
@@ -695,7 +717,7 @@ function DialogShell({
         <h3 class="workflow-dialog__title">{title}</h3>
         {children}
         <div class="workflow-dialog__dismiss">
-          <button type="button" data-testid="workflow-dialog-close" onClick={onClose}>Close</button>
+          <button type="button" class="btn--ghost" data-testid="workflow-dialog-close" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -779,7 +801,7 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           )}
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" data-testid="workflow-init-submit" disabled={submitting || !id || !parentDir}>
+            <button type="submit" class="btn--primary" data-testid="workflow-init-submit" disabled={submitting || !id || !parentDir}>
               {submitting ? 'Creating…' : 'Create draft'}
             </button>
           </div>
@@ -850,7 +872,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           </p>
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" data-testid="workflow-import-submit" disabled={submitting || !source}>
+            <button type="submit" class="btn--primary" data-testid="workflow-import-submit" disabled={submitting || !source}>
               {submitting ? 'Importing…' : 'Import'}
             </button>
           </div>
@@ -901,7 +923,7 @@ function ValidateDialog({ prefill, onClose }: { prefill?: string; onClose: () =>
         </label>
         {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
         <div class="workflow-dialog__actions">
-          <button type="submit" data-testid="workflow-validate-submit" disabled={submitting}>
+          <button type="submit" class="btn--primary" data-testid="workflow-validate-submit" disabled={submitting}>
             {submitting ? 'Validating…' : 'Validate'}
           </button>
         </div>
@@ -1003,7 +1025,7 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
           )}
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" data-testid="workflow-export-submit" disabled={submitting || !dir || !filename}>
+            <button type="submit" class="btn--primary" data-testid="workflow-export-submit" disabled={submitting || !dir || !filename}>
               {submitting ? 'Exporting…' : 'Export'}
             </button>
             {refused && (
@@ -1057,7 +1079,7 @@ function DeleteDialog({ id, onClose, onDone }: { id: string; onClose: () => void
           <p>Delete workflow <strong>{id}</strong>? This removes it from the user library.</p>
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="button" data-testid="workflow-delete-confirm" disabled={submitting} onClick={() => run(false)}>
+            <button type="button" class="btn--danger" data-testid="workflow-delete-confirm" disabled={submitting} onClick={() => run(false)}>
               {submitting ? 'Deleting…' : 'Delete'}
             </button>
           </div>
@@ -1077,6 +1099,7 @@ function DeleteDialog({ id, onClose, onDone }: { id: string; onClose: () => void
               <div class="workflow-dialog__actions">
                 <button
                   type="button"
+                  class="btn--danger"
                   data-testid="workflow-delete-force-confirm"
                   disabled={submitting}
                   onClick={() => run(true)}

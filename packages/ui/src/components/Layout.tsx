@@ -3,7 +3,7 @@ import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
 import { RunningSessionsMenu } from './RunningSessionsMenu.js';
 import { ThemeToggle } from './ThemeToggle.js';
-import { parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
+import { isPipelineCanvasPath, parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces } from '../store/recent-spaces.js';
 
 /**
@@ -37,6 +37,10 @@ export function Layout({ children }: { children: ComponentChildren }) {
   const space = routeSpace ?? parseSelector(getRecentSpaces()[0] ?? '');
   const section = spaceSection(path);
   const onWorkflows = path.startsWith('/workflows');
+  // The pipeline canvas route is viewport-locked (pipelines-ui spec): the shell
+  // fixes the content height and lets the editor's panels scroll internally.
+  // Every other route keeps the normal document-scrolling content area.
+  const onCanvas = isPipelineCanvasPath(path);
 
   return (
     <div class="app-shell">
@@ -75,7 +79,7 @@ export function Layout({ children }: { children: ComponentChildren }) {
           <SpaceSwitcher />
         </div>
       </header>
-      <main class="app-content">{children}</main>
+      <main class={`app-content${onCanvas ? ' app-content--canvas' : ''}`}>{children}</main>
       <ThemeToggle />
     </div>
   );

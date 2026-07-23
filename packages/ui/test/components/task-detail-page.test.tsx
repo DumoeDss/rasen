@@ -101,15 +101,51 @@ describe('TaskDetailPage', () => {
     expect(client.listSessions).toHaveBeenCalledWith('project:proj_x');
   });
 
-  it('renders a single-item Task as its change checklist', async () => {
+  it('renders a single-item Task as a checklist card: progress summary, open items listed, completed collapsed', async () => {
     vi.mocked(client.getTaskDetail).mockResolvedValue(singleTaskDetailFixture);
     await mountAt(container, '/p/proj_x/task/fix-login');
 
     const checklist = container.querySelector('[data-testid="task-detail-checklist"]');
     expect(checklist).not.toBeNull();
-    expect(checklist!.querySelectorAll('li')).toHaveLength(2);
+    // Progress summary shows completed/total (1 of 2 done).
+    expect(container.querySelector('[data-testid="task-checklist-count"]')!.textContent).toBe('1/2');
+    // The open item is always listed; the completed one is behind the disclosure.
+    const openList = container.querySelector('[data-testid="task-checklist-open"]')!;
+    expect(openList.querySelectorAll('li')).toHaveLength(1);
+    expect(openList.textContent).toContain('Patch the redirect');
+    expect(container.querySelector('[data-testid="task-checklist-completed"]')).toBeNull();
+    expect(container.textContent).not.toContain('Reproduce the failure');
     // No portfolio "N/M changes" header for a single Task.
     expect(container.querySelector('[data-testid="task-detail-progress"]')).toBeNull();
+
+    // Expanding the disclosure reveals the completed item.
+    const toggle = container.querySelector('[data-testid="task-checklist-toggle"]') as HTMLButtonElement;
+    expect(toggle.textContent).toContain('Show 1 completed');
+    await act(async () => {
+      toggle.click();
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="task-checklist-completed"]')).not.toBeNull();
+    expect(container.textContent).toContain('Reproduce the failure');
+  });
+
+  it('renders backtick spans in task text as <code>, not literal backticks', async () => {
+    vi.mocked(client.getTaskDetail).mockResolvedValue({
+      ...singleTaskDetailFixture,
+      children: [
+        {
+          ...singleTaskDetailFixture.children[0]!,
+          taskProgress: { total: 1, completed: 0 },
+          tasks: [{ text: 'Extend `parseCodexRolloutFile` to capture usage', done: false }],
+        },
+      ],
+    });
+    await mountAt(container, '/p/proj_x/task/fix-login');
+
+    const code = container.querySelector('[data-testid="task-checklist-open"] code');
+    expect(code).not.toBeNull();
+    expect(code!.textContent).toBe('parseCodexRolloutFile');
+    expect(container.querySelector('[data-testid="task-checklist-open"]')!.textContent).not.toContain('`');
   });
 
   it('shows a not-found state for an unknown Task id', async () => {
