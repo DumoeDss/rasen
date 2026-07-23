@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+﻿import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -73,13 +73,13 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getVerifyEnhancedSkillTemplate: 'a4df1c8928150a14957b38352b3c1fab89a618d8a97a88dae5ba77d4e009a289',
   getShipCommandSkillTemplate: '67374b0b2b697501cd42789d024241a4fae0dae793711703a998c771f2b7ffc8',
   getRetroCommandSkillTemplate: '53eacb51d137ea9c79503ab51864c558cd7d040abd33e63bb04de8329883b170',
-  getAutoCommandSkillTemplate: '9edf0c841e341ca86a46e85c6492bd1a60a753339446be89527c4e547a554d32',
-  getReviewCycleSkillTemplate: 'cc5e9b3163e02528bad56928dd475e2a5c76bedcac988d822a86cfb0feddbee5',
+  getAutoCommandSkillTemplate: 'c2d6ecd7a729eb779961ace97f8f9d9dab4cc609e902f873f65c4d6db57e5d03',
+  getReviewCycleSkillTemplate: '3abd81d3c2e80ae498c1b4ed48923f4e28e263f463331fe50c936a2c50ee10d9',
   getHandoffSkillTemplate: '2dd5358742c4771dbd5eca94526effe5a0f1868d8294e02cea08a8529cf4b7a9',
   getGoalPlanSkillTemplate: 'ef4208ba6a42fee7fd0139d3e26768a988155cc73d82e611e2877e7ef2cda898',
   getGoalIterateSkillTemplate: '4e4c01df15fbc865ea6e8ac3833846d677660bc0821583b302ebe6db69a0417d',
   getGoalReportSkillTemplate: 'a48c1b6c75c5734e051a4aa707ee803c0af73fd2b74b18fb7212e531568a4bed',
-  getGoalCommandSkillTemplate: '1ae983175211000367a07254550e3d02984ae3b0a0a9fd34743047cc34bc8fe8',
+  getGoalCommandSkillTemplate: '15a8a18d8b3cb8609fd3eeea7823af1a4669a9400cf6db66fff90a543e4db40b',
   getHelpSkillTemplate: 'f45bbe71a1a337e3155d30950cc0f8ae77c6cf5c078aa6accc847220c91d0f2e',
   // Expert skill templates (inlined; see expert-template-inlining)
   getBenchmarkSkillTemplate: 'e532d9adbae401c36d797101b3220fa41a7c89788368e2022734c64219757008',
@@ -121,13 +121,13 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-verify-enhanced': 'd5e3f30b5f03af6979ecb4d3ee6693984135aacac63d218eff2618b8db692d38',
   'rasen-ship': 'cc8e158cc3d3657fe0d531fd74129ce621e59ede1326cffb3e2a3a63e86d5b10',
   'rasen-retro': '458aa2ff649293a5e4c5b711e538d16b02e494e909ff6408ff99c28bb987ff73',
-  'rasen-auto': '29bf6f5a0d2beb5194d747bcd9977a87b997a030f871c22e910a8ccced300ce3',
-  'rasen-review-cycle': 'd2728519bbe5317341f19302a8e8148c193e2ae73022877ac1b4e4f1ddb54fd4',
+  'rasen-auto': 'e86b5279ec30e826de7e20378add05a9676b5636652db8ca93acd6a08c79031a',
+  'rasen-review-cycle': 'e4a46473c553b9928ad55af2d50e6bf04219f3c42cd6be69bea0c177ba5858df',
   'rasen-handoff': '6327278c9f06d21b445ffb3a1cd8868994f9d6da3ab24ed86c3c743843d7eb99',
   'rasen-goal-plan': '675ecc645213d6615d470b7c5f811ec8321012644e36e48532b63a482c6b4401',
   'rasen-goal-iterate': '36227c2d4f94be204a92edafc9638daedc28c95b7c0f644c238486b06650e9b1',
   'rasen-goal-report': 'cd60a56882984b4babed00f611793b3e1448e54a2bdb94796f8ac06c17445acc',
-  'rasen-goal': '2a41bcaa907a081b999b5a2a7e21450609be625553c321eb975f24d74fc637c8',
+  'rasen-goal': 'a682bae6b222693bf2a00c5245e246a74f5aaa3902c499eeae79fa1f14e16c6d',
   'rasen-help': 'd4741dd2c9502d7fdb972d57b8d831d99414d4c138832f763c0bac5a01b5fcd6',
   // Expert skills (inlined; see expert-template-inlining)
   'rasen-benchmark': 'e0b06186a7c28369ebec78d0b8a7b1a68c44b18b1ba06c4bf52d44c6e67bac55',
@@ -206,7 +206,7 @@ const GENERATED_SKILL_FACTORIES: Array<[string, () => SkillTemplate]> = [
 // navigator router body (a pure cross-reference map). Expert skills that
 // carry frozen `_shared.ts` dispatched-contract content (review, cso, qa,
 // qa-only, benchmark, design-review, codex, ...) are excluded from this
-// guard — their colon references live in `_shared.ts`'s `PLAN_STATUS_FOOTER`,
+// guard 鈥?their colon references live in `_shared.ts`'s `PLAN_STATUS_FOOTER`,
 // which is a non-goal (C3) of this change.
 const WORKFLOW_BODY_DIR_NAMES = new Set([
   'rasen-explore',

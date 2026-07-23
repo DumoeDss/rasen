@@ -212,11 +212,11 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     scopes: ['global'],
     type: 'number',
     validate: (value) =>
-      typeof value === 'number' && Number.isInteger(value) && value > 0
+      typeof value === 'number' && Number.isInteger(value) && value >= 0
         ? null
-        : 'must be a positive integer (context tokens)',
-    defaultValue: 100000,
-    description: 'Context size (tokens) below which `rasen agent wait` stands down instead of keeping the worker warm',
+        : 'must be a non-negative integer (context tokens; 0 disables the floor)',
+    defaultValue: 0,
+    description: 'Context size (tokens) below which `rasen agent wait` stands down instead of keeping the worker warm (0 = floor disabled, the default)',
     group: 'Pipelines',
   },
   // ---- project scope ----

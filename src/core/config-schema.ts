@@ -68,7 +68,7 @@ export const GlobalConfigSchema = z
             codex: z.boolean().optional(),
           })
           .optional(),
-        contextFloor: z.number().int().positive().optional(),
+        contextFloor: z.number().int().nonnegative().optional(),
       })
       .optional(),
     models: z
