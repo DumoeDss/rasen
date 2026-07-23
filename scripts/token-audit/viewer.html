@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rasen token audit viewer</title>
+<style>
+  /* Palette: dataviz reference instance (validated). Roles, not raw hex, in the body. */
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --ring: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --violet: #4a3aa7;
+    --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --ring: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --violet: #9085e9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --violet: #9085e9;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--page); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px; max-width: 1500px; margin: 0 auto;
+  }
+  h1 { font-size: 18px; font-weight: 650; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+  header .spacer { flex: 1; }
+  .btn {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+    border-radius: 7px; padding: 5px 12px; font: inherit; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--baseline); }
+  #drop {
+    border: 1.5px dashed var(--baseline); border-radius: 12px; background: var(--surface);
+    padding: 48px 24px; text-align: center; color: var(--ink-2); cursor: pointer; margin-bottom: 16px;
+  }
+  #drop.hover { border-color: var(--s1); color: var(--ink); }
+  #drop code { color: var(--ink); }
+  .card {
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .meta { color: var(--ink-2); font-size: 13px; margin-bottom: 16px; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 12px 14px; }
+  .tile .v { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; }
+  .tile .l { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .tile .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); align-items: center; }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--grid); border-radius: 8px; margin-top: 10px; position: relative; }
+  svg { display: block; }
+  svg text { fill: var(--muted); font: 11px system-ui, sans-serif; }
+  svg .rowlabel { fill: var(--ink-2); font-weight: 500; }
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--baseline);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 4px 16px rgba(0,0,0,.18); max-width: 340px;
+  }
+  #tooltip .t2 { color: var(--ink-2); }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: right; padding: 5px 9px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--ink-2); font-weight: 600; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+  th:first-child, td:first-child, th.left, td.left { text-align: left; }
+  td { font-variant-numeric: tabular-nums; }
+  tr:hover td { background: color-mix(in srgb, var(--s1) 6%, transparent); }
+  .cause { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #fff; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .hidden { display: none; }
+  footer { color: var(--muted); font-size: 11px; margin: 8px 0 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>rasen token audit</h1>
+  <span id="loadedName" class="meta" style="margin:0"></span>
+  <span class="spacer"></span>
+  <button class="btn" id="pickBtn">Load JSON…</button>
+  <button class="btn" id="themeBtn" title="toggle theme">◐</button>
+  <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
+</header>
+
+<div id="drop">Drop a <code>session-audit-*.json</code> here (or click) —
+  generated by <code>node scripts/token-audit/audit.mjs &lt;sessionId&gt;</code></div>
+
+<div id="app" class="hidden">
+  <div class="meta" id="sessionMeta"></div>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card">
+    <h2>Billed input composition</h2>
+    <div id="composition"></div>
+  </div>
+
+  <div class="card">
+    <h2>Agent timeline <span style="font-weight:400;text-transform:none;color:var(--muted)">— rows in activation order · tick height = context size · churn events enlarged</span></h2>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="legend" id="tlLegend"></div>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn" id="zoomOut">−</button>
+      <button class="btn" id="zoomIn">+</button>
+    </div>
+    <div class="scroll" id="tlScroll"></div>
+  </div>
+
+  <div class="card">
+    <h2>Agents <span style="font-weight:400;text-transform:none;color:var(--muted)">— click a column to sort</span></h2>
+    <div class="scroll" style="max-height:480px;overflow-y:auto" id="agentTableWrap"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Churn events (cache rewrites)</h2>
+      <div class="scroll" style="max-height:420px;overflow-y:auto" id="churnTableWrap"></div>
+    </div>
+    <div class="card">
+      <h2>By model / resumes / idle gaps</h2>
+      <div id="sidePanels"></div>
+    </div>
+  </div>
+</div>
+
+<footer>rasen token-audit viewer — self-contained, loads locally, sends nothing anywhere.</footer>
+<div id="tooltip"></div>
+
+<script>
+'use strict';
+// ---------- theme ----------
+{ // ?theme=light|dark forces a mode (testing + preference)
+  const th = new URLSearchParams(location.search).get('theme');
+  if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+}
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.onclick = () => {
+  const r = document.documentElement;
+  const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  r.dataset.theme = cur === 'dark' ? 'light' : 'dark';
+  if (DATA) render(DATA); // re-render SVGs so mark colors pick up the mode
+};
+
+// ---------- load ----------
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+document.getElementById('pickBtn').onclick = () => fileInput.click();
+drop.onclick = () => fileInput.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
+drop.ondragleave = () => drop.classList.remove('hover');
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('hover'); loadFile(e.dataTransfer.files[0]); };
+fileInput.onchange = () => loadFile(fileInput.files[0]);
+
+let DATA = null;
+// When served over http(s), ?src=<url> auto-loads a JSON (file:// stays drag-drop only).
+if (location.protocol.startsWith('http')) {
+  const src = new URLSearchParams(location.search).get('src');
+  if (src) fetch(src).then((r) => r.json()).then((j) => {
+    DATA = j;
+    document.getElementById('loadedName').textContent = src;
+    document.getElementById('drop').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    render(j);
+  }).catch((e) => alert('Failed to load ' + src + ': ' + e.message));
+}
+function loadFile(f) {
+  if (!f) return;
+  f.text().then((t) => {
+    const j = JSON.parse(t);
+    if (!j.schema || !String(j.schema).startsWith('rasen-token-audit/')) {
+      alert('Not a rasen-token-audit JSON (missing schema tag).'); return;
+    }
+    DATA = j;
+    document.getElementById('loadedName').textContent = f.name;
+    document.getElementById('drop').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    render(j);
+  }).catch((e) => alert('Failed to parse: ' + e.message));
+}
+
+// ---------- helpers ----------
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+const fmtInt = (n) => n.toLocaleString('en-US');
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hhmm = (ts) => new Date(ts).toISOString().slice(11, 16);
+const hhmmss = (ts) => new Date(ts).toISOString().slice(11, 19);
+const durStr = (ms) => { const h = Math.floor(ms / 3.6e6), m = Math.round(ms % 3.6e6 / 6e4); return (h ? h + 'h ' : '') + m + 'm'; };
+
+// class -> {color-var, label}. Warm hits are deliberately recessive (the story
+// is the exceptions); status hues carry churn causes and never double as series.
+const CLASS_STYLE = {
+  'spawn':        { v: '--s1',       label: 'spawn (first request)' },
+  'hit':          { v: '--muted',    label: 'warm (cache hit)', dim: true },
+  'ttl-expiry':   { v: '--warn',     label: 'churn: TTL expiry' },
+  'rebase':       { v: '--critical', label: 'churn: rebase / injection' },
+  'context-drop': { v: '--serious',  label: 'churn: context drop / compact' },
+  'unattributed': { v: '--violet',   label: 'churn: unattributed' },
+};
+
+// ---------- render ----------
+function render(j) {
+  renderMeta(j); renderTiles(j); renderComposition(j);
+  renderTimeline(j); renderAgentTable(j); renderChurnTable(j); renderSidePanels(j);
+}
+
+function renderMeta(j) {
+  const s = j.session;
+  document.getElementById('sessionMeta').innerHTML =
+    `session <b>${esc(s.id)}</b> · ${s.start ? new Date(s.start).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '?'} · ` +
+    `duration <b>${s.durationMs ? durStr(s.durationMs) : '?'}</b> · <b>${s.agentCount}</b> agents · generated ${esc(j.generatedAt).slice(0, 16)}`;
+}
+
+function renderTiles(j) {
+  const t = j.totals, churnPct = t.billedInputEq ? (100 * 1.25 * t.churn.tokens / t.billedInputEq).toFixed(1) : '0';
+  const tiles = [
+    [fmt(t.billedInputEq), 'billed input equivalent', 'raw + w×TTL-coef + 0.1×read'],
+    [fmtInt(t.requests), 'API requests', 'deduped by message.id'],
+    [fmt(t.outputTokens), 'output tokens', ''],
+    [fmt(t.cacheRead), 'cache read', '0.1× billing'],
+    [fmt(t.cacheWrite), 'cache write', 'main 2× · subagent 1.25×'],
+    [fmt(t.churn.tokens), 'churn rewrites', `${t.churn.events} events · ≈${churnPct}% of bill`],
+    [`${t.resumes.hit} / ${t.resumes.miss}`, 'resumes HIT / MISS', `miss rewrote ${fmt(t.resumes.missRewrote)}`],
+  ];
+  document.getElementById('tiles').innerHTML = tiles.map(([v, l, sub]) =>
+    `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`).join('');
+}
+
+function renderComposition(j) {
+  const t = j.totals;
+  // Weighted (billed) composition. Write coefficient varies per agent, so derive it from the totals.
+  const read = 0.1 * t.cacheRead;
+  const raw = t.inputRaw;
+  const write = t.billedInputEq - read - raw;
+  const segs = [
+    ['cache read ×0.1', read, '--s1'],
+    ['cache write ×TTL-coef', write, '--s2'],
+    ['raw input', raw, '--s3'],
+  ];
+  const total = read + write + raw || 1;
+  const W = 1000, H = 34, gap = 2;
+  let x = 0;
+  let bars = '', labels = '';
+  for (const [name, v, cvar] of segs) {
+    const w = Math.max(0, (v / total) * W - gap);
+    bars += `<rect x="${x}" y="0" width="${w}" height="${H}" rx="4" fill="${css(cvar)}"></rect>`;
+    if (w > 130) labels += `<text x="${x + 8}" y="${H / 2 + 4}" style="fill:#fff;font-weight:600">${esc(name)} — ${fmt(v)} (${(100 * v / total).toFixed(1)}%)</text>`;
+    x += w + gap;
+  }
+  const legend = segs.map(([name, v, cvar]) =>
+    `<span><span class="sw" style="background:${css(cvar)}"></span>${esc(name)} ${fmt(v)} (${(100 * v / total).toFixed(1)}%)</span>`).join(' ');
+  document.getElementById('composition').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none">${bars}${labels}</svg>
+     <div class="legend" style="margin-top:8px">${legend}</div>`;
+}
+
+// ---------- timeline ----------
+let pxPerMin = null;
+document.getElementById('zoomIn').onclick = () => { pxPerMin *= 1.5; renderTimeline(DATA); };
+document.getElementById('zoomOut').onclick = () => { pxPerMin /= 1.5; renderTimeline(DATA); };
+
+const tlHover = { rows: [] }; // per row: sorted [{x, w, html}]
+
+function renderTimeline(j) {
+  const { columns, classes, rows } = j.requests;
+  const col = Object.fromEntries(columns.map((c, i) => [c, i]));
+  const agents = j.agents;
+  const t0 = j.session.start, t1 = j.session.end;
+  if (t0 === null || t1 === null) { document.getElementById('tlScroll').innerHTML = '<div class="meta" style="padding:12px">no timestamps in transcript</div>'; return; }
+  const durMin = Math.max(1, (t1 - t0) / 6e4);
+  if (pxPerMin === null) pxPerMin = Math.min(6, Math.max(0.6, 1400 / durMin));
+
+  const LABELW = 200, ROWH = 24, TOPH = 22, PAD = 8;
+  const plotW = Math.ceil(durMin * pxPerMin) + 20;
+  const W = LABELW + plotW + PAD, H = TOPH + agents.length * ROWH + PAD;
+  const X = (ts) => LABELW + ((ts - t0) / 6e4) * pxPerMin;
+  const maxCtx = Math.max(1, ...rows.map((r) => r[col.context]));
+
+  let svg = '';
+  // row bands + labels
+  for (let i = 0; i < agents.length; i++) {
+    const y = TOPH + i * ROWH;
+    if (i % 2 === 1) svg += `<rect x="${LABELW}" y="${y}" width="${plotW}" height="${ROWH}" fill="${css('--grid')}" opacity="0.25"></rect>`;
+    const a = agents[i];
+    svg += `<text class="rowlabel" x="${LABELW - 8}" y="${y + ROWH / 2 + 4}" text-anchor="end">${esc(a.label.slice(0, 26))}</text>`;
+    // lifespan underline
+    if (a.firstTs !== null && a.lastTs !== null)
+      svg += `<line x1="${X(a.firstTs)}" y1="${y + ROWH - 3}" x2="${X(a.lastTs)}" y2="${y + ROWH - 3}" stroke="${css('--baseline')}" stroke-width="1"></line>`;
+  }
+  // time axis: tick every N minutes so labels stay ≥90px apart
+  const stepMin = [1, 2, 5, 10, 15, 30, 60, 120, 240].find((s) => s * pxPerMin >= 90) || 480;
+  for (let m = 0; m <= durMin; m += stepMin) {
+    const x = LABELW + m * pxPerMin;
+    svg += `<line x1="${x}" y1="${TOPH}" x2="${x}" y2="${H - PAD}" stroke="${css('--grid')}" stroke-width="1"></line>`;
+    svg += `<text x="${x + 3}" y="${TOPH - 8}">${hhmm(t0 + m * 6e4)}</text>`;
+  }
+
+  // marks
+  tlHover.rows = agents.map(() => []);
+  const churnByKey = new Map(); // "agent:ts" -> event (for tooltip enrichment)
+  for (const e of j.churnEvents) churnByKey.set(e.agent + ':' + e.ts, e);
+  for (const r of rows) {
+    const ai = r[col.agent], ts = r[col.ts];
+    if (ts === null) continue;
+    const cls = classes[r[col.class]];
+    const st = CLASS_STYLE[cls] || CLASS_STYLE.unattributed;
+    const y = TOPH + ai * ROWH;
+    const x = X(ts);
+    const ctx = r[col.context];
+    const isChurn = cls !== 'hit' && cls !== 'spawn';
+    const h = Math.max(4, (ctx / maxCtx) * (ROWH - 6));
+    const w = isChurn ? Math.max(3, Math.min(12, Math.sqrt(r[col.cacheWrite] / 1000))) : cls === 'spawn' ? 3 : 1.6;
+    const op = st.dim ? 0.45 : 1;
+    svg += `<rect x="${(x - w / 2).toFixed(1)}" y="${(y + ROWH - 3 - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="1" fill="${css(st.v)}" opacity="${op}"></rect>`;
+    const ev = churnByKey.get(ai + ':' + ts);
+    tlHover.rows[ai].push({
+      x,
+      html: `<b>${esc(agents[ai].label)}</b> · ${hhmmss(ts)}<br>` +
+        `<span class="t2">${esc(st.label)}</span><br>` +
+        `context ${fmt(ctx)} · read ${fmt(r[col.cacheRead])} · write ${fmt(r[col.cacheWrite])} · out ${fmt(r[col.output])}` +
+        (ev ? `<br><span class="t2">gap ${ev.gapMin ?? '?'}m · rewrote ${fmt(ev.rewrote)} · prevPrefix ${fmt(ev.prevPrefix)}${ev.forked ? ' · forked' : ''}${ev.injected ? ' · injected' : ''}</span>` : ''),
+    });
+  }
+  for (const arr of tlHover.rows) arr.sort((a, b) => a.x - b.x);
+
+  const scroll = document.getElementById('tlScroll');
+  scroll.innerHTML = `<svg id="tlSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}<line id="tlCursor" y1="${TOPH}" y2="${H - PAD}" stroke="${css('--baseline')}" stroke-width="1" opacity="0"></line></svg>`;
+  attachTimelineHover(TOPH, ROWH, LABELW);
+
+  // legend (labels always beside color — status hues never color-alone)
+  document.getElementById('tlLegend').innerHTML = Object.values(CLASS_STYLE).map((s) =>
+    `<span><span class="sw" style="background:${css(s.v)};opacity:${s.dim ? 0.45 : 1}"></span>${esc(s.label)}</span>`).join('');
+}
+
+function attachTimelineHover(TOPH, ROWH, LABELW) {
+  const svgEl = document.getElementById('tlSvg');
+  const tip = document.getElementById('tooltip');
+  const cursor = document.getElementById('tlCursor');
+  svgEl.onmousemove = (e) => {
+    const pt = svgEl.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+    const row = Math.floor((p.y - TOPH) / ROWH);
+    if (row < 0 || row >= tlHover.rows.length || p.x < LABELW) { tip.style.display = 'none'; cursor.setAttribute('opacity', 0); return; }
+    const arr = tlHover.rows[row];
+    if (!arr.length) { tip.style.display = 'none'; return; }
+    let lo = 0, hi = arr.length - 1; // nearest by x
+    while (lo < hi) { const mid = (lo + hi) >> 1; arr[mid].x < p.x ? lo = mid + 1 : hi = mid; }
+    const cand = [arr[lo], arr[lo - 1]].filter(Boolean).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+    if (Math.abs(cand.x - p.x) > 40) { tip.style.display = 'none'; cursor.setAttribute('opacity', 0); return; }
+    cursor.setAttribute('x1', cand.x); cursor.setAttribute('x2', cand.x); cursor.setAttribute('opacity', 0.6);
+    tip.innerHTML = cand.html;
+    tip.style.display = 'block';
+    const vw = innerWidth, tw = tip.offsetWidth;
+    tip.style.left = Math.min(e.clientX + 14, vw - tw - 10) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+  };
+  svgEl.onmouseleave = () => { document.getElementById('tooltip').style.display = 'none'; cursor.setAttribute('opacity', 0); };
+}
+
+// ---------- tables ----------
+function sortable(wrapId, headers, rowsData, renderRow, defaultSort) {
+  let sortKey = defaultSort, dir = -1;
+  const wrap = document.getElementById(wrapId);
+  const draw = () => {
+    const sorted = [...rowsData].sort((a, b) => {
+      const va = a[sortKey], vb = b[sortKey];
+      return (typeof va === 'string' ? va.localeCompare(vb) : (va ?? -Infinity) - (vb ?? -Infinity)) * dir;
+    });
+    wrap.innerHTML = `<table><thead><tr>${headers.map(([k, label, left]) =>
+      `<th class="${left ? 'left' : ''}" data-k="${k}">${label}${k === sortKey ? (dir < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>` +
+      `<tbody>${sorted.map(renderRow).join('')}</tbody></table>`;
+    wrap.querySelectorAll('th').forEach((th) => th.onclick = () => {
+      const k = th.dataset.k;
+      if (k === sortKey) dir = -dir; else { sortKey = k; dir = -1; }
+      draw();
+    });
+  };
+  draw();
+}
+
+function renderAgentTable(j) {
+  const rows = j.agents.map((a) => ({
+    idx: a.index, label: a.label, role: a.roleFamily, kind: a.kind,
+    model: Object.keys(a.models).map((m) => m.replace(/^claude-/, '')).join(', '),
+    requests: a.requests, output: a.outputTokens, cw: a.cacheWrite, cr: a.cacheRead,
+    billed: a.billedInputEq, peak: a.peakContext, spawn: a.spawnWrite,
+    churnT: a.churn.tokens, churnE: a.churn.events, hit: a.resumes.hit, miss: a.resumes.miss,
+  }));
+  sortable('agentTableWrap', [
+    ['idx', '#'], ['label', 'agent', true], ['role', 'role', true], ['model', 'model', true],
+    ['requests', 'reqs'], ['output', 'output'], ['cw', 'cacheW'], ['cr', 'cacheR'],
+    ['billed', 'billed-eq'], ['peak', 'peak ctx'], ['spawn', 'spawn payload'],
+    ['churnT', 'churn tok'], ['churnE', 'ev'], ['hit', 'HIT'], ['miss', 'MISS'],
+  ], rows, (r) =>
+    `<tr><td>${r.idx}</td><td class="left">${esc(r.label)}</td><td class="left">${esc(r.role)}</td><td class="left">${esc(r.model)}</td>` +
+    `<td>${fmtInt(r.requests)}</td><td>${fmt(r.output)}</td><td>${fmt(r.cw)}</td><td>${fmt(r.cr)}</td>` +
+    `<td>${fmt(r.billed)}</td><td>${fmt(r.peak)}</td><td>${fmt(r.spawn)}</td>` +
+    `<td>${fmt(r.churnT)}</td><td>${r.churnE}</td><td>${r.hit}</td><td>${r.miss}</td></tr>`,
+    'billed');
+}
+
+function renderChurnTable(j) {
+  const rows = j.churnEvents.map((e) => ({
+    ts: e.ts, agent: j.agents[e.agent] ? j.agents[e.agent].label : e.agent,
+    cause: e.cause, gap: e.gapMin, rewrote: e.rewrote, prevPrefix: e.prevPrefix,
+    readNow: e.readNow, flags: (e.forked ? 'forked ' : '') + (e.injected ? 'injected' : ''),
+  }));
+  sortable('churnTableWrap', [
+    ['ts', 'time', true], ['agent', 'agent', true], ['cause', 'cause', true],
+    ['gap', 'gap(m)'], ['rewrote', 'rewrote'], ['prevPrefix', 'prevPrefix'], ['readNow', 'readNow'], ['flags', 'evidence', true],
+  ], rows, (r) => {
+    const st = CLASS_STYLE[r.cause] || CLASS_STYLE.unattributed;
+    return `<tr><td class="left">${r.ts ? hhmmss(r.ts) : '?'}</td><td class="left">${esc(r.agent)}</td>` +
+      `<td class="left"><span class="cause" style="background:${css(st.v)}">${esc(r.cause)}</span></td>` +
+      `<td>${r.gap ?? '?'}</td><td>${fmt(r.rewrote)}</td><td>${fmt(r.prevPrefix)}</td><td>${fmt(r.readNow)}</td><td class="left">${r.flags || '—'}</td></tr>`;
+  }, 'rewrote');
+}
+
+function renderSidePanels(j) {
+  const models = Object.entries(j.byModel).map(([m, v]) =>
+    `<tr><td class="left">${esc(m.replace(/^claude-/, ''))}</td><td>${fmtInt(v.requests)}</td><td>${fmt(v.outputTokens)}</td><td>${fmt(v.cacheWrite)}</td><td>${fmt(v.cacheRead)}</td></tr>`).join('');
+  const causes = Object.entries(j.totals.churn.byCause).sort((a, b) => b[1].tokens - a[1].tokens).map(([c, v]) => {
+    const st = CLASS_STYLE[c] || CLASS_STYLE.unattributed;
+    return `<tr><td class="left"><span class="cause" style="background:${css(st.v)}">${esc(c)}</span></td><td>${v.events}</td><td>${fmt(v.tokens)}</td></tr>`;
+  }).join('');
+  const gaps = Object.entries(j.gapHistogram).map(([b, n]) => `<tr><td class="left">${b}</td><td>${fmtInt(n)}</td></tr>`).join('');
+  document.getElementById('sidePanels').innerHTML =
+    `<table style="margin-bottom:14px"><thead><tr><th class="left">model</th><th>reqs</th><th>output</th><th>cacheW</th><th>cacheR</th></tr></thead><tbody>${models}</tbody></table>
+     <table style="margin-bottom:14px"><thead><tr><th class="left">churn cause</th><th>events</th><th>tokens</th></tr></thead><tbody>${causes}</tbody></table>
+     <table><thead><tr><th class="left">idle gap (consecutive reqs)</th><th>count</th></tr></thead><tbody>${gaps}</tbody></table>`;
+}
+</script>
+</body>
+</html>
