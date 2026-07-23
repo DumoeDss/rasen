@@ -397,6 +397,49 @@ describe('profile command', () => {
     );
   });
 
+  it.each(['en', 'ja', 'zh-cn'])(
+    'shows a declared skill title verbatim in the %s picker while storing the workflow id',
+    async (lang) => {
+      process.env.RASEN_LANG = lang;
+      const titledDraft = scaffoldWorkflow(
+        'titled-picker',
+        path.join(tempDir, 'draft', 'titled-picker')
+      );
+      fs.appendFileSync(
+        path.join(titledDraft, 'workflow.yaml'),
+        'skill:\n  name: Example Local Verify\n'
+      );
+      await importWorkflow(titledDraft);
+      const untitledDraft = scaffoldWorkflow(
+        'untitled-picker',
+        path.join(tempDir, 'draft', 'untitled-picker')
+      );
+      await importWorkflow(untitledDraft);
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: ['titled-picker', 'untitled-picker'],
+      });
+      const { checkbox, confirm } = await promptMocks();
+      checkbox.mockResolvedValueOnce(['titled-picker']);
+      confirm.mockResolvedValueOnce(false);
+
+      await runProfileCommand(['new', 'titled-profile']);
+
+      const choices = checkbox.mock.calls[0][0].choices as Array<{
+        value: string;
+        name: string;
+        short: string;
+      }>;
+      const titled = choices.find((choice) => choice.value === 'titled-picker');
+      expect(titled?.name).toMatch(/^titled-picker\s+- Example Local Verify$/);
+      expect(titled?.short).toBe('Example Local Verify');
+      const untitled = choices.find((choice) => choice.value === 'untitled-picker');
+      expect(untitled?.name).toMatch(/- rasen-untitled-picker$/);
+      expect(untitled?.short).toBe('rasen-untitled-picker');
+    }
+  );
+
   it('labels user workflows and prevents deselecting a required dependency', async () => {
     const baseDraft = scaffoldWorkflow('picker-base', path.join(tempDir, 'draft', 'picker-base'));
     await importWorkflow(baseDraft);

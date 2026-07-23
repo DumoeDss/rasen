@@ -105,20 +105,41 @@ describe('workflow command', () => {
     expect(linesWithoutAll).toContain('Tasks:');
     expect(linesWithoutAll).toContain('Drivers:');
     expect(linesWithoutAll).not.toContain('Internal:');
-    expect(linesWithoutAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(false);
+    expect(linesWithoutAll.some((line) => /^goal-plan\s/.test(String(line)))).toBe(false);
 
     log.mockClear();
     await runWorkflowCommand(['list', '--all']);
     const linesWithAll = log.mock.calls.map((call) => call[0]);
     expect(linesWithAll).toContain('Internal:');
-    expect(linesWithAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(true);
+    expect(linesWithAll.some((line) => /^goal-plan\s/.test(String(line)))).toBe(true);
+  });
+
+  it('aligns human list columns across mixed id lengths without tab characters', async () => {
+    const draft = path.join(home, 'drafts', 'al');
+    await runWorkflowCommand(['init', 'al', '--output', draft, '--json']);
+    await runWorkflowCommand(['import', draft, '--json']);
+    fs.writeFileSync(path.join(home, 'workflows', 'stray.txt'), 'stray');
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--all']);
+    const lines = log.mock.calls.map(([value]) => String(value));
+
+    expect(lines.every((line) => !line.includes('\t'))).toBe(true);
+    const dataRows = lines.filter((line) => !line.endsWith(':'));
+    expect(dataRows.length).toBeGreaterThan(2);
+    expect(dataRows.some((line) => /^al {2,}/.test(line))).toBe(true);
+    expect(dataRows.some((line) => /^stray\.txt {2,}/.test(line))).toBe(true);
+    const secondColumnOffsets = new Set(
+      dataRows.map((line) => /^(\S+ +)/.exec(line)![1].length)
+    );
+    expect(secondColumnOffsets.size).toBe(1);
   });
 
   it('shows the expert group by default (unlike internal), and JSON tags experts with kind:expert', async () => {
     await runWorkflowCommand(['list']);
     const lines = log.mock.calls.map((call) => call[0]);
     expect(lines).toContain('Experts:');
-    expect(lines.some((line) => String(line).startsWith('review\t'))).toBe(true);
+    expect(lines.some((line) => /^review\s/.test(String(line)))).toBe(true);
 
     log.mockClear();
     await runWorkflowCommand(['list', '--json']);
@@ -167,14 +188,24 @@ describe('workflow command', () => {
     process.chdir(project);
 
     const reads = new Map<string, number>();
+    // Canonicalize both sides (test/AGENTS.md): the planning-root resolver
+    // realpaths the project directory, so on macOS a readdir arrives as
+    // /private/var/... while os.tmpdir() hands the test /var/... aliases.
+    const canonicalize = (directory: string): string => {
+      try {
+        return fs.realpathSync.native(directory);
+      } catch {
+        return path.resolve(directory);
+      }
+    };
     const trackedDirectories = [
       path.join(home, 'workflows'),
       profilesDir,
       globalPipelinesDir,
       projectPipelinesDir,
-    ].map((directory) => path.resolve(directory));
+    ].map(canonicalize);
     fsMock.beforeReaddir = (directoryPath) => {
-      const resolved = path.resolve(String(directoryPath));
+      const resolved = canonicalize(String(directoryPath));
       if (trackedDirectories.includes(resolved)) {
         reads.set(resolved, (reads.get(resolved) ?? 0) + 1);
       }
@@ -212,8 +243,46 @@ describe('workflow command', () => {
 
     expect(log).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenNthCalledWith(1, 'Tasks:');
-    expect(log).toHaveBeenNthCalledWith(2, 'batch-unused\tuser\trasen-batch-unused\tunused');
+    expect(log).toHaveBeenNthCalledWith(2, 'batch-unused  user  rasen-batch-unused  unused');
     expectReadCount(3);
+  });
+
+  it('hides OS metadata files from the list and exported packages without hiding stray files', async () => {
+    const id = 'junk-neighbor';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    await runWorkflowCommand(['import', draft, '--json']);
+    const workflowsDir = path.join(home, 'workflows');
+    fs.writeFileSync(path.join(workflowsDir, '.DS_Store'), Buffer.from([0x00, 0x01]));
+    fs.writeFileSync(path.join(workflowsDir, 'notes.txt'), 'stray');
+    fs.writeFileSync(path.join(workflowsDir, id, '.DS_Store'), Buffer.from([0x00, 0x01]));
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+    const payload = lastJson() as {
+      workflows: Array<{ id: string }>;
+      invalid: Array<{ id: string }>;
+    };
+    expect(payload.workflows).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id })])
+    );
+    expect(payload.invalid).toEqual([expect.objectContaining({ id: 'notes.txt' })]);
+
+    log.mockClear();
+    await runWorkflowCommand(['list']);
+    const humanLines = log.mock.calls.map(([value]) => String(value));
+    expect(humanLines.some((line) => line.includes('.DS_Store'))).toBe(false);
+    expect(humanLines.some((line) => line.startsWith('notes.txt'))).toBe(true);
+
+    const packagePath = path.join(home, 'exports', `${id}.rasenpkg`);
+    log.mockClear();
+    await runWorkflowCommand(['export', id, packagePath, '--json']);
+    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as {
+      workflows: Array<{ files: Array<{ path: string }> }>;
+    };
+    expect(
+      packageJson.workflows.flatMap((workflow) => workflow.files.map((file) => file.path))
+    ).toEqual(['SKILL.md', 'workflow.yaml']);
   });
 
   it('runs the draft, validate, import, show, which, export, and delete journey', async () => {
@@ -260,6 +329,51 @@ describe('workflow command', () => {
     expect(warn).toHaveBeenCalledWith(
       'Warning: project-local consumers outside the current project may still exist.'
     );
+  });
+
+  it.each([
+    ['en', 'Title'],
+    ['ja', 'タイトル'],
+    ['zh-cn', '标题'],
+  ])('exposes a declared skill title verbatim in list and show output under %s', async (lang, titleLabel) => {
+    process.env.RASEN_LANG = lang;
+    const id = 'titled-workflow';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    fs.appendFileSync(
+      path.join(draft, 'workflow.yaml'),
+      'skill:\n  name: Example Local Verify\n'
+    );
+    await runWorkflowCommand(['import', draft, '--json']);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+    const listPayload = lastJson() as { workflows: Array<{ id: string; title: string | null }> };
+    expect(listPayload.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id, title: 'Example Local Verify' }),
+        expect.objectContaining({ id: 'apply', title: null }),
+      ])
+    );
+
+    log.mockClear();
+    await runWorkflowCommand(['list']);
+    const humanLines = log.mock.calls.map(([value]) => String(value));
+    expect(humanLines.some((line) => line.includes('Example Local Verify'))).toBe(false);
+
+    log.mockClear();
+    await runWorkflowCommand(['show', id, '--json']);
+    expect(lastJson()).toMatchObject({
+      workflow: { id, title: 'Example Local Verify', category: null, tags: null },
+    });
+
+    log.mockClear();
+    await runWorkflowCommand(['show', id]);
+    expect(log).toHaveBeenCalledWith(`${titleLabel}: Example Local Verify`);
+
+    log.mockClear();
+    await runWorkflowCommand(['show', 'apply', '--json']);
+    expect(lastJson()).toMatchObject({ workflow: { id: 'apply', title: null } });
   });
 
   it('keeps JSON failures to one document with a stable code', async () => {
@@ -360,7 +474,7 @@ describe('workflow command', () => {
   it('localizes human output while preserving machine IDs and diagnostic codes', async () => {
     process.env.RASEN_LANG = 'ja';
     await runWorkflowCommand(['list']);
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^apply\t組み込み\trasen-apply-change/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^apply +組み込み +rasen-apply-change/));
 
     log.mockClear();
     const draft = path.join(home, 'drafts', 'localized');
@@ -403,8 +517,10 @@ describe('workflow command', () => {
     expect(humanLines).toContain('任务:');
     expect(humanLines).toContain('驱动:');
     expect(humanLines).toContain('专家:');
-    expect(humanLines).toContain(`${id}\t用户\trasen-${id}\t未使用`);
-    expect(humanLines).toContainEqual(expect.stringMatching(/^apply\t内置\trasen-apply-change/));
+    expect(humanLines).toContainEqual(
+      expect.stringMatching(new RegExp(`^${id} +用户 +rasen-${id} {2}未使用$`))
+    );
+    expect(humanLines).toContainEqual(expect.stringMatching(/^apply +内置 +rasen-apply-change/));
     expect(humanLines).not.toContain('Tasks:');
 
     error.mockClear();

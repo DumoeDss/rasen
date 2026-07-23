@@ -20,11 +20,22 @@ const EnabledCommandSchema = z.strictObject({
   tags: z.array(FrontmatterScalarSchema).min(1),
 });
 
+// Presentation metadata for the always-delivered skill surface. Unlike the
+// retired `command:` block there is no `enabled` toggle — the skill surface
+// cannot be turned off, so strict validation rejects one like any unknown
+// field.
+const SkillPresentationSchema = z.strictObject({
+  name: FrontmatterScalarSchema,
+  category: FrontmatterScalarSchema.optional(),
+  tags: z.array(FrontmatterScalarSchema).min(1).optional(),
+});
+
 const WorkflowManifestSchema = z.strictObject({
   version: z.literal(1),
   id: z.string(),
   kind: z.enum(['task', 'internal']).default('task'),
   command: z.discriminatedUnion('enabled', [DisabledCommandSchema, EnabledCommandSchema]).optional(),
+  skill: SkillPresentationSchema.optional(),
   files: z
     .strictObject({
       sidecars: PortableStringArraySchema,

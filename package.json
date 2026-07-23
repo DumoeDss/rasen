@@ -36,6 +36,7 @@
     "schemas",
     "skills",
     "pipelines",
+    "viewer",
     "scripts/postinstall.js",
     "!dist/**/*.test.js",
     "!dist/**/__tests__",

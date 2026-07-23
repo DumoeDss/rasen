@@ -14,6 +14,7 @@
       "invalid": "無効",
       "warningPrefix": "警告:",
       "skillLabel": "スキル",
+      "titleLabel": "タイトル",
       "commandLabel": "コマンド",
       "digestLabel": "ダイジェスト",
       "requiresWorkflowsLabel": "必須ワークフロー",
@@ -287,6 +288,10 @@
         "goal-command": {
           "name": "目標ループを実行",
           "description": "長期目標の計画、反復、結果報告をまとめて進行します"
+        },
+        "audit": {
+          "name": "セッション監査",
+          "description": "セッションのトークン消費量を診断します — セッションを特定し、監査を実行し、レポートを解釈します"
         }
       },
       "experts": {
@@ -820,6 +825,10 @@
     "Self-reported context size; below the keepalive floor stands down immediately": "自己申告のコンテキストサイズ。keepalive下限未満なら即時スタンドダウンします",
     "Beat duration in seconds (default 270, max 300)": "ビート時間（秒、デフォルト270、最大300）",
     "Report context-window occupancy of a transcript from its recorded usage": "記録済み使用量からtranscriptのcontext window使用率を報告します",
+    "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)": "transcriptからセッションのトークン消費量を分析します（実験的機能：内部の非公開transcript形式を解析するため、harnessの更新で動作しなくなる可能性があります）",
+    "Override the Claude projects directory a session id is resolved against": "session idの解決に使うClaude projectsディレクトリを上書きします",
+    "Write the report to this file instead of the default analytics directory": "デフォルトのanalyticsディレクトリの代わりに、このファイルにレポートを書き込みます",
+    "Open the shipped viewer in your default browser, pre-loaded with the report": "生成したレポートを読み込んだ状態で、同梱のviewerをデフォルトブラウザで開きます",
     "Report relationship health for the resolved Rasen root": "解決したRasen rootの関係性の状態を報告します",
     "Report whether the resident daemon is running": "常駐デーモンが実行中かどうかを報告します",
     "Reset all configuration (required)": "すべての設定を初期化します（必須）",

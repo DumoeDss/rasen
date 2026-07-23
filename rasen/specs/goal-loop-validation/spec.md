@@ -58,11 +58,11 @@ The test suite SHALL cover the goal-loop machinery surfaces that `goal-loop-core
 
 ### Requirement: Goal-Loop Workflow Guide Chapter
 
-The user-facing workflow guide (`docs/opsx-workflow-guide.md`) SHALL include a goal-loop chapter that lets a user discover and drive `/rasen-goal` without reading internal design docs. The chapter SHALL match the existing guide's section style and cover: the single `/rasen-goal` entry; LEAD classification keywords and the explicit selector / `--pipeline` override; the three backend pipelines and when each applies; the define-goal → iterate → tail flow for each (measure/evaluate → ship → archive; research → report); the `goal-run.json` authoritative record; and the resume model. It SHALL include a worked example for each of measure, evaluate, and research.
+The user-facing workflow guide (`docs/artifact-workflow-guide.md`) SHALL include a goal-loop chapter that lets a user discover and drive `/rasen-goal` without reading internal design docs. The chapter SHALL match the existing guide's section style and cover: the single `/rasen-goal` entry; LEAD classification keywords and the explicit selector / `--pipeline` override; the three backend pipelines and when each applies; the define-goal → iterate → tail flow for each (measure/evaluate → ship → archive; research → report); the `goal-run.json` authoritative record; and the resume model. It SHALL include a worked example for each of measure, evaluate, and research.
 
 #### Scenario: Chapter is discoverable and complete
 
-- **WHEN** a user reads `docs/opsx-workflow-guide.md`
+- **WHEN** a user reads `docs/artifact-workflow-guide.md`
 - **THEN** the guide SHALL contain a goal-loop section covering the `/rasen-goal` command, the three backend pipelines, classification, `goal-run.json`, and resume
 - **AND** the section SHALL include a worked example each for measure, evaluate, and research tasks
 

@@ -1,10 +1,23 @@
 # token-audit — session cost auditor (debug tooling)
 
+> **Deprecated.** This tool has been productized as `rasen agent audit`
+> (`src/core/token-audit/`), an experimental CLI command that also supports
+> Codex CLI rollouts via `--runtime codex`. Run `rasen agent audit --help`
+> or invoke the `/rasen-audit` skill. `audit.mjs` in this directory is now a
+> thin wrapper that delegates to the new command — existing invocations
+> keep working — but new usage should go through `rasen agent audit`
+> directly. `viewer.html` moved to `viewer/audit.html` at the repo root
+> (also shipped as a package asset); this directory no longer has its own
+> copy. `forensics/` and the measurement-discipline notes below are
+> unchanged and still the source of truth for the underlying math.
+
 Audits a Claude Code session's full token spend — main agent + every subagent —
-and renders it as an interactive timeline. Internal debug tooling (D5 of
-`rasen/office-hours/token-cost-audit.md`); deliberately **not** part of the
-`rasen` CLI surface: it parses the harness's undocumented transcript format,
-which can drift with Claude Code versions.
+and renders it as an interactive timeline. Originally internal debug tooling
+(D5 of `rasen/office-hours/token-cost-audit.md`), kept out of the CLI surface
+because it parses the harness's undocumented transcript format, which can
+drift with Claude Code versions — `rasen agent audit` now surfaces that same
+risk explicitly (an experimental marker plus fail-soft error handling)
+instead of hiding the tool from users.
 
 ## Usage
 
@@ -54,12 +67,12 @@ The analyzer discovers subagent transcripts at
 
 ## Files
 
-- `audit.mjs` — analyzer; emits `session-audit-<sid>.json` (schema
-  `rasen-token-audit/1`, self-describing: per-request rows are column arrays
-  declared in `requests.columns`).
-- `viewer.html` — self-contained single-file viewer (no network, no deps).
-  Drag-drop the JSON; light/dark themes; zoomable agent swimlane, sortable
-  agent/churn tables.
+- `audit.mjs` — deprecated wrapper; delegates to `rasen agent audit`. The
+  original analyzer logic now lives in `src/core/token-audit/`.
+- `viewer.html` — moved to `viewer/audit.html` at the repo root (self-contained
+  single-file viewer, no network, no deps; now also renders a Codex-runtime
+  report). Drag-drop the JSON; light/dark themes; zoomable agent swimlane,
+  sortable agent/churn tables.
 - `forensics/` — the original one-off scripts from the 2026-07 audit session,
   kept verbatim for provenance (hardcoded paths, they answered one question
   each). `audit.mjs` consolidates session-stats + churn-dedup + churn-attrib +

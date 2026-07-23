@@ -1,6 +1,6 @@
 # 命令
 
-这是 OpenSpec 斜杠命令的参考文档。这些命令在你的 AI 编码助手的聊天界面中调用（例如 Claude Code、Cursor、Windsurf）。
+这是 rasen 斜杠命令的参考文档。这些命令在你的 AI 编码助手的聊天界面中调用（例如 Claude Code、Cursor、Windsurf）。
 
 关于工作流模式以及何时使用每个命令，请参阅 [工作流](workflows.md)。关于 CLI 命令，请参阅 [CLI](cli.md)。
 
@@ -345,7 +345,7 @@ AI:  Verifying add-dark-mode...
 
 ### `rasen-review-cycle`
 
-通过迭代循环把变更推进到「真正干净」：`review → triage → fix → re-review(Δ) → {pass | loop | escalate}`。它不重新实现审查器 —— 每一轮都委托给始终安装的 `openspec-review` 引擎。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` profile 中）。
+通过迭代循环把变更推进到「真正干净」：`review → triage → fix → re-review(Δ) → {pass | loop | escalate}`。它不重新实现审查器 —— 每一轮都委托给始终安装的 `rasen-review` 引擎。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` profile 中）。
 
 **语法：**
 ```
@@ -358,7 +358,7 @@ rasen-review-cycle [change-name]
 | `change-name` | 否 | 要运行循环的变更（未提供时从上下文推断） |
 
 **功能说明：**
-- 通过 `openspec-review` 跑一轮审查，然后按修复规模对每条发现分诊
+- 通过 `rasen-review` 跑一轮审查，然后按修复规模对每条发现分诊
 - 路由修复：琐碎（trivial）→ 编排者就地修复；非琐碎（non-trivial）→ 编写该代码的实现 agent；设计级（design-level）→ 单独的修复 agent
 - 仅复审修复增量；只有当**非作者**对照原始发现确认后，该发现才标记为已解决（作者≠验证者）
 - 循环上限为最大轮次（默认 3）；达到上限且仍有未解决的 Blocker/Major 发现时上报给人类 —— 绝不静默通过
@@ -393,7 +393,7 @@ AI:  Review Cycle: add-dark-mode (round 1/3)
 
 ### `rasen-goal`
 
-面向「完成」是一个**条件**而非一份文档的任务——把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。它是 `rasen-auto` 的平级入口：LEAD 分类任务、选**恰好一条**后端 pipeline，然后重复 **修改 → 判定** 直到闸门达标或轮次上限。与 `rasen-auto` 共用同一套编排手册（LEAD + 角色隔离 worker、档位、run-state、gate、resume）。完整章节见 [opsx-workflow-guide.md §9](opsx-workflow-guide.md#9-目标驱动迭代opsxgoal)。
+面向「完成」是一个**条件**而非一份文档的任务——把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。它是 `rasen-auto` 的平级入口：LEAD 分类任务、选**恰好一条**后端 pipeline，然后重复 **修改 → 判定** 直到闸门达标或轮次上限。与 `rasen-auto` 共用同一套编排手册（LEAD + 角色隔离 worker、档位、run-state、gate、resume）。完整章节见 [artifact-workflow-guide.md §9](artifact-workflow-guide.md#9-目标驱动迭代rasengoal)。
 
 **语法：**
 ```text
@@ -609,7 +609,7 @@ AI:  ✓ Archived add-dark-mode
 
 ### `rasen-onboard`
 
-通过完整 OpenSpec 工作流的引导式入门教程。使用你的实际代码库进行交互式教学。
+通过完整 rasen 工作流的引导式入门教程。使用你的实际代码库进行交互式教学。
 
 **语法：**
 ```
@@ -641,7 +641,7 @@ rasen-onboard
 ```
 You: rasen-onboard
 
-AI:  Welcome to OpenSpec!
+AI:  Welcome to rasen!
 
      I'll walk you through the complete workflow using your actual codebase.
      We'll find something small to improve, create a proper change for it,
@@ -673,12 +673,12 @@ AI:  Welcome to OpenSpec!
 
 | 工具 | 语法示例 |
 |------|----------------|
-| Claude Code | `rasen-propose`, `rasen-apply-change` |
+| Claude Code | `/rasen-propose`、`/rasen-apply-change` |
 | Cursor | `/opsx-propose`, `/opsx-apply` |
 | Windsurf | `/opsx-propose`, `/opsx-apply` |
 | Copilot (IDE) | `/opsx-propose`, `/opsx-apply` |
-| Kimi CLI | 基于技能的调用方式，如 `/skill:openspec-propose`、`/skill:openspec-apply-change`（不生成 `opsx-*` 命令文件） |
-| Trae | 基于技能的调用方式，如 `/openspec-propose`、`/openspec-apply-change`（不生成 `opsx-*` 命令文件） |
+| Kimi CLI | 基于技能的调用方式，如 `/skill:rasen-propose`、`/skill:rasen-apply-change`（不生成 `opsx-*` 命令文件） |
+| Trae | 基于技能的调用方式，如 `/rasen-propose`、`/rasen-apply-change`（不生成 `opsx-*` 命令文件） |
 
 各工具的意图相同，但命令的呈现方式会因集成方式而异。
 
@@ -688,7 +688,7 @@ AI:  Welcome to OpenSpec!
 
 ## 旧版命令
 
-这些命令使用较旧的「一次性完成」工作流。它们仍然有效，但推荐使用 OPSX 命令。
+这些命令使用较旧的「一次性完成」工作流。它们仍然有效，但推荐使用 rasen 命令。
 
 | 命令 | 功能 |
 |---------|--------------|
@@ -701,8 +701,8 @@ AI:  Welcome to OpenSpec!
 - 不需要增量产物创建的简单变更
 - 偏好一次性完成的方式
 
-**迁移到 OPSX：**
-旧版变更可以用 OPSX 命令继续。产物结构是兼容的。
+**迁移到制品工作流：**
+旧版变更可以用 rasen 命令继续。产物结构是兼容的。
 
 ---
 
@@ -737,10 +737,10 @@ AI:  Welcome to OpenSpec!
 
 ### 命令无法识别
 
-AI 工具不识别 OpenSpec 命令。
+AI 工具不识别 rasen 命令。
 
 **解决方案：**
-- 确保 OpenSpec 已初始化：`rasen init`
+- 确保 rasen 已初始化：`rasen init`
 - 重新生成技能：`rasen update`
 - 检查 `.claude/skills/` 目录是否存在（对于 Claude Code）
 - 重启你的 AI 工具以加载新技能

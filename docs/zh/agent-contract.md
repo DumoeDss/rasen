@@ -1,11 +1,11 @@
-# OpenSpec Agent 契约
+# Rasen Agent 契约
 
-`openspec` CLI 的机器可读接口面，已对照 `src/` 验证（capstone audit，2026-06-11）。下文的每一个结构都依据产生它的代码记录而来。
+`rasen` CLI 的机器可读接口面，已对照 `src/` 验证（capstone audit，2026-06-11）。下文的每一个结构都依据产生它的代码记录而来。
 
 ## 1. 通用约定
 
 - **每次调用一个 JSON 文档。** 在 `--json` 模式下，stdout 恰好承载一个 JSON 文档（2 空格美化打印）。人类可读的文字、旋转指示器（spinner）以及 store banner 都输出到 stderr。
-- **Store banner。** 在人类模式下，被 store 选中的 root 会向 stderr 打印 `Using OpenSpec root: <id> (<path>)`。在 JSON 模式下从不打印。
+- **Store banner。** 在人类模式下，被 store 选中的 root 会向 stderr 打印 `Using Rasen root: <id> (<path>)`。在 JSON 模式下从不打印。
 - **键的大小写取决于接口面**（参见已知不一致之处）：store/doctor/context 载荷使用 `snake_case`；工作流载荷（`status`、`instructions`、`new change`、`validate`、`list`）使用 `camelCase`，但内嵌的 `root` 对象除外，它始终使用 `store_id`。
 - **在大多数载荷中，可选键被省略而非 `null`**（例如 `root.store_id`、`member.path`）。使用显式 `null` 的例外情况按结构逐一说明（store doctor 的 `git.*`、失败载荷）。
 
@@ -27,10 +27,10 @@
 
 ## 3. Root 选择与 `RootOutput`
 
-所有解析 root 的命令（`list`、`show`、`validate`、`status`、`instructions`、`instructions apply`、`new change`、`archive`、`doctor`、`context`）都按以下优先级解析���个 OpenSpec root：
+所有解析 root 的命令（`list`、`show`、`validate`、`status`、`instructions`、`instructions apply`、`new change`、`archive`、`doctor`、`context`）都按以下优先级解析���个 Rasen root：
 
 1. `--store <id>` → 已注册 store 的 root（`source: "store"`）。
-2. 否则，最近的包含 `openspec/` 的祖先目录：规划结构 → `source: "nearest"`（`store:` 指针会被忽略并附带 stderr 警告）；仅有配置且带有效 `store:` 指针的目录 → 该 store，`source: "declared"`。
+2. 否则，最近的包含 `rasen/` 的祖先目录：规划结构 → `source: "nearest"`（`store:` 指针会被忽略并附带 stderr 警告）；仅有配置且带有效 `store:` 指针的目录 → 该 store，`source: "declared"`。
 3. 没有最近的 root，但存在已注册的 store → 错误 `no_root_with_registered_stores`。
 4. 没有 root、没有 store：脚手架命令将 cwd 视为 `source: "implicit"`；诊断命令（`doctor`、`context`）反而以 `no_openspec_root` 失败——它们只检查，从不脚手架。
 
@@ -96,7 +96,7 @@ setup/register：`{ "store": {id, root, metadata_path?}, "registry": {path, regi
 ### 解析
 `no_openspec_root`, `no_root_with_registered_stores`, `no_registered_stores`, `unknown_store`, `store_identity_mismatch`, `unhealthy_store_root`, `store_path_not_supported`, `invalid_store_pointer`, `initiative_option_removed`, `areas_option_removed`；透传（pass-through）：`invalid_store_id`, `invalid_store_registry`, `invalid_store_metadata`。
 
-### OpenSpec-root 健康（error，无 fix）
+### Rasen-root 健康（error，无 fix）
 `openspec_store_root_missing`, `openspec_root_missing`, `openspec_config_missing`, `openspec_specs_missing`, `openspec_changes_missing`, `openspec_archive_missing`，以及每个对应的 `_not_directory` 变体。
 
 ### Store 注册表/身份/状态

@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-01T00:10:00.000Z","type":"session_meta","payload":{"session_id":"ffffffff-0000-0000-0000-000000000006","id":"ffffffff-0000-0000-0000-000000000006","cwd":"/synthetic/fixture","thread_source":"user","forked_from_id":"aaaaaaaa-0000-0000-0000-000000000001","cli_version":"0.144.1"}}
+{"timestamp":"2026-01-01T00:10:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"fork-turn-1"}}
+{"timestamp":"2026-01-01T00:10:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":300,"cached_input_tokens":250,"output_tokens":12,"reasoning_output_tokens":0,"total_tokens":312},"model_context_window":300000}}}
+{"timestamp":"2026-01-01T00:10:05.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"fork-turn-1","last_agent_message":"forked session turn done"}}

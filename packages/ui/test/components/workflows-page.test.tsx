@@ -31,7 +31,7 @@ import { WorkflowsPage } from '../../src/components/WorkflowsPage.js';
 import { Layout } from '../../src/components/Layout.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
-import { workflowsListFixture, workflowDetailFixture } from '../fixtures/workflows.js';
+import { workflowsListFixture, workflowDetailFixture, workflowDetailFixtureNoTitle } from '../fixtures/workflows.js';
 
 async function flushMicrotasks(times = 10): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -142,6 +142,19 @@ describe('WorkflowsPage', () => {
 
     // The invalid section still renders after the category sections.
     expect(container.querySelector('[data-testid="workflows-group-invalid"]')).not.toBeNull();
+  });
+
+  it('shows the declared title on the card, falling back to the skill name when none is declared', async () => {
+    await mount(container);
+
+    // review-cycle declares a title: the card shows it instead of the skill name.
+    const titled = container.querySelector('[data-id="review-cycle"]')!;
+    expect(titled.querySelector('.workflow-card__name')!.textContent).toBe('Review Cycle');
+    expect(titled.querySelector('.workflow-card__name')!.textContent).not.toBe('rasen-review-cycle');
+
+    // plan-build declares no title (null): the card falls back to the skill name.
+    const untitled = container.querySelector('[data-id="plan-build"]')!;
+    expect(untitled.querySelector('.workflow-card__name')!.textContent).toBe('rasen-plan-build');
   });
 
   it('omits a category section that has no workflows', async () => {
@@ -367,6 +380,28 @@ describe('WorkflowsPage', () => {
     expect(facts.textContent).toContain('rasen-team-flow');
     expect(facts.textContent).toContain('Digest');
     expect(facts.textContent).not.toContain('Command');
+
+    // The detail fixture declares title/category/tags: all three rows render.
+    expect(facts.textContent).toContain('Title');
+    expect(facts.textContent).toContain('Team Flow');
+    expect(facts.textContent).toContain('Category');
+    expect(facts.textContent).toContain('collaboration');
+    expect(facts.textContent).toContain('Tags');
+    expect(facts.textContent).toContain('team, flow');
+  });
+
+  it('omits the Title/Category/Tags rows when the workflow declares none of them', async () => {
+    (client.getWorkflow as any).mockResolvedValue(workflowDetailFixtureNoTitle);
+    await mount(container);
+    const driver = container.querySelector('[data-testid="workflows-section-driver"]')!;
+    await clickAndFlush(driver.querySelector('[data-id="plan-build"] [data-testid="workflow-open"]'));
+
+    const facts = container.querySelector('.workflow-detail__facts')!;
+    // Kind/Source/Skill/Digest still render — only the presentation rows are absent.
+    expect(facts.textContent).toContain('Kind');
+    expect(facts.textContent).not.toContain('Title');
+    expect(facts.textContent).not.toContain('Category');
+    expect(facts.textContent).not.toContain('Tags');
   });
 
   it('offers no model, handoff, or gate control anywhere on the page', async () => {

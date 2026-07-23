@@ -42,7 +42,7 @@ Terms are grouped by topic, then alphabetized within each group.
 
 ## Workflow and commands
 
-**OPSX.** The current standard rasen workflow, built around fluid actions instead of rigid phases. Its slash commands all start with `/rasen-`. See [OPSX Workflow](opsx.md).
+**The artifact workflow.** The current standard rasen workflow, built around fluid actions instead of rigid phases. Its slash commands all start with `/rasen-`. Formerly called "OPSX," a retired codename. See [Artifact Workflow](artifact-workflow.md).
 
 **Slash command.** A command you type into your AI assistant's chat, like `/rasen-propose`. Slash commands drive the workflow. They are not terminal commands. See [How Commands Work](how-commands-work.md).
 

@@ -1,7 +1,7 @@
 # task-detail-ui Specification
 
 ## Purpose
-TBD - created by archiving change ui-space-redesign-task-detail. Update Purpose after archive.
+Provide an independent Task-detail route page that resolves a portfolio or single-item Task and presents its children's lifecycle, progress, and dependency hints across the true roster, alongside the Task's sessions with live run control.
 ## Requirements
 ### Requirement: Task detail is an independent route page
 

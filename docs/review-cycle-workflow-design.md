@@ -210,5 +210,5 @@ Validate + apply + archive through the normal `openspec validate` / `/opsx:apply
 - Command/skill pipeline: `src/core/templates/workflows/*.ts`, `src/core/templates/skill-templates.ts`, `src/core/shared/skill-generation.ts`, `src/core/profiles.ts`, adapters `src/core/command-generation/adapters/`.
 - Reused review engine: `src/core/templates/experts/review.ts` (installed as `openspec-review`).
 - Fusion precedent: `openspec/changes/add-opsx-fusion-commands/` (office-hours, verify-enhanced, ship, retro, auto + `hooks/safety-check.sh`).
-- Doc conventions: `docs/concepts.md`, `docs/opsx.md`, `docs/commands.md`, `docs/workflows.md`, `docs/customization.md` (+ `docs/zh/`).
+- Doc conventions: `docs/concepts.md`, `docs/artifact-workflow.md`, `docs/commands.md`, `docs/workflows.md`, `docs/customization.md` (+ `docs/zh/`).
 - Tests: `test/commands/*.test.ts`, `vitest.config.ts`.

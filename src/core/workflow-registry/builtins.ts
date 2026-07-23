@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   getApplyChangeSkillTemplate,
   getArchiveChangeSkillTemplate,
+  getAuditSkillTemplate,
   getBulkArchiveChangeSkillTemplate,
   getContinueChangeSkillTemplate,
   getExploreSkillTemplate,
@@ -60,6 +61,7 @@ export const BUILT_IN_WORKFLOW_IDS = [
   'goal-iterate',
   'goal-report',
   'goal-command',
+  'audit',
 ] as const;
 
 export type BuiltInWorkflowId = (typeof BUILT_IN_WORKFLOW_IDS)[number];
@@ -124,6 +126,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
       pipelines: ['goal-loop-measure', 'goal-loop-evaluate', 'goal-loop-research'],
     },
   },
+  { id: 'audit', dirName: 'rasen-audit', skill: getAuditSkillTemplate },
 ];
 
 function digestBuiltIn(adapter: BuiltInWorkflowAdapter, skill: SkillTemplate): string {

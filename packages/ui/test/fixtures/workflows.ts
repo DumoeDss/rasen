@@ -19,6 +19,7 @@ export const workflowsListFixture = {
       digest: 'abcdef0123456789aa',
       kind: 'driver',
       skillName: 'rasen-review-cycle',
+      title: 'Review Cycle',
       unused: false,
     },
     {
@@ -28,6 +29,7 @@ export const workflowsListFixture = {
       digest: 'facefeed00112233cc',
       kind: 'driver',
       skillName: 'rasen-plan-build',
+      title: null,
       unused: false,
     },
     {
@@ -37,6 +39,7 @@ export const workflowsListFixture = {
       digest: 'deadbeefcafebabe11',
       kind: 'task',
       skillName: 'rasen-team-flow',
+      title: 'Team Flow',
       unused: true,
     },
     {
@@ -46,6 +49,7 @@ export const workflowsListFixture = {
       digest: 'c0ffee1234567890dd',
       kind: 'expert',
       skillName: 'rasen-deep-research',
+      title: null,
       unused: false,
     },
     {
@@ -55,6 +59,7 @@ export const workflowsListFixture = {
       digest: 'ba5eba11cafef00d99',
       kind: 'internal',
       skillName: 'rasen-resolve-deps',
+      title: null,
       unused: false,
     },
   ],
@@ -78,6 +83,9 @@ export const workflowDetailFixture = {
     sourcePath: '/home/u/.rasen/workflows/team-flow',
     manifestVersion: 1,
     kind: 'task',
+    title: 'Team Flow',
+    category: 'collaboration',
+    tags: ['team', 'flow'],
     digest: 'deadbeefcafebabe11',
     skill: { name: 'rasen-team-flow', dirName: 'team-flow', description: 'A team flow' },
     requires: { workflows: ['dep-a'], skills: [], pipelines: [], schemas: [] },
@@ -88,4 +96,29 @@ export const workflowDetailFixture = {
     ],
   },
   usage: [{ kind: 'pipeline', consumer: 'user:my-pipe', hard: true }],
+} satisfies WorkflowDetailResponse;
+
+/**
+ * A workflow that declares none of the `skill:` presentation fields — the
+ * negative-path counterpart to `workflowDetailFixture`, proving the detail
+ * view's Title/Category/Tags rows are absent (not merely empty) when the
+ * definition carries `null` for all three.
+ */
+export const workflowDetailFixtureNoTitle = {
+  workflow: {
+    id: 'plan-build',
+    source: 'user',
+    sourcePath: '/home/u/.rasen/workflows/plan-build',
+    manifestVersion: 1,
+    kind: 'driver',
+    title: null,
+    category: null,
+    tags: null,
+    digest: 'facefeed00112233cc',
+    skill: { name: 'rasen-plan-build', dirName: 'plan-build', description: 'A plan-build workflow' },
+    requires: { workflows: [], skills: [], pipelines: [], schemas: [] },
+    recommends: { workflows: [] },
+    files: [{ path: 'workflow.yaml', sha256: 'cc' }],
+  },
+  usage: [],
 } satisfies WorkflowDetailResponse;

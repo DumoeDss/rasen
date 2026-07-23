@@ -1204,6 +1204,35 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           },
         ],
       },
+      {
+        name: 'audit',
+        description:
+          "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)",
+        acceptsPositional: true,
+        positionals: [{ name: 'sessionId|path' }],
+        flags: [
+          {
+            name: 'projects-dir',
+            description: 'Override the Claude projects directory a session id is resolved against',
+            takesValue: true,
+          },
+          {
+            name: 'out',
+            description: 'Write the report to this file instead of the default analytics directory',
+            takesValue: true,
+          },
+          {
+            name: 'runtime',
+            description: 'Force detection to "claude" or "codex" instead of sniffing the file',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          {
+            name: 'open',
+            description: 'Open the shipped viewer in your default browser, pre-loaded with the report',
+          },
+        ],
+      },
     ],
   },
 ];

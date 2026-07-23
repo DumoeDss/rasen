@@ -2,7 +2,7 @@
 
 真实变更，从头到尾。每份配方展示你会输入的命令和你会看到的回显，这样你可以把自己的情况匹配到某个模式并照抄。这些使用默认的 **core** 命令（`propose`、`explore`、`apply`、`sync`、`archive`）；在扩展命令集有帮助的地方会注明。
 
-开始之前的一点提醒：像 `/rasen-propose` 这样的斜杠命令要输入到你的 **AI 助手的聊天**里，而 `openspec` 命令要输入到你的 **终端**里。如果这对你来说是新东西，先读一读[命令如何工作](how-commands-work.md)。在下面的对话记录里，`You:` 和 `AI:` 是聊天，以 `$` 开头的行是终端。
+开始之前的一点提醒：像 `/rasen-propose` 这样的斜杠命令要输入到你的 **AI 助手的聊天**里，而 `rasen` 命令要输入到你的 **终端**里。如果这对你来说是新东西，先读一读[命令如何工作](how-commands-work.md)。在下面的对话记录里，`You:` 和 `AI:` 是聊天，以 `$` 开头的行是终端。
 
 > **还不确定要构建什么？** 这些配方大多数在你先用 `/rasen-explore` 把它想清楚后会更加锋利。[配方 3](#配方-3在承诺之前先探索) 展示了它的实际运作，[先探索](explore.md)指南给出了完整的论证。
 
@@ -23,7 +23,7 @@ AI:  Created rasen/changes/add-logout-button/
      Ready for implementation. Run /rasen-apply-change.
 ```
 
-现在读这份方案。打开提案和增量规格。这正是 OpenSpec 为之而生的时刻：在错误假设还只是一段话、而不是 400 行代码时抓住它。如果哪里不对就直接编辑任何产物，然后继续。
+现在读这份方案。打开提案和增量规格。这正是 rasen 为之而生的时刻：在错误假设还只是一段话、而不是 400 行代码时抓住它。如果哪里不对就直接编辑任何产物，然后继续。
 
 ```text
 You: /rasen-apply-change
@@ -179,19 +179,19 @@ AI:  Created specs/auth/spec.md. Now available: design.
 
 ## 配方 7：亲手学习整个循环
 
-**何时使用：** 你已经安装了 OpenSpec，想在自己的代码上、而不是一个玩具示例上*感受*这个工作流。
+**何时使用：** 你已经安装了 rasen，想在自己的代码上、而不是一个玩具示例上*感受*这个工作流。
 
 开启扩展命令（见配方 6），然后：
 
 ```text
 You: /rasen-onboard
 
-AI:  Welcome to OpenSpec! I'll walk you through a complete change
+AI:  Welcome to rasen! I'll walk you through a complete change
      using your actual codebase. Let me scan for a small, safe
      improvement we can make together...
 ```
 
-`/rasen-onboard` 找到一个真实的（小的）改进、为它创建一个变更、实现它、并归档它，每一步都配上讲解。它耗时 15 到 30 分钟，留给你一份你可以保留或丢弃的真实变更。这是最温和的学习方式。参见[命令](commands.md#opsxonboard)。
+`/rasen-onboard` 找到一个真实的（小的）改进、为它创建一个变更、实现它、并归档它，每一步都配上讲解。它耗时 15 到 30 分钟，留给你一份你可以保留或丢弃的真实变更。这是最温和的学习方式。参见[命令](commands.md#rasenonboard)。
 
 ## 从终端检查你的工作
 

@@ -2,7 +2,8 @@
 
 > As of 2026-07-07, recording the real landed shape after `unify-expert-template-pipeline` was archived.
 > This is a "current-state snapshot + how we got here", not a changelog. For changelogs, see each change's retro in `openspec/changes/archive/`.
-> Companion reading: `docs/opsx-workflow-guide.md` (command overview), `docs/review-cycle-workflow-design.md` (review-loop design), `skills/experts/docs/` (expert-skill architecture).
+> Companion reading: `docs/artifact-workflow-guide.md` (command overview), `docs/review-cycle-workflow-design.md` (review-loop design), `skills/experts/docs/` (expert-skill architecture).
+> Terminology note: "OPSX" was the name used for the fusion workflow layer at the time this snapshot was written. The term has since been retired; the same layer is called **the artifact workflow** in current docs (see `docs/artifact-workflow.md`). References to "OPSX" below describe what it was called then, not the current name.
 
 ## 0. The one-paragraph current state
 
@@ -15,7 +16,7 @@ One nuance to note: **the "skill-identity layer" (how the user invokes them, wha
 | Term | Essence | Role in this repo |
 |---|---|---|
 | **OpenSpec** | The core of spec-driven development: `propose → apply → archive` + CLI + change/spec artifact system | The host/substrate |
-| **OPSX** | The "fusion workflow layer" on top of OpenSpec: `/opsx:auto` orchestrator, pipeline registry, ship/verify-enhanced/office-hours/retro commands, LEAD+worker orchestration model | The workflow layer that grew out of absorbing grill/gstack |
+| **OPSX** (retired name; now "the artifact workflow") | The "fusion workflow layer" on top of OpenSpec: `/opsx:auto` orchestrator, pipeline registry, ship/verify-enhanced/office-hours/retro commands, LEAD+worker orchestration model | The workflow layer that grew out of absorbing grill/gstack |
 | **grill** | Matt Pocock's skill set (MIT-licensed): code review, grilling interview discipline, bug diagnosis, routing, methodology design primitives | Source of capabilities — "absorbed" into expert skills and workflow commands |
 | **gstack** | A parallel methodology + tooling layer (expert skills, ship/retro, browse browser tool, orchestration) | Source of tooling — "folded in" to OPSX, exiting as a standalone system |
 

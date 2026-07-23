@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-01T00:05:00.000Z","type":"session_meta","payload":{"session_id":"bbbbbbbb-0000-0000-0000-000000000002","id":"bbbbbbbb-0000-0000-0000-000000000002","cwd":"/synthetic/fixture","thread_source":"subagent","parent_thread_id":"aaaaaaaa-0000-0000-0000-000000000001","agent_nickname":"worker","cli_version":"0.144.1"}}
+{"timestamp":"2026-01-01T00:05:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"sub-turn-1"}}
+{"timestamp":"2026-01-01T00:05:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":20,"reasoning_output_tokens":0,"total_tokens":270},"model_context_window":300000}}}
+{"timestamp":"2026-01-01T00:05:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"sub-turn-1","last_agent_message":"subagent turn done"}}
