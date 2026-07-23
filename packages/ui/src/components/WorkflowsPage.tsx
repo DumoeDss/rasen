@@ -272,7 +272,7 @@ function WorkflowCard({
         data-testid="workflow-open"
         onClick={() => onOpen(entry.id)}
       >
-        <span class="workflow-card__name">{entry.skillName}</span>
+        <span class="workflow-card__name">{entry.title ?? entry.skillName}</span>
         <span class="workflow-card__id">{entry.id}</span>
       </button>
       <div class="workflow-card__meta">
@@ -370,6 +370,21 @@ function WorkflowDetailPanel({ id, onClose }: { id: string; onClose: () => void 
               <dt>Source</dt><dd>{detail.workflow.source}</dd>
               <dt>Skill</dt><dd>{detail.workflow.skill.name}</dd>
               <dt>Digest</dt><dd class="workflow-detail__mono">{detail.workflow.digest}</dd>
+              {detail.workflow.title != null && (
+                <>
+                  <dt>Title</dt><dd>{detail.workflow.title}</dd>
+                </>
+              )}
+              {detail.workflow.category != null && (
+                <>
+                  <dt>Category</dt><dd>{detail.workflow.category}</dd>
+                </>
+              )}
+              {detail.workflow.tags != null && detail.workflow.tags.length > 0 && (
+                <>
+                  <dt>Tags</dt><dd>{detail.workflow.tags.join(', ')}</dd>
+                </>
+              )}
             </dl>
             <Slots label="Requires workflows" items={detail.workflow.requires.workflows} />
             <Slots label="Requires skills" items={detail.workflow.requires.skills} />
