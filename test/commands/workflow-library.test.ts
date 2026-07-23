@@ -321,6 +321,46 @@ describe('workflow command', () => {
     );
   });
 
+  it('exposes a declared skill title verbatim in list and show output', async () => {
+    const id = 'titled-workflow';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    fs.appendFileSync(
+      path.join(draft, 'workflow.yaml'),
+      'skill:\n  name: Example Local Verify\n'
+    );
+    await runWorkflowCommand(['import', draft, '--json']);
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+    const listPayload = lastJson() as { workflows: Array<{ id: string; title: string | null }> };
+    expect(listPayload.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id, title: 'Example Local Verify' }),
+        expect.objectContaining({ id: 'apply', title: null }),
+      ])
+    );
+
+    log.mockClear();
+    await runWorkflowCommand(['list']);
+    const humanLines = log.mock.calls.map(([value]) => String(value));
+    expect(humanLines.some((line) => line.includes('Example Local Verify'))).toBe(false);
+
+    log.mockClear();
+    await runWorkflowCommand(['show', id, '--json']);
+    expect(lastJson()).toMatchObject({
+      workflow: { id, title: 'Example Local Verify', category: null, tags: null },
+    });
+
+    log.mockClear();
+    await runWorkflowCommand(['show', id]);
+    expect(log).toHaveBeenCalledWith('Title: Example Local Verify');
+
+    log.mockClear();
+    await runWorkflowCommand(['show', 'apply', '--json']);
+    expect(lastJson()).toMatchObject({ workflow: { id: 'apply', title: null } });
+  });
+
   it('keeps JSON failures to one document with a stable code', async () => {
     await runWorkflowCommand(['show', 'missing', '--json']);
 

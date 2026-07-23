@@ -51,6 +51,7 @@ export function handleWorkflowsList(): WorkflowReadResult<WorkflowListResponse> 
       digest: definition.digest,
       kind: definition.kind,
       skillName: definition.skill.template.name,
+      title: definition.title ?? null,
       unused: definition.source === 'user' && usage.length === 0,
     };
   });

@@ -47,6 +47,15 @@ export interface WorkflowDefinition {
   sourcePath?: string;
   manifestVersion: number;
   kind: WorkflowKind;
+  /**
+   * Author-declared presentation metadata from the manifest's `skill:` block
+   * (user workflows only). `title` is the human-readable display name pickers
+   * show verbatim, never translated. Built-ins leave all three unset and
+   * source presentation from the locale catalogs instead.
+   */
+  title?: string;
+  category?: string;
+  tags?: string[];
   skill: WorkflowSkillDefinition;
   requires: WorkflowDependencySet;
   recommends: WorkflowRecommendations;

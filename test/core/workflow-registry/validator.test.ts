@@ -146,6 +146,75 @@ describe('workflow directory validator', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
+  it('accepts a skill: presentation block and exposes title, category, and tags', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'titled-workflow', {
+      extraManifest: 'skill:\n  name: Example Local Verify\n  category: Workflow\n  tags: [verify, local]',
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.definition).toMatchObject({
+      title: 'Example Local Verify',
+      category: 'Workflow',
+      tags: ['verify', 'local'],
+    });
+  });
+
+  it('honors the skill title alongside an ignored legacy command block', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'both-blocks', {
+      command: true,
+      extraManifest: 'skill:\n  name: Both Blocks Title',
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.definition?.title).toBe('Both Blocks Title');
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'command_field_ignored',
+        severity: 'warning',
+        message: expect.stringContaining('"skill:"'),
+      })
+    );
+  });
+
+  it.each([
+    ['an enabled field', 'skill:\n  name: Title\n  enabled: true'],
+    ['an unknown field', 'skill:\n  name: Title\n  icon: sparkles'],
+    ['a missing name', 'skill:\n  category: Workflow'],
+    ['a control character in the name', 'skill:\n  name: "Tab\\tTitle"'],
+  ])('rejects a skill block carrying %s', (_case, extraManifest) => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'skill-block-invalid', { extraManifest });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('manifest_schema_invalid');
+  });
+
+  it('keeps the digest a pure function of file content when toggling the skill block', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'digest-toggle');
+    const manifestPath = path.join(root, 'workflow.yaml');
+    const original = fs.readFileSync(manifestPath, 'utf8');
+    const baseline = validateWorkflowDirectory(root);
+
+    fs.writeFileSync(manifestPath, `${original}skill:\n  name: Digest Toggle\n`);
+    const withBlock = validateWorkflowDirectory(root);
+    expect(withBlock.valid).toBe(true);
+    expect(withBlock.definition?.digest).not.toBe(baseline.definition?.digest);
+
+    fs.writeFileSync(manifestPath, original);
+    const restored = validateWorkflowDirectory(root);
+    expect(restored.definition?.digest).toBe(baseline.definition?.digest);
+  });
+
   it('rejects unknown manifest fields', () => {
     const parent = temporaryDirectory();
     const root = writeWorkflow(parent, 'invalid-manifest', { extraManifest: 'unknown: true' });

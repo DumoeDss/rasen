@@ -237,7 +237,9 @@ function workflowChoices(
         ? messages.experts[id]
         : messages.workflows[id as keyof typeof messages.workflows]
       : {
-          name: definition.skill.template.name,
+          // The author-declared display title wins over the skill name; both
+          // are user-authored content and are never translated.
+          name: definition.title ?? definition.skill.template.name,
           description: `[${messages.sourceUser}] ${definition.skill.template.description}`,
         };
     const displayId = displayIds.get(id) ?? id;

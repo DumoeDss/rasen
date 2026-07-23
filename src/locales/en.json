@@ -14,6 +14,7 @@
       "invalid": "invalid",
       "warningPrefix": "Warning:",
       "skillLabel": "Skill",
+      "titleLabel": "Title",
       "commandLabel": "Command",
       "digestLabel": "Digest",
       "requiresWorkflowsLabel": "Requires workflows",

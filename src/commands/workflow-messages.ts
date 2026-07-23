@@ -10,6 +10,7 @@ export interface WorkflowUiMessages {
   invalid: string;
   warningPrefix: string;
   skillLabel: string;
+  titleLabel: string;
   commandLabel: string;
   digestLabel: string;
   requiresWorkflowsLabel: string;

@@ -613,6 +613,9 @@ export function workflowDefinitionForJson(definition: WorkflowDefinition): Recor
     sourcePath: definition.sourcePath ?? null,
     manifestVersion: definition.manifestVersion,
     kind: definition.kind,
+    title: definition.title ?? null,
+    category: definition.category ?? null,
+    tags: definition.tags ?? null,
     digest: definition.digest,
     skill: {
       name: definition.skill.template.name,

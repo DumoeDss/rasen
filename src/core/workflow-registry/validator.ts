@@ -384,7 +384,7 @@ export function validateWorkflowDirectory(
     diagnostics.push({
       code: 'command_field_ignored',
       severity: 'warning',
-      message: `Workflow "${manifest.id}" declares a "command:" block; the command surface is retired and this is ignored (skills are the only delivery format).`,
+      message: `Workflow "${manifest.id}" declares a "command:" block; the command surface is retired and this is ignored (skills are the only delivery format). Declare the display title under "skill:" instead.`,
       path: 'command',
       sourcePath,
     });
@@ -405,6 +405,9 @@ export function validateWorkflowDirectory(
     sourcePath: path.resolve(sourcePath),
     manifestVersion: manifest.version,
     kind: manifest.kind,
+    title: manifest.skill?.name,
+    category: manifest.skill?.category,
+    tags: manifest.skill?.tags ? [...manifest.skill.tags] : undefined,
     skill: {
       dirName: parsedSkill.frontmatter.name,
       template: {
