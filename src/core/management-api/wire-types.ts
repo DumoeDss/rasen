@@ -510,3 +510,40 @@ export type WorkflowMutationResponse =
   | WorkflowInitResponse
   | WorkflowExportResponse
   | WorkflowDeleteResponse;
+
+/**
+ * One selectable catalog unit's enablement state in an addressed space
+ * (space-workflow-enablement design D4). `title` already carries the
+ * skill-name fallback (never null/empty) — the same presentation rule
+ * `workflowDefinitionForJson` applies for the library page.
+ */
+export interface WorkflowEnablementUnit {
+  id: string;
+  kind: WorkflowKind;
+  source: WorkflowSourceKind;
+  title: string;
+  skillName: string;
+  enabled: boolean;
+  installed: boolean;
+  /** True when enabled only because an enabled workflow's dependency closure requires it. */
+  requiredByClosure: boolean;
+}
+
+/** `GET /api/v1/workflow-enablement?root=<...>` response (design D4). */
+export interface WorkflowEnablementResponse {
+  /** Whether the addressed space follows the user-wide profile or its own selection override. */
+  mode: 'profile' | 'override';
+  units: WorkflowEnablementUnit[];
+}
+
+/**
+ * `POST /api/v1/workflow-enablement` request body, discriminated by `op`
+ * (design D5). `enable`/`disable` require a known catalog unit id; `reset`
+ * takes none. Every op addresses a space via `root` (an absolute path
+ * matching a registered space — no `space` selector namespace here, since a
+ * space toggle always targets one concrete filesystem root).
+ */
+export type WorkflowEnablementMutationRequest =
+  | { root: string; op: 'enable'; id: string }
+  | { root: string; op: 'disable'; id: string }
+  | { root: string; op: 'reset' };

@@ -36,14 +36,15 @@ export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
  * The whitelist table, enumerated by tier (change-submission spec's
  * requirement-level exactness rules):
  *
- * - `bounded-cli`: exactly twelve entries — change submission
+ * - `bounded-cli`: exactly thirteen entries — change submission
  *   (`create-change`), the three space-creation ops
  *   (`create-project-space`, `register-store-space`, `setup-store-space`),
  *   the four workflow-library mutations (`import-workflow`, `init-workflow`,
- *   `export-workflow`, `delete-workflow`), and the four pipeline-library
+ *   `export-workflow`, `delete-workflow`), the four pipeline-library
  *   mutations (`import-pipeline`, `init-pipeline`, `export-pipeline`,
- *   `delete-pipeline`). Each is deterministic, bounded, and leaves no resident
- *   process.
+ *   `delete-pipeline`), and the per-space workflow-enablement apply op
+ *   (`workflow-enablement-update`, space-workflow-enablement design D5). Each
+ *   is deterministic, bounded, and leaves no resident process.
  * - `supervised-long-runner`: exactly `auto` and `goal`.
  *
  * Each mutation endpoint admits only entries of its own operation set (the
@@ -64,6 +65,7 @@ export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze
   'init-pipeline': { tier: 'bounded-cli', op: 'init-pipeline' },
   'export-pipeline': { tier: 'bounded-cli', op: 'export-pipeline' },
   'delete-pipeline': { tier: 'bounded-cli', op: 'delete-pipeline' },
+  'workflow-enablement-update': { tier: 'bounded-cli', op: 'workflow-enablement-update' },
   auto: {
     tier: 'supervised-long-runner',
     op: 'auto',

@@ -16,6 +16,7 @@ import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/
 import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/shared/retired-command-paths.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
+import { readProjectConfig } from '../core/project-config.js';
 import {
   getProfilePromptMessages,
   type ProfilePromptMessages,
@@ -305,7 +306,12 @@ function maybeWarnProjectConfigDrift(
   const openspecDir = path.join(projectDir, OPENSPEC_DIR_NAME);
   if (!fs.existsSync(openspecDir)) return;
   if (!hasProjectConfigDrift(projectDir, state.workflows)) return;
-  console.log(colorize(getProfileUiMessages().driftWarning));
+  // A project carrying its own `workflows` override (space-workflow-enablement)
+  // intentionally differs from the user-wide profile — name the override
+  // instead of reporting it as unapplied global config (design.md D3/spec).
+  const hasOverride = readProjectConfig(projectDir)?.workflows !== undefined;
+  const messages = getProfileUiMessages();
+  console.log(colorize(hasOverride ? messages.driftWarningOverride : messages.driftWarning));
 }
 
 export function printProfileApplyGuidance(): void {

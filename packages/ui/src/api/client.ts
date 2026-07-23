@@ -31,6 +31,8 @@ import type {
   SubmitChangeResponse,
   TaskDetailResponse,
   WorkflowDetailResponse,
+  WorkflowEnablementMutationRequest,
+  WorkflowEnablementResponse,
   WorkflowListResponse,
   WorkflowMutationRequest,
   WorkflowMutationResponse,
@@ -42,13 +44,21 @@ export class ApiError extends Error {
   code: string;
   fix?: string;
   status: number;
+  /**
+   * Present only for a workflow-enablement apply failure (space-workflow-
+   * enablement design D5): the selection write succeeded but `update` did
+   * not, so the response carries the space's actual post-write state
+   * alongside the CLI's own error message.
+   */
+  state?: unknown;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody & { state?: unknown }) {
     super(body.error.message);
     this.name = 'ApiError';
     this.status = status;
     this.code = body.error.code;
     this.fix = body.error.fix;
+    this.state = body.state;
   }
 }
 
@@ -324,6 +334,33 @@ export function validateWorkflow(target: string): Promise<WorkflowValidationResp
  */
 export function mutateWorkflow(body: WorkflowMutationRequest): Promise<WorkflowMutationResponse> {
   return request<WorkflowMutationResponse>('/api/v1/workflows', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+// ---- Per-space workflow enablement (space-workflow-enablement design D4/D5) ----
+// Unlike the library endpoints above, these ARE space-addressed — but via an
+// explicit absolute `root`, not the `?space=` selector (a toggle always
+// targets one concrete filesystem root, resolved from the spaces listing).
+
+/** The addressed space's per-unit enablement state (mirrors `GET /api/v1/workflow-enablement`). */
+export function getWorkflowEnablement(root: string): Promise<WorkflowEnablementResponse> {
+  return request<WorkflowEnablementResponse>(
+    `/api/v1/workflow-enablement?root=${encodeURIComponent(root)}`
+  );
+}
+
+/**
+ * Enable / disable / reset a workflow in one space. On an apply failure the
+ * thrown `ApiError.message` is the CLI's own error text verbatim, and
+ * `ApiError.state` carries the space's actual post-write enablement state.
+ */
+export function mutateWorkflowEnablement(
+  body: WorkflowEnablementMutationRequest
+): Promise<WorkflowEnablementResponse> {
+  return request<WorkflowEnablementResponse>('/api/v1/workflow-enablement', {
     method: 'POST',
     json: true,
     body: JSON.stringify(body),

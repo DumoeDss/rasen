@@ -4,7 +4,10 @@ import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import { LocalPathPicker } from './LocalPathPicker.js';
 import type {
+  ProjectSpaceEntry,
   WorkflowDetailResponse,
+  WorkflowEnablementResponse,
+  WorkflowEnablementUnit,
   WorkflowInvalidEntry,
   WorkflowListEntry,
   WorkflowListResponse,
@@ -112,31 +115,40 @@ export function WorkflowsPage() {
         </div>
       </div>
 
-      <WorkflowSection
-        heading="Driver"
-        testid="workflows-section-driver"
-        entries={drivers}
-        internal={internalWorkflows}
-        onOpen={setSelectedId}
-        onExport={onExport}
-        onDelete={onDelete}
-      />
-      <WorkflowSection
-        heading="Task"
-        testid="workflows-section-task"
-        entries={tasks}
-        onOpen={setSelectedId}
-        onExport={onExport}
-        onDelete={onDelete}
-      />
-      <WorkflowSection
-        heading="Expert"
-        testid="workflows-section-expert"
-        entries={experts}
-        onOpen={setSelectedId}
-        onExport={onExport}
-        onDelete={onDelete}
-      />
+      <EnablementControls>
+        {(enablement) => (
+          <>
+            <WorkflowSection
+              heading="Driver"
+              testid="workflows-section-driver"
+              entries={drivers}
+              internal={internalWorkflows}
+              onOpen={setSelectedId}
+              onExport={onExport}
+              onDelete={onDelete}
+              enablement={enablement}
+            />
+            <WorkflowSection
+              heading="Task"
+              testid="workflows-section-task"
+              entries={tasks}
+              onOpen={setSelectedId}
+              onExport={onExport}
+              onDelete={onDelete}
+              enablement={enablement}
+            />
+            <WorkflowSection
+              heading="Expert"
+              testid="workflows-section-expert"
+              entries={experts}
+              onOpen={setSelectedId}
+              onExport={onExport}
+              onDelete={onDelete}
+              enablement={enablement}
+            />
+          </>
+        )}
+      </EnablementControls>
       {invalid.length > 0 && <InvalidGroup entries={invalid} />}
 
       {selectedId !== null && (
@@ -169,6 +181,198 @@ type Dialog =
   | { kind: 'export'; id: string }
   | { kind: 'delete'; id: string };
 
+// ── Per-space enablement (space-workflow-enablement design D6) ─────────────
+
+/** One flattened, pickable space entry (a project space, or a store's member project). */
+interface PickableSpace {
+  root: string;
+  label: string;
+}
+
+/** Context handed down to every `WorkflowCard` once a space is picked, so cards can render their toggle. */
+interface EnablementContext {
+  unitsById: Map<string, WorkflowEnablementUnit>;
+  mutating: boolean;
+  onToggle: (id: string, currentlyEnabled: boolean) => void;
+}
+
+/**
+ * The space picker + mode banner + reset affordance (workflows-ui spec: "The
+ * page offers per-space workflow enablement"). Renders its children with the
+ * `EnablementContext` once a space is picked and its enablement state has
+ * loaded (null otherwise — no space picked keeps the page exactly the
+ * user-wide library manager it is today, per spec).
+ */
+function EnablementControls({
+  children,
+}: {
+  children: (enablement: EnablementContext | null) => ComponentChildren;
+}) {
+  const [spaces, setSpaces] = useState<PickableSpace[] | null>(null);
+  const [selectedRoot, setSelectedRoot] = useState<string>('');
+  const [enablement, setEnablement] = useState<WorkflowEnablementResponse | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const [mutateError, setMutateError] = useState<string | null>(null);
+  const [resetConfirming, setResetConfirming] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    client
+      .listSpaces()
+      .then((res) => {
+        if (cancelled) return;
+        const picked: PickableSpace[] = [];
+        for (const space of res.spaces) {
+          if (space.type === 'project') {
+            const entry = space as ProjectSpaceEntry;
+            picked.push({ root: entry.root, label: entry.name });
+          } else {
+            for (const member of space.members) {
+              picked.push({ root: member.root, label: `${member.name} (${space.name})` });
+            }
+          }
+        }
+        setSpaces(picked);
+      })
+      .catch(() => {
+        if (!cancelled) setSpaces([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRoot) {
+      setEnablement(null);
+      setLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setEnablement(null);
+    setLoadError(null);
+    setMutateError(null);
+    setResetConfirming(false);
+    client
+      .getWorkflowEnablement(selectedRoot)
+      .then((res) => {
+        if (!cancelled) setEnablement(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(cliMessage(err, 'Failed to load enablement state for this space.'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRoot]);
+
+  async function toggle(id: string, currentlyEnabled: boolean) {
+    if (mutating || !selectedRoot) return;
+    setMutating(true);
+    setMutateError(null);
+    try {
+      const res = await client.mutateWorkflowEnablement({
+        root: selectedRoot,
+        op: currentlyEnabled ? 'disable' : 'enable',
+        id,
+      });
+      setEnablement(res);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+      setMutateError(cliMessage(err, 'Failed to update the workflow selection for this space.'));
+      if (err instanceof ApiError && err.state) setEnablement(err.state as WorkflowEnablementResponse);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function reset() {
+    if (mutating || !selectedRoot) return;
+    setMutating(true);
+    setMutateError(null);
+    try {
+      const res = await client.mutateWorkflowEnablement({ root: selectedRoot, op: 'reset' });
+      setEnablement(res);
+      setResetConfirming(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+      setMutateError(cliMessage(err, 'Failed to reset this space to the user-wide profile.'));
+      if (err instanceof ApiError && err.state) setEnablement(err.state as WorkflowEnablementResponse);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  const context: EnablementContext | null = enablement
+    ? {
+        unitsById: new Map(enablement.units.map((u) => [u.id, u])),
+        mutating,
+        onToggle: toggle,
+      }
+    : null;
+
+  return (
+    <div class="workflows-enablement" data-testid="workflows-enablement">
+      <label class="workflows-enablement__picker">
+        <span>Enable/disable per space</span>
+        <select
+          data-testid="workflows-enablement-space-picker"
+          value={selectedRoot}
+          onChange={(e) => setSelectedRoot((e.target as HTMLSelectElement).value)}
+        >
+          <option value="">Choose a space…</option>
+          {(spaces ?? []).map((space) => (
+            <option key={space.root} value={space.root}>{space.label}</option>
+          ))}
+        </select>
+      </label>
+
+      {selectedRoot && loadError && (
+        <p class="workflows-enablement__error" role="alert" data-testid="workflows-enablement-error">{loadError}</p>
+      )}
+
+      {selectedRoot && enablement && (
+        <div class="workflows-enablement__banner" data-testid="workflows-enablement-banner">
+          {enablement.mode === 'override' ? (
+            <>
+              <span data-testid="workflows-enablement-mode">This space uses its own workflow selection.</span>
+              {!resetConfirming ? (
+                <button
+                  type="button"
+                  data-testid="workflows-enablement-reset"
+                  disabled={mutating}
+                  onClick={() => setResetConfirming(true)}
+                >
+                  Reset to profile
+                </button>
+              ) : (
+                <span class="workflows-enablement__confirm">
+                  Discard this space's own selection and follow the user-wide profile?
+                  <button type="button" data-testid="workflows-enablement-reset-confirm" disabled={mutating} onClick={reset}>
+                    {mutating ? 'Resetting…' : 'Yes, reset'}
+                  </button>
+                  <button type="button" onClick={() => setResetConfirming(false)} disabled={mutating}>
+                    Cancel
+                  </button>
+                </span>
+              )}
+            </>
+          ) : (
+            <span data-testid="workflows-enablement-mode">This space follows the user-wide profile.</span>
+          )}
+        </div>
+      )}
+
+      {selectedRoot && mutateError && (
+        <p class="workflows-enablement__error" role="alert" data-testid="workflows-enablement-mutate-error">{mutateError}</p>
+      )}
+
+      {children(context)}
+    </div>
+  );
+}
+
 // ── Listing ────────────────────────────────────────────────────────────────
 
 function WorkflowSection({
@@ -179,6 +383,7 @@ function WorkflowSection({
   onOpen,
   onExport,
   onDelete,
+  enablement,
 }: {
   heading: string;
   testid: string;
@@ -188,6 +393,8 @@ function WorkflowSection({
   onOpen: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Per-space enablement (space-workflow-enablement); absent/null when no space is picked. */
+  enablement?: EnablementContext | null;
 }) {
   const internalEntries = internal ?? [];
   // An empty category renders no section; the driver section still appears if
@@ -199,11 +406,14 @@ function WorkflowSection({
       <ul class="workflows-group__list">
         {entries.map((entry) => (
           <li key={entry.id}>
-            <WorkflowCard entry={entry} onOpen={onOpen} onExport={onExport} onDelete={onDelete} />
+            <WorkflowCard entry={entry} onOpen={onOpen} onExport={onExport} onDelete={onDelete} enablement={enablement} />
           </li>
         ))}
       </ul>
       {internalEntries.length > 0 && (
+        // Internal plumbing never gets an enablement toggle (workflows-ui
+        // spec: "internal workflows... carry no toggle") — no `enablement`
+        // context is threaded to this disclosure's cards.
         <InternalDisclosure entries={internalEntries} onOpen={onOpen} onExport={onExport} onDelete={onDelete} />
       )}
     </section>
@@ -257,13 +467,16 @@ function WorkflowCard({
   onOpen,
   onExport,
   onDelete,
+  enablement,
 }: {
   entry: WorkflowListEntry;
   onOpen: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
+  enablement?: EnablementContext | null;
 }) {
   const isBuiltIn = entry.source === 'built-in';
+  const unit = enablement?.unitsById.get(entry.id);
   return (
     <div class="workflow-card" data-testid="workflow-card" data-id={entry.id} data-source={entry.source}>
       <button
@@ -299,6 +512,44 @@ function WorkflowCard({
             Delete
           </button>
         </div>
+      )}
+      {unit && <WorkflowEnablementBadge unit={unit} enablement={enablement!} />}
+    </div>
+  );
+}
+
+/**
+ * The per-card enablement affordance for the picked space (workflows-ui
+ * spec): shows enabled/installed state and a toggle, EXCEPT for a unit
+ * enabled only because an enabled workflow's dependency closure requires it
+ * — that unit shows "required by an enabled workflow" instead, since a
+ * disable there would be immediately undone by the next apply.
+ */
+function WorkflowEnablementBadge({
+  unit,
+  enablement,
+}: {
+  unit: WorkflowEnablementUnit;
+  enablement: EnablementContext;
+}) {
+  return (
+    <div class="workflow-card__enablement" data-testid="workflow-enablement">
+      <span data-testid="workflow-enablement-state">
+        {unit.enabled ? 'Enabled' : 'Disabled'} in this space{unit.installed ? ' (installed)' : ''}
+      </span>
+      {unit.requiredByClosure ? (
+        <span class="workflow-card__enablement-required" data-testid="workflow-enablement-required">
+          Required by an enabled workflow
+        </span>
+      ) : (
+        <button
+          type="button"
+          data-testid="workflow-enablement-toggle"
+          disabled={enablement.mutating}
+          onClick={() => enablement.onToggle(unit.id, unit.enabled)}
+        >
+          {unit.enabled ? 'Disable here' : 'Enable here'}
+        </button>
       )}
     </div>
   );

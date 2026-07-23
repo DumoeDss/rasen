@@ -36,6 +36,7 @@ import {
   handleWorkflowsList,
 } from './workflows.js';
 import { createWorkflowSubmitter } from './workflow-submit.js';
+import { createWorkflowEnablementSubmitter, handleWorkflowEnablementRead } from './workflow-enablement.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
@@ -81,6 +82,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/local-paths',
   '/api/v1/workflows',
   '/api/v1/workflow-validation',
+  '/api/v1/workflow-enablement',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -160,6 +162,9 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET';
   }
   if (pathname === '/api/v1/workflows') {
+    return method === 'GET' || method === 'POST';
+  }
+  if (pathname === '/api/v1/workflow-enablement') {
     return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/sessions') {
@@ -277,6 +282,10 @@ export function createManagementRouter(
   // The workflow mutation bridge (workflow-http-api design D4): its own cap-1
   // state, admitting only the four workflow bounded-cli ops.
   const submitWorkflow = createWorkflowSubmitter(context);
+  // The per-space workflow-enablement mutation bridge (space-workflow-
+  // enablement design D5): its own cap-1 state, independent of the
+  // workflow-library bridge above.
+  const submitWorkflowEnablement = createWorkflowEnablementSubmitter(context);
 
   // One supervisor per server instance (design D4/task 2.4): its own
   // registry, its own concurrency cap, its own agent-CLI resolution cache.
@@ -421,6 +430,38 @@ export function createManagementRouter(
         return;
       }
       sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/workflow-enablement' && req.method === 'GET') {
+      const result = await handleWorkflowEnablementRead(url.searchParams.get('root') ?? undefined);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/workflow-enablement' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await submitWorkflowEnablement(body.value ?? {});
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: { code: result.code, message: result.message },
+            ...(result.state !== undefined ? { state: result.state } : {}),
+          })
+        );
+        return;
+      }
+      sendJson(res, 200, result.response);
       return;
     }
 

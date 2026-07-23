@@ -23,6 +23,9 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     validateWorkflow: vi.fn(),
     mutateWorkflow: vi.fn(),
     listLocalPaths: vi.fn(),
+    listSpaces: vi.fn(),
+    getWorkflowEnablement: vi.fn(),
+    mutateWorkflowEnablement: vi.fn(),
   };
 });
 
@@ -31,7 +34,14 @@ import { WorkflowsPage } from '../../src/components/WorkflowsPage.js';
 import { Layout } from '../../src/components/Layout.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
-import { workflowsListFixture, workflowDetailFixture, workflowDetailFixtureNoTitle } from '../fixtures/workflows.js';
+import {
+  workflowsListFixture,
+  workflowDetailFixture,
+  workflowDetailFixtureNoTitle,
+  spacesFixture,
+  enablementProfileFixture,
+  enablementOverrideFixture,
+} from '../fixtures/workflows.js';
 
 async function flushMicrotasks(times = 10): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -91,6 +101,7 @@ describe('WorkflowsPage', () => {
     (client.listWorkflows as any).mockResolvedValue(workflowsListFixture);
     (client.getWorkflow as any).mockResolvedValue(workflowDetailFixture);
     (client.listLocalPaths as any).mockResolvedValue(HOME_LISTING);
+    (client.listSpaces as any).mockResolvedValue({ spaces: [] });
   });
 
   afterEach(() => {
@@ -406,12 +417,106 @@ describe('WorkflowsPage', () => {
 
   it('offers no model, handoff, or gate control anywhere on the page', async () => {
     await mount(container);
-    // Library management only (Fork 4B rejected). No such controls or labels.
-    expect(container.querySelector('select')).toBeNull();
+    // Library management (plus the space-workflow-enablement picker below) —
+    // Fork 4B (binding model/handoff/gate controls to this page) is still
+    // rejected. The page's only <select> is the enablement space picker.
+    expect(container.querySelector('[data-testid="workflows-enablement-space-picker"]')).not.toBeNull();
+    expect(container.querySelectorAll('select').length).toBe(1);
     expect(container.querySelector('[data-testid*="model"]')).toBeNull();
     expect(container.querySelector('[data-testid*="handoff"]')).toBeNull();
     expect(container.querySelector('[data-testid*="gate"]')).toBeNull();
     expect(container.textContent!.toLowerCase()).not.toContain('handoff');
+  });
+});
+
+describe('WorkflowsPage per-space enablement (space-workflow-enablement)', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    (client.listWorkflows as any).mockResolvedValue(workflowsListFixture);
+    (client.getWorkflow as any).mockResolvedValue(workflowDetailFixture);
+    (client.listLocalPaths as any).mockResolvedValue(HOME_LISTING);
+    (client.listSpaces as any).mockResolvedValue(spacesFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.pushState({}, '', '/');
+    vi.resetAllMocks();
+  });
+
+  async function pickSpace(): Promise<void> {
+    const picker = container.querySelector('[data-testid="workflows-enablement-space-picker"]')!;
+    await act(async () => {
+      (picker as HTMLSelectElement).value = '/home/u/space-a';
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  it('with no space picked, the page shows the library with no enablement toggles', async () => {
+    await mount(container);
+    expect(container.querySelector('[data-testid="workflow-enablement"]')).toBeNull();
+    expect(container.querySelector('[data-testid="workflows-enablement-banner"]')).toBeNull();
+  });
+
+  it('toggling enables a workflow in the picked space only (renders the post-apply response, no other space touched)', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue(enablementProfileFixture);
+    (client.mutateWorkflowEnablement as any).mockResolvedValue({
+      ...enablementProfileFixture,
+      units: enablementProfileFixture.units.map((u) =>
+        u.id === 'plan-build' ? { ...u, enabled: true, installed: true } : u
+      ),
+    });
+    await mount(container);
+    await pickSpace();
+
+    const planBuildCard = container.querySelector('[data-id="plan-build"]')!;
+    const toggle = planBuildCard.querySelector('[data-testid="workflow-enablement-toggle"]')!;
+    expect(toggle.textContent).toContain('Enable here');
+
+    await clickAndFlush(toggle);
+
+    expect(client.mutateWorkflowEnablement).toHaveBeenCalledWith({
+      root: '/home/u/space-a',
+      op: 'enable',
+      id: 'plan-build',
+    });
+    const updatedCard = container.querySelector('[data-id="plan-build"]')!;
+    expect(updatedCard.querySelector('[data-testid="workflow-enablement-toggle"]')!.textContent).toContain('Disable here');
+  });
+
+  it('shows the override banner with a reset that takes effect only after explicit confirmation', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue(enablementOverrideFixture);
+    (client.mutateWorkflowEnablement as any).mockResolvedValue(enablementProfileFixture);
+    await mount(container);
+    await pickSpace();
+
+    const banner = container.querySelector('[data-testid="workflows-enablement-banner"]')!;
+    expect(banner.textContent).toContain('own workflow selection');
+    const resetButton = banner.querySelector('[data-testid="workflows-enablement-reset"]')!;
+
+    // Clicking Reset only reveals the confirmation — no mutation yet.
+    await clickAndFlush(resetButton);
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+    const confirmButton = container.querySelector('[data-testid="workflows-enablement-reset-confirm"]')!;
+
+    await clickAndFlush(confirmButton);
+    expect(client.mutateWorkflowEnablement).toHaveBeenCalledWith({ root: '/home/u/space-a', op: 'reset' });
+    expect(container.querySelector('[data-testid="workflows-enablement-mode"]')!.textContent).toContain('follows the user-wide profile');
+  });
+
+  it('a closure-required unit shows no disable toggle', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue(enablementProfileFixture);
+    await mount(container);
+    await pickSpace();
+
+    const deepResearchCard = container.querySelector('[data-id="deep-research"]')!;
+    expect(deepResearchCard.querySelector('[data-testid="workflow-enablement-required"]')).not.toBeNull();
+    expect(deepResearchCard.querySelector('[data-testid="workflow-enablement-toggle"]')).toBeNull();
   });
 });
 

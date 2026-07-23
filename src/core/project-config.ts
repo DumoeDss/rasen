@@ -77,6 +77,16 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Stable project identity used by the machine-wide project registry'),
 
+  // Optional: a per-space workflow selection override (space-workflow-enablement
+  // spec). When present, this list (plus its dependency closure) is the
+  // space's desired workflow set verbatim — it replaces the user-wide
+  // profile for this project only. Absent means the space follows the
+  // user-wide profile exactly as before this field existed.
+  workflows: z
+    .array(z.string())
+    .optional()
+    .describe('Per-space workflow selection override (replaces the user-wide profile for this project)'),
+
   // Optional: archive behavior configuration. Extensible - future fields
   // join this same map.
   archive: z
@@ -638,6 +648,24 @@ function parseProjectConfigContent(
           {
             key: 'invalidProjectId',
             fallback: `Invalid 'projectId' field in config (must be string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse workflows field: an optional per-space workflow selection
+    // override (array of strings). Non-array -> dropped with a warning;
+    // valid siblings still parse.
+    if (raw.workflows !== undefined) {
+      const workflowsResult = z.array(z.string()).safeParse(raw.workflows);
+      if (workflowsResult.success) {
+        config.workflows = workflowsResult.data;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidWorkflows',
+            fallback: `Invalid 'workflows' field in config (must be an array of strings)`,
           },
           reporter
         );

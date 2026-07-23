@@ -140,10 +140,11 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'workflows',
-    scopes: ['global'],
+    scopes: ['global', 'project'],
     type: 'array',
     defaultValue: [],
-    description: 'Explicit workflow selection (edit via `rasen profile`)',
+    description:
+      'Explicit workflow selection (global: edit via `rasen profile`; project: a per-space override that replaces the user-wide profile for that space only)',
     group: 'Profile',
   },
   {

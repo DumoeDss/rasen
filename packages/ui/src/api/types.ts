@@ -703,3 +703,29 @@ export type WorkflowMutationResponse =
   | WorkflowInitResponse
   | WorkflowExportResponse
   | WorkflowDeleteResponse;
+
+/** One selectable catalog unit's enablement state in an addressed space (space-workflow-enablement design D4). */
+export interface WorkflowEnablementUnit {
+  id: string;
+  kind: WorkflowKind;
+  source: WorkflowSourceKind;
+  title: string;
+  skillName: string;
+  enabled: boolean;
+  installed: boolean;
+  /** True when enabled only because an enabled workflow's dependency closure requires it. */
+  requiredByClosure: boolean;
+}
+
+/** `GET /api/v1/workflow-enablement?root=<...>` response. */
+export interface WorkflowEnablementResponse {
+  /** Whether the addressed space follows the user-wide profile or its own selection override. */
+  mode: 'profile' | 'override';
+  units: WorkflowEnablementUnit[];
+}
+
+/** `POST /api/v1/workflow-enablement` request, discriminated by `op`. */
+export type WorkflowEnablementMutationRequest =
+  | { root: string; op: 'enable'; id: string }
+  | { root: string; op: 'disable'; id: string }
+  | { root: string; op: 'reset' };

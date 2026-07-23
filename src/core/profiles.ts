@@ -7,6 +7,7 @@
  */
 
 import type { Profile } from './global-config.js';
+import { readProjectConfig } from './project-config.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
@@ -123,4 +124,43 @@ export function resolveDesiredWorkflowSelection(
     (definition) => definition.id
   );
   return { ids, unknown };
+}
+
+/** Result of {@link resolveProjectWorkflowSelection}, naming which layer produced the set. */
+export interface ResolveProjectWorkflowSelectionResult extends ResolveDesiredWorkflowSelectionResult {
+  /** `'override'` when the project carries its own `workflows` selection; `'profile'` otherwise. */
+  mode: 'profile' | 'override';
+}
+
+/**
+ * The per-project entry point (design.md D1/D3, space-workflow-enablement):
+ * when the project's own `rasen/config.yaml` carries a `workflows` override,
+ * that list resolves verbatim plus dependency closure — bypassing the
+ * `expertSelectionExplicit` migration entirely, since an override is always
+ * an explicit, individually-authored list, never a legacy all-experts
+ * install. When no override is present, resolution is unchanged: the
+ * user-wide profile path (`resolveDesiredWorkflowSelection`) governs. Used
+ * by both `update.ts` and `profile-sync-drift.ts` so install, removal, and
+ * drift can never disagree about which space is following what.
+ */
+export function resolveProjectWorkflowSelection(
+  catalog: WorkflowCatalog,
+  projectRoot: string,
+  profile: Profile,
+  customWorkflows: string[] | undefined,
+  expertSelectionExplicit: boolean
+): ResolveProjectWorkflowSelectionResult {
+  const projectConfig = readProjectConfig(projectRoot);
+  const override = projectConfig?.workflows;
+
+  if (override !== undefined) {
+    const { known, unknown } = filterKnownWorkflowRoots(catalog, override);
+    const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+      (definition) => definition.id
+    );
+    return { ids, unknown, mode: 'override' };
+  }
+
+  const result = resolveDesiredWorkflowSelection(catalog, profile, customWorkflows, expertSelectionExplicit);
+  return { ...result, mode: 'profile' };
 }

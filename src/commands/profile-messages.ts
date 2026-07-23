@@ -73,6 +73,7 @@ export interface ProfileUiMessages {
   actions: Record<'workflows' | 'keep', WorkflowPromptMeta>;
   noConfigChanges: string;
   driftWarning: string;
+  driftWarningOverride: string;
   profileChangesHeading: string;
   applyToProject: string;
   updateOtherProjects: string;

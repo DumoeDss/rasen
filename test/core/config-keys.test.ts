@@ -44,6 +44,13 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('handoff.threshold', 'project').valid).toBe(true);
     });
 
+    it('accepts workflows at project scope and rejects it at store scope', () => {
+      const projectResult = validateConfigValue(findConfigKeyDefinition('workflows', 'project')!, ['review']);
+      expect(validateConfigKeyPath('workflows', 'project').valid).toBe(true);
+      expect(projectResult).toBeNull();
+      expect(validateConfigKeyPath('workflows', 'store').valid).toBe(false);
+    });
+
     it('rejects a global-only key at project scope', () => {
       expect(validateConfigKeyPath('proactive', 'project').valid).toBe(false);
     });
@@ -200,20 +207,24 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-    it('assigns exactly 10 global-only, 3 store+project, and 14 all-three keys', () => {
+    it('assigns exactly 9 global-only, 1 global+project, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
+      const globalProject = nonWildcard.filter((def) => sorted(def) === 'global,project');
       const storeProject = nonWildcard.filter((def) => sorted(def) === 'project,store');
       const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
 
       // Guards a future key from silently missing the store scope.
-      // 10 = the 6 machine-level keys from the store-scope re-scope plus
+      // 9 = the 6 machine-level keys from the store-scope re-scope plus
       // ui.pinnedSpaces (spaces-page pins, deliberately global-only) plus the
       // 3 keepalive keys (runtimes.claude/codex + contextFloor — machine-level
       // gates for `rasen agent wait`, deliberately global-only) — `delivery`
-      // was retired from this bucket.
-      expect(globalOnly.length).toBe(10);
+      // was retired from this bucket, and `workflows` moved to global+project
+      // (space-workflow-enablement).
+      expect(globalOnly.length).toBe(9);
+      expect(globalProject.length).toBe(1);
+      expect(globalProject[0].key).toBe('workflows');
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
       // Five wildcard families: featureFlags (global-only, the 9th global-only

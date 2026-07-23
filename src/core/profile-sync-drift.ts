@@ -12,6 +12,7 @@ import {
   hasWorkflowArtifactLedgerDrift,
   readWorkflowArtifactLedger,
 } from './workflow-artifact-ledger.js';
+import { readProjectConfig } from './project-config.js';
 
 type WorkflowId = string;
 
@@ -33,9 +34,19 @@ export const WORKFLOW_TO_SKILL_DIR = Object.fromEntries(
  * `profiles.ts`). Idempotent for callers that already pass a
  * closure-resolved set.
  */
-function resolveClosureDesiredWorkflows(workflows: readonly string[]): WorkflowId[] {
+function resolveClosureDesiredWorkflows(
+  workflows: readonly string[],
+  projectPath?: string
+): WorkflowId[] {
+  // A project carrying its own `workflows` override (space-workflow-enablement)
+  // always wins the closure basis, regardless of what the caller passed in —
+  // this is what keeps drift detection from ever disagreeing with `update`'s
+  // per-project resolution (design.md D3) when a caller still passes the
+  // global/stored selection (e.g. the profile editor's un-expanded state).
+  const override = projectPath ? readProjectConfig(projectPath)?.workflows : undefined;
+  const base = override ?? workflows;
   const catalog = loadWorkflowCatalog();
-  const { known } = filterKnownWorkflowRoots(catalog, workflows);
+  const { known } = filterKnownWorkflowRoots(catalog, base);
   return resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
     (definition) => definition.id
   );
@@ -79,7 +90,7 @@ export function hasToolProfileDrift(
   const tool = AI_TOOLS.find((t) => t.value === toolId);
   if (!tool?.skillsDir) return false;
 
-  const knownDesiredWorkflows = resolveClosureDesiredWorkflows(desiredWorkflows);
+  const knownDesiredWorkflows = resolveClosureDesiredWorkflows(desiredWorkflows, projectPath);
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
   const definitions = loadWorkflowCatalog().definitions;
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
@@ -157,7 +168,7 @@ export function hasProjectConfigDrift(
     return true;
   }
 
-  const desiredSet = new Set(resolveClosureDesiredWorkflows(desiredWorkflows));
+  const desiredSet = new Set(resolveClosureDesiredWorkflows(desiredWorkflows, projectPath));
 
   for (const toolId of configuredTools) {
     const installed = getInstalledWorkflowsForTool(projectPath, toolId);

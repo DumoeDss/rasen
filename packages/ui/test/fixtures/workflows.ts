@@ -1,4 +1,9 @@
-import type { WorkflowDetailResponse, WorkflowListResponse } from '../../src/api/types.js';
+import type {
+  SpacesResponse,
+  WorkflowDetailResponse,
+  WorkflowEnablementResponse,
+  WorkflowListResponse,
+} from '../../src/api/types.js';
 
 /**
  * A workflow library listing (workflows-ui spec) exercising all four kinds so
@@ -122,3 +127,30 @@ export const workflowDetailFixtureNoTitle = {
   },
   usage: [],
 } satisfies WorkflowDetailResponse;
+
+/** One pickable project space (space-workflow-enablement design D6) for the enablement picker test. */
+export const spacesFixture = {
+  spaces: [
+    { type: 'project', id: 'proj-a', name: 'Space A', root: '/home/u/space-a' },
+  ],
+} satisfies SpacesResponse;
+
+/**
+ * A space following the user-wide profile: `team-flow` enabled and installed,
+ * `deep-research` enabled only because an enabled workflow's closure requires
+ * it (no disable offered), `plan-build` disabled.
+ */
+export const enablementProfileFixture = {
+  mode: 'profile',
+  units: [
+    { id: 'team-flow', kind: 'task', source: 'user', title: 'Team Flow', skillName: 'rasen-team-flow', enabled: true, installed: true, requiredByClosure: false },
+    { id: 'plan-build', kind: 'driver', source: 'user', title: 'plan-build', skillName: 'rasen-plan-build', enabled: false, installed: false, requiredByClosure: false },
+    { id: 'deep-research', kind: 'expert', source: 'built-in', title: 'deep-research', skillName: 'rasen-deep-research', enabled: true, installed: true, requiredByClosure: true },
+  ],
+} satisfies WorkflowEnablementResponse;
+
+/** The same space after it gains its own selection override. */
+export const enablementOverrideFixture = {
+  mode: 'override',
+  units: enablementProfileFixture.units,
+} satisfies WorkflowEnablementResponse;

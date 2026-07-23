@@ -11,10 +11,10 @@ import {
  * (change-submission delta: "Whitelisted operations only, across the change,
  * space, workflow, and pipeline bounded-CLI operations").
  *
- * COUNT: the change-submission delta enumerates the bounded tier as exactly
- * TWELVE ops (create-change + three space ops + four workflow ops + four
- * pipeline ops). The pipeline ops landed with the pipelines-page change; the
- * merged table is whole here, so the exact-twelve assertion below pins it.
+ * COUNT: the bounded tier is exactly THIRTEEN ops (create-change + three
+ * space ops + four workflow ops + four pipeline ops + the per-space
+ * workflow-enablement apply op, space-workflow-enablement design D5). The
+ * merged table is whole here, so the exact-thirteen assertion below pins it.
  */
 describe('workflow-library bounded-cli whitelist ops', () => {
   const WORKFLOW_OPS = ['import-workflow', 'init-workflow', 'export-workflow', 'delete-workflow'] as const;
@@ -37,7 +37,7 @@ describe('workflow-library bounded-cli whitelist ops', () => {
     }
   });
 
-  it('pins the merged bounded-cli tier to exactly the twelve enumerated ops', () => {
+  it('pins the merged bounded-cli tier to exactly the thirteen enumerated ops', () => {
     expect([...boundedOps].sort()).toEqual(
       [
         'create-change',
@@ -52,6 +52,7 @@ describe('workflow-library bounded-cli whitelist ops', () => {
         'init-pipeline',
         'export-pipeline',
         'delete-pipeline',
+        'workflow-enablement-update',
       ].sort(),
     );
   });

@@ -36,7 +36,7 @@ import {
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, type Profile, type RepoMode } from './global-config.js';
-import { resolveDesiredWorkflowSelection } from './profiles.js';
+import { resolveProjectWorkflowSelection } from './profiles.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { resolveProjectHome } from './project-home.js';
@@ -174,12 +174,22 @@ export class UpdateCommand {
     }
 
     const catalog = loadWorkflowCatalog();
-    const { ids: desiredWorkflows, unknown: unknownProfileWorkflows } = resolveDesiredWorkflowSelection(
+    const {
+      ids: desiredWorkflows,
+      unknown: unknownProfileWorkflows,
+      mode: selectionMode,
+    } = resolveProjectWorkflowSelection(
       catalog,
+      resolvedProjectPath,
       profile,
       globalConfig.workflows,
       expertSelectionExplicit
     );
+    if (selectionMode === 'override') {
+      console.log(
+        chalk.dim('Note: this space uses its own workflow selection (project override), not the user-wide profile.')
+      );
+    }
     if (unknownProfileWorkflows.length > 0) {
       console.log(
         chalk.yellow(
