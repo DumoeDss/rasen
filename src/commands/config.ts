@@ -33,7 +33,7 @@ import {
 import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from '../core/project-config.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
-import { CORE_WORKFLOWS, ALL_WORKFLOWS } from '../core/profiles.js';
+import { CORE_WORKFLOWS, ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../core/profiles.js';
 import { isPromptCancellationError } from './shared-output.js';
 import { runUiLaunch } from './ui-launch.js';
 import { runLegacyConfigProfileCommand } from './profile.js';
@@ -313,6 +313,13 @@ async function editConfigEntry(
       return;
     }
     setNestedValue(config, definition.key, rawValue);
+    // Setting `workflows` persists a user-wide selection, so it must seed the
+    // known-built-in baseline like every other selection-persisting path
+    // (applyProfileState/init/migration); otherwise a later `update` could
+    // under-surface a genuinely new built-in against a stale baseline.
+    if (definition.key === 'workflows') {
+      (config as GlobalConfig).knownBuiltInWorkflows = getCurrentBuiltInWorkflowIds();
+    }
     saveGlobalConfig(config as GlobalConfig);
   }
 
@@ -622,6 +629,13 @@ export function registerConfigCommand(program: Command): void {
 
             // Apply changes and save
             setNestedValue(config, key, coercedValue);
+            // Setting `workflows` persists a user-wide selection, so seed the
+            // known-built-in baseline like every other selection-persisting
+            // path; a stale baseline would let `update` under-surface a new
+            // built-in workflow later.
+            if (key === 'workflows') {
+              (config as GlobalConfig).knownBuiltInWorkflows = getCurrentBuiltInWorkflowIds();
+            }
             saveGlobalConfig(config as GlobalConfig);
           }
 

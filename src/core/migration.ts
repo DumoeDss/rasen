@@ -9,7 +9,7 @@ import type { AIToolOption } from './config.js';
 import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig } from './global-config.js';
 import { getCommandFilePathCandidates } from './shared/retired-command-paths.js';
 import { WORKFLOW_TO_SKILL_DIR } from './profile-sync-drift.js';
-import { ALL_WORKFLOWS } from './profiles.js';
+import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from './profiles.js';
 import { resolveToolSkillsRoot } from './shared/index.js';
 import path from 'path';
 import * as fs from 'fs';
@@ -113,9 +113,13 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
     return;
   }
 
-  // Migrate: set profile to custom with detected workflows
+  // Migrate: set profile to custom with detected workflows. Seed the
+  // known-built-in-workflows baseline at the same time — this is a selection
+  // save, so a later `update` surfaces only workflows the catalog gains after
+  // this migration, never one absent from the detected legacy set.
   config.profile = 'custom';
   config.workflows = installedWorkflows;
+  config.knownBuiltInWorkflows = getCurrentBuiltInWorkflowIds();
   saveGlobalConfig(config);
 
   console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows (${installedWorkflows.join(', ')})`);

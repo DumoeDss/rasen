@@ -37,6 +37,8 @@ import {
 } from './workflows.js';
 import { createWorkflowSubmitter } from './workflow-submit.js';
 import { createWorkflowEnablementSubmitter, handleWorkflowEnablementRead } from './workflow-enablement.js';
+import { handleListPipelines } from './pipelines.js';
+import { createPipelineSubmitter } from './pipeline-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
@@ -83,11 +85,13 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/workflows',
   '/api/v1/workflow-validation',
   '/api/v1/workflow-enablement',
+  '/api/v1/pipelines',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
 const WORKFLOW_ID_PATH_PREFIX = '/api/v1/workflows/';
+const PIPELINE_ID_PATH_PREFIX = '/api/v1/pipelines/';
 
 /**
  * Matches `/api/v1/tasks/<id>` exactly one segment deep (mirrors
@@ -130,6 +134,25 @@ function matchWorkflowIdPath(pathname: string): string | null {
   }
 }
 
+/**
+ * Matches `/api/v1/pipelines/<name>` exactly one segment deep (mirrors
+ * `matchWorkflowIdPath`; unify-pipeline-http-api design D2), reserving the
+ * detail path for a future change. Until that contract lands, a matched path
+ * answers the management group's 404 `not_found` rather than falling through
+ * (deeper suffixes still fall through — `/api/v1/pipelines/<name>/extra` was
+ * never a "pipelines path" to begin with).
+ */
+function matchPipelineIdPath(pathname: string): string | null {
+  if (!pathname.startsWith(PIPELINE_ID_PATH_PREFIX)) return null;
+  const rest = pathname.slice(PIPELINE_ID_PATH_PREFIX.length);
+  if (rest.length === 0 || rest.includes('/')) return null;
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return null;
+  }
+}
+
 /** Session ids are server-minted `randomUUID()` values (design D2) — any RFC 4122 textual form is accepted, not just v4, since the format check exists to reject junk, not to pin a version. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -161,6 +184,12 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (matchWorkflowIdPath(pathname) !== null) {
     return method === 'GET';
   }
+  if (matchPipelineIdPath(pathname) !== null) {
+    // The detail contract does not exist yet — every method reaches the
+    // dispatch below, which answers 404 uniformly (design D2): a reserved
+    // path that has no contract yet is "not found", not "method not allowed".
+    return true;
+  }
   if (pathname === '/api/v1/workflows') {
     return method === 'GET' || method === 'POST';
   }
@@ -168,6 +197,9 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/sessions') {
+    return method === 'GET' || method === 'POST';
+  }
+  if (pathname === '/api/v1/pipelines') {
     return method === 'GET' || method === 'POST';
   }
   if (method === 'GET') return true;
@@ -238,7 +270,8 @@ export function isManagementPath(pathname: string): boolean {
     MANAGEMENT_PATHS.has(stripped) ||
     matchSessionIdPath(stripped) !== null ||
     matchTaskIdPath(stripped) !== null ||
-    matchWorkflowIdPath(stripped) !== null
+    matchWorkflowIdPath(stripped) !== null ||
+    matchPipelineIdPath(stripped) !== null
   );
 }
 
@@ -247,8 +280,8 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(JSON.stringify(body));
 }
 
-function sendError(res: http.ServerResponse, status: number, code: string, message: string): void {
-  sendJson(res, status, { error: { code, message } });
+function sendError(res: http.ServerResponse, status: number, code: string, message: string, fix?: string): void {
+  sendJson(res, status, { error: { code, message, ...(fix ? { fix } : {}) } });
 }
 
 function isAuthorized(req: http.IncomingMessage, token: string): boolean {
@@ -286,6 +319,12 @@ export function createManagementRouter(
   // enablement design D5): its own cap-1 state, independent of the
   // workflow-library bridge above.
   const submitWorkflowEnablement = createWorkflowEnablementSubmitter(context);
+  // The pipeline-library mutation bridge (pipeline-http-api design D6,
+  // unify-pipeline-http-api design D3): its own cap-1 concurrency, admitting
+  // only the four pipeline bounded-cli ops through the shared admission
+  // whitelist. GET /api/v1/pipelines is this router's own read handler; POST
+  // rides this bridge.
+  const submitPipeline = createPipelineSubmitter(context);
 
   // One supervisor per server instance (design D4/task 2.4): its own
   // registry, its own concurrency cap, its own agent-CLI resolution cache.
@@ -602,6 +641,47 @@ export function createManagementRouter(
         return;
       }
       sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/pipelines' && req.method === 'GET') {
+      await handleListPipelines(res, url, context, sendError, sendJson);
+      return;
+    }
+
+    if (pathname === '/api/v1/pipelines' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      // The bridge guards and admits its own input (unknown op → 400,
+      // relative path / option-shaped name → 400, all before any spawn).
+      const result = await submitPipeline(body.value ?? {});
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (matchPipelineIdPath(pathname) !== null) {
+      // The detail contract does not exist yet (unify-pipeline-http-api
+      // design D2): a reserved path answers not-found from the management
+      // group rather than falling through to another route group.
+      sendError(res, 404, 'not_found', `No route for ${req.method} ${pathname}.`);
       return;
     }
 

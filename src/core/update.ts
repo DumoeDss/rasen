@@ -35,8 +35,8 @@ import {
   RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
-import { getGlobalConfig, type Profile, type RepoMode } from './global-config.js';
-import { resolveProjectWorkflowSelection } from './profiles.js';
+import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type Profile, type RepoMode } from './global-config.js';
+import { getCurrentBuiltInWorkflowIds, resolveProjectWorkflowSelection } from './profiles.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { resolveProjectHome } from './project-home.js';
@@ -197,6 +197,14 @@ export class UpdateCommand {
         )
       );
     }
+    // Surface built-in workflows the catalog gained after this selection was
+    // last saved (frozen `custom`/override selections lag; `full`/`core`
+    // resolve against the live catalog and never lag). Runs before the
+    // up-to-date short-circuit so an upgrade that adds a workflow is honest
+    // even when no tool otherwise needs an update. Never rewrites the stored
+    // selection.
+    this.surfaceNewBuiltInWorkflows(globalConfig, desiredWorkflows);
+
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
@@ -494,6 +502,57 @@ export class UpdateCommand {
 
     console.log(chalk.dim('Note: The core profile now includes sync. Your custom profile is preserving the old core workflow set.'));
     console.log(chalk.dim('Run `rasen profile use core` and then `rasen update` to add sync.'));
+  }
+
+  /**
+   * Surfaces built-in workflows that are in the current catalog but absent
+   * from the resolved desired set because they were added after the stored
+   * selection was last saved — the honest-upgrade note (design.md D1/D2).
+   * Distinguishes a genuinely new workflow from a deliberate deselection via
+   * the `knownBuiltInWorkflows` baseline: only built-ins absent from that
+   * baseline are surfaced. A legacy config lacking the baseline is seeded
+   * silently on this run (no note), so no pre-existing omission is surprised
+   * onto the user. `full`/`core` selections already contain every built-in,
+   * so `surface` is naturally empty for them. Never mutates the stored
+   * selection — only the machine-managed baseline field.
+   */
+  private surfaceNewBuiltInWorkflows(
+    globalConfig: GlobalConfig,
+    desiredWorkflows: readonly string[]
+  ): void {
+    const currentBuiltInIds = getCurrentBuiltInWorkflowIds();
+    const baseline = globalConfig.knownBuiltInWorkflows;
+
+    if (baseline === undefined) {
+      // First `update` on a config that predates this behavior: record the
+      // currently-known built-ins without surfacing anything this run.
+      try {
+        saveGlobalConfig({ ...globalConfig, knownBuiltInWorkflows: currentBuiltInIds });
+      } catch {
+        // Best-effort: a failed seed just means this repeats next run (still
+        // no surprise, since the same seed-then-quiet path re-runs).
+      }
+      return;
+    }
+
+    const baselineSet = new Set(baseline);
+    const desiredSet = new Set(desiredWorkflows);
+    const surface = currentBuiltInIds.filter(
+      (id) => !baselineSet.has(id) && !desiredSet.has(id)
+    );
+    if (surface.length === 0) return;
+
+    reportConfigDiagnostic(
+      {
+        key: 'newBuiltInWorkflowsAvailable',
+        values: { workflows: surface.join(', ') },
+        fallback: `Note: new built-in workflow(s) available that your selection does not include: ${surface.join(
+          ', '
+        )}. Run \`rasen profile\` to add ${surface.length === 1 ? 'it' : 'them'}.`,
+        output: 'warn',
+      },
+      createConfigDiagnosticReporter()
+    );
   }
 
   /**

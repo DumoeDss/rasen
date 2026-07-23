@@ -56,7 +56,7 @@ import {
 } from './shared/index.js';
 import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
-import { getProfileWorkflows, resolveDesiredWorkflowSelection, CORE_WORKFLOWS } from './profiles.js';
+import { getCurrentBuiltInWorkflowIds, getProfileWorkflows, resolveDesiredWorkflowSelection, CORE_WORKFLOWS } from './profiles.js';
 import { loadWorkflowCatalog } from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
@@ -187,9 +187,14 @@ export class InitCommand {
     // below once THIS project's machine home is known.
     if (!extendMode) {
       const currentConfig = getGlobalConfig();
-      if (currentConfig.expertSelectionExplicit !== true) {
-        saveGlobalConfig({ ...currentConfig, expertSelectionExplicit: true });
-      }
+      // A fresh init persists the selection, so it also seeds the
+      // known-built-in-workflows baseline — a subsequent `update` then
+      // surfaces only workflows the catalog gains after this point.
+      saveGlobalConfig({
+        ...currentConfig,
+        expertSelectionExplicit: true,
+        knownBuiltInWorkflows: getCurrentBuiltInWorkflowIds(),
+      });
     }
 
     // Resolve the complete catalog selection before creating project files.
