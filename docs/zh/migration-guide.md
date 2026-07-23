@@ -1,12 +1,12 @@
-# 迁移到 OPSX
+# 迁移到制品工作流
 
-本指南帮助你从旧版 OpenSpec 工作流过渡到 OPSX。迁移过程设计得非常顺畅——你现有的工作会被保留，新系统也提供了更多灵活性。
+本指南帮助你从旧版工作流过渡到制品工作流。迁移过程设计得非常顺畅——你现有的工作会被保留，新系统也提供了更多灵活性。
 
 ## 有什么变化？
 
-OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。以下是关键变化：
+制品工作流用流畅的、基于操作的方式取代了旧的阶段锁定工作流。以下是关键变化：
 
-| 方面 | 旧版 | OPSX |
+| 方面 | 旧版 | 制品工作流 |
 |--------|--------|------|
 | **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/rasen-propose`, `/rasen-apply-change`, `/rasen-sync-specs`, `/rasen-archive-change`（扩展工作流命令可选） |
 | **工作流** | 一次性创建所有产物 | 渐进式或一次性创建——由你选择 |
@@ -14,7 +14,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 | **定制** | 固定结构 | Schema 驱动，完全可定制 |
 | **配置** | `CLAUDE.md` 标记 + `project.md` | 简洁的配置在 `rasen/config.yaml` |
 
-**理念变化：** 工作不是线性的。OPSX 不再假装它是线性的。
+**理念变化：** 工作不是线性的。制品工作流不再假装它是线性的。
 
 ---
 
@@ -24,20 +24,20 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 迁移过程以保留为设计原则：
 
-- **`rasen/changes/` 中的活跃变更** — 完全保留。你可以使用 OPSX 命令继续它们。
+- **`rasen/changes/` 中的活跃变更** — 完全保留。你可以使用 rasen 命令继续它们。
 - **已归档的变更** — 不受影响。你的历史记录保持完整。
 - **`rasen/specs/` 中的主规格** — 不受影响。这些是你的真实数据源。
-- **你在 CLAUDE.md、AGENTS.md 等文件中的内容** — 保留。只有 OpenSpec 标记块会被移除；你写的所有内容都会保留。
+- **你在 CLAUDE.md、AGENTS.md 等文件中的内容** — 保留。只有 rasen 标记块会被移除；你写的所有内容都会保留。
 
 ### 什么会被移除
 
-只有被替换的 OpenSpec 管理文件：
+只有被替换的 rasen 管理文件：
 
 | 内容 | 原因 |
 |------|-----|
 | 旧版斜杠命令目录/文件 | 被新的 skills 系统替代 |
 | `rasen/AGENTS.md` | 已过时的工作流触发器 |
-| `CLAUDE.md`、`AGENTS.md` 等中的 OpenSpec 标记 | 不再需要 |
+| `CLAUDE.md`、`AGENTS.md` 等中的 Rasen 标记 | 不再需要 |
 
 **各工具的旧版命令位置**（示例——你的工具可能有所不同）：
 
@@ -51,7 +51,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 迁移会检测你已配置的工具并清理它们的旧版文件。
 
-移除列表看起来可能很长，但这些都是 OpenSpec 最初创建的文件。你自己的内容永远不会被删除。
+移除列表看起来可能很长，但这些都是 rasen 最初创建的文件。你自己的内容永远不会被删除。
 
 ### 需要你注意的事项
 
@@ -67,7 +67,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 旧的 `project.md` 是被动的——AI 助手可能读它，可能不读，可能忘了读过什么。我们发现可靠性不一致。
 
-新的 `config.yaml` 上下文会**被主动注入到每个 OpenSpec 规划请求中**。这意味着你的项目约定、技术栈和规则在 AI 创建产物时始终存在。可靠性更高。
+新的 `config.yaml` 上下文会**被主动注入到每个 rasen 规划请求中**。这意味着你的项目约定、技术栈和规则在 AI 创建产物时始终存在。可靠性更高。
 
 **权衡：**
 
@@ -98,9 +98,9 @@ rasen init
 init 命令会检测旧版文件并引导你完成清理：
 
 ```
-Upgrading to the new OpenSpec
+Upgrading to the new rasen
 
-OpenSpec now uses agent skills, the emerging standard across coding
+Rasen now uses agent skills, the emerging standard across coding
 agents. This simplifies your setup while keeping everything working
 as before.
 
@@ -110,7 +110,7 @@ No user content to preserve:
   • rasen/AGENTS.md
 
 Files to update
-OpenSpec markers will be removed, your content preserved:
+Rasen markers will be removed, your content preserved:
   • CLAUDE.md
   • AGENTS.md
 
@@ -119,7 +119,7 @@ Needs your attention
     We won't delete this file. It may contain useful project context.
 
     The new rasen/config.yaml has a "context:" section for planning
-    context. This is included in every OpenSpec request and works more
+    context. This is included in every rasen request and works more
     reliably than the old project.md approach.
 
     Review project.md, move any useful content to config.yaml's context
@@ -131,7 +131,7 @@ Needs your attention
 **当你选择"是"时会发生什么：**
 
 1. 旧版斜杠命令目录被移除
-2. OpenSpec 标记从 `CLAUDE.md`、`AGENTS.md` 等文件中剥离（你的内容保留）
+2. Rasen 标记从 `CLAUDE.md`、`AGENTS.md` 等文件中剥离（你的内容保留）
 3. `rasen/AGENTS.md` 被删除
 4. 新的 skills 安装到 `.claude/skills/`
 5. `rasen/config.yaml` 使用默认 schema 创建
@@ -260,7 +260,7 @@ rules:
 如果你不确定如何精炼你的 project.md，可以问你的 AI 助手：
 
 ```
-I'm migrating from OpenSpec's old project.md to the new config.yaml format.
+I'm migrating from rasen's old project.md to the new config.yaml format.
 
 Here's my current project.md:
 [paste your project.md content]
@@ -304,7 +304,7 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 ### 从旧版命令映射
 
-| 旧版 | OPSX 对应命令 |
+| 旧版 | 制品工作流对应命令 |
 |--------|-----------------|
 | `/openspec:proposal` | `/rasen-propose`（默认）或 `/rasen-new-change` 然后 `/rasen-continue-change`（扩展） |
 | `/openspec:apply` | `/rasen-apply-change` |
@@ -344,7 +344,7 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 很遗憾。阶段门控不允许你轻松回退。
 ```
 
-OPSX 使用操作而非阶段：
+制品工作流使用操作而非阶段：
 
 ```
          ┌───────────────────────────────────────────────┐
@@ -393,14 +393,14 @@ OPSX 使用操作而非阶段：
 └── archive.md
 ```
 
-OPSX 使用新兴的 **skills** 标准：
+制品工作流使用新兴的 **skills** 标准：
 
 ```
 .claude/skills/
-├── openspec-explore/SKILL.md
-├── openspec-new-change/SKILL.md
-├── openspec-continue-change/SKILL.md
-├── openspec-apply-change/SKILL.md
+├── rasen-explore/SKILL.md
+├── rasen-new-change/SKILL.md
+├── rasen-continue-change/SKILL.md
+├── rasen-apply-change/SKILL.md
 └── ...
 ```
 
@@ -410,7 +410,7 @@ Skills 被多种 AI 编码工具识别，并提供更丰富的元数据。
 
 ## 继续现有变更
 
-你正在进行的变更可以与 OPSX 命令无缝配合。
+你正在进行的变更可以与 rasen 命令无缝配合。
 
 **有来自旧版工作流的活跃变更？**
 
@@ -418,7 +418,7 @@ Skills 被多种 AI 编码工具识别，并提供更丰富的元数据。
 /rasen-apply-change add-my-feature
 ```
 
-OPSX 会读取现有产物并从你离开的地方继续。
+Rasen 会读取现有产物并从你离开的地方继续。
 
 **想为现有变更添加更多产物？**
 
@@ -465,7 +465,7 @@ rules:
 
 ### Schema 解析
 
-确定使用哪个 schema 时，OPSX 按以下顺序检查：
+确定使用哪个 schema 时，rasen 按以下顺序检查：
 
 1. **CLI 标志**: `--schema <name>`（最高优先级）
 2. **变更元数据**: 变更目录中的 `.openspec.yaml`
@@ -550,20 +550,20 @@ rasen schemas --json
 
 ```
 project/
-├── openspec/
+├── rasen/
 │   ├── specs/                    # 未变更
 │   ├── changes/                  # 未变更
 │   │   └── archive/              # 未变更
 │   └── config.yaml               # 新增: 项目配置
 ├── .claude/
-│   └── skills/                   # 新增: OPSX skills
-│       ├── openspec-propose/     # 默认 core profile
-│       ├── openspec-explore/
-│       ├── openspec-apply-change/
-│       ├── openspec-sync-specs/
+│   └── skills/                   # 新增: rasen skills
+│       ├── rasen-propose/        # 默认 core profile
+│       ├── rasen-explore/
+│       ├── rasen-apply-change/
+│       ├── rasen-sync-specs/
 │       └── ...                   # 扩展 profile 添加 new/continue 等
-├── CLAUDE.md                     # OpenSpec 标记已移除，你的内容保留
-└── AGENTS.md                     # OpenSpec 标记已移除，你的内容保留
+├── CLAUDE.md                     # rasen 标记已移除，你的内容保留
+└── AGENTS.md                     # rasen 标记已移除，你的内容保留
 ```
 
 ### 已移除的内容
@@ -571,7 +571,7 @@ project/
 - `.claude/commands/openspec/` — 被 `.claude/skills/` 替代
 - `rasen/AGENTS.md` — 已过时
 - `openspec/project.md` — 迁移到 `config.yaml`，然后删除
-- `CLAUDE.md`、`AGENTS.md` 等文件中的 OpenSpec 标记块
+- `CLAUDE.md`、`AGENTS.md` 等文件中的 Rasen 标记块
 
 ### 命令速查表
 
@@ -590,5 +590,5 @@ project/
 ## 获取帮助
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
-- **GitHub Issues**: [github.com/Fission-AI/OpenSpec/issues](https://github.com/Fission-AI/OpenSpec/issues)
-- **文档**: [docs/opsx.md](opsx.md) 查看完整的 OPSX 参考
+- **GitHub Issues**: [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues)
+- **文档**: [docs/artifact-workflow.md](artifact-workflow.md) 查看完整的制品工作流参考

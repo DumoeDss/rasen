@@ -67,7 +67,7 @@ That second one matters more than it looks. Rasen has two halves: a command line
 | Doc | What it gives you |
 |-----|-------------------|
 | [Concepts](concepts.md) | The long-form explanation of specs, changes, artifacts, schemas, and archive |
-| [OPSX Workflow](opsx.md) | Why the workflow is fluid instead of phase-locked, plus an architecture deep dive |
+| [Artifact Workflow](artifact-workflow.md) | Why the workflow is fluid instead of phase-locked, plus an architecture deep dive |
 | [Glossary](glossary.md) | Every term defined in one place |
 
 ### Make it yours
@@ -84,7 +84,7 @@ That second one matters more than it looks. Rasen has two halves: a command line
 |-----|-------------------|
 | [FAQ](faq.md) | Quick answers to the questions people ask most |
 | [Troubleshooting](troubleshooting.md) | Concrete fixes for concrete failures |
-| [Migration Guide](migration-guide.md) | Moving from the legacy workflow to OPSX |
+| [Migration Guide](migration-guide.md) | Moving from the legacy workflow to the artifact workflow |
 
 ### Coordinate across repos (beta)
 

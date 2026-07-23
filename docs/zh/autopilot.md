@@ -1,6 +1,6 @@
 # Autopilot 策略:gate、选型与组合式 pipeline
 
-`/rasen-auto` 有三条 **opt-in 策略轴**,控制 LEAD 的自主决定权限。三条全部默认关闭——不带 flag、不写配置时,autopilot 的行为与 [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-一条命令跑完整个工作流opsxauto) 所述完全一致:gate 停顿等确认、pipeline 缺省 `small-feature`、classify 仅作建议。
+`/rasen-auto` 有三条 **opt-in 策略轴**,控制 LEAD 的自主决定权限。三条全部默认关闭——不带 flag、不写配置时,autopilot 的行为与 [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-一键跑完整个工作流rasenauto) 所述完全一致:gate 停顿等确认、pipeline 缺省 `small-feature`、classify 仅作建议。
 
 | 策略轴 | 运行参数 | 配置键(项目 `rasen/config.yaml` 与全局配置均可) | 取值 | 内建默认 |
 |---|---|---|---|---|
@@ -106,4 +106,4 @@ autopilot:
 
 兼容性保证:三条轴全在默认值时,行为与这些能力存在之前逐字节一致。
 
-延伸阅读:[opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-一条命令跑完整个工作流opsxauto)(autopilot 章)、§2.6(手写自定义 pipeline——组合的手动同胞)、§9(goal 驱动迭代及其 vet 门的 `define-goal`)。
+延伸阅读:[artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-一键跑完整个工作流rasenauto)(autopilot 章)、§2.6(手写自定义 pipeline——组合的手动同胞)、§9(goal 驱动迭代及其 vet 门的 `define-goal`)。

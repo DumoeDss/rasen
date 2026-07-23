@@ -141,7 +141,7 @@ rasen/
 
 .claude/skills/         # Claude Code skills (if claude selected)
 .cursor/skills/         # Cursor skills (if cursor selected)
-.cursor/commands/       # Cursor OPSX commands (if delivery is both)
+.cursor/commands/       # Cursor rasen commands (if delivery is both)
 ... (other tool configs)
 ```
 
@@ -613,7 +613,7 @@ rasen archive update-ci-config --skip-specs
 
 ## Workflow Commands
 
-These commands support the artifact-driven OPSX workflow. They're useful for both humans checking progress and agents determining next steps.
+These commands support the artifact workflow. They're useful for both humans checking progress and agents determining next steps.
 
 ### `rasen new change`
 

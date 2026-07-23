@@ -1,18 +1,19 @@
-# Codex 接入 OPSX Workflow 的可行方案
+# Codex 接入制品工作流的可行方案
 
 > **已被取代 (2026-07-13)。** 本文是研究前的 app-server 方案设计（2026-06-08），不反映已发布的实现。rasen 实际以非交互式 `codex exec` 进程（exec 桥）派发 Codex worker，而非 app-server 线程、Codex Claude Code 插件或 `/codex:rescue`。正文保留作为历史记录——其中的协议笔记未来可能对 app-server 方案（tier-3）有参考价值。真实、已实机验证的机制见 `docs/codex-parity/README.md`（英文调研档案）、`docs/zh/codex-parity-solutions.md`（中文综合稿）与已发布的 `src/core/codex/` 模块；编排 playbook 中的 Codex 段落（`src/core/templates/workflows/_orchestration.ts`）是权威的操作指引。
+> 术语说明：写这份文档时，制品工作流还被称为「OPSX」。这个名字后来已退役；文档中提到的这一层，在现在的文档里称为**制品工作流（the artifact workflow）**（见 `docs/zh/artifact-workflow.md`）。下文中「OPSX」已替换为现在的名字，仅示例值里的历史文本保留。
 
 > 日期：2026-06-08  
-> 背景：当前 OPSX workflow 的主路径基于 Claude Code subagent + `SendMessage`。本文分析如何在 `propose`、`review` / `review-loop` 等阶段引入 Codex，并支持启动、传参、结果接收、同阶段会话复用与跨重启恢复。
+> 背景：当前制品工作流的主路径基于 Claude Code subagent + `SendMessage`。本文分析如何在 `propose`、`review` / `review-loop` 等阶段引入 Codex，并支持启动、传参、结果接收、同阶段会话复用与跨重启恢复。
 
 ## 1. 结论
 
-可行，而且不建议把 Codex 当成一个普通 `/codex:*` slash command 文本来调用。更稳的方案是把 Codex 抽象成 OPSX 的第二种 worker runtime：
+可行，而且不建议把 Codex 当成一个普通 `/codex:*` slash command 文本来调用。更稳的方案是把 Codex 抽象成制品工作流的第二种 worker runtime：
 
 - Claude worker：当前 `Task` / subagent / `SendMessage` 机制。
 - Codex worker：通过 Codex app-server 的 `thread/start`、`turn/start`、`thread/resume` 驱动。
 
-也就是说，pipeline 的 DAG、stage、gate、run-state 继续由 OpenSpec/OPSX 统一管理；每个 stage 只多一个可选执行后端 `runtime: claude | codex`。Codex 的会话复用不是 Claude 的 `agentId + transcript`，而是 Codex 的 `threadId`，跨重启可以直接 `thread/resume` 到同一个 thread，这比 Claude subagent 的 transcript 暖播种更接近真正恢复。
+也就是说，pipeline 的 DAG、stage、gate、run-state 继续由 rasen 统一管理；每个 stage 只多一个可选执行后端 `runtime: claude | codex`。Codex 的会话复用不是 Claude 的 `agentId + transcript`，而是 Codex 的 `threadId`，跨重启可以直接 `thread/resume` 到同一个 thread，这比 Claude subagent 的 transcript 暖播种更接近真正恢复。
 
 首批最适合接 Codex 的阶段：
 
@@ -24,7 +25,7 @@
 
 ## 2. 现状约束
 
-当前 `docs/opsx-workflow-guide.md` 与 `_orchestration.ts` 的设计建立在 Claude Code 能力上：
+当前 `docs/artifact-workflow-guide.md` 与 `_orchestration.ts` 的设计建立在 Claude Code 能力上：
 
 - `LEAD` 编排，worker 是叶子 subagent。
 - 同一活会话内，用 `SendMessage` 续聊同一个 worker。
@@ -69,8 +70,8 @@ src/core/ai-runtimes/
 不建议直接 shell 调 `node <plugin>/scripts/codex-companion.mjs task ...` 作为主实现，原因是：
 
 - 插件 state 默认在 `CLAUDE_PLUGIN_DATA` 或 temp 下，生命周期绑定 Claude plugin，不适合作为 OpenSpec 的权威状态。
-- OPSX 需要把结果写入 `auto-run.json`、`portfolio-run.json`、stage artifact；直接调用 slash command 风格工具会多一层状态同步。
-- Codex plugin 面向人类 `/codex:status` / `/codex:result`，而 OPSX 需要机器可控的 stage executor。
+- 制品工作流需要把结果写入 `auto-run.json`、`portfolio-run.json`、stage artifact；直接调用 slash command 风格工具会多一层状态同步。
+- Codex plugin 面向人类 `/codex:status` / `/codex:result`，而制品工作流需要机器可控的 stage executor。
 
 短期可以把插件作为参考实现或 prototype；长期应内置 OpenSpec bridge。
 
@@ -275,9 +276,9 @@ effort?: string;
 可用两种 Codex review 模式：
 
 1. `review/start`：Codex app-server 内置 review，适合工作区 diff / base branch review，返回 `reviewText`。
-2. `turn/start` + 自定义 prompt + `outputSchema`：适合 OPSX 需要的结构化 findings、限定 change、限定 spec scenario 对照。
+2. `turn/start` + 自定义 prompt + `outputSchema`：适合制品工作流需要的结构化 findings、限定 change、限定 spec scenario 对照。
 
-OPSX 推荐第二种作为主路径，因为 review-loop 需要结构化 findings：
+本文推荐第二种作为主路径，因为 review-loop 需要结构化 findings：
 
 ```json
 {
@@ -362,7 +363,7 @@ codex app-server
 
 建议复用 plugin 的 broker 思路：
 
-- 一次 OPSX run 内尽量复用一个 app-server broker，避免每个 stage 反复拉起 Codex。
+- 一次制品工作流 run 内尽量复用一个 app-server broker，避免每个 stage 反复拉起 Codex。
 - broker 只负责 runtime 连接复用，不作为权威状态。
 - 权威状态仍写在 `auto-run.json` / `portfolio-run.json`。
 
@@ -560,7 +561,7 @@ MVP 不需要一次性改完整 workflow 系统。可以按这个顺序做：
 - Claude plugin 的 state 与 OpenSpec run-state 不能双主，OpenSpec 必须是权威。
 - review-loop 中 Codex reviewer 如果也修代码，会破坏 author != verifier；MVP 应禁止 reviewer 写入。
 - 并行多个 Codex stage 时，shared broker 可能 busy；需要每个 stage 独立 app-server 或 broker 队列。MVP 可串行 Codex stage。
-- `review/start` 内置 review 不一定满足 OPSX 结构化 finding 需求；主路径应使用 `turn/start + outputSchema`。
+- `review/start` 内置 review 不一定满足制品工作流的结构化 finding 需求；主路径应使用 `turn/start + outputSchema`。
 
 ## 13. 推荐决策
 

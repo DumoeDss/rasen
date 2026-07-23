@@ -1,12 +1,12 @@
-# Migrating to OPSX
+# Migrating to the Artifact Workflow
 
-This guide helps you transition from the legacy workflow to OPSX. The migration is designed to be smooth—your existing work is preserved, and the new system offers more flexibility.
+This guide helps you transition from the legacy workflow to the artifact workflow. The migration is designed to be smooth—your existing work is preserved, and the new system offers more flexibility.
 
 ## What's Changing?
 
-OPSX replaces the old phase-locked workflow with a fluid, action-based approach. Here's the key shift:
+The artifact workflow replaces the old phase-locked workflow with a fluid, action-based approach. Here's the key shift:
 
-| Aspect | Legacy | OPSX |
+| Aspect | Legacy | Artifact workflow |
 |--------|--------|------|
 | **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Everyday core: `/rasen-propose`, `/rasen-apply-change`, `/rasen-sync-specs`, `/rasen-archive-change` (installed by default alongside the full expanded set) |
 | **Workflow** | Create all artifacts at once | Create incrementally or all at once—your choice |
@@ -14,7 +14,7 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 | **Customization** | Fixed structure | Schema-driven, fully hackable |
 | **Configuration** | `CLAUDE.md` with markers + `project.md` | Clean config in `rasen/config.yaml` |
 
-**The philosophy change:** Work isn't linear. OPSX stops pretending it is.
+**The philosophy change:** Work isn't linear. The artifact workflow stops pretending it is.
 
 ---
 
@@ -24,7 +24,7 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 
 The migration process is designed with preservation in mind:
 
-- **Active changes in `rasen/changes/`** — Completely preserved. You can continue them with OPSX commands.
+- **Active changes in `rasen/changes/`** — Completely preserved. You can continue them with rasen commands.
 - **Archived changes** — Untouched. Your history remains intact.
 - **Main specs in `rasen/specs/`** — Untouched. These are your source of truth.
 - **Your content in CLAUDE.md, AGENTS.md, etc.** — Preserved. Only the rasen marker blocks are removed; everything you wrote stays.
@@ -304,7 +304,7 @@ The default `full` profile already includes these; switch to `core` if you want 
 
 ### Command Mapping from Legacy
 
-| Legacy | OPSX Equivalent |
+| Legacy | Artifact Workflow Equivalent |
 |--------|-----------------|
 | `/openspec:proposal` | `/rasen-propose` (default) or `/rasen-new-change` then `/rasen-continue-change` (expanded) |
 | `/openspec:apply` | `/rasen-apply-change` |
@@ -344,7 +344,7 @@ If you're in implementation and realize the design is wrong?
 Too bad. Phase gates don't let you go back easily.
 ```
 
-OPSX uses actions, not phases:
+The artifact workflow uses actions, not phases:
 
 ```
          ┌───────────────────────────────────────────────┐
@@ -393,7 +393,7 @@ The legacy system used tool-specific command files:
 └── archive.md
 ```
 
-OPSX uses the emerging **skills** standard:
+The artifact workflow uses the emerging **skills** standard:
 
 ```
 .claude/skills/
@@ -410,7 +410,7 @@ Skills are recognized across multiple AI coding tools and provide richer metadat
 
 ## Continuing Existing Changes
 
-Your in-progress changes work seamlessly with OPSX commands.
+Your in-progress changes work seamlessly with rasen commands.
 
 **Have an active change from the legacy workflow?**
 
@@ -418,7 +418,7 @@ Your in-progress changes work seamlessly with OPSX commands.
 /rasen-apply-change add-my-feature
 ```
 
-OPSX reads the existing artifacts and continues from where you left off.
+Rasen reads the existing artifacts and continues from where you left off.
 
 **Want to add more artifacts to an existing change?**
 
@@ -556,7 +556,7 @@ project/
 │   │   └── archive/              # Unchanged
 │   └── config.yaml               # NEW: Project configuration
 ├── .claude/
-│   └── skills/                   # NEW: OPSX skills
+│   └── skills/                   # NEW: rasen skills
 │       ├── rasen-propose/        # full profile (default); core profile keeps this subset
 │       ├── rasen-explore/
 │       ├── rasen-apply-change/
@@ -591,4 +591,4 @@ project/
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
 - **GitHub Issues**: [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues)
-- **Documentation**: [docs/opsx.md](opsx.md) for the full OPSX reference
+- **Documentation**: [docs/artifact-workflow.md](artifact-workflow.md) for the full artifact-workflow reference

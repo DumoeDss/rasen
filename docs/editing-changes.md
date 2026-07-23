@@ -76,7 +76,7 @@ Short version: **update when it's the same work refined; start new when the inte
 - Scope narrowing (ship the MVP now, more later)? Update, then archive, then a new change for phase two.
 - The problem itself changed ("add dark mode" became "build a full theming system")? New change.
 
-There's a full flowchart and worked examples in [Workflows: When to Update vs Start Fresh](workflows.md#when-to-update-vs-start-fresh) and a deeper treatment in [OPSX: When to Update vs. Start Fresh](opsx.md#when-to-update-vs-start-fresh).
+There's a full flowchart and worked examples in [Workflows: When to Update vs Start Fresh](workflows.md#when-to-update-vs-start-fresh) and a deeper treatment in [Artifact Workflow: When to Update vs. Start Fresh](artifact-workflow.md#when-to-update-vs-start-fresh).
 
 ## A note on tasks
 

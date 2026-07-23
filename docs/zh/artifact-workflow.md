@@ -1,31 +1,31 @@
-# OPSX Workflow
+# 制品工作流
 
-> Feedback welcome on [Discord](https://discord.gg/YctCnvvshC).
+> 欢迎在 [Discord](https://discord.gg/YctCnvvshC) 上提供反馈。
 
-## What Is It?
+## 这是什么？
 
-OPSX is now the standard workflow for rasen.
+这是 rasen 现在的标准工作流——我们称之为**制品工作流（the artifact workflow）**。
 
-It's a **fluid, iterative workflow** for rasen changes. No more rigid phases — just actions you can take anytime.
+它是一个**灵活的、迭代式的工作流**，用于管理 rasen 变更。不再有僵化的阶段——你可以随时执行任何操作。
 
-## Why This Exists
+## 为什么需要它
 
-The legacy workflow works, but it's **locked down**:
+传统的工作流虽然可用，但**限制太多**：
 
-- **Instructions are hardcoded** — buried in TypeScript, you can't change them
-- **All-or-nothing** — one big command creates everything, can't test individual pieces
-- **Fixed structure** — same workflow for everyone, no customization
-- **Black box** — when AI output is bad, you can't tweak the prompts
+- **指令是硬编码的** —— 埋在 TypeScript 中，你无法修改
+- **要么全有要么全无** —— 一个大命令创建所有内容，无法单独测试各个部分
+- **固定的结构** —— 所有人使用同样的工作流，无法自定义
+- **黑盒** —— 当 AI 输出质量不好时，你无法调整提示词
 
-**OPSX opens it up.** Now anyone can:
+**制品工作流将其开放。** 现在任何人都可以：
 
-1. **Experiment with instructions** — edit a template, see if the AI does better
-2. **Test granularly** — validate each artifact's instructions independently
-3. **Customize workflows** — define your own artifacts and dependencies
-4. **Iterate quickly** — change a template, test immediately, no rebuild
+1. **尝试不同的指令** —— 编辑模板，看看 AI 是否表现更好
+2. **细粒度测试** —— 独立验证每个产物的指令
+3. **自定义工作流** —— 定义你自己的产物和依赖关系
+4. **快速迭代** —— 修改模板，立即测试，无需重新构建
 
 ```
-Legacy workflow:                      OPSX:
+Legacy workflow:                      Artifact workflow:
 ┌────────────────────────┐           ┌────────────────────────┐
 │  Hardcoded in package  │           │  schema.yaml           │◄── You edit this
 │  (can't change)        │           │  templates/*.md        │◄── Or this
@@ -36,46 +36,46 @@ Legacy workflow:                      OPSX:
 └────────────────────────┘           └────────────────────────┘
 ```
 
-**This is for everyone:**
-- **Teams** — create workflows that match how you actually work
-- **Power users** — tweak prompts to get better AI outputs for your codebase
-- **Rasen contributors** — experiment with new approaches without releases
+**这适用于所有人：**
+- **团队** —— 创建与你实际工作方式匹配的工作流
+- **高级用户** —— 调整提示词以获得更好的 AI 输出
+- **Rasen 贡献者** —— 无需发布新版本即可尝试新方法
 
-We're all still learning what works best. OPSX lets us learn together.
+我们都还在探索什么方法最有效。制品工作流让我们一起学习。
 
-## The User Experience
+## 用户体验
 
-**The problem with linear workflows:**
-You're "in planning phase", then "in implementation phase", then "done". But real work doesn't work that way. You implement something, realize your design was wrong, need to update specs, continue implementing. Linear phases fight against how work actually happens.
+**线性工作流的问题：**
+你处于"规划阶段"，然后是"实现阶段"，然后"完成"。但实际工作并非如此。你实现了某个功能，发现设计有误，需要更新规格，然后继续实现。线性阶段与工作的实际方式相矛盾。
 
-**OPSX approach:**
-- **Actions, not phases** — create, implement, update, archive — do any of them anytime
-- **Dependencies are enablers** — they show what's possible, not what's required next
+**制品工作流的方法：**
+- **操作，而非阶段** —— 创建、实现、更新、归档——随时执行任何操作
+- **依赖是推动力** —— 它们展示什么是可能的，而不是什么是必须的
 
 ```
   proposal ──→ specs ──→ design ──→ tasks ──→ implement
 ```
 
-## Setup
+## 设置
 
 ```bash
 # Make sure you have rasen installed — skills are automatically generated
 rasen init
 ```
 
-This creates skills in `.claude/skills/` (or equivalent) that AI coding assistants auto-detect.
+这将在 `.claude/skills/`（或等效目录）中创建技能文件，AI 编码助手会自动检测到它们。
 
-By default, rasen uses the `full` workflow profile — every workflow, including the expanded commands (`new`, `continue`, `verify`, `bulk-archive`, `onboard`). If you'd rather slim down to the everyday `core` set (`propose`, `explore`, `apply`, `sync`, `archive`), switch with `rasen config profile core` and apply with `rasen update`.
+默认情况下，rasen 使用 `core` 工作流配置（`propose`、`explore`、`apply`、`sync`、`archive`）。如果你需要扩展工作流命令（`new`、`continue`、`verify`、`bulk-archive`、`onboard`），请使用 `rasen config profile` 进行配置，并通过 `rasen update` 应用。
 
-During setup, you'll be prompted to create a **project config** (`rasen/config.yaml`). This is optional but recommended.
+在设置过程中，系统会提示你创建**项目配置**（`rasen/config.yaml`）。这是可选的，但建议创建。
 
-## Project Configuration
+## 项目配置
 
-Project config lets you set defaults and inject project-specific context into all artifacts.
+项目配置允许你设置默认值，并将项目特定的上下文注入到所有产物中。
 
-### Creating Config
+### 创建配置
 
-Config is created during `rasen init`, or manually:
+配置在 `rasen init` 时创建，也可以手动创建：
 
 ```yaml
 # rasen/config.yaml
@@ -97,175 +97,175 @@ rules:
     - Include sequence diagrams for complex flows
 ```
 
-### Config Fields
+### 配置字段
 
-| Field | Type | Description |
+| 字段 | 类型 | 描述 |
 |-------|------|-------------|
-| `schema` | string | Default schema for new changes (e.g., `spec-driven`) |
-| `context` | string | Project context injected into all artifact instructions |
-| `rules` | object | Per-artifact rules, keyed by artifact ID |
+| `schema` | string | 新变更的默认 schema（例如 `spec-driven`） |
+| `context` | string | 注入到所有产物指令中的项目上下文 |
+| `rules` | object | 按产物 ID 索引的每产物规则 |
 
-### How It Works
+### 工作原理
 
-**Schema precedence** (highest to lowest):
-1. CLI flag (`--schema <name>`)
-2. Change metadata (`.openspec.yaml` in change directory)
-3. Project config (`rasen/config.yaml`)
-4. Default (`spec-driven`)
+**Schema 优先级**（从高到低）：
+1. CLI 标志（`--schema <name>`）
+2. 变更元数据（变更目录中的 `.openspec.yaml`）
+3. 项目配置（`rasen/config.yaml`）
+4. 默认值（`spec-driven`）
 
-**Context injection:**
-- Context is prepended to every artifact's instructions
-- Wrapped in `<context>...</context>` tags
-- Helps AI understand your project's conventions
+**上下文注入：**
+- 上下文会被添加到每个产物指令的前面
+- 包裹在 `<context>...</context>` 标签中
+- 帮助 AI 理解你的项目规格
 
-**Rules injection:**
-- Rules are only injected for matching artifacts
-- Wrapped in `<rules>...</rules>` tags
-- Appear after context, before the template
+**规则注入：**
+- 规则仅注入到匹配的产物中
+- 包裹在 `<rules>...</rules>` 标签中
+- 出现在上下文之后、模板之前
 
-### Artifact IDs by Schema
+### 按 Schema 分类的产物 ID
 
-**spec-driven** (default):
-- `proposal` — Change proposal
-- `specs` — Specifications
-- `design` — Technical design
-- `tasks` — Implementation tasks
+**spec-driven**（默认）：
+- `proposal` — 变更提案
+- `specs` — 规格说明
+- `design` — 技术设计
+- `tasks` — 实现任务
 
-### Config Validation
+### 配置验证
 
-- Unknown artifact IDs in `rules` generate warnings
-- Schema names are validated against available schemas
-- Context has a 50KB size limit
-- Invalid YAML is reported with line numbers
+- `rules` 中的未知产物 ID 会生成警告
+- Schema 名称会根据可用的 schema 进行验证
+- 上下文大小限制为 50KB
+- 无效的 YAML 会报告行号
 
-### Troubleshooting
+### 故障排除
 
 **"Unknown artifact ID in rules: X"**
-- Check artifact IDs match your schema (see list above)
-- Run `rasen schemas --json` to see artifact IDs for each schema
+- 检查产物 ID 是否与你的 schema 匹配（参见上方列表）
+- 运行 `rasen schemas --json` 查看每个 schema 的产物 ID
 
-**Config not being applied:**
-- Ensure file is at `rasen/config.yaml` (not `.yml`)
-- Check YAML syntax with a validator
-- Config changes take effect immediately (no restart needed)
+**配置未生效：**
+- 确保文件位于 `rasen/config.yaml`（不是 `.yml`）
+- 使用验证器检查 YAML 语法
+- 配置更改立即生效（无需重启）
 
-**Context too large:**
-- Context is limited to 50KB
-- Summarize or link to external docs instead
+**上下文过大：**
+- 上下文限制为 50KB
+- 改为概括或链接到外部文档
 
-## Commands
+## 命令
 
-| Command | What it does |
+| 命令 | 功能 |
 |---------|--------------|
-| `/rasen-propose` | Create a change and generate planning artifacts in one step (default quick path) |
-| `/rasen-explore` | Think through ideas, investigate problems, clarify requirements |
-| `/rasen-new-change` | Start a new change scaffold (expanded workflow) |
-| `/rasen-continue-change` | Create the next artifact (expanded workflow) |
-| `/rasen-apply-change` | Implement tasks, updating artifacts as needed |
-| `/rasen-verify-change` | Validate implementation against artifacts (expanded workflow) |
-| `/rasen-sync-specs` | Sync delta specs to main (default workflow, optional) |
-| `/rasen-archive-change` | Archive when done |
-| `/rasen-bulk-archive-change` | Archive multiple completed changes (expanded workflow) |
-| `/rasen-onboard` | Guided walkthrough of an end-to-end change (expanded workflow) |
+| `/rasen-propose` | 一步创建变更并生成规划产物（默认快捷路径） |
+| `/rasen-explore` | 思考想法、调查问题、澄清需求 |
+| `/rasen-new-change` | 创建新的变更脚手架（扩展工作流） |
+| `/rasen-continue-change` | 创建下一个产物（扩展工作流） |
+| `/rasen-apply-change` | 实现任务，按需更新产物 |
+| `/rasen-verify-change` | 根据产物验证实现（扩展工作流） |
+| `/rasen-sync-specs` | 将增量规格同步到主分支（默认工作流，可选） |
+| `/rasen-archive-change` | 完成后归档 |
+| `/rasen-bulk-archive-change` | 批量归档已完成的变更（扩展工作流） |
+| `/rasen-onboard` | 端到端变更的引导式演练（扩展工作流） |
 
-## Usage
+## 使用方法
 
-### Explore an idea
+### 探索想法
 ```
 /rasen-explore
 ```
-Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/rasen-propose` (default) or `/rasen-new-change`/`/rasen-continue-change` (expanded).
+思考想法、调查问题、比较选项。不需要任何结构——只是一个思考伙伴。当想法成熟后，转到 `/rasen-propose`（默认）或 `/rasen-new-change`/`/rasen-continue-change`（扩展）。
 
-### Start a new change
+### 开始新的变更
 ```
 /rasen-propose
 ```
-Creates the change and generates planning artifacts needed before implementation.
+创建变更并生成实现前所需的规划产物。
 
-If you've enabled expanded workflows, you can instead use:
+如果你启用了扩展工作流，也可以使用：
 
 ```text
 /rasen-new-change        # scaffold only
 /rasen-continue-change   # create one artifact at a time
 ```
 
-### Create artifacts
+### 创建产物
 ```
 /rasen-continue-change
 ```
-Shows what's ready to create based on dependencies, then creates one artifact. Use repeatedly to build up your change incrementally.
+根据依赖关系显示哪些产物可以创建，然后创建一个。反复使用以逐步构建你的变更。
 
-### Implement (the fluid part)
+### 实现（灵活的部分）
 ```
 /rasen-apply-change
 ```
-Works through tasks, checking them off as you go. If you're juggling multiple changes, you can run `/rasen-apply-change <name>`; otherwise it should infer from the conversation and prompt you to choose if it can't tell.
+逐步完成任务，逐一勾选。如果你同时处理多个变更，可以运行 `/rasen-apply-change <name>`；否则系统会从对话中推断，如果无法判断则会提示你选择。
 
-### Finish up
+### 收尾
 ```
 /rasen-archive-change   # Move to archive when done (prompts to sync specs if needed)
 ```
 
-### Goal-driven iteration (`/rasen-goal`)
+### 目标驱动迭代（`/rasen-goal`）
 
-`/rasen-auto` assumes the product is a code-change document (propose → apply → ship). Some tasks don't fit that shape — their "done" is a **condition**: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/rasen-goal` is the entry point for those. It repeats **modify → judge** until a gate is satisfied or a round cap is hit.
+`/rasen-auto` 假设产物是一份代码变更文档（propose → apply → ship）。有些任务不符合这个形状——它们的「完成」是一个**条件**：把 Lighthouse 分数刷到 90、让某模块满足 rubric、研究并写一份 brief。`/rasen-goal` 就是给这类任务用的入口。它重复 **修改 → 判定**，直到闸门达标或轮次上限。
 
-You see one command. The LEAD classifies the task and selects ONE backend pipeline (explicit override always wins):
+你只看到一个命令。LEAD 据任务分类，选**恰好一条**后端 pipeline（显式覆盖总赢）：
 
-| Selector / keywords | Backend pipeline | Gate | Tail |
+| 选择子 / 关键词 | 后端 pipeline | 闸门 | 尾部 |
 |---|---|---|---|
-| `measure` — `score` `latency` `lighthouse` `benchmark` `p99` `memory` | **goal-loop-measure** | a deterministic command emits `{score, passed}` | ship → archive |
-| `evaluate` — `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | a fresh reviewer worker judges `{satisfied, gaps}` | ship → archive |
-| `research` — `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | a fresh reviewer worker | report (no ship) |
+| `measure` —— `score` `latency` `lighthouse` `benchmark` `p99` `memory` | **goal-loop-measure** | 一条确定性命令产出 `{score, passed}` | ship → archive |
+| `evaluate` —— `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | 一个 fresh reviewer worker 判 `{satisfied, gaps}` | ship → archive |
+| `research` —— `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | 一个 fresh reviewer worker | report（无 ship）|
 
-The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen-goal` shares the same orchestration playbook as `/rasen-auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
+流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/rasen-goal` 与 `/rasen-auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [artifact-workflow-guide.md §9](artifact-workflow-guide.md#9-目标驱动迭代rasengoal)。
 
-## When to Update vs. Start Fresh
+## 何时更新 vs. 重新开始
 
-You can always edit your proposal or specs before implementation. But when does refining become "this is different work"?
+你始终可以在实现前编辑提案或规格。但什么时候"改进"变成了"这是不同的工作"？
 
-### What a Proposal Captures
+### 提案包含什么
 
-A proposal defines three things:
-1. **Intent** — What problem are you solving?
-2. **Scope** — What's in/out of bounds?
-3. **Approach** — How will you solve it?
+一个提案定义了三件事：
+1. **意图** —— 你在解决什么问题？
+2. **范围** —— 什么在范围内/范围外？
+3. **方法** —— 你将如何解决？
 
-The question is: which changed, and by how much?
+关键问题是：哪个发生了变化，变化了多少？
 
-### Update the Existing Change When:
+### 在以下情况下更新现有变更：
 
-**Same intent, refined execution**
-- You discover edge cases you didn't consider
-- The approach needs tweaking but the goal is unchanged
-- Implementation reveals the design was slightly off
+**相同意图，改进执行**
+- 你发现了未考虑到的边界情况
+- 方法需要微调但目标未变
+- 实现中发现设计略有偏差
 
-**Scope narrows**
-- You realize full scope is too big, want to ship MVP first
-- "Add dark mode" → "Add dark mode toggle (system preference in v2)"
+**范围缩小**
+- 你意识到完整范围太大，想先发布 MVP
+- "添加暗色模式" → "添加暗色模式切换（系统偏好在 v2 中实现）"
 
-**Learning-driven corrections**
-- Codebase isn't structured how you thought
-- A dependency doesn't work as expected
-- "Use CSS variables" → "Use Tailwind's dark: prefix instead"
+**学习驱动的修正**
+- 代码库的结构与你想象的不同
+- 某个依赖的行为与预期不符
+- "使用 CSS 变量" → "改用 Tailwind 的 dark: 前缀"
 
-### Start a New Change When:
+### 在以下情况下开始新的变更：
 
-**Intent fundamentally changed**
-- The problem itself is different now
-- "Add dark mode" → "Add comprehensive theme system with custom colors, fonts, spacing"
+**意图根本改变**
+- 问题本身已经不同了
+- "添加暗色模式" → "添加包含自定义颜色、字体、间距的综合主题系统"
 
-**Scope exploded**
-- Change grew so much it's essentially different work
-- Original proposal would be unrecognizable after updates
-- "Fix login bug" → "Rewrite auth system"
+**范围爆炸**
+- 变更增长太多，本质上已经是不同的工作
+- 更新后原始提案将面目全非
+- "修复登录 bug" → "重写认证系统"
 
-**Original is completable**
-- The original change can be marked "done"
-- New work stands alone, not a refinement
-- Complete "Add dark mode MVP" → Archive → New change "Enhance dark mode"
+**原始变更可完成**
+- 原始变更可以标记为"完成"
+- 新工作独立存在，不是改进
+- 完成"添加暗色模式 MVP" → 归档 → 新变更"增强暗色模式"
 
-### The Heuristics
+### 判断准则
 
 ```
                         ┌─────────────────────────────────────┐
@@ -287,42 +287,42 @@ The question is: which changed, and by how much?
        UPDATE            NEW  UPDATE       NEW  UPDATE          NEW
 ```
 
-| Test | Update | New Change |
+| 测试 | 更新 | 新变更 |
 |------|--------|------------|
-| **Identity** | "Same thing, refined" | "Different work" |
-| **Scope overlap** | >50% overlaps | <50% overlaps |
-| **Completion** | Can't be "done" without changes | Can finish original, new work stands alone |
-| **Story** | Update chain tells coherent story | Patches would confuse more than clarify |
+| **身份** | "同样的事情，改进了" | "不同的工作" |
+| **范围重叠** | >50% 重叠 | <50% 重叠 |
+| **完成度** | 没有这些更改无法"完成" | 可以完成原始工作，新工作独立存在 |
+| **叙事** | 更新链讲述连贯的故事 | 补丁带来的困惑多于清晰 |
 
-### The Principle
+### 原则
 
-> **Update preserves context. New change provides clarity.**
+> **更新保留上下文。新变更提供清晰度。**
 >
-> Choose update when the history of your thinking is valuable.
-> Choose new when starting fresh would be clearer than patching.
+> 当思考历程有价值时，选择更新。
+> 当重新开始比打补丁更清晰时，选择新变更。
 
-Think of it like git branches:
-- Keep committing while working on the same feature
-- Start a new branch when it's genuinely new work
-- Sometimes merge a partial feature and start fresh for phase 2
+把它想象成 git 分支：
+- 在同一个功能上持续提交
+- 当确实是全新工作时开始新分支
+- 有时合并部分功能，然后为第二阶段重新开始
 
-## What's Different?
+## 有什么不同？
 
-| | Legacy (`/openspec:proposal`) | OPSX (`/rasen-*`) |
+| | 传统工作流 (`/openspec:proposal`) | 制品工作流 (`/rasen-*`) |
 |---|---|---|
-| **Structure** | One big proposal document | Discrete artifacts with dependencies |
-| **Workflow** | Linear phases: plan → implement → archive | Fluid actions — do anything anytime |
-| **Iteration** | Awkward to go back | Update artifacts as you learn |
-| **Customization** | Fixed structure | Schema-driven (define your own artifacts) |
+| **结构** | 一个大的提案文档 | 具有依赖关系的离散产物 |
+| **工作流** | 线性阶段：规划 → 实现 → 归档 | 灵活操作——随时执行任何操作 |
+| **迭代** | 难以回退 | 在学习过程中更新产物 |
+| **自定义** | 固定结构 | Schema 驱动（定义你自己的产物） |
 
-**The key insight:** work isn't linear. OPSX stops pretending it is.
+**核心洞察：** 工作不是线性的。制品工作流不再假装它是。
 
-## Architecture Deep Dive
+## 架构深入解析
 
-This section explains how OPSX works under the hood and how it compares to the legacy workflow.
-Examples in this section use the expanded command set (`new`, `continue`, etc.); `core`-profile users can map the same flow to `propose → apply → sync → archive`.
+本节解释制品工作流的底层工作原理以及它与传统工作流的比较。
+本节中的示例使用扩展命令集（`new`、`continue` 等）；默认 `core` 用户可以将同样的流程映射为 `propose → apply → sync → archive`。
 
-### Philosophy: Phases vs Actions
+### 理念：阶段 vs 操作
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -346,7 +346,7 @@ Examples in this section use the expanded command set (`new`, `continue`, etc.);
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            OPSX WORKFLOW                                     │
+│                               ARTIFACT WORKFLOW                               │
 │                      (Fluid Actions, Iterative)                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
@@ -366,9 +366,9 @@ Examples in this section use the expanded command set (`new`, `continue`, etc.);
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Architecture
+### 组件架构
 
-**Legacy workflow** uses hardcoded templates in TypeScript:
+**传统工作流** 使用 TypeScript 中的硬编码模板：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -389,11 +389,11 @@ Examples in this section use the expanded command set (`new`, `continue`, etc.);
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**OPSX** uses external schemas and a dependency graph engine:
+**制品工作流** 使用外部 schema 和依赖图引擎：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         OPSX COMPONENTS                                      │
+│                         ARTIFACT WORKFLOW COMPONENTS                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   Schema Definitions (YAML)                                                 │
@@ -426,9 +426,9 @@ Examples in this section use the expanded command set (`new`, `continue`, etc.);
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Dependency Graph Model
+### 依赖图模型
 
-Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, not gates:
+产物形成有向无环图（DAG）。依赖是**推动力**，而非关卡：
 
 ```
                               proposal
@@ -456,7 +456,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
                           └──────────────┘
 ```
 
-**State transitions:**
+**状态转换：**
 
 ```
    BLOCKED ────────────────► READY ────────────────► DONE
@@ -465,9 +465,9 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
    dependencies             are DONE               on filesystem
 ```
 
-### Information Flow
+### 信息流
 
-**Legacy workflow** — agent receives static instructions:
+**传统工作流** —— 代理接收静态指令：
 
 ```
   User: "/openspec:proposal"
@@ -488,7 +488,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
   Agent creates ALL artifacts in one go
 ```
 
-**OPSX** — agent queries for rich context:
+**制品工作流** —— 代理查询丰富的上下文：
 
 ```
   User: "/rasen-continue-change"
@@ -524,9 +524,9 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
   └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Iteration Model
+### 迭代模型
 
-**Legacy workflow** — awkward to iterate:
+**传统工作流** —— 迭代很困难：
 
 ```
   ┌─────────┐     ┌─────────┐     ┌─────────┐
@@ -545,7 +545,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
        └── Creates ALL artifacts at once
 ```
 
-**OPSX** — natural iteration:
+**制品工作流** —— 自然迭代：
 
 ```
   /rasen-new-change ───► /rasen-continue-change ───► /rasen-apply-change ───► /rasen-archive-change
@@ -565,9 +565,9 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
       └── Scaffolds change, waits for direction
 ```
 
-### Custom Schemas
+### 自定义 Schema
 
-Create custom workflows using the schema management commands:
+使用 schema 管理命令创建自定义工作流：
 
 ```bash
 # Create a new schema from scratch (interactive)
@@ -583,9 +583,9 @@ rasen schema validate my-workflow
 rasen schema which my-workflow
 ```
 
-Schemas are stored in `rasen/schemas/` (project-local, version controlled) or `~/.rasen/schemas/` (user global; override the location with `RASEN_HOME`).
+Schema 存储在 `rasen/schemas/`（项目本地，版本控制）或 `~/.rasen/schemas/`（用户全局）。
 
-**Schema structure:**
+**Schema 结构：**
 ```
 rasen/schemas/research-first/
 ├── schema.yaml
@@ -595,7 +595,7 @@ rasen/schemas/research-first/
     └── tasks.md
 ```
 
-**Example schema.yaml:**
+**示例 schema.yaml：**
 ```yaml
 name: research-first
 artifacts:
@@ -612,27 +612,27 @@ artifacts:
     requires: [proposal]
 ```
 
-**Dependency Graph:**
+**依赖图：**
 ```
    research ──► proposal ──► tasks
 ```
 
-### Summary
+### 总结
 
-| Aspect | Legacy | OPSX |
+| 方面 | 传统工作流 | 制品工作流 |
 |--------|----------|------|
-| **Templates** | Hardcoded TypeScript | External YAML + Markdown |
-| **Dependencies** | None (all at once) | DAG with topological sort |
-| **State** | Phase-based mental model | Filesystem existence |
-| **Customization** | Edit source, rebuild | Create schema.yaml |
-| **Iteration** | Phase-locked | Fluid, edit anything |
-| **Editor Support** | Tool-specific configurator/adapters | Single skills directory |
+| **模板** | 硬编码 TypeScript | 外部 YAML + Markdown |
+| **依赖** | 无（一次全部创建） | 具有拓扑排序的 DAG |
+| **状态** | 基于阶段的心智模型 | 文件系统存在性 |
+| **自定义** | 编辑源码，重新构建 | 创建 schema.yaml |
+| **迭代** | 阶段锁定 | 灵活，可编辑任何内容 |
+| **编辑器支持** | 特定工具的配置器/适配器 | 单一技能目录 |
 
-## Schemas
+## Schema
 
-Schemas define what artifacts exist and their dependencies. Currently available:
+Schema 定义了存在哪些产物及其依赖关系。当前可用：
 
-- **spec-driven** (default): proposal → specs → design → tasks
+- **spec-driven**（默认）：proposal → specs → design → tasks
 
 ```bash
 # List available schemas
@@ -651,16 +651,16 @@ rasen schema fork spec-driven my-workflow
 rasen schema validate my-workflow
 ```
 
-## Tips
+## 提示
 
-- Use `/rasen-explore` to think through an idea before committing to a change
-- `/rasen-propose` when you know what you want, `/rasen-new-change`/`/rasen-continue-change` when exploring
-- During `/rasen-apply-change`, if something's wrong — fix the artifact, then continue
-- Tasks track progress via checkboxes in `tasks.md`
-- Check status anytime: `rasen status --change "name"`
+- 使用 `/rasen-explore` 在正式提交变更前思考想法
+- 当你清楚想要什么时使用 `/rasen-propose`，探索时使用 `/rasen-new-change`/`/rasen-continue-change`
+- 在 `/rasen-apply-change` 期间，如果发现问题——修改产物，然后继续
+- 任务通过 `tasks.md` 中的复选框跟踪进度
+- 随时检查状态：`rasen status --change "name"`
 
-## Feedback
+## 反馈
 
-This is rough. That's intentional — we're learning what works.
+这还很粗糙。这是有意为之的——我们正在学习什么有效。
 
-Found a bug? Have ideas? Join us on [Discord](https://discord.gg/YctCnvvshC) or open an issue on [GitHub](https://github.com/DumoeDss/rasen/issues).
+发现了 bug？有想法？加入我们的 [Discord](https://discord.gg/YctCnvvshC) 或在 [GitHub](https://github.com/DumoeDss/rasen/issues) 上提交 issue。
