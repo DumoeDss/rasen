@@ -285,6 +285,13 @@ export const StageLoopSchema = z.discriminatedUnion('kind', [
 ]);
 
 /**
+ * The `loop.kind` vocabulary, named alongside `StageLoopSchema` above so the
+ * pipeline-catalog endpoint (pipeline-definition-api) sources it from one
+ * place instead of retyping the discriminated union's literals.
+ */
+export const LOOP_KIND_VALUES = ['review-cycle', 'goal'] as const;
+
+/**
  * Policy hint for how thoroughly a verification/review stage should run.
  */
 export const VerifyPolicySchema = z.enum(['adaptive', 'standard', 'light']);
@@ -408,13 +415,14 @@ export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
   handoff: HandoffConfigSchema.optional(),
   reuse: ReuseConfigSchema.optional(),
-  // Marks a pipeline assembled by the autopilot LEAD (autonomy-ladder rung 2:
-  // composed pipelines). Absent means human-authored. The ONLY value is
-  // 'composed' — the marker scopes the quality-floor guard (see
-  // validateComposedPolicyFloor in pipeline.ts) to exactly the LEAD-composed
+  // Marks a pipeline assembled by a machine path rather than authored by hand
+  // (autonomy-ladder rung 2: composed pipelines; pipeline-definition-api
+  // widens this to also cover the management UI's canvas). Absent means
+  // human-authored. Every value scopes the quality-floor guard (see
+  // validateComposedPolicyFloor in pipeline.ts) to exactly the machine-assembled
   // population, leaving human-authored pipelines (built-in or project) unaffected.
-  origin: z.literal('composed').optional().describe(
-    "Marks a pipeline assembled by the autopilot LEAD; absent means human-authored. When 'composed', the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
+  origin: z.enum(['composed', 'ui']).optional().describe(
+    "Marks how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's canvas; absent means human-authored. When present, the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
   ),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 }));

@@ -21,6 +21,7 @@ import {
   deletePipeline,
   exportPipeline,
   importPipelinePackage,
+  savePipeline,
   scaffoldPipeline,
   validatePipelineInput,
 } from '../core/pipeline-library.js';
@@ -205,6 +206,34 @@ export class PipelineLibraryCommand {
             referrers: result.forcedReferrers.join(', '),
           }));
         }
+      }
+    } catch (error) {
+      this.reportError(options, error);
+    }
+  }
+
+  async save(
+    name: string,
+    options: PipelineLibraryCommandOptions & { from: string; force?: boolean }
+  ): Promise<void> {
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    try {
+      const result = await savePipeline(name, options.from, {
+        projectRoot: root.path,
+        force: options.force === true,
+      });
+      if (options.json) {
+        console.log(JSON.stringify(
+          { pipeline: { name: result.name, path: result.path }, created: result.created, status: [] },
+          null,
+          2
+        ));
+      } else {
+        console.log(getPipelineMessages().format('savedPipeline', {
+          name: result.name,
+          path: result.path,
+        }));
       }
     } catch (error) {
       this.reportError(options, error);

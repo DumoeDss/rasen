@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parsePipeline,
   validatePipelineSkills,
+  validatePipelineDraft,
   PipelineValidationError,
 } from '../../../src/core/pipeline-registry/pipeline.js';
 import {
@@ -737,6 +738,93 @@ stages:
     });
   });
 
+  describe('validatePipelineDraft (pipeline-definition-api: parse-chain-rejects ⇔ collector-reports-error)', () => {
+    const skillSets = {
+      knownSkillNames: new Set(['rasen-propose', 'rasen-apply-change', 'rasen-review']),
+      enabledSkillNames: new Set(['rasen-propose', 'rasen-apply-change', 'rasen-review']),
+    };
+
+    it('reports no error issues for a fixture parsePipeline accepts', () => {
+      const yaml = `
+name: draft-ok
+stages:
+  - id: a
+    skill: rasen-propose
+  - id: b
+    skill: rasen-review
+    requires: [a]
+`;
+      expect(() => parsePipeline(yaml)).not.toThrow();
+      const issues = validatePipelineDraft(
+        { name: 'draft-ok', stages: [{ id: 'a', skill: 'rasen-propose' }, { id: 'b', skill: 'rasen-review', requires: ['a'] }] },
+        skillSets
+      );
+      expect(issues.filter((i) => i.severity === 'error')).toHaveLength(0);
+    });
+
+    it('reports a Zod issue per schema violation, with its own path', () => {
+      const issues = validatePipelineDraft({ name: '', stages: [] }, skillSets);
+      expect(issues.length).toBeGreaterThanOrEqual(2);
+      for (const issue of issues) {
+        expect(issue.severity).toBe('error');
+        expect(issue.path.startsWith('/')).toBe(true);
+      }
+    });
+
+    it('collects a cycle issue AND an unknown-skill issue for the same draft (multi-issue, single pass)', () => {
+      const definition = {
+        name: 'draft-multi',
+        stages: [
+          { id: 'a', skill: 'no-such-skill', requires: ['b'] },
+          { id: 'b', skill: 'rasen-apply-change', requires: ['a'] },
+        ],
+      };
+      const issues = validatePipelineDraft(definition, skillSets);
+      expect(issues.some((i) => /[Cc]yclic/.test(i.message))).toBe(true);
+      expect(issues.some((i) => i.path === '/stages/0/skill' && /unknown skill/.test(i.message))).toBe(true);
+    });
+
+    it('locates a disabled-skill issue at its stage path', () => {
+      const definition = {
+        name: 'draft-disabled',
+        stages: [{ id: 'a', skill: 'rasen-review' }],
+      };
+      const issues = validatePipelineDraft(definition, {
+        knownSkillNames: new Set(['rasen-review']),
+        enabledSkillNames: new Set(),
+      });
+      expect(issues).toContainEqual(
+        expect.objectContaining({ severity: 'error', path: '/stages/0/skill' })
+      );
+    });
+
+    it('parse-chain-rejects ⇔ collector-reports-an-error over shared fixtures: floor scope (composed/ui/origin-free)', () => {
+      const floorFreeStages = [{ id: 'a', skill: 'rasen-propose' }];
+
+      for (const origin of ['composed', 'ui'] as const) {
+        const definition = { name: 'floor-check', origin, stages: floorFreeStages };
+        expect(() => parsePipeline(`name: floor-check\norigin: ${origin}\nstages:\n  - id: a\n    skill: rasen-propose\n`)).toThrow();
+        const issues = validatePipelineDraft(definition, skillSets);
+        expect(issues.some((i) => i.severity === 'error')).toBe(true);
+      }
+
+      // Origin-free: the same floor-free shape is untouched by either path.
+      const originFreeYaml = 'name: floor-check\nstages:\n  - id: a\n    skill: rasen-propose\n';
+      expect(() => parsePipeline(originFreeYaml)).not.toThrow();
+      const originFreeIssues = validatePipelineDraft(
+        { name: 'floor-check', stages: floorFreeStages },
+        skillSets
+      );
+      expect(originFreeIssues.filter((i) => i.severity === 'error')).toHaveLength(0);
+    });
+
+    it('never throws on an invalid draft — invalidity is data', () => {
+      expect(() =>
+        validatePipelineDraft({ name: 'a', stages: [{ id: 'x', requires: ['missing'] }] }, skillSets)
+      ).not.toThrow();
+    });
+  });
+
   describe('decompose stages', () => {
     it('parses a decompose stage (no skill, with childPipeline)', () => {
       const pipeline = parsePipeline(`
@@ -925,6 +1013,39 @@ stages:
     skill: rasen-propose
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+
+    it('parses origin: ui when both floor stages are present, and enforces the same floor as composed', () => {
+      const pipeline = parsePipeline(`
+name: ui-ok
+origin: ui
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen-review
+    role: reviewer
+    requires: [apply]
+    loop:
+      kind: review-cycle
+`);
+      expect(pipeline.origin).toBe('ui');
+
+      const missingReviewer = `
+name: ui-no-reviewer
+origin: ui
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: review-loop
+    skill: rasen-review-cycle
+    requires: [apply]
+    loop:
+      kind: review-cycle
+`;
+      expect(() => parsePipeline(missingReviewer)).toThrow(/origin: ui/);
     });
   });
 

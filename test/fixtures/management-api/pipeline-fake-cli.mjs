@@ -48,6 +48,26 @@ async function main() {
     printJson({ ...base, pipeline: { name: args[2], path: args[3] } });
   } else if (sub === 'delete') {
     printJson({ ...base, deleted: args[2] });
+  } else if (sub === 'save') {
+    const fromIdx = args.indexOf('--from');
+    const fromPath = fromIdx >= 0 ? args[fromIdx + 1] : null;
+    // Read the scratch file so a test can assert its content (or that it's
+    // absent), and echo whether --force was passed, matching how the real
+    // savePipeline reports `created` (false only on a forced overwrite).
+    let scratchContent = null;
+    if (fromPath) {
+      try {
+        scratchContent = (await import('node:fs')).readFileSync(fromPath, 'utf-8');
+      } catch {
+        scratchContent = null;
+      }
+    }
+    printJson({
+      ...base,
+      pipeline: { name: args[2], path: fromPath },
+      created: !args.includes('--force'),
+      _scratchContent: scratchContent,
+    });
   } else {
     printJson(base);
   }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -106,5 +106,84 @@ describe('createPipelineSubmitter (pipeline-http-api design D6)', () => {
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.status).toBe(409);
     await slow;
+  });
+
+  describe('save op (pipeline-definition-api): scratch-file handoff', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('writes the definition to a scratch file (never argv) and passes `--from <scratch>` — 201 on create', async () => {
+      const submit = submitter();
+      const definition = { name: 'saved-pipe', stages: [{ id: 'a', skill: 'rasen-apply-change' }] };
+      const result = await submit({ op: 'save', name: 'saved-pipe', definition });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.status).toBe(201);
+      // The definition never rides argv — only name/flags/the scratch path do.
+      expect(result.response._argv).toEqual([
+        'pipeline',
+        'save',
+        'saved-pipe',
+        '--from',
+        result.response.pipeline.path,
+        '--json',
+      ]);
+      expect(JSON.parse(result.response._scratchContent as string)).toEqual(definition);
+    });
+
+    it('reports 200 (not 201) when the CLI reports an overwrite (created: false)', async () => {
+      const submit = submitter();
+      const definition = { name: 'saved-pipe', stages: [{ id: 'a', skill: 'rasen-apply-change' }] };
+      const result = await submit({ op: 'save', name: 'saved-pipe', definition, force: true });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.status).toBe(200);
+    });
+
+    it('passes the CLI built-in refusal through verbatim as 422', async () => {
+      const result = await submitter()({ op: 'save', name: 'fail-me', definition: { name: 'fail-me', stages: [] } });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(422);
+        expect(result.message).toContain('fake pipeline failure');
+      }
+    });
+
+    it('non-object definition → 400, no spawn', async () => {
+      const result = await submitter()({ op: 'save', name: 'x', definition: 'not-an-object' } as any);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.status).toBe(400);
+    });
+
+    it('scratch-file deletion failure is tolerated: the response still succeeds (Windows lock simulation)', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.resetModules();
+      vi.doMock('node:fs', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('node:fs')>();
+        const rmSync = vi.fn(() => {
+          throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+        });
+        return { ...actual, default: { ...actual.default, rmSync }, rmSync };
+      });
+      try {
+        const { createPipelineSubmitter: freshCreateSubmitter } = await import(
+          '../../../src/core/management-api/pipeline-submit.js'
+        );
+        const mockedFs = await import('node:fs');
+        const submit = freshCreateSubmitter(
+          { launchProjectRoot: os.tmpdir() },
+          { cliEntryOverride: fakeCliEntry }
+        );
+        const definition = { name: 'lock-sim', stages: [{ id: 'a', skill: 'rasen-apply-change' }] };
+        const result = await submit({ op: 'save', name: 'lock-sim', definition });
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.status).toBe(201);
+        expect(mockedFs.rmSync).toHaveBeenCalled();
+        expect(consoleErrorSpy).toHaveBeenCalled();
+      } finally {
+        vi.doUnmock('node:fs');
+        vi.resetModules();
+      }
+    });
   });
 });

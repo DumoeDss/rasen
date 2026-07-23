@@ -765,6 +765,20 @@ pipelineCmd
   });
 
 pipelineCmd
+  .command('save <name>')
+  .description('Validate and install a pipeline definition file as a user pipeline')
+  .requiredOption('--from <file>', 'Path to a JSON or YAML pipeline definition')
+  .option('--force', 'Overwrite an already-installed user pipeline of the same name')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.save(name, options);
+  });
+
+pipelineCmd
   .command('delete <name>')
   .description('Delete an unreferenced user pipeline')
   .option('-y, --yes', 'Skip confirmation')

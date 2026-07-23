@@ -36,20 +36,21 @@ export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
  * The whitelist table, enumerated by tier (change-submission spec's
  * requirement-level exactness rules):
  *
- * - `bounded-cli`: exactly thirteen entries — change submission
+ * - `bounded-cli`: exactly fourteen entries — change submission
  *   (`create-change`), the three space-creation ops
  *   (`create-project-space`, `register-store-space`, `setup-store-space`),
  *   the four workflow-library mutations (`import-workflow`, `init-workflow`,
- *   `export-workflow`, `delete-workflow`), the four pipeline-library
+ *   `export-workflow`, `delete-workflow`), the five pipeline-library
  *   mutations (`import-pipeline`, `init-pipeline`, `export-pipeline`,
- *   `delete-pipeline`), and the per-space workflow-enablement apply op
- *   (`workflow-enablement-update`, space-workflow-enablement design D5). Each
- *   is deterministic, bounded, and leaves no resident process.
+ *   `delete-pipeline`, `save-pipeline` — pipeline-definition-api), and the
+ *   per-space workflow-enablement apply op (`workflow-enablement-update`,
+ *   space-workflow-enablement design D5). Each is deterministic, bounded, and
+ *   leaves no resident process.
  * - `supervised-long-runner`: exactly `auto` and `goal`.
  *
  * Each mutation endpoint admits only entries of its own operation set (the
  * space bridge serves only the three space ops, the workflow bridge only the
- * four workflow ops, the pipeline bridge only the four pipeline ops, the change
+ * four workflow ops, the pipeline bridge only the five pipeline ops, the change
  * bridge only `create-change`).
  */
 export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze({
@@ -65,6 +66,7 @@ export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze
   'init-pipeline': { tier: 'bounded-cli', op: 'init-pipeline' },
   'export-pipeline': { tier: 'bounded-cli', op: 'export-pipeline' },
   'delete-pipeline': { tier: 'bounded-cli', op: 'delete-pipeline' },
+  'save-pipeline': { tier: 'bounded-cli', op: 'save-pipeline' },
   'workflow-enablement-update': { tier: 'bounded-cli', op: 'workflow-enablement-update' },
   auto: {
     tier: 'supervised-long-runner',

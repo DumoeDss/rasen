@@ -1101,6 +1101,19 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           COMMON_FLAGS.project,
         ],
       },
+      {
+        name: 'save',
+        description: 'Validate and install a pipeline definition file as a user pipeline',
+        acceptsPositional: true,
+        positionals: [{ name: 'name' }],
+        flags: [
+          { name: 'from', description: 'Path to a JSON or YAML pipeline definition', takesValue: true },
+          { name: 'force', description: 'Overwrite an already-installed pipeline of the same name' },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
     ],
   },
   {

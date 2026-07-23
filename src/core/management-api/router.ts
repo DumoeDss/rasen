@@ -37,7 +37,7 @@ import {
 } from './workflows.js';
 import { createWorkflowSubmitter } from './workflow-submit.js';
 import { createWorkflowEnablementSubmitter, handleWorkflowEnablementRead } from './workflow-enablement.js';
-import { handleListPipelines } from './pipelines.js';
+import { handleListPipelines, handlePipelineCatalog, handlePipelineDetail, handlePipelineValidation } from './pipelines.js';
 import { createPipelineSubmitter } from './pipeline-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 
@@ -86,6 +86,8 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/workflow-validation',
   '/api/v1/workflow-enablement',
   '/api/v1/pipelines',
+  '/api/v1/pipeline-validation',
+  '/api/v1/pipeline-catalog',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -136,11 +138,14 @@ function matchWorkflowIdPath(pathname: string): string | null {
 
 /**
  * Matches `/api/v1/pipelines/<name>` exactly one segment deep (mirrors
- * `matchWorkflowIdPath`; unify-pipeline-http-api design D2), reserving the
- * detail path for a future change. Until that contract lands, a matched path
- * answers the management group's 404 `not_found` rather than falling through
- * (deeper suffixes still fall through — `/api/v1/pipelines/<name>/extra` was
- * never a "pipelines path" to begin with).
+ * `matchWorkflowIdPath`; unify-pipeline-http-api design D2). Serves the
+ * pipeline detail contract (pipeline-definition-api design D2): a pipeline
+ * name is user-chosen, so NO format constraint is applied here — a pipeline
+ * legitimately named `validation` or `catalog` must still resolve as a detail
+ * path (the validation/catalog contracts live at their OWN top-level paths
+ * specifically so they are never shadowed). The handler answers 404 for an
+ * unknown name (deeper suffixes still fall through —
+ * `/api/v1/pipelines/<name>/extra` was never a "pipelines path" to begin with).
  */
 function matchPipelineIdPath(pathname: string): string | null {
   if (!pathname.startsWith(PIPELINE_ID_PATH_PREFIX)) return null;
@@ -185,10 +190,17 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET';
   }
   if (matchPipelineIdPath(pathname) !== null) {
-    // The detail contract does not exist yet — every method reaches the
-    // dispatch below, which answers 404 uniformly (design D2): a reserved
-    // path that has no contract yet is "not found", not "method not allowed".
-    return true;
+    // The detail contract is GET-only (pipeline-definition-api spec): PUT,
+    // DELETE, and POST on `/api/v1/pipelines/<name>` are all rejected 405.
+    return method === 'GET';
+  }
+  if (pathname === '/api/v1/pipeline-validation') {
+    // POST-only: GET/PUT/DELETE are rejected 405 (pipeline-definition-api spec).
+    return method === 'POST';
+  }
+  if (pathname === '/api/v1/pipeline-catalog') {
+    // GET-only: POST/PUT/DELETE are rejected 405 (pipeline-definition-api spec).
+    return method === 'GET';
   }
   if (pathname === '/api/v1/workflows') {
     return method === 'GET' || method === 'POST';
@@ -677,11 +689,25 @@ export function createManagementRouter(
       return;
     }
 
-    if (matchPipelineIdPath(pathname) !== null) {
-      // The detail contract does not exist yet (unify-pipeline-http-api
-      // design D2): a reserved path answers not-found from the management
-      // group rather than falling through to another route group.
-      sendError(res, 404, 'not_found', `No route for ${req.method} ${pathname}.`);
+    if (pathname === '/api/v1/pipeline-catalog' && req.method === 'GET') {
+      await handlePipelineCatalog(res, context, sendJson);
+      return;
+    }
+
+    if (pathname === '/api/v1/pipeline-validation' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      await handlePipelineValidation(res, body.value, context, sendError, sendJson);
+      return;
+    }
+
+    const pipelineId = matchPipelineIdPath(pathname);
+    if (pipelineId !== null && req.method === 'GET') {
+      await handlePipelineDetail(res, url, pipelineId, context, sendError, sendJson);
       return;
     }
 

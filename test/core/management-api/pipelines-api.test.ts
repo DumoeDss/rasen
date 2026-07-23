@@ -273,12 +273,15 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(body.error.fix.length).toBeGreaterThan(0);
     });
 
-    it('the one-segment detail path answers management-group 404, deeper suffixes fall through', async () => {
+    it('the one-segment detail path serves the detail contract, deeper suffixes fall through', async () => {
       const h = await startServer();
 
       const detail = await req(h.port, { method: 'GET', path: '/api/v1/pipelines/bug-fix', headers: authed() });
-      expect(detail.status).toBe(404);
-      expect((detail.json() as any).error.code).toBe('not_found');
+      expect(detail.status).toBe(200);
+      const body = detail.json() as any;
+      expect(body.pipeline.name).toBe('bug-fix');
+      expect(body.definition.name).toBe('bug-fix');
+      expect(body.editable).toBe(false);
 
       // A two-segment suffix was never claimed by either group's dispatch — it
       // falls through past the management group to the config group's
@@ -290,6 +293,248 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
         headers: authed(),
       });
       expect(deeper.status).toBe(404);
+    });
+  });
+
+  describe('pipeline detail (pipeline-definition-api)', () => {
+    it('returns both views plus editable for a user pipeline', async () => {
+      const h = await startServer();
+      const userDir = path.join(tempConfigHome, 'rasen', 'pipelines', 'my-pipe');
+      fs.mkdirSync(userDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(userDir, 'pipeline.yaml'),
+        'name: my-pipe\nstages:\n  - id: implement\n    skill: rasen-apply-change\n    role: implementer\n'
+      );
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines/my-pipe', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.pipeline.name).toBe('my-pipe');
+      expect(body.definition.stages[0].id).toBe('implement');
+      expect(body.editable).toBe(true);
+    });
+
+    it('404s an unknown name, 400s a malformed name', async () => {
+      const h = await startServer();
+      const unknown = await req(h.port, { method: 'GET', path: '/api/v1/pipelines/no-such-pipeline', headers: authed() });
+      expect(unknown.status).toBe(404);
+      expect((unknown.json() as any).error.code).toBe('not_found');
+
+      const malformed = await req(h.port, { method: 'GET', path: '/api/v1/pipelines/-bad-name', headers: authed() });
+      expect(malformed.status).toBe(400);
+    });
+
+    it('rejects PUT/DELETE/POST with 405', async () => {
+      const h = await startServer();
+      for (const method of ['PUT', 'DELETE', 'POST']) {
+        const res = await req(h.port, { method, path: '/api/v1/pipelines/bug-fix', headers: authed() });
+        expect(res.status).toBe(405);
+      }
+    });
+
+    it('a pipeline named catalog is served by detail, not shadowed by the catalog endpoint', async () => {
+      const h = await startServer();
+      const userDir = path.join(tempConfigHome, 'rasen', 'pipelines', 'catalog');
+      fs.mkdirSync(userDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(userDir, 'pipeline.yaml'),
+        'name: catalog\nstages:\n  - id: implement\n    skill: rasen-apply-change\n'
+      );
+      const detail = await req(h.port, { method: 'GET', path: '/api/v1/pipelines/catalog', headers: authed() });
+      expect(detail.status).toBe(200);
+      expect((detail.json() as any).pipeline.name).toBe('catalog');
+
+      const catalogEndpoint = await req(h.port, { method: 'GET', path: '/api/v1/pipeline-catalog', headers: authed() });
+      expect(catalogEndpoint.status).toBe(200);
+      expect(Array.isArray((catalogEndpoint.json() as any).roles)).toBe(true);
+    });
+  });
+
+  describe('pipeline-catalog (pipeline-definition-api)', () => {
+    it('reports vocabulary sourced from the schemas plus the skill inventory', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipeline-catalog', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.roles).toEqual(expect.arrayContaining(['planner', 'implementer', 'reviewer', 'fixer', 'shipper']));
+      expect(body.runtimes).toEqual(expect.arrayContaining(['claude', 'codex']));
+      expect(body.loopKinds).toEqual(expect.arrayContaining(['review-cycle', 'goal']));
+      expect(Array.isArray(body.skills)).toBe(true);
+      expect(body.skills.length).toBeGreaterThan(0);
+      expect(body.skills[0]).toHaveProperty('enabled');
+      expect(body.gate.default).toBe(false);
+      expect(body.handoff.fractionRange).toEqual([0, 1]);
+    });
+
+    it('rejects POST/PUT/DELETE with 405', async () => {
+      const h = await startServer();
+      for (const method of ['POST', 'PUT', 'DELETE']) {
+        const res = await req(h.port, { method, path: '/api/v1/pipeline-catalog', headers: authed() });
+        expect(res.status).toBe(405);
+      }
+    });
+
+    it('requires the session token', async () => {
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipeline-catalog' });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('pipeline-validation (pipeline-definition-api)', () => {
+    function validDefinition() {
+      return {
+        name: 'draft',
+        stages: [
+          { id: 'implement', skill: 'rasen-apply-change', role: 'implementer' },
+          { id: 'review', skill: 'rasen-review', role: 'reviewer', requires: ['implement'] },
+        ],
+      };
+    }
+
+    it('200s a valid draft with no error issues', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ definition: validDefinition() }),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.valid).toBe(true);
+      expect(body.issues.filter((i: any) => i.severity === 'error')).toHaveLength(0);
+    });
+
+    it('200s an invalid draft reporting all issues (cycle + unknown skill)', async () => {
+      const h = await startServer();
+      const definition = {
+        name: 'draft',
+        stages: [
+          { id: 'a', skill: 'no-such-skill', requires: ['b'] },
+          { id: 'b', skill: 'rasen-apply-change', requires: ['a'] },
+        ],
+      };
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ definition }),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.valid).toBe(false);
+      expect(body.issues.length).toBeGreaterThanOrEqual(2);
+      expect(body.issues.some((i: any) => /[Cc]yclic/.test(i.message))).toBe(true);
+      expect(body.issues.some((i: any) => i.path === '/stages/0/skill')).toBe(true);
+    });
+
+    it('400s a body with no definition member; never spawns anything for validation', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ notADefinition: true }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects GET/PUT/DELETE with 405', async () => {
+      const h = await startServer();
+      for (const method of ['GET', 'PUT', 'DELETE']) {
+        const res = await req(h.port, { method, path: '/api/v1/pipeline-validation', headers: authed() });
+        expect(res.status).toBe(405);
+      }
+    });
+
+    it('runs without a 409 even while a pipeline mutation is in flight', async () => {
+      const h = await startServer();
+      // No concurrent mutation actually spawned here (unit-scope), but the
+      // endpoint must not touch the bridge's cap-1 slot at all: two concurrent
+      // validation requests both succeed.
+      const [a, b] = await Promise.all([
+        req(h.port, {
+          method: 'POST',
+          path: '/api/v1/pipeline-validation',
+          headers: authed({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ definition: validDefinition() }),
+        }),
+        req(h.port, {
+          method: 'POST',
+          path: '/api/v1/pipeline-validation',
+          headers: authed({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ definition: validDefinition() }),
+        }),
+      ]);
+      expect(a.status).toBe(200);
+      expect(b.status).toBe(200);
+    });
+  });
+
+  describe('save op (POST /api/v1/pipelines, pipeline-definition-api)', () => {
+    it('creates a new user pipeline with 201, then detail round-trips it', async () => {
+      const h = await startServer();
+      const definition = {
+        name: 'saved-pipe',
+        stages: [{ id: 'implement', skill: 'rasen-apply-change', role: 'implementer' }],
+      };
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'save', name: 'saved-pipe', definition }),
+      });
+      expect(res.status).toBe(201);
+
+      const detail = await req(h.port, { method: 'GET', path: '/api/v1/pipelines/saved-pipe', headers: authed() });
+      expect(detail.status).toBe(200);
+      expect((detail.json() as any).definition.stages[0].skill).toBe('rasen-apply-change');
+    });
+
+    it('refuses overwrite without force (422), then force succeeds (200)', async () => {
+      const h = await startServer();
+      const definition = {
+        name: 'saved-pipe-2',
+        stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+      };
+      const first = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'save', name: 'saved-pipe-2', definition }),
+      });
+      expect(first.status).toBe(201);
+
+      const noForce = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'save', name: 'saved-pipe-2', definition }),
+      });
+      expect(noForce.status).toBe(422);
+
+      const forced = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'save', name: 'saved-pipe-2', definition, force: true }),
+      });
+      expect(forced.status).toBe(200);
+    });
+
+    it('refuses saving over a built-in name regardless of force', async () => {
+      const h = await startServer();
+      const definition = {
+        name: 'bug-fix',
+        stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+      };
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'save', name: 'bug-fix', definition, force: true }),
+      });
+      expect(res.status).toBe(422);
     });
   });
 });

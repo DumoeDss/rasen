@@ -1,27 +1,39 @@
 /**
- * `POST /api/v1/pipelines` mutation bridge (pipeline-http-api design D6).
+ * `POST /api/v1/pipelines` mutation bridge (pipeline-http-api design D6,
+ * `save` added by pipeline-definition-api).
  *
  * Mirrors `workflow-submit.ts` exactly: the server never writes a library or
  * workspace file and never reimplements the pipeline-library logic. It validates
  * input, then spawns the CLI's own `dist/cli/index.js` entry (never PATH) with a
  * fixed argv template per operation, `shell: false` and an argv array, and
  * passes the CLI's exit code and `--json` output through verbatim. Admission is
- * the shared tiered table in `whitelist.ts`; this bridge admits only the four
+ * the shared tiered table in `whitelist.ts`; this bridge admits only the five
  * pipeline bounded-cli ops (checked via `getBoundedCliEntry`) — never a workflow,
  * change, space, or supervised entry.
  *
- * The four operations (design D6):
+ * The five operations:
  *   import  → `pipeline import <path> --json`               (+ `--force` iff `force`)
  *   init    → `pipeline init <name> --output <output> --json`
  *   export  → `pipeline export <name> <path> --json`        (+ `--force` iff `force`)
  *   delete  → `pipeline delete <name> --yes --json`         (+ `--force` iff `force`)
+ *   save    → `pipeline save <name> --from <scratch-file> --json` (+ `--force` iff `force`)
  *
  * `--yes` is always passed on delete: confirmation is the UI dialog's job
  * (pipeline-http-api spec), mirroring how the bounded tier already treats a
  * non-interactive CLI run.
+ *
+ * `save` is the ONE sanctioned exception to "the server writes no library or
+ * workspace file itself": the posted definition is written to a server-owned
+ * scratch file in `os.tmpdir()` (random name, closed before spawn) solely to
+ * hand it to the CLI as `--from <path>`, then deleted in a `finally` — deletion
+ * failure (e.g. a transient Windows file lock) is logged and tolerated, never
+ * surfaced as a request error. The definition itself never travels through argv.
  */
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { isPortableWorkflowId } from '../workflow-registry/index.js';
@@ -43,7 +55,11 @@ const OP_TO_WHITELIST: Readonly<Record<PipelineMutationRequest['op'], string>> =
   init: 'init-pipeline',
   export: 'export-pipeline',
   delete: 'delete-pipeline',
+  save: 'save-pipeline',
 };
+
+/** Placeholder substituted for the real scratch-file path once it is written, right before spawn (`save` only). */
+const SAVE_SCRATCH_PLACEHOLDER = '\0save-scratch-path\0';
 
 export type PipelineSubmitResult =
   | { ok: true; status: 200 | 201; response: Record<string, unknown> }
@@ -102,9 +118,21 @@ function invalid(message: string): PipelineSubmitResult {
  * (`isPortableWorkflowId`), which also forbids a leading `-`. `import`/`init`
  * create things (201); `export`/`delete` do not (200).
  */
+interface BuiltArgv {
+  argv: string[];
+  successStatus: 200 | 201;
+  /**
+   * `save`'s success status depends on whether the CLI created or overwrote
+   * (201 vs 200) — reported back in its own `--json` payload (`created`), not
+   * fixable statically like the other four ops. When present, this overrides
+   * `successStatus` once the parsed payload is available.
+   */
+  successStatusFromPayload?: (payload: Record<string, unknown>) => 200 | 201;
+}
+
 function buildArgv(
   request: PipelineMutationRequest
-): { argv: string[]; successStatus: 200 | 201 } | PipelineSubmitResult {
+): BuiltArgv | PipelineSubmitResult {
   switch (request.op) {
     case 'import': {
       if (typeof request.path !== 'string' || !path.isAbsolute(request.path)) {
@@ -146,8 +174,27 @@ function buildArgv(
       if (request.force === true) argv.push('--force');
       return { argv, successStatus: 200 };
     }
+    case 'save': {
+      if (typeof request.name !== 'string' || !isPortableWorkflowId(request.name)) {
+        return invalid('save name must be a valid pipeline identifier.');
+      }
+      if (typeof request.definition !== 'object' || request.definition === null) {
+        return invalid('save definition must be an object.');
+      }
+      // The scratch-file path is substituted for SAVE_SCRATCH_PLACEHOLDER by
+      // the caller right before spawn, once the definition has been written
+      // to a temp file (design D6) — the definition itself never rides argv.
+      const argv = ['pipeline', 'save', request.name, '--from', SAVE_SCRATCH_PLACEHOLDER, '--json'];
+      if (request.force === true) argv.push('--force');
+      return {
+        argv,
+        successStatus: 201,
+        successStatusFromPayload: (payload) =>
+          (payload as { created?: unknown }).created === false ? 200 : 201,
+      };
+    }
     default:
-      // An `op` outside the four admitted operations spawns nothing.
+      // An `op` outside the five admitted operations spawns nothing.
       return { ok: false, status: 400, code: 'invalid_input', message: 'Unknown pipeline operation.' };
   }
 }
@@ -197,14 +244,60 @@ export function createPipelineSubmitter(
     // project. Never client free text.
     const cwd = context.launchProjectRoot ?? process.cwd();
 
+    // `save` is the sole scratch-write exception (design D6): the posted
+    // definition is written to a server-owned temp file, closed before spawn,
+    // solely so the CLI's `--from` can read it; the file is deleted in
+    // `runMutation`'s cleanup regardless of outcome, failure tolerated and logged.
+    let argvSuffix = built.argv;
+    let scratchPath: string | undefined;
+    if ((request as PipelineMutationRequest).op === 'save') {
+      const definition = (request as Extract<PipelineMutationRequest, { op: 'save' }>).definition;
+      scratchPath = path.join(
+        os.tmpdir(),
+        `rasen-pipeline-save-${process.pid}-${randomBytes(8).toString('hex')}.json`
+      );
+      try {
+        fs.writeFileSync(scratchPath, JSON.stringify(definition), { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
+      } catch (error) {
+        return {
+          ok: false,
+          status: 500,
+          code: 'internal_error',
+          message: `Failed to write the scratch definition file: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      argvSuffix = argvSuffix.map((token) => (token === SAVE_SCRATCH_PLACEHOLDER ? scratchPath! : token));
+    }
+
     inFlight = true;
     // The slot is released by `runMutation` from the child's own 'close' (or
     // spawn 'error') event, NOT at response time — on the timeout path the
     // promise resolves early while the child may still be alive.
-    return runMutation(cliEntry, cwd, built.argv, built.successStatus, timeoutMs, killGraceMs, () => {
-      inFlight = false;
-    });
+    return runMutation(
+      cliEntry,
+      cwd,
+      argvSuffix,
+      built.successStatus,
+      timeoutMs,
+      killGraceMs,
+      () => {
+        inFlight = false;
+      },
+      scratchPath,
+      built.successStatusFromPayload
+    );
   };
+}
+
+function deleteScratchFile(scratchPath: string | undefined): void {
+  if (!scratchPath) return;
+  try {
+    fs.rmSync(scratchPath, { force: true });
+  } catch (error) {
+    // Failure-tolerant: a transient Windows file lock (antivirus, etc.) must
+    // never fail the response — log and leak the scratch file (design D6).
+    console.error(`Failed to delete pipeline-save scratch file "${scratchPath}": ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function runMutation(
@@ -214,7 +307,9 @@ function runMutation(
   successStatus: 200 | 201,
   timeoutMs: number,
   killGraceMs: number,
-  onChildClosed: () => void
+  onChildClosed: () => void,
+  scratchPath?: string,
+  successStatusFromPayload?: (payload: Record<string, unknown>) => 200 | 201
 ): Promise<PipelineSubmitResult> {
   return new Promise((resolve) => {
     const argv = [cliEntry, ...argvSuffix];
@@ -265,6 +360,7 @@ function runMutation(
         message: `Failed to spawn the CLI subprocess: ${error.message}`,
       });
       releaseSlot();
+      deleteScratchFile(scratchPath);
     });
 
     child.on('close', (code) => {
@@ -281,7 +377,8 @@ function runMutation(
             message: `The CLI exited successfully but its output could not be parsed: ${stdout || '(empty)'}`,
           });
         } else {
-          respond({ ok: true, status: successStatus, response: parsed });
+          const status = successStatusFromPayload ? successStatusFromPayload(parsed) : successStatus;
+          respond({ ok: true, status, response: parsed });
         }
       } else {
         respond({
@@ -295,6 +392,10 @@ function runMutation(
       }
 
       releaseSlot();
+      // Scratch cleanup runs AFTER the CLI has fully exited (success or
+      // failure alike) so the child process never races the deletion of the
+      // file it was reading from.
+      deleteScratchFile(scratchPath);
     });
   });
 }

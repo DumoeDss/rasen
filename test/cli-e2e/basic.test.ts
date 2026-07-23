@@ -119,6 +119,7 @@ describe('openspec CLI e2e basics', () => {
       'import',
       'export',
       'delete',
+      'save',
     ];
 
     expect(sourcePipeline).toBeDefined();
