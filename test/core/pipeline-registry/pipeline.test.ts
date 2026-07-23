@@ -212,6 +212,38 @@ stages:
       }
     });
 
+    it('should default blockedThreshold to 3 when omitted and accept an explicit value', () => {
+      const defaulted = parsePipeline(`
+name: goal-blocked-default
+stages:
+  - id: iterate
+    skill: rasen-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+`);
+      const defLoop = defaulted.stages[0].loop;
+      expect(defLoop?.kind).toBe('goal');
+      if (defLoop?.kind === 'goal') {
+        expect(defLoop.blockedThreshold).toBe(3);
+      }
+
+      const explicit = parsePipeline(`
+name: goal-blocked-explicit
+stages:
+  - id: iterate
+    skill: rasen-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+      blockedThreshold: 5
+`);
+      const expLoop = explicit.stages[0].loop;
+      if (expLoop?.kind === 'goal') {
+        expect(expLoop.blockedThreshold).toBe(5);
+      }
+    });
+
     it('should parse a measure gate with a stop condition (threshold)', () => {
       const yaml = `
 name: goal-threshold

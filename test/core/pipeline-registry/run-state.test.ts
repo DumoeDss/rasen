@@ -693,6 +693,53 @@ describe('pipeline run-state', () => {
       }
     });
 
+        it('round-trips a loopConfig carrying blockedThreshold, and one without it still parses (additive)', () => {
+      const withThreshold: RunState = {
+        pipeline: 'goal-loop-evaluate',
+        loopConfig: {
+          kind: 'goal',
+          gate: { kind: 'evaluate', goal: 'the refactor satisfies the rubric' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          blockedThreshold: 4,
+          workProduct: 'code',
+        },
+        loopProgress: {
+          kind: 'goal',
+          round: 2,
+          stallStreak: 0,
+          blockedStreak: 1,
+          historyRef: 'goal-run.json',
+        },
+      };
+      writeRunState(dir, withThreshold);
+      const back = readRunState(dir);
+      expect(back?.loopConfig?.kind).toBe('goal');
+      if (back?.loopConfig?.kind === 'goal') {
+        expect(back.loopConfig.blockedThreshold).toBe(4);
+      } else {
+        throw new Error('expected goal loopConfig to narrow');
+      }
+      expect(back?.loopProgress?.blockedStreak).toBe(1);
+
+      const withoutThreshold: RunState = {
+        pipeline: 'goal-loop-evaluate',
+        loopConfig: {
+          kind: 'goal',
+          gate: { kind: 'evaluate', goal: 'the refactor satisfies the rubric' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          workProduct: 'code',
+        },
+      };
+      writeRunState(dir, withoutThreshold);
+      const back2 = readRunState(dir);
+      expect(back2?.loopConfig?.kind).toBe('goal');
+      if (back2?.loopConfig?.kind === 'goal') {
+        expect(back2.loopConfig.blockedThreshold).toBeUndefined();
+      }
+    });
+
     it('round-trips a measure gate with a target (passed-count) stop condition', () => {
       const state: RunState = {
         pipeline: 'goal-loop-measure',

@@ -64,6 +64,8 @@ ${ORCHESTRATION_PLAYBOOK}
 
 - **maxRounds cap (default 5).** The loop is bounded. On exhaustion, proceed to the tail but mark \`outcome: maxRounds-exhausted\` — NEVER report success when the gate was never satisfied.
 - **author != verifier.** For an evaluate gate, a FRESH reviewer worker (≠ the implementer) judges each round. For a measure gate, the neutral command is the verifier. **Under Tier C** (no subagent), an evaluate gate degrades to a **second, freshly-reset single-context pass** seeded ONLY with goal + rubric + the artifact (NOT the implementation transcript), recorded as the Tier-C fallback; if that is impossible, goal-loop-evaluate is **unsupported under Tier C** — the implementer NEVER self-certifies the rubric (see playbook Step L).
+- **completion audit (evaluate gate).** The evaluate reviewer (and the Tier-C reset pass) judges by a completion AUDIT, not by failing to find remaining work: treat completion as **unproven** and verify it against the actual current state; derive concrete requirements from goal/rubric and demand **authoritative evidence** (files, command output, test results, runtime behavior) per requirement; treat uncertain or indirect evidence as **not achieved**; the audit must **prove** completion, not merely fail to find obvious remaining work; NEVER accept intent, partial progress, or memory as proof.
+- **blockedThreshold (default 3).** A blocked report is not accepted immediately: the SAME blocker must recur for \`blockedThreshold\` consecutive rounds (each re-dispatched to try a different angle; progress or a different blocker resets the streak) before the loop escalates via Step H.5/H.6 — distinct from loopStallLimit and maxRounds (see playbook Step L).
 - **loopStallLimit (default 2).** Consecutive no-progress rounds trigger the LEAD strategy review (Step H.5) — never silently burn rounds.
 - **Flat hierarchy.** The implementer NEVER spawns child subagents. Research is done inline by the implementer + Step H.3 relay.
 
@@ -91,7 +93,7 @@ satisfied | maxRounds-exhausted | in-progress
 
 - Under the default gate policy, pause at the define-goal gate — confirm the goal + gate before any round runs: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries). It is an ordinary \`gate: true\`: under \`--no-gate\` or \`autopilot.gates: off\` it auto-approves and the measure command runs unattended, unless \`pipelines.<name>.gates.define-goal: on\` restores the pause.
 - Save run-state + goal-run.json so the loop is resumable.
-- Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command).
+- Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command). For an evaluate gate, the reviewer must PROVE completion by the completion audit — authoritative evidence per requirement, uncertain evidence counts as not achieved — never wave a round through by not spotting remaining work.
 - If the loop stalls (loopStallLimit consecutive no-progress rounds), run the Step H.5 escalation ladder before interrupting a human.`;
 
 export function getGoalCommandSkillTemplate(): SkillTemplate {
