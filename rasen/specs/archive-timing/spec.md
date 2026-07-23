@@ -87,7 +87,7 @@ When the resolved timing is `in-ship`, the ship workflow SHALL run spec sync and
 
 #### Scenario: Archive after in-ship is an idempotent no-op
 
-- **WHEN** `/rasen:archive` runs for a change whose ship log records an in-ship archive
+- **WHEN** `/rasen-archive-change` runs for a change whose ship log records an in-ship archive
 - **THEN** it SHALL report the change as already archived at the recorded location and stop cleanly
 
 ### Requirement: Recorded delivery facts outrank re-resolved config

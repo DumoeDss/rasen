@@ -45,12 +45,12 @@ The `office-hours` skill SHALL include a line disambiguating the two meanings of
 
 ### Requirement: Design product has an explicit terminal that skips the founder close
 
-The `office-hours` skill SHALL define an explicit terminal for the Design product: after the converged discussion is distilled into a design doc (on the user's explicit "yes"), the skill SHALL deliver a plain summary plus a `/rasen:propose` pointer, and SHALL SKIP Phase 4.5 (founder-signal synthesis) and Phase 6 (the founder plea / three closing beats). The skill SHALL scope the Phase 6 "every user gets all three beats" statement and the Phase 4.5 signal synthesis to the Diagnosis product only, so they do not fire on a Design-product session.
+The `office-hours` skill SHALL define an explicit terminal for the Design product: after the converged discussion is distilled into a design doc (on the user's explicit "yes"), the skill SHALL deliver a plain summary plus a `/rasen-propose` pointer, and SHALL SKIP Phase 4.5 (founder-signal synthesis) and Phase 6 (the founder plea / three closing beats). The skill SHALL scope the Phase 6 "every user gets all three beats" statement and the Phase 4.5 signal synthesis to the Diagnosis product only, so they do not fire on a Design-product session.
 
 #### Scenario: Design-product terminal is plain and skips Phase 4.5/6
 
 - **WHEN** the regenerated `office-hours` skill's Design-product flow and closing steps are inspected
-- **THEN** the Design-product terminal SHALL be a plain summary plus a `/rasen:propose` pointer
+- **THEN** the Design-product terminal SHALL be a plain summary plus a `/rasen-propose` pointer
 - **AND** SHALL state that Phase 4.5 (founder-signal synthesis) and Phase 6 (founder plea) are skipped in the Design product
 
 #### Scenario: Founder close scoped to the Diagnosis product

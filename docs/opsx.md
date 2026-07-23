@@ -157,58 +157,58 @@ rules:
 
 | Command | What it does |
 |---------|--------------|
-| `/rasen:propose` | Create a change and generate planning artifacts in one step (default quick path) |
-| `/rasen:explore` | Think through ideas, investigate problems, clarify requirements |
-| `/rasen:new` | Start a new change scaffold (expanded workflow) |
-| `/rasen:continue` | Create the next artifact (expanded workflow) |
-| `/rasen:apply` | Implement tasks, updating artifacts as needed |
-| `/rasen:verify` | Validate implementation against artifacts (expanded workflow) |
-| `/rasen:sync` | Sync delta specs to main (default workflow, optional) |
-| `/rasen:archive` | Archive when done |
-| `/rasen:bulk-archive` | Archive multiple completed changes (expanded workflow) |
-| `/rasen:onboard` | Guided walkthrough of an end-to-end change (expanded workflow) |
+| `/rasen-propose` | Create a change and generate planning artifacts in one step (default quick path) |
+| `/rasen-explore` | Think through ideas, investigate problems, clarify requirements |
+| `/rasen-new-change` | Start a new change scaffold (expanded workflow) |
+| `/rasen-continue-change` | Create the next artifact (expanded workflow) |
+| `/rasen-apply-change` | Implement tasks, updating artifacts as needed |
+| `/rasen-verify-change` | Validate implementation against artifacts (expanded workflow) |
+| `/rasen-sync-specs` | Sync delta specs to main (default workflow, optional) |
+| `/rasen-archive-change` | Archive when done |
+| `/rasen-bulk-archive-change` | Archive multiple completed changes (expanded workflow) |
+| `/rasen-onboard` | Guided walkthrough of an end-to-end change (expanded workflow) |
 
 ## Usage
 
 ### Explore an idea
 ```
-/rasen:explore
+/rasen-explore
 ```
-Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/rasen:propose` (default) or `/rasen:new`/`/rasen:continue` (expanded).
+Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/rasen-propose` (default) or `/rasen-new-change`/`/rasen-continue-change` (expanded).
 
 ### Start a new change
 ```
-/rasen:propose
+/rasen-propose
 ```
 Creates the change and generates planning artifacts needed before implementation.
 
 If you've enabled expanded workflows, you can instead use:
 
 ```text
-/rasen:new        # scaffold only
-/rasen:continue   # create one artifact at a time
+/rasen-new-change        # scaffold only
+/rasen-continue-change   # create one artifact at a time
 ```
 
 ### Create artifacts
 ```
-/rasen:continue
+/rasen-continue-change
 ```
 Shows what's ready to create based on dependencies, then creates one artifact. Use repeatedly to build up your change incrementally.
 
 ### Implement (the fluid part)
 ```
-/rasen:apply
+/rasen-apply-change
 ```
-Works through tasks, checking them off as you go. If you're juggling multiple changes, you can run `/rasen:apply <name>`; otherwise it should infer from the conversation and prompt you to choose if it can't tell.
+Works through tasks, checking them off as you go. If you're juggling multiple changes, you can run `/rasen-apply-change <name>`; otherwise it should infer from the conversation and prompt you to choose if it can't tell.
 
 ### Finish up
 ```
-/rasen:archive   # Move to archive when done (prompts to sync specs if needed)
+/rasen-archive-change   # Move to archive when done (prompts to sync specs if needed)
 ```
 
-### Goal-driven iteration (`/rasen:goal`)
+### Goal-driven iteration (`/rasen-goal`)
 
-`/rasen:auto` assumes the product is a code-change document (propose → apply → ship). Some tasks don't fit that shape — their "done" is a **condition**: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/rasen:goal` is the entry point for those. It repeats **modify → judge** until a gate is satisfied or a round cap is hit.
+`/rasen-auto` assumes the product is a code-change document (propose → apply → ship). Some tasks don't fit that shape — their "done" is a **condition**: drive a Lighthouse score to 90, make a module rubric-clean, research and write a brief. `/rasen-goal` is the entry point for those. It repeats **modify → judge** until a gate is satisfied or a round cap is hit.
 
 You see one command. The LEAD classifies the task and selects ONE backend pipeline (explicit override always wins):
 
@@ -218,7 +218,7 @@ You see one command. The LEAD classifies the task and selects ONE backend pipeli
 | `evaluate` — `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | a fresh reviewer worker judges `{satisfied, gaps}` | ship → archive |
 | `research` — `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | a fresh reviewer worker | report (no ship) |
 
-The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen:goal` shares the same orchestration playbook as `/rasen:auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
+The flow is **define-goal → iterate → tail**: a planner writes `goal-plan.md` (goal, gate, work product, maxRounds), the implementer is warm-reused across rounds, each round's judgment is appended to `goal-run.json` (the authoritative loop position), and the run is bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2). `/rasen-goal` shares the same orchestration playbook as `/rasen-auto` — a sibling entry, not a second system. For the full chapter with worked examples, resume semantics, and the stall ladder, see `opsx-workflow-guide.md` §9 (Goal-driven iteration) in the repo's `docs/` directory.
 
 ## When to Update vs. Start Fresh
 
@@ -308,7 +308,7 @@ Think of it like git branches:
 
 ## What's Different?
 
-| | Legacy (`/openspec:proposal`) | OPSX (`/rasen:*`) |
+| | Legacy (`/openspec:proposal`) | OPSX (`/rasen-*`) |
 |---|---|---|
 | **Structure** | One big proposal document | Discrete artifacts with dependencies |
 | **Workflow** | Linear phases: plan → implement → archive | Fluid actions — do anything anytime |
@@ -491,7 +491,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
 **OPSX** — agent queries for rich context:
 
 ```
-  User: "/rasen:continue"
+  User: "/rasen-continue-change"
            │
            ▼
   ┌──────────────────────────────────────────────────────────────────────────┐
@@ -548,7 +548,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
 **OPSX** — natural iteration:
 
 ```
-  /rasen:new ───► /rasen:continue ───► /rasen:apply ───► /rasen:archive
+  /rasen-new-change ───► /rasen-continue-change ───► /rasen-apply-change ───► /rasen-archive-change
       │                │                  │
       │                │                  ├── "The design is wrong"
       │                │                  │
@@ -557,7 +557,7 @@ Artifacts form a directed acyclic graph (DAG). Dependencies are **enablers**, no
       │                │            and continue!
       │                │                  │
       │                │                  ▼
-      │                │         /rasen:apply picks up
+      │                │         /rasen-apply-change picks up
       │                │         where you left off
       │                │
       │                └── Creates ONE artifact, shows what's unlocked
@@ -653,9 +653,9 @@ rasen schema validate my-workflow
 
 ## Tips
 
-- Use `/rasen:explore` to think through an idea before committing to a change
-- `/rasen:propose` when you know what you want, `/rasen:new`/`/rasen:continue` when exploring
-- During `/rasen:apply`, if something's wrong — fix the artifact, then continue
+- Use `/rasen-explore` to think through an idea before committing to a change
+- `/rasen-propose` when you know what you want, `/rasen-new-change`/`/rasen-continue-change` when exploring
+- During `/rasen-apply-change`, if something's wrong — fix the artifact, then continue
 - Tasks track progress via checkboxes in `tasks.md`
 - Check status anytime: `rasen status --change "name"`
 

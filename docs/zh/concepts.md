@@ -507,8 +507,8 @@ artifacts:
 
 **执行层。** 真正让工作跑起来的部分，分成两个相互嵌套的循环：
 
-- **工作流（workflow）——内循环。** 一个工作流是在一个 session 里跑完的一个任务单元：AI 代码 agent 自主规划并执行它，过程中可能会调度 subagent，最终带着结果返回。`rasen:propose`、`rasen:apply`、`rasen:review-cycle`——每一个都是一个内循环任务。`rasen workflow list` 展示的就是这些可安装单元的目录。
-- **Pipeline——外循环。** Pipeline 是一个 harness（例如驱动 autopilot 的 `/rasen:auto`）把多个内循环任务串起来按顺序推进的方式——先 propose，再 apply，再 archive，每一步都是独立的工作流，依次运行，中间还有 gate 和 review 循环。`rasen pipeline list` 展示 harness 可用的内置与自定义 pipeline。
+- **工作流（workflow）——内循环。** 一个工作流是在一个 session 里跑完的一个任务单元：AI 代码 agent 自主规划并执行它，过程中可能会调度 subagent，最终带着结果返回。`rasen-propose`、`rasen-apply-change`、`rasen-review-cycle`——每一个都是一个内循环任务。`rasen workflow list` 展示的就是这些可安装单元的目录。
+- **Pipeline——外循环。** Pipeline 是一个 harness（例如驱动 autopilot 的 `/rasen-auto`）把多个内循环任务串起来按顺序推进的方式——先 propose，再 apply，再 archive，每一步都是独立的工作流，依次运行，中间还有 gate 和 review 循环。`rasen pipeline list` 展示 harness 可用的内置与自定义 pipeline。
 
 换个说法：工作流是*一次* AI session 里发生的事；pipeline 是 harness 为了把一个变更完整交付而驱动的一连串 session。
 
@@ -518,7 +518,7 @@ artifacts:
 
 - **`task`**——你直接调用的普通内循环单元（`propose`、`apply`、`archive`，以及默认目录里的其余部分）。
 - **`driver`**——消费 pipeline 而不是"属于"某个 pipeline 的外循环引擎。`auto-command` 和 `goal-command` 是内置的 driver：它们读取一份 pipeline 定义，并按顺序运行其中的各个 stage。driver 不是它所运行的那个 pipeline 的"一部分"，就像测试运行器不是它执行的那套测试用例的一部分。
-- **`internal`**——只被某个 driver 调用、用户不会直接选中的子单元。支撑 `/rasen:goal` 的 `goal-plan` / `goal-iterate` / `goal-report` 三件套就是 internal；除非传入 `--all`，否则 `rasen workflow list` 会隐藏它们。
+- **`internal`**——只被某个 driver 调用、用户不会直接选中的子单元。支撑 `/rasen-goal` 的 `goal-plan` / `goal-iterate` / `goal-report` 三件套就是 internal；除非传入 `--all`，否则 `rasen workflow list` 会隐藏它们。
 
 `kind` 只是呈现层的元数据，不是一次结构性搬家：driver 和 internal 工作流仍然活在和其他一切相同的可安装工作流库里，因为只有这个库拥有安装/更新/digest 机制。把它们拆到一个独立注册表里，等于再造一套安装器，却毫无收益。
 
@@ -537,7 +537,7 @@ artifacts:
 
 ### 接下来的方向
 
-以下三个后续变更是方向，不是已交付的行为：显式依赖图，让工作流的 `requires` 能表达真实的边（workflow → workflow、workflow → pipeline、driver → pipeline），而不是靠"全体必装"来兜底缺失的依赖数据；pipeline 通过和工作流相同的 `.rasenpkg` 机制变得可安装、可导出，CLI 动词集（`init`/`validate`/`import`/`export`/`delete`）随之补齐；以及 21 个内置专家（`rasen:review`、`rasen:qa` 等）加入同一个注册表，归为 `kind: 'expert'`，让它们的安装/digest/依赖故事不再是特例。这些都尚未上线——目前每个内置工作流的 `requires` 字段仍然是空的，也还没有 `rasen pipeline import`。
+以下三个后续变更是方向，不是已交付的行为：显式依赖图，让工作流的 `requires` 能表达真实的边（workflow → workflow、workflow → pipeline、driver → pipeline），而不是靠"全体必装"来兜底缺失的依赖数据；pipeline 通过和工作流相同的 `.rasenpkg` 机制变得可安装、可导出，CLI 动词集（`init`/`validate`/`import`/`export`/`delete`）随之补齐；以及 21 个内置专家（`rasen-review`、`rasen-qa` 等）加入同一个注册表，归为 `kind: 'expert'`，让它们的安装/digest/依赖故事不再是特例。这些都尚未上线——目前每个内置工作流的 `requires` 字段仍然是空的，也还没有 `rasen pipeline import`。
 
 ## 归档（Archive）
 
@@ -602,27 +602,27 @@ openspec/
 │                              OPENSPEC FLOW                                   │
 │                                                                              │
 │   ┌────────────────┐                                                         │
-│   │  1. START      │  /rasen:propose (core) or /rasen:new (expanded)           │
+│   │  1. START      │  /rasen-propose (core) or /rasen-new-change (expanded)           │
 │   │     CHANGE     │                                                         │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  2. CREATE     │  /rasen:continue (expanded workflow)                     │
+│   │  2. CREATE     │  /rasen-continue-change (expanded workflow)                     │
 │   │     ARTIFACTS  │  Creates proposal → specs → design → tasks              │
 │   │                │  (based on schema dependencies)                         │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  3. IMPLEMENT  │  /rasen:apply                                            │
+│   │  3. IMPLEMENT  │  /rasen-apply-change                                            │
 │   │     TASKS      │  Work through tasks, checking them off                  │
 │   │                │◄──── Update artifacts as you learn                      │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
 │           ▼                                                                  │
 │   ┌────────────────┐                                                         │
-│   │  4. VERIFY     │  /rasen:verify (optional)                                │
+│   │  4. VERIFY     │  /rasen-verify-change (optional)                                │
 │   │     WORK       │  Check implementation matches specs                     │
 │   └───────┬────────┘                                                         │
 │           │                                                                  │
@@ -657,7 +657,7 @@ openspec/
 | **Driver** | 一种通过消费 pipeline 来运行外循环的工作流 `kind`（例如 `auto-command`、`goal-command`）；不"属于"它所运行的那个 pipeline |
 | **内循环（Inner loop）** | 一个工作流如何运行：在一个 AI session 内执行的单个任务单元，过程中可能调度 subagent |
 | **可安装工作流（Installable workflow）** | 一个面向整机、可在 profile 中选择的内循环任务单元，用 `rasen workflow` 管理；参见[执行模型](#执行模型内循环与外循环inner-and-outer-loops) |
-| **外循环（Outer loop）** | 一个 pipeline 如何运行：由 harness（例如 `/rasen:auto`）按顺序串联多个内循环工作流 |
+| **外循环（Outer loop）** | 一个 pipeline 如何运行：由 harness（例如 `/rasen-auto`）按顺序串联多个内循环工作流 |
 | **Pipeline** | harness 为推进一个变更而串联的一串工作流，例如 propose → apply → archive；用 `rasen pipeline` 管理 |
 | **需求（Requirement）** | 系统必须具备的某项具体行为 |
 | **场景（Scenario）** | 需求的一个具体示例，通常采用 Given/When/Then 格式 |

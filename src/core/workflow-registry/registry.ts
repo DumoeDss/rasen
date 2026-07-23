@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { getGlobalDataDir } from '../global-config.js';
+import { mapLegacySkillId } from '../pipeline-registry/legacy-skill.js';
 import { getBuiltInWorkflowDefinitions } from './builtins.js';
 import { WorkflowCatalog } from './catalog.js';
 import { getBuiltInExpertDefinitions } from './experts.js';
@@ -202,7 +203,10 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
       }
     }
     for (const skill of definition.requires.skills) {
-      if (!expertNames.has(skill)) {
+      // A pre-sweep user workflow may name an expert by its retired colon-form or
+      // upstream-namespace identity; resolve through the legacy mapping so it is
+      // not dropped from the catalog against the unified hyphen expert names.
+      if (!expertNames.has(skill) && !expertNames.has(mapLegacySkillId(skill) ?? '')) {
         diagnostics.push({
           code: 'skill_dependency_missing',
           severity: 'error',

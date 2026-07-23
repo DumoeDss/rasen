@@ -30,7 +30,7 @@ The system SHALL carry three expert skills adapted from the grill sources (MIT, 
 
 ### Requirement: Four skills registered as expert templates
 
-Each surviving grill skill SHALL be registered through the full expert wiring chain, by explicit file lookup: an expert template `src/core/templates/experts/<name>.ts` returning `name: 'rasen:<name>'`; an export in `src/core/templates/experts/index.ts`; a re-export in `src/core/templates/skill-templates.ts`; and an import plus a `getSkillTemplates()` entry in `src/core/shared/skill-generation.ts` with `dirName: 'rasen-<name>'` and `workflowId: '<name>'`. The `domain-modeling` wiring SHALL be absent at every point in that chain.
+Each surviving grill skill SHALL be registered through the full expert wiring chain, by explicit file lookup: an expert template `src/core/templates/experts/<name>.ts` returning `name: 'rasen-<name>'`; an export in `src/core/templates/experts/index.ts`; a re-export in `src/core/templates/skill-templates.ts`; and an import plus a `getSkillTemplates()` entry in `src/core/shared/skill-generation.ts` with `dirName: 'rasen-<name>'` and `workflowId: '<name>'`. The `domain-modeling` wiring SHALL be absent at every point in that chain.
 
 #### Scenario: getSkillTemplates returns the surviving experts
 

@@ -21,16 +21,16 @@
 
 回到起点的循环只是一个圆。Rasen（螺旋）是一个不断上升的循环的形状。这就是全部理念，而它恰好映射到工具的实际运作方式：
 
-- **规范是原点。** 每个 change 都始于一份写下来的意图——提案、需求、设计、任务清单——在写任何代码之前先落在你的 `rasen/` 工作区里。`/rasen:propose → apply → archive`。
+- **规范是原点。** 每个 change 都始于一份写下来的意图——提案、需求、设计、任务清单——在写任何代码之前先落在你的 `rasen/` 工作区里。`/rasen-propose → apply → archive`。
 - **循环是形态。** 工作以周期推进，而非一次瀑布式通过。`rasen` 流水线家族——`small-feature`、`bug-fix`、`full-feature`、`auto-decompose`——把一个任务塑造成 propose、implement、review、ship 的循环。
-- **每一圈都在上升。** harness 不只是重复，而是持续进步。`/rasen:auto` 拉起一个 LEAD，编排角色隔离的子 agent、一个能纠正自身错误的评审环，以及跨会话携带上下文的 handoff/接力——让每一圈都比上一圈更高。
-- **直到突破。** `/rasen:goal` 以条件而非文档来收束螺旋：把某个指标推到目标、把某个模块做到 rubric 洁净、把某个课题研究到 brief 被回答——重复 modify → judge 直到 gate 达成。
+- **每一圈都在上升。** harness 不只是重复，而是持续进步。`/rasen-auto` 拉起一个 LEAD，编排角色隔离的子 agent、一个能纠正自身错误的评审环，以及跨会话携带上下文的 handoff/接力——让每一圈都比上一圈更高。
+- **直到突破。** `/rasen-goal` 以条件而非文档来收束螺旋：把某个指标推到目标、把某个模块做到 rubric 洁净、把某个课题研究到 brief 被回答——重复 modify → judge 直到 gate 达成。
 
 规范是你的起点，螺旋是你抵达的方式。
 
 ## 血统（Lineage）
 
-Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [Sayo](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen:*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
+Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [Sayo](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen-*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
 
 ## 安装
 
@@ -47,7 +47,7 @@ cd your-project
 rasen init
 ```
 
-`rasen init` 会创建一个 `rasen/` 工作区（specs 与 changes），并为你的 AI 编程工具安装 `/rasen:*` 斜杠命令。
+`rasen init` 会创建一个 `rasen/` 工作区（specs 与 changes），并为你的 AI 编程工具安装 `/rasen-*` 斜杠命令。
 
 升级后刷新 AI 指导并获取最新斜杠命令：
 
@@ -62,7 +62,7 @@ Rasen 被设计为可以与上游 OpenSpec **并存**而互不冲突。每一个
 | 界面 | OpenSpec | Rasen |
 | --- | --- | --- |
 | 二进制 | `openspec` | `rasen` |
-| 斜杠命令 | `/opsx:*` | `/rasen:*` |
+| 斜杠命令 | `/opsx:*` | `/rasen-*` |
 | 技能 | `openspec-*` | `rasen-*` |
 | 工作区 | `openspec/` | `rasen/` |
 
@@ -87,18 +87,18 @@ rasen migrate
 
 ## 你会得到什么
 
-- **规范驱动的工作流** — 每个 change 是一个文件夹，含提案、specs、设计和任务清单。在写代码之前先就要构建的内容达成共识：`/rasen:propose → /rasen:apply → /rasen:archive`。
+- **规范驱动的工作流** — 每个 change 是一个文件夹，含提案、specs、设计和任务清单。在写代码之前先就要构建的内容达成共识：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
 - **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看。新增一种任务类型 = 加一个文件，零代码。
-- **`/rasen:auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
-- **`/rasen:goal` 目标驱动迭代** — `/rasen:auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
+- **`/rasen-auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
+- **`/rasen-goal` 目标驱动迭代** — `/rasen-auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
 - **Auto-decompose** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
 - **chrome-use** — 一个通过 CDP 驱动你真实 Chrome 的专家：导航、点击、抓包、注入 JS、读 cookie 和 `localStorage`、等待请求——面向需登录的页面、SPA，以及普通 fetch 触及不到的一切。
-- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen:handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
+- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen-handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
 
 ## 实际演示
 
 ```text
-你: /rasen:explore
+你: /rasen-explore
 AI: 你想探索什么？
 你: 我想做暗色模式，但不确定怎么干净地实现。
 AI: 让我看看你的样式设置……
@@ -106,7 +106,7 @@ AI: 让我看看你的样式设置……
     加上系统偏好检测。不引入新依赖。要不要定下范围？
 你: 好，就这么做。
 
-你: /rasen:propose add-dark-mode
+你: /rasen-propose add-dark-mode
 AI: 已创建 rasen/changes/add-dark-mode/
     ✓ proposal.md — 为什么要做、有哪些变更
     ✓ specs/       — 需求和场景
@@ -114,7 +114,7 @@ AI: 已创建 rasen/changes/add-dark-mode/
     ✓ tasks.md     — 实施清单
     准备开始实施！
 
-你: /rasen:apply
+你: /rasen-apply-change
 AI: 正在执行任务...
     ✓ 1.1 添加主题上下文提供者
     ✓ 1.2 创建切换组件
@@ -122,7 +122,7 @@ AI: 正在执行任务...
     ✓ 2.2 接入 localStorage
     所有任务已完成！
 
-你: /rasen:archive
+你: /rasen-archive-change
 AI: 已归档至 rasen/changes/archive/2026-01-23-add-dark-mode/
     规范已更新。准备好迎接下一个功能。
 ```

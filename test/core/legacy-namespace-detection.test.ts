@@ -18,13 +18,16 @@ describe('legacy skill-ID mapping', () => {
     expect(mapLegacySkillId('openspec-review-cycle')).toBe('rasen-review-cycle');
   });
 
-  it('maps the namespace form openspec:<x> to rasen:<x>', () => {
-    expect(mapLegacySkillId('openspec:apply')).toBe('rasen:apply');
+  it('maps the upstream namespace form openspec:<x> to the hyphen rasen-<x>', () => {
+    expect(mapLegacySkillId('openspec:apply')).toBe('rasen-apply');
   });
 
-  it('returns null for an already-migrated (rasen) ID', () => {
+  it('maps the retired colon namespace rasen:<x> to the hyphen rasen-<x>', () => {
+    expect(mapLegacySkillId('rasen:review')).toBe('rasen-review');
+  });
+
+  it('returns null for an already-migrated (hyphen rasen-) ID', () => {
     expect(mapLegacySkillId('rasen-ship')).toBeNull();
-    expect(mapLegacySkillId('rasen:apply')).toBeNull();
   });
 });
 

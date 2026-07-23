@@ -1,7 +1,7 @@
 # opsx-ship-command Specification
 
 ## Purpose
-Provide the `/rasen:ship` command — pre-flight checks, delivery-mode resolution (pr / push / local), commit-with-hooks, an evidence-based test gate, a PR body derived from the proposal, a mode-aware ship log, and optional land-and-deploy.
+Provide the `/rasen-ship` command — pre-flight checks, delivery-mode resolution (pr / push / local), commit-with-hooks, an evidence-based test gate, a PR body derived from the proposal, a mode-aware ship log, and optional land-and-deploy.
 ## Requirements
 ### Requirement: Ship Skill and Command Templates
 
@@ -43,7 +43,7 @@ Pre-flight checks SHALL verify readiness before shipping. A dirty working tree S
 
 ### Requirement: Ship Execution
 
-Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/rasen:ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a legacy `/ship` expert skill.
+Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/rasen-ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a legacy `/ship` expert skill.
 
 #### Scenario: Merge base branch only in pr mode
 

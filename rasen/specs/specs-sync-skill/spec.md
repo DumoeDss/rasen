@@ -6,21 +6,21 @@ Defines the agent skill for syncing delta specs from changes to main specs.
 ## Requirements
 
 ### Requirement: Specs Sync Skill
-The system SHALL provide an `/rasen:sync` skill that syncs delta specs from a change to the main specs.
+The system SHALL provide an `/rasen-sync-specs` skill that syncs delta specs from a change to the main specs.
 
 #### Scenario: Sync delta specs to main specs
-- **WHEN** agent executes `/rasen:sync` with a change name
+- **WHEN** agent executes `/rasen-sync-specs` with a change name
 - **THEN** the agent reads delta specs from `rasen/changes/<name>/specs/`
 - **AND** reads corresponding main specs from `rasen/specs/`
 - **AND** reconciles main specs to match what the deltas describe
 
 #### Scenario: Idempotent operation
-- **WHEN** agent executes `/rasen:sync` multiple times on the same change
+- **WHEN** agent executes `/rasen-sync-specs` multiple times on the same change
 - **THEN** the result is the same as running it once
 - **AND** no duplicate requirements are created
 
 #### Scenario: Change selection prompt
-- **WHEN** agent executes `/rasen:sync` without specifying a change
+- **WHEN** agent executes `/rasen-sync-specs` without specifying a change
 - **THEN** the agent prompts user to select from available changes
 - **AND** shows changes that have delta specs
 

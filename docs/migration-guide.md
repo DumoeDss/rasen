@@ -8,7 +8,7 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 
 | Aspect | Legacy | OPSX |
 |--------|--------|------|
-| **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Everyday core: `/rasen:propose`, `/rasen:apply`, `/rasen:sync`, `/rasen:archive` (installed by default alongside the full expanded set) |
+| **Commands** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | Everyday core: `/rasen-propose`, `/rasen-apply-change`, `/rasen-sync-specs`, `/rasen-archive-change` (installed by default alongside the full expanded set) |
 | **Workflow** | Create all artifacts at once | Create incrementally or all at once—your choice |
 | **Going back** | Awkward phase gates | Natural—update any artifact anytime |
 | **Customization** | Fixed structure | Schema-driven, fully hackable |
@@ -284,21 +284,21 @@ Command availability is profile-dependent:
 
 | Command | Purpose |
 |---------|---------|
-| `/rasen:propose` | Create a change and generate planning artifacts in one step |
-| `/rasen:explore` | Think through ideas with no structure |
-| `/rasen:apply` | Implement tasks from tasks.md |
-| `/rasen:archive` | Finalize and archive the change |
+| `/rasen-propose` | Create a change and generate planning artifacts in one step |
+| `/rasen-explore` | Think through ideas with no structure |
+| `/rasen-apply-change` | Implement tasks from tasks.md |
+| `/rasen-archive-change` | Finalize and archive the change |
 
 **Expanded workflow (custom selection):**
 
 | Command | Purpose |
 |---------|---------|
-| `/rasen:new` | Start a new change scaffold |
-| `/rasen:continue` | Create the next artifact (one at a time) |
-| `/rasen:verify` | Validate implementation matches specs |
-| `/rasen:sync` | Merge delta specs into main specs |
-| `/rasen:bulk-archive` | Archive multiple changes at once |
-| `/rasen:onboard` | Guided end-to-end onboarding workflow |
+| `/rasen-new-change` | Start a new change scaffold |
+| `/rasen-continue-change` | Create the next artifact (one at a time) |
+| `/rasen-verify-change` | Validate implementation matches specs |
+| `/rasen-sync-specs` | Merge delta specs into main specs |
+| `/rasen-bulk-archive-change` | Archive multiple changes at once |
+| `/rasen-onboard` | Guided end-to-end onboarding workflow |
 
 The default `full` profile already includes these; switch to `core` if you want just the everyday set, or adjust with `rasen config profile`, then run `rasen update`.
 
@@ -306,9 +306,9 @@ The default `full` profile already includes these; switch to `core` if you want 
 
 | Legacy | OPSX Equivalent |
 |--------|-----------------|
-| `/openspec:proposal` | `/rasen:propose` (default) or `/rasen:new` then `/rasen:continue` (expanded) |
-| `/openspec:apply` | `/rasen:apply` |
-| `/openspec:archive` | `/rasen:archive` |
+| `/openspec:proposal` | `/rasen-propose` (default) or `/rasen-new-change` then `/rasen-continue-change` (expanded) |
+| `/openspec:apply` | `/rasen-apply-change` |
+| `/openspec:archive` | `/rasen-archive-change` |
 
 ### New Capabilities
 
@@ -316,13 +316,13 @@ These capabilities are part of the expanded workflow command set.
 
 **Granular artifact creation:**
 ```
-/rasen:continue
+/rasen-continue-change
 ```
 Creates one artifact at a time based on dependencies. Use this when you want to review each step.
 
 **Exploration mode:**
 ```
-/rasen:explore
+/rasen-explore
 ```
 Think through ideas with a partner before committing to a change.
 
@@ -380,7 +380,7 @@ Artifacts form a directed graph. Dependencies are enablers, not gates:
                      specs, design)
 ```
 
-When you run `/rasen:continue`, it checks what's ready and offers the next artifact. You can also create multiple ready artifacts in any order.
+When you run `/rasen-continue-change`, it checks what's ready and offers the next artifact. You can also create multiple ready artifacts in any order.
 
 ### Skills vs Commands
 
@@ -415,7 +415,7 @@ Your in-progress changes work seamlessly with OPSX commands.
 **Have an active change from the legacy workflow?**
 
 ```
-/rasen:apply add-my-feature
+/rasen-apply-change add-my-feature
 ```
 
 OPSX reads the existing artifacts and continues from where you left off.
@@ -423,7 +423,7 @@ OPSX reads the existing artifacts and continues from where you left off.
 **Want to add more artifacts to an existing change?**
 
 ```
-/rasen:continue add-my-feature
+/rasen-continue-change add-my-feature
 ```
 
 Shows what's ready to create based on what already exists.
@@ -576,13 +576,13 @@ project/
 ### Command Cheatsheet
 
 ```text
-/rasen:propose      Start quickly (default core profile)
-/rasen:apply        Implement tasks
-/rasen:archive      Finish and archive
+/rasen-propose      Start quickly (default core profile)
+/rasen-apply-change        Implement tasks
+/rasen-archive-change      Finish and archive
 
 # Expanded workflow (if enabled):
-/rasen:new          Scaffold a change
-/rasen:continue     Create next artifact
+/rasen-new-change          Scaffold a change
+/rasen-continue-change     Create next artifact
 ```
 
 ---

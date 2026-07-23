@@ -54,7 +54,7 @@ script reads it on every Edit/Write invocation.
 
 export function getFreezeSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:freeze',
+    name: 'rasen-freeze',
     description: 'Restrict edits to a directory — set an edit boundary so writes outside the frozen scope are rejected',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

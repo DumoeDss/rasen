@@ -373,7 +373,7 @@ audits — not as your only line of defense.
 
 export function getCsoSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:cso',
+    name: 'rasen-cso',
     description: 'Chief Security Officer audit — adversarial security review of the branch diff with confidence-scored, severity-tagged findings',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

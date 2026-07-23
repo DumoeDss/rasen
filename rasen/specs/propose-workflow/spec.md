@@ -7,13 +7,13 @@ Provide a single `propose` workflow that creates a change and generates all its 
 The system SHALL provide a `propose` workflow that creates a change and generates all artifacts in one step.
 
 #### Scenario: Basic propose invocation
-- **WHEN** user invokes `/rasen:propose "add user authentication"`
+- **WHEN** user invokes `/rasen-propose "add user authentication"`
 - **THEN** the system SHALL create a change directory with kebab-case name
 - **THEN** the system SHALL create `.openspec.yaml` in the change directory (via `rasen new change`)
 - **THEN** the system SHALL generate all artifacts needed for implementation: proposal.md, design.md, specs/, tasks.md
 
 #### Scenario: Propose with existing change name
-- **WHEN** user invokes `/rasen:propose` with a name that already exists
+- **WHEN** user invokes `/rasen-propose` with a name that already exists
 - **THEN** the system SHALL ask if user wants to continue existing change or create new
 - **THEN** if "continue": the system SHALL resume artifact generation from last completed state
 - **THEN** if "create new": the system SHALL prompt for a new name
@@ -23,9 +23,9 @@ The system SHALL provide a `propose` workflow that creates a change and generate
 The `propose` workflow SHALL include explanatory output to help new users understand the process.
 
 #### Scenario: First-time user guidance
-- **WHEN** user invokes `/rasen:propose`
+- **WHEN** user invokes `/rasen-propose`
 - **THEN** the system SHALL explain what artifacts will be created (proposal.md, design.md, specs/, tasks.md)
-- **THEN** the system SHALL indicate next step (`/rasen:apply` to implement)
+- **THEN** the system SHALL indicate next step (`/rasen-apply-change` to implement)
 
 #### Scenario: Artifact creation progress
 - **WHEN** the system creates each artifact
@@ -37,7 +37,7 @@ The `propose` workflow SHALL create the change and generate all artifacts requir
 
 #### Scenario: Change and artifacts created in one step
 
-- **WHEN** user invokes `/rasen:propose "feature name"`
+- **WHEN** user invokes `/rasen-propose "feature name"`
 - **THEN** the change directory SHALL be created
 - **AND** all artifacts required for implementation SHALL be generated
 - **THEN** console output MAY include onboarding explanations

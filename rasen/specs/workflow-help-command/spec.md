@@ -1,7 +1,7 @@
 # workflow-help-command Specification
 
 ## Purpose
-Defines the `help` workflow — skill `rasen-help` and slash command `/rasen:help` — a router that guides users to the right Rasen command or flow, answers usage questions, and helps with configuration. It is part of both ALL_WORKFLOWS and CORE_WORKFLOWS (new users are its primary audience), generated per the configured delivery mode.
+Defines the `help` workflow — skill `rasen-help` and slash command `/rasen-help` — a router that guides users to the right Rasen command or flow, answers usage questions, and helps with configuration. It is part of both ALL_WORKFLOWS and CORE_WORKFLOWS (new users are its primary audience), generated per the configured delivery mode.
 ## Requirements
 ### Requirement: Help workflow generation
 The system SHALL provide a `help` workflow (skill `rasen-help`) included in both ALL_WORKFLOWS and CORE_WORKFLOWS, generated as a skill (skills are the only delivery format) and covered by drift detection like other workflows.

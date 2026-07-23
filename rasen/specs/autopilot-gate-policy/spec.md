@@ -6,16 +6,16 @@ Define how the autopilot's ordinary human-confirmation gates (`gate: true`) reso
 
 ### Requirement: --no-gate auto-approves ordinary gates in autopilot
 
-`/rasen:auto` SHALL accept a `--no-gate` argument. When it is present, ordinary gate stages (stages marked `gate: true`) SHALL be auto-approved: the autopilot proceeds past them without pausing for human Continue/Stop confirmation. When `--no-gate` is absent and no project default overrides it, gate stages SHALL pause for human confirmation exactly as they do today.
+`/rasen-auto` SHALL accept a `--no-gate` argument. When it is present, ordinary gate stages (stages marked `gate: true`) SHALL be auto-approved: the autopilot proceeds past them without pausing for human Continue/Stop confirmation. When `--no-gate` is absent and no project default overrides it, gate stages SHALL pause for human confirmation exactly as they do today.
 
 #### Scenario: Autopilot runs unattended with --no-gate
 
-- **WHEN** a user runs `/rasen:auto --no-gate <task>` on a pipeline whose stages include `gate: true` gates
+- **WHEN** a user runs `/rasen-auto --no-gate <task>` on a pipeline whose stages include `gate: true` gates
 - **THEN** each ordinary gate is auto-approved and the workflow continues to the next stage without waiting for human input
 
 #### Scenario: Gates still pause by default
 
-- **WHEN** a user runs `/rasen:auto <task>` without `--no-gate` and no project gate default is set
+- **WHEN** a user runs `/rasen-auto <task>` without `--no-gate` and no project gate default is set
 - **THEN** each `gate: true` stage pauses and waits for the human to Continue, Stop, or switch to Manual
 
 ### Requirement: Gate policy is a mask over every stage gate

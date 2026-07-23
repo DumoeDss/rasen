@@ -35,7 +35,7 @@ const DEFAULT_MAX_CONCURRENT = 3;
 
 export interface LaunchInput {
   kind: SessionKind;
-  /** The whitelist entry's skill invocation, e.g. `/rasen:auto` (design D1). */
+  /** The whitelist entry's skill invocation, e.g. `/rasen-auto` (design D1). */
   skill: string;
   task: string;
   cwd: string;

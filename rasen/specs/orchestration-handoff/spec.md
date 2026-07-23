@@ -48,7 +48,7 @@ When a stage exhausts its strategy budget (relay reviews or review-loop rounds),
 - **AND** after the strategy budget is exhausted the stage SHALL be marked `escalated` and parked while independent work continues
 
 ### Requirement: LEAD session pre-flight probe
-The `/rasen:auto` entry SHALL probe the LEAD's own transcript (`rasen agent context --latest`) once before starting the pipeline and, when usage meets the session threshold, offer the user a choice — without blocking: (a) automatic session relay now (write the session handoff document, then launch a successor session per the session-relay protocol), (b) continue in the current session with auto-compact as the backstop, or (c) handle it manually. Below the threshold it proceeds silently.
+The `/rasen-auto` entry SHALL probe the LEAD's own transcript (`rasen agent context --latest`) once before starting the pipeline and, when usage meets the session threshold, offer the user a choice — without blocking: (a) automatic session relay now (write the session handoff document, then launch a successor session per the session-relay protocol), (b) continue in the current session with auto-compact as the backstop, or (c) handle it manually. Below the threshold it proceeds silently.
 
 #### Scenario: Entry probe above threshold
 - **WHEN** an auto run starts and the probe reports usage at or above the session threshold

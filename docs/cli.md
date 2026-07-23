@@ -1,6 +1,6 @@
 # CLI Reference
 
-The rasen CLI (`rasen`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/rasen:propose`) documented in [Commands](commands.md).
+The rasen CLI (`rasen`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/rasen-propose`) documented in [Commands](commands.md).
 
 ## Summary
 
@@ -1027,7 +1027,7 @@ In the workflow checklist, press `Space` to toggle one workflow, `A` to select a
 
 Profile prompts, CLI help, the interactive config editor, and shell-completion descriptions and management messages are available in English, Japanese, and Simplified Chinese. The selected language is stored using the canonical `language: "auto" | "en" | "ja" | "zh-cn"` values in the machine-global JSON config. Set it with `rasen config set language en`, `rasen config set language ja`, or `rasen config set language zh-cn`.
 
-The workflow picker shows the stable public workflow id before the localized name, with the separator aligned across rows (for example, `propose - 変更を提案`). Tool-specific slash punctuation is intentionally omitted because assistants may expose the same workflow as `/rasen:propose`, `/rasen-propose`, or a skill.
+The workflow picker shows the stable public workflow id before the localized name, with the separator aligned across rows (for example, `propose - 変更を提案`). Tool-specific slash punctuation is intentionally omitted because assistants may expose the same workflow as `/rasen-propose`, `/rasen-propose`, or a skill.
 
 With `language: "auto"` (the default), Unix-like systems check `LC_ALL`, `LC_MESSAGES`, and `LANG`, then fall back to the runtime's system locale. Windows uses the system locale reported by Node.js. The aliases `zh-CN`, `zh_CN.UTF-8`, `zh-SG`, `zh-Hans`, and bare `zh` resolve to `zh-cn`. Traditional Chinese locales `zh-TW`, `zh-HK`, `zh-MO`, and `zh-Hant` are unsupported and fall back to English, as do other unsupported automatic locales. `RASEN_LANG=en`, `RASEN_LANG=ja`, or `RASEN_LANG=zh-cn` temporarily overrides the saved setting. Reinstall or regenerate shell completions after changing the saved language so generated descriptions are refreshed.
 
@@ -1119,7 +1119,7 @@ Pipeline help and Rasen-owned human output for all ten subcommands are available
 
 `delete`'s refcount guard refuses to delete a pipeline referenced by any installed workflow's `requires.pipelines` or by another pipeline's `decompose` stage `childPipeline` (explicit or the `small-feature` default), naming every referrer; `--force` bypasses the guard (not the built-in-pipeline prohibition) and warns about the referrers left dangling.
 
-Pipeline stage `skill:` fields appear in both the workflow directory-name form (`rasen-propose`) and the skill-name form (`rasen:review`) across the built-in pipelines; `validate` and package import accept either form and do not require the skill to be installed at import time — a missing skill is caught at execution time instead.
+Pipeline stage `skill:` fields in the built-in pipelines use the workflow directory-name form (`rasen-propose`, `rasen-review`); `validate` and package import also accept the retired skill-name colon form (`rasen:review`) for backward compatibility, and do not require the skill to be installed at import time — a missing skill is caught at execution time instead.
 
 ### `rasen config`
 
@@ -1330,7 +1330,7 @@ rasen completion uninstall
 
 ## Related Documentation
 
-- [Commands](commands.md) - AI slash commands (`/rasen:propose`, `/rasen:apply`, etc.)
+- [Commands](commands.md) - AI slash commands (`/rasen-propose`, `/rasen-apply-change`, etc.)
 - [Workflows](workflows.md) - Common patterns and when to use each command
 - [Customization](customization.md) - Create custom schemas and templates
 - [Getting Started](getting-started.md) - First-time setup guide

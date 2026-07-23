@@ -37,7 +37,7 @@ The _answer_ is the only thing worth keeping from a prototype. Capture it somewh
 
 export function getPrototypeSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:prototype',
+    name: 'rasen-prototype',
     description: 'Rapid prototyping — build a throwaway UI or logic spike to answer a question fast',
     instructions: `${BODY.trim()}\n\n${CHANGE_CONTEXT_CAPTURE_GUIDANCE}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

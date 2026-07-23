@@ -735,7 +735,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -781,7 +781,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
   - id: review-loop
@@ -839,7 +839,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [propose]
   - id: fix
@@ -937,7 +937,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [propose]
   - id: fix
@@ -1269,6 +1269,64 @@ stages:
       expect(result.stderr).toMatch(/known but disabled skill/);
       expect(result.stderr).not.toMatch(/unknown skill/);
       expect(result.stdout).not.toMatch(/"ready"/);
+    });
+
+    it('surfaces the old→new hint (not a bare unknown-skill error) when a resumed pipeline stage names a retired colon skill (B1)', async () => {
+      // Regression guard for the ADDED spec scenario "User pipeline authored with
+      // colon reference resumes with a hint": a pre-rebrand project pipeline stage
+      // references the retired colon identity `rasen:review`. Resume must not
+      // dead-end at preflight — it resolves the ref for validation and surfaces the
+      // old→new hint so the resumer renames the stage. The colon id stays an
+      // INVALID execution id (validate/dispatch still reject it — design D3: this
+      // is a hint, not silent acceptance).
+      const home = path.join(testDir, '.legacy-colon-home');
+      await fs.mkdir(home, { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ profile: 'full', delivery: 'both' })
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'legacy-colon-pipe');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        [
+          'name: legacy-colon-pipe',
+          'stages:',
+          '  - id: propose',
+          '    skill: rasen-propose',
+          '  - id: review',
+          '    skill: rasen:review',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+      const changeDir = path.join(changesDir, 'legacy-colon-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'legacy-colon-pipe', completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'legacy-colon-change', '--json'],
+        { cwd: testDir, env: { RASEN_HOME: home } }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toMatch(/unknown skill/);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.legacySkillHints).toEqual(
+        expect.arrayContaining([{ stage: 'review', from: 'rasen:review', to: 'rasen-review' }])
+      );
+
+      // The retired colon id remains an INVALID execution id: the execution
+      // preflight view still rejects it (D3 — hint, not silent acceptance).
+      const forExec = await runCLI(
+        ['pipeline', 'show', 'legacy-colon-pipe', '--for-execution', '--json'],
+        { cwd: testDir, env: { RASEN_HOME: home } }
+      );
+      expect(forExec.exitCode).toBe(1);
+      expect(forExec.stderr).toMatch(/rasen:review/);
     });
 
     it('reports hasRunState:false when no auto-run.json exists', async () => {

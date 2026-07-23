@@ -1,7 +1,7 @@
 # review-cycle-workflow Specification
 
 ## Purpose
-Provide an iterative review → triage → fix → re-review loop (the `/rasen:review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
+Provide an iterative review → triage → fix → re-review loop (the `/rasen-review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
 ## Requirements
 ### Requirement: Review-Cycle Skill and Command Templates
 
@@ -11,7 +11,7 @@ The system SHALL provide a SkillTemplate and a CommandTemplate for the review-cy
 
 - **WHEN** the template file is loaded
 - **THEN** it SHALL export `getReviewCycleSkillTemplate()` returning a SkillTemplate named `rasen-review-cycle`
-- **AND** it SHALL export `getOpsxReviewCycleCommandTemplate()` returning a CommandTemplate for `/rasen:review-cycle`
+- **AND** it SHALL export `getOpsxReviewCycleCommandTemplate()` returning a CommandTemplate for `/rasen-review-cycle`
 - **AND** both templates SHALL follow the same pattern as existing workflow templates (e.g. `ship.ts`, `verify-enhanced.ts`)
 
 #### Scenario: Delegates to the review engine, does not fork it

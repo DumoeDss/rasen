@@ -4,7 +4,7 @@
 Keep the curated, publication-facing `docs/` content accurate to the current rasen product: correct self-naming, commands that match the shipped CLI, and publication-ready landing pages.
 ## Requirements
 ### Requirement: Docs name the product rasen
-User-facing documentation under `docs/` SHALL refer to the product as **rasen** when describing itself: the docs home and guides introduce rasen, install instructions use `npm i -g @atelierai/rasen`, workspace paths shown are `rasen/` (specs, changes, config), terminal commands are `rasen …`, and slash commands are `/rasen:*`. References to upstream OpenSpec remain only where they genuinely refer to the upstream project — lineage, the coexistence/namespace table, `rasen migrate` from a legacy `openspec/` workspace, and license attribution — and are framed so a reader cannot mistake them for the product's own name.
+User-facing documentation under `docs/` SHALL refer to the product as **rasen** when describing itself: the docs home and guides introduce rasen, install instructions use `npm i -g @atelierai/rasen`, workspace paths shown are `rasen/` (specs, changes, config), terminal commands are `rasen …`, and slash commands are `/rasen-*`. References to upstream OpenSpec remain only where they genuinely refer to the upstream project — lineage, the coexistence/namespace table, `rasen migrate` from a legacy `openspec/` workspace, and license attribution — and are framed so a reader cannot mistake them for the product's own name.
 
 #### Scenario: Self-reference audit passes
 - **WHEN** the curated user-facing docs are searched for "OpenSpec" and `openspec`
@@ -15,7 +15,7 @@ User-facing documentation under `docs/` SHALL refer to the product as **rasen** 
 - **THEN** the command installs `@atelierai/rasen` (never `@fission-ai/openspec`) and subsequent setup steps use `rasen init` and the `rasen/` workspace tree
 
 ### Requirement: Documented commands match the shipped CLI
-Every terminal command (`rasen …`) and slash command (`/rasen:…`) mentioned in the curated docs SHALL exist in the current CLI build with the documented behavior, verified against `rasen --help` / subcommand help or the source. Commands the current build does not support are corrected or removed rather than left aspirational.
+Every terminal command (`rasen …`) and slash command (`/rasen-…`) mentioned in the curated docs SHALL exist in the current CLI build with the documented behavior, verified against `rasen --help` / subcommand help or the source. Commands the current build does not support are corrected or removed rather than left aspirational.
 
 #### Scenario: CLI reference is verifiable
 - **WHEN** each documented command in the curated set is checked against the current CLI's help output
@@ -40,7 +40,7 @@ The pages the website surfaces most prominently — `overview.md`, `getting-star
 
 The documentation SHALL present rasen's conceptual model in a reader-facing concept document: `schema` as the content layer (what artifacts a methodology produces and how they depend on each other), `workflow` as the execution inner loop (how one task unit runs in a single session), and `pipeline` as the execution outer loop (how a harness chains multiple inner-loop tasks). The document SHALL explain the workflow `kind` taxonomy (`task`, `driver`, `internal`) consistently with the shipped `kind` field, and SHALL state why the three concept names are retained.
 
-Any `rasen` CLI command or `/rasen:*` command the concept document presents as current behavior SHALL exist in the shipped CLI. Behavior that has not yet shipped SHALL be presented as design direction, not as current behavior.
+Any `rasen` CLI command or `/rasen-*` command the concept document presents as current behavior SHALL exist in the shipped CLI. Behavior that has not yet shipped SHALL be presented as design direction, not as current behavior.
 
 #### Scenario: Concept document presents the model
 
@@ -50,7 +50,7 @@ Any `rasen` CLI command or `/rasen:*` command the concept document presents as c
 
 #### Scenario: Referenced commands exist
 
-- **WHEN** the concept document names a `rasen` or `/rasen:*` command as current behavior
+- **WHEN** the concept document names a `rasen` or `/rasen-*` command as current behavior
 - **THEN** that command SHALL exist in the shipped CLI
 - **AND** any not-yet-shipped capability the document mentions SHALL be marked as design direction rather than current behavior
 

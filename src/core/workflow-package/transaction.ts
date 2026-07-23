@@ -18,6 +18,7 @@ import {
   type WorkflowDefinition,
   type WorkflowRegistryOptions,
 } from '../workflow-registry/index.js';
+import { mapLegacySkillId } from '../pipeline-registry/legacy-skill.js';
 import { portablePathCollisionKey } from '../workflow-registry/path-policy.js';
 import type { RasenPackage } from './schema.js';
 
@@ -147,7 +148,10 @@ function assertInstallableSet(
     incomingSkillNames.set(skillName, definition.id);
 
     for (const skill of definition.requires.skills) {
-      if (!expertNames.has(skill)) {
+      // A pre-sweep package may reference an expert by its retired colon-form or
+      // upstream-namespace identity; resolve through the legacy mapping so such
+      // packages still install against the unified hyphen expert names.
+      if (!expertNames.has(skill) && !expertNames.has(mapLegacySkillId(skill) ?? '')) {
         throw new WorkflowTransactionError(
           `Required always-installed skill "${skill}" does not exist`,
           'skill_dependency_missing'

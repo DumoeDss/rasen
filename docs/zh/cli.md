@@ -1,6 +1,6 @@
 # CLI 参考手册
 
-OpenSpec CLI（`openspec`）提供了用于项目初始化、校验、状态检查和管理的终端命令。这些命令与 AI 斜杠命令（如 `/rasen:propose`）互为补充，后者参见[命令](commands.md)。
+OpenSpec CLI（`openspec`）提供了用于项目初始化、校验、状态检查和管理的终端命令。这些命令与 AI 斜杠命令（如 `/rasen-propose`）互为补充，后者参见[命令](commands.md)。
 
 ## 概览
 
@@ -1085,7 +1085,7 @@ rasen pipeline delete <name> [--yes] [--force] [--json]
 
 `delete` 的引用计数守卫会拒绝删除被任一已安装工作流的 `requires.pipelines`、或另一个 pipeline 的 `decompose` stage 的 `childPipeline`（显式声明或默认的 `small-feature`）所引用的 pipeline，并列出每个引用方；`--force` 会绕过该守卫（但不会绕过对内置 pipeline 的禁止删除），并警告哪些引用方将变成悬空引用。
 
-内置 pipeline 中的 stage `skill:` 字段同时存在工作流目录名形式（`rasen-propose`）与 skill 名形式（`rasen:review`）两种写法；`validate` 与包导入两者都接受，且不要求该 skill 在导入时已安装——缺失的 skill 会在执行期才被捕获。
+内置 pipeline 中的 stage `skill:` 字段使用工作流目录名形式（`rasen-propose`、`rasen-review`）；`validate` 与包导入仍接受已退役的 skill 名冒号形式（`rasen:review`）以保持向后兼容，且不要求该 skill 在导入时已安装——缺失的 skill 会在执行期才被捕获。
 
 ### `rasen config`
 
@@ -1262,7 +1262,7 @@ rasen completion uninstall
 
 ## 相关文档
 
-- [命令](commands.md) - AI 斜杠命令（`/rasen:propose`、`/rasen:apply` 等）
+- [命令](commands.md) - AI 斜杠命令（`/rasen-propose`、`/rasen-apply-change` 等）
 - [工作流](workflows.md) - 常见模式和各命令的适用时机
 - [自定义](customization.md) - 创建自定义 schema 和模板
 - [入门指南](getting-started.md) - 首次设置指南

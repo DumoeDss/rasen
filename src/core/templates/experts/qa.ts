@@ -311,7 +311,7 @@ If the repo has a \`TODOS.md\`:
 
 export function getQaSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:qa',
+    name: 'rasen-qa',
     description: 'Browser QA test, fix, and verify — explore the app via the CDP proxy, document evidence-backed issues, compute a health score, and fix findings',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

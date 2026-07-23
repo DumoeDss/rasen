@@ -250,7 +250,7 @@ describe('pipeline-registry/execution-validation expert leniency preflight (revi
 name: lean-profile-tdd
 stages:
   - id: a
-    skill: rasen:tdd
+    skill: rasen-tdd
 `);
 
     try {
@@ -276,7 +276,7 @@ stages:
 name: lean-profile-review
 stages:
   - id: a
-    skill: rasen:review
+    skill: rasen-review
 `);
 
     await validatePipelineForExecution(p);
@@ -295,7 +295,7 @@ stages:
 name: legacy-tdd
 stages:
   - id: a
-    skill: rasen:tdd
+    skill: rasen-tdd
 `);
 
     await validatePipelineForExecution(p);
@@ -367,7 +367,7 @@ describe('pipeline-registry/execution-validation per-project expert-selection ac
 name: unacknowledged-project-tdd
 stages:
   - id: a
-    skill: rasen:tdd
+    skill: rasen-tdd
 `);
 
     // A stage naming a not-installed-by-profile expert must NOT fail
@@ -401,7 +401,7 @@ stages:
 name: acknowledged-project-tdd
 stages:
   - id: a
-    skill: rasen:tdd
+    skill: rasen-tdd
 `);
 
     try {

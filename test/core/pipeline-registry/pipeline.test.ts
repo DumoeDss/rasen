@@ -291,7 +291,7 @@ stages:
   - id: a
     skill: rasen-propose
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     requires: [a]
     condition: always
     verifyPolicy: adaptive
@@ -319,7 +319,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -542,7 +542,7 @@ stages:
 name: bad-policy
 stages:
   - id: a
-    skill: rasen:review
+    skill: rasen-review
     verifyPolicy: extreme
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
@@ -620,7 +620,7 @@ stages:
     requires:
       - A
   - id: C
-    skill: rasen:review
+    skill: rasen-review
     requires:
       - B
 `;
@@ -642,11 +642,11 @@ stages:
   - id: root
     skill: rasen-apply-change
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: rasen:cso
+    skill: rasen-cso
     requires: [root, review]
     parallelGroup: experts
 `;
@@ -661,11 +661,11 @@ stages:
   - id: root
     skill: rasen-apply-change
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: rasen:cso
+    skill: rasen-cso
     requires: [root]
     parallelGroup: experts
 `;
@@ -680,22 +680,22 @@ stages:
   - id: a
     skill: rasen-propose
   - id: b
-    skill: rasen:review
+    skill: rasen-review
     requires: [a]
 `;
 
     it('should pass when all skills are known', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['rasen-propose', 'rasen:review', 'extra']);
+      const known = new Set(['rasen-propose', 'rasen-review', 'extra']);
       expect(() => validatePipelineSkills(pipeline, known)).not.toThrow();
     });
 
     it('should throw when a stage references an unknown skill', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['rasen-propose']); // missing rasen:review
+      const known = new Set(['rasen-propose']); // missing rasen-review
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(PipelineValidationError);
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(
-        /Stage 'b' references unknown skill: 'rasen:review'/
+        /Stage 'b' references unknown skill: 'rasen-review'/
       );
     });
 
@@ -706,7 +706,7 @@ stages:
 
     it('distinguishes a known but disabled skill from an unknown skill', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['rasen-propose', 'rasen:review']);
+      const known = new Set(['rasen-propose', 'rasen-review']);
       const enabled = new Set(['rasen-propose']);
 
       try {
@@ -716,7 +716,7 @@ stages:
         expect(error).toBeInstanceOf(PipelineValidationError);
         expect(error).toMatchObject({ code: 'pipeline_skill_disabled' });
         expect((error as Error).message).toMatch(
-          /Stage 'b' references known but disabled skill: 'rasen:review'/
+          /Stage 'b' references known but disabled skill: 'rasen-review'/
         );
       }
     });
@@ -848,7 +848,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
   - id: review-loop
@@ -887,7 +887,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
 `;
@@ -970,7 +970,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [propose]
     handoff:
@@ -1055,7 +1055,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [implement]
   - id: fix
@@ -1613,7 +1613,7 @@ handoff:
     reviewer: 0.65
 stages:
   - id: a
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     handoff:
       maxRelays: 6

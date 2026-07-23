@@ -84,7 +84,7 @@ skill choices are safe or complete.
 
 export function getWorkflowReviewSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:workflow-review',
+    name: 'rasen-workflow-review',
     description: 'Review installable workflows and pipelines independently — semantic quality, security boundaries, portability, dependencies, and completion',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

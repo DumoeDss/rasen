@@ -7,17 +7,17 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 如果只读一页，就读这两页：
 
 1. [快速入门](getting-started.md)：安装、初始化，并交付你的第一个变更。
-2. [命令是如何工作的](how-commands-work.md)：你到底在哪里输入 `/rasen:propose`（提示：在你的 AI 聊天里，而不是终端里）。几乎每个人都会在这里绊一次。
+2. [命令是如何工作的](how-commands-work.md)：你到底在哪里输入 `/rasen-propose`（提示：在你的 AI 聊天里，而不是终端里）。几乎每个人都会在这里绊一次。
 
 第二页的重要性比看起来更大。OpenSpec 有两个部分：你在终端里运行的命令行工具，以及你给 AI 助手下达的斜杠命令（slash command）。分清这两者，能省掉最常见的那次困惑。
 
-> **最值得先养成的习惯：当你不确定要构建什么时，从 `/rasen:explore` 开始。** 它是一个零成本的思考伙伴——会阅读你的代码、权衡各种选项，在任何产物或代码存在之前，把一个模��的想法打磨成具体的计划。[先做探索（Explore First）](explore.md) 这份指南把理由讲得很清楚。
+> **最值得先养成的习惯：当你不确定要构建什么时，从 `/rasen-explore` 开始。** 它是一个零成本的思考伙伴——会阅读你的代码、权衡各种选项，在任何产物或代码存在之前，把一个模��的想法打磨成具体的计划。[先做探索（Explore First）](explore.md) 这份指南把理由讲得很清楚。
 
 ## 按你的情况选路径
 
 **我完全是新手。** 从 [快速入门](getting-started.md) 开始，然后略读 [核心概念一览](overview.md)。当某处让人摸不着头脑时，[FAQ](faq.md) 和 [术语表](glossary.md) 就在附近。
 
-**我有问题，但还没有方案。** 这是最常见的情况，并且有专门的答案：[先做探索](explore.md)。在拍板之前，先用 `/rasen:explore` 和 AI 一起把它想透。
+**我有问题，但还没有方案。** 这是最常见的情况，并且有专门的答案：[先做探索](explore.md)。在拍板之前，先用 `/rasen-explore` 和 AI 一起把它想透。
 
 **我有一个庞大的现成代码库。** 你不必为它全部写文档。[在现有项目中使用 OpenSpec](existing-projects.md) 讲解如何在真实的、棕地（brownfield）代码上起步，而不必“一口吃成胖子”。
 
@@ -42,7 +42,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 | 文档 | 你能从中得到什么 |
 |-----|-------------------|
 | [快速入门](getting-started.md) | 安装、初始化，并端到端跑通你的第一个变更 |
-| [先做探索](explore.md) | 在拍板之前，用 `/rasen:explore` 把一个想法想透 |
+| [先做探索](explore.md) | 在拍板之前，用 `/rasen-explore` 把一个想法想透 |
 | [命令是如何工作的](how-commands-work.md) | 斜杠命令在哪里运行、“交互模式”是什么意思、终端与聊天的区别 |
 | [核心概念一览](overview.md) | 用一页讲清整套心智模型：spec、变更、delta、归档 |
 | [安装](installation.md) | npm、pnpm、yarn、bun、Nix，以及如何确认安装成功 |
@@ -52,14 +52,14 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 | 文档 | 你能从中得到什么 |
 |-----|-------------------|
 | [工作流](workflows.md) | 常见模式，以及何时该用哪个命令 |
-| [Autopilot 策略](autopilot.md) | `/rasen:auto` 的 opt-in 自主权：`--no-gate`、`--auto-select`、组合式流水线 |
+| [Autopilot 策略](autopilot.md) | `/rasen-auto` 的 opt-in 自主权：`--no-gate`、`--auto-select`、组合式流水线 |
 | [示例与配方](examples.md) | 真实变更的完整演练，可直接复制粘贴 |
 | [写好规格](writing-specs.md) | 一条强需求和一个好场景长什么样，以及如何给一次变更定准大小 |
 | [评审一次变更](reviewing-changes.md) | 在写任何代码之前，用两分钟过一遍起草好的计划 |
 | [团队中的 OpenSpec](team-workflow.md) | 变更如何契合分支、pull request 与评审 |
 | [在现有项目中使用 OpenSpec](existing-projects.md) | 在庞大的棕地代码库上采用 OpenSpec |
 | [编辑与迭代一次变更](editing-changes.md) | 更新产物、回退、调和手动改动 |
-| [命令](commands.md) | 每一个 `/rasen:*` 斜杠命令的参考 |
+| [命令](commands.md) | 每一个 `/rasen-*` 斜杠命令的参考 |
 | [CLI](cli.md) | 每一个 `openspec` 终端命令的参考 |
 
 ### 深入理解
@@ -98,13 +98,13 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 ```text
 1. 安装          npm install -g @fission-ai/openspec@latest
 2. 初始化        cd your-project && rasen init
-3. 探索          （在你的 AI 聊天里）  /rasen:explore           ← 可选，但是个好习惯
-4. 提案          （在你的 AI 聊天里）  /rasen:propose add-dark-mode
-5. 构建          （在你的 AI 聊天里）  /rasen:apply
-6. 归档          （在你的 AI 聊天里）  /rasen:archive
+3. 探索          （在你的 AI 聊天里）  /rasen-explore           ← 可选，但是个好习惯
+4. 提案          （在你的 AI 聊天里）  /rasen-propose add-dark-mode
+5. 构建          （在你的 AI 聊天里）  /rasen-apply-change
+6. 归档          （在你的 AI 聊天里）  /rasen-archive-change
 ```
 
-第 1、2 步在你的终端里发生。其余都在你的 AI 助手的聊天里。这一分工是唯一值得记住的事，[命令是如何工作的](how-commands-work.md) 把其中的道理讲得清清楚楚。第 3 步是可选的，但当你拿不准时从 `/rasen:explore` 开始，是最值得养成的习惯。
+第 1、2 步在你的终端里发生。其余都在你的 AI 助手的聊天里。这一分工是唯一值得记住的事，[命令是如何工作的](how-commands-work.md) 把其中的道理讲得清清楚楚。第 3 步是可选的，但当你拿不准时从 `/rasen-explore` 开始，是最值得养成的习惯。
 
 ## 还能在哪里获得帮助
 

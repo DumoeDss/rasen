@@ -55,9 +55,9 @@ The command SHALL provide clear, actionable next steps upon successful initializ
   - "Refreshed: <tools>" for already-configured tools that were updated
   - Count of skills generated
 - **AND** display getting started section with:
-  - `/rasen:new` - Start a new change
-  - `/rasen:continue` - Create the next artifact
-  - `/rasen:apply` - Implement tasks
+  - `/rasen-new-change` - Start a new change
+  - `/rasen-continue-change` - Create the next artifact
+  - `/rasen-apply-change` - Implement tasks
 - **AND** display links to documentation and feedback
 
 #### Scenario: Displaying restart instruction

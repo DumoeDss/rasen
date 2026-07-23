@@ -138,12 +138,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| Verify | \\\`/rasen:verify\\\` | Implementation matches the change artifacts | 0 | — | — |
-| Verify (enhanced) | \\\`/rasen:verify-enhanced\\\` | Adds code-review, security, and browser passes | 0 | — | — |
-| Review cycle | \\\`/rasen:review-cycle\\\` | Iterate review → triage → fix until clean | 0 | — | — |
+| Verify | \\\`/rasen-verify-change\\\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \\\`/rasen-verify-enhanced\\\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \\\`/rasen-review-cycle\\\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \\\`/codex review\\\` | Independent 2nd opinion | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \\\`/rasen:review-cycle\\\` for the full review loop, or the individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \\\`/rasen-review-cycle\\\` for the full review loop, or the individual reviews above.
 \\\`\\\`\\\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
@@ -364,9 +364,9 @@ Produce this markdown table:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| Verify | \\\`/rasen:verify\\\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
-| Verify (enhanced) | \\\`/rasen:verify-enhanced\\\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
-| Review cycle | \\\`/rasen:review-cycle\\\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
+| Verify | \\\`/rasen-verify-change\\\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
+| Verify (enhanced) | \\\`/rasen-verify-enhanced\\\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
+| Review cycle | \\\`/rasen-review-cycle\\\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
 | Codex Review | \\\`/codex review\\\` | Independent 2nd opinion | {runs} | {status} | {findings} |
 \\\`\\\`\\\`
 
@@ -1546,8 +1546,8 @@ The screenshot file at \`/tmp/rasen-sketch.png\` can be referenced by downstream
 export const SPEC_REVIEW_LOOP = `## Spec Review Loop
 
 Before presenting the document to the user for approval, run adversarial review. This is
-a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/rasen:propose\` →
-implement → \`/rasen:review-cycle\` will scrutinize it again (review-cycle is the real
+a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/rasen-propose\` →
+implement → \`/rasen-review-cycle\` will scrutinize it again (review-cycle is the real
 adversarial code review). Do not over-polish a draft, and never iterate to convergence.
 
 **Step 1: One fresh adversarial review**
@@ -1611,7 +1611,7 @@ fresh pass after a major redesign**. Do NOT iterate toward a perfect score.
 
 - If the reviewer returns the SAME unresolved issue on two consecutive passes (the fix didn't
   land, or it's a genuine disagreement), STOP. Persist it as an "## Open Questions" or
-  "## Reviewer Concerns" section in the document for \`/rasen:propose\` to resolve. A draft is
+  "## Reviewer Concerns" section in the document for \`/rasen-propose\` to resolve. A draft is
   allowed to carry open questions — that is not a failure.
 - If the subagent fails, times out, or is unavailable — skip the loop: tell the user "Spec
   review unavailable — presenting unreviewed doc." The document is already on disk; the

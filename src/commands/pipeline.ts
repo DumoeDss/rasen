@@ -601,20 +601,11 @@ export class PipelineCommand {
     }
 
     const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
-    await validatePipelineForExecution(
-      pipeline,
-      projectRoot,
-      this.executionOptions(options)
-    );
-    const graph = PipelineGraph.fromPipeline(pipeline);
-    const buildOrder = graph.getBuildOrder();
-    const completed = completedStages(runState);
-    const completedSet = new Set(completed);
-
     // A project-local or user-override pipeline authored before the rebrand can
-    // still name legacy `openspec-*`/`openspec:*` skill IDs that no installed
-    // skill answers to. Surface each stale stage skill with its rasen mapping so
-    // the resumer can fix the pipeline instead of dispatching a dead ID.
+    // still name legacy `openspec-*`/`openspec:*` or retired colon-form skill IDs
+    // that no installed skill answers to. Surface each stale stage skill with its
+    // rasen mapping so the resumer can rename the stage instead of dispatching a
+    // dead ID.
     const legacySkillHints = pipeline.stages
       .filter((stage) => stage.skill)
       .map((stage) => {
@@ -622,6 +613,31 @@ export class PipelineCommand {
         return mapped ? { stage: stage.id, from: stage.skill as string, to: mapped } : null;
       })
       .filter((hint): hint is { stage: string; from: string; to: string } => hint !== null);
+    // Retired legacy skill IDs are NOT valid execution IDs (design D3: `validate`
+    // and dispatch still reject them — the fallback is a hint, not acceptance).
+    // But resume must not dead-end on a stale pipeline: preflight a copy with each
+    // legacy stage skill resolved to its current target, so a genuinely-unknown
+    // skill still fails here while a pre-rebrand colon/openspec pipeline reaches
+    // the old→new hint surfaced in the result below.
+    const preflightPipeline =
+      legacySkillHints.length === 0
+        ? pipeline
+        : {
+            ...pipeline,
+            stages: pipeline.stages.map((stage) => {
+              const mapped = stage.skill ? mapLegacySkillId(stage.skill) : null;
+              return mapped ? { ...stage, skill: mapped } : stage;
+            }),
+          };
+    await validatePipelineForExecution(
+      preflightPipeline,
+      projectRoot,
+      this.executionOptions(options)
+    );
+    const graph = PipelineGraph.fromPipeline(pipeline);
+    const buildOrder = graph.getBuildOrder();
+    const completed = completedStages(runState);
+    const completedSet = new Set(completed);
     // getNextStages can return several ready stages (parallel frontier); report
     // the full set as `ready`, and keep `next` as its first member for callers
     // that want a single cursor.

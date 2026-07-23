@@ -2,17 +2,17 @@
 
 ## Purpose
 
-Define the expected behavior for the `/rasen:archive` skill, including readiness checks, spec sync prompting, archive execution, and user-facing output.
+Define the expected behavior for the `/rasen-archive-change` skill, including readiness checks, spec sync prompting, archive execution, and user-facing output.
 
 ## Requirements
 
 ### Requirement: Rasen Archive Skill
 
-The system SHALL provide an `/rasen:archive` skill that archives completed changes in the experimental workflow.
+The system SHALL provide an `/rasen-archive-change` skill that archives completed changes in the experimental workflow.
 
 #### Scenario: Archive a change with all artifacts complete
 
-- **WHEN** agent executes `/rasen:archive` with a change name
+- **WHEN** agent executes `/rasen-archive-change` with a change name
 - **AND** all artifacts in the schema are complete
 - **AND** all tasks are complete
 - **THEN** the agent moves the change to `rasen/changes/archive/YYYY-MM-DD-<name>/`
@@ -20,7 +20,7 @@ The system SHALL provide an `/rasen:archive` skill that archives completed chang
 
 #### Scenario: Change selection prompt
 
-- **WHEN** agent executes `/rasen:archive` without specifying a change
+- **WHEN** agent executes `/rasen-archive-change` without specifying a change
 - **THEN** the agent prompts user to select from available changes
 - **AND** shows only active changes (excludes archive/)
 
@@ -118,7 +118,7 @@ The skill SHALL prompt to sync delta specs before archiving if specs exist.
 - **WHEN** agent checks for delta specs
 - **AND** `specs/` directory exists in the change with spec files
 - **THEN** prompt user: "This change has delta specs. Would you like to sync them to main specs before archiving?"
-- **AND** if user confirms, execute `/rasen:sync` logic
+- **AND** if user confirms, execute `/rasen-sync-specs` logic
 - **AND** proceed with archive regardless of sync choice
 
 #### Scenario: No delta specs
@@ -153,7 +153,7 @@ The skill SHALL provide clear feedback about the archive operation.
 
 - **WHEN** archive completes after syncing specs
 - **THEN** display summary:
-  - Specs synced (from `/rasen:sync` output)
+  - Specs synced (from `/rasen-sync-specs` output)
   - Change archived to location
   - Schema that was used
 
@@ -190,7 +190,7 @@ The archive skill SHALL resolve artifact paths from `rasen status --change <name
 
 #### Scenario: Single archive matches bulk archive resolution
 
-- **WHEN** the same change is archived via single `/rasen:archive` versus `/rasen:bulk-archive`
+- **WHEN** the same change is archived via single `/rasen-archive-change` versus `/rasen-bulk-archive-change`
 - **THEN** both SHALL resolve the tasks and specs paths the same way (from status JSON), so neither reports a spurious "no tasks" for a non-`tasks.md` schema
 
 ### Requirement: Archive resolves the timing axis before its gates

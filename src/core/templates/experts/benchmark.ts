@@ -224,7 +224,7 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 export function getBenchmarkSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:benchmark',
+    name: 'rasen-benchmark',
     description: 'Performance regression detection — run repeatable timing and size benchmarks for the branch, compare against budgets, and grade regressions',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

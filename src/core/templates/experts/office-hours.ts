@@ -281,7 +281,7 @@ Use whichever lens the user's stated goal implies when framing fork-scan questio
 
 ### Terminal
 
-Once the discussion converges and the user gives an explicit "yes" to distilling it into a doc, write the design doc (see Phase 5 — the Design product's convergence "yes" is one of the two ways into that hard gate), then close with a **plain summary plus a \`/rasen:propose\` pointer**. Skip Phase 4.5 (founder-signal synthesis) and Phase 6 (the three-beat close) — those are reserved for the Diagnosis product; a converged design review tracks no founder signals and the golden-age plea is a tone mismatch here.
+Once the discussion converges and the user gives an explicit "yes" to distilling it into a doc, write the design doc (see Phase 5 — the Design product's convergence "yes" is one of the two ways into that hard gate), then close with a **plain summary plus a \`/rasen-propose\` pointer**. Skip Phase 4.5 (founder-signal synthesis) and Phase 6 (the three-beat close) — those are reserved for the Diagnosis product; a converged design review tracks no founder signals and the golden-age plea is a tone mismatch here.
 
 ---
 
@@ -516,7 +516,7 @@ Present the reviewed design doc to the user via AskUserQuestion:
 
 ## Phase 6: Handoff — Founder Discovery
 
-Once the design doc is APPROVED, deliver the closing sequence. This is three beats with a deliberate pause between them. On the **Diagnosis product, every user gets all three beats**; the intensity varies by founder signal strength. The **Design product does NOT run this phase** — it ends at its own terminal (plain summary + \`/rasen:propose\` pointer), because the founder plea is a tone mismatch for a peer design review.
+Once the design doc is APPROVED, deliver the closing sequence. This is three beats with a deliberate pause between them. On the **Diagnosis product, every user gets all three beats**; the intensity varies by founder signal strength. The **Design product does NOT run this phase** — it ends at its own terminal (plain summary + \`/rasen-propose\` pointer), because the founder plea is a tone mismatch for a peer design review.
 
 ### Beat 1: Signal Reflection + Golden Age
 
@@ -577,7 +577,7 @@ Say:
 
 After the plea, suggest the next step:
 
-- **\`/rasen:propose\`** — turn the validated idea into a change: proposal, design, specs, and tasks
+- **\`/rasen-propose\`** — turn the validated idea into a change: proposal, design, specs, and tasks
 
 The design doc at the project's registry-backed documents directory is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
@@ -597,7 +597,7 @@ The design doc at the project's registry-backed documents directory is automatic
 
 export function getOfficeHoursSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:office-hours',
+    name: 'rasen-office-hours',
     description: 'YC-style office hours — pressure-test product demand and design direction before building',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

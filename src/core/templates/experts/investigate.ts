@@ -224,7 +224,7 @@ Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 
 export function getInvestigateSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:investigate',
+    name: 'rasen-investigate',
     description: 'Systematic debugging — reproduce, isolate, and root-cause a bug with evidence before attempting any fix',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

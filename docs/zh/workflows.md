@@ -33,25 +33,25 @@ OPSX (fluid actions):
 ### 默认快速路径（`core` profile）
 
 新安装默认使用 `core`，提供以下命令：
-- `/rasen:explore`
-- `/rasen:propose`
-- `/rasen:apply`
-- `/rasen:sync`
-- `/rasen:archive`
+- `/rasen-explore`
+- `/rasen-propose`
+- `/rasen-apply-change`
+- `/rasen-sync-specs`
+- `/rasen-archive-change`
 
 典型流程：
 
 ```text
-/rasen:explore ──► /rasen:propose ──► /rasen:apply ──► /rasen:sync ──► /rasen:archive
+/rasen-explore ──► /rasen-propose ──► /rasen-apply-change ──► /rasen-sync-specs ──► /rasen-archive-change
   (optional)
 ```
 
 #### 从探索开始（值得养成的习惯）
 
-`/rasen:explore` 是默认 profile 的一部分，而不是什么高级附加功能。只要你有一个问题、却还没有方案时，就该用它——而在有 AI 助手的情况下，这大半时间都成立。
+`/rasen-explore` 是默认 profile 的一部分，而不是什么高级附加功能。只要你有一个问题、却还没有方案时，就该用它——而在有 AI 助手的情况下，这大半时间都成立。
 
 ```text
-You: /rasen:explore
+You: /rasen-explore
 
 AI:  What would you like to explore?
 
@@ -67,14 +67,14 @@ AI:  Let me look... [reads the search service and cache layer]
 
 You: Yes.
 
-You: /rasen:propose rebuild-search-index-on-write
+You: /rasen-propose rebuild-search-index-on-write
 ```
 
-探索不会创建任何产物，也不会编写任何代码。它是一场免费的、零成本的对话，把一个模糊的担忧变成一个精确的变更，因此随后产出的提案会很犀利。已经确切知道想要什么？跳过它，直接用 `/rasen:propose`。完整指南：[先探索](explore.md)。
+探索不会创建任何产物，也不会编写任何代码。它是一场免费的、零成本的对话，把一个模糊的担忧变成一个精确的变更，因此随后产出的提案会很犀利。已经确切知道想要什么？跳过它，直接用 `/rasen-propose`。完整指南：[先探索](explore.md)。
 
 ### 扩展/完整工作流（自定义选择）
 
-如果你需要显式的脚手架和构建命令（`/rasen:new`、`/rasen:continue`、`/rasen:verify`、`/rasen:bulk-archive`、`/rasen:onboard`），通过以下方式启用：
+如果你需要显式的脚手架和构建命令（`/rasen-new-change`、`/rasen-continue-change`、`/rasen-verify-change`、`/rasen-bulk-archive-change`、`/rasen-onboard`），通过以下方式启用：
 
 ```bash
 rasen config profile
@@ -88,13 +88,13 @@ rasen update
 当你清楚要构建什么、只需要执行时：
 
 ```text
-/rasen:propose ──► /rasen:apply ──► /rasen:verify ──► /rasen:archive
+/rasen-propose ──► /rasen-apply-change ──► /rasen-verify-change ──► /rasen-archive-change
 ```
 
 **对话示例：**
 
 ```text
-You: /rasen:propose add-logout-button
+You: /rasen-propose add-logout-button
 
 AI:  Created rasen/changes/add-logout-button/
      Creating all planning artifacts...
@@ -104,7 +104,7 @@ AI:  Created rasen/changes/add-logout-button/
      ✓ tasks.md
      Ready for implementation!
 
-You: /rasen:apply
+You: /rasen-apply-change
 
 AI:  Working through tasks...
      ✓ Added logout button to header
@@ -112,7 +112,7 @@ AI:  Working through tasks...
      ✓ Added confirmation dialog
      All tasks complete!
 
-You: /rasen:archive
+You: /rasen-archive-change
 
 AI:  ✓ Merged specs
      ✓ Archived change
@@ -125,13 +125,13 @@ AI:  ✓ Merged specs
 当需求不明确或需要先调查研究时：
 
 ```text
-/rasen:explore ──► /rasen:new ──► /rasen:continue ──► ... ──► /rasen:apply
+/rasen-explore ──► /rasen-new-change ──► /rasen-continue-change ──► ... ──► /rasen-apply-change
 ```
 
 **对话示例：**
 
 ```text
-You: /rasen:explore
+You: /rasen-explore
 
 AI:  What would you like to explore?
 
@@ -151,11 +151,11 @@ AI:  Let me help investigate...
 
 You: Let's tackle the data fetching issue.
 
-You: /rasen:new optimize-product-list-fetching
+You: /rasen-new-change optimize-product-list-fetching
 
 AI:  Created change. Ready to create: proposal
 
-You: /rasen:continue
+You: /rasen-continue-change
 
 AI:  Creating proposal based on our exploration...
      [Writes proposal incorporating investigation insights]
@@ -163,7 +163,7 @@ AI:  Creating proposal based on our exploration...
      Ready to create: specs, design
      Which would you like next?
 
-You: /rasen:continue
+You: /rasen-continue-change
 
 AI:  Creating specs...
 ```
@@ -175,11 +175,11 @@ AI:  Creating specs...
 同时处理多个变更：
 
 ```text
-Change A: /rasen:propose ──► /rasen:apply (in progress)
+Change A: /rasen-propose ──► /rasen-apply-change (in progress)
                                │
                           context switch
                                │
-Change B: /rasen:propose ──────► /rasen:apply
+Change B: /rasen-propose ──────► /rasen-apply-change
 ```
 
 **对话示例：**
@@ -187,24 +187,24 @@ Change B: /rasen:propose ──────► /rasen:apply
 ```text
 You: I'm working on add-dark-mode but got pulled into a bug fix
 
-You: /rasen:propose fix-login-redirect
+You: /rasen-propose fix-login-redirect
 
 AI:  Created rasen/changes/fix-login-redirect/
      ✓ Created planning artifacts
 
-You: /rasen:apply
+You: /rasen-apply-change
 
 AI:  Working on fix-login-redirect...
      [Implements the fix]
      All tasks complete!
 
-You: /rasen:archive
+You: /rasen-archive-change
 
 AI:  ✓ Archived fix-login-redirect
 
 You: Let's get back to dark mode
 
-You: /rasen:apply add-dark-mode
+You: /rasen-apply-change add-dark-mode
 
 AI:  Resuming add-dark-mode...
      Picking up at task 2.3: Update Header...
@@ -212,10 +212,10 @@ AI:  Resuming add-dark-mode...
 
 **最适合：** 并行工作流、紧急中断、团队协作。
 
-当你有多个已完成的变更时，使用 `/rasen:bulk-archive`：
+当你有多个已完成的变更时，使用 `/rasen-bulk-archive-change`：
 
 ```text
-You: /rasen:bulk-archive
+You: /rasen-bulk-archive-change
 
 AI:  Found 3 completed changes:
      - add-dark-mode (all tasks done)
@@ -245,7 +245,7 @@ AI:  ✓ Archived add-dark-mode
 推荐的完成流程：
 
 ```text
-/rasen:apply ──► /rasen:verify ──► /rasen:archive
+/rasen-apply-change ──► /rasen-verify-change ──► /rasen-archive-change
                     │                 │
               validates          prompts to sync
               implementation     if needed
@@ -253,10 +253,10 @@ AI:  ✓ Archived add-dark-mode
 
 #### 验证：检查你的工作
 
-`/rasen:verify` 从三个维度验证实现是否符合产物：
+`/rasen-verify-change` 从三个维度验证实现是否符合产物：
 
 ```text
-You: /rasen:verify
+You: /rasen-verify-change
 
 AI:  Verifying add-auth...
 
@@ -298,7 +298,7 @@ AI:  Verifying add-auth...
 
 #### 审查循环：循环直至干净（可选）
 
-`/rasen:verify` 是单次通过；`/rasen:review-cycle` 则是包裹审查器、持续推进直到变更真正干净的**循环**：
+`/rasen-verify-change` 是单次通过；`/rasen-review-cycle` 则是包裹审查器、持续推进直到变更真正干净的**循环**：
 
 ```text
 review ──► triage ──► fix ──► re-review(Δ) ──► { pass | loop | escalate }
@@ -315,10 +315,10 @@ review ──► triage ──► fix ──► re-review(Δ) ──► { pass |
 
 #### 归档：最终完成变更
 
-`/rasen:archive` 完成变更并将其移至归档：
+`/rasen-archive-change` 完成变更并将其移至归档：
 
 ```text
-You: /rasen:archive
+You: /rasen-archive-change
 
 AI:  Archiving add-auth...
 
@@ -343,17 +343,17 @@ AI:  ✓ Synced specs to rasen/specs/auth/spec.md
 
 ## 何时使用什么
 
-### `/rasen:propose` 与 `/rasen:continue` 的对比
+### `/rasen-propose` 与 `/rasen-continue-change` 的对比
 
 | 场景 | 使用 |
 |------|------|
-| 需求明确，准备构建 | `/rasen:propose` |
-| 探索中，想逐步审查 | `/rasen:new` 然后 `/rasen:continue` |
-| 想在 specs 之前迭代 proposal | `/rasen:new` 然后 `/rasen:continue` |
-| 时间紧迫，需要快速推进 | `/rasen:propose` |
-| 复杂变更，需要精细控制 | `/rasen:new` 然后 `/rasen:continue` |
+| 需求明确，准备构建 | `/rasen-propose` |
+| 探索中，想逐步审查 | `/rasen-new-change` 然后 `/rasen-continue-change` |
+| 想在 specs 之前迭代 proposal | `/rasen-new-change` 然后 `/rasen-continue-change` |
+| 时间紧迫，需要快速推进 | `/rasen-propose` |
+| 复杂变更，需要精细控制 | `/rasen-new-change` 然后 `/rasen-continue-change` |
 
-**经验法则：** 如果你能提前描述完整范围，使用 `/rasen:propose`。如果你在过程中逐步摸索，使用 `/rasen:new` 然后 `/rasen:continue`。
+**经验法则：** 如果你能提前描述完整范围，使用 `/rasen-propose`。如果你在过程中逐步摸索，使用 `/rasen-new-change` 然后 `/rasen-continue-change`。
 
 ### 何时更新已有变更 vs 重新开始
 
@@ -411,12 +411,12 @@ AI:  ✓ Synced specs to rasen/specs/auth/spec.md
 - 可以独立发布
 - 需要时回滚更简单
 
-### 需求不明确时使用 `/rasen:explore`
+### 需求不明确时使用 `/rasen-explore`
 
 在提交变更之前，先探索问题空间：
 
 ```text
-You: /rasen:explore
+You: /rasen-explore
 
 AI:  What would you like to explore?
 
@@ -437,10 +437,10 @@ AI:  Let me investigate your current setup and options...
 
 ### 归档前先验证
 
-使用 `/rasen:verify` 检查实现是否与产物匹配：
+使用 `/rasen-verify-change` 检查实现是否与产物匹配：
 
 ```text
-You: /rasen:verify
+You: /rasen-verify-change
 
 AI:  Verifying add-dark-mode...
 
@@ -471,15 +471,15 @@ implement-2fa                  wip
 
 | 命令 | 用途 | 适用场景 |
 |---------|---------|-------------|
-| `/rasen:propose` | 创建变更 + 规划产物 | 快速默认路径（`core` profile） |
-| `/rasen:explore` | 和 AI 一起思考想法 | 不确定时从这里开始：需求不明确、调查研究、比较方案 |
-| `/rasen:new` | 创建变更脚手架 | 扩展模式，显式产物控制 |
-| `/rasen:continue` | 创建下一个产物 | 扩展模式，逐步创建产物 |
-| `/rasen:apply` | 实施任务 | 准备编写代码 |
-| `/rasen:verify` | 验证实现 | 扩展模式，归档前 |
-| `/rasen:sync` | 合并增量规格 | 扩展模式，可选 |
-| `/rasen:archive` | 完成变更 | 所有工作已完成 |
-| `/rasen:bulk-archive` | 归档多个变更 | 扩展模式，并行工作 |
+| `/rasen-propose` | 创建变更 + 规划产物 | 快速默认路径（`core` profile） |
+| `/rasen-explore` | 和 AI 一起思考想法 | 不确定时从这里开始：需求不明确、调查研究、比较方案 |
+| `/rasen-new-change` | 创建变更脚手架 | 扩展模式，显式产物控制 |
+| `/rasen-continue-change` | 创建下一个产物 | 扩展模式，逐步创建产物 |
+| `/rasen-apply-change` | 实施任务 | 准备编写代码 |
+| `/rasen-verify-change` | 验证实现 | 扩展模式，归档前 |
+| `/rasen-sync-specs` | 合并增量规格 | 扩展模式，可选 |
+| `/rasen-archive-change` | 完成变更 | 所有工作已完成 |
+| `/rasen-bulk-archive-change` | 归档多个变更 | 扩展模式，并行工作 |
 
 ## 后续步骤
 

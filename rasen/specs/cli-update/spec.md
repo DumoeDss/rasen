@@ -40,13 +40,13 @@ The update command SHALL always update the core Rasen files and display an ASCII
 The archive slash command template SHALL support optional change ID arguments for tools that support `$ARGUMENTS` placeholder.
 
 #### Scenario: Archive command with change ID argument
-- **WHEN** a user invokes `/rasen:archive <change-id>` with a change ID
+- **WHEN** a user invokes `/rasen-archive-change <change-id>` with a change ID
 - **THEN** the template SHALL instruct the AI to validate the provided change ID against `rasen list`
 - **AND** use the provided change ID for archiving if valid
 - **AND** fail fast if the provided change ID doesn't match an archivable change
 
 #### Scenario: Archive command without argument (backward compatibility)
-- **WHEN** a user invokes `/rasen:archive` without providing a change ID
+- **WHEN** a user invokes `/rasen-archive-change` without providing a change ID
 - **THEN** the template SHALL instruct the AI to identify the change ID from context or by running `rasen list`
 - **AND** proceed with the existing behavior (maintaining backward compatibility)
 

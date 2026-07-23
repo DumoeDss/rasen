@@ -5,7 +5,7 @@
  * next step(s), plus a pure resolver that filters those steps against the
  * caller's installed-workflow set and skips ahead to the nearest installed
  * node when a direct successor is absent. This is the CLI-runtime
- * replacement for the hardcoded `/rasen:verify` -> `/rasen:ship` steering
+ * replacement for the hardcoded `/rasen-verify-change` -> `/rasen-ship` steering
  * that used to live in skill bodies (child 3 deletes that steering once
  * this module ships).
  *

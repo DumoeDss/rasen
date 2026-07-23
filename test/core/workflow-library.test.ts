@@ -370,4 +370,54 @@ describe('workflow library lifecycle', () => {
       code: 'builtin_delete_forbidden',
     });
   });
+
+  it('protects an expert referenced by a legacy colon requires.skills identity', async () => {
+    // A user workflow authored before the colon-namespace retirement can still
+    // carry `requires.skills: ['rasen:review']`. All three legacy-fallback sites
+    // must resolve that colon identity to the current 'review' expert:
+    //  - import validation (workflow-package/transaction.ts) must not reject it;
+    //  - catalog load (workflow-registry/registry.ts) must not drop it with a
+    //    skill_dependency_missing diagnostic;
+    //  - the referrer scan (workflow-library.ts) must still record the dependency.
+    const source = draft('legacy-colon-referrer');
+    const manifestPath = path.join(source, 'workflow.yaml');
+    fs.writeFileSync(
+      manifestPath,
+      fs.readFileSync(manifestPath, 'utf8').replace('  skills: []', "  skills:\n    - rasen:review")
+    );
+    // Import validation site: does not throw skill_dependency_missing.
+    await importWorkflow(source);
+
+    // Catalog-load site: the workflow stays in the catalog, no missing-skill diagnostic.
+    const catalog = loadWorkflowCatalog();
+    expect(catalog.get('legacy-colon-referrer')?.source).toBe('user');
+    expect(catalog.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: 'skill_dependency_missing' })
+    );
+
+    // Usage-scan site: dependency recorded against the resolved 'review' expert.
+    expect(scanWorkflowUsage('review')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'dependency', consumer: 'legacy-colon-referrer' }),
+      ])
+    );
+  });
+
+  it('attributes project-pipeline usage through a legacy colon stage skill', async () => {
+    // A pre-rebrand project pipeline names the review expert by its retired colon
+    // identity `rasen:review`. collectPipelineUsage must resolve it to the current
+    // hyphen identity so the expert's usage is still recorded (dependency guard).
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-workflow-project-'));
+    cleanup.push(project);
+    const pipelineDirectory = path.join(project, 'rasen', 'pipelines', 'uses-colon-skill');
+    fs.mkdirSync(pipelineDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(pipelineDirectory, 'pipeline.yaml'),
+      'stages:\n  - id: check\n    skill: rasen:review\n'
+    );
+
+    expect(scanWorkflowUsage('review', { projectRoot: project })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'pipeline' })])
+    );
+  });
 });

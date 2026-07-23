@@ -8,7 +8,7 @@ OPSX 用流畅的、基于操作的方式取代了旧的阶段锁定工作流。
 
 | 方面 | 旧版 | OPSX |
 |--------|--------|------|
-| **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/rasen:propose`, `/rasen:apply`, `/rasen:sync`, `/rasen:archive`（扩展工作流命令可选） |
+| **命令** | `/openspec:proposal`, `/openspec:apply`, `/openspec:archive` | 默认: `/rasen-propose`, `/rasen-apply-change`, `/rasen-sync-specs`, `/rasen-archive-change`（扩展工作流命令可选） |
 | **工作流** | 一次性创建所有产物 | 渐进式或一次性创建——由你选择 |
 | **回退** | 笨拙的阶段门控 | 自然——随时更新任何产物 |
 | **定制** | 固定结构 | Schema 驱动，完全可定制 |
@@ -284,21 +284,21 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 | 命令 | 用途 |
 |---------|---------|
-| `/rasen:propose` | 创建变更并一步生成规划产物 |
-| `/rasen:explore` | 无结构地思考想法 |
-| `/rasen:apply` | 从 tasks.md 执行任务 |
-| `/rasen:archive` | 完成并归档变更 |
+| `/rasen-propose` | 创建变更并一步生成规划产物 |
+| `/rasen-explore` | 无结构地思考想法 |
+| `/rasen-apply-change` | 从 tasks.md 执行任务 |
+| `/rasen-archive-change` | 完成并归档变更 |
 
 **扩展工作流（自定义选择）：**
 
 | 命令 | 用途 |
 |---------|---------|
-| `/rasen:new` | 创建新的变更脚手架 |
-| `/rasen:continue` | 创建下一个产物（一次一个） |
-| `/rasen:verify` | 验证实现是否匹配规格 |
-| `/rasen:sync` | 将 delta specs 合并到主 specs |
-| `/rasen:bulk-archive` | 一次归档多个变更 |
-| `/rasen:onboard` | 引导式端到端入门工作流 |
+| `/rasen-new-change` | 创建新的变更脚手架 |
+| `/rasen-continue-change` | 创建下一个产物（一次一个） |
+| `/rasen-verify-change` | 验证实现是否匹配规格 |
+| `/rasen-sync-specs` | 将 delta specs 合并到主 specs |
+| `/rasen-bulk-archive-change` | 一次归档多个变更 |
+| `/rasen-onboard` | 引导式端到端入门工作流 |
 
 使用 `rasen config profile` 启用扩展命令，然后运行 `rasen update`。
 
@@ -306,9 +306,9 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 | 旧版 | OPSX 对应命令 |
 |--------|-----------------|
-| `/openspec:proposal` | `/rasen:propose`（默认）或 `/rasen:new` 然后 `/rasen:continue`（扩展） |
-| `/openspec:apply` | `/rasen:apply` |
-| `/openspec:archive` | `/rasen:archive` |
+| `/openspec:proposal` | `/rasen-propose`（默认）或 `/rasen-new-change` 然后 `/rasen-continue-change`（扩展） |
+| `/openspec:apply` | `/rasen-apply-change` |
+| `/openspec:archive` | `/rasen-archive-change` |
 
 ### 新功能
 
@@ -316,13 +316,13 @@ AI 会帮你识别哪些是必要的，哪些可以精简。
 
 **细粒度产物创建：**
 ```
-/rasen:continue
+/rasen-continue-change
 ```
 根据依赖关系一次创建一个产物。当你想逐步审查时使用此命令。
 
 **探索模式：**
 ```
-/rasen:explore
+/rasen-explore
 ```
 在提交变更之前，与伙伴一起思考想法。
 
@@ -380,7 +380,7 @@ OPSX 使用操作而非阶段：
                      specs, design)
 ```
 
-当你运行 `/rasen:continue` 时，它会检查哪些已就绪并���供下一个产物。你也可以按任意顺序创建多个就绪的产物。
+当你运行 `/rasen-continue-change` 时，它会检查哪些已就绪并���供下一个产物。你也可以按任意顺序创建多个就绪的产物。
 
 ### Skills 与 Commands
 
@@ -415,7 +415,7 @@ Skills 被多种 AI 编码工具识别，并提供更丰富的元数据。
 **有来自旧版工作流的活跃变更？**
 
 ```
-/rasen:apply add-my-feature
+/rasen-apply-change add-my-feature
 ```
 
 OPSX 会读取现有产物并从你离开的地方继续。
@@ -423,7 +423,7 @@ OPSX 会读取现有产物并从你离开的地方继续。
 **想为现有变更添加更多产物？**
 
 ```
-/rasen:continue add-my-feature
+/rasen-continue-change add-my-feature
 ```
 
 根据已有内容显示哪些可以创建。
@@ -576,13 +576,13 @@ project/
 ### 命令速查表
 
 ```text
-/rasen:propose      快速开始（默认 core profile）
-/rasen:apply        执行任务
-/rasen:archive      完成并归档
+/rasen-propose      快速开始（默认 core profile）
+/rasen-apply-change        执行任务
+/rasen-archive-change      完成并归档
 
 # 扩展工作流（如果启用）：
-/rasen:new          创建变更脚手架
-/rasen:continue     创建下一个产物
+/rasen-new-change          创建变更脚手架
+/rasen-continue-change     创建下一个产物
 ```
 
 ---

@@ -393,7 +393,7 @@ The `rasen status` and `rasen instructions` (apply) surfaces SHALL emit the runt
 Note: the current `Next:` hint prints only the bare workflow name and a
 prose reason — never a runnable `rasen ...` command line, because under
 skills-only delivery the next workflow is invoked as a skill in the user's
-agent (e.g. `/rasen:verify`), not as a scoped `rasen` subcommand a
+agent (e.g. `/rasen-verify-change`), not as a scoped `rasen` subcommand a
 `--store`/`--project` flag would need to be threaded onto. The store/
 project-flag clause above therefore has no antecedent today and is
 vacuously satisfied; it stays in the requirement as a forward-looking

@@ -82,27 +82,27 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getGoalCommandSkillTemplate: '4be69d8ff92cf0a8d60e503e82a67e76155eff1c673120f2bcab463124aedb37',
   getHelpSkillTemplate: 'f45bbe71a1a337e3155d30950cc0f8ae77c6cf5c078aa6accc847220c91d0f2e',
   // Expert skill templates (inlined; see expert-template-inlining)
-  getBenchmarkSkillTemplate: '702c789fc07d7b65666e8e0c3fc32c3ddfd404c28e2dce1ede84d044eac7c561',
-  getCarefulSkillTemplate: 'e8d342630bb867799f6356252199ccd318ba546048d3d01eb3b287aeec4bb99a',
-  getChromeUseSkillTemplate: '78d042d37bc3a2e949c3e4cf4863c1d35cdf36376f49e4cb595b397c9d2e5069',
-  getCodebaseDesignSkillTemplate: '18ba11e92021633cc216d3bbbf5962542d6d9f30a8ad882d1f7a9636fd929a1f',
-  getCodexSkillTemplate: '7f23b8cf1da78fcdd39c380b9b74764d4c4098e06bb7c8e9812054f7f11ad946',
-  getCsoSkillTemplate: '3742557b4dd04f0eb95d2048404c172e7a24ecdf9fd0b1d1a186a100d8362f89',
-  getDesignConsultationSkillTemplate: '74c3319990faab725d1df62db03b3d6a8b8e2b8229461249fd0f1e28d20e0831',
-  getDesignReviewSkillTemplate: '0ee7b311e0a03401a133f6c63f3ef1ac700708ad8ffc135e6e77aaf19b977a16',
-  getFreezeSkillTemplate: '9df5e9cbade2c7935f661ec83732927355e03578f52d47503acd0a32a57aea09',
-  getGuardSkillTemplate: '98c4694a5d36aa158eb52ccca58ca2fd787c2986695f0d328d78bb8b39f52ba3',
-  getInvestigateSkillTemplate: '8e3b407408309461007f0fdb53cc3266e91cc719275b14e7dde29846eedf51b0',
-  getNavigatorSkillTemplate: '38ee23e6e4e1a53c680b5c04dca72b8e4da9c4239dd34e828b477130a129e4c7',
-  getOfficeHoursSkillTemplate: '03746117fcc781c755a92a5d435782339c3ef0d65d1267f265b432d8718da063',
-  getPrototypeSkillTemplate: 'dcd8aadd8544c757079efaa6e06b402a9bf07f7472dabf8bc9b8c3e9df6426e1',
-  getQaSkillTemplate: 'e165ec8f2dd92b5be29870ba8fce1d4061c33620208e4a1b66f4ffceea29f586',
-  getQaOnlySkillTemplate: '82adf8ce6e9fd530340b2d7a687714d9726c9e6038a226b5eb68e14adcc830d1',
-  getReviewSkillTemplate: '208332231bceafa883316cc4f787edb4a93857f391f1829efd7c2f08a0e01fe1',
-  getTddSkillTemplate: '5c4149303ad3b322d0500431b67d7a4c35af2e4071c56d2499ae8f511de989e1',
-  getUnfreezeSkillTemplate: '6bedb3316477b441b7da2f82ee465ca0233a36cd46cbf2434a8f185b14126f87',
-  getWorkflowAuthorSkillTemplate: '59356ac89a56e9a3915df29050f0323be59b0d9a45a78db1b0082fd87deeafae',
-  getWorkflowReviewSkillTemplate: 'a708138b0c17df357cb97b038fe74ec9c925bd4f67f57c71504d6e788c980363',
+  getBenchmarkSkillTemplate: 'e532d9adbae401c36d797101b3220fa41a7c89788368e2022734c64219757008',
+  getCarefulSkillTemplate: 'e1d464d2b51dda32c0ef37f7e9346ed41dbfec15f5ba56e3f3ecf2dd2045bbec',
+  getChromeUseSkillTemplate: '887f74bc1c0d2c1a38f685352d0dd7a26182ca0f88705581f139f676499914a9',
+  getCodebaseDesignSkillTemplate: 'c0459451628588b196d05aba88e9c94e02123cc1d30693795ff9acd8b39b5730',
+  getCodexSkillTemplate: '5d12d958487a8fc4a5b9ea4f9e528fcc6dfbd9646a9f469a315aeadcbba1d1c1',
+  getCsoSkillTemplate: '2f0c59342bf1e7f23b8477327c735afad4a858fc98d24e49a50c02e9d53de531',
+  getDesignConsultationSkillTemplate: '8a3ef8de2f3a17af5c59fcfd0606f7d84ee467baaf034d204ae070785e3455ce',
+  getDesignReviewSkillTemplate: '6edce579c579acfa1526afc3175da8d4ac529f9f13371d46b6df1a251040c67a',
+  getFreezeSkillTemplate: '7432fb383e3e12cec423308e3f0835488be99a61eb8d557f337dddba595210f2',
+  getGuardSkillTemplate: 'ab5c3028eae0d532d096dc13be0e9101c9ed7cf7251c19f6bf0ce6190b106e2a',
+  getInvestigateSkillTemplate: '2be629df42ad6beda5e1cfced4e4db678d99b9a6519a1367137e9e2a97990d59',
+  getNavigatorSkillTemplate: 'ba25e60a398399dca52a8f56eec68cb51bd8c6694d4987a9977bf2f49ab20cad',
+  getOfficeHoursSkillTemplate: '4a083781872fdf1ca991806be02d506b177f9059f6d35ef58678dad459b78fed',
+  getPrototypeSkillTemplate: 'cbe38ed637dce4ba18586795111ab6cf70929b3225ee1b6eac734953e0a25958',
+  getQaSkillTemplate: '3c5ec8f914024f60b916d2bb12de3277e342c23e135b18e2024e4299e190b2c9',
+  getQaOnlySkillTemplate: '2e7f55a9664bd1a2e34ab1be74fe0ad70494436addb6cad561aef85423599dc3',
+  getReviewSkillTemplate: '9e4c564be0fdfa22b2d78e4524368c7b9800cdbc4144d1eb6dc8b3bada372395',
+  getTddSkillTemplate: '5ee24e317b5f1a1ab114153212a72ed633a40e1f1268c34b31102d9be9607701',
+  getUnfreezeSkillTemplate: 'a8f1126bc4b1a9db8dfbae048bde8fe340eca8af68bc5d6dca50a5cec8dacf81',
+  getWorkflowAuthorSkillTemplate: '394ba85dc1d03fde795bc926e87668ae05a29153d470b472471a0b563474af8e',
+  getWorkflowReviewSkillTemplate: 'af745dd997e44a1a758a59b6873cf86a8cc1304d3b70fa00cd920b9ad6f0e504',
 };
 
 const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
@@ -130,27 +130,27 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-goal': '75c616c7602cc914da2cafa9f8424934dc130eb5d1d59560e6a72e496032e02a',
   'rasen-help': 'd4741dd2c9502d7fdb972d57b8d831d99414d4c138832f763c0bac5a01b5fcd6',
   // Expert skills (inlined; see expert-template-inlining)
-  'rasen-benchmark': '64c4d22eab9e68048bd3dc304cab56db64e65e79aa234ad37667d38818b901d9',
-  'rasen-careful': '1bd68426e8c5ffcdcdaa724211ea2580c1cd3e2cf213eff21b8afc9d4bed539d',
-  'rasen-chrome-use': '4d08a5c379a47b48d3dc5ae6f6e9699590e49fa890edf6a1c5277688eb233b80',
-  'rasen-codebase-design': 'eb07a5047b731caca9d59e13838cf25a233cee154a3063d2e43fefe14a754dec',
-  'rasen-codex': '0ea96bc867fa915041f2ef65042334b171b9568d3c8c3ee981d694fa4a83a59b',
-  'rasen-cso': 'cec6228e9acb12c97259607c0c033076ee9b69b40a42d36ab1d1db530b597cef',
-  'rasen-design-consultation': 'e8e8c53cf90896addfd71115bdda8f75cc03c41437408e2648e9530c8760457b',
-  'rasen-design-review': '79c287f542fa8cea87037a43c935c88f3ca660dd33c5543a3d9c15413c0248b4',
-  'rasen-freeze': 'f3ef82c79cf162b59aaaa3b0b2706f919cd6bfb4cade0678c743616c804db937',
-  'rasen-guard': 'e9f77e4fdaf73fab74128c2cdb469bde69bf6432ed7e1d1e27de360e6eca7c59',
-  'rasen-investigate': '1aca9ed41ed12cab377a12e77b276f0bfa96bb7ec675b564f98ac572b98e6514',
-  'rasen-navigator': '67847739c03150558d2a6ed3d26cad9e832286d9295390c6850886e32a2169ec',
-  'rasen-office-hours': '6a4aca45de54bf2a7ac19ae65c3fa38e89834da3ee17daeacb835d4886da2be9',
-  'rasen-prototype': 'e0747e26486e63f5579bf497b78376d7e6b1994eab89c351eda7e6412d5b0da8',
-  'rasen-qa': '948c6ac7af99f461bd2d817c031acd5efac3fe1ffc75db146e67f048eec3883b',
-  'rasen-qa-only': '3adae1c4f0754663659f4fd49adeb30a59779322073638dd22aebc57cdd2c487',
-  'rasen-review': '085ffaa479d47fd331845b6092daec476be379639b655b8b539a4bc27b733dd5',
-  'rasen-tdd': '8d953757ae31296a628010b07d1f229d4c3d983e44836e3b70031aafcbb9a463',
-  'rasen-unfreeze': 'ca727311494108d775f3f34f7c21ea104943e2e12f17f5c1051e3952cd5486e2',
-  'rasen-workflow-author': 'd6b1ea3ef28fe93f06fa48c3e57b896b5c4d3ea60e1db34f51778aec1e257077',
-  'rasen-workflow-review': '94e56651467d0687e1a20d1c425ab75795b0092eed608ecc52db1c9c6e232fd3',
+  'rasen-benchmark': 'e0b06186a7c28369ebec78d0b8a7b1a68c44b18b1ba06c4bf52d44c6e67bac55',
+  'rasen-careful': 'b3f81a672fe3f110fb21574aefe5f4a908fb888ad090901291d83dc542f4ebd8',
+  'rasen-chrome-use': 'eaf2f68497a641d62dc3916893c9e8789a9aced243ad7914499a1162465a051e',
+  'rasen-codebase-design': 'd84f401fddbab582447df483858e021ab6b859516bc021ed1f2ca8134ba0bd28',
+  'rasen-codex': 'e053f25f97257678608eb0d0e35dd27f0af4104bf79e53a137547ed6df9110df',
+  'rasen-cso': 'fbb542b1c9be07c2ab4ade0e8ba1c9982fe9dcdeaa7dcdc9af2ca957dd7c3ecf',
+  'rasen-design-consultation': '63d460f6b08dbd858823d282d1b449dc1a14735ae04bbdd4b367a5b5b22cfc1e',
+  'rasen-design-review': 'a99d8b8990187fbd53bfbda8c80821bc8012386af45049a22ca50e722c6d6f09',
+  'rasen-freeze': 'd6e38d901e456e28c9d1cc51fac6462be0d9d8aff885e34697fce303c8d89de5',
+  'rasen-guard': 'b10f98eaf65e41dd37a58c9ddc4bba49b005f65e2c66eb4b3ccabeabed174d39',
+  'rasen-investigate': 'e8e02b011b308abd910917d26399c46a2824b9708c6b1a1f42037768afff7469',
+  'rasen-navigator': '413bed4b17971a392f035cd94ae4ce8ab7b5440ec37ccbd9b0b83b2c8a85c035',
+  'rasen-office-hours': 'f2248a99203aa18b3af7cb3c7b1dcb92db95ad21c5b47156dac14ac890f0700f',
+  'rasen-prototype': '28b8e21f7079c4a39c4088c0b5e6cb6741302b35c02a9e90da417611c917dd3e',
+  'rasen-qa': '1eeba9dfcd33f21f371ff103ac65d2d0b2937f6a0d1d0101612720b7d208d5fc',
+  'rasen-qa-only': '3b83a6a334c62ed08064e1498ab67564318b8bde524e4634ee737034de14d9c6',
+  'rasen-review': '18fa34083ee719dc2fefba5a8bb44b08c10d220a0b08eb5266a6cfdf18af3951',
+  'rasen-tdd': 'fe0fead48016db070ad3b55b9cd6c0bc45fd7b220ba410373d4fc6b71d21eefe',
+  'rasen-unfreeze': 'ae901355f45f538d1567d9848198a74b55726a4ae4193052c49f1bd55f0a11b9',
+  'rasen-workflow-author': '1dc87300dcf059accbf84cd82af89c48230a94bc5ec1b44e44f809e8d160ded4',
+  'rasen-workflow-review': '42ae9b2f1dc938b83b9380a0867a6fde99bbcba87af8617c464ee431b5f0837f',
 };
 
 // Intentionally excludes getFeedbackSkillTemplate: this list only models templates
@@ -373,11 +373,11 @@ describe('skill templates split parity', () => {
     expect(content).not.toMatch(/rasen-ship\b/);
   });
 
-  // The /rasen:auto skill embeds the orchestration playbook; its changeRoot
+  // The /rasen-auto skill embeds the orchestration playbook; its changeRoot
   // blackboard teaching (tasks 3.1/3.2) and store-scoped resume teaching (M1)
   // are otherwise unpinned by any hash (auto is not in the golden-master map),
   // so a regression that dropped either would pass silently. Pin them here.
-  it('teaches changeRoot blackboard resolution and store-scoped resume in the generated rasen:auto skill', () => {
+  it('teaches changeRoot blackboard resolution and store-scoped resume in the generated rasen-auto skill', () => {
     const autoSkill = getSkillTemplates().find(({ dirName }) => dirName === 'rasen-auto');
     expect(autoSkill, 'rasen-auto skill template').toBeDefined();
     const content = generateSkillContent(autoSkill!.template, 'PARITY-BASELINE');

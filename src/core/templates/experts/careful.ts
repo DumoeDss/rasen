@@ -37,7 +37,7 @@ To deactivate, end the conversation or start a new one. Hooks are session-scoped
 
 export function getCarefulSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:careful',
+    name: 'rasen-careful',
     description: 'Destructive command guardrails — pause, explain, and confirm before any risky or irreversible shell command',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
