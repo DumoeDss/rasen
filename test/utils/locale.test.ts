@@ -189,6 +189,18 @@ describe('resolveCliLocale', () => {
     ).toBe('en');
   });
 
+  it('falls back to a supported runtime-reported locale when the macOS probe fails', () => {
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: {},
+        platform: 'darwin',
+        systemLocale: 'ja-JP',
+        readOsLocale: () => undefined,
+      })
+    ).toBe('ja');
+  });
+
   it.each(['C', 'C.UTF-8', 'POSIX'])(
     'treats the portable locale %j as an explicit English request without probing the OS',
     (value) => {

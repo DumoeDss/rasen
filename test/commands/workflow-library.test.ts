@@ -331,7 +331,12 @@ describe('workflow command', () => {
     );
   });
 
-  it('exposes a declared skill title verbatim in list and show output', async () => {
+  it.each([
+    ['en', 'Title'],
+    ['ja', 'タイトル'],
+    ['zh-cn', '标题'],
+  ])('exposes a declared skill title verbatim in list and show output under %s', async (lang, titleLabel) => {
+    process.env.RASEN_LANG = lang;
     const id = 'titled-workflow';
     const draft = path.join(home, 'drafts', id);
     await runWorkflowCommand(['init', id, '--output', draft, '--json']);
@@ -364,7 +369,7 @@ describe('workflow command', () => {
 
     log.mockClear();
     await runWorkflowCommand(['show', id]);
-    expect(log).toHaveBeenCalledWith('Title: Example Local Verify');
+    expect(log).toHaveBeenCalledWith(`${titleLabel}: Example Local Verify`);
 
     log.mockClear();
     await runWorkflowCommand(['show', 'apply', '--json']);
