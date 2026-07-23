@@ -21,6 +21,7 @@
   { "id": "goal-iterate", "skillName": "rasen-goal-iterate", "dirName": "rasen-goal-iterate", "kind": "internal" },
   { "id": "goal-report", "skillName": "rasen-goal-report", "dirName": "rasen-goal-report", "kind": "internal" },
   { "id": "goal-command", "skillName": "rasen-goal", "dirName": "rasen-goal", "kind": "driver" },
+  { "id": "audit", "skillName": "rasen-audit", "dirName": "rasen-audit", "kind": "task" },
   { "id": "benchmark", "skillName": "rasen-benchmark", "dirName": "rasen-benchmark", "kind": "expert" },
   { "id": "careful", "skillName": "rasen-careful", "dirName": "rasen-careful", "kind": "expert" },
   { "id": "chrome-use", "skillName": "rasen-chrome-use", "dirName": "rasen-chrome-use", "kind": "expert" },

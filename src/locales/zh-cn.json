@@ -288,6 +288,10 @@
         "goal-command": {
           "name": "运行目标循环",
           "description": "为长期目标编排规划、迭代和报告"
+        },
+        "audit": {
+          "name": "会话审计",
+          "description": "诊断一次会话的 token 花费——定位会话、运行审计并解读报告"
         }
       },
       "experts": {
@@ -820,6 +824,10 @@
     "Self-reported context size; below the keepalive floor stands down immediately": "自报的上下文规模；低于保活下限时立即停机退出",
     "Beat duration in seconds (default 270, max 300)": "节拍时长（秒，默认 270，上限 300）",
     "Report context-window occupancy of a transcript from its recorded usage": "根据已记录的使用量报告 transcript 的上下文窗口占用率",
+    "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)": "根据 transcript 分析一次会话的 token 花费（实验性功能：解析内部未公开的 transcript 格式，harness 升级可能导致失效）",
+    "Override the Claude projects directory a session id is resolved against": "覆盖用于解析 session id 的 Claude projects 目录",
+    "Write the report to this file instead of the default analytics directory": "将报告写入此文件，而非默认的 analytics 目录",
+    "Open the shipped viewer in your default browser, pre-loaded with the report": "在默认浏览器中打开随包分发的 viewer，并预加载本次生成的报告",
     "Report relationship health for the resolved Rasen root": "报告已解析 Rasen 根目录的关系健康状况",
     "Report whether the resident daemon is running": "报告常驻守护进程是否正在运行",
     "Reset all configuration (required)": "重置所有配置（必需）",

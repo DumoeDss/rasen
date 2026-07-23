@@ -162,6 +162,43 @@ export function findRolloutPath(threadId: string, options: FindRolloutPathOption
   return scanArchivedSessions(codexHome, threadId);
 }
 
+/**
+ * Parsed first line of a candidate rollout, or `undefined` when
+ * unreadable/malformed/not `session_meta`. Shared by `agent-context.ts`'s
+ * `findLatestRollout` (cwd/non-forked filtering) and
+ * `src/core/token-audit/discover-codex.ts`'s subagent-family BFS
+ * (`parent_thread_id` chain) — the one implementation of "read a rollout's
+ * session_meta first line" (design D5, relocated from `agent-context.ts`'s
+ * private `readSessionMeta`, behavior unchanged).
+ */
+export function readRolloutSessionMeta(rolloutPath: string): Record<string, unknown> | undefined {
+  let content: string;
+  try {
+    content = fs.readFileSync(rolloutPath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  let firstLine: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      firstLine = trimmed;
+      break;
+    }
+  }
+  if (!firstLine) return undefined;
+  let row: Record<string, unknown>;
+  try {
+    row = JSON.parse(firstLine) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (row.type !== 'session_meta') return undefined;
+  const payload = row.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  return payload as Record<string, unknown>;
+}
+
 function readJsonlLines(rolloutPath: string): Record<string, unknown>[] {
   const content = fs.readFileSync(rolloutPath, 'utf-8');
   const rows: Record<string, unknown>[] = [];

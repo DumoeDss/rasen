@@ -1,0 +1,3 @@
+{"timestamp":"2026-01-01T00:00:00.000Z","type":"session_meta","payload":{"session_id":"dddddddd-0000-0000-0000-000000000004","cwd":"/synthetic/fixture","thread_source":"user"}}
+{"timestamp":"2026-01-01T00:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1"}}
+{"timestamp":"2026-01-01T00:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":200,"output_tokens":"fifty","reasoning_output_tokens":10,"total_tokens":1260},"model_context_window":300000}}}

@@ -18,6 +18,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   readRolloutOccupancy,
+  readRolloutSessionMeta,
   listRolloutFiles,
   resolveCodexHome,
   CODEX_CLI_VERSION_PREMISE,
@@ -361,35 +362,6 @@ export function findLatestMainTranscript(baseDir: string): string {
   return newest;
 }
 
-/** Parsed first line of a candidate rollout, or `undefined` when unreadable/malformed/not `session_meta`. */
-function readSessionMeta(rolloutPath: string): Record<string, unknown> | undefined {
-  let content: string;
-  try {
-    content = fs.readFileSync(rolloutPath, 'utf-8');
-  } catch {
-    return undefined;
-  }
-  let firstLine: string | undefined;
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed) {
-      firstLine = trimmed;
-      break;
-    }
-  }
-  if (!firstLine) return undefined;
-  let row: Record<string, unknown>;
-  try {
-    row = JSON.parse(firstLine) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-  if (row.type !== 'session_meta') return undefined;
-  const payload = row.payload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
-  return payload as Record<string, unknown>;
-}
-
 /**
  * Newest Codex rollout under `sessionsDir` whose recorded session `cwd`
  * (`session_meta.payload.cwd`, resolved) equals the resolved probe `cwd`,
@@ -408,7 +380,7 @@ export function findLatestRollout(sessionsDir: string, cwd: string): string {
   const candidates = listRolloutFiles(sessionsDir).sort((a, b) => b.mtimeMs - a.mtimeMs);
 
   for (const candidate of candidates) {
-    const meta = readSessionMeta(candidate.path);
+    const meta = readRolloutSessionMeta(candidate.path);
     if (!meta) continue;
     if (meta.forked_from_id !== undefined || meta.parent_thread_id !== undefined) continue;
     const metaCwd = meta.cwd;

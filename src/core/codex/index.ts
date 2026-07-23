@@ -44,6 +44,7 @@ export {
   findRolloutPath,
   readRolloutOccupancy,
   readRolloutConversation,
+  readRolloutSessionMeta,
   listRolloutFiles,
   type FindRolloutPathOptions,
   type RolloutOccupancy,

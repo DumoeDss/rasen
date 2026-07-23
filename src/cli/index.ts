@@ -835,6 +835,33 @@ agentCmd
     }
   });
 
+agentCmd
+  .command('audit <sessionId|path>')
+  .description(
+    "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)"
+  )
+  .option('--projects-dir <dir>', 'Override the Claude projects directory a session id is resolved against')
+  .option('--out <path>', 'Write the report to this file instead of the default analytics directory')
+  .option('--runtime <runtime>', 'Force detection to "claude" or "codex" instead of sniffing the file')
+  .option('--json', 'Output as JSON')
+  .option('--open', 'Open the shipped viewer in your default browser, pre-loaded with the report')
+  .action(async (target: string, options?: {
+    projectsDir?: string;
+    out?: string;
+    runtime?: string;
+    json?: boolean;
+    open?: boolean;
+  }) => {
+    try {
+      const agentCommand = new AgentCommand();
+      await agentCommand.audit(target, options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 export { program };
 
 export function runCli(argv = process.argv): void {
