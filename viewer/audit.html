@@ -118,7 +118,7 @@
   </div>
 
   <div class="card" id="timelineCard">
-    <h2>Agent timeline <span style="font-weight:400;text-transform:none;color:var(--muted)">— rows in activation order · tick height = context size · churn events enlarged</span></h2>
+    <h2>Agent timeline <span id="tlDesc" style="font-weight:400;text-transform:none;color:var(--muted)">— rows in activation order · tick height = context size · churn events enlarged</span></h2>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="legend" id="tlLegend"></div>
       <span class="spacer" style="flex:1"></span>
@@ -232,8 +232,10 @@ const CLASS_STYLE = {
 // its own render path rather than reading undefined fields off the Claude one.
 function render(j) {
   const runtime = (j.session && j.session.runtime) || 'claude';
+  const codexHasTimeline = runtime === 'codex' && j.requests && Array.isArray(j.requests.rows) && j.requests.rows.length > 0;
   document.getElementById('compositionCard').classList.toggle('hidden', runtime !== 'claude');
-  document.getElementById('timelineCard').classList.toggle('hidden', runtime !== 'claude');
+  // Timeline card: always for Claude; for Codex only when the enriched per-request rows exist (D8 backward tolerance).
+  document.getElementById('timelineCard').classList.toggle('hidden', runtime !== 'claude' && !codexHasTimeline);
   renderCaveats(j);
   if (runtime === 'codex') {
     renderCodex(j);
@@ -241,6 +243,16 @@ function render(j) {
     renderClaude(j);
   }
 }
+
+// Codex class styling: the `rebase` cause is ALWAYS an injected user message
+// (Codex rollouts carry no message chain), so its legend reads "injection" and
+// never claims a conversation-branch/chain fork (spec: honest attribution).
+const CODEX_CLASS_STYLE = Object.assign({}, CLASS_STYLE, {
+  'ttl-expiry':   { v: '--warn',     label: 'rebuild: idle-gap (approx.)' },
+  'rebase':       { v: '--critical', label: 'rebuild: injection (user message)' },
+  'context-drop': { v: '--serious',  label: 'rebuild: context drop / compaction' },
+  'unattributed': { v: '--violet',   label: 'rebuild: unattributed' },
+});
 
 // M1 fix: honestly-flagged report caveats (e.g. a Codex fork/resume whose
 // replayed parent history isn't per-request trustworthy) — cheap top-of-page
@@ -319,12 +331,25 @@ function renderComposition(j) {
 
 // ---------- timeline ----------
 let pxPerMin = null;
-document.getElementById('zoomIn').onclick = () => { pxPerMin *= 1.5; renderTimeline(DATA); };
-document.getElementById('zoomOut').onclick = () => { pxPerMin /= 1.5; renderTimeline(DATA); };
+let tlOpts = null; // opts for the currently-rendered timeline (so zoom re-renders the same runtime path)
+document.getElementById('zoomIn').onclick = () => { pxPerMin *= 1.5; renderTimeline(DATA, tlOpts); };
+document.getElementById('zoomOut').onclick = () => { pxPerMin /= 1.5; renderTimeline(DATA, tlOpts); };
 
 const tlHover = { rows: [] }; // per row: sorted [{x, w, html}]
 
-function renderTimeline(j) {
+// opts (column-name indirection, design D8): { classStyle, events, readCol, evidence }.
+//  - readCol: the column holding the "cache read" figure (Claude: cacheRead; Codex: cachedInput).
+//  - events: the per-request rebuild/churn event list (Claude: churnEvents; Codex: rebuildEvents).
+//  - evidence(ev): tooltip suffix naming the evidence flags for that runtime.
+function renderTimeline(j, opts) {
+  opts = opts || {};
+  tlOpts = opts;
+  const classStyle = opts.classStyle || CLASS_STYLE;
+  const tlDesc = document.getElementById('tlDesc');
+  if (tlDesc) tlDesc.textContent = opts.headerDesc || '— rows in activation order · tick height = context size · churn events enlarged';
+  const events = opts.events || j.churnEvents || [];
+  const readCol = opts.readCol || 'cacheRead';
+  const evidence = opts.evidence || ((ev) => (ev.forked ? ' · forked' : '') + (ev.injected ? ' · injected' : ''));
   const { columns, classes, rows } = j.requests;
   const col = Object.fromEntries(columns.map((c, i) => [c, i]));
   const agents = j.agents;
@@ -361,12 +386,12 @@ function renderTimeline(j) {
   // marks
   tlHover.rows = agents.map(() => []);
   const churnByKey = new Map(); // "agent:ts" -> event (for tooltip enrichment)
-  for (const e of j.churnEvents) churnByKey.set(e.agent + ':' + e.ts, e);
+  for (const e of events) churnByKey.set(e.agent + ':' + e.ts, e);
   for (const r of rows) {
     const ai = r[col.agent], ts = r[col.ts];
     if (ts === null) continue;
     const cls = classes[r[col.class]];
-    const st = CLASS_STYLE[cls] || CLASS_STYLE.unattributed;
+    const st = classStyle[cls] || classStyle.unattributed;
     const y = TOPH + ai * ROWH;
     const x = X(ts);
     const ctx = r[col.context];
@@ -380,8 +405,8 @@ function renderTimeline(j) {
       x,
       html: `<b>${esc(agents[ai].label)}</b> · ${hhmmss(ts)}<br>` +
         `<span class="t2">${esc(st.label)}</span><br>` +
-        `context ${fmt(ctx)} · read ${fmt(r[col.cacheRead])} · write ${fmt(r[col.cacheWrite])} · out ${fmt(r[col.output])}` +
-        (ev ? `<br><span class="t2">gap ${ev.gapMin ?? '?'}m · rewrote ${fmt(ev.rewrote)} · prevPrefix ${fmt(ev.prevPrefix)}${ev.forked ? ' · forked' : ''}${ev.injected ? ' · injected' : ''}</span>` : ''),
+        `context ${fmt(ctx)} · read ${fmt(r[col[readCol]])} · write ${fmt(r[col.cacheWrite])} · out ${fmt(r[col.output])}` +
+        (ev ? `<br><span class="t2">gap ${ev.gapMin ?? '?'}m · rewrote ${fmt(ev.rewrote)} · prevPrefix ${fmt(ev.prevPrefix)}${evidence(ev)}</span>` : ''),
     });
   }
   for (const arr of tlHover.rows) arr.sort((a, b) => a.x - b.x);
@@ -391,7 +416,7 @@ function renderTimeline(j) {
   attachTimelineHover(TOPH, ROWH, LABELW);
 
   // legend (labels always beside color — status hues never color-alone)
-  document.getElementById('tlLegend').innerHTML = Object.values(CLASS_STYLE).map((s) =>
+  document.getElementById('tlLegend').innerHTML = Object.values(classStyle).map((s) =>
     `<span><span class="sw" style="background:${css(s.v)};opacity:${s.dim ? 0.45 : 1}"></span>${esc(s.label)}</span>`).join('');
 }
 
@@ -493,77 +518,144 @@ function renderSidePanels(j) {
      <table><thead><tr><th class="left">idle gap (consecutive reqs)</th><th>count</th></tr></thead><tbody>${gaps}</tbody></table>`;
 }
 
-// ---------- Codex render path (design D6 / spec: Codex report omits Claude-specific accounting) ----------
-// No pricing model, no churn-cause taxonomy, no billed-input-equivalent — a
-// Codex report exposes raw token component totals and a cache-hit ratio
-// instead. There is no flat requests[]/churnEvents[] timeline to draw, so
-// the timeline and composition cards stay hidden (toggled in render()) and
-// this path renders tiles + an agent table + a flat turns table instead.
+// ---------- Codex render path (design D6/D8) ----------
+// A Codex report exposes raw token component totals and a cache-hit ratio
+// (no billed-equivalent, no Claude churn taxonomy). When the enriched fields
+// are present (per-request `requests` rows, `rebuildEvents`, occupancy,
+// bursts, aborted turns) this path draws the multi-thread timeline, an
+// itemized rebuild-events table, occupancy, and the unsupported-dimensions
+// disclosure. Every enriched field is optional — an older Codex report
+// (totals + turns only) still renders (design D8 backward tolerance).
 function renderCodex(j) {
-  document.getElementById('secondTableTitle').textContent = 'Turns (per-agent, cumulative-delta derived)';
-  document.getElementById('sidePanelsTitle').textContent = 'Session totals';
+  const hasRebuilds = Array.isArray(j.rebuildEvents) && j.rebuildEvents.length > 0;
+  document.getElementById('secondTableTitle').textContent = hasRebuilds ? 'Cache-rebuild events' : 'Turns (per-agent, cumulative-delta derived)';
+  document.getElementById('sidePanelsTitle').textContent = 'Turns · occupancy · disclosure';
   renderMeta(j);
   renderCodexTiles(j);
+  if (j.requests && Array.isArray(j.requests.rows) && j.requests.rows.length > 0) {
+    renderTimeline(j, {
+      classStyle: CODEX_CLASS_STYLE,
+      headerDesc: '— rows in activation order · tick height = context size · cache-rebuild events enlarged',
+      events: j.rebuildEvents || [],
+      readCol: 'cachedInput',
+      evidence: (ev) =>
+        (ev.compacted ? ' · compacted' : '') + (ev.rolledBack ? ' · rolled-back' : '') + (ev.injected ? ' · injected' : ''),
+    });
+  }
   renderCodexAgentTable(j);
-  renderCodexTurnsTable(j);
-  renderCodexSidePanel(j);
+  if (hasRebuilds) renderCodexRebuildTable(j); else renderCodexTurnsTable(j, 'churnTableWrap');
+  renderCodexSidePanel(j, hasRebuilds);
+}
+
+// Occupancy summary across agents (design D6): the peak context and, when any
+// agent reported a model context window, the peak occupancy relative to it.
+function codexOccupancy(j) {
+  let peak = 0, window = null;
+  for (const a of j.agents) {
+    if (typeof a.peakContext === 'number' && a.peakContext > peak) peak = a.peakContext;
+    if (typeof a.modelContextWindow === 'number' && a.modelContextWindow > 0) {
+      window = window === null ? a.modelContextWindow : Math.max(window, a.modelContextWindow);
+    }
+  }
+  return { peak, window };
 }
 
 function renderCodexTiles(j) {
   const t = j.totals.rawTokens;
+  const occ = codexOccupancy(j);
   const tiles = [
     [fmtInt(j.totals.requests), 'derived requests', 'one per cumulative-counter change'],
     [fmt(t.inputTokens), 'input tokens', ''],
     [fmt(t.cachedInputTokens), 'cached input tokens', ''],
     [fmt(t.outputTokens), 'output tokens', ''],
-    [fmt(t.reasoningOutputTokens), 'reasoning output tokens', ''],
     [(j.totals.cacheHitRatio * 100).toFixed(1) + '%', 'cache hit ratio', 'cachedInput / input'],
   ];
+  if (j.totals.rebuilds) {
+    tiles.push([fmt(j.totals.rebuilds.rewroteTokens), 'cache-rebuild rewrites', `${j.totals.rebuilds.events} events`]);
+  }
+  // Occupancy tile: honest "window not reported" state when no window is known (design D6).
+  if (occ.window) {
+    tiles.push([(100 * occ.peak / occ.window).toFixed(0) + '%', 'peak context occupancy', `peak ${fmt(occ.peak)} / ${fmt(occ.window)}`]);
+  } else if (occ.peak > 0) {
+    tiles.push(['n/a', 'peak context occupancy', 'window not reported']);
+  }
   document.getElementById('tiles').innerHTML = tiles.map(([v, l, sub]) =>
     `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`).join('');
 }
 
 function renderCodexAgentTable(j) {
-  const rows = j.agents.map((a) => ({
-    idx: a.index, label: a.label, kind: a.kind, requests: a.requests,
-    input: a.rawTokens.inputTokens, cached: a.rawTokens.cachedInputTokens,
-    output: a.rawTokens.outputTokens, reasoning: a.rawTokens.reasoningOutputTokens,
-    hitRatio: a.cacheHitRatio, turns: a.turns.length,
-  }));
+  const rows = j.agents.map((a) => {
+    const window = typeof a.modelContextWindow === 'number' ? a.modelContextWindow : null;
+    const peak = typeof a.peakContext === 'number' ? a.peakContext : null;
+    return {
+      idx: a.index, label: a.label, kind: a.kind, requests: a.requests,
+      input: a.rawTokens.inputTokens, cached: a.rawTokens.cachedInputTokens,
+      output: a.rawTokens.outputTokens, hitRatio: a.cacheHitRatio,
+      peak: peak, // null on pre-enrichment reports => rendered "n/a"
+      occ: window && peak !== null ? peak / window : -1, // -1 sorts as "n/a"
+      bursts: Array.isArray(a.bursts) ? a.bursts.length : 0,
+      rebuilds: a.rebuilds ? a.rebuilds.events : 0,
+      turns: a.turns.length,
+    };
+  });
   sortable('agentTableWrap', [
     ['idx', '#'], ['label', 'agent', true], ['kind', 'kind', true],
-    ['requests', 'reqs'], ['input', 'input'], ['cached', 'cached input'],
-    ['output', 'output'], ['reasoning', 'reasoning'], ['hitRatio', 'hit ratio'], ['turns', 'turns'],
+    ['requests', 'reqs'], ['input', 'input'], ['cached', 'cached'],
+    ['output', 'output'], ['hitRatio', 'hit ratio'], ['peak', 'peak ctx'], ['occ', 'occupancy'],
+    ['bursts', 'bursts'], ['rebuilds', 'rebuilds'], ['turns', 'turns'],
   ], rows, (r) =>
     `<tr><td>${r.idx}</td><td class="left">${esc(r.label)}</td><td class="left">${esc(r.kind)}</td>` +
     `<td>${fmtInt(r.requests)}</td><td>${fmt(r.input)}</td><td>${fmt(r.cached)}</td>` +
-    `<td>${fmt(r.output)}</td><td>${fmt(r.reasoning)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td><td>${r.turns}</td></tr>`,
+    `<td>${fmt(r.output)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td><td>${r.peak === null ? 'n/a' : fmt(r.peak)}</td>` +
+    `<td>${r.occ < 0 ? 'n/a' : (r.occ * 100).toFixed(0) + '%'}</td>` +
+    `<td>${r.bursts}</td><td>${r.rebuilds}</td><td>${r.turns}</td></tr>`,
     'input');
 }
 
-function renderCodexTurnsTable(j) {
+function renderCodexRebuildTable(j) {
+  const rows = j.rebuildEvents.map((e) => ({
+    ts: e.ts, agent: j.agents[e.agent] ? j.agents[e.agent].label : e.agent,
+    cause: e.cause, gap: e.gapMin, rewrote: e.rewrote, prevPrefix: e.prevPrefix, readNow: e.readNow,
+    evidence: [e.compacted ? 'compacted' : '', e.rolledBack ? 'rolled-back' : '', e.injected ? 'injected' : ''].filter(Boolean).join(' '),
+  }));
+  sortable('churnTableWrap', [
+    ['ts', 'time', true], ['agent', 'agent', true], ['cause', 'cause', true],
+    ['gap', 'gap(m)'], ['rewrote', 'rewrote'], ['prevPrefix', 'prevPrefix'], ['readNow', 'readNow'], ['evidence', 'evidence', true],
+  ], rows, (r) => {
+    const st = CODEX_CLASS_STYLE[r.cause] || CODEX_CLASS_STYLE.unattributed;
+    return `<tr><td class="left">${r.ts ? hhmmss(r.ts) : '?'}</td><td class="left">${esc(r.agent)}</td>` +
+      `<td class="left"><span class="cause" style="background:${css(st.v)}">${esc(r.cause)}</span></td>` +
+      `<td>${r.gap ?? '?'}</td><td>${fmt(r.rewrote)}</td><td>${fmt(r.prevPrefix)}</td><td>${fmt(r.readNow)}</td><td class="left">${r.evidence || '—'}</td></tr>`;
+  }, 'rewrote');
+}
+
+// Turns table with aborted marking (design D5). `wrapId` lets it render into
+// either grid card depending on whether the rebuild table took the left slot.
+function renderCodexTurnsTable(j, wrapId) {
   const rows = [];
   for (const a of j.agents) {
     for (const t of a.turns) {
       rows.push({
         agent: a.label, turnId: t.turnId ?? '(untitled)', start: t.start, requests: t.requests,
         input: t.rawTokens.inputTokens, output: t.rawTokens.outputTokens, hitRatio: t.cacheHitRatio,
+        aborted: t.aborted ? 1 : 0,
       });
     }
   }
-  sortable('churnTableWrap', [
+  sortable(wrapId, [
     ['agent', 'agent', true], ['turnId', 'turn', true], ['start', 'start'],
-    ['requests', 'reqs'], ['input', 'input'], ['output', 'output'], ['hitRatio', 'hit ratio'],
+    ['requests', 'reqs'], ['input', 'input'], ['output', 'output'], ['hitRatio', 'hit ratio'], ['aborted', 'status', true],
   ], rows, (r) =>
     `<tr><td class="left">${esc(r.agent)}</td><td class="left">${esc(String(r.turnId).slice(0, 12))}</td>` +
     `<td>${r.start ? hhmmss(r.start) : '?'}</td><td>${fmtInt(r.requests)}</td><td>${fmt(r.input)}</td>` +
-    `<td>${fmt(r.output)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td></tr>`,
+    `<td>${fmt(r.output)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td>` +
+    `<td class="left">${r.aborted ? '<span class="cause" style="background:var(--serious)">aborted</span>' : 'complete'}</td></tr>`,
     'start');
 }
 
-function renderCodexSidePanel(j) {
+function renderCodexSidePanel(j, hasRebuilds) {
   const t = j.totals.rawTokens;
-  const rows = [
+  const totalsRows = [
     ['input tokens', fmt(t.inputTokens)],
     ['cached input tokens', fmt(t.cachedInputTokens)],
     ['cache-write input tokens', fmt(t.cacheWriteInputTokens)],
@@ -572,9 +664,24 @@ function renderCodexSidePanel(j) {
     ['total tokens', fmt(t.totalTokens)],
     ['cache hit ratio', (j.totals.cacheHitRatio * 100).toFixed(1) + '%'],
   ].map(([l, v]) => `<tr><td class="left">${l}</td><td>${v}</td></tr>`).join('');
+
+  // When the rebuild-events table occupies the left card, the turns table lands here.
+  const turnsHtml = hasRebuilds ? '<div id="codexTurnsSide"></div>' : '';
+
+  // Unsupported-dimensions disclosure (design D7): rendered visibly, never hidden.
+  const dims = Array.isArray(j.unsupportedDimensions) ? j.unsupportedDimensions : [];
+  const disclosure = dims.length
+    ? `<div class="caveat-banner" style="border-color:var(--baseline);background:color-mix(in srgb,var(--baseline) 12%,var(--surface));margin-top:12px">` +
+      `<b>Not supported by Codex rollout data</b><ul>${dims.map((d) => `<li><b>${esc(d.dimension)}</b> — ${esc(d.reason)}</li>`).join('')}</ul></div>`
+    : '';
+
   document.getElementById('sidePanels').innerHTML =
-    `<table><thead><tr><th class="left">field</th><th>value</th></tr></thead><tbody>${rows}</tbody></table>
-     <div class="meta" style="margin-top:10px">Codex has no cache-write TTL tiers or churn-cause taxonomy — see the CLI docs for why this view differs from a Claude report.</div>`;
+    turnsHtml +
+    `<table style="margin-top:${hasRebuilds ? '4px' : '0'}"><thead><tr><th class="left">field</th><th>value</th></tr></thead><tbody>${totalsRows}</tbody></table>` +
+    disclosure +
+    `<div class="meta" style="margin-top:10px">Codex has no cache-write TTL tiers; the "idle-gap" rebuild cause is an approximation from request spacing, and a rebuild attributed to injection means a user message arrived — never a message-chain fork.</div>`;
+
+  if (hasRebuilds) renderCodexTurnsTable(j, 'codexTurnsSide');
 }
 </script>
 </body>

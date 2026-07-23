@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { claudeProjectsDir, detectTranscriptKind, type TranscriptKind } from '../agent-context.js';
 import { findRolloutPath, resolveCodexHome } from '../codex/index.js';
 import { getGlobalDataDir, type GlobalDataDirOptions } from '../global-config.js';
-import { PRICING, REQUEST_CLASSES, TTL_MIN, classify, clusterBursts } from './classify.js';
+import { PRICING, REQUEST_CLASSES, TTL_MIN, classify, classifyCodex, clusterBursts, clusterCodexBursts } from './classify.js';
 import { buildCodexFamilyMember, discoverCodexThreadFamily } from './discover-codex.js';
 import { TranscriptFormatError } from './errors.js';
 import { parseCodexRolloutFile } from './parse-codex.js';
@@ -32,8 +32,31 @@ import {
   type CodexAgentRecord,
   type CodexAuditResult,
   type CodexRawTokens,
+  type CodexRebuildEvent,
   type CodexTurn,
 } from './types.js';
+
+/**
+ * Codex dimensions the rollout data cannot support (design D7) — an explicit
+ * named list, never pattern-derived. Post-full-corpus-survey this is only:
+ * message-chain fork attribution (no parentUuid-style chain in rollouts) and
+ * billed-input-equivalent pricing (no pinned OpenAI cached-input multipliers).
+ */
+const UNSUPPORTED_CODEX_DIMENSIONS: ReadonlyArray<{ dimension: string; reason: string }> = [
+  {
+    dimension: 'conversation-branch (message-chain fork) attribution',
+    reason:
+      'Codex rollouts carry no parentUuid-style message chain, so a cache rebuild cannot be attributed to a branch/fork; the "rebase" cause here always means an injected user message.',
+  },
+  {
+    dimension: 'billed-input-equivalent pricing',
+    reason:
+      "OpenAI's cached-input discount multipliers are not pinned, so a Claude-style billed-equivalent figure would be a guess; raw token totals are reported instead.",
+  },
+];
+
+/** Increment cross-check tolerance (design D4): summed per-request increments vs cumulative endpoint. */
+const CROSS_CHECK_TOLERANCE = 0.02;
 
 export interface RunAuditOptions extends GlobalDataDirOptions {
   /** Override the Claude projects directory a bare session id is resolved against. */
@@ -346,7 +369,7 @@ function buildForkCaveat(forkedFromId: string): string {
   return (
     `This session is a fork/resume of ${forkedFromId}: its rollout replays the parent session's history into its own file. ` +
     `token_count transitions recorded during that replay are indistinguishable from real per-request deltas, so request counts, ` +
-    `turn timings, and cacheHitRatio are not per-request trustworthy before this thread's own first local turn.`
+    `turn timings, the per-request timeline, and cacheHitRatio are not per-request trustworthy before this thread's own first local turn.`
   );
 }
 
@@ -382,9 +405,16 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
   const agents: CodexAgentRecord[] = [];
   const totalsRaw = emptyRawTokens();
   let totalRequests = 0;
+  // Per-request timeline rows (raw, remapped to activation order below). Each row also
+  // carries its original agent index at [0]; classes indexed via REQUEST_CLASSES.
+  const timelineRows: Array<Array<number | null>> = [];
+  const allRebuilds: CodexRebuildEvent[] = [];
+  // Cross-check accumulators (design D4): summed per-request primary figures vs cumulative endpoints.
+  const summedIncrements = emptyRawTokens();
+  const summedEndpoints = emptyRawTokens();
 
   for (const member of family) {
-    const { requests, turnBoundaries } = parseCodexRolloutFile(member.path);
+    const { requests, turnBoundaries, cumulativeEndpoint, modelContextWindow } = parseCodexRolloutFile(member.path);
     if (requests.length === 0) continue;
 
     const rawTokens = emptyRawTokens();
@@ -397,9 +427,11 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
         requests: 0,
         rawTokens: emptyRawTokens(),
         cacheHitRatio: 0,
+        ...(boundary.aborted ? { aborted: true } : {}),
       });
     }
     let untitledTurn: CodexTurn | undefined;
+    let peakContext = 0;
 
     for (const req of requests) {
       const delta: CodexRawTokens = {
@@ -411,6 +443,7 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
         totalTokens: req.totalTokens,
       };
       addRawTokens(rawTokens, delta);
+      if (req.contextEstimate > peakContext) peakContext = req.contextEstimate;
 
       let turn = req.turnId ? turnsById.get(req.turnId) : undefined;
       if (!turn) {
@@ -430,12 +463,49 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
     for (const turn of turns) turn.cacheHitRatio = cacheHitRatio(turn.rawTokens);
     turns.sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
 
+    // Cache-rebuild classification + bursts (design D2/D3/D9).
+    const { classes, rebuildEvents } = classifyCodex(requests);
+    const bursts = clusterCodexBursts(requests, classes);
+
+    const rebuildRollup = { events: 0, rewroteTokens: 0, byCause: {} as Record<string, { events: number; rewroteTokens: number }> };
+    for (const e of rebuildEvents) {
+      rebuildRollup.events++;
+      rebuildRollup.rewroteTokens += e.rewrote;
+      (rebuildRollup.byCause[e.cause] ??= { events: 0, rewroteTokens: 0 });
+      rebuildRollup.byCause[e.cause].events++;
+      rebuildRollup.byCause[e.cause].rewroteTokens += e.rewrote;
+      allRebuilds.push({ agent: agents.length, ...e });
+    }
+
+    const agentIndex = agents.length;
+    for (let i = 0; i < requests.length; i++) {
+      const req = requests[i];
+      timelineRows.push([
+        agentIndex,
+        req.ts,
+        req.inputTokens,
+        req.cachedInputTokens,
+        req.cacheWriteInputTokens,
+        req.outputTokens,
+        req.reasoningOutputTokens,
+        req.contextEstimate,
+        REQUEST_CLASSES.indexOf(classes[i]),
+      ]);
+      summedIncrements.inputTokens += req.inputTokens;
+      summedIncrements.cachedInputTokens += req.cachedInputTokens;
+      summedIncrements.cacheWriteInputTokens += req.cacheWriteInputTokens;
+      summedIncrements.outputTokens += req.outputTokens;
+      summedIncrements.reasoningOutputTokens += req.reasoningOutputTokens;
+      summedIncrements.totalTokens += req.totalTokens;
+    }
+    if (cumulativeEndpoint) addRawTokens(summedEndpoints, cumulativeEndpoint as CodexRawTokens);
+
     const firstTs = requests.find((r) => r.ts !== null)?.ts ?? null;
     const lastReqWithTs = [...requests].reverse().find((r) => r.ts !== null);
     const lastTs = lastReqWithTs?.ts ?? null;
 
     const agent: CodexAgentRecord = {
-      index: agents.length,
+      index: agentIndex,
       key: member.threadId,
       kind: member.threadId === mainMember.threadId ? 'main' : 'subagent',
       label: member.agentNickname ?? member.agentPath ?? member.threadId,
@@ -447,6 +517,10 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
       rawTokens,
       cacheHitRatio: cacheHitRatio(rawTokens),
       turns,
+      peakContext,
+      modelContextWindow,
+      bursts,
+      rebuilds: rebuildRollup,
     };
     agents.push(agent);
     addRawTokens(totalsRaw, rawTokens);
@@ -456,10 +530,27 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
   // Activation order: sort agents by first request timestamp (main stays first on ties).
   const order = agents.map((a) => a.index);
   order.sort((x, y) => (agents[x].firstTs ?? 0) - (agents[y].firstTs ?? 0) || x - y);
+  const remap = new Map(order.map((oldIdx, newIdx) => [oldIdx, newIdx]));
   const sortedAgents = order.map((oldIdx, newIdx) => ({ ...agents[oldIdx], index: newIdx }));
+  for (const row of timelineRows) row[0] = remap.get(row[0] as number) ?? row[0];
+  for (const e of allRebuilds) e.agent = remap.get(e.agent) ?? e.agent;
+  timelineRows.sort((a, b) => (a[1] ?? 0) - (b[1] ?? 0));
+  allRebuilds.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+
+  const rebuildByCause: Record<string, { events: number; rewroteTokens: number }> = {};
+  for (const e of allRebuilds) {
+    (rebuildByCause[e.cause] ??= { events: 0, rewroteTokens: 0 });
+    rebuildByCause[e.cause].events++;
+    rebuildByCause[e.cause].rewroteTokens += e.rewrote;
+  }
 
   const start = Math.min(...sortedAgents.map((a) => a.firstTs ?? Infinity));
   const end = Math.max(...sortedAgents.map((a) => a.lastTs ?? -Infinity));
+
+  const caveats: string[] = [];
+  if (mainMember.forkedFromId) caveats.push(buildForkCaveat(mainMember.forkedFromId));
+  const crossCheck = buildCrossCheckCaveat(summedIncrements, summedEndpoints);
+  if (crossCheck) caveats.push(crossCheck);
 
   const result: CodexAuditResult = {
     schema: SCHEMA_VERSION,
@@ -478,11 +569,52 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
       requests: totalRequests,
       rawTokens: totalsRaw,
       cacheHitRatio: cacheHitRatio(totalsRaw),
+      rebuilds: { events: allRebuilds.length, rewroteTokens: allRebuilds.reduce((s, e) => s + e.rewrote, 0), byCause: rebuildByCause },
     },
     agents: sortedAgents,
-    ...(mainMember.forkedFromId ? { caveats: [buildForkCaveat(mainMember.forkedFromId)] } : {}),
+    requests: {
+      columns: ['agent', 'ts', 'input', 'cachedInput', 'cacheWrite', 'output', 'reasoningOutput', 'context', 'class'],
+      classes: REQUEST_CLASSES,
+      rows: timelineRows,
+    },
+    rebuildEvents: allRebuilds,
+    unsupportedDimensions: UNSUPPORTED_CODEX_DIMENSIONS.map((d) => ({ ...d })),
+    ...(caveats.length ? { caveats } : {}),
   };
 
   const outPath = writeReport(result, options, mainMember.threadId);
   return { result, outPath };
+}
+
+/**
+ * Endpoint cross-check (design D4): compares summed per-request primary
+ * figures against the cumulative endpoint totals. Returns a caveat naming the
+ * fields that disagree beyond {@link CROSS_CHECK_TOLERANCE}, or `undefined`
+ * when they agree (or when there are no cumulative endpoints to compare —
+ * absence adds no caveat).
+ */
+function buildCrossCheckCaveat(summed: CodexRawTokens, endpoint: CodexRawTokens): string | undefined {
+  if (endpoint.totalTokens === 0) return undefined;
+  const fields: Array<keyof CodexRawTokens> = [
+    'inputTokens',
+    'cachedInputTokens',
+    'cacheWriteInputTokens',
+    'outputTokens',
+    'reasoningOutputTokens',
+    'totalTokens',
+  ];
+  const diverged: string[] = [];
+  for (const f of fields) {
+    const a = summed[f];
+    const b = endpoint[f];
+    const denom = Math.max(Math.abs(b), 1);
+    if (Math.abs(a - b) / denom > CROSS_CHECK_TOLERANCE) {
+      diverged.push(`${f} (per-request sum ${a} vs cumulative endpoint ${b})`);
+    }
+  }
+  if (diverged.length === 0) return undefined;
+  return (
+    'Per-request increments (last_token_usage) disagree with the cumulative endpoint totals beyond tolerance for: ' +
+    `${diverged.join('; ')}. Per-request figures are shown as-is; neither source is silently reconciled.`
+  );
 }

@@ -157,6 +157,36 @@ export interface CodexTurn {
   requests: number;
   rawTokens: CodexRawTokens;
   cacheHitRatio: number;
+  /** Set when the turn ended via `turn_aborted` rather than `task_complete` (design D5). */
+  aborted?: boolean;
+}
+
+/**
+ * One Codex cache-rebuild event (design D3) — a non-hit, non-spawn request
+ * whose cached-input reading collapsed. `rewrote` is the request's
+ * cache-write cost. `compacted`/`injected`/`rolledBack` record which event
+ * evidence was present. A Codex `rebase` cause always means `injected`
+ * (chain-fork is never claimed).
+ */
+export interface CodexRebuildEvent {
+  agent: number;
+  ts: number | null;
+  gapMin: number | null;
+  cause: RequestClass;
+  rewrote: number;
+  prevPrefix: number;
+  readNow: number;
+  compacted: boolean;
+  injected: boolean;
+  rolledBack: boolean;
+  /**
+   * True when `cause` is `ttl-expiry` — an idle-gap APPROXIMATION derived from
+   * request spacing, not a confirmed cache-TTL expiry (Codex publishes no TTL).
+   * Lets a JSON-only consumer tell an approximated cause from an evidenced one
+   * without re-deriving it (spec: "the report ... SHALL present that cause as
+   * an approximation"). Additive.
+   */
+  approximate?: boolean;
 }
 
 export interface CodexAgentRecord {
@@ -172,6 +202,14 @@ export interface CodexAgentRecord {
   rawTokens: CodexRawTokens;
   cacheHitRatio: number;
   turns: CodexTurn[];
+  /** Peak per-request context size (design D6). Additive. */
+  peakContext?: number;
+  /** Model context window for this thread, or null when the rollout did not report one (design D6). Additive. */
+  modelContextWindow?: number | null;
+  /** Activity bursts split by idle gaps (design D9). Additive. */
+  bursts?: Burst[];
+  /** Per-agent rebuild rollup (design D3). Additive. */
+  rebuilds?: { events: number; rewroteTokens: number; byCause: Record<string, { events: number; rewroteTokens: number }> };
 }
 
 export interface CodexAuditResult {
@@ -199,9 +237,30 @@ export interface CodexAuditResult {
     requests: number;
     rawTokens: CodexRawTokens;
     cacheHitRatio: number;
+    /** Cache-rebuild rollup across all agents (design D3). Additive; absent on pre-enrichment reports. */
+    rebuilds?: { events: number; rewroteTokens: number; byCause: Record<string, { events: number; rewroteTokens: number }> };
   };
   agents: CodexAgentRecord[];
-  /** See {@link ClaudeAuditResult.caveats} — populated when `session.forkedFrom` is set. */
+  /**
+   * Per-request timeline (design D1), columnar to match the Claude shape and
+   * the viewer's column-index plumbing. Additive; absent on pre-enrichment
+   * reports. Columns:
+   * `['agent','ts','input','cachedInput','cacheWrite','output','reasoningOutput','context','class']`.
+   */
+  requests?: {
+    columns: string[];
+    classes: readonly string[];
+    rows: Array<Array<number | null>>;
+  };
+  /** Itemized cache-rebuild events across all agents (design D3). Additive. */
+  rebuildEvents?: CodexRebuildEvent[];
+  /**
+   * Dimensions the Codex rollout data cannot support, each with a reason
+   * (design D7). Built from a named constant; rendered as a disclosure panel.
+   * Additive.
+   */
+  unsupportedDimensions?: Array<{ dimension: string; reason: string }>;
+  /** See {@link ClaudeAuditResult.caveats} — populated when `session.forkedFrom` is set or the increment cross-check diverges. */
   caveats?: string[];
 }
 
