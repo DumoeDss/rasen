@@ -19,11 +19,25 @@ function formatHandoff(value: unknown): string {
 }
 
 export function StageNode({ data }: NodeProps<StageFlowNode>) {
-  const { id, role, skill, effectiveGate, effectiveModel, effectiveHandoff, effectiveRuntime } = data;
+  const { id, role, skill, effectiveGate, effectiveModel, effectiveHandoff, effectiveRuntime, issueSeverity } = data;
 
   return (
-    <div class="stage-node" data-testid="stage-node" data-stage={id}>
+    <div
+      class={`stage-node${issueSeverity ? ` stage-node--issue-${issueSeverity}` : ''}`}
+      data-testid="stage-node"
+      data-stage={id}
+      data-issue={issueSeverity ?? undefined}
+    >
       <Handle type="target" position={Position.Left} class="stage-node__handle" />
+      {issueSeverity && (
+        <span
+          class={`stage-node__issue-badge stage-node__issue-badge--${issueSeverity}`}
+          data-testid="stage-node-issue-badge"
+          title={issueSeverity === 'error' ? 'Validation error' : 'Validation warning'}
+        >
+          {issueSeverity === 'error' ? '!' : '△'}
+        </span>
+      )}
       <div class="stage-node__header">
         <span class="stage-node__id">{id}</span>
         <span

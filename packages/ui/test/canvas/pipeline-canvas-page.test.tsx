@@ -17,18 +17,55 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   return {
     ...actual,
     getPipelineDetail: vi.fn(),
+    validatePipeline: vi.fn(),
+    getPipelineCatalog: vi.fn(),
+    mutatePipeline: vi.fn(),
   };
 });
 
+interface MockNode {
+  id: string;
+  type?: string;
+}
+
 vi.mock('@xyflow/react', () => ({
-  ReactFlow: (props: { nodes: Array<{ id: string }> }) => (
-    <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
+  ReactFlow: (props: {
+    nodes: MockNode[];
+    onNodeClick?: (e: unknown, n: MockNode) => void;
+    onPaneClick?: () => void;
+  }) => (
+    <div data-testid="mock-reactflow-wrapper">
+      <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
+      <div data-testid="mock-reactflow-controls">
+        {props.nodes
+          .filter((n) => n.type === 'stage')
+          .map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              data-testid="mock-node-click"
+              data-node-id={n.id}
+              onClick={() => props.onNodeClick?.(null, n)}
+            >
+              select {n.id}
+            </button>
+          ))}
+        <button type="button" data-testid="mock-pane-click" onClick={() => props.onPaneClick?.()}>
+          pane
+        </button>
+      </div>
+    </div>
   ),
   Background: () => null,
   Controls: () => null,
   ReactFlowProvider: ({ children }: { children: unknown }) => <>{children}</>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
+  // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
+  useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
+  addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
+  applyNodeChanges: (_changes: unknown[], nodes: unknown[]) => nodes,
+  applyEdgeChanges: (_changes: unknown[], edges: unknown[]) => edges,
 }));
 
 import { LocationProvider, Router, Route } from 'preact-iso';
@@ -36,6 +73,22 @@ import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
+import type { PipelineCatalogResponse } from '../../src/api/types.js';
+
+const catalogFixture: PipelineCatalogResponse = {
+  roles: ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'],
+  skills: [
+    { id: 'rasen-propose', description: 'Propose a change', enabled: true },
+    { id: 'rasen-apply', description: 'Apply tasks', enabled: true },
+  ],
+  runtimes: ['claude', 'codex'],
+  stageKinds: ['standard', 'decompose'],
+  loopKinds: ['none', 'review-cycle', 'goal'],
+  verifyPolicies: ['adaptive', 'standard', 'light'],
+  conditionLabels: ['always'],
+  gate: { default: false },
+  handoff: { fractionRange: [0, 1], remainingTokensGt: 0 },
+};
 
 async function flushMicrotasks(times = 12): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -154,5 +207,277 @@ describe('PipelineCanvasPage', () => {
     await mountAt(container, '/p/proj_x/pipelines/small-feature');
 
     expect(container.querySelector('[data-testid="pipeline-canvas-readonly-notice"]')).toBeNull();
+  });
+});
+
+/**
+ * Edit-mode coverage (pipeline-canvas-edit tasks 5.1-5.3): mode gating,
+ * validate-blocks-save / warnings-pass / issue selection, the origin stamp
+ * and 422-collision / 409-busy save-failure UX, dirty guards, and the
+ * new-draft mount + refresh-degradation recovery affordance. The DnD palette
+ * and real drag/connect interactions need browser APIs jsdom lacks — those
+ * stay with browser QA (task 6.2); this file exercises the header controls,
+ * the mocked flow's node-click/pane-click callbacks, and the panel/drawer
+ * components the page wires them to.
+ */
+describe('PipelineCanvasPage — edit mode', () => {
+  let container: HTMLElement;
+
+  const editableDetail = {
+    ...pipelineDetailFixture,
+    pipeline: { ...pipelineDetailFixture.pipeline, provenance: 'user' as const, sourceLayer: 'user' as const },
+    editable: true,
+  };
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(catalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    vi.clearAllMocks();
+  });
+
+  async function enterEdit(): Promise<void> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  it('gates the Edit button on `editable` and offers Duplicate-to-edit on a built-in', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(pipelineDetailFixture); // editable: false
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-duplicate"]')).not.toBeNull();
+
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    render(null, container);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-duplicate"]')).toBeNull();
+  });
+
+  it('navigates duplicate-to-edit into edit mode on the new name, seeded from the built-in definition', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(pipelineDetailFixture); // editable: false
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-duplicate"]'));
+    const nameInput = container.querySelector('[data-testid="pipeline-canvas-duplicate-name"]') as HTMLInputElement;
+    await act(async () => {
+      nameInput.value = 'small-feature-copy';
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-duplicate-submit"]'));
+
+    expect(window.location.pathname).toBe('/p/proj_x/pipelines/small-feature-copy');
+    // getPipelineDetail was called once for the original — the destination
+    // consumes the pending draft and never fetches (it does not exist yet).
+    expect(client.getPipelineDetail).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="pipeline-canvas-save"]')).not.toBeNull();
+    expect(container.querySelector('.pipeline-canvas__name')?.textContent).toBe('small-feature-copy');
+  });
+
+  it('offers a Start-assembling recovery affordance on the not-found view and enters edit mode with an empty draft', async () => {
+    vi.mocked(client.getPipelineDetail).mockRejectedValue(
+      new ApiError(404, { error: { code: 'not_found', message: 'No pipeline named "brand-new".' } })
+    );
+    await mountAt(container, '/p/proj_x/pipelines/brand-new');
+    expect(container.querySelector('[data-testid="pipeline-canvas-not-found"]')).not.toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-start-assembling"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-save"]')).not.toBeNull();
+    expect(container.querySelector('.pipeline-canvas__name')?.textContent).toBe('brand-new');
+    // No stages yet — the mock flow renders an empty node-id string.
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toBe('');
+  });
+
+  it('blocks save on an error-severity issue, passes on warnings only, and stamps origin: ui on the save body', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [{ severity: 'error', path: '/stages/0/skill', message: 'Missing reviewer stage.' }],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-save-blocked"]')).not.toBeNull();
+    expect(client.mutatePipeline).not.toHaveBeenCalled();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: true,
+      issues: [{ severity: 'warning', path: '/stages/0/skill', message: 'Consider a stricter verify policy.' }],
+    });
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'small-feature', path: '/pipelines/small-feature' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(editableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(client.mutatePipeline).mock.calls[0][0] as { definition: { origin?: string } };
+    expect(body.definition.origin).toBe('ui');
+    expect(container.querySelector('[data-testid="pipeline-canvas-save-collision"]')).toBeNull();
+    // Save succeeded — back in view mode.
+    expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
+  });
+
+  it('renders returned issues in the drawer and lets a click select the mapped stage', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [{ severity: 'error', path: '/stages/1/skill', message: 'Skill is disabled.' }],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const drawerItem = container.querySelector('[data-testid="issues-drawer-item"]');
+    expect(drawerItem).not.toBeNull();
+    expect(drawerItem!.textContent).toContain('Skill is disabled.');
+
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
+    // Stage index 1 in the fixture's definition is 'apply'.
+    expect(container.querySelector('[data-testid="stage-panel"]')?.getAttribute('data-stage')).toBe('apply');
+  });
+
+  it('refreshes the Id input to the newly-selected stage when switching selection (no stale carry-over)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    function nodeButton(stageId: string): Element | null {
+      return [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+        (el) => el.getAttribute('data-node-id') === stageId
+      ) ?? null;
+    }
+
+    await clickAndFlush(nodeButton('propose'));
+    let idInput = container.querySelector('[data-testid="stage-panel-id"]') as HTMLInputElement;
+    expect(idInput.value).toBe('propose');
+
+    await clickAndFlush(nodeButton('apply'));
+    idInput = container.querySelector('[data-testid="stage-panel-id"]') as HTMLInputElement;
+    expect(idInput.value).toBe('apply');
+  });
+
+  it('offers an explicit overwrite retry on a 422 collision, stamping force on the retried call', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockRejectedValueOnce(
+      new ApiError(422, { error: { code: 'cli_error', message: 'Pipeline "small-feature" already exists.' } })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-save-collision"]')!.textContent).toContain(
+      'already exists'
+    );
+
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'small-feature', path: '/pipelines/small-feature' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(editableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save-overwrite"]'));
+
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(client.mutatePipeline).mock.calls[1][0]).toMatchObject({ force: true });
+  });
+
+  it('surfaces a 409 busy refusal with a manual retry — no automatic retry loop', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockRejectedValueOnce(
+      new ApiError(409, { error: { code: 'busy', message: 'Another pipeline mutation is already in flight.' } })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-save-busy"]')).not.toBeNull();
+    // No automatic retry — mutatePipeline was called exactly once so far.
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'small-feature', path: '/pipelines/small-feature' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(editableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save-retry"]'));
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(2);
+  });
+
+  it('a rapid double-click on Save while a save is in flight fires exactly one mutation call', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    let resolveMutate!: (v: { pipeline: { name: string; path: string }; created: boolean }) => void;
+    vi.mocked(client.mutatePipeline).mockReturnValue(
+      new Promise((r) => {
+        resolveMutate = r;
+      })
+    );
+
+    const saveButton = container.querySelector('[data-testid="pipeline-canvas-save"]') as HTMLButtonElement;
+    await act(async () => {
+      // Both clicks fire before the mutation resolves — the second must be
+      // rejected even though the `disabled` attribute has not re-rendered yet.
+      saveButton.click();
+      saveButton.click();
+      await flushMicrotasks();
+    });
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(editableDetail);
+    await act(async () => {
+      resolveMutate({ pipeline: { name: 'small-feature', path: '/pipelines/small-feature' }, created: false });
+      await flushMicrotasks();
+    });
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the dirty chip once edited, confirms discard-while-dirty on the back link, and releases the guard on Discard', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+    expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).toBeNull();
+
+    const description = container.querySelector('[data-testid="pipeline-canvas-description"]') as HTMLInputElement;
+    await act(async () => {
+      description.value = 'An edited description';
+      description.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).not.toBeNull();
+
+    // Back link while dirty asks first.
+    await clickAndFlush(container.querySelector('.pipeline-canvas__back'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-nav-confirm"]')).not.toBeNull();
+
+    // Staying keeps the draft.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-nav-confirm-stay"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-nav-confirm"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).not.toBeNull();
+
+    // Discard (direct button) releases the guard and returns to view mode.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-discard"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).toBeNull();
   });
 });

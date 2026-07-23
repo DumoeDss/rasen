@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
@@ -11,6 +12,8 @@ import type {
   WirePipelineStage,
 } from '../api/types.js';
 import { useSpace, spaceHref } from '../store/use-space.js';
+import { setPendingDraft } from '../canvas/pending-draft.js';
+import { validatePipelineName } from '../canvas/pipeline-name.js';
 import {
   KNOWN_MODEL_IDS,
   modeScope,
@@ -65,6 +68,7 @@ export function PipelinesPage() {
   const space = useSpace();
   const selector = space?.selector;
   const spaceType: SpaceType = space?.type ?? 'project';
+  const { route } = useLocation();
 
   const [entries, setEntries] = useState<WireConfigEntry[] | null>(null);
   const [storeRef, setStoreRef] = useState<StoreLayerRef | null>(null);
@@ -165,6 +169,9 @@ export function PipelinesPage() {
           <button type="button" data-testid="pipeline-new" onClick={() => setDialog({ kind: 'init' })}>
             New pipeline
           </button>
+          <button type="button" data-testid="pipeline-assemble" onClick={() => setDialog({ kind: 'assemble' })}>
+            Assemble in canvas
+          </button>
           <button type="button" data-testid="pipeline-import" onClick={() => setDialog({ kind: 'import' })}>
             Import…
           </button>
@@ -243,6 +250,16 @@ export function PipelinesPage() {
       </section>
 
       {dialog?.kind === 'init' && <InitDialog onClose={() => setDialog(null)} onDone={refreshAll} />}
+      {dialog?.kind === 'assemble' && space && (
+        <AssembleDialog
+          onClose={() => setDialog(null)}
+          onStart={(name) => {
+            setPendingDraft({ name });
+            setDialog(null);
+            route(spaceHref(space, 'pipelines', name));
+          }}
+        />
+      )}
       {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={refreshAll} />}
       {dialog?.kind === 'export' && <ExportDialog name={dialog.name} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'delete' && (
@@ -254,9 +271,58 @@ export function PipelinesPage() {
 
 type Dialog =
   | { kind: 'init' }
+  | { kind: 'assemble' }
   | { kind: 'import' }
   | { kind: 'export'; name: string }
   | { kind: 'delete'; name: string };
+
+/**
+ * "Assemble in canvas" — the name-first entry into the canvas editor's
+ * new-draft flow (pipeline-canvas-edit design D6): grammar-checked
+ * client-side, then hands off to the graph route via the in-memory
+ * pending-draft hint. No reserved URL segment — a pipeline named `new` is
+ * never shadowed.
+ */
+function AssembleDialog({ onClose, onStart }: { onClose: () => void; onStart: (name: string) => void }) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(event: Event) {
+    event.preventDefault();
+    const validationError = validatePipelineName(name);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    onStart(name.trim());
+  }
+
+  return (
+    <DialogShell title="Assemble in canvas" onClose={onClose}>
+      <form class="pipeline-dialog__form" onSubmit={submit}>
+        <label class="pipeline-dialog__field">
+          <span>Pipeline name</span>
+          <input
+            type="text"
+            data-testid="pipeline-assemble-name"
+            value={name}
+            required
+            onInput={(e) => {
+              setName((e.target as HTMLInputElement).value);
+              setError(null);
+            }}
+          />
+        </label>
+        {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
+        <div class="pipeline-dialog__actions">
+          <button type="submit" data-testid="pipeline-assemble-submit">
+            Start assembling
+          </button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
 
 // ── Defaults matrix ──────────────────────────────────────────────────────────
 // A compact role-first table (design D5): one row per role, columns Model and

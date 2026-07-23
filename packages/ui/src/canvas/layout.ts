@@ -11,6 +11,7 @@ import type {
   PipelineDetailResponse,
   ThresholdValue,
   WireEffectiveValue,
+  WirePipelineDefinition,
 } from '../api/types.js';
 
 export const NODE_WIDTH = 200;
@@ -31,6 +32,8 @@ export interface StageCardData extends Record<string, unknown> {
   effectiveModel: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveValue<ThresholdValue>;
   effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
+  /** Set in edit mode from the latest validation response (pipeline-canvas-edit design D5); absent in view mode. */
+  issueSeverity?: 'error' | 'warning';
 }
 
 /** Data for a `parallelGroup` container node. */
@@ -77,6 +80,39 @@ export function definitionToGraph(
   });
 
   const edges: Edge[] = detail.definition.stages.flatMap((stage) =>
+    stage.requires.map((requiredId) => ({
+      id: `${requiredId}->${stage.id}`,
+      source: requiredId,
+      target: stage.id,
+    }))
+  );
+
+  return { nodes, edges };
+}
+
+/**
+ * Derives the graph's nodes and edges from a DRAFT definition alone (no
+ * resolved `pipeline.stages` view exists for an unsaved draft) — the canvas
+ * editor's data source (pipeline-canvas-edit). Declared values stand in for
+ * "effective" values with `source: 'draft'`, since there is nothing to
+ * resolve yet; the properties panel is where these fields are actually
+ * edited, this is only the card's at-a-glance badge data.
+ */
+export function draftToGraph(def: WirePipelineDefinition): { nodes: UnpositionedStage[]; edges: Edge[] } {
+  const nodes: UnpositionedStage[] = def.stages.map((stage) => {
+    const data: StageCardData = {
+      id: stage.id,
+      role: stage.role ?? null,
+      skill: stage.skill ?? null,
+      effectiveGate: { value: stage.gate, source: 'draft' },
+      effectiveModel: { value: stage.model ?? null, source: 'draft' },
+      effectiveHandoff: { value: stage.handoff?.threshold ?? 0.5, source: 'draft' },
+      effectiveRuntime: { value: stage.runtime ?? 'claude', source: 'draft' },
+    };
+    return { id: stage.id, parallelGroup: stage.parallelGroup, data };
+  });
+
+  const edges: Edge[] = def.stages.flatMap((stage) =>
     stage.requires.map((requiredId) => ({
       id: `${requiredId}->${stage.id}`,
       source: requiredId,

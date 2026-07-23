@@ -180,7 +180,8 @@ export type PipelineMutationRequest =
   | { op: 'import'; path: string; force?: boolean }
   | { op: 'init'; name: string; output: string }
   | { op: 'export'; name: string; path: string; force?: boolean }
-  | { op: 'delete'; name: string; force?: boolean };
+  | { op: 'delete'; name: string; force?: boolean }
+  | { op: 'save'; name: string; definition: unknown; force?: boolean };
 
 export interface PipelineImportResponse {
   path: string;
@@ -198,12 +199,25 @@ export interface PipelineDeleteResponse {
   forcedReferrers: string[];
 }
 
-/** `POST /api/v1/pipelines` success response — one of the four op payloads. */
+/**
+ * `op: 'save'` success payload (mirrors `pipeline save --json` in
+ * `src/commands/pipeline-library.ts`): `created` distinguishes a brand-new
+ * install (`true`) from an overwrite of an existing user pipeline (`false`) —
+ * the client's own `request()` wrapper discards the HTTP status, so this
+ * field is the only signal for the 201-vs-200 UX distinction.
+ */
+export interface PipelineSaveResponse {
+  pipeline: { name: string; path: string };
+  created: boolean;
+}
+
+/** `POST /api/v1/pipelines` success response — one of the five op payloads. */
 export type PipelineMutationResponse =
   | PipelineImportResponse
   | PipelineInitResponse
   | PipelineExportResponse
-  | PipelineDeleteResponse;
+  | PipelineDeleteResponse
+  | PipelineSaveResponse;
 
 // ---- Management API mirror (rasen-ui-slice1-readonly-api design.md D7) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root
@@ -745,7 +759,7 @@ export type PipelineAgentRuntimeSessionReuse = 'none' | 'stage' | 'run-planner' 
 export type PipelineAgentRuntimeSandbox = 'read-only' | 'workspace-write';
 
 export interface PipelineAgentRuntimeConfig {
-  runtime?: PipelineAgentRuntime;
+  runtime: PipelineAgentRuntime;
   sessionReuse?: PipelineAgentRuntimeSessionReuse;
   sandbox?: PipelineAgentRuntimeSandbox;
   model?: string;
@@ -879,4 +893,49 @@ export interface PipelineDetailResponse {
   definition: WirePipelineDefinition;
   /** `false` for built-in (package-provenance) pipelines, returned read-only as save-as templates. */
   editable: boolean;
+}
+
+// ---- Draft validation + catalog (pipeline-definition-api; pipeline-canvas-edit
+// is their first UI consumer, per that change's design D9) ----
+
+/** `POST /api/v1/pipeline-validation` request body. */
+export interface PipelineValidationRequest {
+  definition: unknown;
+  space?: string;
+}
+
+/** One issue reported by draft validation — `severity: 'error'` makes the draft invalid; `'warning'` does not. */
+export interface PipelineValidationIssue {
+  severity: 'error' | 'warning';
+  /** A JSON-pointer-ish locator into the definition, e.g. `/stages/2/skill`. */
+  path: string;
+  message: string;
+}
+
+/** `POST /api/v1/pipeline-validation` response — 200 for both a valid and an invalid draft. */
+export interface PipelineValidationResponse {
+  valid: boolean;
+  issues: PipelineValidationIssue[];
+}
+
+/** One skill in the pipeline-catalog vocabulary. */
+export interface PipelineCatalogSkill {
+  id: string;
+  description: string;
+  /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
+  enabled: boolean;
+}
+
+/** `GET /api/v1/pipeline-catalog` response: the assembly vocabulary for the pipeline canvas. */
+export interface PipelineCatalogResponse {
+  roles: string[];
+  skills: PipelineCatalogSkill[];
+  runtimes: string[];
+  stageKinds: string[];
+  loopKinds: string[];
+  verifyPolicies: string[];
+  /** Conventional freeform condition labels, offered as suggestions — the `condition` field itself stays freeform. */
+  conditionLabels: string[];
+  gate: { default: boolean };
+  handoff: { fractionRange: [number, number]; remainingTokensGt: number };
 }

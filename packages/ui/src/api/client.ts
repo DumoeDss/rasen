@@ -18,9 +18,11 @@ import type {
   ListPipelinesResponse,
   ListProjectsResponse,
   LocalPathsResponse,
+  PipelineCatalogResponse,
   PipelineDetailResponse,
   PipelineMutationRequest,
   PipelineMutationResponse,
+  PipelineValidationResponse,
   RunsResponse,
   SessionActionResponse,
   SessionDetailResponse,
@@ -170,6 +172,31 @@ export function mutatePipeline(body: PipelineMutationRequest): Promise<PipelineM
     json: true,
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * Dry-run validation of a draft definition (pipeline-definition-api): the
+ * server is the sole authority on validity; the client's own `wouldCreateCycle`
+ * check is only a fast-path UX guard on top of this. `space` mirrors the
+ * detail/save calls' selector threading — no selector = launch-project fallback.
+ */
+export function validatePipeline(definition: unknown, space?: string): Promise<PipelineValidationResponse> {
+  return request<PipelineValidationResponse>('/api/v1/pipeline-validation', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify({ definition, space }),
+  });
+}
+
+/**
+ * The installation-wide assembly vocabulary for the canvas editor (roles,
+ * skills with their enabled state, runtimes, stage kinds, loop kinds, verify
+ * policies, condition-label suggestions, gate default, handoff bounds).
+ * Fetched once per editor entry and cached for the page's lifetime — the
+ * vocabulary changes only with installs, not per space.
+ */
+export function getPipelineCatalog(): Promise<PipelineCatalogResponse> {
+  return request<PipelineCatalogResponse>('/api/v1/pipeline-catalog');
 }
 
 export function getKey(key: string, space?: string): Promise<GetConfigKeyResponse> {
