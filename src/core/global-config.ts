@@ -11,12 +11,15 @@ import {
 import type { ThresholdValue } from './model-presets.js';
 import {
   SUPPORTED_CLI_LOCALES,
+  resolveCliLocale,
   type CliLanguage,
+  type CliLocale,
 } from '../utils/locale.js';
 import {
   reportConfigDiagnostic,
   type ConfigDiagnosticReporter,
 } from './config-diagnostics.js';
+import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -37,6 +40,24 @@ export type RepoMode = 'solo' | 'collaborative';
 
 function isLanguage(value: unknown): value is Language {
   return value === 'auto' || SUPPORTED_CLI_LOCALES.some((locale) => locale === value);
+}
+
+/**
+ * Builds a locale-aware diagnostic reporter for `getGlobalConfig()`'s own
+ * internal diagnostics, given a locale already resolved from data in scope
+ * (never via `getCliLocale()`, which reads global config and would recreate
+ * the `global-config.ts` <-> `cli-locale.ts` recursion this function exists
+ * to avoid). Any failure constructing the reporter falls back to `undefined`
+ * so `reportConfigDiagnostic`'s existing English-fallback path takes over —
+ * a diagnostic must never be dropped because locale/catalog resolution
+ * failed.
+ */
+function safeDefaultReporter(locale: CliLocale): ConfigDiagnosticReporter | undefined {
+  try {
+    return createConfigDiagnosticReporter(locale);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -328,7 +349,7 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
           fallback: `Note: the 'delivery' setting has been retired (skills are the only delivery surface now). Removing '${String(parsed.delivery)}' from your config.`,
           output: 'error',
         },
-        options.reporter
+        options.reporter ?? safeDefaultReporter(resolveCliLocale({ language: merged.language }))
       );
       if (options.persistMigrations !== false) {
         try {
@@ -351,7 +372,7 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
           fallback: `Warning: Invalid JSON in ${configPath}, using defaults`,
           output: 'error',
         },
-        options.reporter
+        options.reporter ?? safeDefaultReporter(resolveCliLocale({}))
       );
     }
     return { ...DEFAULT_CONFIG };

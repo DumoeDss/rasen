@@ -780,6 +780,36 @@ describe('resolveOpenSpecRoot', () => {
       }
     });
 
+    it('renders the mismatch warning in the resolved CLI locale (locale-diagnostic-reporter)', async () => {
+      const projectRoot = await registerStore('locale-stale-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const savedRasenLang = process.env.RASEN_LANG;
+      process.env.RASEN_LANG = 'ja';
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'locale-stale-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const message = warnSpy.mock.calls[0]?.[0] as string;
+        expect(message).toContain(STALE_VERSION);
+        // Japanese catalog entry, not the English fallback string.
+        expect(message).not.toContain('the running CLI is');
+        expect(message).toContain('実行中の CLI');
+      } finally {
+        warnSpy.mockRestore();
+        if (savedRasenLang === undefined) {
+          delete process.env.RASEN_LANG;
+        } else {
+          process.env.RASEN_LANG = savedRasenLang;
+        }
+      }
+    });
+
     it('does not warn when the installed stamp matches the running CLI', async () => {
       const projectRoot = await registerStore('current-project', { type: 'project' });
       writeStaleSkill(projectRoot, await currentCliVersion());

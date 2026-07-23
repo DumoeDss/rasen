@@ -249,6 +249,11 @@ describe('global-config', () => {
 
     it('should log warning for invalid JSON', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
+      // Pinned so this assertion is deterministic regardless of the host
+      // machine's OS locale (locale-diagnostic-reporter made this warning
+      // locale-aware by default; see the dedicated describe block below for
+      // non-English coverage).
+      process.env.RASEN_LANG = 'en';
       const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
@@ -415,6 +420,63 @@ describe('global-config', () => {
           expect(consoleErrorSpy).not.toHaveBeenCalled();
         });
       }
+    });
+
+    describe('locale-aware default diagnostics (locale-diagnostic-reporter)', () => {
+      it('renders the deliveryRetired notice in the config-stored language when no reporter is supplied', () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        const configDir = path.join(tempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({ featureFlags: {}, profile: 'full', language: 'ja', delivery: 'both' })
+        );
+
+        getGlobalConfig();
+
+        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+        const message = consoleErrorSpy.mock.calls[0]?.[0] as string;
+        expect(message).toContain('both');
+        // Japanese catalog entry, not the English fallback text.
+        expect(message).not.toContain('has been retired');
+        expect(message).toContain('廃止されました');
+      });
+
+      it('renders the invalidGlobalJson warning per RASEN_LANG when no reporter is supplied and the file fails to parse', () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        process.env.RASEN_LANG = 'ja';
+        const configDir = path.join(tempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(configPath, '{ invalid json }');
+
+        getGlobalConfig();
+
+        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+        const message = consoleErrorSpy.mock.calls[0]?.[0] as string;
+        // Japanese catalog entry, not the English fallback text.
+        expect(message).not.toContain('Invalid JSON');
+        expect(message).toContain('のJSONが無効なため');
+      });
+
+      it('an explicit options.reporter still wins over the locale-aware default', () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        const configDir = path.join(tempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({ featureFlags: {}, profile: 'full', language: 'ja', delivery: 'both' })
+        );
+
+        const seen: string[] = [];
+        getGlobalConfig({ reporter: (diagnostic) => seen.push(diagnostic.key) });
+
+        expect(seen).toEqual(['deliveryRetired']);
+        // The explicit reporter took over; no console.error from the default path.
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+      });
     });
   });
 

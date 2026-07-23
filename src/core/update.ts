@@ -38,6 +38,7 @@ import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { resolveDesiredWorkflowSelection } from './profiles.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
+import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { resolveProjectHome } from './project-home.js';
 import { hasExpertSelectionAck, writeExpertSelectionAck } from './expert-selection-state.js';
 import {
@@ -197,12 +198,15 @@ export class UpdateCommand {
     // and a fresh `init` do, so this notice keeps firing on every legacy
     // `update` until the user explicitly re-selects experts.
     if (!expertSelectionExplicit) {
-      reportConfigDiagnostic({
-        key: 'expertSelectionMigration',
-        fallback:
-          "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install.",
-        output: 'warn',
-      });
+      reportConfigDiagnostic(
+        {
+          key: 'expertSelectionMigration',
+          fallback:
+            "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install.",
+          output: 'warn',
+        },
+        createConfigDiagnosticReporter()
+      );
     }
 
     // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
