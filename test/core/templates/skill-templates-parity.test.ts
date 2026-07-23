@@ -101,7 +101,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getReviewSkillTemplate: '9e4c564be0fdfa22b2d78e4524368c7b9800cdbc4144d1eb6dc8b3bada372395',
   getTddSkillTemplate: '5ee24e317b5f1a1ab114153212a72ed633a40e1f1268c34b31102d9be9607701',
   getUnfreezeSkillTemplate: 'a8f1126bc4b1a9db8dfbae048bde8fe340eca8af68bc5d6dca50a5cec8dacf81',
-  getWorkflowAuthorSkillTemplate: '394ba85dc1d03fde795bc926e87668ae05a29153d470b472471a0b563474af8e',
+  getWorkflowAuthorSkillTemplate: '7493fb63c5361b40f1de2cc7ff7521fc83cd581707e82886f353285fa9781059',
   getWorkflowReviewSkillTemplate: 'af745dd997e44a1a758a59b6873cf86a8cc1304d3b70fa00cd920b9ad6f0e504',
 };
 
@@ -149,7 +149,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-review': '18fa34083ee719dc2fefba5a8bb44b08c10d220a0b08eb5266a6cfdf18af3951',
   'rasen-tdd': 'fe0fead48016db070ad3b55b9cd6c0bc45fd7b220ba410373d4fc6b71d21eefe',
   'rasen-unfreeze': 'ae901355f45f538d1567d9848198a74b55726a4ae4193052c49f1bd55f0a11b9',
-  'rasen-workflow-author': '1dc87300dcf059accbf84cd82af89c48230a94bc5ec1b44e44f809e8d160ded4',
+  'rasen-workflow-author': '89669aca08003a6a61861e4cb4192f66e5d40aec10cfe10e5d550b46ac124599',
   'rasen-workflow-review': '42ae9b2f1dc938b83b9380a0867a6fde99bbcba87af8617c464ee431b5f0837f',
 };
 
