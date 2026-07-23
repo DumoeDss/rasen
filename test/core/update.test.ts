@@ -102,6 +102,30 @@ describe('UpdateCommand', () => {
     });
   });
 
+  describe('expert-selection migration notice locale (locale-diagnostic-reporter)', () => {
+    it('renders the notice in the resolved CLI locale', async () => {
+      const savedRasenLang = process.env.RASEN_LANG;
+      process.env.RASEN_LANG = 'ja';
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        // Default mock config has no expertSelectionExplicit marker, so the
+        // legacy branch fires the migration notice on every `update`.
+        await updateCommand.execute(testDir);
+
+        const messages = warnSpy.mock.calls.map((call) => call[0]);
+        expect(messages.some((message) => typeof message === 'string' && message.includes('エキスパートを個別に選択'))).toBe(true);
+        expect(messages.some((message) => typeof message === 'string' && message.includes('are now individually selectable'))).toBe(false);
+      } finally {
+        warnSpy.mockRestore();
+        if (savedRasenLang === undefined) {
+          delete process.env.RASEN_LANG;
+        } else {
+          process.env.RASEN_LANG = savedRasenLang;
+        }
+      }
+    });
+  });
+
   describe('skill updates', () => {
     it('should update skill files for configured Claude tool', async () => {
       // Set up a configured Claude tool by creating skill directories
