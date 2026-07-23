@@ -28,6 +28,7 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { countMigratableEphemera } from '../core/work-migration.js';
 import { checkMachineRootRelocation } from '../core/global-config.js';
 import { StoreError } from '../core/store/errors.js';
+import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
 import { gatherRelationshipData } from './shared-gather.js';
 import {
   inspectRelationships,
@@ -371,11 +372,26 @@ export function registerDoctorCommand(program: Command): void {
 
         const { health, declaredReferenceCount } = await gatherHealth(root);
 
+        // Migration drift (store-migration-commands D7): pointer to an
+        // unregistered store, ambiguous shape+pointer, manifest/store
+        // mismatch. Surfaced here so top-level doctor aggregates the same
+        // checks `store doctor` reports. Best-effort — never breaks doctor.
+        const migrationDrift = await diagnoseMigrationDrift(root.path).catch(() => []);
+
         if (options.json) {
-          printJson(gcResult ? { ...health, gc: formatGcResult(gcResult) } : health);
+          const base = gcResult ? { ...health, gc: formatGcResult(gcResult) } : { ...health };
+          printJson({ ...base, migrationDrift });
           return;
         }
         printHumanHealth(health, declaredReferenceCount);
+        if (migrationDrift.length > 0) {
+          console.log('');
+          console.log('Migration drift:');
+          for (const status of migrationDrift) {
+            console.log(`  - [${status.severity}] ${status.message}`);
+            if (status.fix) console.log(`    Fix: ${status.fix}`);
+          }
+        }
         if (gcResult) {
           printGcSummary(gcResult);
         }

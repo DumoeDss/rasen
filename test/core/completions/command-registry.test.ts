@@ -379,6 +379,8 @@ describe('command completion registry', () => {
       'add-project',
       'unregister',
       'remove',
+      'adopt',
+      'eject',
       'list',
       'ls',
       'doctor',

@@ -93,7 +93,7 @@ A project-level pipeline with the same name as a built-in **overrides it** — t
 - \`rasen/config.yaml\` → \`autopilot.gates: on|off\` — whether ordinary gates pause for approval (default on) or auto-approve.
 - \`rasen pipeline agents <name> --reviewer codex --implementer claude\` — assign per-role runtimes for a pipeline.
 
-**Work across repositories.** Register other Rasen repos as stores (\`rasen store register <path>\`) or projects (\`rasen store add-project\`), then target them with \`--store <id>\` / \`--project <id>\` on workspace commands. \`rasen store list --json\` shows what's registered.
+**Work across repositories.** Register other Rasen repos as stores (\`rasen store register <path>\`) or projects (\`rasen store add-project\`), then target them with \`--store <id>\` / \`--project <id>\` on workspace commands. \`rasen store list --json\` shows what's registered. To MOVE a project's planning into a store, \`rasen store adopt [path] --to <store-id>\` migrates its specs/changes and converts the repo to a pointer; \`rasen store eject <project-id> --from <store-id>\` reverses it. \`rasen archive relocate --to <in-repo|external|store>\` moves an existing archive and flips \`archive.destination\` together, and \`rasen home prune\` cleans orphaned machine-home state (report-only until \`--apply\`). All support \`--dry-run\` and \`--json\` and never touch git.
 
 **Adjust what's installed.** Profile controls WHICH workflows install. Use \`rasen profile\` to edit the current selection, or \`rasen profile new/use/list\` to reuse named selections, then run \`rasen update\` to regenerate.
 

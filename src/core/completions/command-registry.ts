@@ -156,11 +156,43 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'home',
+    description: 'Manage machine-local project home state',
+    flags: [],
+    subcommands: [
+      {
+        name: 'prune',
+        description: 'List (default) or remove orphaned machine-home directories and stale registry entries',
+        flags: [
+          { name: 'apply', description: 'Delete the reported orphans (default is report-only)' },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'archive',
     description: 'Archive a completed change and update main specs',
     acceptsPositional: true,
     positionalType: 'change-id',
     positionals: [{ name: 'change-name', type: 'change-id', optional: true }],
+    subcommands: [
+      {
+        name: 'relocate',
+        description: 'Move existing archived changes to a destination and flip archive.destination together',
+        flags: [
+          {
+            name: 'to',
+            description: 'Target destination: in-repo, external, or store',
+            takesValue: true,
+            values: ['in-repo', 'external', 'store'],
+          },
+          { name: 'dry-run', description: 'Print the move plan and change nothing' },
+          { name: 'verify-hash', description: 'Verify moved files by content hash' },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
     flags: [
       {
         name: 'yes',
@@ -381,6 +413,40 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             name: 'project-namespace',
             description: 'Target the project namespace for <id> instead of the store namespace',
           },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'adopt',
+        description: "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
+        acceptsPositional: true,
+        positionals: [{ name: 'path', type: 'path', optional: true }],
+        flags: [
+          { name: 'to', description: 'Target store to adopt into', takesValue: true },
+          {
+            name: 'archive',
+            description: 'Archive handling: move (default), leave, or external',
+            takesValue: true,
+            values: ['move', 'leave', 'external'],
+          },
+          { name: 'dry-run', description: 'Print the move plan and change nothing' },
+          { name: 'verify-hash', description: 'Verify moved files by content hash' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'eject',
+        description: 'Restore a store-hosted project back to in-repo planning',
+        acceptsPositional: true,
+        positionals: [{ name: 'project-id' }],
+        flags: [
+          { name: 'from', description: 'Source store to eject from', takesValue: true },
+          { name: 'all', description: 'Manifest-less full copy back (with confirmation)' },
+          { name: 'yes', description: 'Consent for a manifest-less --all copy back in non-interactive mode' },
+          { name: 'force', description: 'Proceed past manifest drift, reporting gaps' },
+          { name: 'into', description: 'Repo path to restore into', takesValue: true },
+          { name: 'dry-run', description: 'Print the restore plan and change nothing' },
+          { name: 'verify-hash', description: 'Verify moved files by content hash' },
           COMMON_FLAGS.json,
         ],
       },
