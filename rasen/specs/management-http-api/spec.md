@@ -208,6 +208,44 @@ The management server SHALL expose a read-only endpoint that, given a Task id an
 - **WHEN** the endpoint serves any request
 - **THEN** it performs only reads — no change directory, run-state file, or identity is created or modified as a side effect
 
+### Requirement: The pipeline paths serve inventory and mutation under the management security posture
+
+`GET /api/v1/pipelines`, `POST /api/v1/pipelines`, `GET /api/v1/pipelines/<name>` (exactly one path segment deep), `POST /api/v1/pipeline-validation`, and `GET /api/v1/pipeline-catalog` SHALL be served by the management route group with the same loopback bind, bearer-token requirement, trailing-slash tolerance, and fresh-read posture as the other management paths; their content contracts are defined by the pipeline-http-api capability. Deeper suffixes under `/api/v1/pipelines/<name>/` are not management paths and fall through to the rest of the server's routing. PUT and DELETE on all pipeline paths SHALL be rejected with 405 `method_not_allowed`, as SHALL POST to `/api/v1/pipelines/<name>` and `/api/v1/pipeline-catalog`, and GET to `/api/v1/pipeline-validation`.
+
+#### Scenario: Pipeline paths require the session token
+
+- **WHEN** a client sends any `/api/v1/pipelines`, `/api/v1/pipeline-validation`, or `/api/v1/pipeline-catalog` request without a valid bearer token
+- **THEN** the response is 401 with the `unauthorized` error envelope, answered by the management route group
+
+#### Scenario: Admitted POST routes to the pipeline bridge
+
+- **WHEN** a client sends an authorized `POST /api/v1/pipelines`
+- **THEN** the request is handled by the CLI-backed pipeline mutation bridge rather than rejected with 405
+
+#### Scenario: Unadmitted methods on pipeline paths rejected
+
+- **WHEN** a client sends PUT or DELETE to `/api/v1/pipelines`, POST to `/api/v1/pipeline-catalog`, or GET to `/api/v1/pipeline-validation`
+- **THEN** the response is 405 `method_not_allowed` and no file is modified
+
+#### Scenario: One-segment pipeline suffix serves the detail contract, deeper suffixes fall through
+
+- **WHEN** a client requests `/api/v1/pipelines/<name>` versus `/api/v1/pipelines/<name>/extra`
+- **THEN** the one-segment form is answered by the pipeline detail contract from the management route group and the deeper form falls through to the rest of the server's routing
+
+### Requirement: Error envelope carries an optional fix hint
+
+Every error response from the management server — from either route group — SHALL use the envelope `{ error: { code, message } }` optionally extended with a `fix` field carrying an actionable remediation hint. Endpoints whose error contracts promise a fix hint (such as the config endpoints' space-resolution errors and the pipeline endpoints inheriting them) SHALL keep emitting it after any change of which route group answers the path; endpoints that do not supply a hint SHALL omit the field rather than sending it empty.
+
+#### Scenario: Fix hint preserved across route groups
+
+- **WHEN** a request to `/api/v1/pipelines` fails space resolution with an error that previously carried a `fix` hint
+- **THEN** the error response still carries the same envelope shape `{ error: { code, message, fix } }` with an actionable hint
+
+#### Scenario: Fix field omitted when absent
+
+- **WHEN** a management endpoint answers an error for which no remediation hint exists
+- **THEN** the envelope contains `code` and `message` and no `fix` key
+
 ### Requirement: Archive listing endpoint reports a space's archived changes
 
 The management server SHALL expose a read-only endpoint that, given a planning space, lists that space's archived changes — the same sticky-union of the in-repo archive directory and the project's machine-home archive that the workflow's archived-change enumeration reports. For each archived change it SHALL report the un-dated change name, the archive date, the portfolio container it belongs to (by the same longest-prefix container rule the changes listing uses), and its task-checkbox progress. The endpoint SHALL be authenticated and space-addressed exactly like the changes listing — an explicit space selector resolves through the machine registries and an omitted selector falls back to the launch project, with no resolvable project rejected the same way the changes listing rejects it — and SHALL be strictly read-only: it creates no directory, mints no identity, and writes no file. A space with no archived changes SHALL yield an empty listing, not an error.
