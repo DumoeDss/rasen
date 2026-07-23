@@ -1,7 +1,7 @@
 # daemon-residency Specification
 
 ## Purpose
-TBD - created by archiving change slice3-daemon-residency. Update Purpose after archive.
+Host session supervision in a resident daemon that survives terminal exits, discoverable and authenticated through a runtime state file, with identity-based adopt/replace-stale/never-touch-foreign classification, shutdown that reaps its own sessions, and first-class daemon CLI commands.
 ## Requirements
 ### Requirement: Resident daemon owns session supervision across terminal exits
 The CLI SHALL provide a `rasen daemon` command group. `rasen daemon run` SHALL run the resident daemon in the foreground: the full management server (management API, config API, UI assets, and the sessions route group) listening on a fixed default port (8791, overridable via `RASEN_DAEMON_PORT` or `--port`, and never 8890), owning the session supervisor so that supervised sessions continue running after any launching terminal exits. `rasen daemon start` SHALL spawn that same daemon as a detached background process — using the running CLI's own installation entry, never PATH — redirect its output to a log file, wait a bounded time for the daemon to answer with matching identity, and exit successfully only once it does (killing the half-started child and reporting the log path on failure). Supervised sessions launched through the daemon SHALL keep running when the terminal that started the daemon or any consumer exits.
