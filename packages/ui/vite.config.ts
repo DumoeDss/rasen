@@ -15,8 +15,29 @@ import preact from '@preact/preset-vite';
 export default defineConfig({
   plugins: [preact()],
   base: '/',
+  resolve: {
+    /**
+     * App-wide preact/compat aliasing (pipeline-canvas-view design D2), proven
+     * in `rasen/office-hours/canvas-demos/react-flow/`: only a module that
+     * imports React resolves through this — today that is exactly
+     * `@xyflow/react` (+ its internals) — every Preact-authored module in this
+     * app imports `preact`/`preact/hooks` directly and is unaffected. This
+     * keeps React Flow v12 on its native API without shipping a second React
+     * runtime. Vitest inherits this via the shared vite config.
+     */
+    alias: {
+      react: 'preact/compat',
+      'react-dom/test-utils': 'preact/test-utils',
+      'react-dom': 'preact/compat',
+      'react/jsx-runtime': 'preact/jsx-runtime',
+    },
+  },
   build: {
     outDir: 'dist',
+    // The build-split test (pipeline-canvas-view design D6) reads this to
+    // assert the canvas chunk is not statically reachable from the entry
+    // chunk — the manifest is the only artifact that names chunk imports.
+    manifest: true,
   },
   server: {
     proxy: process.env.VITE_DEV_API_TARGET

@@ -729,3 +729,154 @@ export type WorkflowEnablementMutationRequest =
   | { root: string; op: 'enable'; id: string }
   | { root: string; op: 'disable'; id: string }
   | { root: string; op: 'reset' };
+
+// ---- Pipeline definition (pipeline-definition-api, pipeline-canvas-view) ----
+// Mirrors `WirePipelineDefinition` / `PipelineDetailResponse` in the CLI's
+// `src/core/management-api/wire-types.ts` (which types the definition as
+// `PipelineYaml`, `z.infer<typeof PipelineYamlSchema>` in
+// `src/core/pipeline-registry/types.ts`). Declared IN FULL — every
+// loader-accepted field — per pipeline-canvas-view design D5, so child 4 (the
+// canvas editor) adds no further mirror entries for the definition shape.
+// Validation/catalog shapes are DELIBERATELY not mirrored here; child 4 is
+// their first consumer.
+
+export type PipelineAgentRuntime = 'claude' | 'codex';
+export type PipelineAgentRuntimeSessionReuse = 'none' | 'stage' | 'run-planner' | 'review-thread';
+export type PipelineAgentRuntimeSandbox = 'read-only' | 'workspace-write';
+
+export interface PipelineAgentRuntimeConfig {
+  runtime?: PipelineAgentRuntime;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse;
+  sandbox?: PipelineAgentRuntimeSandbox;
+  model?: string;
+  effort?: string;
+}
+
+export type PipelineAgentRuntimeConfigValue = PipelineAgentRuntime | PipelineAgentRuntimeConfig;
+
+export interface PipelineAgentRuntimeOverrides {
+  planner?: PipelineAgentRuntimeConfigValue;
+  implementer?: PipelineAgentRuntimeConfigValue;
+  reviewer?: PipelineAgentRuntimeConfigValue;
+  fixer?: PipelineAgentRuntimeConfigValue;
+  shipper?: PipelineAgentRuntimeConfigValue;
+}
+
+export interface PipelineHandoffRoles {
+  planner?: ThresholdValue;
+  implementer?: ThresholdValue;
+  reviewer?: ThresholdValue;
+  fixer?: ThresholdValue;
+  shipper?: ThresholdValue;
+}
+
+export interface PipelineHandoffConfig {
+  threshold?: ThresholdValue;
+  roles?: PipelineHandoffRoles;
+  maxRelays?: number;
+  stallLimit?: number;
+}
+
+/** Per-stage handoff overrides — same shape as `PipelineHandoffConfig` minus `roles` (pipeline-level only). */
+export type PipelineStageHandoffConfig = Omit<PipelineHandoffConfig, 'roles'>;
+
+export type PipelineReuseMode = 'auto' | 'never';
+
+export interface PipelineReuseRoles {
+  planner?: ThresholdValue;
+  implementer?: ThresholdValue;
+}
+
+export interface PipelineReuseConfig {
+  planner?: PipelineReuseMode;
+  implementer?: PipelineReuseMode;
+  threshold?: ThresholdValue;
+  roles?: PipelineReuseRoles;
+}
+
+/** `loop.kind: 'review-cycle'` — the bounded review/fix loop. */
+export interface PipelineStageLoopReviewCycle {
+  kind: 'review-cycle';
+  maxRounds: number;
+}
+
+export type PipelineGoalGate =
+  | {
+      kind: 'measure';
+      command?: string;
+      threshold?: number;
+      target?: number;
+      direction: 'gte' | 'lte';
+      timeoutSec: number;
+    }
+  | {
+      kind: 'evaluate';
+      goal?: string;
+      rubric?: string;
+    };
+
+/** `loop.kind: 'goal'` — the goal-driven iterate/judge loop. */
+export interface PipelineStageLoopGoal {
+  kind: 'goal';
+  gate: PipelineGoalGate;
+  maxRounds: number;
+  loopStallLimit: number;
+  runArtifact: string;
+}
+
+export type PipelineStageLoop = PipelineStageLoopReviewCycle | PipelineStageLoopGoal;
+
+export type PipelineStageKind = 'standard' | 'decompose';
+export type PipelineVerifyPolicy = 'adaptive' | 'standard' | 'light';
+
+/**
+ * A single stage in a pipeline definition (mirrors `Stage` /
+ * `WirePipelineDefinitionStage`) — every loader-accepted field. `requires` and
+ * `parallelGroup` exist ONLY here (the resolved `WirePipelineStage` above
+ * carries neither); the canvas draws its edges and groups from this shape.
+ */
+export interface WirePipelineDefinitionStage {
+  id: string;
+  kind: PipelineStageKind;
+  skill?: string;
+  childPipeline?: string;
+  role?: 'planner' | 'implementer' | 'reviewer' | 'fixer' | 'shipper';
+  requires: string[];
+  gate: boolean;
+  loop?: PipelineStageLoop;
+  parallelGroup?: string;
+  condition?: string;
+  leadReview: boolean;
+  verifyPolicy?: PipelineVerifyPolicy;
+  runtime?: PipelineAgentRuntime;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse;
+  sandbox?: PipelineAgentRuntimeSandbox;
+  model?: string;
+  effort?: string;
+  handoff?: PipelineStageHandoffConfig;
+}
+
+/**
+ * A pipeline's full declared definition (mirrors `WirePipelineDefinition` =
+ * `PipelineYaml`) — the JSON projection of the loader's own accepted schema.
+ * Round-tripping this value through a future `save` and back through `detail`
+ * (child 4) is meant to be lossless.
+ */
+export interface WirePipelineDefinition {
+  name: string;
+  description?: string;
+  agents?: PipelineAgentRuntimeOverrides;
+  handoff?: PipelineHandoffConfig;
+  reuse?: PipelineReuseConfig;
+  /** Marks a machine-assembled pipeline: `'composed'` (autopilot LEAD) or `'ui'` (this canvas' future editor). Absent = human-authored. */
+  origin?: 'composed' | 'ui';
+  stages: WirePipelineDefinitionStage[];
+}
+
+/** `GET /api/v1/pipelines/<name>` response (pipeline-definition-api). */
+export interface PipelineDetailResponse {
+  pipeline: WirePipeline;
+  definition: WirePipelineDefinition;
+  /** `false` for built-in (package-provenance) pipelines, returned read-only as save-as templates. */
+  editable: boolean;
+}

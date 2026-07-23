@@ -18,6 +18,7 @@ import type {
   ListPipelinesResponse,
   ListProjectsResponse,
   LocalPathsResponse,
+  PipelineDetailResponse,
   PipelineMutationRequest,
   PipelineMutationResponse,
   RunsResponse,
@@ -144,6 +145,18 @@ export function listConfig(space?: string): Promise<ListConfigResponse> {
  */
 export function listPipelines(space?: string): Promise<ListPipelinesResponse> {
   return request<ListPipelinesResponse>(`/api/v1/pipelines${spaceQuery(space)}`);
+}
+
+/**
+ * One pipeline's declared definition plus its resolved effective view
+ * (pipeline-definition-api, pipeline-canvas-view's data source): `definition`
+ * carries `requires`/`parallelGroup`, absent from `listPipelines`' resolved
+ * stage shape — the graph view draws edges and groups from it. `name` is
+ * percent-encoded like every other path segment; no selector = launch-project
+ * fallback, same threading as `listPipelines`.
+ */
+export function getPipelineDetail(name: string, space?: string): Promise<PipelineDetailResponse> {
+  return request<PipelineDetailResponse>(`/api/v1/pipelines/${encodeURIComponent(name)}${spaceQuery(space)}`);
 }
 
 /**

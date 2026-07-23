@@ -234,6 +234,7 @@ export function PipelinesPage() {
             pipeline={pipeline}
             scope={writeScope}
             selector={selector}
+            graphHref={space ? spaceHref(space, 'pipelines', pipeline.name) : undefined}
             onWrite={refreshPipelines}
             onExport={(name) => setDialog({ kind: 'export', name })}
             onDelete={(name) => setDialog({ kind: 'delete', name })}
@@ -494,6 +495,7 @@ function PipelineSection({
   pipeline,
   scope,
   selector,
+  graphHref,
   onWrite,
   onExport,
   onDelete,
@@ -501,6 +503,8 @@ function PipelineSection({
   pipeline: WirePipeline;
   scope: 'global' | 'store' | 'project';
   selector: string;
+  /** The pipeline's graph-view route (pipeline-canvas-view), or undefined when no space is resolved. */
+  graphHref?: string;
   onWrite: () => Promise<void>;
   onExport: (name: string) => void;
   onDelete: (name: string) => void;
@@ -530,6 +534,11 @@ function PipelineSection({
           {pipeline.sourceLayer}
         </span>
         <div class="pipeline-section__actions">
+          {graphHref && (
+            <a class="pipeline-section__graph-link" data-testid="pipeline-view-graph" href={graphHref}>
+              View graph
+            </a>
+          )}
           {/* Only user-library pipelines expose export/delete; built-in (package)
               and project-layer pipelines are locked — the CLI refuses both ops on
               them, so surfacing either would be a dead 422. */}
