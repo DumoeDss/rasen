@@ -673,7 +673,7 @@ AI:  Welcome to OpenSpec!
 
 | 工具 | 语法示例 |
 |------|----------------|
-| Claude Code | `rasen-propose`, `rasen-apply-change` |
+| Claude Code | `/rasen-propose`、`/rasen-apply-change` |
 | Cursor | `/opsx-propose`, `/opsx-apply` |
 | Windsurf | `/opsx-propose`, `/opsx-apply` |
 | Copilot (IDE) | `/opsx-propose`, `/opsx-apply` |

@@ -673,7 +673,7 @@ Rasen installs a **skill** for every workflow — `.claude/skills/rasen-*/SKILL.
 
 | Tool | Syntax Example |
 |------|----------------|
-| Claude Code | `rasen-propose`, `rasen-apply-change` |
+| Claude Code | `/rasen-propose`, `/rasen-apply-change` |
 | Cursor | `/rasen-propose`, `/rasen-apply` |
 | Windsurf | `/rasen-propose`, `/rasen-apply` |
 | Copilot (IDE) | `/rasen-propose`, `/rasen-apply` |

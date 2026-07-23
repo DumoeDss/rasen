@@ -75,14 +75,14 @@ CLI 是**引擎**。它掌握规则：变更文件夹长什么样、哪些产物
 
 | 工具 | 你怎么输入 |
 |------|-----------------|
-| Claude Code | `rasen-propose`、`rasen-apply-change` |
+| Claude Code | `/rasen-propose`、`/rasen-apply-change` |
 | Cursor | `/opsx-propose`、`/opsx-apply` |
 | Windsurf | `/opsx-propose`、`/opsx-apply` |
 | GitHub Copilot（IDE） | `/opsx-propose`、`/opsx-apply` |
 | Kimi CLI | skill 风格，例如 `/skill:openspec-propose` |
 | Trae | skill 风格，例如 `/openspec-propose` |
 
-大多数工具要么用冒号形式（`rasen-propose`），要么用连字符形式（`/opsx-propose`）。少数工具把 OpenSpec 作为具名 skill 暴露出来，而不是斜杠命令；对于这些工具，你按名字调用 skill 即可。完整的逐工具清单（包括究竟哪些文件被写到哪里）在[支持的工具](supported-tools.md)里。
+每个工具都会通过前导斜杠来呈现该 skill，具体语法因工具而异。完整的逐工具清单（包括究竟哪些文件被写到哪里）在[支持的工具](supported-tools.md)里。
 
 拿不准时，就在 AI 聊天里敲一个斜杠，然后看自动补全。你的工具会把它期望的形式显示给你。
 
