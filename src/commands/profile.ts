@@ -26,6 +26,7 @@ import {
   type AvailableProfile,
   type ProfileDefinition,
 } from '../core/named-profiles.js';
+import { getCurrentBuiltInWorkflowIds } from '../core/profiles.js';
 import { isPromptCancellationError } from './shared-output.js';
 import {
   formatNamedProfileError,
@@ -350,9 +351,11 @@ async function importProfileCommand(
   // profile-default plus closure expert set governs future installs
   // instead of the legacy all-experts fallback.
   const config = getGlobalConfigForProfile();
-  if (config.expertSelectionExplicit !== true) {
-    saveGlobalConfig({ ...config, expertSelectionExplicit: true });
-  }
+  saveGlobalConfig({
+    ...config,
+    expertSelectionExplicit: true,
+    knownBuiltInWorkflows: getCurrentBuiltInWorkflowIds(),
+  });
 }
 
 async function exportProfileCommand(

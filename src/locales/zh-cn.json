@@ -412,6 +412,7 @@
       "currentSettingsHeading": "\n当前配置方案设置",
       "workflowsLabel": "工作流",
       "workflowsExplanation": "  工作流 = 可使用哪些操作（propose、explore、apply 等）",
+      "availableBuiltInsNote": "  可用但未选择：{workflows}（在下方勾选即可添加）",
       "configurePrompt": "要配置什么？",
       "actions": {
         "workflows": {
@@ -594,6 +595,7 @@
       "invalidHandoffThreshold": "配置中的 'handoff.threshold' 字段无效（必须是 (0, 1] 内的数字，或对象 { remainingTokens: <positive integer> }）",
       "invalidHandoff": "配置中的 'handoff' 字段无效（必须是对象）",
       "expertSelectionMigration": "提示：现在可以单独选择专家。暂时保留以前安装的所有专家——请运行 `rasen profile` 选择要安装的专家。",
+      "newBuiltInWorkflowsAvailable": "提示：有新的内置工作流可用，但未包含在你的选择中：{workflows}。请运行 `rasen profile` 添加。",
       "skillVersionMismatch": "警告：已安装的技能由 rasen v{stampVersion} 生成；当前运行的 CLI 版本为 v{cliVersion}。请运行 `rasen update`。"
     }
   },

@@ -10,6 +10,7 @@ import {
   ALL_WORKFLOWS,
   CORE_WORKFLOWS,
   QUALITY_FLOOR_EXPERTS,
+  getCurrentBuiltInWorkflowIds,
   getProfileWorkflows,
 } from '../core/profiles.js';
 import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
@@ -182,7 +183,7 @@ interface WorkflowChoice {
  * disabled — the user cannot uncheck it while the requiring workflow stays
  * selected (matrix row 8).
  */
-function workflowChoices(
+export function workflowChoices(
   currentState: ProfileState,
   messages: ProfilePromptMessages,
   SeparatorCtor: InquirerPrompts['Separator']
@@ -335,7 +336,30 @@ export function applyProfileState(state: ProfileState): void {
   config.profile = state.profile;
   config.workflows = [...state.workflows];
   config.expertSelectionExplicit = true;
+  // Record the built-in workflows known at this save, so a later `update`
+  // surfaces only workflows added to the catalog after this point, never one
+  // the user just deliberately deselected here.
+  config.knownBuiltInWorkflows = getCurrentBuiltInWorkflowIds();
   saveGlobalConfig(config);
+}
+
+/**
+ * Built-in workflows available in the catalog but absent from the current
+ * selection, as friendly display ids (the picker's public names). Powers the
+ * editor's discoverability line so a newly-available workflow is findable
+ * without scrolling the paginated picker. Experts are excluded (a disjoint id
+ * space); a `full` selection yields an empty list.
+ */
+export function unselectedBuiltInWorkflowDisplayIds(currentState: ProfileState): string[] {
+  const selectedIds = new Set(currentState.workflows);
+  return loadWorkflowCatalog()
+    .definitions.filter(
+      (definition) =>
+        definition.source === 'built-in' &&
+        definition.kind !== 'expert' &&
+        !selectedIds.has(definition.id)
+    )
+    .map((definition) => getCommandFileId(definition.id) ?? definition.id);
 }
 
 export async function runInteractiveProfileEditor(): Promise<void> {
@@ -357,6 +381,15 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     console.log(chalk.bold(ui.currentSettingsHeading));
     console.log(`  ${ui.workflowsLabel}: ${formatWorkflowSummary(currentState.workflows, currentState.profile)}`);
     console.log(chalk.dim(ui.workflowsExplanation));
+
+    // Surface built-in workflows available but not in the current selection,
+    // so a newly-available workflow is findable without scrolling the
+    // paginated picker. Display ids match the picker's friendly names.
+    const unselectedBuiltIns = unselectedBuiltInWorkflowDisplayIds(currentState);
+    if (unselectedBuiltIns.length > 0) {
+      console.log(chalk.dim(ui.availableBuiltInsNote(unselectedBuiltIns)));
+    }
+
     console.log();
 
     const action = await select<ProfileAction>({

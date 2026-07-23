@@ -27,6 +27,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidHandoffThreshold',
   'invalidHandoff',
   'expertSelectionMigration',
+  'newBuiltInWorkflowsAvailable',
   'skillVersionMismatch',
 ] as const;
 

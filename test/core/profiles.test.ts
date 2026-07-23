@@ -5,9 +5,14 @@ import {
   CORE_WORKFLOWS,
   ALL_WORKFLOWS,
   QUALITY_FLOOR_EXPERTS,
+  getCurrentBuiltInWorkflowIds,
   getProfileWorkflows,
+  resolveDesiredWorkflowSelection,
 } from '../../src/core/profiles.js';
-import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
+import {
+  getExpertSkillDefinitions,
+  loadWorkflowCatalog,
+} from '../../src/core/workflow-registry/index.js';
 
 describe('profiles', () => {
   describe('CORE_WORKFLOWS', () => {
@@ -143,6 +148,45 @@ describe('profiles', () => {
         const result = getProfileWorkflows('custom', undefined, { expertSelectionExplicit: true });
         expect(result).toEqual([]);
       });
+    });
+  });
+
+  describe('getCurrentBuiltInWorkflowIds', () => {
+    it('returns exactly the built-in workflow ids (no experts)', () => {
+      const ids = getCurrentBuiltInWorkflowIds();
+      expect([...ids].sort()).toEqual([...ALL_WORKFLOWS].sort());
+      for (const expert of ALL_EXPERTS) {
+        expect(ids).not.toContain(expert);
+      }
+    });
+
+    it('includes the recently-added `audit` workflow', () => {
+      expect(getCurrentBuiltInWorkflowIds()).toContain('audit');
+    });
+  });
+
+  describe('frozen custom selection excludes a catalog-new built-in (root cause)', () => {
+    // Simulate a selection saved before `audit` existed: the stored list is a
+    // verbatim snapshot, so `audit` is absent and stays absent through the
+    // shared install resolver — the exact silent-drop the change addresses.
+    const storedBeforeAudit = ALL_WORKFLOWS.filter((id) => id !== 'audit');
+
+    it('getProfileWorkflows returns the stored list verbatim, without audit', () => {
+      const result = getProfileWorkflows('custom', [...storedBeforeAudit], {
+        expertSelectionExplicit: true,
+      });
+      expect(result).not.toContain('audit');
+      expect(result).toEqual(storedBeforeAudit);
+    });
+
+    it('resolveDesiredWorkflowSelection does not install the catalog-new workflow', () => {
+      const { ids } = resolveDesiredWorkflowSelection(
+        loadWorkflowCatalog(),
+        'custom',
+        [...storedBeforeAudit],
+        true
+      );
+      expect(ids).not.toContain('audit');
     });
   });
 });

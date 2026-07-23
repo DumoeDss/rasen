@@ -234,6 +234,30 @@ describe('global-config', () => {
       expect(config.featureFlags).toEqual({ testFlag: true, anotherFlag: false });
     });
 
+    it('round-trips knownBuiltInWorkflows through save and read', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      const baseline = ['propose', 'apply', 'audit'];
+
+      saveGlobalConfig({ featureFlags: {}, profile: 'custom', knownBuiltInWorkflows: baseline });
+      const config = getGlobalConfig();
+
+      expect(config.knownBuiltInWorkflows).toEqual(baseline);
+    });
+
+    it('reads a config lacking knownBuiltInWorkflows without error (field is optional)', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      const configDir = path.join(tempDir, 'rasen');
+      const configPath = path.join(configDir, 'config.json');
+
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ profile: 'custom', workflows: ['propose'] }));
+
+      const config = getGlobalConfig();
+
+      expect(config.knownBuiltInWorkflows).toBeUndefined();
+      expect(config.profile).toBe('custom');
+    });
+
     it('should return defaults for invalid JSON', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
       const configDir = path.join(tempDir, 'rasen');
