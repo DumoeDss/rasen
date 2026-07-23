@@ -259,6 +259,16 @@ export const StageLoopSchema = z.discriminatedUnion('kind', [
         .int()
         .positive({ error: 'loopStallLimit must be a positive integer' })
         .default(2),
+      // Distinct counter from loopStallLimit (non-progressing rounds) and
+      // maxRounds (total budget): the number of consecutive rounds the SAME
+      // implementer-reported blocker must recur before the loop escalates it
+      // as genuinely blocked. Default 3 (> stall 2 by design — a self-reported
+      // wall earns more alternate-angle retries than a silent non-improvement).
+      blockedThreshold: z
+        .number()
+        .int()
+        .positive({ error: 'blockedThreshold must be a positive integer' })
+        .default(3),
       runArtifact: z.string().default('goal-run.json'),
     })
     .superRefine((s, ctx) => {

@@ -189,6 +189,9 @@ export const RunStateSchema = z
         ]),
         maxRounds: z.number().int().positive(),
         loopStallLimit: z.number().int().positive(),
+        // Optional so run-state written before this field still parses; the
+        // default (3) is applied by the registry schema at inject time.
+        blockedThreshold: z.number().int().positive().optional(),
         workProduct: z.enum(['code', 'prose']),
       })
       .optional(),
@@ -202,6 +205,10 @@ export const RunStateSchema = z
         measurePassed: z.boolean().optional(), // present when gate=measure
         evaluateSatisfied: z.boolean().optional(), // present when gate=evaluate
         stallStreak: z.number().int().nonnegative(),
+        // Consecutive rounds the same implementer-reported blocker has recurred
+        // (resets on progress or a materially different blocker). Optional so it
+        // survives worker relay without breaking pre-existing loopProgress caches.
+        blockedStreak: z.number().int().nonnegative().optional(),
         historyRef: z.string(), // -> goal-run.json
       })
       .optional(),

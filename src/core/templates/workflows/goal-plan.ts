@@ -52,6 +52,13 @@ code | prose   # code = edit the codebase; prose = research + write a document (
 
 ## maxRounds
 <number>   # default 5; research/evaluate MAY set lower (e.g. 3)
+
+## blockedThreshold
+<number>   # optional; default 3 when omitted. Consecutive rounds the same
+           # implementer-reported blocker must recur before the loop escalates
+           # it as genuinely blocked (each intervening round retried from a
+           # different angle). Distinct from maxRounds and loopStallLimit. Lower
+           # it for a genuinely one-shot gate; raise it for a hard research task.
 \`\`\`
 
 ## Choosing the gate
@@ -69,6 +76,7 @@ Pick exactly ONE gate type by task nature — never both:
 - Exactly ONE gate (measure XOR evaluate). Do not combine.
 - The concrete \`command\`/\`threshold\` (measure) or \`goal\`/\`rubric\` (evaluate) live HERE — the pipeline YAML registers only the gate TYPE; the LEAD reads this file to inject them into \`iterate.loopConfig\`.
 - Keep the goal falsifiable: a future round must be able to tell satisfied from not-satisfied.
+- Fix the goal at its true scope. Do NOT frame success around a smaller or easier task than the user asked for — the goal you write here is the goal the gate judges every round, and the implementer is forbidden from shrinking it. State the full success condition, not a convenient subset.
 - This is a planning stage. Do NOT edit code or write the work product here — that is the implementer's job in the iterate stage.`;
 
 export function getGoalPlanSkillTemplate(): SkillTemplate {
