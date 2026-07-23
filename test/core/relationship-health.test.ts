@@ -183,4 +183,27 @@ describe('relationship health composition (3.6)', () => {
     const health = inspectRelationships({ ...baseInput(), referenceEntries: entries });
     expect(health.references).toBe(entries);
   });
+
+  it('reports a skill-version-mismatch finding with a Fix hint (delivery-reliability-version-guard)', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      skillVersionMismatch: { stampVersion: '0.1.2', cliVersion: '0.1.5' },
+    });
+
+    expect(health.status).toContainEqual(
+      expect.objectContaining({
+        severity: 'warning',
+        code: 'skill_version_mismatch',
+        fix: 'rasen update',
+      })
+    );
+    const entry = health.status.find((status) => status.code === 'skill_version_mismatch');
+    expect(entry?.message).toContain('0.1.2');
+    expect(entry?.message).toContain('0.1.5');
+  });
+
+  it('omits the skill-version-mismatch finding when versions match (absent input)', () => {
+    const health = inspectRelationships(baseInput());
+    expect(health.status.some((status) => status.code === 'skill_version_mismatch')).toBe(false);
+  });
 });

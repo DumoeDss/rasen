@@ -37,7 +37,12 @@ import {
 import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
 import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { emitFailure, printJson } from './shared-output.js';
+import { getAllToolVersionStatus } from '../core/shared/index.js';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { version: OPENSPEC_VERSION } = require('../../package.json');
 
 const FAILURE_PAYLOAD = { root: null, store: null, references: [] };
 
@@ -163,6 +168,25 @@ async function gatherHealth(
     input.machineRootRelocation = checkMachineRootRelocation();
   } catch {
     // Swallowed; the relocation note is simply omitted.
+  }
+
+  // Skill/CLI version mismatch (delivery-reliability-version-guard):
+  // doctor is an explicit, on-demand health check, so it re-derives this
+  // directly from getAllToolVersionStatus rather than reading the ambient
+  // warning's debounce marker — it must report the finding even when that
+  // warning already fired and was suppressed earlier in the same session.
+  // Best-effort: a lookup failure must never break doctor.
+  try {
+    const versionStatuses = getAllToolVersionStatus(root.path, OPENSPEC_VERSION);
+    const mismatched = versionStatuses.find((status) => status.needsUpdate);
+    if (mismatched) {
+      input.skillVersionMismatch = {
+        stampVersion: mismatched.generatedByVersion ?? 'unknown',
+        cliVersion: OPENSPEC_VERSION,
+      };
+    }
+  } catch {
+    // Swallowed; the finding is simply omitted.
   }
 
   return {
