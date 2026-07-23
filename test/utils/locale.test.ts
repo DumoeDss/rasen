@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   parseCliLocale,
@@ -161,5 +161,125 @@ describe('resolveCliLocale', () => {
         systemLocale: 'ja-JP',
       })
     ).toBe('en');
+  });
+
+  it('consults the macOS OS locale when no locale environment variables exist', () => {
+    const readOsLocale = vi.fn(() => 'ja_JP');
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: {},
+        platform: 'darwin',
+        systemLocale: 'en-US',
+        readOsLocale,
+      })
+    ).toBe('ja');
+    expect(readOsLocale).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the runtime locale and then English when the macOS probe fails', () => {
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: {},
+        platform: 'darwin',
+        systemLocale: 'en-US',
+        readOsLocale: () => undefined,
+      })
+    ).toBe('en');
+  });
+
+  it.each(['C', 'C.UTF-8', 'POSIX'])(
+    'treats the portable locale %j as an explicit English request without probing the OS',
+    (value) => {
+      const readOsLocale = vi.fn(() => 'ja_JP');
+      expect(
+        resolveCliLocale({
+          language: 'auto',
+          env: { LC_ALL: value },
+          platform: 'darwin',
+          systemLocale: 'ja-JP',
+          readOsLocale,
+        })
+      ).toBe('en');
+      expect(readOsLocale).not.toHaveBeenCalled();
+    }
+  );
+
+  it('falls through encoding-only environment values to the macOS OS locale', () => {
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: { LC_ALL: 'UTF-8', LANG: 'UTF-8' },
+        platform: 'darwin',
+        systemLocale: 'en-US',
+        readOsLocale: () => 'ja_JP',
+      })
+    ).toBe('ja');
+  });
+
+  it('lets a later variable decide after a language-free higher-precedence value', () => {
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: { LC_ALL: 'UTF-8', LANG: 'zh_CN.UTF-8' },
+        platform: 'linux',
+        systemLocale: 'en-US',
+      })
+    ).toBe('zh-cn');
+  });
+
+  it('keeps unsupported well-formed languages falling back to English before the OS probe', () => {
+    const readOsLocale = vi.fn(() => 'ja_JP');
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: { LANG: 'fr_FR.UTF-8' },
+        platform: 'darwin',
+        systemLocale: 'ja-JP',
+        readOsLocale,
+      })
+    ).toBe('en');
+    expect(readOsLocale).not.toHaveBeenCalled();
+  });
+
+  it('never consults the OS locale probe on Linux', () => {
+    const readOsLocale = vi.fn(() => 'ja_JP');
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: {},
+        platform: 'linux',
+        systemLocale: 'zh-Hans',
+        readOsLocale,
+      })
+    ).toBe('zh-cn');
+    expect(readOsLocale).not.toHaveBeenCalled();
+  });
+
+  it('never consults the OS locale probe or Unix variables on Windows', () => {
+    const readOsLocale = vi.fn(() => 'en_US');
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: { LANG: 'UTF-8' },
+        platform: 'win32',
+        systemLocale: 'ja-JP',
+        readOsLocale,
+      })
+    ).toBe('ja');
+    expect(readOsLocale).not.toHaveBeenCalled();
+  });
+
+  it('keeps the RASEN_LANG override ahead of the macOS OS locale', () => {
+    expect(
+      resolveCliLocale({
+        language: 'auto',
+        env: { RASEN_LANG: 'zh-cn' },
+        platform: 'darwin',
+        systemLocale: 'en-US',
+        readOsLocale: () => 'ja_JP',
+      })
+    ).toBe('zh-cn');
   });
 });

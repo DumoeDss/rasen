@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+
 export const SUPPORTED_CLI_LOCALES = ['en', 'ja', 'zh-cn'] as const;
 
 export type CliLocale = (typeof SUPPORTED_CLI_LOCALES)[number];
@@ -30,11 +32,61 @@ export function parseCliLocale(value: string | undefined): CliLocale | undefined
   return region === 'cn' || region === 'sg' ? 'zh-cn' : undefined;
 }
 
+/**
+ * One Unix locale environment value either resolves to a supported locale,
+ * explicitly requests unlocalized output (`C`/`POSIX`), names a language we
+ * do not ship, or carries no language information at all (`UTF-8`, malformed
+ * values). Only the last kind lets resolution continue with the next source.
+ */
+type UnixLocaleValueClass = CliLocale | 'portable' | 'unsupported-language' | 'no-language';
+
+function classifyUnixLocaleValue(value: string): UnixLocaleValueClass {
+  const supported = parseCliLocale(value);
+  if (supported) return supported;
+
+  const base = value
+    .trim()
+    .toLowerCase()
+    .split(/[.@]/, 1)[0]
+    .replaceAll('_', '-');
+  if (base === 'c' || base === 'posix') return 'portable';
+  // Encoding-only values (macOS terminals export `LC_CTYPE=UTF-8`) name no
+  // language even though `utf` looks like a language subtag.
+  if (/^utf-?8$/.test(base)) return 'no-language';
+  return /^[a-z]{2,3}(?:-|$)/.test(base) ? 'unsupported-language' : 'no-language';
+}
+
+let darwinOsLocaleProbed = false;
+let darwinOsLocale: string | undefined;
+
+/**
+ * Reads the macOS user locale (`AppleLocale`), which Node's ICU never
+ * reflects. Silent and memoized: probed at most once per process, and only
+ * on the `auto` path after every locale environment variable failed to name
+ * a language, so correctly-configured shells never pay its cost.
+ */
+function readDarwinOsLocale(): string | undefined {
+  if (!darwinOsLocaleProbed) {
+    darwinOsLocaleProbed = true;
+    try {
+      darwinOsLocale =
+        execSync('defaults read -g AppleLocale', {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim() || undefined;
+    } catch {
+      darwinOsLocale = undefined;
+    }
+  }
+  return darwinOsLocale;
+}
+
 export interface ResolveCliLocaleOptions {
   language?: CliLanguage;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   systemLocale?: string;
+  readOsLocale?: () => string | undefined;
 }
 
 export function resolveCliLocale(options: ResolveCliLocaleOptions = {}): CliLocale {
@@ -51,7 +103,15 @@ export function resolveCliLocale(options: ResolveCliLocaleOptions = {}): CliLoca
   if (platform !== 'win32') {
     for (const key of UNIX_LOCALE_ENV_KEYS) {
       const value = env[key];
-      if (value?.trim()) return parseCliLocale(value) ?? 'en';
+      if (!value?.trim()) continue;
+      const classified = classifyUnixLocaleValue(value);
+      if (classified === 'no-language') continue;
+      if (classified === 'portable' || classified === 'unsupported-language') return 'en';
+      return classified;
+    }
+    if (platform === 'darwin') {
+      const osLocale = parseCliLocale((options.readOsLocale ?? readDarwinOsLocale)());
+      if (osLocale) return osLocale;
     }
   }
 
