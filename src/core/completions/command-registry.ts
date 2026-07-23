@@ -1173,6 +1173,37 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           COMMON_FLAGS.json,
         ],
       },
+      {
+        name: 'wait',
+        description: 'One cache-keepalive beat: block briefly polling the change\'s role signal file',
+        flags: [
+          {
+            name: 'change',
+            description: 'Change whose signals directory to poll',
+            takesValue: true,
+          },
+          {
+            name: 'role',
+            description: 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)',
+            takesValue: true,
+          },
+          {
+            name: 'max-beats',
+            description: 'Override the default beat cap (12)',
+            takesValue: true,
+          },
+          {
+            name: 'context-tokens',
+            description: 'Self-reported context size; below the keepalive floor stands down immediately',
+            takesValue: true,
+          },
+          {
+            name: 'beat-seconds',
+            description: 'Beat duration in seconds (default 270, max 300)',
+            takesValue: true,
+          },
+        ],
+      },
     ],
   },
 ];

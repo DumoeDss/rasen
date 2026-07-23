@@ -190,6 +190,34 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     description: 'Send anonymous usage telemetry (environment opt-outs always win)',
     group: 'Telemetry',
   },
+  {
+    key: 'keepalive.runtimes.claude',
+    scopes: ['global'],
+    type: 'boolean',
+    defaultValue: true,
+    description: 'Allow `rasen agent wait` keepalive beats under the Claude Code runtime',
+    group: 'Pipelines',
+  },
+  {
+    key: 'keepalive.runtimes.codex',
+    scopes: ['global'],
+    type: 'boolean',
+    defaultValue: false,
+    description: 'Allow `rasen agent wait` keepalive beats under the Codex runtime',
+    group: 'Pipelines',
+  },
+  {
+    key: 'keepalive.contextFloor',
+    scopes: ['global'],
+    type: 'number',
+    validate: (value) =>
+      typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? null
+        : 'must be a positive integer (context tokens)',
+    defaultValue: 100000,
+    description: 'Context size (tokens) below which `rasen agent wait` stands down instead of keeping the worker warm',
+    group: 'Pipelines',
+  },
   // ---- project scope ----
   {
     key: 'schema',

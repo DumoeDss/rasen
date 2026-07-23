@@ -810,6 +810,31 @@ agentCmd
     }
   });
 
+agentCmd
+  .command('wait')
+  .description('One cache-keepalive beat: block briefly polling the change\'s role signal file')
+  .requiredOption('--change <name>', 'Change whose signals directory to poll')
+  .requiredOption('--role <key>', 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)')
+  .option('--max-beats <n>', 'Override the default beat cap (12)', (v) => parseInt(v, 10))
+  .option('--context-tokens <n>', 'Self-reported context size; below the keepalive floor stands down immediately', (v) => parseInt(v, 10))
+  .option('--beat-seconds <s>', 'Beat duration in seconds (default 270, max 300)', (v) => parseInt(v, 10))
+  .action(async (options: {
+    change: string;
+    role: string;
+    maxBeats?: number;
+    contextTokens?: number;
+    beatSeconds?: number;
+  }) => {
+    try {
+      const agentCommand = new AgentCommand();
+      await agentCommand.wait(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 export { program };
 
 export function runCli(argv = process.argv): void {
