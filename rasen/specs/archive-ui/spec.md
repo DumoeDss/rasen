@@ -1,7 +1,7 @@
 # archive-ui Specification
 
 ## Purpose
-TBD - created by archiving change ui-space-redesign-archive-page. Update Purpose after archive.
+Provide a space-scoped Archive page in the UI that lists archived changes grouped into Tasks with name search and store-member filtering, and bound the board's Done column so overflow links to this page.
 ## Requirements
 ### Requirement: Archive is an independent route page listing the space's archived Tasks
 

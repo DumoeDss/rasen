@@ -417,6 +417,8 @@ export interface WorkflowListEntry {
   digest: string;
   kind: WorkflowKind;
   skillName: string;
+  /** Author-declared display title from the manifest's `skill:` block; null when the workflow declares none. */
+  title: string | null;
   /** True only for a user workflow with no detected machine-level consumer (same marker `workflow list` computes). */
   unused: boolean;
 }
@@ -444,6 +446,10 @@ export interface WorkflowDefinitionWire {
   sourcePath: string | null;
   manifestVersion: number;
   kind: WorkflowKind;
+  /** Author-declared presentation metadata from the manifest's `skill:` block; null when not declared. */
+  title: string | null;
+  category: string | null;
+  tags: string[] | null;
   digest: string;
   skill: { name: string; dirName: string; description: string };
   requires: WorkflowDependencySet;

@@ -40,6 +40,10 @@ Edit only \`workflow.yaml\`, \`SKILL.md\`, and sidecars that are actually needed
 - Put workflow dependencies in \`requires.workflows\`, not only in prose.
 - Put always-installed expert dependencies in \`requires.skills\`.
 - Put optional related workflows in \`recommends.workflows\`.
+- Optionally declare a human-readable display title in the manifest's
+  \`skill:\` block (\`name\` is required inside the block; \`category\` and
+  \`tags\` are optional; there is no \`enabled\` field). Pickers show the title
+  verbatim, and \`rasen workflow list --json\` / \`show\` expose it as \`title\`.
 - Declare every sidecar and script in the manifest.
 - Keep paths relative and portable; never embed an absolute machine path.
 - Do not add binary files, generated output, credentials, or machine metadata.

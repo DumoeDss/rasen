@@ -146,6 +146,75 @@ describe('workflow directory validator', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
+  it('accepts a skill: presentation block and exposes title, category, and tags', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'titled-workflow', {
+      extraManifest: 'skill:\n  name: Example Local Verify\n  category: Workflow\n  tags: [verify, local]',
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.definition).toMatchObject({
+      title: 'Example Local Verify',
+      category: 'Workflow',
+      tags: ['verify', 'local'],
+    });
+  });
+
+  it('honors the skill title alongside an ignored legacy command block', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'both-blocks', {
+      command: true,
+      extraManifest: 'skill:\n  name: Both Blocks Title',
+    });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(true);
+    expect(result.definition?.title).toBe('Both Blocks Title');
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'command_field_ignored',
+        severity: 'warning',
+        message: expect.stringContaining('"skill:"'),
+      })
+    );
+  });
+
+  it.each([
+    ['an enabled field', 'skill:\n  name: Title\n  enabled: true'],
+    ['an unknown field', 'skill:\n  name: Title\n  icon: sparkles'],
+    ['a missing name', 'skill:\n  category: Workflow'],
+    ['a control character in the name', 'skill:\n  name: "Tab\\tTitle"'],
+  ])('rejects a skill block carrying %s', (_case, extraManifest) => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'skill-block-invalid', { extraManifest });
+
+    const result = validateWorkflowDirectory(root);
+
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('manifest_schema_invalid');
+  });
+
+  it('keeps the digest a pure function of file content when toggling the skill block', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'digest-toggle');
+    const manifestPath = path.join(root, 'workflow.yaml');
+    const original = fs.readFileSync(manifestPath, 'utf8');
+    const baseline = validateWorkflowDirectory(root);
+
+    fs.writeFileSync(manifestPath, `${original}skill:\n  name: Digest Toggle\n`);
+    const withBlock = validateWorkflowDirectory(root);
+    expect(withBlock.valid).toBe(true);
+    expect(withBlock.definition?.digest).not.toBe(baseline.definition?.digest);
+
+    fs.writeFileSync(manifestPath, original);
+    const restored = validateWorkflowDirectory(root);
+    expect(restored.definition?.digest).toBe(baseline.definition?.digest);
+  });
+
   it('rejects unknown manifest fields', () => {
     const parent = temporaryDirectory();
     const root = writeWorkflow(parent, 'invalid-manifest', { extraManifest: 'unknown: true' });
@@ -418,6 +487,47 @@ describe('user workflow registry', () => {
     expect(catalog.diagnostics).toEqual([
       expect.objectContaining({ code: 'recommended_workflow_missing', severity: 'warning' }),
     ]);
+  });
+
+  it('silently skips OS metadata entries while still reporting genuine stray files', () => {
+    const globalDataDir = temporaryDirectory();
+    const workflowsDir = path.join(globalDataDir, 'workflows');
+    writeWorkflow(workflowsDir, 'valid-user');
+    fs.writeFileSync(path.join(workflowsDir, '.DS_Store'), Buffer.from([0x00, 0x01]));
+    fs.writeFileSync(path.join(workflowsDir, 'Thumbs.db'), Buffer.from([0x00]));
+    fs.writeFileSync(path.join(workflowsDir, 'desktop.INI'), '[stub]');
+    fs.mkdirSync(path.join(workflowsDir, '.hidden-directory'));
+    fs.writeFileSync(path.join(workflowsDir, 'notes.txt'), 'stray');
+
+    const catalog = loadWorkflowCatalog({ globalDataDir });
+
+    expect(catalog.get('valid-user')).toBeDefined();
+    expect(catalog.invalid).toEqual([
+      expect.objectContaining({
+        id: 'notes.txt',
+        diagnostics: [expect.objectContaining({ code: 'registry_entry_not_directory' })],
+      }),
+    ]);
+  });
+
+  it('excludes OS metadata inside a workflow source tree from files and digest', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'junk-carrier');
+
+    const clean = validateWorkflowDirectory(root);
+    expect(clean.valid).toBe(true);
+
+    fs.writeFileSync(path.join(root, '.DS_Store'), Buffer.from([0x00, 0x01, 0x02]));
+    fs.writeFileSync(path.join(root, 'Thumbs.db'), Buffer.from([0x00]));
+
+    const withJunk = validateWorkflowDirectory(root);
+
+    expect(withJunk.valid).toBe(true);
+    expect(withJunk.definition?.files.map((file) => file.path)).toEqual([
+      'SKILL.md',
+      'workflow.yaml',
+    ]);
+    expect(withJunk.definition?.digest).toBe(clean.definition?.digest);
   });
 
   it('keeps an invalid entry visible without breaking valid catalog entries', () => {

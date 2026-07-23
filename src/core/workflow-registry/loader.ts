@@ -3,7 +3,11 @@ import * as path from 'node:path';
 import { TextDecoder } from 'node:util';
 
 import { WORKFLOW_LIMITS } from './limits.js';
-import { checkPortableRelativePath, portablePathCollisionKey } from './path-policy.js';
+import {
+  checkPortableRelativePath,
+  isOsJunkEntryName,
+  portablePathCollisionKey,
+} from './path-policy.js';
 import type { WorkflowDiagnostic } from './types.js';
 
 export interface LoadedWorkflowFile {
@@ -173,6 +177,7 @@ export function loadWorkflowSourceTree(sourcePath: string): LoadedWorkflowTree {
 
       entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
       for (const entry of entries) {
+        if (isOsJunkEntryName(entry.name)) continue;
         assertDirectoryUnchanged(directory, expectedDirectory);
         try {
           const logicalPath = prefix ? `${prefix}/${entry.name}` : entry.name;

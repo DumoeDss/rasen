@@ -1,7 +1,7 @@
 # sessions-ui Specification
 
 ## Purpose
-TBD - created by archiving change slice3-sessions-ui. Update Purpose after archive.
+Provide a Sessions page in the UI for observing and controlling agent sessions — live and ended listings with run progress, recent-output detail, confirmed kills reflected on the board, and auto/goal run launches — implemented as a thin shell over the shared management-API seam.
 ## Requirements
 ### Requirement: Sessions view lists live and ended sessions with run progress
 The management UI SHALL provide a Sessions view, reachable from the platform navigation alongside Board and Config, listing every session the server reports — live and retained ended — with, per session: kind, task, lifecycle state, start and last-output times, and for ended sessions the termination reason and exit code or signal. When a session's listing entry carries a joined run-state with a parsed pipeline run, the entry SHALL render the pipeline's per-stage progress; a session without a linked change SHALL state that plainly rather than appearing stuck; an invalid run-state SHALL surface its reason. The view SHALL refresh itself on a short fixed cadence while open so state transitions appear without manual action, and SHALL keep a manual refresh affordance.

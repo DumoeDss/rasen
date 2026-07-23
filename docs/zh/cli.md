@@ -997,7 +997,7 @@ rasen config set language zh-cn
 RASEN_LANG=zh-cn rasen --help
 ```
 
-`RASEN_LANG=en|ja|zh-cn` 会临时覆盖已保存的设置。默认的 `auto` 模式在类 Unix 系统上依次检查 `LC_ALL`、`LC_MESSAGES` 和 `LANG`，然后使用运行时系统语言环境；Windows 直接使用运行时系统语言环境。`zh-CN`、`zh_CN.UTF-8`、`zh-SG`、`zh-Hans` 和不带区域的 `zh` 会解析为 `zh-cn`。繁体中文语言环境 `zh-TW`、`zh-HK`、`zh-MO` 和 `zh-Hant` 暂不支持，并回退到英语。
+`RASEN_LANG=en|ja|zh-cn` 会临时覆盖已保存的设置。默认的 `auto` 模式在类 Unix 系统上依次检查 `LC_ALL`、`LC_MESSAGES` 和 `LANG`：解析为受支持语言环境的值直接生效；`C` 或 `POSIX`（可带编码后缀）表示显式请求非本地化输出，解析为英语；格式正确但不受支持的语言（如 `fr_FR.UTF-8`）回退到英语；不携带语言信息的值（如 `UTF-8`）会被跳过，由下一个变量决定。在 macOS 上，当所有变量都未能确定语言时（例如 GUI 启动的进程，或只导出 `LC_CTYPE=UTF-8` 的终端），CLI 会先读取操作系统配置的语言环境（`defaults read -g AppleLocale`，静默且每个进程最多一次），再回退到运行时系统语言环境；Windows 直接使用运行时系统语言环境。`zh-CN`、`zh_CN.UTF-8`、`zh-SG`、`zh-Hans` 和不带区域的 `zh` 会解析为 `zh-cn`。繁体中文语言环境 `zh-TW`、`zh-HK`、`zh-MO` 和 `zh-Hant` 暂不支持，并回退到英语。
 
 界面语言只控制 Rasen 自有的帮助、提示和人类可读输出，不决定 AI 生成的产物语言。产物语言应通过项目 `rasen/config.yaml` 的 `context` 指令设置，详见[多语言指南](multi-language.md)。更改已保存的界面语言后，请重新运行 `rasen completion install [shell]`；如果手动管理补全脚本，则重新运行 `rasen completion generate [shell]`，以刷新生成的命令说明。
 
@@ -1019,7 +1019,7 @@ rasen workflow delete <id> [--yes] [--json]
 | 子命令 | 说明 |
 |------------|-------------|
 | `list` | 按 kind 分组列出有效的内置/用户定义，以及无效的用户条目；`--unused` 仅供参考，只考虑可探测到的使用方；`--all` 会额外显示 internal 分组 |
-| `show <id>` | 显示身份信息、skill/command 元数据、依赖、文件、digest 以及已知的使用情况 |
+| `show <id>` | 显示身份信息、skill 元数据、声明的显示标题、依赖、文件、digest 以及已知的使用情况 |
 | `which <id>` | 显示某个 ID 是解析自内置目录还是用户目录 |
 | `init <id>` | 在必须为空的 `--output` 目录下创建最小草稿，不安装它 |
 | `validate <id-or-path>` | 静态校验一个已安装的 ID、一个未打包的草稿，或一个严格模式的 `.rasenpkg`，不执行脚本 |

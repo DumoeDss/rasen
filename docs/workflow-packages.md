@@ -1,7 +1,7 @@
 # Installable workflows and `.rasenpkg`
 
 This document defines version 1 of Rasen's installable workflow and package
-contracts. An installable workflow is a skill, an optional command entry point,
+contracts. An installable workflow is a skill, optional presentation metadata,
 and declared UTF-8 sidecar files that can be selected by a profile. It is
 distinct from an artifact workflow schema and from a pipeline.
 
@@ -19,11 +19,11 @@ expands `requires.workflows` transitively in catalog order. Always-installed
 expert skills remain outside the workflow selection.
 
 Built-in IDs cannot be overridden. A user workflow also cannot reuse a skill
-name or command ID owned by a built-in or another user workflow. Re-importing
+name owned by a built-in or another user workflow. Re-importing
 the same ID and digest is a no-op. Reusing an ID with a different digest is an
 error in format version 1.
 
-Portable workflow IDs, user skill names, and command IDs must match
+Portable workflow IDs and user skill names must match
 `^[a-z0-9][a-z0-9-]{0,63}$`. References to always-installed expert skills use
 their catalog names — the `rasen-<name>` skill directory name; the retired
 `rasen:<name>` colon form is still accepted for backward compatibility. File paths
@@ -40,8 +40,7 @@ is a strict YAML object; unknown fields are rejected.
 ```yaml
 version: 1
 id: team-release
-command:
-  enabled: true
+skill:
   name: Rasen Team Release
   category: Workflow
   tags: [workflow, release]
@@ -69,10 +68,19 @@ The exact fields are:
   so declaring or changing it never triggers drift-healing of an installed
   copy. See [`rasen workflow`](cli.md#rasen-workflow) for how `list` groups
   and hides by kind.
-- `command`: optional. `{ enabled: false }` disables command delivery. When
-  enabled, `name`, `category`, and a non-empty unique `tags` array are required.
-  The command ID is the workflow ID, its description comes from `SKILL.md`, and
-  its body is the `SKILL.md` instruction body.
+- `skill`: optional presentation metadata for the always-generated skill
+  surface. `name` (required within the block) is the workflow's human-readable
+  display title: pickers show it verbatim in the author's original language
+  (never translated), and `rasen workflow list --json` and `rasen workflow
+  show` expose it as a stable `title` field (`null` when absent). `category`
+  and a non-empty `tags` array are optional and carried through for JSON
+  consumers. The block has no `enabled` field — the skill surface cannot be
+  turned off — and unknown fields fail strict validation. Declaring the block
+  requires no manifest version bump and adds no digest input beyond the
+  manifest file content itself.
+- `command`: legacy, optional. The command delivery surface is retired; the
+  block is accepted and ignored with a `command_field_ignored` warning that
+  recommends declaring the display title under `skill:` instead.
 - `files`: optional. `sidecars` and `scripts` are unique portable paths. Every
   file other than `workflow.yaml` and `SKILL.md` must be declared exactly once.
   Scripts are data during validation and import and are never executed.

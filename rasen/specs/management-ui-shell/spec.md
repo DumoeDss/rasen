@@ -1,7 +1,7 @@
 # management-ui-shell Specification
 
 ## Purpose
-TBD - created by archiving change ui-space-redesign-shell. Update Purpose after archive.
+Make the management UI shell space-aware: the URL is the source of truth for the selected planning space, launch URLs bootstrap to canonical space routes, a switcher spans both namespaces, the header's running-run summary scopes to the current space, and a shared client seam threads the space selector onto every API call.
 ## Requirements
 ### Requirement: The URL is the source of truth for the selected planning space
 
