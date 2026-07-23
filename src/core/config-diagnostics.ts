@@ -26,6 +26,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidHandoffThreshold',
   'invalidHandoff',
   'expertSelectionMigration',
+  'skillVersionMismatch',
 ] as const;
 
 export type ConfigDiagnosticKey = (typeof CONFIG_DIAGNOSTIC_KEYS)[number];

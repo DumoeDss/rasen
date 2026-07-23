@@ -735,4 +735,168 @@ describe('resolveOpenSpecRoot', () => {
       });
     });
   });
+
+  describe('ambient skill-version-mismatch warning (delivery-reliability-version-guard)', () => {
+    const STALE_VERSION = '0.0.1-stale';
+
+    async function currentCliVersion(): Promise<string> {
+      const { version } = await import('../../package.json');
+      return version as string;
+    }
+
+    function writeStaleSkill(rootDir: string, version: string): void {
+      const skillDir = path.join(rootDir, '.claude', 'skills', 'rasen-explore');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: rasen-explore\nmetadata:\n  generatedBy: "${version}"\n---\n\nContent\n`
+      );
+    }
+
+    it('warns once on a mismatched project, then stays silent on a second command (debounce)', async () => {
+      const projectRoot = await registerStore('stale-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      // Mint the machine-local home so the debounce marker can be consulted.
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'stale-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0]?.[0]).toContain(STALE_VERSION);
+
+        warnSpy.mockClear();
+        await resolveRootForCommand(
+          { project: 'stale-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('does not warn when the installed stamp matches the running CLI', async () => {
+      const projectRoot = await registerStore('current-project', { type: 'project' });
+      writeStaleSkill(projectRoot, await currentCliVersion());
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'current-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('suppresses the warning under --json output', async () => {
+      const projectRoot = await registerStore('json-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const root = await resolveRootForCommand(
+          { project: 'json-project' },
+          { globalDataDir, json: true }
+        );
+        expect(root).not.toBeNull();
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('warns every time when the project has no machine-local home registered', async () => {
+      const projectRoot = await registerStore('unregistered-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      // Deliberately no resolveProjectHome call: this project has no machine home.
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'unregistered-project' },
+          { globalDataDir, reporter: false }
+        );
+        await resolveRootForCommand(
+          { project: 'unregistered-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('re-arms once the stamp version advances, even with a registered home', async () => {
+      const projectRoot = await registerStore('rearm-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'rearm-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+
+        warnSpy.mockClear();
+        // Simulate `rasen update` re-stamping the skill with the current CLI version.
+        writeStaleSkill(projectRoot, await currentCliVersion());
+        await resolveRootForCommand(
+          { project: 'rearm-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('never fails or slows the command when the underlying lookup throws', async () => {
+      const projectRoot = await registerStore('throwing-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      // A projectId is required for resolveProjectHome's ensure:false probe
+      // to consult the (about-to-be-corrupted) machine-local project
+      // registry at all; without one it degrades to "no home" before ever
+      // reading that file, which would not exercise this failure mode.
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${randomUUID()}\n`
+      );
+
+      // Corrupts the machine-local project registry (not the store registry
+      // used for --project selection above) so resolveProjectHome's read
+      // throws inside checkSkillVersionGuard's try block — a realistic
+      // failure mode, not a mocked one.
+      const registryPath = path.join(globalDataDir, 'projects', 'registry.json');
+      fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+      fs.writeFileSync(registryPath, '{not valid json');
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const root = await resolveRootForCommand(
+          { project: 'throwing-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(root).not.toBeNull();
+        expect(root?.path).toBe(projectRoot);
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
 });

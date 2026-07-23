@@ -588,7 +588,8 @@
       "invalidAutopilot": "設定の'autopilot'フィールドが無効です（オブジェクトを指定してください）",
       "invalidHandoffThreshold": "設定の'handoff.threshold'フィールドが無効です（(0, 1]の数値、または{ remainingTokens: <正の整数> }を指定してください）",
       "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）",
-      "expertSelectionMigration": "注: エキスパートを個別に選択できるようになりました。これまでインストール済みのエキスパートは当面すべて維持されます — インストールするものを選ぶには `rasen profile` を実行してください。"
+      "expertSelectionMigration": "注: エキスパートを個別に選択できるようになりました。これまでインストール済みのエキスパートは当面すべて維持されます — インストールするものを選ぶには `rasen profile` を実行してください。",
+      "skillVersionMismatch": "警告: インストール済みのスキルは rasen v{stampVersion} で生成されたものですが、実行中の CLI は v{cliVersion} です。`rasen update` を実行してください。"
     }
   },
   "completion": {

@@ -7,7 +7,8 @@ import { randomUUID } from 'node:crypto';
 
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { getProjectHomeDir, registerProject } from '../../src/core/project-registry.js';
-import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
+import { runCLI, cliProjectRoot, type RunCLIResult } from '../helpers/run-cli.js';
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 import { isolatedGitEnv } from '../helpers/store-git.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
@@ -625,6 +626,83 @@ describe('rasen doctor (3.6)', () => {
       expect(
         fs.readFileSync(path.join(newRoot(), 'projects', 'already-there', 'marker.txt'), 'utf-8')
       ).toBe('current\n');
+    });
+  });
+
+  describe('skill-version mismatch finding (delivery-reliability-version-guard)', () => {
+    let projectRoot: string;
+
+    beforeEach(() => {
+      projectRoot = mkdir('mismatch-project');
+      createOpenSpecRoot(projectRoot);
+    });
+
+    function writeStaleSkill(version: string): void {
+      const skillDir = path.join(projectRoot, '.claude', 'skills', 'rasen-explore');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: rasen-explore\nmetadata:\n  generatedBy: "${version}"\n---\n\nContent\n`
+      );
+    }
+
+    it('reports the mismatch in human output with a Fix hint', async () => {
+      writeStaleSkill('0.0.1-stale');
+
+      const result = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('0.0.1-stale');
+      expect(result.stdout).toContain('Fix: rasen update');
+    });
+
+    it('includes the mismatch in --json output', async () => {
+      writeStaleSkill('0.0.1-stale');
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'skill_version_mismatch', fix: 'rasen update' })
+      );
+    });
+
+    it('reports nothing when the installed skills match the running CLI', async () => {
+      const { version } = JSON.parse(
+        fs.readFileSync(path.join(cliProjectRoot, 'package.json'), 'utf-8')
+      );
+      writeStaleSkill(version);
+
+      const human = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(human.stdout).not.toContain('skill_version_mismatch');
+      expect(human.stdout).not.toContain('rasen update');
+
+      const json = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(json);
+      expect(health.status.some((entry: { code: string }) => entry.code === 'skill_version_mismatch')).toBe(
+        false
+      );
+    });
+
+    it('still reports the mismatch even after the ambient warning already fired and debounced', async () => {
+      writeStaleSkill('0.0.1-stale');
+      // Mint the machine-local home first so the ambient warning (a
+      // separate mechanism from this finding) actually has debounce state
+      // to consult; otherwise it would warn on every command instead.
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      // First doctor run: this itself is a project-scoped command, so it
+      // also trips (and debounces) the ambient warning from
+      // resolveRootForCommand — independent of the health finding below.
+      const first = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(first.stderr).toContain('0.0.1-stale');
+
+      const second = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      // The ambient warning is debounced (stderr silent this time)...
+      expect(second.stderr).not.toContain('0.0.1-stale');
+      // ...but doctor's own finding, re-derived independently, still fires.
+      const health = parseJson(second);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'skill_version_mismatch' })
+      );
     });
   });
 });
