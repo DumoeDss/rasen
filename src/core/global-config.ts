@@ -103,6 +103,18 @@ export interface GlobalConfig {
    */
   expertSelectionExplicit?: boolean;
   /**
+   * Baseline of built-in *workflow* ids (catalog `kind !== 'expert'`,
+   * `source === 'built-in'`) known when the workflow selection was last
+   * saved. Written by the selection-persisting paths (`applyProfileState`,
+   * `profile use`/`import`, `init`, existing-user migration) and seeded
+   * silently by `update` on first read for legacy configs. `update` uses it
+   * to tell a workflow genuinely new to the catalog from one the user
+   * deliberately deselected: a frozen (`custom`/override) selection surfaces
+   * only built-ins absent from this baseline. Optional and additive — an
+   * older binary that lacks it reads without error.
+   */
+  knownBuiltInWorkflows?: string[];
+  /**
    * Context-handoff threshold; project config of the same name wins over
    * this. `roles` carries per-role overrides (planner/implementer/
    * reviewer/fixer/shipper) mirroring the pipeline registry's

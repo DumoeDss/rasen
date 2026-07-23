@@ -3,7 +3,9 @@ import { UpdateCommand, scanInstalledWorkflows } from '../../src/core/update.js'
 import { InitCommand } from '../../src/core/init.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
 import { OPENSPEC_MARKERS } from '../../src/core/config.js';
+import { saveGlobalConfig } from '../../src/core/global-config.js';
 import type { GlobalConfig } from '../../src/core/global-config.js';
+import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../../src/core/profiles.js';
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
@@ -1510,6 +1512,107 @@ content
       expect(hasToolsList).toBe(true);
 
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('surfacing newly-available built-in workflows (update-sync-new-workflows)', () => {
+    // Pin the locale so the literal-English marker is deterministic regardless
+    // of the host machine's CLI locale (the note is localized).
+    const NOTE_MARKER = 'new built-in workflow';
+    let savedRasenLang: string | undefined;
+    beforeEach(() => {
+      savedRasenLang = process.env.RASEN_LANG;
+      process.env.RASEN_LANG = 'en';
+    });
+    afterEach(() => {
+      if (savedRasenLang === undefined) delete process.env.RASEN_LANG;
+      else process.env.RASEN_LANG = savedRasenLang;
+    });
+    // A custom selection saved before `audit` joined the catalog: it omits
+    // audit and every path treats it verbatim.
+    const customBeforeAudit = ALL_WORKFLOWS.filter((id) => id !== 'audit');
+
+    function warnedMessages(spy: ReturnType<typeof vi.spyOn>): string[] {
+      return spy.mock.calls.map((call) => String(call[0]));
+    }
+
+    it('surfaces the note for a custom selection whose baseline predates audit, and leaves config.workflows unchanged', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: [...customBeforeAudit],
+        expertSelectionExplicit: true,
+        knownBuiltInWorkflows: [...customBeforeAudit],
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await updateCommand.execute(testDir);
+
+      expect(warnedMessages(warnSpy).some((m) => m.includes(NOTE_MARKER) && m.includes('audit'))).toBe(true);
+      // The stored selection is never rewritten to absorb the workflow.
+      const saveMock = saveGlobalConfig as unknown as ReturnType<typeof vi.fn>;
+      for (const call of saveMock.mock.calls) {
+        const saved = call[0] as GlobalConfig;
+        if (saved.workflows) expect(saved.workflows).not.toContain('audit');
+      }
+
+      warnSpy.mockRestore();
+    });
+
+    it('does not surface a workflow the baseline already knew (deliberate deselection)', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: [...customBeforeAudit],
+        expertSelectionExplicit: true,
+        // audit is already in the baseline: the user deselected it deliberately.
+        knownBuiltInWorkflows: [...getCurrentBuiltInWorkflowIds()],
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await updateCommand.execute(testDir);
+
+      expect(warnedMessages(warnSpy).some((m) => m.includes(NOTE_MARKER))).toBe(false);
+      warnSpy.mockRestore();
+    });
+
+    it('does not surface for a full profile (live catalog already includes every built-in)', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'full',
+        expertSelectionExplicit: true,
+        knownBuiltInWorkflows: [...customBeforeAudit],
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await updateCommand.execute(testDir);
+
+      expect(warnedMessages(warnSpy).some((m) => m.includes(NOTE_MARKER))).toBe(false);
+      warnSpy.mockRestore();
+    });
+
+    it('seeds the baseline silently on a legacy config lacking it (no note that run)', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: [...customBeforeAudit],
+        expertSelectionExplicit: true,
+        // No knownBuiltInWorkflows field: a pre-behavior config.
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await updateCommand.execute(testDir);
+
+      expect(warnedMessages(warnSpy).some((m) => m.includes(NOTE_MARKER))).toBe(false);
+      // The baseline is recorded with the currently-known built-ins.
+      const saveMock = saveGlobalConfig as unknown as ReturnType<typeof vi.fn>;
+      const seeded = saveMock.mock.calls
+        .map((call) => call[0] as GlobalConfig)
+        .find((cfg) => Array.isArray(cfg.knownBuiltInWorkflows));
+      expect(seeded).toBeDefined();
+      expect(seeded!.knownBuiltInWorkflows).toContain('audit');
+
+      warnSpy.mockRestore();
     });
   });
 });

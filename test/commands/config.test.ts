@@ -122,6 +122,21 @@ describe('config command integration', () => {
     );
   });
 
+  it('seeds the known-built-in-workflows baseline when setting workflows (every selection-persisting path writes the baseline)', async () => {
+    await runConfigCommand(['set', 'workflows', '["propose","apply"]']);
+
+    const { getGlobalConfig } = await import('../../src/core/global-config.js');
+    const { getCurrentBuiltInWorkflowIds } = await import('../../src/core/profiles.js');
+    const config = getGlobalConfig();
+
+    // The stored selection is exactly what the user set...
+    expect(config.workflows).toEqual(['propose', 'apply']);
+    // ...but the baseline captures the full current built-in catalog, so a
+    // later `update` surfaces only workflows the catalog gains after this.
+    expect(config.knownBuiltInWorkflows).toEqual(getCurrentBuiltInWorkflowIds());
+    expect(config.knownBuiltInWorkflows).toContain('audit');
+  });
+
   it('config set delivery is a retired-key no-op notice, not an unknown-key error', async () => {
     await runConfigCommand(['set', 'delivery', 'commands-first']);
 

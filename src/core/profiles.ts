@@ -12,6 +12,7 @@ import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
   filterKnownWorkflowRoots,
+  getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
   resolveWorkflowSelection,
   WorkflowCatalog,
@@ -51,6 +52,20 @@ export const QUALITY_FLOOR_EXPERTS: readonly string[] = [
   'benchmark',
   'design-review',
 ];
+
+/**
+ * The current built-in *workflow* ids — catalog entries with
+ * `source === 'built-in'` and `kind !== 'expert'` (experts are a disjoint id
+ * space, tracked by their own migration marker). This is the source of truth
+ * for `GlobalConfig.knownBuiltInWorkflows`: the baseline written when a
+ * selection is persisted, and the set `update` diffs against that baseline to
+ * surface a genuinely new built-in workflow.
+ */
+export function getCurrentBuiltInWorkflowIds(): string[] {
+  return getBuiltInWorkflowDefinitions()
+    .filter((definition) => definition.source === 'built-in' && definition.kind !== 'expert')
+    .map((definition) => definition.id);
+}
 
 export interface GetProfileWorkflowsOptions {
   /**

@@ -69,6 +69,7 @@ export interface ProfileUiMessages {
   workflowsLabel: string;
   workflowSummary: (count: number, profile: string) => string;
   workflowsExplanation: string;
+  availableBuiltInsNote: (workflows: string[]) => string;
   configurePrompt: string;
   actions: Record<'workflows' | 'keep', WorkflowPromptMeta>;
   noConfigChanges: string;
@@ -123,6 +124,8 @@ export function getProfileUiMessages(locale: CliLocale = getCliLocale()): Profil
     profileExported: (subject, path) => format(raw.profileExported, { subject, path }),
     namedProfileSettings: (name) => format(raw.namedProfileSettings, { name }),
     workflowSummary: (count, profile) => format(raw.workflowSummary, { count, profile }),
+    availableBuiltInsNote: (workflows) =>
+      format(raw.availableBuiltInsNote, { workflows: workflows.join(', ') }),
     diffProfile: (before, after) => format(raw.diffProfile, { before, after }),
     diffWorkflows: (added, removed) => {
       if (added.length > 0 && removed.length > 0) {
