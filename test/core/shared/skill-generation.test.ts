@@ -11,9 +11,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (22 workflow + 21 expert)', () => {
+    it('should return all skill templates (23 workflow + 21 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(43);
+      expect(templates).toHaveLength(44);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {

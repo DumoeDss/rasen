@@ -1,0 +1,8 @@
+{"timestamp":"2026-01-01T00:00:00.000Z","type":"session_meta","payload":{"session_id":"aaaaaaaa-0000-0000-0000-000000000001","id":"aaaaaaaa-0000-0000-0000-000000000001","cwd":"/synthetic/fixture","thread_source":"user","cli_version":"0.144.1"}}
+{"timestamp":"2026-01-01T00:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1"}}
+{"timestamp":"2026-01-01T00:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":200,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":1260},"model_context_window":300000}}}
+{"timestamp":"2026-01-01T00:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":200,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":1260},"model_context_window":300000}}}
+{"timestamp":"2026-01-01T00:00:05.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","last_agent_message":"first turn done"}}
+{"timestamp":"2026-01-01T00:00:10.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-2"}}
+{"timestamp":"2026-01-01T00:00:11.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1500,"cached_input_tokens":300,"output_tokens":80,"reasoning_output_tokens":15,"total_tokens":1895},"model_context_window":300000}}}
+{"timestamp":"2026-01-01T00:00:15.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-2","last_agent_message":"second turn done"}}

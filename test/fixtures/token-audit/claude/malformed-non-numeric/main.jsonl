@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"u1","timestamp":"2026-01-01T00:00:00.000Z","parentUuid":null,"message":{"id":"msg-A","model":"claude-opus-4-8","content":[{"type":"text","text":"synthetic response with a corrupted usage field"}],"usage":{"input_tokens":100,"cache_creation_input_tokens":200,"cache_read_input_tokens":0,"output_tokens":"ten"}}}

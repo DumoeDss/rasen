@@ -8,12 +8,19 @@
  *   - wait    : one cache-keepalive beat for a parked pipeline worker — a
  *               bounded blocking poll of the change's role signal file, with
  *               a persistent beat cap and runtime gating (cli-agent-wait spec).
+ *   - audit   : local, pull-model session token-spend audit (cli-agent-audit
+ *               spec) — parses a session's transcript(s), writes a report,
+ *               and optionally opens the shipped viewer. Experimental: it
+ *               parses an internal, undocumented transcript/rollout format.
  *
- * A thin consumer of `src/core/agent-context.ts` and `src/core/keepalive/`;
- * all sensing/protocol logic lives there.
+ * A thin consumer of `src/core/agent-context.ts`, `src/core/keepalive/`, and
+ * `src/core/token-audit/`; all sensing/protocol/parsing logic lives there.
  */
 
-import * as fs from 'fs';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   probeAgentContextSafe,
@@ -41,6 +48,9 @@ import {
 import { getGlobalConfig } from '../core/global-config.js';
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
+import { runAudit } from '../core/token-audit/audit.js';
+import { TranscriptFormatError } from '../core/token-audit/errors.js';
+import { isCodexAuditResult, type AuditResult } from '../core/token-audit/types.js';
 
 /** Human-readable rendering of a dual-form threshold for the text-mode verdict line. */
 function formatThresholdDisplay(threshold: ThresholdValue): string {
@@ -64,6 +74,101 @@ export interface AgentWaitOptions {
   maxBeats?: number;
   contextTokens?: number;
   beatSeconds?: number;
+}
+
+export interface AgentAuditOptions {
+  projectsDir?: string;
+  out?: string;
+  runtime?: string;
+  json?: boolean;
+  open?: boolean;
+}
+
+/**
+ * Best-effort default-browser launch, mirroring `src/commands/ui-launch.ts`'s
+ * `openInBrowser` (darwin `open` / win32 `cmd /c start` / else `xdg-open`,
+ * spawned detached with stdio ignored, unref'd so it never holds the CLI
+ * process open; errors swallowed since the URL/path is already printed for
+ * manual opening — design D2).
+ */
+function openInBrowser(url: string): void {
+  try {
+    let command: string;
+    let args: string[];
+    if (process.platform === 'darwin') {
+      command = 'open';
+      args = [url];
+    } else if (process.platform === 'win32') {
+      command = 'cmd';
+      args = ['/c', 'start', '""', url];
+    } else {
+      command = 'xdg-open';
+      args = [url];
+    }
+    const child = spawn(command, args, { stdio: 'ignore', detached: true, shell: false });
+    child.on('error', () => {
+      // Best-effort: the path is already printed for manual opening.
+    });
+    child.unref();
+  } catch {
+    // Best-effort: the path is already printed for manual opening.
+  }
+}
+
+/**
+ * Resolves the shipped `viewer/audit.html` asset's path relative to this
+ * package's own root (design D2), independent of `process.cwd()`. Mirrors
+ * the package-relative resolution pattern used elsewhere (e.g.
+ * `resolveUiPackageDir` in `src/core/config-api/ui-package.ts`). Returns
+ * `undefined` when the asset is not found (never throws — `--open` is
+ * best-effort, the report path is always printed regardless).
+ */
+function resolveAuditViewerPath(): string | undefined {
+  const currentFile = fileURLToPath(import.meta.url);
+  // dist/commands/agent.js -> dist/commands -> package root (two levels up).
+  const packageRoot = path.join(path.dirname(currentFile), '..', '..');
+  const viewerPath = path.join(packageRoot, 'viewer', 'audit.html');
+  try {
+    return fs.statSync(viewerPath).isFile() ? viewerPath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Opens the shipped viewer pre-loaded with the just-generated report via a
+ * `?src=` file reference (design D2). Best-effort: any failure is swallowed
+ * since the report path is always printed as a fallback (spec: "Opening the
+ * viewer after analysis").
+ */
+function openAuditViewer(reportPath: string): void {
+  const viewerPath = resolveAuditViewerPath();
+  if (!viewerPath) return;
+  const viewerUrl = pathToFileURL(viewerPath);
+  viewerUrl.searchParams.set('src', pathToFileURL(reportPath).toString());
+  openInBrowser(viewerUrl.toString());
+}
+
+function formatMillions(n: number): string {
+  return (n / 1e6).toFixed(2) + 'M';
+}
+
+/** One-line totals summary for text mode, shaped per runtime (task 4.1). */
+function summarizeAuditResult(result: AuditResult): string {
+  if (isCodexAuditResult(result)) {
+    const t = result.totals;
+    return (
+      `requests=${t.requests} input=${formatMillions(t.rawTokens.inputTokens)} ` +
+      `cachedInput=${formatMillions(t.rawTokens.cachedInputTokens)} output=${formatMillions(t.rawTokens.outputTokens)} ` +
+      `cacheHitRatio=${(t.cacheHitRatio * 100).toFixed(1)}%`
+    );
+  }
+  const t = result.totals;
+  return (
+    `requests=${t.requests} output=${formatMillions(t.outputTokens)} cacheWrite=${formatMillions(t.cacheWrite)} ` +
+    `cacheRead=${formatMillions(t.cacheRead)} billed-input-equivalent=${formatMillions(t.billedInputEq)} ` +
+    `churn=${formatMillions(t.churn.tokens)} (${t.churn.events} events)`
+  );
 }
 
 /** Every wait outcome is a single JSON object on stdout, exit 0 (design D-4). */
@@ -118,6 +223,55 @@ export class AgentCommand {
     console.log(
       `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
     );
+  }
+
+  /**
+   * Local, pull-model session token-spend audit (cli-agent-audit spec):
+   * parses a Claude Code session transcript (or, with `--runtime codex`, a
+   * Codex rollout) plus its subagent transcripts, writes a report under the
+   * user's Rasen machine-data directory (or `--out`), prints the resolved
+   * path and a one-line summary, and optionally opens the shipped viewer.
+   *
+   * Only {@link TranscriptFormatError} is caught here and turned into a
+   * friendly, non-crashing failure (design D3) — every other thrown error
+   * (an ambiguous session id prefix, a missing transcript, an invalid
+   * `--runtime`) surfaces normally, for the CLI layer's generic catch to
+   * report and exit non-zero, matching `context`'s own error contract.
+   */
+  async audit(target: string, options: AgentAuditOptions = {}): Promise<void> {
+    try {
+      const { result, outPath } = await runAudit(target, {
+        projectsDir: options.projectsDir,
+        outPath: options.out,
+        runtime: options.runtime,
+      });
+      if (options.json) {
+        console.log(JSON.stringify(result));
+      } else {
+        console.log(`wrote ${outPath}`);
+        console.log(summarizeAuditResult(result));
+        for (const caveat of result.caveats ?? []) {
+          console.log(`Caveat: ${caveat}`);
+        }
+      }
+      if (options.open) {
+        openAuditViewer(outPath);
+      }
+    } catch (error) {
+      if (error instanceof TranscriptFormatError) {
+        const message =
+          `rasen agent audit: transcript format not recognized (harness may have updated the session log format). ` +
+          `${error.detail} at ${error.filePath}:${error.lineNumber}. This command is experimental; see 'rasen agent audit --help' for details.`;
+        if (options.json) {
+          console.log(JSON.stringify({ available: false, reason: 'format-drift', detail: message }));
+        } else {
+          console.log(message);
+        }
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

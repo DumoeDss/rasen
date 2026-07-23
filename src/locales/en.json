@@ -287,6 +287,10 @@
         "goal-command": {
           "name": "Run goal loop",
           "description": "Orchestrate planning, iterations, and reporting for a long-running goal"
+        },
+        "audit": {
+          "name": "Session audit",
+          "description": "Diagnose a session's token spend — find the session, run the audit, and interpret the report"
         }
       },
       "experts": {
@@ -819,6 +823,10 @@
     "Self-reported context size; below the keepalive floor stands down immediately": "Self-reported context size; below the keepalive floor stands down immediately",
     "Beat duration in seconds (default 270, max 300)": "Beat duration in seconds (default 270, max 300)",
     "Report context-window occupancy of a transcript from its recorded usage": "Report context-window occupancy of a transcript from its recorded usage",
+    "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)": "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)",
+    "Override the Claude projects directory a session id is resolved against": "Override the Claude projects directory a session id is resolved against",
+    "Write the report to this file instead of the default analytics directory": "Write the report to this file instead of the default analytics directory",
+    "Open the shipped viewer in your default browser, pre-loaded with the report": "Open the shipped viewer in your default browser, pre-loaded with the report",
     "Report relationship health for the resolved Rasen root": "Report relationship health for the resolved Rasen root",
     "Report whether the resident daemon is running": "Report whether the resident daemon is running",
     "Reset all configuration (required)": "Reset all configuration (required)",
