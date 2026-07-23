@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { stringify as stringifyYaml } from 'yaml';
 
 import {
   acquireFileLock,
@@ -10,7 +11,8 @@ import {
 } from './file-state.js';
 import { getGlobalConfigDir } from './global-config.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
-import { PipelineValidationError, parsePipeline } from './pipeline-registry/pipeline.js';
+import { PipelineValidationError, parsePipeline, validatePipelineSkills } from './pipeline-registry/pipeline.js';
+import { resolvePipelineExecutionSkillSets } from './pipeline-registry/execution-validation.js';
 import {
   getUserPipelinesDir,
   listPipelinesWithInfo,
@@ -606,5 +608,79 @@ export async function deletePipeline(
     }
 
     return { forcedReferrers: usage.length > 0 ? forcedReferrers : [] };
+  });
+}
+
+export interface SavePipelineResult {
+  name: string;
+  path: string;
+  /** `false` when an existing user pipeline of this name was overwritten (`--force`). */
+  created: boolean;
+}
+
+/**
+ * Installs a pipeline definition (read from `fromFile`, JSON or YAML — `yaml`'s
+ * parser accepts both) as the named USER pipeline (pipeline-definition-api).
+ * Validates through the SAME chain `parsePipeline` runs (schema + every
+ * structural check, including the origin-scoped quality floor) plus the skill
+ * known/enabled checks, refuses a built-in name unconditionally, refuses an
+ * existing user pipeline without `force`, and emits canonical YAML preserving
+ * every field — including `origin` — verbatim (no field is stamped or
+ * stripped by this function; a caller wanting `origin: 'ui'` stamps it into
+ * the definition before calling this).
+ */
+export async function savePipeline(
+  name: string,
+  fromFile: string,
+  options: WorkflowRegistryOptions & { projectRoot?: string; force?: boolean } = {}
+): Promise<SavePipelineResult> {
+  if (!isPortableWorkflowId(name)) {
+    throw new PipelineLibraryError(`Pipeline name "${name}" is not portable`, 'pipeline_id_invalid');
+  }
+
+  const projectRoot = options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+  const info = listPipelinesWithInfo(projectRoot).find((entry) => entry.name === name);
+  if (info?.source === 'package') {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" is a built-in pipeline and cannot be overwritten by save`,
+      'pipeline_builtin_protected'
+    );
+  }
+  if (info?.source === 'user' && !options.force) {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" already exists; use --force to overwrite`,
+      'pipeline_already_exists'
+    );
+  }
+
+  const resolvedFrom = path.resolve(fromFile);
+  let content: string;
+  try {
+    content = fs.readFileSync(resolvedFrom, 'utf8');
+  } catch (error) {
+    throw new PipelineLibraryError(
+      `Definition file "${resolvedFrom}" could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      'definition_not_found'
+    );
+  }
+
+  // Full structural chain (schema, duplicate ids, requires refs, cycles,
+  // parallel groups, decompose constraints, origin-scoped quality floor) —
+  // throws PipelineValidationError on the first violation, exactly like every
+  // other pipeline load.
+  const pipeline = parsePipeline(content);
+
+  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(
+    projectRoot,
+    { reporter: false }
+  );
+  validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
+
+  return withPipelinesLock(() => {
+    const targetDir = path.join(getUserPipelinesDir(), name);
+    fs.mkdirSync(targetDir, { recursive: true, mode: 0o700 });
+    const targetFile = path.join(targetDir, 'pipeline.yaml');
+    fs.writeFileSync(targetFile, stringifyYaml(pipeline), { encoding: 'utf8', mode: 0o600 });
+    return { name, path: targetFile, created: !info };
   });
 }

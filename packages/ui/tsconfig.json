@@ -15,7 +15,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "react": ["./node_modules/preact/compat"],
+      "react-dom/test-utils": ["./node_modules/preact/test-utils"],
+      "react-dom": ["./node_modules/preact/compat"],
+      "react/jsx-runtime": ["./node_modules/preact/jsx-runtime"]
+    }
   },
   "include": ["src", "test", "vite.config.ts"]
 }

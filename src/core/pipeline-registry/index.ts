@@ -13,6 +13,7 @@ export {
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
   StageLoopSchema,
+  LOOP_KIND_VALUES,
   StageKindSchema,
   VerifyPolicySchema,
   PipelineYamlSchema,
@@ -56,7 +57,9 @@ export {
   loadPipeline,
   parsePipeline,
   validatePipelineSkills,
+  validatePipelineDraft,
   PipelineValidationError,
+  type PipelineValidationIssue,
 } from './pipeline.js';
 export {
   resolvePipelineExecutionSkillSets,

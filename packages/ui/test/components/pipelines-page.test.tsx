@@ -222,6 +222,29 @@ describe('PipelinesPage', () => {
     expect(container.querySelector('[data-testid="pipelines-no-space"]')).not.toBeNull();
     expect(client.listPipelines).not.toHaveBeenCalled();
   });
+
+  it('rejects a malformed name and, once valid, navigates to the graph route in edit mode (pipeline-canvas-edit)', async () => {
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-assemble"]'));
+    const nameInput = container.querySelector('[data-testid="pipeline-assemble-name"]') as HTMLInputElement;
+
+    await act(async () => {
+      nameInput.value = 'Not Valid!';
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-assemble-submit"]'));
+    expect(container.querySelector('[data-testid="pipeline-dialog-error"]')).not.toBeNull();
+    expect(window.location.pathname).toBe('/p/proj_x/pipelines');
+
+    await act(async () => {
+      nameInput.value = 'my-new-pipeline';
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-assemble-submit"]'));
+    expect(window.location.pathname).toBe('/p/proj_x/pipelines/my-new-pipeline');
+  });
 });
 
 function stageSection(container: HTMLElement, name: string): Element {

@@ -28,11 +28,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@xyflow/react": "^12.3.6",
+    "dagre": "^0.8.5",
     "preact": "^10.24.3",
     "preact-iso": "^2.9.1"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.3",
+    "@types/dagre": "^0.7.52",
     "jsdom": "^25.0.1",
     "typescript": "^5.9.3",
     "vite": "^6.0.7",

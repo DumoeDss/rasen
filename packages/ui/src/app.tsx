@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { LocationProvider, Router, Route, useLocation } from 'preact-iso';
+import { LocationProvider, Router, Route, lazy, useLocation } from 'preact-iso';
 import { hasToken, isUnauthorized, onUnauthorized } from './api/token.js';
 import { Layout } from './components/Layout.js';
 import { ConfigPage } from './components/ConfigPage.js';
@@ -12,6 +12,17 @@ import { WorkflowsPage } from './components/WorkflowsPage.js';
 import { PipelinesPage } from './components/PipelinesPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
+
+/**
+ * Lazy route (pipeline-canvas-view design D1): the canvas page and its
+ * dependencies (`@xyflow/react`, `dagre`, the preact/compat-aliased React
+ * runtime) live in a chunk fetched only when a graph route is opened —
+ * `preact-iso`'s `lazy()` gives this chunk boundary for free at the route
+ * level, so every other page's bundle stays canvas-free.
+ */
+const PipelineCanvasPage = lazy(() =>
+  import('./canvas/PipelineCanvasPage.js').then((m) => m.PipelineCanvasPage)
+);
 
 /**
  * Redirects a bare space root (`/p/<id>` or `/s/<id>`, no section) to that
@@ -62,6 +73,8 @@ export function App() {
           <Route path="/s/:storeId/config" component={ConfigPage} />
           <Route path="/p/:projectId/pipelines" component={PipelinesPage} />
           <Route path="/s/:storeId/pipelines" component={PipelinesPage} />
+          <Route path="/p/:projectId/pipelines/:name" component={PipelineCanvasPage} />
+          <Route path="/s/:storeId/pipelines/:name" component={PipelineCanvasPage} />
           <Route path="/p/:projectId/archive" component={ArchivePage} />
           <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />

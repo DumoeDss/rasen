@@ -262,6 +262,7 @@ describe('command completion registry', () => {
       'pipeline init',
       'pipeline list',
       'pipeline resume',
+      'pipeline save',
       'pipeline show',
       'pipeline validate',
     ]);
@@ -285,6 +286,7 @@ describe('command completion registry', () => {
       'pipeline import',
       'pipeline export',
       'pipeline delete',
+      'pipeline save',
     ]);
     for (const commandPath of seen) {
       if (pipelineLibraryVerbs.has(commandPath)) continue;

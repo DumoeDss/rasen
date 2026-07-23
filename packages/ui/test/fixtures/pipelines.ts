@@ -7,7 +7,11 @@
  * diverges from the CLI's wire-types.ts. Path-valued fields are plain display
  * strings kept separator-neutral with forward slashes.
  */
-import type { ListConfigResponse, ListPipelinesResponse } from '../../src/api/types.js';
+import type {
+  ListConfigResponse,
+  ListPipelinesResponse,
+  PipelineDetailResponse,
+} from '../../src/api/types.js';
 
 /**
  * Three pipelines: a built-in `small-feature` (locked; a propose stage with no
@@ -97,6 +101,118 @@ export const pipelinesFixture = {
     },
   ],
 } satisfies ListPipelinesResponse;
+
+/**
+ * `GET /api/v1/pipelines/small-feature` detail (pipeline-definition-api,
+ * pipeline-canvas-view's data source): `propose` -> `apply`, three stages
+ * (`review`/`cso`/`qa`) sharing `parallelGroup: 'checks'` all requiring
+ * `apply`, and `review-loop` requiring all three (fork + convergence) —
+ * exactly the shape the layout unit tests pin. `pipeline` (the resolved view)
+ * carries the same stage ids so `layout.ts` can join badges by id.
+ */
+export const pipelineDetailFixture = {
+  pipeline: {
+    name: 'small-feature',
+    description: 'A small feature pipeline',
+    provenance: 'built-in',
+    sourceLayer: 'package',
+    stages: [
+      {
+        id: 'propose',
+        role: 'planner',
+        skill: 'rasen-propose',
+        gate: true,
+        effectiveGate: { value: true, source: 'stage' },
+        effectiveModel: { value: 'fable', source: 'default' },
+        effectiveHandoff: { value: 0.5, source: 'default' },
+        effectiveRuntime: { value: 'claude', source: 'default' },
+      },
+      {
+        id: 'apply',
+        role: 'implementer',
+        skill: 'rasen-apply',
+        gate: false,
+        effectiveGate: { value: false, source: 'stage' },
+        effectiveModel: { value: 'opus-4', source: 'stage-override-project' },
+        effectiveHandoff: { value: { remainingTokens: 50000 }, source: 'stage-override-project' },
+        effectiveRuntime: { value: 'codex', source: 'stage-override-project' },
+      },
+      {
+        id: 'review',
+        role: 'reviewer',
+        skill: 'rasen-review',
+        gate: true,
+        effectiveGate: { value: true, source: 'stage' },
+        effectiveModel: { value: null, source: 'default' },
+        effectiveHandoff: { value: 0.5, source: 'default' },
+        effectiveRuntime: { value: 'claude', source: 'default' },
+      },
+      {
+        id: 'cso',
+        role: 'reviewer',
+        skill: 'rasen-cso',
+        gate: true,
+        effectiveGate: { value: true, source: 'stage' },
+        effectiveModel: { value: null, source: 'default' },
+        effectiveHandoff: { value: 0.5, source: 'default' },
+        effectiveRuntime: { value: 'claude', source: 'default' },
+      },
+      {
+        id: 'qa',
+        role: 'reviewer',
+        skill: 'rasen-qa',
+        gate: true,
+        effectiveGate: { value: true, source: 'stage' },
+        effectiveModel: { value: null, source: 'default' },
+        effectiveHandoff: { value: 0.5, source: 'default' },
+        effectiveRuntime: { value: 'claude', source: 'default' },
+      },
+      {
+        id: 'review-loop',
+        role: 'fixer',
+        skill: 'rasen-review-cycle',
+        gate: true,
+        effectiveGate: { value: true, source: 'stage' },
+        effectiveModel: { value: null, source: 'default' },
+        effectiveHandoff: { value: 0.5, source: 'default' },
+        effectiveRuntime: { value: 'claude', source: 'default' },
+      },
+      {
+        id: 'ship',
+        role: 'shipper',
+        skill: 'rasen-ship',
+        gate: false,
+        effectiveGate: { value: false, source: 'stage' },
+        effectiveModel: { value: null, source: 'default' },
+        effectiveHandoff: { value: 0.5, source: 'default' },
+        effectiveRuntime: { value: 'claude', source: 'default' },
+      },
+    ],
+  },
+  definition: {
+    name: 'small-feature',
+    description: 'A small feature pipeline',
+    stages: [
+      { id: 'propose', kind: 'standard', skill: 'rasen-propose', role: 'planner', requires: [], gate: true, leadReview: false },
+      { id: 'apply', kind: 'standard', skill: 'rasen-apply', role: 'implementer', requires: ['propose'], gate: false, leadReview: false },
+      { id: 'review', kind: 'standard', skill: 'rasen-review', role: 'reviewer', requires: ['apply'], gate: true, leadReview: false, parallelGroup: 'checks' },
+      { id: 'cso', kind: 'standard', skill: 'rasen-cso', role: 'reviewer', requires: ['apply'], gate: true, leadReview: false, parallelGroup: 'checks' },
+      { id: 'qa', kind: 'standard', skill: 'rasen-qa', role: 'reviewer', requires: ['apply'], gate: true, leadReview: false, parallelGroup: 'checks' },
+      {
+        id: 'review-loop',
+        kind: 'standard',
+        skill: 'rasen-review-cycle',
+        role: 'fixer',
+        requires: ['review', 'cso', 'qa'],
+        gate: true,
+        leadReview: false,
+        loop: { kind: 'review-cycle', maxRounds: 3 },
+      },
+      { id: 'ship', kind: 'standard', skill: 'rasen-ship', role: 'shipper', requires: ['review-loop'], gate: false, leadReview: false },
+    ],
+  },
+  editable: false,
+} satisfies PipelineDetailResponse;
 
 /** The Defaults-table config keys (a representative subset of the role matrix + the autopilot controls). */
 export const pipelinesConfigFixture = {

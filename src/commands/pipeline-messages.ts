@@ -98,6 +98,7 @@ export interface PipelineMessageValues {
   importedEntry: { name: string; digest: string };
   replaceDestination: { path: string };
   exported: { name: string; path: string };
+  savedPipeline: { name: string; path: string };
   deletePipeline: { name: string };
   deleted: { name: string };
   forcedDeleteWarning: { name: string; referrers: string };
@@ -186,6 +187,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'importedEntry',
   'replaceDestination',
   'exported',
+  'savedPipeline',
   'deletePipeline',
   'deleted',
   'forcedDeleteWarning',
@@ -206,6 +208,8 @@ export const PIPELINE_ERROR_KEYS = [
   'output_not_directory',
   'output_not_empty',
   'pipeline_already_exists',
+  'pipeline_builtin_protected',
+  'definition_not_found',
   'pipeline_delete_forbidden',
   'pipeline_in_use',
   'destination_exists',

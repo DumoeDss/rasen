@@ -6,7 +6,7 @@
  */
 import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
-import type { ThresholdValue } from '../pipeline-registry/index.js';
+import type { PipelineYaml, ThresholdValue } from '../pipeline-registry/index.js';
 import type {
   WorkflowDependencySet,
   WorkflowDiagnostic,
@@ -84,7 +84,75 @@ export type PipelineMutationRequest =
   | { op: 'import'; path: string; force?: boolean }
   | { op: 'init'; name: string; output: string }
   | { op: 'export'; name: string; path: string; force?: boolean }
-  | { op: 'delete'; name: string; force?: boolean };
+  | { op: 'delete'; name: string; force?: boolean }
+  | { op: 'save'; name: string; definition: unknown; force?: boolean };
+
+// -----------------------------------------------------------------------
+// Pipeline definition API (pipeline-definition-api) — the detail, draft
+// validation, and catalog reads plus the `save` mutation the pipeline canvas
+// (children 3-4 of pipeline-online-assembly) needs. `packages/ui/src/api/
+// types.ts` is DELIBERATELY not mirrored by this change: mirror discipline
+// says the mirror is updated by the change that first CONSUMES a shape, and
+// no UI code consumes these yet.
+// -----------------------------------------------------------------------
+
+/**
+ * The JSON projection of a pipeline's declared definition, derived from the
+ * loader's own accepted schema (`z.infer<typeof PipelineYamlSchema>`) so no
+ * YAML-accepted field is silently dropped — round-tripping this value through
+ * `save` and back through `detail` yields a semantically identical pipeline.
+ */
+export type WirePipelineDefinition = PipelineYaml;
+
+/** `GET /api/v1/pipelines/<name>` response (pipeline-definition-api). */
+export interface PipelineDetailResponse {
+  pipeline: WirePipeline;
+  definition: WirePipelineDefinition;
+  /** `false` for built-in (package-provenance) pipelines, which are still returned read-only as save-as templates. */
+  editable: boolean;
+}
+
+/** `POST /api/v1/pipeline-validation` request body. */
+export interface PipelineValidationRequest {
+  definition: unknown;
+  space?: string;
+}
+
+/** One issue reported by draft validation — `severity: 'error'` makes the draft invalid; `'warning'` does not. */
+export interface PipelineValidationIssue {
+  severity: 'error' | 'warning';
+  /** A JSON-pointer-ish locator into the definition, e.g. `/stages/2/skill`. */
+  path: string;
+  message: string;
+}
+
+/** `POST /api/v1/pipeline-validation` response — 200 for both a valid and an invalid draft. */
+export interface PipelineValidationResponse {
+  valid: boolean;
+  issues: PipelineValidationIssue[];
+}
+
+/** One skill in the pipeline-catalog vocabulary. */
+export interface PipelineCatalogSkill {
+  id: string;
+  description: string;
+  /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
+  enabled: boolean;
+}
+
+/** `GET /api/v1/pipeline-catalog` response: the assembly vocabulary for the pipeline canvas. */
+export interface PipelineCatalogResponse {
+  roles: string[];
+  skills: PipelineCatalogSkill[];
+  runtimes: string[];
+  stageKinds: string[];
+  loopKinds: string[];
+  verifyPolicies: string[];
+  /** Conventional freeform condition labels, offered as suggestions — the `condition` field itself stays freeform. */
+  conditionLabels: string[];
+  gate: { default: boolean };
+  handoff: { fractionRange: [number, number]; remainingTokensGt: number };
+}
 
 /** `POST /api/v1/changes` request body (change-submission design D1). */
 export interface SubmitChangeRequest {

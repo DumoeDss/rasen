@@ -9,6 +9,7 @@ import {
   exportPipeline,
   importPipelinePackage,
   PipelineLibraryError,
+  savePipeline,
   scaffoldPipeline,
   validatePipelineInput,
 } from '../../src/core/pipeline-library.js';
@@ -17,7 +18,7 @@ import {
   encodePackage,
   type PipelinePackageInput,
 } from '../../src/core/workflow-package/index.js';
-import { getUserPipelinesDir, listPipelines } from '../../src/core/pipeline-registry/index.js';
+import { getUserPipelinesDir, listPipelines, loadPipelineByName } from '../../src/core/pipeline-registry/index.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 import { scaffoldWorkflow, importWorkflow } from '../../src/core/workflow-library.js';
 
@@ -250,5 +251,140 @@ describe('pipeline library lifecycle', () => {
     expect(result.forcedReferrers).toEqual([]);
     expect(listPipelines()).not.toContain('lonely-pipe');
     expect(fs.existsSync(path.join(getUserPipelinesDir(), 'lonely-pipe'))).toBe(false);
+  });
+
+  describe('savePipeline (pipeline-definition-api)', () => {
+    function writeDefinitionFile(dir: string, filename: string, content: string): string {
+      const target = path.join(dir, filename);
+      fs.writeFileSync(target, content);
+      return target;
+    }
+
+    it('installs a valid JSON definition as a user pipeline', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft.json',
+        JSON.stringify({
+          name: 'saved-from-json',
+          stages: [{ id: 'implement', skill: 'rasen-apply-change', role: 'implementer' }],
+        })
+      );
+      const result = await savePipeline('saved-from-json', definitionPath);
+      expect(result.created).toBe(true);
+      expect(listPipelines()).toContain('saved-from-json');
+      const pipeline = loadPipelineByName('saved-from-json');
+      expect(pipeline.stages[0].skill).toBe('rasen-apply-change');
+    });
+
+    it('installs a valid YAML definition, preserving origin verbatim', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft.yaml',
+        [
+          'name: saved-from-yaml',
+          'origin: ui',
+          'stages:',
+          '  - id: implement',
+          '    skill: rasen-apply-change',
+          '    role: implementer',
+          '  - id: review',
+          '    skill: rasen-review',
+          '    role: reviewer',
+          '    requires: [implement]',
+          '    loop:',
+          '      kind: review-cycle',
+          '',
+        ].join('\n')
+      );
+      const result = await savePipeline('saved-from-yaml', definitionPath);
+      expect(result.created).toBe(true);
+      const pipeline = loadPipelineByName('saved-from-yaml');
+      expect(pipeline.origin).toBe('ui');
+    });
+
+    it('round-trips optional fields (requires, loop, role) through save + read-back', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft2.json',
+        JSON.stringify({
+          name: 'saved-roundtrip',
+          stages: [
+            { id: 'implement', skill: 'rasen-apply-change', role: 'implementer' },
+            {
+              id: 'review',
+              skill: 'rasen-review',
+              role: 'reviewer',
+              requires: ['implement'],
+              loop: { kind: 'review-cycle', maxRounds: 2 },
+            },
+          ],
+        })
+      );
+      await savePipeline('saved-roundtrip', definitionPath);
+      const pipeline = loadPipelineByName('saved-roundtrip');
+      const review = pipeline.stages.find((s) => s.id === 'review')!;
+      expect(review.requires).toEqual(['implement']);
+      expect(review.loop).toEqual({ kind: 'review-cycle', maxRounds: 2 });
+    });
+
+    it('refuses an existing user pipeline without --force, then allows it with --force', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft3.json',
+        JSON.stringify({
+          name: 'saved-twice',
+          stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+        })
+      );
+      await savePipeline('saved-twice', definitionPath);
+      await expect(savePipeline('saved-twice', definitionPath)).rejects.toMatchObject({
+        code: 'pipeline_already_exists',
+      });
+      const result = await savePipeline('saved-twice', definitionPath, { force: true });
+      expect(result.created).toBe(false);
+    });
+
+    it('refuses a built-in pipeline name regardless of force', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft4.json',
+        JSON.stringify({
+          name: 'bug-fix',
+          stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+        })
+      );
+      await expect(savePipeline('bug-fix', definitionPath, { force: true })).rejects.toMatchObject({
+        code: 'pipeline_builtin_protected',
+      });
+    });
+
+    it('never installs an invalid definition (structural failure)', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft5.json',
+        JSON.stringify({
+          name: 'saved-invalid',
+          stages: [
+            { id: 'a', skill: 'rasen-apply-change', requires: ['b'] },
+            { id: 'b', skill: 'rasen-apply-change', requires: ['a'] },
+          ],
+        })
+      );
+      await expect(savePipeline('saved-invalid', definitionPath)).rejects.toThrow(/[Cc]yclic/);
+      expect(listPipelines()).not.toContain('saved-invalid');
+    });
+
+    it('never installs a definition referencing an unknown skill', async () => {
+      const definitionPath = writeDefinitionFile(
+        home,
+        'draft6.json',
+        JSON.stringify({
+          name: 'saved-unknown-skill',
+          stages: [{ id: 'implement', skill: 'no-such-skill' }],
+        })
+      );
+      await expect(savePipeline('saved-unknown-skill', definitionPath)).rejects.toThrow(/unknown skill/);
+      expect(listPipelines()).not.toContain('saved-unknown-skill');
+    });
   });
 });
