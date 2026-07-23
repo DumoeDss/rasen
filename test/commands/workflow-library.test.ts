@@ -188,14 +188,24 @@ describe('workflow command', () => {
     process.chdir(project);
 
     const reads = new Map<string, number>();
+    // Canonicalize both sides (test/AGENTS.md): the planning-root resolver
+    // realpaths the project directory, so on macOS a readdir arrives as
+    // /private/var/... while os.tmpdir() hands the test /var/... aliases.
+    const canonicalize = (directory: string): string => {
+      try {
+        return fs.realpathSync.native(directory);
+      } catch {
+        return path.resolve(directory);
+      }
+    };
     const trackedDirectories = [
       path.join(home, 'workflows'),
       profilesDir,
       globalPipelinesDir,
       projectPipelinesDir,
-    ].map((directory) => path.resolve(directory));
+    ].map(canonicalize);
     fsMock.beforeReaddir = (directoryPath) => {
-      const resolved = path.resolve(String(directoryPath));
+      const resolved = canonicalize(String(directoryPath));
       if (trackedDirectories.includes(resolved)) {
         reads.set(resolved, (reads.get(resolved) ?? 0) + 1);
       }
