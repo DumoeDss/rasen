@@ -25,4 +25,4 @@
 ## 4. Verification
 
 - [x] 4.1 Run the full test suite (isolate any Windows EBUSY/spawn flakes per known list) and `rasen validate ui-space-workflow-toggle --strict` — all touched-area tests green (616/616 core + management-api + 259/259 UI); two pre-existing baseline failures unrelated to this change isolated and confirmed (cli-e2e locale skillVersionMismatch env flake; skill-templates-parity hash drift in untouched files, zero diff from HEAD)
-- [ ] 4.2 Manual smoke: two local spaces — enable/disable in one, confirm the other's skills and drift status untouched; reset restores profile-following; CLI `rasen update` in the overridden space keeps the override
+- [x] 4.2 Manual smoke: two local spaces — enable/disable in one, confirm the other's skills and drift status untouched; reset restores profile-following; CLI `rasen update` in the overridden space keeps the override
