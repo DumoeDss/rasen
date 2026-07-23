@@ -75,14 +75,14 @@ The intent is identical everywhere. The punctuation differs. Use the form that m
 
 | Tool | How you type it |
 |------|-----------------|
-| Claude Code | `rasen-propose`, `rasen-apply-change` |
+| Claude Code | `/rasen-propose`, `/rasen-apply-change` |
 | Cursor | `/rasen-propose`, `/rasen-apply` |
 | Windsurf | `/rasen-propose`, `/rasen-apply` |
 | GitHub Copilot (IDE) | `/rasen-propose`, `/rasen-apply` |
 | Kimi CLI | skill-style, e.g. `/rasen-propose` |
 | Trae | skill-style, e.g. `/rasen-propose` |
 
-Most tools use either the colon form (`rasen-propose`) or the dash form (`/rasen-propose`), driven by how that tool surfaces an installed skill. The full per-tool list, including exactly which files get written where, lives in [Supported Tools](supported-tools.md).
+Every tool surfaces the skill behind a leading slash; the exact syntax after that varies by tool. The full per-tool list, including exactly which files get written where, lives in [Supported Tools](supported-tools.md).
 
 When in doubt, type a slash in your AI chat and look at the autocomplete. Your tool will show you the form it expects.
 
