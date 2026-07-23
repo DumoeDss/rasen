@@ -1,15 +1,15 @@
-# OpenSpec 文档
+# Rasen 文档
 
-欢迎。这里是 OpenSpec 的一切所在。
+欢迎。这里是 rasen 的一切所在。
 
-OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 bug、一项功能——它便自行驱动外循环，起草规格和任务清单、实施、评审、修复、交付这次改动。从此不必在写了一半时才发现 AI 做错了方向。
+Rasen 是一套**自主引擎**：你描述意图——一个目标、一个 bug、一项功能——它便自行驱动外循环，起草规格和任务清单、实施、评审、修复、交付这次改动。从此不必在写了一半时才发现 AI 做错了方向。
 
 如果只读一页，就读这两页：
 
 1. [快速入门](getting-started.md)：安装、初始化，并交付你的第一个变更。
 2. [命令是如何工作的](how-commands-work.md)：你到底在哪里输入 `/rasen-propose`（提示：在你的 AI 聊天里，而不是终端里）。几乎每个人都会在这里绊一次。
 
-第二页的重要性比看起来更大。OpenSpec 有两个部分：你在终端里运行的命令行工具，以及你给 AI 助手下达的斜杠命令（slash command）。分清这两者，能省掉最常见的那次困惑。
+第二页的重要性比看起来更大。Rasen 有两个部分：你在终端里运行的命令行工具，以及你给 AI 助手下达的斜杠命令（slash command）。分清这两者，能省掉最常见的那次困惑。
 
 > **最值得先养成的习惯：当你不确定要构建什么时，从 `/rasen-explore` 开始。** 它是一个零成本的思考伙伴——会阅读你的代码、权衡各种选项，在任何产物或代码存在之前，把一个模��的想法打磨成具体的计划。[先做探索（Explore First）](explore.md) 这份指南把理由讲得很清楚。
 
@@ -19,7 +19,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 
 **我有问题，但还没有方案。** 这是最常见的情况，并且有专门的答案：[先做探索](explore.md)。在拍板之前，先用 `/rasen-explore` 和 AI 一起把它想透。
 
-**我有一个庞大的现成代码库。** 你不必为它全部写文档。[在现有项目中使用 OpenSpec](existing-projects.md) 讲解如何在真实的、棕地（brownfield）代码上起步，而不必“一口吃成胖子”。
+**我有一个庞大的现成代码库。** 你不必为它全部写文档。[在现有项目中使用 Rasen](existing-projects.md) 讲解如何在真实的、棕地（brownfield）代码上起步，而不必“一口吃成胖子”。
 
 **我只想让它先跑起来。** [安装](installation.md)，运行 `rasen init`，然后读 [命令是如何工作的](how-commands-work.md)，好让你的第一个斜杠命令落到正确的地方。
 
@@ -27,7 +27,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 
 **AI 刚起草了一份计划——接下来怎么办？** 读它。[评审一次变更](reviewing-changes.md) 展示了那两分钟的过一遍，趁走错还便宜时及时纠偏；[写好规格](writing-specs.md) 则讲清楚一份值得批准的计划由什么构成。
 
-**我在团队中工作。** [团队中的 OpenSpec](team-workflow.md) 展示了一次变更如何映射到一个分支和一个 pull request，以及队友如何在代码之前评审计划。
+**我在团队中工作。** [团队中的 Rasen](team-workflow.md) 展示了一次变更如何映射到一个分支和一个 pull request，以及队友如何在代码之前评审计划。
 
 **我从旧的工作流迁移过来。** [迁移指南](migration-guide.md) 解释了什么变了、为什么变，并保证你既有的工作不会丢失。
 
@@ -56,18 +56,18 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 | [示例与配方](examples.md) | 真实变更的完整演练，可直接复制粘贴 |
 | [写好规格](writing-specs.md) | 一条强需求和一个好场景长什么样，以及如何给一次变更定准大小 |
 | [评审一次变更](reviewing-changes.md) | 在写任何代码之前，用两分钟过一遍起草好的计划 |
-| [团队中的 OpenSpec](team-workflow.md) | 变更如何契合分支、pull request 与评审 |
-| [在现有项目中使用 OpenSpec](existing-projects.md) | 在庞大的棕地代码库上采用 OpenSpec |
+| [团队中的 Rasen](team-workflow.md) | 变更如何契合分支、pull request 与评审 |
+| [在现有项目中使用 Rasen](existing-projects.md) | 在庞大的棕地代码库上采用 rasen |
 | [编辑与迭代一次变更](editing-changes.md) | 更新产物、回退、调和手动改动 |
 | [命令](commands.md) | 每一个 `/rasen-*` 斜杠命令的参考 |
-| [CLI](cli.md) | 每一个 `openspec` 终端命令的参考 |
+| [CLI](cli.md) | 每一个 `rasen` 终端命令的参考 |
 
 ### 深入理解
 
 | 文档 | 你能从中得到什么 |
 |-----|-------------------|
 | [概念](concepts.md) | 对 spec、变更、产物、schema 和归档的长篇讲解 |
-| [OPSX 工作流](opsx.md) | 为什么这套工作流是“流动的”而非“阶段锁死的”，外加一次架构深潜 |
+| [制品工作流](artifact-workflow.md) | 为什么这套工作流是”流动的”而非”阶段锁死的”，外加一次架构深潜 |
 | [术语表](glossary.md) | 每个术语集中在一处定义 |
 
 ### 改造成你自己的
@@ -76,7 +76,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 |-----|-------------------|
 | [自定义](customization.md) | 项目配置、自定义 schema、共享上下文 |
 | [多语言](multi-language.md) | 用英文以外的语言生成产物 |
-| [支持的工具](supported-tools.md) | OpenSpec 集成的 25+ AI 工具，以及文件落在哪里 |
+| [支持的工具](supported-tools.md) | rasen 集成的 25+ AI 工具，以及文件落在哪里 |
 
 ### 需要帮助时
 
@@ -84,7 +84,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 |-----|-------------------|
 | [FAQ](faq.md) | 人们最常问的那些问题的快速解答 |
 | [故障排查](troubleshooting.md) | 针对具体失败的具体修复 |
-| [迁移指南](migration-guide.md) | 从旧工作流迁移到 OPSX |
+| [迁移指南](migration-guide.md) | 从旧工作流迁移到制品工作流 |
 
 ### 跨仓库协作（beta）
 
@@ -96,7 +96,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 ## 三十秒版
 
 ```text
-1. 安装          npm install -g @fission-ai/openspec@latest
+1. 安装          npm install -g @atelierai/rasen@latest
 2. 初始化        cd your-project && rasen init
 3. 探索          （在你的 AI 聊天里）  /rasen-explore           ← 可选，但是个好习惯
 4. 提案          （在你的 AI 聊天里）  /rasen-propose add-dark-mode
@@ -109,7 +109,7 @@ OpenSpec 是一套**自主引擎**：你描述意图——一个目标、一个 
 ## 还能在哪里获得帮助
 
 - **Discord：** [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)，用于提问、想法和求助。
-- **GitHub Issues：** [github.com/Fission-AI/OpenSpec/issues](https://github.com/Fission-AI/OpenSpec/issues)，用于 bug 和功能请求。
+- **GitHub Issues：** [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues)，用于 bug 和功能请求。
 - **`rasen feedback "你的留言"`** 直接从你的终端发送反馈（它会打开一个 GitHub issue）。
 
 如果你在这些文档里发现了错误、过时或令人费解的内容，那就是一个 bug。开个 issue 或 PR 吧。文档改进是你能做出的最有价值的贡献之一。

@@ -1,6 +1,6 @@
 # Autopilot Policies: Gates, Selection, and Composed Pipelines
 
-`/rasen-auto` has three **opt-in policy axes** that control how much the LEAD decides on its own. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-run-the-entire-workflow-with-one-command-opsxauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
+`/rasen-auto` has three **opt-in policy axes** that control how much the LEAD decides on its own. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-run-the-entire-workflow-with-one-command-rasenauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
 
 | Axis | Run flag | Config key (project `rasen/config.yaml` AND global config) | Values | Built-in default |
 |---|---|---|---|---|
@@ -106,4 +106,4 @@ What still stops an unattended run: **vet gates** (always), open **Blocker/Major
 
 Compatibility guarantee: with all three axes at their defaults, behavior is byte-identical to before these capabilities existed.
 
-Related reading: [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-run-the-entire-workflow-with-one-command-opsxauto) (the autopilot chapter), §2.6 (writing custom pipelines by hand — composition's manual sibling), §9 (goal-driven iteration and its vet-gated `define-goal`).
+Related reading: [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-run-the-entire-workflow-with-one-command-rasenauto) (the autopilot chapter), §2.6 (writing custom pipelines by hand — composition's manual sibling), §9 (goal-driven iteration and its vet-gated `define-goal`).

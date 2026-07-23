@@ -16,7 +16,7 @@ Explore 往往是正确的第一步，频率比人们预想的更高。当以下
 - 需求还很模糊，你想在投入之前把它打磨清楚。
 - 你怀疑这项工作比看上去更大或更小，想诚实地界定它的范围。
 
-只有当你已经确切知道自己想要什么、以及怎么做时，才跳过 explore。那种情况下直接用 [`/rasen-propose`](commands.md#opsxpropose)。
+只有当你已经确切知道自己想要什么、以及怎么做时，才跳过 explore。那种情况下直接用 [`/rasen-propose`](commands.md#rasenpropose)。
 
 ## 它做什么（以及不做什么）
 
@@ -38,7 +38,7 @@ Explore 是一场**对话**，而不是一个生成器。
 
 ## 它已经装好了
 
-好消息：`/rasen-explore` 默认就随 **core** 配置文件一同安装，和 `propose`、`apply`、`sync`、`archive` 并列。你不需要启用任何东西。只要你的项目里设置好了 OpenSpec，explore 就已经在你的 AI 聊天里就绪了。（和所有 `/rasen-*` 命令一样，你要把它打在助手的聊天里，而不是终端里。参见[命令是如何工作的](how-commands-work.md)。）
+好消息：`/rasen-explore` 默认就随 **core** 配置文件一同安装，和 `propose`、`apply`、`sync`、`archive` 并列。你不需要启用任何东西。只要你的项目里设置好了 rasen，explore 就已经在你的 AI 聊天里就绪了。（和所有 `/rasen-*` 命令一样，你要把它打在助手的聊天里，而不是终端里。参见[命令是如何工作的](how-commands-work.md)。）
 
 ## 一个完整示例
 
@@ -115,7 +115,7 @@ explore  ──►  propose  ──►  apply  ──►  archive
 
 ## 接下来去哪
 
-- [命令：`/rasen-explore`](commands.md#opsxexplore)：精确的参考说明
+- [命令：`/rasen-explore`](commands.md#rasenexplore)：精确的参考说明
 - [工作流](workflows.md)：explore 作为日常循环的一部分
 - [示例与配方](examples.md#配方-3在承诺之前先探索)：一次完整走查中的 explore
 - [快速入门](getting-started.md)：首次变更指南，包含探索

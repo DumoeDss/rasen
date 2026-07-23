@@ -1,12 +1,12 @@
 # 工作流
 
-本指南涵盖 OpenSpec 的常见工作流模式以及每种模式的适用场景。基础设置请参阅 [快速入门](getting-started.md)。命令参考请参阅 [命令](commands.md)。
+本指南涵盖 rasen 的常见工作流模式以及每种模式的适用场景。基础设置请参阅 [快速入门](getting-started.md)。命令参考请参阅 [命令](commands.md)。
 
 ## 理念：操作而非阶段
 
 传统工作流强制你经历各个阶段：先规划、再实施、最后完成。但实际工作并不能整齐地放进这些框框里。
 
-OPSX 采用了不同的方式：
+制品工作流采用了不同的方式：
 
 ```text
 Traditional (phase-locked):
@@ -16,7 +16,7 @@ Traditional (phase-locked):
       │   "Can't go back"  │
       └────────────────────┘
 
-OPSX (fluid actions):
+The artifact workflow (fluid actions):
 
   proposal ──► specs ──► design ──► tasks ──► implement
 ```
@@ -26,7 +26,7 @@ OPSX (fluid actions):
 - **操作而非阶段** - 命令是你可以执行的操作，而不是把你困在其中的阶段
 - **依赖关系是推动者** - 它们展示的是可能性，而不是下一步必须做什么
 
-> **自定义：** OPSX 工作流由定义产物序列的 schema 驱动。有关创建自定义 schema 的详情，请参阅 [自定义](customization.md)。
+> **自定义：** 制品工作流由定义产物序列的 schema 驱动。有关创建自定义 schema 的详情，请参阅 [自定义](customization.md)。
 
 ## 两种模式
 
@@ -304,7 +304,7 @@ AI:  Verifying add-auth...
 review ──► triage ──► fix ──► re-review(Δ) ──► { pass | loop | escalate }
 ```
 
-每一轮审查都委托给始终安装的 `openspec-review` 引擎 —— 循环本身不重新实现审查启发式。它在此之上增加四件事：
+每一轮审查都委托给始终安装的 `rasen-review` 引擎 —— 循环本身不重新实现审查启发式。它在此之上增加四件事：
 
 - **按修复规模分诊。** 每条发现按其修复规模路由：**琐碎（trivial）** → 编排者就地修复；**非琐碎（non-trivial）** → 编写该代码的实现 agent；**设计级（design-level）** → 单独的修复 agent（而非原作者）。
 - **作者≠验证者。** 只有当确认者不是修复作者、并对照原始发现确认后，发现才算解决。对于琐碎的就地修复，等价的非作者检查是一次独立的门禁运行（测试/lint/构建）加上对该改动的 diff 阅读 —— 且必须记入循环报告。
@@ -485,7 +485,7 @@ implement-2fa                  wip
 
 - [编写好的规格](writing-specs.md) - 什么是强有力的需求和场景，以及如何把变更规模定得合适
 - [审查变更](reviewing-changes.md) - 在写任何代码之前，对草案计划的两分钟快速过审
-- [团队中的 OpenSpec](team-workflow.md) - 变更如何配合分支和 pull request
+- [团队中的 Rasen](team-workflow.md) - 变更如何配合分支和 pull request
 - [命令](commands.md) - 完整命令参考及选项
 - [概念](concepts.md) - 深入了解 specs、产物和 schemas
 - [自定义](customization.md) - 创建自定义工作流

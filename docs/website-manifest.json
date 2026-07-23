@@ -16,7 +16,7 @@
         { "title": "Core Concepts at a Glance", "slug": "overview", "source": "overview.md" },
         { "title": "Concepts", "slug": "core-concepts", "source": "concepts.md" },
         { "title": "Workflows", "slug": "the-workflow", "source": "workflows.md" },
-        { "title": "OPSX Workflow", "slug": "opsx", "source": "opsx.md" },
+        { "title": "Artifact Workflow", "slug": "artifact-workflow", "source": "artifact-workflow.md" },
         { "title": "Explore First", "slug": "explore", "source": "explore.md" }
       ]
     },

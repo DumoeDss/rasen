@@ -1,18 +1,19 @@
-# Feasibility Plan for Integrating Codex into the OPSX Workflow
+# Feasibility Plan for Integrating Codex into the Artifact Workflow
 
 > **Superseded (2026-07-13).** This document is the pre-research app-server design (2026-06-08) and does not describe the shipped integration. rasen dispatches Codex workers as non-interactive `codex exec` processes (the exec bridge), not through an app-server thread, a Codex Claude Code plugin, or `/codex:rescue`. The body below is preserved as a historical record — it holds protocol notes that may be relevant to a future app-server-backed (tier-3) integration. For the actual, live-verified mechanism, see `docs/codex-parity/README.md` (research dossier), `docs/zh/codex-parity-solutions.md` (Chinese summary), and the shipped `src/core/codex/` module; the orchestration playbook's Codex sections (`src/core/templates/workflows/_orchestration.ts`) are the authoritative operational guidance.
+> Terminology note: this document was written when the artifact workflow was still called "OPSX." That name is retired; the layer it referred to is called **the artifact workflow** in current docs (see `docs/artifact-workflow.md`). Below, "OPSX" is replaced with its current name except where it names a historical example value.
 
 > Date: 2026-06-08  
-> Background: The current main path of the OPSX workflow is built on Claude Code subagents + `SendMessage`. This document analyzes how to introduce Codex into stages such as `propose` and `review` / `review-loop`, and how to support launch, parameter passing, result reception, same-stage session reuse, and cross-restart recovery.
+> Background: The current main path of the artifact workflow is built on Claude Code subagents + `SendMessage`. This document analyzes how to introduce Codex into stages such as `propose` and `review` / `review-loop`, and how to support launch, parameter passing, result reception, same-stage session reuse, and cross-restart recovery.
 
 ## 1. Conclusion
 
-Feasible. Moreover, we do not recommend invoking Codex as an ordinary `/codex:*` slash command. A more robust approach is to abstract Codex as a second worker runtime for OPSX:
+Feasible. Moreover, we do not recommend invoking Codex as an ordinary `/codex:*` slash command. A more robust approach is to abstract Codex as a second worker runtime for the artifact workflow:
 
 - Claude worker: the current `Task` / subagent / `SendMessage` mechanism.
 - Codex worker: driven through the Codex app-server's `thread/start`, `turn/start`, and `thread/resume`.
 
-In other words, the pipeline's DAG, stages, gates, and run-state continue to be managed centrally by OpenSpec/OPSX; each stage merely gains an optional execution backend `runtime: claude | codex`. Codex's session-reuse unit is not Claude's `agentId + transcript` but Codex's `threadId`, and across restarts you can `thread/resume` straight into the same thread — closer to true resumption than warm-seeding a Claude subagent from its transcript.
+In other words, the pipeline's DAG, stages, gates, and run-state continue to be managed centrally by rasen; each stage merely gains an optional execution backend `runtime: claude | codex`. Codex's session-reuse unit is not Claude's `agentId + transcript` but Codex's `threadId`, and across restarts you can `thread/resume` straight into the same thread — closer to true resumption than warm-seeding a Claude subagent from its transcript.
 
 The stages best suited to adopt Codex first:
 
@@ -24,7 +25,7 @@ We do not recommend letting Codex take on `apply` / `fixer` code-writing in the 
 
 ## 2. Current constraints
 
-The current design in `docs/opsx-workflow-guide.md` and `_orchestration.ts` is built on Claude Code capabilities:
+The current design in `docs/artifact-workflow-guide.md` and `_orchestration.ts` is built on Claude Code capabilities:
 
 - `LEAD` orchestrates; workers are leaf subagents.
 - Within the same live session, use `SendMessage` to continue a conversation with the same worker.
@@ -69,8 +70,8 @@ It can start by porting / adapting the key implementations from the plugin:
 We do not recommend directly shelling out to `node <plugin>/scripts/codex-companion.mjs task ...` as the primary implementation, for these reasons:
 
 - Plugin state lives under `CLAUDE_PLUGIN_DATA` or a temp directory by default, with its lifecycle bound to the Claude plugin — not suitable as OpenSpec's authoritative state.
-- OPSX needs to write results into `auto-run.json`, `portfolio-run.json`, and stage artifacts; calling a slash-command-style tool directly adds an extra layer of state synchronization.
-- The Codex plugin targets humans (`/codex:status` / `/codex:result`), whereas OPSX needs a machine-controllable stage executor.
+- The artifact workflow needs to write results into `auto-run.json`, `portfolio-run.json`, and stage artifacts; calling a slash-command-style tool directly adds an extra layer of state synchronization.
+- The Codex plugin targets humans (`/codex:status` / `/codex:result`), whereas the artifact workflow needs a machine-controllable stage executor.
 
 In the short term the plugin can serve as a reference implementation or prototype; in the long term an OpenSpec-internal bridge should be built in.
 
@@ -275,9 +276,9 @@ When the planner thread grows too long:
 Two Codex review modes are available:
 
 1. `review/start`: the Codex app-server's built-in review, suited to workspace-diff / base-branch review, returning `reviewText`.
-2. `turn/start` + a custom prompt + `outputSchema`: suited to the structured findings OPSX needs, scoped to a specific change and checked against specific spec scenarios.
+2. `turn/start` + a custom prompt + `outputSchema`: suited to the structured findings the artifact workflow needs, scoped to a specific change and checked against specific spec scenarios.
 
-OPSX recommends the second as the primary path, because review-loop needs structured findings:
+This document recommends the second as the primary path, because review-loop needs structured findings:
 
 ```json
 {
@@ -362,7 +363,7 @@ Via the app-server JSON-RPC:
 
 We recommend reusing the plugin's broker approach:
 
-- Within one OPSX run, reuse a single app-server broker as much as possible, to avoid repeatedly spinning up Codex for each stage.
+- Within one artifact-workflow run, reuse a single app-server broker as much as possible, to avoid repeatedly spinning up Codex for each stage.
 - The broker only reuses the runtime connection; it is not the authoritative state.
 - Authoritative state is still written to `auto-run.json` / `portfolio-run.json`.
 
@@ -560,7 +561,7 @@ The rationale for this order: read-only review is the lowest risk, so it can val
 - The Claude plugin's state and OpenSpec's run-state must not both be authoritative; OpenSpec must be the source of truth.
 - If the Codex reviewer in review-loop also modifies code, it breaks author != verifier; the MVP must forbid the reviewer from writing.
 - When multiple Codex stages run in parallel, a shared broker may be busy; each stage needs its own app-server, or a broker queue. The MVP can run Codex stages serially.
-- The built-in `review/start` review may not meet OPSX's structured-finding needs; the primary path should use `turn/start + outputSchema`.
+- The built-in `review/start` review may not meet the artifact workflow's structured-finding needs; the primary path should use `turn/start + outputSchema`.
 
 ## 13. Recommended decision
 

@@ -4,12 +4,12 @@
 
 ## 安装与设置
 
-### `openspec: command not found`
+### `rasen: command not found`
 
 CLI 没有安装，或者你的 shell 找不到它。全局安装并检查：
 
 ```bash
-npm install -g @fission-ai/openspec@latest
+npm install -g @atelierai/rasen@latest
 rasen --version
 ```
 
@@ -17,13 +17,13 @@ rasen --version
 
 ### “Requires Node.js 20.19.0 or higher”
 
-OpenSpec 运行在 Node 20.19.0+ 上。检查你的版本，必要时升级：
+Rasen 运行在 Node 20.19.0+ 上。检查你的版本，必要时升级：
 
 ```bash
 node --version
 ```
 
-如果你是用 bun 安装的 OpenSpec，请注意 OpenSpec 仍然*运行在* Node 之上，所以无论如何你都需要在 `PATH` 中可用、版本为 20.19.0+ 的 Node。参见[安装](installation.md)。
+如果你是用 bun 安装的 rasen，请注意 rasen 仍然*运行在* Node 之上，所以无论如何你都需要在 `PATH` 中可用、版本为 20.19.0+ 的 Node。参见[安装](installation.md)。
 
 ### `rasen init` 没有配置我的 AI 工具
 
@@ -51,11 +51,11 @@ rasen init --tools claude,cursor
 
 3. **重启你的助手。** 大多数工具在启动时扫描技能和命令。开一个新窗口往往就能解决。
 
-4. **确认文件存在。** 对于 Claude Code，检查 `.claude/skills/` 是否包含 `openspec-*` 文件夹。其他工具使用各自的目录，全部列在[支持的工具](supported-tools.md)里。
+4. **确认文件存在。** 对于 Claude Code，检查 `.claude/skills/` 是否包含 `rasen-*` 文件夹。其他工具使用各自的目录，全部列在[支持的工具](supported-tools.md)里。
 
 5. **检查你是否初始化了这个项目。** 技能是按项目写入的。如果你克隆了一个仓库或切换了文件夹，就在那里运行 `rasen init`（或 `rasen update`）。
 
-6. **确认你的工具支持命令文件。** 少数工具（Kimi CLI、Trae、ForgeCode、Mistral Vibe）不会生成 `opsx-*` 命令文件；它们改用基于技能的调用方式。各工具的形式有所不同：参见[支持的工具](supported-tools.md)和[命令是如何工作的](how-commands-work.md#各工具的斜杠命令语法)。
+6. **确认你的工具支持命令文件。** 少数工具（Kimi CLI、Trae、ForgeCode、Mistral Vibe）不会生成 `rasen-*` 命令文件；它们改用基于技能的调用方式。各工具的形式有所不同：参见[支持的工具](supported-tools.md)和[命令是如何工作的](how-commands-work.md#各工具的斜杠命令语法)。
 
 ## 处理变更
 
@@ -90,7 +90,7 @@ rasen validate --all            # validate everything
 rasen validate --all --strict   # stricter checks, good for CI
 ```
 
-常见原因包括缺少必要的章节（比如一份没有场景的规格），或增量头部格式有误。修复文件后重新运行。[CLI 参考](cli.md#openspec-validate)文档说明了输出格式。
+常见原因包括缺少必要的章节（比如一份没有场景的规格），或增量头部格式有误。修复文件后重新运行。[CLI 参考](cli.md#rasen-validate)文档说明了输出格式。
 
 ### AI 创建了不完整或错误的产物
 
@@ -143,7 +143,7 @@ rasen schema init <name>         # create a custom one
 
 ### “Legacy files detected in non-interactive mode”
 
-你处于 CI 或非交互式 shell 中，而 OpenSpec 发现有旧文件需要清理，却无法提示你。自动批准：
+你处于 CI 或非交互式 shell 中，而 rasen 发现有旧文件需要清理，却无法提示你。自动批准：
 
 ```bash
 rasen init --force
@@ -155,12 +155,12 @@ rasen init --force
 
 ### 我的旧 `project.md` 没有被迁移
 
-这是有意为之。OpenSpec 从不自动删除 `project.md`，因为它可能装着你写下的上下文。把其中有用的部分搬进 `config.yaml` 的 `context:` 章节，然后自己删掉它。[迁移指南](migration-guide.md#将-projectmd-迁移到-configyaml)详细讲解了这一过程，包括一段你可以直接交给 AI 去做提炼的提示词。
+这是有意为之。Rasen 从不自动删除 `project.md`，因为它可能装着你写下的上下文。把其中有用的部分搬进 `config.yaml` 的 `context:` 章节，然后自己删掉它。[迁移指南](migration-guide.md#将-projectmd-迁移到-configyaml)详细讲解了这一过程，包括一段你可以直接交给 AI 去做提炼的提示词。
 
 ## 还是卡住了？
 
 - **Discord：** [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
-- **GitHub Issues：** [github.com/Fission-AI/OpenSpec/issues](https://github.com/Fission-AI/OpenSpec/issues)
+- **GitHub Issues：** [github.com/DumoeDss/rasen/issues](https://github.com/DumoeDss/rasen/issues)
 - **从你的终端：** `rasen feedback "what went wrong"` 会为你打开一个 issue。
 
-当你反馈问题时，请附上你的 OpenSpec 版本（`rasen --version`）、Node 版本（`node --version`）、你的 AI 工具，以及确切的命令和输出。这能让帮助快得多。
+当你反馈问题时，请附上你的 rasen 版本（`rasen --version`）、Node 版本（`node --version`）、你的 AI 工具，以及确切的命令和输出。这能让帮助快得多。

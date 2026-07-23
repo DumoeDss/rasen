@@ -6,7 +6,7 @@ This guide covers common workflow patterns for rasen and when to use each one. F
 
 Traditional workflows force you through phases: planning, then implementation, then done. But real work doesn't fit neatly into boxes.
 
-OPSX takes a different approach:
+The artifact workflow takes a different approach:
 
 ```text
 Traditional (phase-locked):
@@ -16,7 +16,7 @@ Traditional (phase-locked):
       │   "Can't go back"  │
       └────────────────────┘
 
-OPSX (fluid actions):
+The artifact workflow (fluid actions):
 
   proposal ──► specs ──► design ──► tasks ──► implement
 ```
@@ -26,7 +26,7 @@ OPSX (fluid actions):
 - **Actions, not phases** - Commands are things you can do, not stages you're stuck in
 - **Dependencies are enablers** - They show what's possible, not what's required next
 
-> **Customization:** OPSX workflows are driven by schemas that define artifact sequences. See [Customization](customization.md) for details on creating custom schemas.
+> **Customization:** The artifact workflow is driven by schemas that define artifact sequences. See [Customization](customization.md) for details on creating custom schemas.
 
 ## Two Modes
 

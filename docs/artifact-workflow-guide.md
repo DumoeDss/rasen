@@ -1,15 +1,15 @@
-# OPSX Workflow Guide: One-Command End-to-End + Per-Stage Commands
+# Artifact Workflow Guide: One-Command End-to-End + Per-Stage Commands
 
-> Date: 2026-06-01 · Applies to: OpenSpec (OPSX workflow, including orchestration-based autopilot + data-driven pipeline registry)
+> Date: 2026-06-01 · Applies to: rasen (the artifact workflow, including orchestration-based autopilot + data-driven pipeline registry)
 > Related references: [`commands.md`](./commands.md) (detailed reference for each command), [`workflows.md`](./workflows.md) (modes and timing), [`cli.md`](./cli.md) (terminal CLI), [`review-cycle-workflow-design.md`](./review-cycle-workflow-design.md) (review-cycle design).
 >
-> This article explains the current OPSX workflow from the perspective of "the whole pipeline": first it gives **one command that runs end-to-end**, then **the command for each individual stage**, and finally the **CLI commands**, profile switches, and complete examples that underlie them.
+> This article explains the current artifact workflow from the perspective of "the whole pipeline": first it gives **one command that runs end-to-end**, then **the command for each individual stage**, and finally the **CLI commands**, profile switches, and complete examples that underlie them.
 
 ---
 
 ## 1. Workflow Overview
 
-OPSX breaks "a requirement → implemented, reviewed, verified, shipped, archived" into several stages. Each stage can be automatically chained by autopilot, or manually invoked on its own.
+The artifact workflow breaks "a requirement → implemented, reviewed, verified, shipped, archived" into several stages. Each stage can be automatically chained by autopilot, or manually invoked on its own.
 
 ```
  explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ verify ─▶ review-cycle ─▶ ship ─▶ archive ─▶ retro
@@ -35,7 +35,7 @@ OPSX breaks "a requirement → implemented, reviewed, verified, shipped, archive
 
 ### 2.1 Orchestration model: LEAD + role-isolated sub-agents (with capability tiers)
 
-- **The LEAD is the sole orchestrator; sub-agents are leaves**: all loops / dispatching / triage happen in the LEAD; each worker invokes that stage's existing OPSX skill, does its job, and returns. **Workers never spawn child agents** (flat hierarchy).
+- **The LEAD is the sole orchestrator; sub-agents are leaves**: all loops / dispatching / triage happen in the LEAD; each worker invokes that stage's existing skill, does its job, and returns. **Workers never spawn child agents** (flat hierarchy).
 - **Cross-task isolation, same-task continuity**: different changes each get their own worker team and don't interfere with each other; within a task the LEAD can use `SendMessage` to wake a worker for continuation (e.g., have the original reviewer re-review only the delta). When a task is **fanned out by decompose** into multiple sub-changes, this "each change has its own worker team" truly takes effect — each sub-change runs its own pipeline with its own independent worker team (see §2.7).
 - **Persistent planner (propose-only reuse — the sole exception to the isolation rule above)**: a single run has **only one planner**. Before the first propose, the LEAD seeds it by writing known context (user intent, its own research, decomposition rationale) into `planning-context.md`; afterward, each sub-change's propose continues the **same** planner via `SendMessage` — the codebase is researched once and sibling specs stay naturally consistent; each round the planner appends new conclusions back to the digest. The planner pointer is recorded at the top level of `portfolio-run.json` (`planner` field); after a restart it resumes via warm seeding; when its context bloats it is retired and replaced. **All other stages (apply/verify/review/ship…) stay cold-isolated and are not reused** (playbook Step B.1).
 - **Structured author ≠ verifier**: the review worker ≠ the implementation worker; the design-level fixer ≠ the original author; the re-review worker ≠ the fixer — guaranteed by the LEAD dispatching different workers (no longer a verbal promise within the same context).
@@ -77,7 +77,7 @@ Optional: `rasen pipeline classify "<task>"` for a suggestion, or `rasen pipelin
 
 > **Opt-in autonomy**: `--auto-select` lets the LEAD adopt the classify suggestion instead of defaulting, and `--auto-compose` further allows composing a new pipeline from the stage library when nothing fits (machine-enforced review floor). Both default OFF; explicit selection always stays on top. See [autopilot.md](autopilot.md).
 
-Each stage carries metadata the LEAD uses to execute: **kind** (`standard` default / `decompose` fan-out point, §2.7), **skill** (the OPSX skill the worker invokes; the decompose stage has no such field), **childPipeline** (decompose only — the pipeline each sub-change runs, default `small-feature`), **role** (isolation), **gate** (human pause), **loop** (review loop), **parallelGroup** (concurrent fan-out, e.g. verify's expert group), **condition** (runs only when satisfied; mutually exclusive conditions like ui / non-ui pick one), **leadReview** (LEAD checks for direction drift, §2.3), **verifyPolicy** (adaptive / standard / light, §2.3), **model** (the model override for that stage's worker; if omitted it inherits the main agent's model — built-in pipelines set `model: sonnet` for ship/archive).
+Each stage carries metadata the LEAD uses to execute: **kind** (`standard` default / `decompose` fan-out point, §2.7), **skill** (the skill the worker invokes; the decompose stage has no such field), **childPipeline** (decompose only — the pipeline each sub-change runs, default `small-feature`), **role** (isolation), **gate** (human pause), **loop** (review loop), **parallelGroup** (concurrent fan-out, e.g. verify's expert group), **condition** (runs only when satisfied; mutually exclusive conditions like ui / non-ui pick one), **leadReview** (LEAD checks for direction drift, §2.3), **verifyPolicy** (adaptive / standard / light, §2.3), **model** (the model override for that stage's worker; if omitted it inherits the main agent's model — built-in pipelines set `model: sonnet` for ship/archive).
 
 ### 2.3 Two task-related enhancements
 
@@ -381,7 +381,7 @@ rasen archive add-jwt-auth
 
 ## 8. Claude / Codex agent runtime switching
 
-The OPSX pipeline now supports switching each role individually to `claude` or `codex`. The switchable roles are:
+The pipeline now supports switching each role individually to `claude` or `codex`. The switchable roles are:
 
 - `planner`
 - `implementer`
