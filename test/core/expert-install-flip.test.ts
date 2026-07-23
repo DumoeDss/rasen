@@ -133,6 +133,10 @@ describe('expert install-set matrix (6b)', () => {
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
     saveGlobalConfig({ ...getGlobalConfig(), expertSelectionExplicit: undefined });
 
+    // Pinned so this assertion is deterministic regardless of the host
+    // machine's OS locale (locale-diagnostic-reporter wired this notice to
+    // a locale-aware reporter).
+    process.env.RASEN_LANG = 'en';
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       await new UpdateCommand({ force: true }).execute(testDir);
