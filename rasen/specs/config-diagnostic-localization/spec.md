@@ -1,3 +1,7 @@
+## Purpose
+
+Config and CLI diagnostics (skill/CLI version mismatch, expert-selection migration, retired-config-key warnings, invalid-JSON warnings) render in the session's resolved CLI locale wherever a locale catalog entry exists, with a safe English fallback when locale resolution fails, so diagnostics are never silently dropped or forced into English regardless of which command or internal code path triggers them.
+
 ## Requirements
 
 ### Requirement: Config and CLI diagnostics render in the session's resolved locale
