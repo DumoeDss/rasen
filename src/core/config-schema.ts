@@ -57,6 +57,20 @@ export const GlobalConfigSchema = z
         selection: z.enum(['classify', 'manual', 'compose']).optional(),
       })
       .optional(),
+    // Keepalive gate for `rasen agent wait` (cli-agent-wait spec): per-runtime
+    // enablement plus the context-size floor below which parking a worker is
+    // not worth a beat.
+    keepalive: z
+      .object({
+        runtimes: z
+          .object({
+            claude: z.boolean().optional(),
+            codex: z.boolean().optional(),
+          })
+          .optional(),
+        contextFloor: z.number().int().positive().optional(),
+      })
+      .optional(),
     models: z
       .object({
         default: z.string().min(1).optional(),
