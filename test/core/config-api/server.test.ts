@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as http from 'node:http';
 
-import { startConfigApiServer, type ConfigApiServerHandle } from '../../../src/core/config-api/server.js';
-import type { ConfigApiContext } from '../../../src/core/config-api/router.js';
+import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
+import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
 
-const baseContext: ConfigApiContext = {
+const baseContext: ManagementApiContext = {
   token: 'tok',
   launchProjectRoot: null,
   launchProjectRef: null,
@@ -12,8 +12,8 @@ const baseContext: ConfigApiContext = {
   uiAssetsDir: null,
 };
 
-describe('startConfigApiServer', () => {
-  let handle: ConfigApiServerHandle | undefined;
+describe('startManagementServer (config-api retarget: unify-pipeline-http-api)', () => {
+  let handle: ManagementServerHandle | undefined;
 
   afterEach(async () => {
     await handle?.stopServer();
@@ -21,28 +21,28 @@ describe('startConfigApiServer', () => {
   });
 
   it('binds to loopback on an ephemeral port', async () => {
-    handle = await startConfigApiServer({ context: baseContext });
+    handle = await startManagementServer({ context: baseContext });
     expect(handle.port).toBeGreaterThan(0);
     const address = handle.server.address();
     expect(typeof address === 'object' && address?.address).toBe('127.0.0.1');
   });
 
   it('respects a pinned port', async () => {
-    const first = await startConfigApiServer({ context: baseContext });
+    const first = await startManagementServer({ context: baseContext });
     const pinnedPort = first.port;
     await first.stopServer();
 
-    handle = await startConfigApiServer({ context: baseContext, port: pinnedPort });
+    handle = await startManagementServer({ context: baseContext, port: pinnedPort });
     expect(handle.port).toBe(pinnedPort);
   });
 
   it('rejects when the pinned port is already in use', async () => {
-    handle = await startConfigApiServer({ context: baseContext });
-    await expect(startConfigApiServer({ context: baseContext, port: handle.port })).rejects.toThrow();
+    handle = await startManagementServer({ context: baseContext });
+    await expect(startManagementServer({ context: baseContext, port: handle.port })).rejects.toThrow();
   });
 
   it('shuts down promptly even with an open keep-alive connection held by the client (D6)', async () => {
-    handle = await startConfigApiServer({ context: baseContext });
+    handle = await startManagementServer({ context: baseContext });
     const keepAliveAgent = new http.Agent({ keepAlive: true });
 
     await new Promise<void>((resolve, reject) => {

@@ -1,12 +1,12 @@
 /**
  * Wire (HTTP JSON) shapes for the read-only management API (design.md D4/D5
- * of `rasen-ui-slice1-readonly-api`). Sibling of `config-api/wire-types.ts`;
- * shares its `ApiErrorBody` envelope shape (re-declared here rather than
- * imported — the two route groups stay independently deployable) but adds
- * nothing config-api does not already own.
+ * of `rasen-ui-slice1-readonly-api`). `ApiErrorBody` here is the canonical
+ * unified envelope (unify-pipeline-http-api design D6): `config-api/wire-types.ts`
+ * re-exports it rather than declaring its own — one shape, one definition.
  */
 import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
+import type { ThresholdValue } from '../pipeline-registry/index.js';
 import type {
   WorkflowDependencySet,
   WorkflowDiagnostic,
@@ -32,6 +32,59 @@ export interface ProjectRef {
 export interface ApiErrorBody {
   error: { code: string; message: string; fix?: string; cliExitCode?: number; stderr?: string };
 }
+
+// -----------------------------------------------------------------------
+// Pipeline library (pipeline-http-api, unify-pipeline-http-api design D5) —
+// `GET`/`POST /api/v1/pipelines`. Moved here from config-api/wire-types.ts
+// with no re-export shim: the two routers and `pipeline-submit.ts` are its
+// sole importers.
+// -----------------------------------------------------------------------
+
+/** An effective value plus the scope-qualified layer that supplied it (`GET /api/v1/pipelines`). */
+export interface WireEffectiveValue<T> {
+  value: T;
+  source: string;
+}
+
+/**
+ * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
+ * declared identity and its declared `gate` value (a boolean), it reports each
+ * EFFECTIVE per-stage value — gate (after the mask), model, handoff threshold,
+ * and runtime — with the layer that supplied it, so the UI renders resolution
+ * without reimplementing it.
+ */
+export interface WirePipelineStage {
+  id: string;
+  role: string | null;
+  skill: string | null;
+  /** The declared gate value from the pipeline definition, unmasked. */
+  gate: boolean;
+  /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
+  effectiveGate: WireEffectiveValue<boolean>;
+  effectiveModel: WireEffectiveValue<string | null>;
+  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
+  effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
+}
+
+/**
+ * A pipeline's identity, provenance, and per-stage effective configuration for
+ * `GET /api/v1/pipelines`. `provenance` marks a built-in versus a user pipeline;
+ * `sourceLayer` names the layer the definition resolved from.
+ */
+export interface WirePipeline {
+  name: string;
+  description: string;
+  provenance: 'built-in' | 'user';
+  sourceLayer: 'project' | 'user' | 'package';
+  stages: WirePipelineStage[];
+}
+
+/** The `op` discriminated request body for `POST /api/v1/pipelines`. */
+export type PipelineMutationRequest =
+  | { op: 'import'; path: string; force?: boolean }
+  | { op: 'init'; name: string; output: string }
+  | { op: 'export'; name: string; path: string; force?: boolean }
+  | { op: 'delete'; name: string; force?: boolean };
 
 /** `POST /api/v1/changes` request body (change-submission design D1). */
 export interface SubmitChangeRequest {

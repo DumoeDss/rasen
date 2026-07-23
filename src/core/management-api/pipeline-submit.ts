@@ -27,7 +27,7 @@ import * as path from 'node:path';
 import { isPortableWorkflowId } from '../workflow-registry/index.js';
 import type { ManagementApiContext } from './router.js';
 import { getBoundedCliEntry } from './whitelist.js';
-import type { PipelineMutationRequest } from '../config-api/wire-types.js';
+import type { PipelineMutationRequest } from './wire-types.js';
 
 const require = createRequire(import.meta.url);
 
