@@ -8,8 +8,8 @@
     "apply": { "status": "done", "gateDecision": "auto-approved (global)", "worker": { "role": "implementer", "agentId": "impl-goal-gate@session-f834a450" }, "note": "3 local commits 65af9466/659f8eb2/a1c3000b; 17/17 tasks; DONE return not delivered (idle) — verified via tasks.md + git log" },
     "verify": { "status": "done", "worker": { "role": "reviewer", "agentId": "reviewer-goal-gate@session-f834a450" }, "note": "196/196 tests pass; 0B/0M/1m/1t" },
     "review-loop": { "status": "done", "note": "clean on first review; no fix rounds needed" },
-    "ship": { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper-goal-gate@session-f834a450" }, "gateDecision": "auto-approved (global)" },
-    "archive": { "status": "pending" }
+    "ship": { "status": "done", "worker": { "role": "shipper", "agentId": "shipper-goal-gate@session-f834a450" }, "gateDecision": "auto-approved (global)", "note": "commit eeaf4b25; PR #46 -> dev/0.1.5; ship-log.md written" },
+    "archive": { "status": "in_progress", "worker": { "role": "shipper", "agentId": "shipper-goal-gate@session-f834a450" }, "note": "PR #46 merged (user-confirmed); archive dispatched to warm shipper" }
   },
   "rounds": 1,
   "openFindings": [],
