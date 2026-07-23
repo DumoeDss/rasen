@@ -9,22 +9,31 @@ metadata:
   generatedBy: "0.1.4"
 ---
 
-# /rasen:npm-pack — Package an Unreleased Rasen CLI
+# /rasen:npm-pack — Package an Unreleased Rasen CLI or UI
 
 Create or inspect an installable npm tarball for the current unreleased Rasen
 working tree. Prefer this workflow when the user needs to test a branch on
 another machine before the corresponding npm release exists.
+
+By default the helper packs the root CLI package (`@atelierai/rasen`). Pass
+`--package packages/ui` to pack the management UI (`@atelierai/rasen-ui`)
+instead — same dev-local versioning, same failure-safe restore. The CLI and UI
+are separate npm packages: the UI tarball is **not** bundled inside the CLI
+tarball, and `rasen ui` resolves it at runtime from the globally installed
+`@atelierai/rasen-ui` (see Phase 4).
 
 ## Safety boundary
 
 - Default to a local npm tarball. Do not run `npm publish`, persist a package
   version change, create a release, push a branch, or install globally unless
   the user explicitly requests that action.
-- The packaging helper temporarily changes only the root `package.json` version
-  from `<version>` to `<version>-dev.local.<n>` (an auto-incrementing per-base-version
-  index; see Phase 3), keeps that value through build and pack, and restores the
-  original file bytes in `finally`. Do not edit `package.json` concurrently while
-  the helper is running.
+- The packaging helper temporarily changes only the target `package.json` version
+  from `<version>` to `<version>-dev.local.<n>` (an auto-incrementing per-package,
+  per-base-version index; see Phase 3), keeps that value through build and pack,
+  and restores the original file bytes in `finally`. The target is the root
+  `package.json` by default, or `packages/ui/package.json` under `--package
+  packages/ui`. Do not edit that `package.json` concurrently while the helper is
+  running.
 - Treat the current working tree as package input. Inspect and report staged,
   unstaged, and untracked source changes before building; do not silently omit or
   discard them.
@@ -53,10 +62,22 @@ Confirm the following before continuing:
 
 - Node.js is at least 20.19;
 - pnpm matches the repository's declared `packageManager` version;
-- `package.json` names `@atelierai/rasen` and exposes `bin/rasen.js`;
+- the target manifest names a package under the `@atelierai/` scope — the CLI
+  `@atelierai/rasen` (root, exposes `bin/rasen.js`) or, with `--package
+  packages/ui`, the UI `@atelierai/rasen-ui`;
 - the user understands whether uncommitted source changes should be included;
-- the root manifest has a stable `major.minor.patch` version that can safely be
+- the target manifest has a stable `major.minor.patch` version that can safely be
   labeled `<version>-dev.local` for the local tarball.
+
+The UI package (`packages/ui`) is **not** part of a pnpm workspace (there is no
+`pnpm-workspace.yaml` at the repo root); it has its own lockfile and `node_modules`.
+If the UI build fails to resolve a dependency, install UI deps inside the package
+dir rather than at the root:
+
+```bash
+# from the repo root, only if a UI dep is missing from packages/ui/node_modules:
+pnpm --dir packages/ui install
+```
 
 If dependencies are missing, use the locked install rather than updating them:
 
@@ -111,19 +132,36 @@ node .claude/skills/rasen-npm-pack/scripts/pack-dev-local.mjs
 
 By default the helper creates `./artifacts/` and writes
 `<name>-<original-version>-dev.local.<n>.tgz` there, where `<n>` is an
-auto-incrementing per-base-version index (repeated packs yield
-`...-dev.local.1.tgz`, `...-dev.local.2.tgz`, ...). The index is
-`max(persisted counter, highest existing indexed tarball in the destination) + 1`;
-the counter lives under the skill dir
-(`.claude/skills/rasen-npm-pack/.devlocal-counters.json`) and keeps the number
-monotonic even after old tarballs are deleted, so reinstalling a fresh build
-always updates — npm would otherwise skip an unchanged version. `--dry-run`
+auto-incrementing per-package, per-base-version index (repeated packs of the
+same package yield `...-dev.local.1.tgz`, `...-dev.local.2.tgz`, ...). The index
+is `max(persisted counter, highest existing indexed tarball in the destination)
++ 1`; the counter is keyed by `<name>@<base-version>` and lives under the skill
+dir (`.claude/skills/rasen-npm-pack/.devlocal-counters.json`), so the CLI and UI
+keep independent monotonic indices even when they share a base version. It keeps
+the number monotonic even after old tarballs are deleted, so reinstalling a fresh
+build always updates — npm would otherwise skip an unchanged version. `--dry-run`
 previews the next index without consuming it. The helper prints the exact
 absolute archive path after npm finishes. If the user requested another destination, use:
 
 ```bash
 node .claude/skills/rasen-npm-pack/scripts/pack-dev-local.mjs --pack-destination <directory>
 ```
+
+### Packaging the management UI
+
+Pass `--package <dir>` to target `@atelierai/rasen-ui` instead of the CLI. The
+helper reads `packages/ui/package.json`, bumps its version to
+`<ui-version>-dev.local.<n>`, runs `pnpm run build` (Vite) with its cwd inside
+`packages/ui`, packs from there with `--ignore-scripts`, and restores the UI
+manifest in `finally`:
+
+```bash
+node .claude/skills/rasen-npm-pack/scripts/pack-dev-local.mjs --package packages/ui
+```
+
+`--package` composes with `--dry-run`, `--force`, and `--pack-destination`. The
+name guard accepts any `@atelierai/*` package, so a stray `--package` pointing at
+an unrelated manifest is refused.
 
 The helper creates the default or explicit destination directory when
 necessary. If the expected archive already exists, it stops before changing
@@ -164,6 +202,22 @@ rasen workflow --help
 The tarball should report `<original-version>-dev.local.<n>`, so `rasen --version`
 can distinguish it from the registry build. Also use an unreleased feature
 command, such as `rasen workflow --help`, as the behavioral smoke check.
+
+### UI tarball installation
+
+The UI is a separate package and is **not** bundled with the CLI. Install its
+tarball globally on its own:
+
+```bash
+npm install -g ./atelierai-rasen-ui-<ui-version>-dev.local.<n>.tgz
+npm ls -g @atelierai/rasen-ui --depth=0
+```
+
+`rasen ui` resolves the UI at runtime via `resolveUiPackageDir()` — it looks for
+the globally installed `@atelierai/rasen-ui`'s `dist/` next to the CLI, so
+reinstalling the UI tarball is all that is needed for `rasen ui` to serve the new
+build. There is no `rasen-ui --version` (the package has no `bin`); verify via
+`npm ls -g` instead.
 
 A target installing a prepared tarball does not need TypeScript or pnpm. It does
 need a supported Node.js/npm environment, and npm will install runtime

@@ -14,6 +14,10 @@ function parseArgs(args) {
     dryRun: false,
     force: false,
     packDestination: undefined,
+    // Directory (relative to cwd) holding the target package.json. Defaults to
+    // the repo root (the CLI package @atelierai/rasen); pass e.g.
+    // `--package packages/ui` to pack a workspace package instead.
+    packageDir: '.',
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -35,6 +39,15 @@ function parseArgs(args) {
       index += 1;
       continue;
     }
+    if (argument === '--package') {
+      const packageDir = args[index + 1];
+      if (!packageDir || packageDir.startsWith('--')) {
+        throw new Error('--package requires a directory');
+      }
+      options.packageDir = packageDir;
+      index += 1;
+      continue;
+    }
     throw new Error(`unsupported argument: ${argument}`);
   }
 
@@ -45,20 +58,20 @@ function commandName(name) {
   return process.platform === 'win32' ? `${name}.cmd` : name;
 }
 
-function run(command, args, options = {}) {
-  const stdio = options.captureStdout ? ['inherit', 'pipe', 'inherit'] : 'inherit';
+function run(command, args, { cwd = process.cwd(), captureStdout = false } = {}) {
+  const stdio = captureStdout ? ['inherit', 'pipe', 'inherit'] : 'inherit';
   if (process.platform === 'win32') {
     // pnpm/npm ship as .cmd shims; Node refuses to spawn them directly
     // (EINVAL since CVE-2024-27980) and shell:true would concatenate args
     // unsafely (Node DEP0190). Route through cmd.exe instead.
     return execFileSync(process.env.ComSpec || 'cmd.exe', ['/c', commandName(command), ...args], {
-      cwd: process.cwd(),
+      cwd,
       encoding: 'utf8',
       stdio,
     });
   }
   return execFileSync(command, args, {
-    cwd: process.cwd(),
+    cwd,
     encoding: 'utf8',
     stdio,
   });
@@ -81,15 +94,24 @@ function writeCounters(counters) {
   writeFileSync(countersPath, `${JSON.stringify(counters, null, 2)}\n`, 'utf8');
 }
 
-// Next dev-local index for this base version = max(persisted counter, index of
-// any existing dev-local tarball in the destination) + 1. The persisted counter
-// keeps the number monotonic even if old tarballs are deleted, so reinstalling
-// the new build always updates — npm would otherwise skip an unchanged version.
-// Returns the counters object read from disk so the caller can persist it after
-// a successful (non-dry-run) pack without a second read.
-function nextDevIndex(destination, originalVersion, nameStem) {
+// Counters are keyed by `<name>@<base-version>` so two packages in the same
+// workspace (e.g. @atelierai/rasen@0.1.5 and @atelierai/rasen-ui@0.1.1) keep
+// independent monotonic indices even when they share a base version number.
+function counterKey(name, originalVersion) {
+  return `${name}@${originalVersion}`;
+}
+
+// Next dev-local index for this package+base version = max(persisted counter,
+// index of any existing dev-local tarball in the destination) + 1. The
+// persisted counter keeps the number monotonic even if old tarballs are
+// deleted, so reinstalling the new build always updates — npm would otherwise
+// skip an unchanged version. Returns the counters object read from disk so the
+// caller can persist it after a successful (non-dry-run) pack without a second
+// read.
+function nextDevIndex(destination, name, originalVersion, nameStem) {
   const counters = readCounters();
-  let max = Number(counters[originalVersion]) || 0;
+  const key = counterKey(name, originalVersion);
+  let max = Number(counters[key]) || 0;
   if (existsSync(destination)) {
     const prefix = `${nameStem}-${originalVersion}-dev.local.`;
     for (const entry of readdirSync(destination)) {
@@ -111,9 +133,10 @@ try {
   process.exit();
 }
 
-const packagePath = resolve('package.json');
+const packageDir = resolve(options.packageDir);
+const packagePath = resolve(packageDir, 'package.json');
 if (!existsSync(packagePath)) {
-  fail('package.json was not found; run this script from the Rasen repository root');
+  fail(`package.json was not found at ${packagePath}; run this script from the Rasen repository root (use --package <dir> for a workspace package)`);
   process.exit();
 }
 
@@ -127,8 +150,11 @@ try {
   process.exit();
 }
 
-if (manifest.name !== '@atelierai/rasen') {
-  fail(`expected @atelierai/rasen, found ${String(manifest.name)}`);
+// Allow any package under the @atelierai scope (the CLI @atelierai/rasen and
+// the management UI @atelierai/rasen-ui today); refuse anything else so a stray
+// --package never packs an unrelated manifest.
+if (typeof manifest.name !== 'string' || !manifest.name.startsWith('@atelierai/')) {
+  fail(`expected an @atelierai/* package, found ${String(manifest.name)}`);
   process.exit();
 }
 if (typeof manifest.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(manifest.version)) {
@@ -148,6 +174,7 @@ if (!versionMatch || versionMatch[2] !== originalVersion) {
 const destination = options.packDestination ?? resolve('artifacts');
 const { index: devIndex, counters: devCounters } = nextDevIndex(
   destination,
+  manifest.name,
   originalVersion,
   nameStem,
 );
@@ -168,9 +195,9 @@ let temporaryVersionWritten = false;
 try {
   writeFileSync(packagePath, temporaryText, 'utf8');
   temporaryVersionWritten = true;
-  console.log(`rasen-npm-pack: temporary version ${originalVersion} -> ${devVersion}`);
+  console.log(`rasen-npm-pack: ${manifest.name} temporary version ${originalVersion} -> ${devVersion}`);
 
-  run('pnpm', ['run', 'build']);
+  run('pnpm', ['run', 'build'], { cwd: packageDir });
 
   const packArgs = ['pack', '--ignore-scripts'];
   if (options.dryRun) {
@@ -180,10 +207,10 @@ try {
     packArgs.push('--pack-destination', destination);
   }
 
-  const output = run('npm', packArgs, { captureStdout: true });
+  const output = run('npm', packArgs, { cwd: packageDir, captureStdout: true });
   if (output) process.stdout.write(output);
   if (!options.dryRun) {
-    devCounters[originalVersion] = devIndex;
+    devCounters[counterKey(manifest.name, originalVersion)] = devIndex;
     writeCounters(devCounters);
     console.log(`rasen-npm-pack: archive ${expectedArchive}`);
   }
@@ -197,9 +224,9 @@ try {
     writeFileSync(packagePath, originalPackage);
     const restored = readFileSync(packagePath).equals(originalPackage);
     if (!restored) {
-      fail('package.json restoration could not be verified');
+      fail(`package.json restoration could not be verified (${packagePath})`);
     } else {
-      console.log(`rasen-npm-pack: restored package.json to ${originalVersion}`);
+      console.log(`rasen-npm-pack: restored ${packagePath} to ${originalVersion}`);
     }
   }
 }
