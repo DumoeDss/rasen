@@ -7,7 +7,6 @@
  */
 import type { ConfigScope, ConfigValueType } from '../config-keys.js';
 import type { ConfigSource } from '../effective-config.js';
-import type { ThresholdValue } from '../pipeline-registry/index.js';
 
 /** `{ projectId, name, root }` — a registered project, or the server's launch project. */
 export interface ProjectRef {
@@ -70,53 +69,11 @@ export interface WireConfigEntry {
   warnings?: string[];
 }
 
-/** Uniform non-2xx error envelope, mirroring the CLI's `StoreError` code/fix vocabulary. */
-export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string };
-}
-
-/** An effective value plus the scope-qualified layer that supplied it (`GET /api/v1/pipelines`). */
-export interface WireEffectiveValue<T> {
-  value: T;
-  source: string;
-}
-
 /**
- * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
- * declared identity and its declared `gate` value (a boolean), it reports each
- * EFFECTIVE per-stage value — gate (after the mask), model, handoff threshold,
- * and runtime — with the layer that supplied it, so the UI renders resolution
- * without reimplementing it.
+ * Uniform non-2xx error envelope, mirroring the CLI's `StoreError` code/fix
+ * vocabulary. Re-exported from `management-api/wire-types.ts` — the
+ * management envelope is canonical (unify-pipeline-http-api design D6: one
+ * shared envelope, one helper family, across both route groups) — rather
+ * than re-declared, so there is a single definition to diverge from.
  */
-export interface WirePipelineStage {
-  id: string;
-  role: string | null;
-  skill: string | null;
-  /** The declared gate value from the pipeline definition, unmasked. */
-  gate: boolean;
-  /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
-  effectiveGate: WireEffectiveValue<boolean>;
-  effectiveModel: WireEffectiveValue<string | null>;
-  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
-  effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
-}
-
-/**
- * A pipeline's identity, provenance, and per-stage effective configuration for
- * `GET /api/v1/pipelines`. `provenance` marks a built-in versus a user pipeline;
- * `sourceLayer` names the layer the definition resolved from.
- */
-export interface WirePipeline {
-  name: string;
-  description: string;
-  provenance: 'built-in' | 'user';
-  sourceLayer: 'project' | 'user' | 'package';
-  stages: WirePipelineStage[];
-}
-
-/** The `op` discriminated request body for `POST /api/v1/pipelines`. */
-export type PipelineMutationRequest =
-  | { op: 'import'; path: string; force?: boolean }
-  | { op: 'init'; name: string; output: string }
-  | { op: 'export'; name: string; path: string; force?: boolean }
-  | { op: 'delete'; name: string; force?: boolean };
+export type { ApiErrorBody } from '../management-api/wire-types.js';

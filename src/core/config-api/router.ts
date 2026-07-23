@@ -16,38 +16,22 @@ import {
   type ConfigScope,
 } from '../config-keys.js';
 import type { EffectiveConfigEntry } from '../effective-config.js';
-import {
-  resolveConfigStoreLayer,
-  resolveEffectiveConfig,
-  type ResolveEffectiveConfigOptions,
-  type StoreConfigLayer,
-} from '../effective-config.js';
-import {
-  readProjectConfig,
-  resolveAutopilotGatePolicy,
-  updateProjectConfigKey,
-  type ResolvedGatePolicy,
-} from '../project-config.js';
-import { getGlobalConfig } from '../global-config.js';
-import {
-  resolveHandoffThresholdLayers,
-  resolveModelConfigLayers,
-} from '../effective-config.js';
+import { resolveEffectiveConfig } from '../effective-config.js';
+import { updateProjectConfigKey, type ResolvedGatePolicy } from '../project-config.js';
 import { readProjectRegistryState } from '../project-registry.js';
 import { pathIsDirectory } from '../file-state.js';
 import {
-  listPipelinesWithInfo,
-  loadPipelineByName,
-  resolvePipelineStageOverrides,
-  resolveEffectiveStage,
-  type EffectiveStageInputs,
-} from '../pipeline-registry/index.js';
-import { createPipelineSubmitter } from '../management-api/pipeline-submit.js';
-import { resolveProjectSelector, resolveSpaceSelector } from './project-addressing.js';
+  resolveConfigContext,
+  contextResolveOptions,
+  contextStoreRef,
+  contextProjectRef,
+  firstQueryValue,
+  type ConfigContext,
+} from './config-context.js';
 import { serializeConfigEntry } from './serialize.js';
 import { writeGlobalConfigKeyMinimalDiff, GlobalConfigWriteError } from './global-write.js';
 import { serveStatic } from './static.js';
-import type { ProjectRef, StoreLayerRef, WirePipeline } from './wire-types.js';
+import type { ProjectRef, StoreLayerRef } from './wire-types.js';
 
 /** A write scope on the config API — the registry scopes plus nothing else. */
 type WriteScope = ConfigScope;
@@ -147,138 +131,6 @@ function hasJsonContentType(req: http.IncomingMessage): boolean {
   const raw = req.headers['content-type'];
   if (!raw) return false;
   return raw.split(';')[0]!.trim().toLowerCase() === 'application/json';
-}
-
-interface ProjectContextOk {
-  ok: true;
-  root: string | undefined;
-  ref: ProjectRef | null;
-}
-interface ProjectContextErr {
-  ok: false;
-  status: number;
-  code: string;
-  message: string;
-  fix?: string;
-}
-
-/**
- * Resolves the `project` selector (explicit id/root, or the server's launch
- * project when omitted) shared by every read and write endpoint (D4).
- */
-async function resolveProjectContext(
-  selector: string | undefined,
-  context: ConfigApiContext
-): Promise<ProjectContextOk | ProjectContextErr> {
-  if (selector === undefined || selector === '') {
-    return { ok: true, root: context.launchProjectRoot ?? undefined, ref: context.launchProjectRef };
-  }
-  const resolved = await resolveProjectSelector(selector);
-  if (!resolved) {
-    return {
-      ok: false,
-      status: 404,
-      code: 'project_not_found',
-      message: `No registered project matches "${selector}".`,
-      fix: 'Open the project with the CLI once (run any `rasen` command inside it to register it), then retry.',
-    };
-  }
-  return { ok: true, root: resolved.root, ref: resolved.ref };
-}
-
-/**
- * A resolved config context (design D6): either a project context (a project
- * root, its ref, and the store layer it inherits — if any) or a store context
- * (a store's own root addressed directly as a space). Every read and write
- * endpoint resolves one of these from the optional `space`/`project`
- * selectors.
- */
-type ConfigContext =
-  | { kind: 'project'; root: string | undefined; ref: ProjectRef | null; storeLayer: StoreConfigLayer | null }
-  | { kind: 'store'; storeId: string; storeRoot: string };
-
-type ConfigContextResult = { ok: true; context: ConfigContext } | ProjectContextErr;
-
-/**
- * Resolves the config context from the optional `space` and `project`
- * selectors (design D6). Both present -> 400 `bad_request` (one addressing
- * mode per request). `space` resolves via `resolveSpaceSelector` (its
- * `invalid_space`/`space_not_found`/`space_unavailable` errors pass through):
- * a store space becomes a store context; a project space behaves exactly like
- * `?project=`. A bare `project` selector (or neither) resolves the project
- * context and awaits `resolveConfigStoreLayer` so inheritance applies to every
- * project-addressed read.
- */
-async function resolveConfigContext(
-  projectSelector: string | undefined,
-  spaceSelector: string | undefined,
-  context: ConfigApiContext
-): Promise<ConfigContextResult> {
-  const hasProject = projectSelector !== undefined && projectSelector !== '';
-  const hasSpace = spaceSelector !== undefined && spaceSelector !== '';
-  if (hasProject && hasSpace) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'bad_request',
-      message: 'Pass either "project" or "space", not both.',
-      fix: 'Use one addressing mode per request.',
-    };
-  }
-
-  if (hasSpace) {
-    const resolved = await resolveSpaceSelector(spaceSelector!);
-    if (!resolved.ok) {
-      return { ok: false, status: resolved.status, code: resolved.code, message: resolved.message };
-    }
-    const space = resolved.space;
-    if (space.type === 'store') {
-      return { ok: true, context: { kind: 'store', storeId: space.id, storeRoot: space.root } };
-    }
-    const storeLayer = await resolveConfigStoreLayer(space.root);
-    return {
-      ok: true,
-      context: {
-        kind: 'project',
-        root: space.root,
-        ref: { projectId: space.id, name: space.name, root: space.root },
-        storeLayer,
-      },
-    };
-  }
-
-  const projectCtx = await resolveProjectContext(projectSelector, context);
-  if (!projectCtx.ok) return projectCtx;
-  const storeLayer = await resolveConfigStoreLayer(projectCtx.root);
-  return { ok: true, context: { kind: 'project', root: projectCtx.root, ref: projectCtx.ref, storeLayer } };
-}
-
-/**
- * The `resolveEffectiveConfig` options a context resolves with (design D3).
- * The API always opts into wildcard families so family template entries and
- * set instances are first-class in every list/get/re-resolve response (D4/D5).
- */
-function contextResolveOptions(context: ConfigContext): ResolveEffectiveConfigOptions {
-  if (context.kind === 'store') {
-    return { store: { storeId: context.storeId, storeRoot: context.storeRoot }, includeWildcards: true };
-  }
-  return { projectRoot: context.root, store: context.storeLayer, includeWildcards: true };
-}
-
-/** The store-layer reference reported in a response body (design D6). */
-function contextStoreRef(context: ConfigContext): StoreLayerRef | null {
-  if (context.kind === 'store') return { id: context.storeId, root: context.storeRoot };
-  return context.storeLayer ? { id: context.storeLayer.storeId, root: context.storeLayer.storeRoot } : null;
-}
-
-/** The project reference reported in a response body — null for a store context. */
-function contextProjectRef(context: ConfigContext): ProjectRef | null {
-  return context.kind === 'project' ? context.ref : null;
-}
-
-function firstQueryValue(url: URL, name: string): string | undefined {
-  const value = url.searchParams.get(name);
-  return value === null ? undefined : value;
 }
 
 /**
@@ -381,122 +233,6 @@ async function handleListProjects(res: http.ServerResponse): Promise<void> {
       root,
     }));
   sendJson(res, 200, { projects });
-}
-
-/**
- * The per-root resolution bundle a space's pipelines resolve their effective
- * per-stage values against. Derived from a resolved config context so the
- * pipeline registry root, the config-family instance layer, the model/handoff
- * layers, and the autopilot.gates mask base all address the SAME space (design
- * D1): a store space resolves the store's own root as both the pipeline
- * registry root and the store config layer; a project space uses its root with
- * the inherited store layer.
- */
-interface PipelineResolutionBundle {
-  pipelineRoot: string | undefined;
-  effOptions: ResolveEffectiveConfigOptions;
-  inputsBase: Omit<EffectiveStageInputs, 'overrides'>;
-}
-
-function pipelineResolutionBundle(context: ConfigContext): PipelineResolutionBundle {
-  const globalConfig = getGlobalConfig();
-  if (context.kind === 'store') {
-    const { storeId, storeRoot } = context;
-    // A store space reads the store's own config as the store layer (mirroring
-    // resolveEffectiveConfig's store context), so model/handoff/base sources
-    // report `store` consistently with the family-instance sources.
-    const storeConfig = readProjectConfig(storeRoot);
-    const basePolicy = resolveAutopilotGatePolicy(null, false, globalConfig, storeConfig);
-    return {
-      pipelineRoot: storeRoot,
-      effOptions: { store: { storeId, storeRoot } },
-      inputsBase: {
-        basePolicy,
-        configLayers: resolveHandoffThresholdLayers(undefined, storeRoot),
-        modelLayers: resolveModelConfigLayers(undefined, storeRoot),
-      },
-    };
-  }
-
-  const root = context.root;
-  const storeLayer = context.storeLayer;
-  const storeRoot = storeLayer?.storeRoot;
-  const projectConfig = root ? readProjectConfig(root) : null;
-  const storeConfig = storeRoot ? readProjectConfig(storeRoot) : null;
-  const basePolicy = resolveAutopilotGatePolicy(projectConfig, false, globalConfig, storeConfig);
-  return {
-    pipelineRoot: root,
-    effOptions: { projectRoot: root, store: storeLayer },
-    inputsBase: {
-      basePolicy,
-      configLayers: resolveHandoffThresholdLayers(root, storeRoot),
-      modelLayers: resolveModelConfigLayers(root, storeRoot),
-    },
-  };
-}
-
-/**
- * Pipelines inventory endpoint (pipeline-http-api): the pipelines available to
- * the addressed space, each stage reporting its declared gate PLUS its effective
- * gate/model/handoff/runtime with the layer that supplied each — computed
- * through the same in-process resolvers `rasen pipeline show` uses
- * (`resolvePipelineStageOverrides` + `resolveEffectiveStage`), no resolution
- * reimplemented here. A pipeline that fails to (re)load between the listing and
- * load calls (e.g. deleted mid-request) is skipped rather than failing the whole
- * response.
- */
-async function handleListPipelines(
-  res: http.ServerResponse,
-  url: URL,
-  context: ConfigApiContext
-): Promise<void> {
-  const ctx = await resolveConfigContext(
-    firstQueryValue(url, 'project'),
-    firstQueryValue(url, 'space'),
-    context
-  );
-  if (!ctx.ok) {
-    sendError(res, ctx.status, ctx.code, ctx.message, ctx.fix);
-    return;
-  }
-
-  const bundle = pipelineResolutionBundle(ctx.context);
-  const infos = listPipelinesWithInfo(bundle.pipelineRoot);
-  const pipelines: WirePipeline[] = [];
-  for (const info of infos) {
-    let pipeline;
-    try {
-      pipeline = loadPipelineByName(info.name, bundle.pipelineRoot);
-    } catch {
-      continue;
-    }
-    const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
-    const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
-    pipelines.push({
-      name: pipeline.name,
-      description: pipeline.description ?? '',
-      provenance: info.source === 'package' ? 'built-in' : 'user',
-      sourceLayer: info.source,
-      stages: pipeline.stages.map((stage) => {
-        const eff = resolveEffectiveStage(stage, pipeline, inputs);
-        return {
-          id: eff.id,
-          role: eff.role,
-          skill: eff.skill,
-          gate: eff.declaredGate,
-          effectiveGate: { value: eff.gate.effective, source: eff.gate.source },
-          effectiveModel: { value: eff.model.value, source: eff.model.source },
-          effectiveHandoff: { value: eff.handoff.threshold, source: eff.handoff.source },
-          effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
-        };
-      }),
-    });
-  }
-  sendJson(res, 200, {
-    project: contextProjectRef(ctx.context),
-    store: contextStoreRef(ctx.context),
-    pipelines,
-  });
 }
 
 /**
@@ -800,13 +536,6 @@ async function handleDeleteConfigKey(
 export function createRouter(
   context: ConfigApiContext
 ): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> {
-  // The pipeline-library mutation bridge (pipeline-http-api design D6): its own
-  // cap-1 concurrency, admitting only the four pipeline bounded-cli ops through
-  // the shared admission whitelist. GET /api/v1/pipelines stays this router's
-  // read handler; POST rides this bridge (the whole path stays in config-api so
-  // the read contract is unmoved).
-  const submitPipeline = createPipelineSubmitter(context);
-
   return async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const pathname = url.pathname;
@@ -836,42 +565,6 @@ export function createRouter(
         return;
       }
       await handleListProjects(res);
-      return;
-    }
-
-    if (pathname === '/api/v1/pipelines') {
-      if (req.method === 'GET') {
-        await handleListPipelines(res, url, context);
-        return;
-      }
-      if (req.method === 'POST') {
-        const body = await readJsonBody(req);
-        if (!body.ok) {
-          sendError(res, body.status, body.code, body.message);
-          return;
-        }
-        // The bridge guards and admits its own input (unknown op → 400,
-        // relative path / option-shaped name → 400, all before any spawn).
-        const result = await submitPipeline(body.value ?? {});
-        if (!result.ok) {
-          res.writeHead(result.status, JSON_HEADERS);
-          res.end(
-            JSON.stringify({
-              error: {
-                code: result.code,
-                message: result.message,
-                ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
-                ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
-              },
-            })
-          );
-          return;
-        }
-        sendJson(res, result.status, result.response);
-        return;
-      }
-      // PUT/DELETE (and any other method) on the path are rejected (design D6).
-      sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on /api/v1/pipelines.`);
       return;
     }
 
