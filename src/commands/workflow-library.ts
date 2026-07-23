@@ -110,15 +110,31 @@ export function registerWorkflowLibraryCommand(program: Command): void {
           { kind: 'expert', heading: messages.expertGroupHeading },
           ...(options.all ? [{ kind: 'internal' as const, heading: messages.internalGroupHeading }] : []),
         ];
-        for (const group of groupOrder) {
-          const entries = workflows.filter((entry) => entry.kind === group.kind);
-          if (entries.length === 0) continue;
+        const groups = groupOrder
+          .map((group) => ({ ...group, entries: workflows.filter((entry) => entry.kind === group.kind) }))
+          .filter((group) => group.entries.length > 0);
+        // Column widths span every row this invocation renders — all groups
+        // plus invalid records — so rows align across group boundaries.
+        const renderedRows = [
+          ...groups.flatMap((group) => group.entries),
+          ...invalid.map((entry) => ({ id: entry.id, source: 'user' as const })),
+        ];
+        const idWidth = Math.max(...renderedRows.map((row) => row.id.length), 0);
+        const sourceWidth = Math.max(
+          ...renderedRows.map((row) => messages.source(row.source).length),
+          0
+        );
+        const row = (id: string, source: 'built-in' | 'user', ...rest: string[]): string =>
+          [id.padEnd(idWidth), messages.source(source).padEnd(sourceWidth), ...rest].join('  ');
+        for (const group of groups) {
           console.log(`${group.heading}:`);
-          for (const entry of entries) {
-            console.log(`${entry.id}\t${messages.source(entry.source)}\t${entry.skillName}${entry.unused ? `\t${messages.unused}` : ''}`);
+          for (const entry of group.entries) {
+            console.log(
+              row(entry.id, entry.source, entry.skillName, ...(entry.unused ? [messages.unused] : []))
+            );
           }
         }
-        for (const entry of invalid) console.log(`${entry.id}\t${messages.source('user')}\t${messages.invalid}`);
+        for (const entry of invalid) console.log(row(entry.id, 'user', messages.invalid));
         for (const diagnostic of catalog.diagnostics) {
           console.warn(`${messages.warningPrefix} ${messages.diagnostic(
             diagnostic.severity,

@@ -105,20 +105,41 @@ describe('workflow command', () => {
     expect(linesWithoutAll).toContain('Tasks:');
     expect(linesWithoutAll).toContain('Drivers:');
     expect(linesWithoutAll).not.toContain('Internal:');
-    expect(linesWithoutAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(false);
+    expect(linesWithoutAll.some((line) => /^goal-plan\s/.test(String(line)))).toBe(false);
 
     log.mockClear();
     await runWorkflowCommand(['list', '--all']);
     const linesWithAll = log.mock.calls.map((call) => call[0]);
     expect(linesWithAll).toContain('Internal:');
-    expect(linesWithAll.some((line) => String(line).startsWith('goal-plan\t'))).toBe(true);
+    expect(linesWithAll.some((line) => /^goal-plan\s/.test(String(line)))).toBe(true);
+  });
+
+  it('aligns human list columns across mixed id lengths without tab characters', async () => {
+    const draft = path.join(home, 'drafts', 'al');
+    await runWorkflowCommand(['init', 'al', '--output', draft, '--json']);
+    await runWorkflowCommand(['import', draft, '--json']);
+    fs.writeFileSync(path.join(home, 'workflows', 'stray.txt'), 'stray');
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--all']);
+    const lines = log.mock.calls.map(([value]) => String(value));
+
+    expect(lines.every((line) => !line.includes('\t'))).toBe(true);
+    const dataRows = lines.filter((line) => !line.endsWith(':'));
+    expect(dataRows.length).toBeGreaterThan(2);
+    expect(dataRows.some((line) => /^al {2,}/.test(line))).toBe(true);
+    expect(dataRows.some((line) => /^stray\.txt {2,}/.test(line))).toBe(true);
+    const secondColumnOffsets = new Set(
+      dataRows.map((line) => /^(\S+ +)/.exec(line)![1].length)
+    );
+    expect(secondColumnOffsets.size).toBe(1);
   });
 
   it('shows the expert group by default (unlike internal), and JSON tags experts with kind:expert', async () => {
     await runWorkflowCommand(['list']);
     const lines = log.mock.calls.map((call) => call[0]);
     expect(lines).toContain('Experts:');
-    expect(lines.some((line) => String(line).startsWith('review\t'))).toBe(true);
+    expect(lines.some((line) => /^review\s/.test(String(line)))).toBe(true);
 
     log.mockClear();
     await runWorkflowCommand(['list', '--json']);
@@ -212,7 +233,7 @@ describe('workflow command', () => {
 
     expect(log).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenNthCalledWith(1, 'Tasks:');
-    expect(log).toHaveBeenNthCalledWith(2, 'batch-unused\tuser\trasen-batch-unused\tunused');
+    expect(log).toHaveBeenNthCalledWith(2, 'batch-unused  user  rasen-batch-unused  unused');
     expectReadCount(3);
   });
 
@@ -398,7 +419,7 @@ describe('workflow command', () => {
   it('localizes human output while preserving machine IDs and diagnostic codes', async () => {
     process.env.RASEN_LANG = 'ja';
     await runWorkflowCommand(['list']);
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^apply\t組み込み\trasen-apply-change/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^apply +組み込み +rasen-apply-change/));
 
     log.mockClear();
     const draft = path.join(home, 'drafts', 'localized');
@@ -441,8 +462,10 @@ describe('workflow command', () => {
     expect(humanLines).toContain('任务:');
     expect(humanLines).toContain('驱动:');
     expect(humanLines).toContain('专家:');
-    expect(humanLines).toContain(`${id}\t用户\trasen-${id}\t未使用`);
-    expect(humanLines).toContainEqual(expect.stringMatching(/^apply\t内置\trasen-apply-change/));
+    expect(humanLines).toContainEqual(
+      expect.stringMatching(new RegExp(`^${id} +用户 +rasen-${id} {2}未使用$`))
+    );
+    expect(humanLines).toContainEqual(expect.stringMatching(/^apply +内置 +rasen-apply-change/));
     expect(humanLines).not.toContain('Tasks:');
 
     error.mockClear();
