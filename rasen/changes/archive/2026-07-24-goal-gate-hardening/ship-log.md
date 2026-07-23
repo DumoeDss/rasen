@@ -32,3 +32,4 @@ Status: Pending (run rasen-ship --deploy to continue)
 **Date:** 2026-07-24T00:55:00Z
 **Ship commit:** eeaf4b25af2b04cdb865af5f76696e99091e072b
 **Outcome:** archived to rasen/changes/archive/2026-07-24-goal-gate-hardening
+**Archive commit:** 3a962f532870cb79b6ab41553dda331e355e4e41
