@@ -216,6 +216,44 @@ describe('workflow command', () => {
     expectReadCount(3);
   });
 
+  it('hides OS metadata files from the list and exported packages without hiding stray files', async () => {
+    const id = 'junk-neighbor';
+    const draft = path.join(home, 'drafts', id);
+    await runWorkflowCommand(['init', id, '--output', draft, '--json']);
+    await runWorkflowCommand(['import', draft, '--json']);
+    const workflowsDir = path.join(home, 'workflows');
+    fs.writeFileSync(path.join(workflowsDir, '.DS_Store'), Buffer.from([0x00, 0x01]));
+    fs.writeFileSync(path.join(workflowsDir, 'notes.txt'), 'stray');
+    fs.writeFileSync(path.join(workflowsDir, id, '.DS_Store'), Buffer.from([0x00, 0x01]));
+
+    log.mockClear();
+    await runWorkflowCommand(['list', '--json']);
+    const payload = lastJson() as {
+      workflows: Array<{ id: string }>;
+      invalid: Array<{ id: string }>;
+    };
+    expect(payload.workflows).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id })])
+    );
+    expect(payload.invalid).toEqual([expect.objectContaining({ id: 'notes.txt' })]);
+
+    log.mockClear();
+    await runWorkflowCommand(['list']);
+    const humanLines = log.mock.calls.map(([value]) => String(value));
+    expect(humanLines.some((line) => line.includes('.DS_Store'))).toBe(false);
+    expect(humanLines.some((line) => line.startsWith('notes.txt'))).toBe(true);
+
+    const packagePath = path.join(home, 'exports', `${id}.rasenpkg`);
+    log.mockClear();
+    await runWorkflowCommand(['export', id, packagePath, '--json']);
+    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as {
+      workflows: Array<{ files: Array<{ path: string }> }>;
+    };
+    expect(
+      packageJson.workflows.flatMap((workflow) => workflow.files.map((file) => file.path))
+    ).toEqual(['SKILL.md', 'workflow.yaml']);
+  });
+
   it('runs the draft, validate, import, show, which, export, and delete journey', async () => {
     const draft = path.join(home, 'drafts', 'team-release');
     const packagePath = path.join(home, 'exports', 'team-release.rasenpkg');

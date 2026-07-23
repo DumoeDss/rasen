@@ -19,6 +19,19 @@ export function isPortableWorkflowId(value: string): boolean {
   return PORTABLE_ID_PATTERN.test(value);
 }
 
+/**
+ * Operating-system metadata entries (Finder's `.DS_Store`, any dot-prefixed
+ * entry, Windows `Thumbs.db`/`desktop.ini`) are never legitimate workflow
+ * content: workflow IDs cannot start with a dot, and the files are OS noise.
+ * Library scans and source-tree walks skip them silently instead of
+ * reporting them as invalid entries or embedding them in packages.
+ */
+export function isOsJunkEntryName(name: string): boolean {
+  if (name.startsWith('.')) return true;
+  const lowered = name.toLowerCase();
+  return lowered === 'thumbs.db' || lowered === 'desktop.ini';
+}
+
 export function isPortableSkillReference(value: string): boolean {
   return SKILL_REFERENCE_PATTERN.test(value);
 }

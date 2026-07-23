@@ -6,7 +6,7 @@ import { mapLegacySkillId } from '../pipeline-registry/legacy-skill.js';
 import { getBuiltInWorkflowDefinitions } from './builtins.js';
 import { WorkflowCatalog } from './catalog.js';
 import { getBuiltInExpertDefinitions } from './experts.js';
-import { portablePathCollisionKey } from './path-policy.js';
+import { isOsJunkEntryName, portablePathCollisionKey } from './path-policy.js';
 import type {
   InvalidWorkflowRecord,
   WorkflowDefinition,
@@ -103,6 +103,7 @@ export function loadWorkflowCatalog(options: WorkflowRegistryOptions = {}): Work
 
   entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
   for (const entry of entries) {
+    if (isOsJunkEntryName(entry.name)) continue;
     const sourcePath = path.join(workflowsDir, entry.name);
     if (!entry.isDirectory()) {
       invalid.push(

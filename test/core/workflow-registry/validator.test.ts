@@ -420,6 +420,47 @@ describe('user workflow registry', () => {
     ]);
   });
 
+  it('silently skips OS metadata entries while still reporting genuine stray files', () => {
+    const globalDataDir = temporaryDirectory();
+    const workflowsDir = path.join(globalDataDir, 'workflows');
+    writeWorkflow(workflowsDir, 'valid-user');
+    fs.writeFileSync(path.join(workflowsDir, '.DS_Store'), Buffer.from([0x00, 0x01]));
+    fs.writeFileSync(path.join(workflowsDir, 'Thumbs.db'), Buffer.from([0x00]));
+    fs.writeFileSync(path.join(workflowsDir, 'desktop.INI'), '[stub]');
+    fs.mkdirSync(path.join(workflowsDir, '.hidden-directory'));
+    fs.writeFileSync(path.join(workflowsDir, 'notes.txt'), 'stray');
+
+    const catalog = loadWorkflowCatalog({ globalDataDir });
+
+    expect(catalog.get('valid-user')).toBeDefined();
+    expect(catalog.invalid).toEqual([
+      expect.objectContaining({
+        id: 'notes.txt',
+        diagnostics: [expect.objectContaining({ code: 'registry_entry_not_directory' })],
+      }),
+    ]);
+  });
+
+  it('excludes OS metadata inside a workflow source tree from files and digest', () => {
+    const parent = temporaryDirectory();
+    const root = writeWorkflow(parent, 'junk-carrier');
+
+    const clean = validateWorkflowDirectory(root);
+    expect(clean.valid).toBe(true);
+
+    fs.writeFileSync(path.join(root, '.DS_Store'), Buffer.from([0x00, 0x01, 0x02]));
+    fs.writeFileSync(path.join(root, 'Thumbs.db'), Buffer.from([0x00]));
+
+    const withJunk = validateWorkflowDirectory(root);
+
+    expect(withJunk.valid).toBe(true);
+    expect(withJunk.definition?.files.map((file) => file.path)).toEqual([
+      'SKILL.md',
+      'workflow.yaml',
+    ]);
+    expect(withJunk.definition?.digest).toBe(clean.definition?.digest);
+  });
+
   it('keeps an invalid entry visible without breaking valid catalog entries', () => {
     const globalDataDir = temporaryDirectory();
     const workflowsDir = path.join(globalDataDir, 'workflows');

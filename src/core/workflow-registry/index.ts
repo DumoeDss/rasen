@@ -24,6 +24,7 @@ export {
 } from './manifest.js';
 export {
   checkPortableRelativePath,
+  isOsJunkEntryName,
   isPortableSkillReference,
   isPortableWorkflowId,
   portablePathCollisionKey,
