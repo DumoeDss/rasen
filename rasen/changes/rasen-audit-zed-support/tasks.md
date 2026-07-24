@@ -2,7 +2,7 @@
 
 - [x] 1.1 Finalize the WASM SQLite package (`node-sqlite3-wasm` vs `sql.js`) against the D1 criteria — MIT/Apache-2.0 license, maintained, ESM + Node-20 compatible, WASM asset resolvable from an installed npm package — and record the choice in `design.md` Open Questions. → chose `node-sqlite3-wasm` (MIT, sync, bundled wasm, Uint8Array BLOBs) + `fzstd` (MIT); verified by round-trip smoke test.
 - [x] 1.2 Add the chosen SQLite reader and `fzstd` to `package.json` dependencies; run `pnpm install` and commit the updated `pnpm-lock.yaml`.
-- [ ] 1.3 Regenerate the Nix hash with `bash scripts/update-flake.sh` and confirm the flake validates (CI parity). → BLOCKED: `nix` is not installed on this machine; must be run on a nix-equipped machine or in CI before release.
+- [x] 1.3 Regenerate the Nix hash with `bash scripts/update-flake.sh` and confirm the flake validates (CI parity). → done: pnpm-deps hash updated to `sha256-wNiIeJ27r/ojthErxkLBfC6bZIIykLeydHndCfZI9K8=`; `nix build` and `nix flake check` pass.
 - [x] 1.4 Confirm the WASM asset loads under ESM/Node from `node_modules` in a throwaway script (dev smoke) before building on it.
 
 ## 2. Zed database read and payload decode
