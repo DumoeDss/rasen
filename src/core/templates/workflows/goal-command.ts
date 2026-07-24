@@ -13,7 +13,7 @@
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
-import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
+import { GOAL_ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const GOAL_INSTRUCTIONS = `Goal-driven iteration — drive a task whose "done" is a condition (a measurable threshold or a quality judgment), not a code-change document. Repeat modify -> judge until the gate is satisfied or the round cap is hit.
 
@@ -58,7 +58,7 @@ Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind
 
 ## 3. Execute the pipeline as the LEAD
 
-${ORCHESTRATION_PLAYBOOK}
+${GOAL_ORCHESTRATION_PLAYBOOK}
 
 ## Termination Invariants (non-negotiable)
 

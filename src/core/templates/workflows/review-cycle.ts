@@ -12,7 +12,7 @@
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
-import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
+import { REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const REVIEW_CYCLE_INSTRUCTIONS = `Iterative review loop — drive a change to actually-clean: review the diff, triage findings, fix, re-review only the delta, and repeat until clean or escalate to a human.
 
@@ -44,7 +44,7 @@ If a change name is provided, use it. Otherwise infer from context, auto-select 
 
 Execute **Step E (the review -> fix loop)** of the playbook below against the current diff. Tier detection (Step A), role-isolated dispatch (Step B), the author != verifier enforcement (Step C), and run-state (Step F) all apply — they are how this loop achieves a structurally independent re-review rather than a same-context promise.
 
-${ORCHESTRATION_PLAYBOOK}
+${REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK}
 
 ## Cycle report
 

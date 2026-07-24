@@ -9,7 +9,7 @@
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
-import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
+import { AUTO_ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const AUTO_INSTRUCTIONS = `Autopilot — drive the full Rasen workflow end-to-end.
 
@@ -83,7 +83,7 @@ The user may freely mix runtimes. Example: Codex planner + Codex reviewer + Clau
 
 ## 3. Execute the pipeline as the LEAD
 
-${ORCHESTRATION_PLAYBOOK}
+${AUTO_ORCHESTRATION_PLAYBOOK}
 
 ## 4. Propose direction-review gate (optional)
 
