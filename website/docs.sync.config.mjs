@@ -33,6 +33,7 @@ export const sections = [
       { source: 'workflows.md', slug: 'the-workflow', icon: 'Workflow' },
       { source: 'artifact-workflow.md', slug: 'artifact-workflow', icon: 'GitBranch' },
       { source: 'explore.md', slug: 'explore', icon: 'Compass' },
+      { source: 'retention-and-learned-skills.md', slug: 'retention-and-learned-skills', icon: 'Lightbulb' },
     ],
   },
   {

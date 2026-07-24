@@ -135,7 +135,7 @@ Display a summary with pass/fail status for each stage:
 
 - This command coexists with the original \`rasen-verify-change\` skill (pure artifact consistency check)
 - The enhanced version adds expert review layers on top of artifact checks
-- Reports written to the work directory are consumed by \`rasen-retro\` and \`rasen-archive-change\`
+- Reports written to the work directory are consumed by \`rasen-retain\` (report mode) and \`rasen-archive-change\`
 - \`rasen-ship\` checks for verification reports before proceeding`;
 
 export function getVerifyEnhancedSkillTemplate(): SkillTemplate {

@@ -80,7 +80,7 @@ Rounds: <r>/<max-rounds>   Tier: A | B | C   Status: CLEAN | ESCALATED
 - Delegates every review pass to \`rasen-review\` — one review engine, no fork.
 - Runs AFTER implementation, against the live diff; complements (does not replace) the one-shot \`rasen-verify-enhanced\` gate and plan-time \`plan-*-review\`.
 - Shares the orchestration playbook with \`rasen-auto\` — this loop is auto's \`review-loop\` stage.
-- The cycle report lives in the work directory alongside \`review-report.md\` / \`ship-log.md\` and is consumable by \`rasen-retro\` and \`rasen-archive-change\`.`;
+- The cycle report lives in the work directory alongside \`review-report.md\` / \`ship-log.md\` and is consumable by \`rasen-retain\` (report mode) and \`rasen-archive-change\`.`;
 
 export function getReviewCycleSkillTemplate(): SkillTemplate {
   return {

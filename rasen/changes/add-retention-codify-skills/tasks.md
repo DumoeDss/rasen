@@ -58,11 +58,11 @@
 
 ## 7. Archive behavior, navigation, and documentation
 
-- [ ] 7.1 Remove archive `[RULE]` extraction, `quality-rules` mutation, and extracted-rule count output while preserving all existing quality scanning and metadata capture.
-- [ ] 7.2 Add archive tests proving existing `quality-rules` remain byte-equivalent, missing rules stay absent, `[RULE]` text is ordinary artifact content, `retro.md` is archived after report mode, and archive never codifies.
-- [ ] 7.3 Update navigator, help, ship guidance, auto descriptions, and workflow maps to show `ship → retain → archive`, the mutually exclusive report/codify policy, and the temporary retro alias only as compatibility.
-- [ ] 7.4 Document profile v2/downgrade limits, `rasen knowledge`, canonical learned-skill stores, scope/promotion rules, applicability markers, ownership, context budgets, and the archive behavior break.
-- [ ] 7.5 Update CLI reference, completion metadata, all three locale catalogs, and catalog-completeness tests for every new command, option, workflow, warning, and result message.
+- [x] 7.1 Remove archive `[RULE]` extraction, `quality-rules` mutation, and extracted-rule count output while preserving all existing quality scanning and metadata capture.
+- [x] 7.2 Add archive tests proving existing `quality-rules` remain byte-equivalent, missing rules stay absent, `[RULE]` text is ordinary artifact content, `retro.md` is archived after report mode, and archive never codifies.
+- [x] 7.3 Update navigator, help, ship guidance, auto descriptions, and workflow maps to show `ship → retain → archive`, the mutually exclusive report/codify policy, and the temporary retro alias only as compatibility.
+- [x] 7.4 Document profile v2/downgrade limits, `rasen knowledge`, canonical learned-skill stores, scope/promotion rules, applicability markers, ownership, context budgets, and the archive behavior break.
+- [x] 7.5 Update CLI reference, completion metadata, all three locale catalogs, and catalog-completeness tests for every new command, option, workflow, warning, and result message.
 
 ## 8. End-to-end and release verification
 
