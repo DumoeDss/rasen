@@ -22,13 +22,20 @@ sidecar.
 
 ## Steps
 
-### 1. Gather change evidence
+### 1. Reuse the frozen knowledge owner
+
+- Read `knowledgeContext` and the absolute `runStateDir` from `rasen pipeline resume <change> --json`.
+- Carry `--run-state-dir "<runStateDir>"` on every project-scope `rasen knowledge list`, `show`, `apply`, and `retire` call. The CLI loads the frozen context directly and revalidates both its planning root and owner; an optional `--project`/`--store` is only a consistency check. For a global candidate, omit the project run-state context because the global owner is a distinct typed owner and the CLI rejects owner/scope mismatch.
+- Never translate frozen identity into an ordinary selector or derive a replacement from the resume cwd, a directory basename, candidate evidence, or model output.
+- If pre-context run-state has no field, resolve and persist the typed context as directed by the parent `rasen-retain` skill before continuing. Ambiguous or stale identity is a pause, not permission to guess.
+
+### 2. Gather change evidence
 
 - Run `rasen status --change "<name>" --json` to get `changeRoot` and `workDir`.
 - Read the planning artifacts from `changeRoot` (proposal, design, tasks, delta specs) and the outcome artifacts from `workDir` (review/qa/cso reports, ship-log, verification report), falling back to `changeRoot` for legacy ephemera.
 - Record, for each artifact you use, its stable identity for evidence: the source project id (`rasen status`/registry), the change name, the artifact kind, and a content digest — never the raw body.
 
-### 2. Propose candidate lessons
+### 3. Propose candidate lessons
 
 For each candidate lesson, apply **all six acceptance gates**. Reject the
 candidate (and say which gate failed) unless it is:
@@ -43,10 +50,10 @@ candidate (and say which gate failed) unless it is:
 A regression test that demonstrates a recurring failure and supports a concrete
 prevention/verification procedure MAY yield a bounded, actionable candidate.
 
-### 3. Deduplicate before writing
+### 4. Deduplicate before writing
 
 Before accepting a create or rewrite, compare the candidate against:
-- active and retired managed learned skills (`rasen knowledge list --json`),
+- active and retired managed learned skills (`rasen knowledge list --scope project --run-state-dir "<runStateDir>" --json` for project ownership),
 - the project's `quality-rules`,
 - repository documentation, and
 - repository or installed skills.
@@ -58,7 +65,7 @@ either leave it unchanged or rewrite that complete managed skill when new
 evidence materially improves it — never append a second instruction or emit a
 duplicate skill.
 
-### 4. Name the skill (context-first)
+### 5. Name the skill (context-first)
 
 Use 3–6 lowercase kebab-case semantic tokens, at most 64 characters. Lead with
 the applicable context, then the operation/seam/constraint/failure mode. No
@@ -66,13 +73,13 @@ dates, change ids, user/project ids, or generic words (`memory`, `lesson`,
 `learning`, `notes`). Examples: `typescript-cli-i18n-diagnostic-routing`,
 `go-sql-transaction-locking`.
 
-### 5. Submit through the CLI (never write skill directories yourself)
+### 6. Submit through the CLI (never write skill directories yourself)
 
 For each accepted decision, write a **strict candidate JSON** file below the
 resolved `workDir` (a temporary file), then apply it:
 
 ```bash
-rasen knowledge apply --from "<absolute-path-to-candidate>.json" [--json]
+rasen knowledge apply --from "<absolute-path-to-candidate>.json" --run-state-dir "<runStateDir>" [--json]
 ```
 
 The candidate schema (version 1):
@@ -95,13 +102,13 @@ The candidate schema (version 1):
 - Do NOT write canonical or tool skill directories directly — the CLI is the only writer.
 - The CLI shows the deterministic plan and enforces id/ownership/budget/evidence gates; treat a `blocked` result as a rejection to report, not to work around.
 
-### 6. Clean up and report
+### 7. Clean up and report
 
 - Delete each temporary candidate file after `rasen knowledge apply` returns; canonical provenance is already recorded by the CLI.
 - Report each outcome distinctly: created, rewritten, promoted, retired, rejected (with the failed gate), or no-op.
 - If no candidate passed all six gates, report a successful "no learned skill created, updated, or retired" result.
 
-### 7. Idempotency
+### 8. Idempotency
 
 Rerunning codify for the same change and evidence must not create duplicates:
 the CLI deduplicates evidence and returns `no-op` when a managed record already

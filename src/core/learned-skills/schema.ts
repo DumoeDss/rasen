@@ -29,6 +29,25 @@ const EvidenceSchema = z
   })
   .strict();
 
+export const KnowledgeOwnerRefSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('global') }).strict(),
+  z.object({ type: z.literal('project'), id: z.string().min(1) }).strict(),
+  z.object({ type: z.literal('store'), id: z.string().min(1) }).strict(),
+]);
+
+export const KnowledgePlanningRootRefSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('project'), id: z.string().min(1) }).strict(),
+  z.object({ type: z.literal('store'), id: z.string().min(1) }).strict(),
+]);
+
+export const FrozenKnowledgeContextSchema = z
+  .object({
+    version: z.literal(1),
+    planningRoot: KnowledgePlanningRootRefSchema,
+    owner: KnowledgeOwnerRefSchema,
+  })
+  .strict();
+
 const CandidateContentFields = {
   version: z.literal(LEARNED_SKILL_CANDIDATE_VERSION),
   scope: z.enum(['project', 'global']),

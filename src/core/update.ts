@@ -39,7 +39,11 @@ import {
   getRetroCommandSkillTemplate,
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
-import { resolveLearnedSkills, type ResolvedLearnedSkillSet } from './learned-skills/index.js';
+import {
+  resolveLearnedSkillExecutionContext,
+  resolveLearnedSkills,
+  type ResolvedLearnedSkillSet,
+} from './learned-skills/index.js';
 import {
   learnedReconcileHasActivity,
   mergeLearnedReconcileResult,
@@ -764,7 +768,11 @@ export class UpdateCommand {
     const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
     let resolved: ResolvedLearnedSkillSet;
     try {
-      resolved = await resolveLearnedSkills({ projectRoot: projectPath });
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: projectPath,
+        requestedScope: 'mixed',
+      });
+      resolved = await resolveLearnedSkills({ execution });
     } catch {
       return aggregate;
     }

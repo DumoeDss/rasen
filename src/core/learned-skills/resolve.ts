@@ -19,7 +19,7 @@ export async function resolveLearnedSkills(
   const global = loadStoreCatalog(resolveGlobalStore(context), 'global').filter(isActive);
 
   let project: CanonicalLearnedSkill[] = [];
-  if (context.projectRoot) {
+  if (context.execution?.owner.type === 'project' || context.projectRoot) {
     const resolution = await resolveProjectStore(context);
     if (resolution.ok) {
       project = loadStoreCatalog(resolution.store, 'project').filter(isActive);

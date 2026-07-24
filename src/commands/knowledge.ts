@@ -4,19 +4,28 @@ import * as path from 'node:path';
 import { Command } from 'commander';
 
 import { getGlobalConfig } from '../core/global-config.js';
-import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { formatZodIssues } from '../core/zod-issues.js';
 import {
+  KnowledgeContextError,
   LearnedSkillCandidateSchema,
   commitLearnedSkillPlan,
   listCanonicalLearnedSkills,
   planLearnedSkillMutation,
   type CanonicalLearnedSkill,
+  type FrozenKnowledgeContext,
   type LearnedSkillContext,
+  type LearnedSkillExecutionContext,
   type LearnedSkillMutationRequest,
   type LearnedSkillScope,
   type ParsedLearnedSkillCandidate,
+  isKnowledgeContextError,
+  resolveLearnedSkillExecutionContext,
 } from '../core/learned-skills/index.js';
+import {
+  RUN_STATE_FILENAME,
+  frozenKnowledgeContext,
+  readRunStateDetailed,
+} from '../core/pipeline-registry/run-state.js';
 import { getKnowledgeMessages, type KnowledgeMessages } from './knowledge-messages.js';
 import { resolveCurrentProfileState } from './profile-editor.js';
 import { isPromptCancellationError, printJson } from './shared-output.js';
@@ -24,19 +33,116 @@ import { isPromptCancellationError, printJson } from './shared-output.js';
 /** A candidate file larger than this is rejected before parsing (defense-in-depth). */
 const MAX_CANDIDATE_FILE_BYTES = 256 * 1024;
 
-function reportError(json: boolean | undefined, message: string, code: string): void {
+function reportError(
+  json: boolean | undefined,
+  message: string,
+  code: string,
+  details: Record<string, unknown> = {}
+): void {
   if (json) {
-    printJson({ ok: false, error: { code, message } });
+    printJson({ ok: false, error: { code, message, ...details } });
   } else {
     console.error(`Error: ${message}`);
   }
   process.exitCode = 1;
 }
 
-/** The nearest ancestor Rasen project root, or undefined when outside a project. */
-function buildContext(): LearnedSkillContext {
-  const projectRoot = findRepoPlanningRootSync(process.cwd());
-  return projectRoot ? { projectRoot } : {};
+interface KnowledgeOwnerOptions {
+  project?: string;
+  store?: string;
+  runStateDir?: string;
+  json?: boolean;
+}
+
+function reportSelectorConflict(options: KnowledgeOwnerOptions): boolean {
+  if (options.project === undefined || options.store === undefined) return false;
+  reportError(
+    options.json,
+    '--project and --store are mutually exclusive knowledge-owner selectors; pass only one.',
+    'knowledge_selector_conflict',
+    { selectorGuidance: ['--project <id>', '--store <id>'] }
+  );
+  return true;
+}
+
+async function buildContext(
+  options: KnowledgeOwnerOptions,
+  requestedScope: LearnedSkillScope | 'mixed'
+): Promise<LearnedSkillContext> {
+  const frozen = loadFrozenKnowledgeContext(options.runStateDir);
+  const execution = await resolveLearnedSkillExecutionContext({
+    launchDirectory: process.cwd(),
+    selector: {
+      ...(options.project !== undefined ? { project: options.project } : {}),
+      ...(options.store !== undefined ? { store: options.store } : {}),
+    },
+    requestedScope,
+    ...(frozen ? { frozen } : {}),
+  });
+  return { execution };
+}
+
+function loadFrozenKnowledgeContext(
+  runStateDir: string | undefined
+): FrozenKnowledgeContext | undefined {
+  if (runStateDir === undefined) return undefined;
+  if (!path.isAbsolute(runStateDir)) {
+    throw new KnowledgeContextError({
+      code: 'knowledge_owner_stale',
+      message: `--run-state-dir must be the absolute resolved directory containing ${RUN_STATE_FILENAME}.`,
+      selectorGuidance: ['rasen pipeline resume <change> --json'],
+    });
+  }
+
+  const result = readRunStateDetailed(runStateDir);
+  if (result.kind === 'absent') {
+    throw new KnowledgeContextError({
+      code: 'knowledge_owner_stale',
+      message: `No ${RUN_STATE_FILENAME} was found in the resolved run-state directory ${runStateDir}.`,
+      selectorGuidance: ['rasen pipeline resume <change> --json'],
+    });
+  }
+  if (result.kind === 'invalid') {
+    throw new KnowledgeContextError({
+      code: 'knowledge_owner_stale',
+      message: `The resolved ${RUN_STATE_FILENAME} is invalid and its frozen knowledge identity cannot be trusted: ${result.reason}`,
+      selectorGuidance: ['repair auto-run.json before resuming retain/codify'],
+    });
+  }
+  return frozenKnowledgeContext(result.state);
+}
+
+function contextToWire(context: LearnedSkillExecutionContext): Record<string, unknown> {
+  const owner =
+    context.owner.type === 'global'
+      ? { type: 'global' }
+      : { type: context.owner.type, id: context.owner.id };
+  return {
+    owner,
+    ...(context.planningRoot
+      ? {
+          planningRoot: {
+            type: context.planningRoot.type,
+            id: context.planningRoot.id,
+          },
+        }
+      : {}),
+    source: context.source,
+  };
+}
+
+function reportHumanContext(
+  context: LearnedSkillExecutionContext,
+  messages: KnowledgeMessages
+): void {
+  const owner =
+    context.owner.type === 'global'
+      ? 'global'
+      : `${context.owner.type}:${context.owner.id}`;
+  const planning = context.planningRoot
+    ? `${context.planningRoot.type}:${context.planningRoot.id}`
+    : 'none';
+  console.error(messages.contextSummary(owner, planning));
 }
 
 function scopeFromOption(scope: string | undefined): LearnedSkillScope | undefined {
@@ -122,8 +228,12 @@ function readCandidate(
 async function applyCommand(options: {
   from?: string;
   approveGlobal?: boolean;
+  project?: string;
+  store?: string;
+  runStateDir?: string;
   json?: boolean;
 }): Promise<void> {
+  if (reportSelectorConflict(options)) return;
   const messages = getKnowledgeMessages();
   const candidate = readCandidate(options.from, options.json, messages);
   if (!candidate) return;
@@ -146,7 +256,8 @@ async function applyCommand(options: {
     }
   }
 
-  const context = buildContext();
+  const context = await buildContext(options, targetScope);
+  if (!options.json) reportHumanContext(context.execution!, messages);
   const request = candidateToRequest(candidate);
   const plan = await planLearnedSkillMutation(request, context);
 
@@ -210,6 +321,7 @@ async function applyCommand(options: {
       scope: result.scope,
       id: result.id,
       status: result.status,
+      context: contextToWire(context.execution!),
     });
     return;
   }
@@ -254,10 +366,14 @@ function toWireRecord(record: CanonicalLearnedSkill): Record<string, unknown> {
   };
 }
 
-async function listCommand(options: { scope?: string; json?: boolean }): Promise<void> {
+async function listCommand(
+  options: { scope?: string } & KnowledgeOwnerOptions
+): Promise<void> {
+  if (reportSelectorConflict(options)) return;
   const messages = getKnowledgeMessages();
-  const context = buildContext();
   const explicit = scopeFromOption(options.scope);
+  const context = await buildContext(options, explicit ?? 'mixed');
+  if (!options.json) reportHumanContext(context.execution!, messages);
   const scopes: LearnedSkillScope[] = explicit ? [explicit] : ['project', 'global'];
 
   const rows: Array<{ scope: LearnedSkillScope; record: CanonicalLearnedSkill }> = [];
@@ -268,7 +384,10 @@ async function listCommand(options: { scope?: string; json?: boolean }): Promise
   }
 
   if (options.json) {
-    printJson({ learnedSkills: rows.map(({ record }) => toWireRecord(record)) });
+    printJson({
+      context: contextToWire(context.execution!),
+      learnedSkills: rows.map(({ record }) => toWireRecord(record)),
+    });
     return;
   }
   if (rows.length === 0) {
@@ -284,10 +403,15 @@ async function listCommand(options: { scope?: string; json?: boolean }): Promise
   }
 }
 
-async function showCommand(id: string, options: { scope?: string; json?: boolean }): Promise<void> {
+async function showCommand(
+  id: string,
+  options: { scope?: string } & KnowledgeOwnerOptions
+): Promise<void> {
+  if (reportSelectorConflict(options)) return;
   const messages = getKnowledgeMessages();
-  const context = buildContext();
   const explicit = scopeFromOption(options.scope);
+  const context = await buildContext(options, explicit ?? 'mixed');
+  if (!options.json) reportHumanContext(context.execution!, messages);
   const scopes: LearnedSkillScope[] = explicit ? [explicit] : ['project', 'global'];
 
   for (const scope of scopes) {
@@ -296,7 +420,10 @@ async function showCommand(id: string, options: { scope?: string; json?: boolean
     );
     if (!found) continue;
     if (options.json) {
-      printJson(toWireRecord(found));
+      printJson({
+        ...toWireRecord(found),
+        context: contextToWire(context.execution!),
+      });
       return;
     }
     const manifest = found.manifest;
@@ -315,11 +442,13 @@ async function showCommand(id: string, options: { scope?: string; json?: boolean
 
 async function retireCommand(
   id: string,
-  options: { scope?: string; yes?: boolean; json?: boolean }
+  options: { scope?: string; yes?: boolean } & KnowledgeOwnerOptions
 ): Promise<void> {
+  if (reportSelectorConflict(options)) return;
   const messages = getKnowledgeMessages();
   const scope: LearnedSkillScope = scopeFromOption(options.scope) ?? 'project';
-  const context = buildContext();
+  const context = await buildContext(options, scope);
+  if (!options.json) reportHumanContext(context.execution!, messages);
 
   if (!options.yes) {
     if (!process.stdout.isTTY) {
@@ -346,14 +475,24 @@ async function retireCommand(
   }
   const result = await commitLearnedSkillPlan(plan, context);
   if (options.json) {
-    printJson({ ok: true, outcome: result.outcome, scope: result.scope, id: result.id, status: result.status });
+    printJson({
+      ok: true,
+      outcome: result.outcome,
+      scope: result.scope,
+      id: result.id,
+      status: result.status,
+      context: contextToWire(context.execution!),
+    });
     return;
   }
   if (result.outcome === 'retired') console.log(messages.retired(result.scope, result.id));
   else if (result.outcome === 'no-op') console.log(messages.noop(result.id));
 }
 
-async function runKnowledgeAction(action: () => Promise<void>): Promise<void> {
+async function runKnowledgeAction(
+  action: () => Promise<void>,
+  json?: boolean
+): Promise<void> {
   try {
     await action();
   } catch (error) {
@@ -362,49 +501,93 @@ async function runKnowledgeAction(action: () => Promise<void>): Promise<void> {
       process.exitCode = 130;
       return;
     }
-    reportError(false, error instanceof Error ? error.message : String(error), 'knowledge_error');
+    if (isKnowledgeContextError(error)) {
+      const { code, message, ...details } = error.diagnostic;
+      reportError(json, message, code, details);
+      return;
+    }
+    reportError(json, error instanceof Error ? error.message : String(error), 'knowledge_error');
   }
+}
+
+function addOwnerSelectorOptions(
+  command: Command,
+  messages: KnowledgeMessages
+): Command {
+  return command
+    .option(
+      '--project <id>',
+      messages.projectSelectorDescription
+    )
+    .option(
+      '--store <id>',
+      messages.storeSelectorDescription
+    )
+    .option(
+      '--run-state-dir <path>',
+      messages.runStateDirDescription
+    );
 }
 
 export function registerKnowledgeCommand(program: Command): void {
   const messages = getKnowledgeMessages();
   const knowledge = program.command('knowledge').description(messages.commandDescription);
 
-  knowledge
+  addOwnerSelectorOptions(knowledge
     .command('apply')
     .description(messages.applyDescription)
     .requiredOption('--from <path>', 'Absolute path to a candidate JSON file')
     .option('--approve-global', 'Approve a global create or promotion non-interactively')
-    .option('--json', 'Output as JSON')
-    .action(async (options: { from?: string; approveGlobal?: boolean; json?: boolean }) => {
-      await runKnowledgeAction(() => applyCommand(options));
+    .option('--json', 'Output as JSON'), messages)
+    .action(async (options: {
+      from?: string;
+      approveGlobal?: boolean;
+      project?: string;
+      store?: string;
+      runStateDir?: string;
+      json?: boolean;
+    }) => {
+      await runKnowledgeAction(() => applyCommand(options), options.json);
     });
 
-  knowledge
+  addOwnerSelectorOptions(knowledge
     .command('list')
     .description(messages.listDescription)
     .option('--scope <scope>', 'project or global')
-    .option('--json', 'Output as JSON')
-    .action(async (options: { scope?: string; json?: boolean }) => {
-      await runKnowledgeAction(() => listCommand(options));
+    .option('--json', 'Output as JSON'), messages)
+    .action(async (options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }) => {
+      await runKnowledgeAction(() => listCommand(options), options.json);
     });
 
-  knowledge
+  addOwnerSelectorOptions(knowledge
     .command('show <id>')
     .description(messages.showDescription)
     .option('--scope <scope>', 'project or global')
-    .option('--json', 'Output as JSON')
-    .action(async (id: string, options: { scope?: string; json?: boolean }) => {
-      await runKnowledgeAction(() => showCommand(id, options));
+    .option('--json', 'Output as JSON'), messages)
+    .action(async (
+      id: string,
+      options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }
+    ) => {
+      await runKnowledgeAction(() => showCommand(id, options), options.json);
     });
 
-  knowledge
+  addOwnerSelectorOptions(knowledge
     .command('retire <id>')
     .description(messages.retireDescription)
     .option('--scope <scope>', 'project or global')
     .option('-y, --yes', 'Skip the confirmation prompt')
-    .option('--json', 'Output as JSON')
-    .action(async (id: string, options: { scope?: string; yes?: boolean; json?: boolean }) => {
-      await runKnowledgeAction(() => retireCommand(id, options));
+    .option('--json', 'Output as JSON'), messages)
+    .action(async (
+      id: string,
+      options: {
+        scope?: string;
+        yes?: boolean;
+        project?: string;
+        store?: string;
+        runStateDir?: string;
+        json?: boolean;
+      }
+    ) => {
+      await runKnowledgeAction(() => retireCommand(id, options), options.json);
     });
 }

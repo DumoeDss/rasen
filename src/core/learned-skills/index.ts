@@ -11,6 +11,9 @@ export * from './types.js';
 export {
   LearnedSkillCandidateSchema,
   LearnedSkillManifestSchema,
+  FrozenKnowledgeContextSchema,
+  KnowledgeOwnerRefSchema,
+  KnowledgePlanningRootRefSchema,
   type ParsedLearnedSkillCandidate,
   type ParsedLearnedSkillManifest,
 } from './schema.js';
@@ -47,3 +50,12 @@ export {
 } from './catalog.js';
 export { commitLearnedSkillPlan, planLearnedSkillMutation } from './mutate.js';
 export { listCanonicalLearnedSkills, resolveLearnedSkills } from './resolve.js';
+export {
+  KnowledgeContextError,
+  freezeKnowledgeContext,
+  isKnowledgeContextError,
+  resolveLearnedSkillExecutionContext,
+  type KnowledgeContextDiagnostic,
+  type KnowledgeContextDiagnosticCode,
+  type ResolveLearnedSkillExecutionContextInput,
+} from './context.js';

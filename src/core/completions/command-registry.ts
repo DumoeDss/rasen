@@ -736,6 +736,21 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             name: 'approve-global',
             description: 'Approve a global create or promotion non-interactively',
           },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -748,6 +763,21 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             description: 'project or global',
             takesValue: true,
             values: ['project', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
           },
           COMMON_FLAGS.json,
         ],
@@ -764,6 +794,21 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
             values: ['project', 'global'],
           },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -778,6 +823,21 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             description: 'project or global',
             takesValue: true,
             values: ['project', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
           },
           {
             name: 'yes',
