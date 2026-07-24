@@ -627,6 +627,40 @@ rules:
     });
   });
 
+  describe('pipeline runtime parsing', () => {
+    it('keeps Claude/Codex and drops Zed/unknown runtime leaves', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        `schema: spec-driven
+pipelines:
+  runtime-test:
+    runtimes:
+      planner: claude
+      reviewer: codex
+      fixer: zed
+      shipper: unknown
+`
+      );
+
+      expect(readProjectConfig(tempDir)?.pipelines).toEqual({
+        'runtime-test': {
+          runtimes: {
+            planner: 'claude',
+            reviewer: 'codex',
+          },
+        },
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("pipelines.runtime-test.runtimes.fixer")
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("pipelines.runtime-test.runtimes.shipper")
+      );
+    });
+  });
+
   describe('validateConfigRules', () => {
     it('should return no warnings for valid artifact IDs', () => {
       const rules = {

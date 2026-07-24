@@ -34,11 +34,13 @@ import {
   type RuntimeSource,
   type Stage,
   type StageConfigOverrides,
+  type AgentRuntime,
   type StageOverride,
   type StageOverrideScope,
   type StageRole,
   type ThresholdValue,
 } from './types.js';
+import { hasRuntimeCapability } from '../runtime-adapters.js';
 
 export type { StageOverride, StageOverrideScope };
 
@@ -52,7 +54,7 @@ export interface PipelineStageOverrides {
   gates: Map<string, StageOverride<'on' | 'off'>>;
   models: Map<string, StageOverride<string>>;
   handoff: Map<string, StageOverride<ThresholdValue>>;
-  runtimes: Map<string, StageOverride<'claude' | 'codex'>>;
+  runtimes: Map<string, StageOverride<AgentRuntime>>;
 }
 
 /** `EffectiveConfigEntry.source` narrowed to the three layers a family instance can resolve from. */
@@ -106,7 +108,7 @@ export function bucketPipelineStageOverrides(
         }
         break;
       case 'runtimes':
-        if (entry.value === 'claude' || entry.value === 'codex') {
+        if (hasRuntimeCapability(entry.value, 'canDispatch')) {
           overrides.runtimes.set(leaf, { value: entry.value, scope });
         }
         break;
@@ -198,7 +200,7 @@ export interface EffectiveStageConfig {
   gate: MaskedStageGate;
   model: { value: string | null; source: ModelSource };
   handoff: { threshold: ThresholdValue; source: ResolvedStageHandoffConfig['source'] };
-  runtime: { value: 'claude' | 'codex'; source: RuntimeSource };
+  runtime: { value: AgentRuntime; source: RuntimeSource };
 }
 
 /** The per-root resolution inputs a pipeline's effective per-stage values are computed against. */

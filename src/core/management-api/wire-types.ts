@@ -7,6 +7,7 @@
 import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
 import type { PipelineYaml, ThresholdValue } from '../pipeline-registry/index.js';
+import type { AuditRuntime, DispatchRuntime } from '../runtime-adapters.js';
 import type {
   WorkflowDependencySet,
   WorkflowDiagnostic,
@@ -63,7 +64,7 @@ export interface WirePipelineStage {
   effectiveGate: WireEffectiveValue<boolean>;
   effectiveModel: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveValue<ThresholdValue>;
-  effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
+  effectiveRuntime: WireEffectiveValue<DispatchRuntime>;
 }
 
 /**
@@ -144,7 +145,7 @@ export interface PipelineCatalogSkill {
 export interface PipelineCatalogResponse {
   roles: string[];
   skills: PipelineCatalogSkill[];
-  runtimes: string[];
+  runtimes: DispatchRuntime[];
   stageKinds: string[];
   loopKinds: string[];
   verifyPolicies: string[];
@@ -190,7 +191,7 @@ export interface StatusResponse {
 
 // ---- Session audits (web-ui-session-audit) ----
 
-export type AuditRuntimeWire = 'claude' | 'codex' | 'zed';
+export type AuditRuntimeWire = AuditRuntime;
 
 export interface RecentAuditSessionWire {
   runtime: AuditRuntimeWire;

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { resolveModelPreset, type ThresholdValue } from '../model-presets.js';
+import {
+  DISPATCH_RUNTIMES,
+  type DispatchRuntime,
+} from '../runtime-adapters.js';
 
 export type { ThresholdValue };
 
@@ -23,8 +27,8 @@ export type StageRole = z.infer<typeof StageRoleSchema>;
  * `src/core/codex` exec bridge) and record the resulting threadId in
  * run-state for direct resume.
  */
-export const AgentRuntimeSchema = z.enum(['claude', 'codex']);
-export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
+export const AgentRuntimeSchema = z.enum(DISPATCH_RUNTIMES);
+export type AgentRuntime = DispatchRuntime;
 
 export const AgentRuntimeSessionReuseSchema = z.enum([
   'none',
@@ -461,7 +465,7 @@ export interface StageOverride<T> {
 export interface StageConfigOverrides {
   model?: StageOverride<string>;
   handoff?: StageOverride<ThresholdValue>;
-  runtime?: StageOverride<'claude' | 'codex'>;
+  runtime?: StageOverride<AgentRuntime>;
 }
 
 /** Provenance of the MODEL field specifically — tracked separately from `source` (which names the runtime/session/sandbox/effort provenance) because the two can differ: e.g. a stage with only `runtime` overridden still resolves its model from machine config. */

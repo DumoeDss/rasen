@@ -14,9 +14,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { claudeProjectsDir, detectTranscriptKind, type TranscriptKind } from '../agent-context.js';
+import { claudeProjectsDir, detectTranscriptKind } from '../agent-context.js';
 import { findRolloutPath, resolveCodexHome } from '../codex/index.js';
 import { getGlobalDataDir, type GlobalDataDirOptions } from '../global-config.js';
+import {
+  AUDIT_RUNTIMES,
+  hasRuntimeCapability,
+  type AuditRuntime,
+} from '../runtime-adapters.js';
 import { PRICING, REQUEST_CLASSES, TTL_MIN, classify, classifyCodex, clusterBursts, clusterCodexBursts } from './classify.js';
 import { buildCodexFamilyMember, discoverCodexThreadFamily } from './discover-codex.js';
 import { TranscriptFormatError } from './errors.js';
@@ -93,17 +98,17 @@ export interface RunAuditResult {
 }
 
 /**
- * Runtimes `agent audit` can select. Broader than `agent-context.ts`'s
- * {@link TranscriptKind} (claude/codex) because Zed is auditable but has no
+ * Audit eligibility is broader than context-probe eligibility because Zed is
+ * auditable but has no
  * transcript file for the context probe — so `agent context` deliberately
- * does NOT accept `zed`, and the two runtime sets stay distinct.
+ * does NOT accept `zed`. The registry keeps the two capability sets distinct.
  */
-type AuditRuntime = TranscriptKind | 'zed';
-
 function validateRuntimeOption(runtime: string | undefined): AuditRuntime | undefined {
   if (runtime === undefined) return undefined;
-  if (runtime === 'claude' || runtime === 'codex' || runtime === 'zed') return runtime;
-  throw new Error(`--runtime must be "claude", "codex", or "zed" (got "${runtime}").`);
+  if (hasRuntimeCapability(runtime, 'canAudit')) return runtime;
+  const choices = AUDIT_RUNTIMES.map((candidate) => `"${candidate}"`);
+  const expected = `${choices.slice(0, -1).join(', ')}, or ${choices.at(-1)}`;
+  throw new Error(`--runtime must be ${expected} (got "${runtime}").`);
 }
 
 /**

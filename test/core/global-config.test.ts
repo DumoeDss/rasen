@@ -15,6 +15,7 @@ import {
   GLOBAL_CONFIG_FILE_NAME
 } from '../../src/core/global-config.js';
 import type { Profile } from '../../src/core/global-config.js';
+import { GlobalConfigSchema } from '../../src/core/config-schema.js';
 import {
   getProjectHomeDir,
   getProjectRegistryPath,
@@ -64,6 +65,24 @@ describe('global-config', () => {
 
     it('should export correct file name', () => {
       expect(GLOBAL_CONFIG_FILE_NAME).toBe('config.json');
+    });
+  });
+
+  describe('pipeline runtime schema', () => {
+    it.each(['claude', 'codex'])('accepts dispatch runtime %s', (runtime) => {
+      expect(
+        GlobalConfigSchema.safeParse({
+          pipelines: { 'runtime-test': { runtimes: { reviewer: runtime } } },
+        }).success
+      ).toBe(true);
+    });
+
+    it.each(['zed', 'unknown'])('rejects non-dispatch runtime %s', (runtime) => {
+      expect(
+        GlobalConfigSchema.safeParse({
+          pipelines: { 'runtime-test': { runtimes: { reviewer: runtime } } },
+        }).success
+      ).toBe(false);
     });
   });
 

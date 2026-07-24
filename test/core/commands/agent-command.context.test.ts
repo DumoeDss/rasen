@@ -110,9 +110,9 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(parsed.pct).toBe(0);
   });
 
-  it('--runtime bogus errors actionably', async () => {
+  it.each(['zed', 'bogus'])('--runtime %s errors actionably', async (runtime) => {
     const p = writeRollout('rollout-2026-01-01T00-00-02-abc.jsonl', [SESSION_META_LINE]);
-    await expect(cmd.context({ transcript: p, runtime: 'bogus' })).rejects.toThrow(
+    await expect(cmd.context({ transcript: p, runtime })).rejects.toThrow(
       /--runtime must be "claude" or "codex"/
     );
   });

@@ -246,6 +246,20 @@ describe('pipeline run-state', () => {
       ).toThrow();
     });
 
+    it('rejects the audit-only Zed runtime on write', () => {
+      expect(() =>
+        writeRunState(dir, {
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { runtime: 'zed' as unknown as 'codex' },
+            },
+          },
+        } as RunState)
+      ).toThrow();
+    });
+
     it('rejects runtime: null', () => {
       expect(() =>
         writeRunState(dir, {

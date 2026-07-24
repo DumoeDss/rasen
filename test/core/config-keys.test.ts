@@ -428,6 +428,20 @@ describe('wildcard config key families', () => {
     }
   });
 
+  it('derives the runtime family choices from dispatch-capable runtimes', () => {
+    const def = findWildcardDefinition(
+      'pipelines.small-feature.runtimes.reviewer',
+      'project'
+    )!;
+    expect(def.enumValues).toEqual(['claude', 'codex']);
+    for (const runtime of ['claude', 'codex']) {
+      expect(validateConfigValue(def, runtime)).toBeNull();
+    }
+    for (const runtime of ['zed', 'unknown']) {
+      expect(validateConfigValue(def, runtime)).not.toBeNull();
+    }
+  });
+
   it('rejects a wrong-shape family path naming the pattern', () => {
     const missingStage = validateConfigKeyPath('pipelines.small-feature.gates', 'global');
     expect(missingStage.valid).toBe(false);

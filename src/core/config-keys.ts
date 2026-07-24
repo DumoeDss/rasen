@@ -20,6 +20,7 @@ import * as path from 'node:path';
 import { RETENTION_MODES } from './retention.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 import { getGlobalConfigDir } from './global-config.js';
+import { DISPATCH_RUNTIMES } from './runtime-adapters.js';
 
 export type ConfigScope = 'global' | 'store' | 'project';
 /**
@@ -502,7 +503,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     key: 'pipelines.<name>.runtimes.<role>',
     scopes: ['global', 'store', 'project'],
     type: 'enum',
-    enumValues: ['claude', 'codex'],
+    enumValues: [...DISPATCH_RUNTIMES],
     wildcard: true,
     pattern: 'pipelines.<name>.runtimes.<role>',
     defaultValue: undefined,

@@ -63,6 +63,8 @@ describe('bucketPipelineStageOverrides', () => {
       instanceEntry('pipelines.test-pipe.models.apply', 'fable', 'store'),
       instanceEntry('pipelines.test-pipe.handoff.apply', 0.6, 'global'),
       instanceEntry('pipelines.test-pipe.runtimes.reviewer', 'codex', 'project'),
+      instanceEntry('pipelines.test-pipe.runtimes.fixer', 'zed', 'project'),
+      instanceEntry('pipelines.test-pipe.runtimes.shipper', 'unknown', 'project'),
       // Another pipeline's instance must not leak in.
       instanceEntry('pipelines.other.gates.propose', 'on', 'project'),
     ];
@@ -71,6 +73,8 @@ describe('bucketPipelineStageOverrides', () => {
     expect(overrides.models.get('apply')).toEqual({ value: 'fable', scope: 'store' });
     expect(overrides.handoff.get('apply')).toEqual({ value: 0.6, scope: 'global' });
     expect(overrides.runtimes.get('reviewer')).toEqual({ value: 'codex', scope: 'project' });
+    expect(overrides.runtimes.has('fixer')).toBe(false);
+    expect(overrides.runtimes.has('shipper')).toBe(false);
     expect(overrides.gates.has('other')).toBe(false);
   });
 

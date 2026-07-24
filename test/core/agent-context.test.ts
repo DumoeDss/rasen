@@ -536,12 +536,15 @@ describe('agent-context', () => {
       expect(detectTranscriptKind(p, 'codex')).toBe('codex');
     });
 
-    it('rejects an invalid --runtime value via probeAgentContext', () => {
+    it.each(['zed', 'bogus'])(
+      'rejects non-probe runtime %s with the accepted runtimes in the error',
+      (runtime) => {
       const p = writeTranscript('t.jsonl', [assistantLine('claude-opus-4-8', { input_tokens: 1 })]);
-      expect(() => probeAgentContext({ transcript: p, runtime: 'bogus' })).toThrow(
+      expect(() => probeAgentContext({ transcript: p, runtime })).toThrow(
         /--runtime must be "claude" or "codex"/
       );
-    });
+      }
+    );
 
     it('the rollout-*.jsonl filename convention selects codex with zero content I/O', () => {
       // A nonexistent file still detects codex from the name alone — proves no read happens.

@@ -27,6 +27,11 @@ import { findRepoPlanningRootSync } from './planning-home.js';
 import { resolveConfigStoreLayer, resolveHandoffThresholdLayers } from './effective-config.js';
 import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry/types.js';
 import { resolveModelPreset } from './model-presets.js';
+import {
+  PROBE_RUNTIMES,
+  hasRuntimeCapability,
+  type ProbeRuntime,
+} from './runtime-adapters.js';
 
 export interface AgentContextResult {
   model: string;
@@ -148,15 +153,16 @@ export function computeContextFromTranscript(
   };
 }
 
-export type TranscriptKind = 'claude' | 'codex';
+export type TranscriptKind = ProbeRuntime;
 
 /** codex-cli's own rollout filename convention — the same one `findRolloutPath` builds paths from. */
 const CODEX_ROLLOUT_BASENAME = /^rollout-.*\.jsonl$/;
 
 function validateRuntime(runtime: string | undefined): TranscriptKind | undefined {
   if (runtime === undefined) return undefined;
-  if (runtime === 'claude' || runtime === 'codex') return runtime;
-  throw new Error(`--runtime must be "claude" or "codex" (got "${runtime}").`);
+  if (hasRuntimeCapability(runtime, 'canProbeContext')) return runtime;
+  const expected = PROBE_RUNTIMES.map((candidate) => `"${candidate}"`).join(' or ');
+  throw new Error(`--runtime must be ${expected} (got "${runtime}").`);
 }
 
 /**

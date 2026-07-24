@@ -1187,12 +1187,12 @@ stages:
       });
     });
 
-    it('rejects invalid role runtime values', async () => {
-      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--planner', 'gemini', '--json'], {
+    it.each(['zed', 'gemini'])('rejects non-dispatch role runtime %s', async (runtime) => {
+      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--planner', runtime, '--json'], {
         cwd: testDir,
       });
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("Invalid runtime 'gemini'");
+      expect(result.stderr).toContain(`Invalid runtime '${runtime}'`);
     });
   });
 

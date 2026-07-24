@@ -135,7 +135,7 @@ interface StageView {
   condition: string | null;
   leadReview: boolean;
   verifyPolicy: Stage['verifyPolicy'] | null;
-  runtime: 'claude' | 'codex';
+  runtime: AgentRuntime;
   runtimeSource: RuntimeSource;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;

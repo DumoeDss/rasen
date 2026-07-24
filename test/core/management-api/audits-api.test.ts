@@ -161,14 +161,39 @@ describe('management audit API', () => {
     );
     expect(pathField.status).toBe(400);
     expect(pathField.json.error.code).toBe('invalid_audit_request');
+
+    const invalidRuntime = await request(
+      handle.port,
+      'POST',
+      '/api/v1/audits',
+      { ...auth(), 'Content-Type': 'application/json' },
+      JSON.stringify({ runtime: 'unknown', sessionId: 'x' })
+    );
+    expect(invalidRuntime.status).toBe(400);
+    expect(invalidRuntime.json.error.code).toBe('invalid_audit_request');
+
+    for (const runtime of ['claude', 'codex', 'zed']) {
+      const validRuntime = await request(
+        handle.port,
+        'POST',
+        '/api/v1/audits',
+        { ...auth(), 'Content-Type': 'application/json' },
+        JSON.stringify({ runtime, sessionId: 'missing' })
+      );
+      expect(validRuntime.status).not.toBe(400);
+      expect(validRuntime.json.error.code).not.toBe('invalid_audit_request');
+    }
   });
 
   it('returns fail-soft session diagnostics and bounds the requested limit', async () => {
     const sessions = await request(handle.port, 'GET', '/api/v1/audits/sessions?limit=5', auth());
     expect(sessions.status).toBe(200);
     expect(sessions.json.sessions).toEqual([]);
-    expect(sessions.json.diagnostics).toHaveLength(3);
-    expect(sessions.json.diagnostics.every((item: any) => item.available === false)).toBe(true);
+    expect(sessions.json.diagnostics).toEqual([
+      expect.objectContaining({ runtime: 'claude', available: false }),
+      expect.objectContaining({ runtime: 'codex', available: false }),
+      expect.objectContaining({ runtime: 'zed', available: false }),
+    ]);
     expect((await request(handle.port, 'GET', '/api/v1/audits/sessions?limit=9999', auth())).status).toBe(400);
   });
 

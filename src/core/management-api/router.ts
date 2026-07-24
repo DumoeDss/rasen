@@ -47,8 +47,8 @@ import {
   AuditServiceError,
   MAX_RECENT_AUDIT_LIMIT,
   type AuditManagementOptions,
-  type AuditRuntime,
 } from '../token-audit/management.js';
+import { hasRuntimeCapability } from '../runtime-adapters.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
@@ -509,7 +509,7 @@ export function createManagementRouter(
       if (
         !record ||
         keys.some((key) => key !== 'runtime' && key !== 'sessionId') ||
-        (runtime !== 'claude' && runtime !== 'codex' && runtime !== 'zed') ||
+        !hasRuntimeCapability(runtime, 'canAudit') ||
         typeof sessionId !== 'string' ||
         sessionId.length === 0
       ) {
@@ -517,7 +517,7 @@ export function createManagementRouter(
         return;
       }
       try {
-        sendJson(res, 200, await audits.runNative(runtime as AuditRuntime, sessionId));
+        sendJson(res, 200, await audits.runNative(runtime, sessionId));
       } catch (error) {
         sendAuditFailure(error);
       }

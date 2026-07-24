@@ -10,6 +10,11 @@ import { withProjectRegistryLock, type ProjectPathOptions } from './project-regi
 import { isKebabId } from './id.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
+  DISPATCH_RUNTIMES,
+  hasRuntimeCapability,
+  type DispatchRuntime,
+} from './runtime-adapters.js';
+import {
   reportConfigDiagnostic,
   type ConfigDiagnostic,
   type ConfigDiagnosticReporter,
@@ -215,7 +220,7 @@ export const ProjectConfigSchema = z.object({
           gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
           models: z.record(z.string(), z.string().min(1)).optional(),
           handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
-          runtimes: z.record(z.string(), z.enum(['claude', 'codex'])).optional(),
+          runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
         })
         .passthrough()
     )
@@ -395,7 +400,7 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
       const gates: Record<string, 'on' | 'off'> = {};
       const models: Record<string, string> = {};
       const handoff: Record<string, ThresholdValue> = {};
-      const runtimes: Record<string, 'claude' | 'codex'> = {};
+      const runtimes: Record<string, DispatchRuntime> = {};
       // `gates`/`models`/`handoff` leaves are keyed by stage; `runtimes` by role.
       for (const [leafKey, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
         const label = `pipelines.${pipelineName}.${axis}.${leafKey}`;
@@ -406,8 +411,11 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
           if (typeof leaf === 'string' && leaf.length > 0) models[leafKey] = leaf;
           else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
         } else if (axis === 'runtimes') {
-          if (leaf === 'claude' || leaf === 'codex') runtimes[leafKey] = leaf;
-          else console.warn(`Invalid '${label}' field in config (must be 'claude' or 'codex')`);
+          if (hasRuntimeCapability(leaf, 'canDispatch')) runtimes[leafKey] = leaf;
+          else {
+            const expected = DISPATCH_RUNTIMES.map((runtime) => `'${runtime}'`).join(' or ');
+            console.warn(`Invalid '${label}' field in config (must be ${expected})`);
+          }
         } else {
           const parsed = thresholdSchema('threshold').safeParse(leaf);
           if (parsed.success) handoff[leafKey] = parsed.data;

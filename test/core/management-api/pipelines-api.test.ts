@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -6,6 +6,8 @@ import * as os from 'node:os';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
+import type { PipelineCatalogResponse } from '../../../src/core/management-api/wire-types.js';
+import type { DispatchRuntime } from '../../../src/core/runtime-adapters.js';
 
 const TOKEN = 'test-token-pipelines-abc123';
 
@@ -354,9 +356,10 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       const h = await startServer();
       const res = await req(h.port, { method: 'GET', path: '/api/v1/pipeline-catalog', headers: authed() });
       expect(res.status).toBe(200);
-      const body = res.json() as any;
+      const body = res.json() as PipelineCatalogResponse;
+      expectTypeOf(body.runtimes).toEqualTypeOf<DispatchRuntime[]>();
       expect(body.roles).toEqual(expect.arrayContaining(['planner', 'implementer', 'reviewer', 'fixer', 'shipper']));
-      expect(body.runtimes).toEqual(expect.arrayContaining(['claude', 'codex']));
+      expect(body.runtimes).toEqual(['claude', 'codex']);
       expect(body.loopKinds).toEqual(expect.arrayContaining(['review-cycle', 'goal']));
       expect(Array.isArray(body.skills)).toBe(true);
       expect(body.skills.length).toBeGreaterThan(0);
@@ -404,6 +407,37 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(body.valid).toBe(true);
       expect(body.issues.filter((i: any) => i.severity === 'error')).toHaveLength(0);
     });
+
+    it.each(['zed', 'unknown'])(
+      'rejects non-dispatch runtime %s in pipeline drafts',
+      async (runtime) => {
+        const h = await startServer();
+        const definition = {
+          ...validDefinition(),
+          agents: { implementer: runtime },
+          stages: [
+            { id: 'implement', skill: 'rasen-apply-change', role: 'implementer' },
+            {
+              id: 'review',
+              skill: 'rasen-review',
+              role: 'reviewer',
+              runtime,
+              requires: ['implement'],
+            },
+          ],
+        };
+        const res = await req(h.port, {
+          method: 'POST',
+          path: '/api/v1/pipeline-validation',
+          headers: authed({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ definition }),
+        });
+        expect(res.status).toBe(200);
+        const body = res.json() as any;
+        expect(body.valid).toBe(false);
+        expect(body.issues.some((issue: any) => /runtime/.test(issue.path))).toBe(true);
+      }
+    );
 
     it('accepts a floor-free ui draft but rejects the equivalent composed draft', async () => {
       const h = await startServer();

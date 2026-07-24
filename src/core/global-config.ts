@@ -21,6 +21,7 @@ import {
 } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { isRetentionMode, type RetentionMode } from './retention.js';
+import type { DispatchRuntime } from './runtime-adapters.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -194,7 +195,7 @@ export interface GlobalConfig {
       gates?: Record<string, 'on' | 'off'>;
       models?: Record<string, string>;
       handoff?: Record<string, ThresholdValue>;
-      runtimes?: Record<string, 'claude' | 'codex'>;
+      runtimes?: Record<string, DispatchRuntime>;
     }
   >;
 }

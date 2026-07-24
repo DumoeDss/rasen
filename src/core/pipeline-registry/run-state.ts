@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import { z } from 'zod';
 import { AgentRuntimeSandboxSchema, AgentRuntimeSchema } from './types.js';
 import { RETENTION_MODES, type RetentionMode } from '../retention.js';
+import { hasRuntimeCapability } from '../runtime-adapters.js';
 
 /** The full-feature retention stage id and the retired legacy retro stage id. */
 export const RETAIN_STAGE_ID = 'retain';
@@ -284,7 +285,10 @@ export function normalizeRunStateWorkerRecord(raw: unknown): unknown {
   // the runtimeRaw passthrough treatment.
   if (obj.runtime === null) {
     delete obj.runtime;
-  } else if (typeof obj.runtime === 'string' && obj.runtime !== 'claude' && obj.runtime !== 'codex') {
+  } else if (
+    typeof obj.runtime === 'string' &&
+    !hasRuntimeCapability(obj.runtime, 'canDispatch')
+  ) {
     obj.runtimeRaw = obj.runtime;
     delete obj.runtime;
   }
