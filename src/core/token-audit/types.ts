@@ -264,7 +264,95 @@ export interface CodexAuditResult {
   caveats?: string[];
 }
 
-export type AuditResult = ClaudeAuditResult | CodexAuditResult;
+// ---------------------------------------------------------------------------
+// Zed runtime shapes (Zed threads.db adapter)
+// ---------------------------------------------------------------------------
+
+/**
+ * The honest subset of token figures Zed's `cumulative_token_usage` actually
+ * stores. Reasoning-output and cache-write totals are deliberately ABSENT
+ * (not zero-valued) — Zed does not record them, and a zero field would read as
+ * observed zero usage. See {@link ZedAuditResult.caveats}.
+ */
+export interface ZedRawTokens {
+  /** Uncached input (`cumulative_token_usage.input_tokens`). */
+  inputTokens: number;
+  /** Cache-read input (`cumulative_token_usage.cache_read_input_tokens`). */
+  cachedInputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * One Zed thread (the audited root or one of its `parent_id`-linked
+ * descendants), represented as a single aggregate entry — Zed does not retain
+ * enough per-request detail to reconstruct a per-request or per-turn timeline.
+ * `cacheHitRatio` is `cachedInputTokens / (inputTokens + cachedInputTokens)`
+ * (differs from the Codex `cached/input` definition, because the Zed subset
+ * keeps uncached and cached input distinct rather than folded).
+ */
+export interface ZedThreadRecord {
+  index: number;
+  /** Thread id (parity with the other runtimes' `key`). */
+  key: string;
+  threadId: string;
+  parentThreadId: string | null;
+  kind: AgentKind;
+  title: string | null;
+  /** Working directory from the `folder_paths` column, when present. */
+  workingDir?: string | null;
+  /** Model from the decoded payload, when present. */
+  model?: string | null;
+  /** The thread's first user message (`messages[0].User.content`), when present. */
+  firstUserCommand?: string | null;
+  firstTs: number | null;
+  lastTs: number | null;
+  /**
+   * Count of retained `request_token_usage` entries — NOT a complete API
+   * request count; Zed prunes older entries, so this can undercount after a
+   * compaction. Disclosed in {@link ZedAuditResult.caveats}.
+   */
+  retainedRequests: number;
+  rawTokens: ZedRawTokens;
+  cacheHitRatio: number;
+}
+
+/**
+ * A first-class Zed report (`session.runtime === 'zed'`), not the Codex
+ * impersonation the older external adapter used. Shares the schema tag with
+ * the other runtimes (`rasen-token-audit/2`, viewer dispatches on
+ * `session.runtime`) but omits every Claude/Codex-only structure (pricing,
+ * churn/rebuild, per-request timeline, unsupported-dimensions) since Zed's
+ * stored data cannot support them.
+ */
+export interface ZedAuditResult {
+  schema: 'rasen-token-audit/2';
+  generatedAt: string;
+  session: {
+    id: string;
+    runtime: 'zed';
+    /** Resolved `threads.db` path (kept under `mainTranscript` for cross-runtime symmetry). */
+    mainTranscript: string;
+    title?: string | null;
+    workingDir?: string | null;
+    firstUserCommand?: string | null;
+    start: number | null;
+    end: number | null;
+    durationMs: number | null;
+    /** Thread count (named `agentCount` for parity with the other runtimes). */
+    agentCount: number;
+  };
+  totals: {
+    retainedRequests: number;
+    rawTokens: ZedRawTokens;
+    cacheHitRatio: number;
+  };
+  threads: ZedThreadRecord[];
+  source: { adapter: 'zed-threads-db'; dataVersion: string | null };
+  /** Always populated: the Zed data-limit disclosures (see the "Zed data limits are disclosed" requirement). */
+  caveats: string[];
+}
+
+export type AuditResult = ClaudeAuditResult | CodexAuditResult | ZedAuditResult;
 
 export const SCHEMA_VERSION = 'rasen-token-audit/2' as const;
 
@@ -278,4 +366,13 @@ export const SCHEMA_VERSION = 'rasen-token-audit/2' as const;
  */
 export function isCodexAuditResult(result: AuditResult): result is CodexAuditResult {
   return result.session.runtime === 'codex';
+}
+
+/**
+ * Narrows {@link AuditResult} to a Zed report on `session.runtime` — the same
+ * intermediate-property narrowing limitation that motivates
+ * {@link isCodexAuditResult} applies here.
+ */
+export function isZedAuditResult(result: AuditResult): result is ZedAuditResult {
+  return result.session.runtime === 'zed';
 }

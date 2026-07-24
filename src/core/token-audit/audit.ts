@@ -34,7 +34,19 @@ import {
   type CodexRawTokens,
   type CodexRebuildEvent,
   type CodexTurn,
+  type ZedAuditResult,
+  type ZedRawTokens,
+  type ZedThreadRecord,
 } from './types.js';
+import {
+  openZedDatabase,
+  queryAllThreadRows,
+  queryThreadFamily,
+  resolveDefaultZedDbPath,
+  resolveThreadIdsByPrefix,
+  type ZedDatabase,
+} from './zed/database.js';
+import { decodeZedThread } from './zed/decode.js';
 
 /**
  * Codex dimensions the rollout data cannot support (design D7) — an explicit
@@ -63,12 +75,16 @@ export interface RunAuditOptions extends GlobalDataDirOptions {
   projectsDir?: string;
   /** Explicit output file path — overrides the default `~/.rasen/analytics/...` resolution. */
   outPath?: string;
-  /** Force detection to "claude" or "codex" instead of sniffing the target. */
+  /** Force detection to "claude", "codex", or "zed" instead of sniffing the target. */
   runtime?: string;
   /** Working directory used to derive the Claude projects dir (defaults to process.cwd()). */
   cwd?: string;
   /** Override the Codex home directory (defaults to resolveCodexHome()). */
   codexHome?: string;
+  /** Zed runtime only: resolve the session by its first user command instead of a thread id. */
+  match?: string;
+  /** Zed runtime only: override the `threads.db` path (defaults to the per-OS location). */
+  db?: string;
 }
 
 export interface RunAuditResult {
@@ -76,21 +92,31 @@ export interface RunAuditResult {
   outPath: string;
 }
 
-function validateRuntimeOption(runtime: string | undefined): TranscriptKind | undefined {
+/**
+ * Runtimes `agent audit` can select. Broader than `agent-context.ts`'s
+ * {@link TranscriptKind} (claude/codex) because Zed is auditable but has no
+ * transcript file for the context probe — so `agent context` deliberately
+ * does NOT accept `zed`, and the two runtime sets stay distinct.
+ */
+type AuditRuntime = TranscriptKind | 'zed';
+
+function validateRuntimeOption(runtime: string | undefined): AuditRuntime | undefined {
   if (runtime === undefined) return undefined;
-  if (runtime === 'claude' || runtime === 'codex') return runtime;
-  throw new Error(`--runtime must be "claude" or "codex" (got "${runtime}").`);
+  if (runtime === 'claude' || runtime === 'codex' || runtime === 'zed') return runtime;
+  throw new Error(`--runtime must be "claude", "codex", or "zed" (got "${runtime}").`);
 }
 
 /**
- * Runtime selection (design D5): an explicit `--runtime` wins outright;
- * otherwise a direct path (`*.jsonl`) is detected from its filename/content;
- * a bare id with no `--runtime` resolves as Claude (unchanged default) —
- * resolving a bare id as Codex requires `--runtime codex`.
+ * Runtime selection (design D5, extended for Zed): an explicit `--runtime`
+ * wins outright; otherwise a `threads.db`/`.db`/`.sqlite` path detects as Zed
+ * and a `*.jsonl` path is detected from its filename/content; a bare id with
+ * no `--runtime` resolves as Claude (unchanged default) — resolving a bare id
+ * as Codex or Zed requires the corresponding `--runtime` flag.
  */
-function resolveRuntimeKind(target: string, override: TranscriptKind | undefined): TranscriptKind {
+function resolveRuntimeKind(target: string, override: AuditRuntime | undefined): AuditRuntime {
   if (override) return override;
   if (target.endsWith('.jsonl')) return detectTranscriptKind(target);
+  if (target.endsWith('.db') || target.endsWith('.sqlite') || path.basename(target) === 'threads.db') return 'zed';
   return 'claude';
 }
 
@@ -106,12 +132,21 @@ function writeReport(result: AuditResult, options: RunAuditOptions, sid: string)
 }
 
 export async function runAudit(target: string, options: RunAuditOptions = {}): Promise<RunAuditResult> {
-  if (!target) {
-    throw new Error('usage: rasen agent audit <sessionId|path> [--projects-dir <dir>] [--out <file>] [--runtime <claude|codex>]');
-  }
   const override = validateRuntimeOption(options.runtime);
+  const wantsZedMatch = override === 'zed' && !!options.match;
+  if (!target && !wantsZedMatch) {
+    throw new Error(
+      'usage: rasen agent audit <sessionId|path> [--projects-dir <dir>] [--out <file>] [--runtime <claude|codex|zed>]\n' +
+        '       rasen agent audit --runtime zed [<threadId> | --match <text>] [--db <threads.db>]'
+    );
+  }
   const kind = resolveRuntimeKind(target, override);
-  return kind === 'codex' ? runCodexAudit(target, options) : runClaudeAudit(target, options);
+  if (kind !== 'zed' && (options.match !== undefined || options.db !== undefined)) {
+    throw new Error('--match and --db only apply to --runtime zed');
+  }
+  if (kind === 'zed') return runZedAudit(target, options);
+  if (kind === 'codex') return runCodexAudit(target, options);
+  return runClaudeAudit(target, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -617,4 +652,169 @@ function buildCrossCheckCaveat(summed: CodexRawTokens, endpoint: CodexRawTokens)
     'Per-request increments (last_token_usage) disagree with the cumulative endpoint totals beyond tolerance for: ' +
     `${diverged.join('; ')}. Per-request figures are shown as-is; neither source is silently reconciled.`
   );
+}
+
+// ---------------------------------------------------------------------------
+// Zed path (Zed threads.db adapter)
+// ---------------------------------------------------------------------------
+
+/**
+ * Zed data-limit disclosures, always attached to a Zed report's `caveats`
+ * (spec: "Zed data limits are disclosed"). A named constant, never derived.
+ */
+const ZED_CAVEATS: readonly string[] = [
+  "Experimental Zed adapter: Zed's threads.db is an internal, undocumented format and may change without notice.",
+  'Zed does not store reasoning-output or cache-write totals; those dimensions are omitted (not zero) — their absence is not observed zero usage.',
+  'Request counts are retained request_token_usage entries, not a complete API-request count, and can undercount after a compaction.',
+  'Each thread is a single aggregate entry; Zed does not retain enough per-request detail for a per-request or per-turn timeline.',
+  'Descendant Zed threads (linked by parent_id) are included; Claude or Codex processes launched as external tools are not linked in threads.db and are not included — audit those separately with their own --runtime.',
+];
+
+/** Cached-input share of total input (kept distinct from the Codex cached/input definition, design D6). */
+function zedHitRatio(inputTokens: number, cachedInputTokens: number): number {
+  const total = inputTokens + cachedInputTokens;
+  return total > 0 ? cachedInputTokens / total : 0;
+}
+
+function normalizeMatch(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Resolves a Zed root thread by a case-insensitive, whitespace-normalized
+ * substring match of its first user command. Threads that fail to decode are
+ * skipped during the scan (an unrelated bad row must not abort the search);
+ * the chosen root is decoded on the normal audit path, where a bad payload
+ * fails soft. Ambiguity lists candidates and never guesses.
+ */
+function resolveZedRootByFirstCommand(db: ZedDatabase, query: string): string {
+  const needle = normalizeMatch(query);
+  const matches: Array<{ id: string; title: string | null; firstTs: number | null }> = [];
+  for (const row of queryAllThreadRows(db)) {
+    try {
+      const d = decodeZedThread(row);
+      if (d.firstUserCommand && normalizeMatch(d.firstUserCommand).includes(needle)) {
+        matches.push({ id: row.id, title: d.title, firstTs: d.firstTs });
+      }
+    } catch {
+      // Skip a thread that fails to decode during the scan.
+    }
+  }
+  if (matches.length === 0) throw new Error(`no Zed thread whose first command matches "${query}"`);
+  if (matches.length > 1) {
+    const list = matches
+      .map((m) => `${m.id} "${(m.title ?? '').slice(0, 40)}" (${m.firstTs ? new Date(m.firstTs).toISOString() : '?'})`)
+      .join('; ');
+    throw new Error(`first-command match "${query}" is ambiguous across ${matches.length} Zed threads: ${list}`);
+  }
+  return matches[0].id;
+}
+
+/** Resolves the Zed thread id to audit from a positional id/prefix or `--match`. */
+function resolveZedRootId(db: ZedDatabase, target: string, options: RunAuditOptions): string {
+  if (target && options.match !== undefined) {
+    throw new Error('provide either a Zed thread id or --match <text>, not both');
+  }
+  if (options.match !== undefined) {
+    if (!options.match.trim()) throw new Error('--match requires non-empty text');
+    return resolveZedRootByFirstCommand(db, options.match);
+  }
+  if (!target) throw new Error('rasen agent audit --runtime zed requires a thread id or --match <text>');
+  const ids = resolveThreadIdsByPrefix(db, target);
+  if (ids.length === 0) throw new Error(`no Zed thread matching "${target}"`);
+  if (ids.length > 1) throw new Error(`Zed thread id prefix "${target}" is ambiguous: ${ids.slice(0, 5).join(', ')}`);
+  return ids[0];
+}
+
+async function runZedAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
+  const dbPath = options.db ? path.resolve(options.db) : resolveDefaultZedDbPath({ homedir: options.homedir });
+  if (!options.db && !fs.existsSync(dbPath)) {
+    throw new Error(`Zed thread database not found at its default location: ${dbPath} (pass --db <path>)`);
+  }
+
+  const db = openZedDatabase(dbPath);
+  try {
+    const rootId = resolveZedRootId(db, target, options);
+    const familyRows = queryThreadFamily(db, rootId);
+    if (familyRows.length === 0) throw new Error(`Zed thread not found: ${rootId} in ${dbPath}`);
+
+    // Decode each family thread exactly once; a bad payload here fails soft.
+    const decoded = familyRows.map((row) => decodeZedThread(row));
+
+    const threads: ZedThreadRecord[] = decoded.map((d) => {
+      const record: ZedThreadRecord = {
+        index: 0,
+        key: d.threadId,
+        threadId: d.threadId,
+        parentThreadId: d.parentThreadId,
+        kind: d.threadId === rootId ? 'main' : 'subagent',
+        title: d.title,
+        firstTs: d.firstTs,
+        lastTs: d.lastTs,
+        retainedRequests: d.retainedRequests,
+        rawTokens: { inputTokens: d.inputTokens, cachedInputTokens: d.cachedInputTokens, outputTokens: d.outputTokens },
+        cacheHitRatio: zedHitRatio(d.inputTokens, d.cachedInputTokens),
+      };
+      if (d.workingDir != null) record.workingDir = d.workingDir;
+      if (d.model != null) record.model = d.model;
+      if (d.firstUserCommand != null) record.firstUserCommand = d.firstUserCommand;
+      return record;
+    });
+
+    // Activation order: earliest thread first; the root stays first on ties.
+    threads.sort(
+      (a, b) =>
+        (a.firstTs ?? 0) - (b.firstTs ?? 0) ||
+        (a.kind === 'main' ? -1 : b.kind === 'main' ? 1 : 0) ||
+        a.threadId.localeCompare(b.threadId)
+    );
+    threads.forEach((t, i) => {
+      t.index = i;
+    });
+
+    const totalsRaw: ZedRawTokens = threads.reduce(
+      (acc, t) => ({
+        inputTokens: acc.inputTokens + t.rawTokens.inputTokens,
+        cachedInputTokens: acc.cachedInputTokens + t.rawTokens.cachedInputTokens,
+        outputTokens: acc.outputTokens + t.rawTokens.outputTokens,
+      }),
+      { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
+    );
+    const retainedRequests = threads.reduce((s, t) => s + t.retainedRequests, 0);
+    const root = threads.find((t) => t.kind === 'main') ?? threads[0];
+    const dataVersion = decoded.find((d) => d.threadId === rootId)?.dataVersion ?? decoded[0]?.dataVersion ?? null;
+
+    const start = Math.min(...threads.map((t) => t.firstTs ?? Infinity));
+    const end = Math.max(...threads.map((t) => t.lastTs ?? -Infinity));
+
+    const result: ZedAuditResult = {
+      schema: SCHEMA_VERSION,
+      generatedAt: new Date().toISOString(),
+      session: {
+        id: rootId,
+        runtime: 'zed',
+        mainTranscript: dbPath,
+        title: root?.title ?? null,
+        workingDir: root?.workingDir ?? null,
+        firstUserCommand: root?.firstUserCommand ?? null,
+        start: Number.isFinite(start) ? start : null,
+        end: Number.isFinite(end) ? end : null,
+        durationMs: Number.isFinite(start) && Number.isFinite(end) ? end - start : null,
+        agentCount: threads.length,
+      },
+      totals: {
+        retainedRequests,
+        rawTokens: totalsRaw,
+        cacheHitRatio: zedHitRatio(totalsRaw.inputTokens, totalsRaw.cachedInputTokens),
+      },
+      threads,
+      source: { adapter: 'zed-threads-db', dataVersion },
+      caveats: [...ZED_CAVEATS],
+    };
+
+    const outPath = writeReport(result, options, rootId);
+    return { result, outPath };
+  } finally {
+    db.close();
+  }
 }

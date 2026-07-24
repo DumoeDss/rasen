@@ -859,25 +859,29 @@ agentCmd
   });
 
 agentCmd
-  .command('audit <sessionId|path>')
+  .command('audit [sessionId|path]')
   .description(
-    "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)"
+    "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)"
   )
   .option('--projects-dir <dir>', 'Override the Claude projects directory a session id is resolved against')
   .option('--out <path>', 'Write the report to this file instead of the default analytics directory')
-  .option('--runtime <runtime>', 'Force detection to "claude" or "codex" instead of sniffing the file')
+  .option('--runtime <runtime>', 'Force the runtime: "claude", "codex", or "zed" (Zed reads its local threads.db; experimental, format may change)')
+  .option('--match <text>', 'Zed only: resolve the session by its first user command instead of a thread id')
+  .option('--db <path>', "Zed only: override the threads.db path (default: Zed's per-OS location)")
   .option('--json', 'Output as JSON')
   .option('--open', 'Open the shipped viewer in your default browser, pre-loaded with the report')
-  .action(async (target: string, options?: {
+  .action(async (target: string | undefined, options?: {
     projectsDir?: string;
     out?: string;
     runtime?: string;
+    match?: string;
+    db?: string;
     json?: boolean;
     open?: boolean;
   }) => {
     try {
       const agentCommand = new AgentCommand();
-      await agentCommand.audit(target, options);
+      await agentCommand.audit(target ?? '', options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);
