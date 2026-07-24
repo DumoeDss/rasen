@@ -31,6 +31,8 @@ import {
 } from '../core/store/index.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
+import { runAdopt, runEject } from './store-migration.js';
+import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
 
 interface StoreSetupOptions {
   path?: string;
@@ -785,12 +787,30 @@ class StoreCommand {
         await doctorStores(id, options.projectNamespace ? 'project' : undefined)
       );
 
+      // Drift diagnostics for the current project root (D7): pointer to an
+      // unregistered store, ambiguous shape+pointer, and manifest/store
+      // mismatch. Only meaningful when running from a project root, so a
+      // failure to resolve degrades to no drift rather than an error.
+      let drift: StoreDiagnostic[] = [];
+      if (id === undefined) {
+        drift = await diagnoseMigrationDrift(process.cwd()).catch(() => []);
+      }
+      const withDrift = { ...payload, projectDrift: drift };
+
       if (options.json) {
-        printJson(payload);
+        printJson(withDrift);
         return;
       }
 
       printDoctorHuman(payload);
+      if (drift.length > 0) {
+        console.log('');
+        console.log('Current project drift:');
+        for (const status of drift) {
+          console.log(`  - [${status.severity}] ${status.message}`);
+          if (status.fix) console.log(`    Fix: ${status.fix}`);
+        }
+      }
     } catch (error) {
       this.handleFailure(options.json, { stores: [], status: [] }, error);
     }
@@ -863,6 +883,33 @@ export function registerStoreCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (projectPath: string, options: StoreAddProjectOptions) => {
       await storeCommand.addProject(projectPath, options);
+    });
+
+  store
+    .command('adopt [path]')
+    .description("Migrate an in-repo project's planning content into a store and convert the repo to a pointer")
+    .option('--to <store-id>', 'Target store to adopt the project into (must already be registered)')
+    .option('--archive <mode>', 'Archive handling: move (default), leave, or external')
+    .option('--dry-run', 'Print the full move plan and change nothing')
+    .option('--verify-hash', 'Verify moved files by content hash, not just size')
+    .option('--json', 'Output as JSON')
+    .action(async (inputPath: string | undefined, options) => {
+      await runAdopt(inputPath, options);
+    });
+
+  store
+    .command('eject <project-id>')
+    .description('Restore a store-hosted project back to in-repo planning using the adoption manifest')
+    .option('--from <store-id>', 'Source store to eject from (must already be registered)')
+    .option('--all', 'Manifest-less fallback: copy the entire store planning content back (with confirmation)')
+    .option('--yes', 'Explicit consent for a manifest-less --all copy back in non-interactive/JSON mode')
+    .option('--force', 'Proceed past manifest drift, reporting the missing content')
+    .option('--into <path>', 'Repo path to restore into (defaults to the manifest source path)')
+    .option('--dry-run', 'Print the restore plan and change nothing')
+    .option('--verify-hash', 'Verify moved files by content hash, not just size')
+    .option('--json', 'Output as JSON')
+    .action(async (projectId: string, options) => {
+      await runEject(projectId, options);
     });
 
   store

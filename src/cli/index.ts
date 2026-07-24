@@ -25,6 +25,10 @@ import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
+import {
+  registerArchiveRelocateSubcommand,
+  registerHomeCommand,
+} from '../commands/store-migration.js';
 import { registerDoctorCommand } from '../commands/doctor.js';
 import { registerContextCommand } from '../commands/context.js';
 import { registerWorksetCommand } from '../commands/workset.js';
@@ -341,7 +345,7 @@ program
     }
   });
 
-program
+const archiveCommand = program
   .command('archive [change-name]')
   .description('Archive a completed change and update main specs')
   .option('-y, --yes', 'Skip confirmation prompts')
@@ -354,13 +358,18 @@ program
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {
-      const archiveCommand = new ArchiveCommand();
-      await archiveCommand.execute(changeName, options);
+      const command = new ArchiveCommand();
+      await command.execute(changeName, options);
     } catch (error) {
       failWithError(error);
       process.exit(1);
     }
   });
+
+// `rasen archive relocate` — a subcommand of the archive command (commander
+// runs it instead of the parent action when `relocate` is the first operand).
+registerArchiveRelocateSubcommand(archiveCommand);
+registerHomeCommand(program);
 
 registerConfigCommand(program);
 registerUiCommand(program);
@@ -831,7 +840,7 @@ agentCmd
   .requiredOption('--role <key>', 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)')
   .option('--max-beats <n>', 'Override the default beat cap (12)', (v) => parseInt(v, 10))
   .option('--context-tokens <n>', 'Self-reported context size; below the keepalive floor stands down immediately', (v) => parseInt(v, 10))
-  .option('--beat-seconds <s>', 'Beat duration in seconds (default 270, max 300)', (v) => parseInt(v, 10))
+  .option('--beat-seconds <s>', 'Beat duration in seconds (default 100 — fits the default Bash tool timeout; max 300)', (v) => parseInt(v, 10))
   .action(async (options: {
     change: string;
     role: string;

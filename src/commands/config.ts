@@ -324,6 +324,38 @@ async function editConfigEntry(
   }
 
   console.log(ui.setValue(definition.key, formatSetDisplayValue(rawValue)));
+
+  // Relocation hint (archive-destination spec): a config-only destination flip
+  // leaves existing archives where they are. When the repo archive is
+  // non-empty, point at `archive relocate` so data and config move together.
+  if (
+    scope === 'project' &&
+    projectRoot &&
+    definition.key === 'archive.destination' &&
+    (rawValue === 'external' || rawValue === 'prune')
+  ) {
+    maybeEmitRelocateHint(projectRoot, String(rawValue));
+  }
+}
+
+/**
+ * Prints the `archive relocate` hint when a config-only destination flip leaves
+ * a non-empty in-repo archive behind (archive-destination spec). Sync (the
+ * `config set` write path is synchronous).
+ */
+function maybeEmitRelocateHint(projectRoot: string, value: string): void {
+  if (value !== 'external' && value !== 'prune') return;
+  const archiveDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', 'archive');
+  let nonEmpty = false;
+  try {
+    nonEmpty = fs.readdirSync(archiveDir).length > 0;
+  } catch {
+    nonEmpty = false;
+  }
+  if (!nonEmpty) return;
+  console.log(
+    `Note: existing archives remain in the repo. Run 'rasen archive relocate --to ${value === 'external' ? 'external' : 'in-repo'}' to move them together with the config${value === 'prune' ? " (prune deletes rather than relocates; relocate does not target prune)" : ''}.`
+  );
 }
 
 /**
@@ -640,6 +672,17 @@ export function registerConfigCommand(program: Command): void {
           }
 
           console.log(messages.setValue(key, formatSetDisplayValue(coercedValue)));
+
+          if (
+            scope === 'project' &&
+            key === 'archive.destination' &&
+            (coercedValue === 'external' || coercedValue === 'prune')
+          ) {
+            const projectRoot = resolveProjectRootOrFail();
+            if (projectRoot) {
+              maybeEmitRelocateHint(projectRoot, String(coercedValue));
+            }
+          }
         });
       }
     );

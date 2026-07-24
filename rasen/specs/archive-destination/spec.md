@@ -25,6 +25,15 @@ The project config's `archive` block SHALL support a `destination` field accepti
 - **THEN** the change directory SHALL be deleted after the safety preconditions pass
 - **AND** no archive copy SHALL be created anywhere
 
+### Requirement: Relocation is the recommended surface for destination changes
+
+When the user changes `archive.destination` via the config-only path while existing archives remain at the previous location, the CLI SHALL note that existing archives stay where they are and point to `rasen archive relocate` as the way to move data and config together. The config-only flip remains valid; union-read semantics are unchanged.
+
+#### Scenario: Config flip hints at relocate
+
+- **WHEN** the user runs `rasen config set archive.destination external` and the repo archive directory is non-empty
+- **THEN** the command succeeds and the output mentions that existing archives remain in the repo and `rasen archive relocate --to external` moves them
+
 ### Requirement: External destination resolves through the machine home at write time
 
 Resolving the `external` archive location SHALL use the machine-home resolver (probe first; establish identity only when actually archiving), never re-derive home paths. When `external` is configured but no location can be resolved on a surface that cannot establish identity (e.g. a read-only payload for an unregistered project), consumers SHALL fall back to an in-repo move accompanied by an explicit note — a destination fallback MAY relocate but SHALL NEVER escalate to deletion.
