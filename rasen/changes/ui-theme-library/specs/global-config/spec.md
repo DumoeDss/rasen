@@ -26,4 +26,3 @@ than rewriting configuration as a read side effect.
   identifier whose manifest is unavailable
 - **THEN** global config loading returns that identifier unchanged
 - **AND** availability fallback is left to theme activation
-

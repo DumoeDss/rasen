@@ -132,4 +132,3 @@ describe('authenticated theme API', () => {
     expect((await request(server.port, 'GET', '/api/v1/themes/extra', auth())).status).toBe(404);
   });
 });
-

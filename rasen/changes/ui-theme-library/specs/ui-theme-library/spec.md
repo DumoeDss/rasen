@@ -143,4 +143,3 @@ component class names or leave styling residue.
   without them
 - **THEN** the omitted values resolve from the new theme's normalized baseline
   and the old effects are absent
-

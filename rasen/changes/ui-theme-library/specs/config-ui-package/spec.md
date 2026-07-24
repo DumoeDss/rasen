@@ -104,4 +104,3 @@ environment or active theme SHALL preserve behavior, contrast, and legibility.
 - **WHEN** Editorial is active and the viewer expresses no preference or
   requests light
 - **THEN** the editor renders Editorial's light parchment presentation
-

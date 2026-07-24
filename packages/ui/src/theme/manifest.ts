@@ -112,4 +112,3 @@ export function validateThemeManifest(value: unknown): ThemeValidationResult {
     mode: source.mode as ThemeMode, tokens: { ...(light ? { light } : {}), ...(dark ? { dark } : {}) }, effects,
   } };
 }
-

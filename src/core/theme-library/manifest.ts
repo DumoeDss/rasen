@@ -246,4 +246,3 @@ export function validateThemeManifest(value: unknown): ThemeValidationResult {
     },
   };
 }
-

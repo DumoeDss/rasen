@@ -31,4 +31,3 @@ describe('self-contained UI theme decoder', () => {
     }
   });
 });
-
