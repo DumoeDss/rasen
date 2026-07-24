@@ -55,6 +55,22 @@ rasen init
 rasen update
 ```
 
+## Web UI
+
+CLI の隣にはブラウザベースの管理プラットフォームがあります。CLI と並べて UI パッケージをインストールし、起動してください：
+
+```bash
+npm i -g @atelierai/rasen-ui
+rasen ui
+```
+
+`rasen ui` は常駐バックグラウンドデーモンを起動（または接続）し——127.0.0.1 のみにバインド、セッションごとのトークン付き——アプリを開きます：
+
+- **Board** — アクティブな change を Task 単位でライフサイクル列に配置。スペーススイッチャーであらゆるプロジェクトと store を横断できます。
+- **Sessions** — ブラウザから headless の `/rasen-auto` / `/rasen-goal` 実行を起動し、出力を眺め、ワンクリックで停止。ターミナルを閉じても生き続けます。
+- **パイプラインキャンバス** — 任意のパイプラインを DAG として表示し、スキルをキャンバスへドラッグして新しいパイプラインを組み立て。保存前にサーバー側バリデーションが走ります。
+- **Config / Workflows / Profiles** — 継承元が見える階層化設定、スペースごとに有効・無効を切り替えられるインストール可能ワークフローライブラリ、名前付きワークフロープロファイル。
+
 ## OpenSpec との共存
 
 Rasen は上流の OpenSpec と衝突せずに**共存**できるよう設計されています。すべてのインターフェースが独立した名前空間なので、同じプロジェクトに両方を同時にインストールできます：
@@ -88,12 +104,15 @@ rasen migrate
 ## 得られるもの
 
 - **スペック駆動ワークフロー** — すべての change は、提案・specs・設計・タスクリストを含む 1 つのフォルダです。コードを書く前に、何を作るかについて合意します：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
-- **`rasen` パイプラインファミリー** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` がデータ（YAML）として同梱；`rasen pipeline show|list|classify|resume` で確認できます。タスクタイプの追加はファイル 1 つの追加、コードはゼロ。
+- **`rasen` パイプラインファミリー** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` がデータ（YAML）として同梱；`rasen pipeline show|list|classify|resume` で確認、`rasen pipeline import|export` でインストール可能パッケージとして共有、あるいは web UI のパイプラインキャンバスでドラッグ＆ドロップして自作できます。タスクタイプの追加はファイル 1 つの追加、コードはゼロ。
+- **`rasen ui` 管理プラットフォーム** — ローカルの web UI：タスクボード、ターミナルを閉じても生き続ける監視付き headless エージェントセッション、パイプラインキャンバス、config / workflow / profile の管理。[Web UI](#web-ui) を参照。
 - **`/rasen-auto` オートパイロット** — 1 つのコマンドでエージェントが **LEAD** となり、役割分離されたサブエージェント（planner / implementer / reviewer / fixer / shipper）をパイプラインに沿ってオーケストレーションし、gate でのみ停止します。
 - **`/rasen-goal` ゴール駆動反復** — `/rasen-auto` の姉妹コマンド。「完了」がドキュメントではなく条件であるタスク向け（Lighthouse を 90 まで上げる、モジュールをルーブリック合格まで磨く、リサーチしてブリーフを書く）。LEAD がタスクを measure / evaluate / research バックエンドに分類し、gate を満たすかラウンド上限に達するまで modify → judge を繰り返します。
 - **Auto-decompose** — 1 つのレビュー可能な diff に収まらない大きなタスクを、依存 DAG と保守的な直列／並列ポリシー付きで、独立してデリバリー可能な子 change に分割します。
 - **chrome-use** — CDP 経由で実際の Chrome を操作するエキスパート：ナビゲート、クリック、ネットワークキャプチャ、JS 注入、cookie と `localStorage` の読み取り、リクエスト待機——ログインが必要なページ、SPA、素の fetch では届かないあらゆるものに。
 - **コンテキスト感知と handoff** — `rasen agent context` が実際の占有率を測定；`/rasen-handoff` が蒸留チェックポイントを書き出し；worker はソフト予算で自己交代し、compact 復帰フックが auto-compact 後にセッションを蒸留物へ再アンカーします——長時間の実行がコンテキスト上限を生き延びるように。
+- **プロンプトキャッシュ・キープアライブ** — `rasen agent wait` はアイドル状態の worker をキープアライブ・ビートに停留させ、5 分のプロンプトキャッシュ TTL を失効させません——implementer を待つ reviewer が、次のターンでコンテキスト全体の書き直しコストを払わずに済みます。ビート長は `keepalive.beatSeconds` で調整可能。
+- **トークン監査** — `rasen agent audit` はセッションのトークンが実際にどこへ消えたかを表示：エージェントごとの消費、キャッシュ churn とその原因、同梱の HTML ビューア付き。Claude Code トランスクリプトと Codex ロールアウトの両方に対応し、完全ローカル——何もアップロードしません。
 
 ## 動作イメージ
 

@@ -55,6 +55,22 @@ rasen init
 rasen update
 ```
 
+## Web UI
+
+CLI 곁에는 브라우저 기반 관리 플랫폼이 있습니다. CLI 옆에 UI 패키지를 설치한 뒤 실행하세요:
+
+```bash
+npm i -g @atelierai/rasen-ui
+rasen ui
+```
+
+`rasen ui`는 상주 백그라운드 데몬을 시작(또는 연결)하고 — 127.0.0.1에만 바인딩, 세션별 토큰 — 앱을 엽니다:
+
+- **Board** — 활성 change를 Task 단위로 라이프사이클 열에 배치. 스페이스 스위처로 모든 프로젝트와 store를 넘나듭니다.
+- **Sessions** — 브라우저에서 headless `/rasen-auto` / `/rasen-goal` 실행을 시작하고, 출력을 지켜보고, 클릭 한 번으로 종료. 터미널을 닫아도 살아 있습니다.
+- **파이프라인 캔버스** — 어떤 파이프라인이든 DAG로 보고, 스킬을 캔버스로 끌어와 새 파이프라인을 조립. 저장 전 서버 측 검증이 실행됩니다.
+- **Config / Workflows / Profiles** — 상속 출처가 보이는 계층형 설정, 스페이스별로 켜고 끌 수 있는 설치형 워크플로 라이브러리, 이름 있는 워크플로 프로파일.
+
 ## OpenSpec과의 공존
 
 Rasen은 업스트림 OpenSpec과 충돌 없이 **나란히** 살도록 설계되었습니다. 모든 인터페이스가 별도의 네임스페이스이므로, 같은 프로젝트에 둘을 동시에 설치할 수 있습니다:
@@ -88,12 +104,15 @@ rasen migrate
 ## 무엇을 얻게 되나
 
 - **스펙 주도 워크플로** — 모든 change는 제안, specs, 설계, 작업 목록이 담긴 하나의 폴더입니다. 코드를 쓰기 전에 무엇을 만들지 합의합니다: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
-- **`rasen` 파이프라인 패밀리** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose`가 데이터(YAML)로 제공됩니다; `rasen pipeline show|list|classify|resume`으로 확인하세요. 작업 유형 추가는 파일 하나 추가, 코드는 제로.
+- **`rasen` 파이프라인 패밀리** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose`가 데이터(YAML)로 제공됩니다; `rasen pipeline show|list|classify|resume`으로 확인하고, `rasen pipeline import|export`로 설치형 패키지로 공유하거나, web UI의 파이프라인 캔버스에서 드래그 앤 드롭으로 직접 조립하세요. 작업 유형 추가는 파일 하나 추가, 코드는 제로.
+- **`rasen ui` 관리 플랫폼** — 로컬 web UI: 작업 보드, 터미널보다 오래 살아남는 감독형 headless 에이전트 세션, 파이프라인 캔버스, config/workflow/profile 관리. [Web UI](#web-ui) 참조.
 - **`/rasen-auto` 오토파일럿** — 명령 하나로 에이전트가 **LEAD**가 되어 역할이 분리된 서브에이전트(planner / implementer / reviewer / fixer / shipper)를 파이프라인 전체에 걸쳐 오케스트레이션하고, gate에서만 멈춥니다.
 - **`/rasen-goal` 목표 주도 반복** — `/rasen-auto`의 자매 명령으로, "완료"가 문서가 아니라 조건인 작업을 위한 것입니다(Lighthouse를 90까지 올리기, 모듈을 루브릭 통과 수준으로 다듬기, 리서치해서 브리프 쓰기). LEAD가 작업을 measure / evaluate / research 백엔드로 분류하고, gate가 충족되거나 라운드 상한에 도달할 때까지 modify → judge를 반복합니다.
 - **Auto-decompose** — 리뷰 가능한 diff 하나에 담기엔 너무 큰 작업을, 의존성 DAG와 보수적인 직렬/병렬 정책과 함께 독립적으로 배포 가능한 자식 change들로 분할합니다.
 - **chrome-use** — CDP로 실제 Chrome을 조작하는 전문가: 탐색, 클릭, 네트워크 캡처, JS 주입, cookie와 `localStorage` 읽기, 요청 대기 — 로그인이 필요한 페이지, SPA, 단순 fetch로는 닿지 않는 모든 것을 위해.
 - **컨텍스트 감지와 handoff** — `rasen agent context`가 실제 점유율을 측정하고; `/rasen-handoff`가 증류된 체크포인트를 기록하며; worker는 소프트 예산에서 스스로 교대하고, compact 복구 훅이 auto-compact 후 세션을 증류물에 다시 고정합니다 — 긴 작업이 컨텍스트 한계를 버텨내도록.
+- **프롬프트 캐시 킵얼라이브** — `rasen agent wait`는 유휴 worker를 킵얼라이브 비트에 정박시켜 5분짜리 프롬프트 캐시가 만료되지 않게 합니다 — implementer를 기다리는 reviewer가 다음 턴에 전체 컨텍스트 재작성 비용을 치르지 않습니다. 비트 길이는 `keepalive.beatSeconds`로 조절합니다.
+- **토큰 감사** — `rasen agent audit`는 세션의 토큰이 실제로 어디에 쓰였는지 보여줍니다: 에이전트별 소비, 캐시 churn과 그 원인, 번들 HTML 뷰어 포함. Claude Code 트랜스크립트와 Codex 롤아웃을 모두 지원하며, 완전 로컬 — 아무것도 업로드하지 않습니다.
 
 ## 실제 동작 예시
 

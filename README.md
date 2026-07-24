@@ -55,6 +55,22 @@ To refresh AI guidance and pick up the latest slash commands after upgrading:
 rasen update
 ```
 
+## Web UI
+
+The CLI has a browser-based management platform beside it. Install the UI package next to the CLI, then launch:
+
+```bash
+npm i -g @atelierai/rasen-ui
+rasen ui
+```
+
+`rasen ui` starts (or adopts) a resident background daemon — bound to 127.0.0.1 with a per-session token — and opens the app:
+
+- **Board** — your active changes as Tasks in lifecycle columns, across every project and store via the space switcher.
+- **Sessions** — launch headless `/rasen-auto` / `/rasen-goal` runs from the browser, watch their output, kill them with a click; they survive closing the terminal.
+- **Pipeline canvas** — view any pipeline as a DAG, and assemble new ones by dragging skills onto the canvas, with server-side validation before save.
+- **Config / Workflows / Profiles** — layered configuration with visible inheritance, the installable-workflow library with per-space toggles, and named workflow profiles.
+
 ## Coexistence with OpenSpec
 
 Rasen is designed to live **alongside** upstream OpenSpec without collision. Every surface is a distinct namespace, so both can be installed in the same project at the same time:
@@ -88,12 +104,15 @@ The `chrome-use` expert drives your everyday Chrome over the Chrome DevTools Pro
 ## What you get
 
 - **Spec-driven workflow** — every change is a folder with a proposal, specs, a design, and a task list. Agree on what to build before code is written: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
-- **`rasen` pipeline family** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as data (YAML); inspect them with `rasen pipeline show|list|classify|resume`. Adding a task type is adding one file, zero code.
+- **`rasen` pipeline family** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as data (YAML); inspect them with `rasen pipeline show|list|classify|resume`, share them as installable packages (`rasen pipeline import|export`), or assemble your own by drag-and-drop in the web UI's pipeline canvas. Adding a task type is adding one file, zero code.
+- **`rasen ui` management platform** — a local web UI: task board, supervised headless agent sessions that outlive your terminal, the pipeline canvas, and config/workflow/profile management. See [Web UI](#web-ui).
 - **`/rasen-auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
 - **`/rasen-goal` goal-driven iteration** — a sibling to `/rasen-auto` for tasks whose "done" is a condition, not a document (drive Lighthouse to 90, make a module rubric-clean, research and write a brief). The LEAD classifies the task into a measure / evaluate / research backend and repeats modify → judge until the gate is satisfied or the round cap is hit.
 - **Auto-decompose** — a task too large for one reviewable diff is split into independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
 - **chrome-use** — an expert that drives your real Chrome via CDP: navigate, click, capture network traffic, inject JS, read cookies and `localStorage`, wait on requests — for logged-in pages, SPAs, and anything a plain fetch can't reach.
 - **Context sensing & handoff** — `rasen agent context` measures real occupancy; `/rasen-handoff` writes a distillate checkpoint; workers self-hand-off at soft budgets, and a compact-recovery hook re-anchors on the distillate after an auto-compact, so long runs survive context limits.
+- **Prompt-cache keepalive** — `rasen agent wait` parks an idle worker on a keepalive beat instead of letting its 5-minute prompt cache expire, so a reviewer waiting on an implementer doesn't pay a full-context rewrite on its next turn. Beat length is tunable via `keepalive.beatSeconds`.
+- **Token audit** — `rasen agent audit` shows where a session's tokens actually went: per-agent spend, cache churn and its causes, with a bundled HTML viewer. Works on Claude Code transcripts and Codex rollouts, fully local — nothing is uploaded.
 
 ## See it in action
 

@@ -55,6 +55,22 @@ rasen init
 rasen update
 ```
 
+## Web UI
+
+CLI 之外还有一个基于浏览器的管理平台。在 CLI 旁边安装 UI 包,然后启动:
+
+```bash
+npm i -g @atelierai/rasen-ui
+rasen ui
+```
+
+`rasen ui` 会启动(或接管)一个常驻后台 daemon——仅绑定 127.0.0.1,带每会话 token——并打开应用:
+
+- **Board** — 你的活跃 change 以 Task 为单位分布在生命周期列中,通过空间切换器覆盖所有项目与 store。
+- **Sessions** — 在浏览器里发起 headless 的 `/rasen-auto` / `/rasen-goal` 运行,查看输出、一键终止;关掉终端它们也继续存活。
+- **Pipeline 画布** — 以 DAG 形式查看任意流水线,并通过把技能拖上画布来组装新流水线,保存前有服务端校验。
+- **Config / Workflows / Profiles** — 可见继承来源的分层配置、支持按空间启停的可安装 workflow 库,以及命名的 workflow profile。
+
 ## 与 OpenSpec 共存
 
 Rasen 被设计为可以与上游 OpenSpec **并存**而互不冲突。每一个界面都是独立的命名空间，因此二者可以同时安装在同一个项目里：
@@ -88,12 +104,15 @@ rasen migrate
 ## 你会得到什么
 
 - **规范驱动的工作流** — 每个 change 是一个文件夹，含提案、specs、设计和任务清单。在写代码之前先就要构建的内容达成共识：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
-- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看。新增一种任务类型 = 加一个文件，零代码。
+- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看，用 `rasen pipeline import|export` 作为可安装包分享，或在 web UI 的流水线画布中拖拽组装你自己的流水线。新增一种任务类型 = 加一个文件，零代码。
+- **`rasen ui` 管理平台** — 本地 web UI：任务看板、可脱离终端存活的受监督 headless agent 会话、流水线画布，以及 config/workflow/profile 管理。见 [Web UI](#web-ui)。
 - **`/rasen-auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
 - **`/rasen-goal` 目标驱动迭代** — `/rasen-auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
 - **Auto-decompose** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
 - **chrome-use** — 一个通过 CDP 驱动你真实 Chrome 的专家：导航、点击、抓包、注入 JS、读 cookie 和 `localStorage`、等待请求——面向需登录的页面、SPA，以及普通 fetch 触及不到的一切。
 - **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen-handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
+- **Prompt 缓存保活** — `rasen agent wait` 让空闲 worker 停靠在保活心跳上，而不是任由其 5 分钟 prompt 缓存过期——等待 implementer 的 reviewer 不再在下一轮支付整个上下文的重写成本。心跳长度可通过 `keepalive.beatSeconds` 调节。
+- **Token 审计** — `rasen agent audit` 展示一个会话的 token 究竟花在了哪里：按 agent 的开销、缓存 churn 及其成因，附带 HTML 查看器。支持 Claude Code transcript 与 Codex rollout，完全本地——不上传任何数据。
 
 ## 实际演示
 
