@@ -117,7 +117,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-onboard': 'ca929a0dfa8785bc945302d14f14d3f8da0cdde97ff87528c8e845a7021f730f',
   'rasen-propose': '8c3553716a378d012fa781d377a7d20fbe0719cacf2a75cccd16a3ffaaf59bdf',
   // Workflow/orchestration templates (workflow-template-parity)
-  'rasen-office-hours-command': '40abb0f8df06501b21b33f7615b0a36bb65015c0652b4548e30cd6bdd4b19e34',
+  'rasen-office-hours-command': '952a4f8d2f489d599edce569990d1a110157d287d9da464a9c67c35f5404f688',
   'rasen-verify-enhanced': 'd5e3f30b5f03af6979ecb4d3ee6693984135aacac63d218eff2618b8db692d38',
   'rasen-ship': 'cc8e158cc3d3657fe0d531fd74129ce621e59ede1326cffb3e2a3a63e86d5b10',
   'rasen-retro': '458aa2ff649293a5e4c5b711e538d16b02e494e909ff6408ff99c28bb987ff73',
@@ -125,7 +125,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-review-cycle': 'e4a46473c553b9928ad55af2d50e6bf04219f3c42cd6be69bea0c177ba5858df',
   'rasen-handoff': '6327278c9f06d21b445ffb3a1cd8868994f9d6da3ab24ed86c3c743843d7eb99',
   'rasen-goal-plan': '675ecc645213d6615d470b7c5f811ec8321012644e36e48532b63a482c6b4401',
-  'rasen-goal-iterate': '36227c2d4f94be204a92edafc9638daedc28c95b7c0f644c238486b06650e9b1',
+  'rasen-goal-iterate': '0bd42b75112906e05cc8f2ff9a0e656ca46ac86bdf8a54ce5a5c1904c5b8fa81',
   'rasen-goal-report': 'cd60a56882984b4babed00f611793b3e1448e54a2bdb94796f8ac06c17445acc',
   'rasen-goal': 'a682bae6b222693bf2a00c5245e246a74f5aaa3902c499eeae79fa1f14e16c6d',
   'rasen-help': 'f35b26e651607ec7ee4302ccc1429a2c5d972f7481833f517ba044f9fb75d066',
