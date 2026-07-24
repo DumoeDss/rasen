@@ -22,11 +22,11 @@
 
 ## 3. Knowledge CLI seam
 
-- [ ] 3.1 Register the localized `rasen knowledge` command group and typed human/JSON result format without changing existing workflow/profile payload fields.
-- [ ] 3.2 Implement `knowledge apply --from <absolute-json-file>` as plan-then-commit, including project codify authorization, interactive global approval, non-interactive `--approve-global`, and consent-scope validation.
-- [ ] 3.3 Implement `knowledge list` and `knowledge show` for project/global canonical records, including active/retired status, applicability, provenance summaries, and stable JSON fields.
-- [ ] 3.4 Implement confirmation-safe `knowledge retire` through the same core planning/commit seam and exact managed identity checks.
-- [ ] 3.5 Add CLI tests for POSIX and Windows absolute candidate paths, malformed/oversized input, TTY and non-TTY approval, no-op/rejection/collision output, localization, and unchanged state on every failure.
+- [x] 3.1 Register the localized `rasen knowledge` command group and typed human/JSON result format without changing existing workflow/profile payload fields.
+- [x] 3.2 Implement `knowledge apply --from <absolute-json-file>` as plan-then-commit, including project codify authorization, interactive global approval, non-interactive `--approve-global`, and consent-scope validation.
+- [x] 3.3 Implement `knowledge list` and `knowledge show` for project/global canonical records, including active/retired status, applicability, provenance summaries, and stable JSON fields.
+- [x] 3.4 Implement confirmation-safe `knowledge retire` through the same core planning/commit seam and exact managed identity checks.
+- [x] 3.5 Add CLI tests for POSIX and Windows absolute candidate paths, malformed/oversized input, TTY and non-TTY approval, no-op/rejection/collision output, localization, and unchanged state on every failure.
 
 ## 4. Retain workflow and compatibility surface
 
