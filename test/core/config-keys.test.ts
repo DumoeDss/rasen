@@ -257,6 +257,28 @@ describe('config-keys registry', () => {
     });
   });
 
+  describe('keepalive.enabled (keepalive-enabled-switch key)', () => {
+    it('is a global+project boolean key defaulting to true in the Pipelines group', () => {
+      expect(validateConfigKeyPath('keepalive.enabled', 'global').valid).toBe(true);
+      expect(validateConfigKeyPath('keepalive.enabled', 'project').valid).toBe(true);
+      expect(validateConfigKeyPath('keepalive.enabled', 'store').valid).toBe(false);
+      const def = findConfigKeyDefinition('keepalive.enabled', 'global')!;
+      expect(def.type).toBe('boolean');
+      expect(def.defaultValue).toBe(true);
+      expect(def.group).toBe('Pipelines');
+      expect(validateConfigValue(def, true)).toBeNull();
+      expect(validateConfigValue(def, false)).toBeNull();
+      expect(validateConfigValue(def, 'false')).toMatch(/boolean/);
+    });
+
+    it('round-trips through both declared scope schemas', () => {
+      expect(GlobalConfigSchema.parse({ keepalive: { enabled: false } }).keepalive?.enabled).toBe(false);
+      expect(
+        ProjectConfigSchema.parse({ schema: 'spec-driven', keepalive: { enabled: true } }).keepalive?.enabled
+      ).toBe(true);
+    });
+  });
+
   describe('profile key per-scope values (init-profile-lock)', () => {
     let tempDir: string;
     let originalEnv: NodeJS.ProcessEnv;
@@ -323,7 +345,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-    it('assigns exactly 10 global-only, 3 global+project, 3 store+project, and 14 all-three keys', () => {
+      it('assigns exactly 9 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -342,9 +364,14 @@ describe('config-keys registry', () => {
       // global+project (per-project beat tuning) alongside `workflows`
       // (space-workflow-enablement) and `profile` (init-profile-lock: a
       // project-scope value is the locked profile). `delivery` was retired.
-      expect(globalOnly.length).toBe(10);
-      expect(globalProject.length).toBe(3);
-      expect(globalProject.map((def) => def.key).sort()).toEqual(['keepalive.beatSeconds', 'profile', 'workflows']);
+        expect(globalOnly.length).toBe(9);
+        expect(globalProject.length).toBe(4);
+        expect(globalProject.map((def) => def.key).sort()).toEqual([
+          'keepalive.beatSeconds',
+          'keepalive.enabled',
+          'profile',
+          'workflows',
+        ]);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
       // Five wildcard families: featureFlags (the sole global-only wildcard)

@@ -57,6 +57,12 @@ describe('locale catalogs', () => {
     }
   });
 
+  it('localizes the keepalive.enabled config description in every catalog', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      expect(getLocaleCatalog(locale).config.descriptions['keepalive.enabled'], locale).toBeTruthy();
+    }
+  });
+
   it('defines a name and description for every workflow in every supported locale', () => {
     for (const locale of SUPPORTED_CLI_LOCALES) {
       const workflows = getLocaleCatalog(locale).profile.prompt.workflows;

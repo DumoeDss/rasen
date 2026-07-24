@@ -293,8 +293,22 @@ export const pipelinesConfigFixture = {
     },
     {
       definition: {
+        key: 'keepalive.enabled',
+        scopes: ['global', 'project'],
+        type: 'boolean',
+        defaultValue: true,
+        description: 'Enable parked-worker keepalive beats',
+        group: 'Pipelines',
+        constraints: { type: 'boolean' },
+      },
+      value: true,
+      source: 'default',
+      scopeValues: {},
+    },
+    {
+      definition: {
         key: 'keepalive.beatSeconds',
-        scopes: ['global'],
+        scopes: ['global', 'project'],
         type: 'number',
         defaultValue: 270,
         description: '`rasen agent wait` beat length in seconds (90–280; default 270)',

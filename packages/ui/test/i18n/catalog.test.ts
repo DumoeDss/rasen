@@ -59,14 +59,28 @@ describe('translate — fallback discipline (design D6; spec req 4)', () => {
   });
 });
 
-describe('catalog completeness — en and zh-cn key-for-key parity (design D7; spec req 5)', () => {
-  it('every key in en is present in zh-cn and vice versa', () => {
+describe('catalog completeness — shipped locales have key-for-key parity (design D7; spec req 5)', () => {
+  it('every key in en is present in ja/zh-cn and vice versa', () => {
     const enKeys = new Set(Object.keys(EN));
-    const zhKeys = new Set(Object.keys(ZH));
-    const missingFromZh = [...enKeys].filter((k) => !zhKeys.has(k));
-    const extraInZh = [...zhKeys].filter((k) => !enKeys.has(k));
-    expect(missingFromZh).toEqual([]);
-    expect(extraInZh).toEqual([]);
+    for (const [locale, catalog] of Object.entries({ ja: JA, 'zh-cn': ZH })) {
+      const localizedKeys = new Set(Object.keys(catalog));
+      expect([...enKeys].filter((key) => !localizedKeys.has(key)), locale).toEqual([]);
+      expect([...localizedKeys].filter((key) => !enKeys.has(key)), locale).toEqual([]);
+    }
+  });
+
+  it('defines localized enabled label, description, state, and accessible-name keys', () => {
+    for (const [locale, catalog] of Object.entries(CATALOGS)) {
+      for (const key of [
+        'keepalive.enabled_label',
+        'keepalive.enabled_description',
+        'keepalive.enabled_on',
+        'keepalive.enabled_off',
+        'keepalive.enabled_aria',
+      ]) {
+        expect(catalog[key], `${locale}: ${key}`).toBeTruthy();
+      }
+    }
   });
 });
 

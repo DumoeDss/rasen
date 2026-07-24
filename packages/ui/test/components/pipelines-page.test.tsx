@@ -118,6 +118,75 @@ describe('PipelinesPage', () => {
     expect(builtIn.querySelector('[data-testid="pipeline-source-layer"]')!.textContent).toBe('package');
   });
 
+  it('shows keepalive enabled in Global and project Local modes, but omits store Local mode', async () => {
+    await mount(container);
+    expect(container.querySelector('[data-testid="keepalive-enabled-toggle"]')).not.toBeNull();
+
+    await clickAndFlush([...container.querySelectorAll('[data-testid="pipelines-mode"] button')][0]);
+    expect(container.querySelector('[data-testid="keepalive-enabled-toggle"]')).not.toBeNull();
+
+    render(null, container);
+    vi.clearAllMocks();
+    (client.listConfig as any).mockResolvedValue(pipelinesConfigFixture);
+    (client.listPipelines as any).mockResolvedValue(pipelinesFixture);
+    await mount(container, '/s/store_x/pipelines');
+    expect(client.listConfig).toHaveBeenCalledWith('store:store_x');
+    expect(container.querySelector('[data-testid="pipelines-defaults-keepalive"]')).toBeNull();
+
+    await clickAndFlush([...container.querySelectorAll('[data-testid="pipelines-mode"] button')][0]);
+    expect(container.querySelector('[data-testid="keepalive-enabled-toggle"]')).not.toBeNull();
+  });
+
+  it('re-renders enabled state/source after a project unset without changing beatSeconds', async () => {
+    const config = structuredClone(pipelinesConfigFixture) as typeof pipelinesConfigFixture;
+    const enabled = config.entries.find((entry) => entry.definition.key === 'keepalive.enabled')!;
+    Object.assign(enabled, {
+      value: true,
+      source: 'project',
+      scopeValues: { global: false, project: true },
+    });
+    (client.listConfig as any).mockResolvedValue(config);
+    (client.deleteKey as any).mockResolvedValue({
+      entry: {
+        ...enabled,
+        value: false,
+        source: 'global',
+        scopeValues: { global: false },
+      },
+      store: null,
+    });
+
+    await mount(container);
+    const beatBefore = (container.querySelector('[data-testid="keepalive-custom-input"]') as HTMLInputElement).value;
+    expect(container.querySelector('[data-testid="keepalive-enabled-toggle"]')!.getAttribute('aria-checked')).toBe('true');
+    await clickAndFlush(container.querySelector('[data-testid="keepalive-enabled-unset"]'));
+
+    expect(client.deleteKey).toHaveBeenCalledWith('keepalive.enabled', 'project', 'project:proj_x');
+    expect(container.querySelector('[data-testid="keepalive-enabled-toggle"]')!.getAttribute('aria-checked')).toBe('false');
+    expect(container.querySelector('[data-testid="keepalive-enabled-source"]')!.textContent).toBe('global');
+    expect((container.querySelector('[data-testid="keepalive-custom-input"]') as HTMLInputElement).value).toBe(beatBefore);
+  });
+
+  it('re-renders from the API response after toggling enabled at project scope', async () => {
+    const enabled = pipelinesConfigFixture.entries.find(
+      (entry) => entry.definition.key === 'keepalive.enabled'
+    )!;
+    (client.putKey as any).mockResolvedValue({
+      entry: { ...enabled, value: false, source: 'project', scopeValues: { project: false } },
+      store: null,
+    });
+
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="keepalive-enabled-toggle"]'));
+
+    expect(client.putKey).toHaveBeenCalledWith(
+      'keepalive.enabled',
+      { scope: 'project', value: false },
+      'project:proj_x'
+    );
+    expect(container.querySelector('[data-testid="keepalive-enabled-toggle"]')!.getAttribute('aria-checked')).toBe('false');
+  });
+
   it('exposes export/delete only for user-library pipelines; built-in AND project-layer are locked', async () => {
     await mount(container);
     const builtIn = stageSection(container, 'small-feature'); // sourceLayer package

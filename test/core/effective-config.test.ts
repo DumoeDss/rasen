@@ -6,10 +6,11 @@ import * as os from 'node:os';
 import {
   resolveConfigStoreLayer,
   resolveEffectiveConfig,
+  resolveEffectiveConfigWithMetadata,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
 } from '../../src/core/effective-config.js';
-import { saveGlobalConfig } from '../../src/core/global-config.js';
+import { getGlobalConfigPath, saveGlobalConfig } from '../../src/core/global-config.js';
 import { registerStore } from '../../src/core/store/registry.js';
 
 describe('effective-config', () => {
@@ -50,6 +51,85 @@ describe('effective-config', () => {
       const proactive = entries.find((e) => e.definition.key === 'proactive')!;
       expect(proactive.value).toBe(true);
       expect(proactive.source).toBe('default');
+    });
+
+    it('reports keepalive.enabled default metadata and a global override', () => {
+      let enabled = resolveEffectiveConfig().find((e) => e.definition.key === 'keepalive.enabled')!;
+      expect(enabled.value).toBe(true);
+      expect(enabled.source).toBe('default');
+      expect(enabled.scopeValues).toEqual({ global: undefined, store: undefined, project: undefined });
+
+      saveGlobalConfig({ keepalive: { enabled: false } } as never);
+      enabled = resolveEffectiveConfig().find((e) => e.definition.key === 'keepalive.enabled')!;
+      expect(enabled.value).toBe(false);
+      expect(enabled.source).toBe('global');
+      expect(enabled.scopeValues.global).toBe(false);
+    });
+
+    it('derives metadata and entries from exactly one coherent global-file read', () => {
+      saveGlobalConfig({ keepalive: { beatSeconds: 90 } } as never);
+      const configPath = getGlobalConfigPath();
+      let targetReads = 0;
+      const resolution = resolveEffectiveConfigWithMetadata({}, {
+        readGlobalConfigFile(file) {
+          targetReads += 1;
+          const content = fs.readFileSync(file, 'utf-8');
+          fs.writeFileSync(
+            configPath,
+            JSON.stringify({ keepalive: { beatSeconds: 180 } }),
+            'utf-8'
+          );
+          return content;
+        },
+      });
+      const beat = resolution.entries.find(
+        (entry) => entry.definition.key === 'keepalive.beatSeconds'
+      )!;
+
+      expect(targetReads).toBe(1);
+      expect(resolution.globalConfigStatus).toBe('readable');
+      expect((resolution.globalConfig.keepalive as { beatSeconds: number }).beatSeconds).toBe(90);
+      expect(beat.value).toBe(90);
+      expect(beat.source).toBe('global');
+      expect(beat.scopeValues.global).toBe(90);
+    });
+
+    it('preserves missing and unreadable global-file status without contributing a value', () => {
+      const missing = resolveEffectiveConfigWithMetadata();
+      const missingBeat = missing.entries.find(
+        (entry) => entry.definition.key === 'keepalive.beatSeconds'
+      )!;
+      expect(missing.globalConfigStatus).toBe('missing');
+      expect(missingBeat.source).toBe('default');
+
+      const configPath = getGlobalConfigPath();
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, '{ invalid json', 'utf-8');
+      const unreadable = resolveEffectiveConfigWithMetadata({ reporter: vi.fn() });
+      const unreadableBeat = unreadable.entries.find(
+        (entry) => entry.definition.key === 'keepalive.beatSeconds'
+      )!;
+      expect(unreadable.globalConfigStatus).toBe('unreadable');
+      expect(unreadableBeat.source).toBe('default');
+    });
+
+    it('resolves keepalive.enabled project over global and excludes the store layer', () => {
+      saveGlobalConfig({ keepalive: { enabled: false } } as never);
+      const storeRoot = writeStoreConfig(
+        path.join(tempDir, 'keepalive-store'),
+        'schema: spec-driven\nkeepalive:\n  enabled: false\n'
+      );
+      const projectRoot = path.join(tempDir, 'keepalive-project');
+      writeProjectConfig(projectRoot, 'schema: spec-driven\nkeepalive:\n  enabled: true\n');
+
+      const enabled = resolveEffectiveConfig({
+        projectRoot,
+        store: { storeId: 'keepalive-store', storeRoot },
+      }).find((e) => e.definition.key === 'keepalive.enabled')!;
+
+      expect(enabled.value).toBe(true);
+      expect(enabled.source).toBe('project');
+      expect(enabled.scopeValues).toEqual({ global: false, store: undefined, project: true });
     });
 
     it('project value wins over global for a both-scope key', () => {

@@ -261,12 +261,14 @@ export function detectAgentRuntime(env: NodeJS.ProcessEnv = process.env): AgentR
 }
 
 export interface KeepaliveConfig {
+  enabled: boolean;
   runtimes: { claude: boolean; codex: boolean };
   contextFloor: number;
   beatSeconds: number;
 }
 
 export const DEFAULT_KEEPALIVE_CONFIG: KeepaliveConfig = {
+  enabled: true,
   runtimes: { claude: true, codex: false },
   contextFloor: DEFAULT_CONTEXT_FLOOR,
   beatSeconds: DEFAULT_CONFIG_BEAT_SECONDS,
@@ -274,6 +276,7 @@ export const DEFAULT_KEEPALIVE_CONFIG: KeepaliveConfig = {
 
 /** Shape of the optional `keepalive` block in the global config file. */
 export interface KeepaliveConfigInput {
+  enabled?: boolean;
   runtimes?: { claude?: boolean; codex?: boolean };
   contextFloor?: number;
   beatSeconds?: number;
@@ -281,6 +284,7 @@ export interface KeepaliveConfigInput {
 
 export function resolveKeepaliveConfig(input?: KeepaliveConfigInput | null): KeepaliveConfig {
   return {
+    enabled: input?.enabled ?? DEFAULT_KEEPALIVE_CONFIG.enabled,
     runtimes: {
       claude: input?.runtimes?.claude ?? DEFAULT_KEEPALIVE_CONFIG.runtimes.claude,
       codex: input?.runtimes?.codex ?? DEFAULT_KEEPALIVE_CONFIG.runtimes.codex,
