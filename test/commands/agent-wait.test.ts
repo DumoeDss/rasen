@@ -127,14 +127,58 @@ describe('rasen agent wait', () => {
     expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
   });
 
-  it('context below the floor stands down immediately', async () => {
+  it('the context floor is disabled by default — small contexts still beat', async () => {
     await wait({ contextTokens: 60_000 });
-    expect(lastOutcome()).toEqual({ standDown: true, reason: 'context-below-floor' });
+    expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
   });
 
-  it('context at or above the floor proceeds', async () => {
+  it('a configured floor stands small contexts down and passes large ones', async () => {
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { contextFloor: 100_000 } }),
+      'utf-8'
+    );
+    await wait({ contextTokens: 60_000 });
+    expect(lastOutcome()).toEqual({ standDown: true, reason: 'context-below-floor' });
     await wait({ contextTokens: 150_000 });
     expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
+  });
+
+  it('a stale pre-existing signal is discarded on the first beat of an episode', async () => {
+    writeSignalAtomic(changeRoot, 'reviewer', { kind: 'standDown' });
+    const file = signalFilePath(changeRoot, 'reviewer');
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    fs.utimesSync(file, old, old);
+    await wait();
+    expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 }); // not insta-killed
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('a BOM-prefixed signal (PowerShell-written) is still parsed and delivered', async () => {
+    fs.mkdirSync(path.dirname(signalFilePath(changeRoot, 'reviewer')), { recursive: true });
+    fs.writeFileSync(
+      signalFilePath(changeRoot, 'reviewer'),
+      '\uFEFF{"kind":"resume","instruction":"bom ok"}',
+      'utf-8'
+    );
+    await wait({ beatSeconds: 30 });
+    expect(lastOutcome()).toMatchObject({ resumed: true, instruction: 'bom ok' });
+  });
+
+  it('a fresh pre-existing signal is still delivered on the first beat', async () => {
+    writeSignalAtomic(changeRoot, 'reviewer', { kind: 'resume', instruction: 'go' });
+    await wait({ beatSeconds: 30 });
+    expect(lastOutcome()).toMatchObject({ resumed: true, instruction: 'go' });
+  });
+
+  it('a stale signal mid-episode (beats > 0) is still delivered', async () => {
+    await wait(); // beat 1 — episode live
+    writeSignalAtomic(changeRoot, 'reviewer', { kind: 'standDown' });
+    const file = signalFilePath(changeRoot, 'reviewer');
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    fs.utimesSync(file, old, old);
+    await wait({ beatSeconds: 30 });
+    expect(lastOutcome()).toEqual({ standDown: true, reason: 'lead-stand-down' });
   });
 
   it('rejects a missing change and an invalid role key', async () => {

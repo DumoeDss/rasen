@@ -35,6 +35,7 @@ import {
   clearBeatState,
   consumeSignal,
   detectAgentRuntime,
+  discardStaleSignal,
   isRuntimeGated,
   isValidRoleKey,
   loadBeatState,
@@ -312,8 +313,13 @@ export class AgentCommand {
       return;
     }
 
-    // Gate 2: context floor. Only enforced when the caller self-reports size.
-    if (options.contextTokens !== undefined && options.contextTokens < keepalive.contextFloor) {
+    // Gate 2: context floor. Only enforced when a floor is configured (>0)
+    // AND the caller self-reports size. Default floor is 0 (gate disabled).
+    if (
+      keepalive.contextFloor > 0 &&
+      options.contextTokens !== undefined &&
+      options.contextTokens < keepalive.contextFloor
+    ) {
       this.emitWait({ standDown: true, reason: 'context-below-floor' });
       return;
     }
@@ -327,8 +333,14 @@ export class AgentCommand {
       return;
     }
 
-    // Live beat: poll the signal file until hit or timeout.
+    // Live beat: poll the signal file until hit or timeout. On the first
+    // beat of an episode, discard any signal left over from a PRIOR episode
+    // (older than the grace window) — a stale standDown would otherwise
+    // insta-kill every new park.
     fs.mkdirSync(signalsDir(changeRoot), { recursive: true });
+    if (state.beats === 0) {
+      await discardStaleSignal(changeRoot, roleKey);
+    }
     const deadline = Date.now() + beatSeconds * 1000;
     for (;;) {
       const signal = readSignal(changeRoot, roleKey);

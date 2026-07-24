@@ -21,15 +21,32 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-/** Beat duration ceiling: one beat must return well inside the 5-minute TTL. */
-export const DEFAULT_BEAT_SECONDS = 270;
+/**
+ * Beat duration: must return inside BOTH the 5-minute cache TTL and the
+ * harness's default Bash tool timeout (120s) — a longer default beat gets the
+ * whole wait call killed/backgrounded by the tool timeout when the worker
+ * forgets to raise it, which silently defeats the keepalive. Callers may set
+ * `--beat-seconds` up to MAX_BEAT_SECONDS, but then MUST also raise the tool
+ * timeout on their side.
+ */
+export const DEFAULT_BEAT_SECONDS = 100;
 export const MAX_BEAT_SECONDS = 300;
 /** Signal-file poll cadence within a beat. */
 export const POLL_INTERVAL_MS = 5000;
 /** Beat state older than this is a leftover from a dead park episode. */
 export const STALE_STATE_MS = 2 * 60 * 60 * 1000;
-/** Below this context size a rewrite is cheap enough that keepalive is not worth a slot. */
-export const DEFAULT_CONTEXT_FLOOR = 100_000;
+/**
+ * A signal already on disk when a NEW park episode starts is honored only if
+ * written within this grace window; older files are leftovers from a prior
+ * episode (e.g. a standDown the LEAD wrote after the previous worker exited)
+ * and would otherwise insta-kill every subsequent park.
+ */
+export const STALE_SIGNAL_MS = 120_000;
+/**
+ * Context floor below which keepalive is skipped. Default 0 = gate disabled;
+ * set `keepalive.contextFloor` in config to re-enable.
+ */
+export const DEFAULT_CONTEXT_FLOOR = 0;
 
 // ---------------------------------------------------------------------------
 // Signal-file protocol
@@ -87,13 +104,37 @@ export function readSignal(changeRoot: string, roleKey: string): KeepaliveSignal
     return null;
   }
   try {
-    const parsed = JSON.parse(raw) as KeepaliveSignal;
+    // Strip a UTF-8 BOM: Windows-side LEADs writing signals via PowerShell
+    // (Set-Content/Out-File -Encoding utf8) prepend one, and JSON.parse
+    // rejects it — without this the signal is swallowed as a poison pill.
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as KeepaliveSignal;
     if (parsed && (parsed.kind === 'resume' || parsed.kind === 'standDown')) return parsed;
   } catch {
     // fall through to poison-pill removal
   }
   void consumeSignal(changeRoot, roleKey);
   return null;
+}
+
+/**
+ * Discard a pre-existing signal that predates the current park episode.
+ * Called once before the FIRST beat of an episode: a signal file whose mtime
+ * is older than `STALE_SIGNAL_MS` before `now` was written for a previous
+ * park (or a worker that already exited) and must not be delivered to the new
+ * one. Returns true when a stale signal was consumed. Signals younger than
+ * the grace window are left in place — the LEAD legitimately may write a
+ * resume moments before the worker parks (no lost-wakeup).
+ */
+export async function discardStaleSignal(changeRoot: string, roleKey: string, now = Date.now()): Promise<boolean> {
+  const file = signalFilePath(changeRoot, roleKey);
+  let mtimeMs: number;
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    return false;
+  }
+  if (now - mtimeMs <= STALE_SIGNAL_MS) return false;
+  return consumeSignal(changeRoot, roleKey);
 }
 
 /**
@@ -231,7 +272,7 @@ export function resolveKeepaliveConfig(input?: KeepaliveConfigInput | null): Kee
       codex: input?.runtimes?.codex ?? DEFAULT_KEEPALIVE_CONFIG.runtimes.codex,
     },
     contextFloor:
-      typeof input?.contextFloor === 'number' && input.contextFloor > 0
+      typeof input?.contextFloor === 'number' && input.contextFloor >= 0
         ? input.contextFloor
         : DEFAULT_KEEPALIVE_CONFIG.contextFloor,
   };
