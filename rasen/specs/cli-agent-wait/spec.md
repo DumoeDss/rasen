@@ -4,7 +4,7 @@
 Defines `rasen agent wait`, the subagent cache-keepalive primitive: a per-beat CLI command that parks a dispatched worker (blocking-poll a per-role signal file, with a persistent beat cap, runtime gating, and a context-floor exemption) so the orchestration playbook can keep a worker's cache warm between reuses without SendMessage, and hands control back via a single JSON outcome on stdout.
 ## Requirements
 ### Requirement: Beat semantics of rasen agent wait
-`rasen agent wait --change <name> --role <key>` SHALL execute exactly one keepalive beat per invocation: block for at most the beat duration (default 100 seconds — chosen to fit inside the host harness's default shell-tool timeout of 120 seconds — with `--beat-seconds` settable up to a hard cap of 300), polling the role's signal file at `<changeRoot>/signals/<key>.json` at an interval of no more than 5 seconds. Every outcome SHALL exit with code 0 and emit a single JSON object on stdout; the command SHALL NOT rely on shell `sleep` for blocking (the wait loop runs inside the Node process).
+`rasen agent wait --change <name> --role <key>` SHALL execute exactly one keepalive beat per invocation: block for at most the beat duration, polling the role's signal file at `<changeRoot>/signals/<key>.json` at an interval of no more than 5 seconds. The beat duration SHALL resolve in this order: an explicit `--beat-seconds` flag; otherwise the resolved `keepalive.beatSeconds` configuration value (registry default 270 — near-optimal for the 5-minute cache TTL); otherwise the built-in fuse of 100 seconds when configuration is unavailable or the configured value is outside the 90–280 range. The resolved duration SHALL remain clamped to a hard cap of 300 seconds. Every outcome SHALL exit with code 0 and emit a single JSON object on stdout; the command SHALL NOT rely on shell `sleep` for blocking (the wait loop runs inside the Node process). The `--beat-seconds` help text SHALL state that beats longer than the host shell tool's default timeout require the caller to raise the tool timeout.
 
 #### Scenario: Timeout beat returns progress
 - **WHEN** a beat elapses with no signal file appearing
@@ -19,9 +19,21 @@ Defines `rasen agent wait`, the subagent cache-keepalive primitive: a per-beat C
 - **WHEN** a signal file with `kind: "standDown"` appears during a beat
 - **THEN** the command exits 0 with JSON `{ "standDown": true, "reason": "lead-stand-down" }` and consumes the signal file and clears the beat state
 
-#### Scenario: Default beat fits the default shell-tool timeout
-- **WHEN** `rasen agent wait` is invoked without `--beat-seconds`
-- **THEN** the beat blocks for at most 100 seconds, so an invocation through a shell tool with a 120-second default timeout returns synchronously instead of being killed or backgrounded mid-beat
+#### Scenario: Explicit flag wins over configuration
+- **WHEN** `keepalive.beatSeconds` is configured to `270` and `rasen agent wait --beat-seconds 100` is invoked
+- **THEN** the beat blocks for at most 100 seconds
+
+#### Scenario: Configured beat applies without a flag
+- **WHEN** `keepalive.beatSeconds` is set to `120` and `rasen agent wait` is invoked without `--beat-seconds`
+- **THEN** the beat blocks for at most 120 seconds
+
+#### Scenario: Unset configuration uses the registry default
+- **WHEN** no layer sets `keepalive.beatSeconds` and `rasen agent wait` is invoked without `--beat-seconds`
+- **THEN** the beat blocks for at most 270 seconds (the registry default), consistent with the effective value config surfaces report
+
+#### Scenario: Out-of-range configuration falls back to the fuse
+- **WHEN** the on-disk `keepalive.beatSeconds` value is outside the 90–280 range and `rasen agent wait` is invoked without `--beat-seconds`
+- **THEN** the beat blocks for at most 100 seconds (the built-in fuse)
 
 ### Requirement: Persistent beat cap
 Beat counts SHALL persist across invocations in `<changeRoot>/signals/.state/<key>.json` (`{ beats, startedAt, maxBeats }`). When the persisted count reaches the applicable cap, the command SHALL immediately return `{ "standDown": true, "reason": "beat-cap" }` without waiting and clear the state file. The counter SHALL reset when a resume signal is consumed, when the applicable `maxBeats` differs from the persisted `maxBeats`, or when `startedAt` is older than 2 hours (stale-state reset).
