@@ -192,7 +192,7 @@
   "config.threshold.fraction": "割合",
   "config.threshold.remaining_tokens": "残りトークン",
   "config.scope.store": "ストア",
-  "config.scope.global": "グローバ���",
+  "config.scope.global": "グローバル",
   "config.annotation.env_override": "環境変数はすべてのスコープより優先されます",
   "config.annotation.value_global_prefix": "(グローバル値: ",
   "config.annotation.value_store_prefix": "(ストア値: ",

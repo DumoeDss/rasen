@@ -9,10 +9,25 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getLocaleCatalog, translate } from '../../src/i18n/catalog.js';
 import en from '../../src/i18n/locales/en.json' with { type: 'json' };
+import ja from '../../src/i18n/locales/ja.json' with { type: 'json' };
 import zhCn from '../../src/i18n/locales/zh-cn.json' with { type: 'json' };
 
 const EN = en as Record<string, string>;
+const JA = ja as Record<string, string>;
 const ZH = zhCn as Record<string, string>;
+const CATALOGS = { en: EN, ja: JA, 'zh-cn': ZH };
+
+describe('catalog text integrity', () => {
+  for (const [locale, catalog] of Object.entries(CATALOGS)) {
+    it(`${locale} contains no replacement or forbidden control characters`, () => {
+      const damagedEntries = Object.entries(catalog)
+        .filter(([, value]) => /[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u.test(value))
+        .map(([key]) => key);
+
+      expect(damagedEntries).toEqual([]);
+    });
+  }
+});
 
 describe('translate — fallback discipline (design D6; spec req 4)', () => {
   it('renders the active-locale entry when present', () => {
