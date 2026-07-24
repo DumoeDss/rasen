@@ -187,6 +187,46 @@ function removeEmptyDirsUpTo(start: string, boundary: string): void {
 }
 
 /**
+ * True when the create branch must NOT write to `targetFile`. `sha256File`
+ * returns null both for an absent target AND for a non-regular-file occupant
+ * (a symlink, directory, fifo, …). An absent target is free to generate, but a
+ * symlink at the file or at the `<id>` directory would make `writeFileSync`
+ * follow the link and clobber its target — data loss and a boundary escape.
+ * This mirrors the workflow ledger's `containsSymlinkInChain` guard so a
+ * human-planted symlink is preserved, never written through.
+ */
+function targetOccupiedByUnsafeEntity(targetDir: string, targetFile: string): boolean {
+  try {
+    // If the file exists here at all, it is a non-regular-file occupant
+    // (otherwise `sha256File` would have returned a hash, not null).
+    fs.lstatSync(targetFile);
+    return true;
+  } catch {
+    // targetFile is absent — the `<id>` directory itself may still be a symlink.
+  }
+  try {
+    return fs.lstatSync(targetDir).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the `<id>` directory itself is a symlink. An in-place refresh of an
+ * owned regular `SKILL.md` reached through a symlinked `<id>` dir would write
+ * through the link into its target, so the refresh branch skips instead. (The
+ * create branch handles the symlinked-leaf/absent cases via
+ * {@link targetOccupiedByUnsafeEntity}; this guards the owned-refresh path.)
+ */
+function targetDirIsSymlink(targetDir: string): boolean {
+  try {
+    return fs.lstatSync(targetDir).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The pure reconcile core over absolute target paths, shared by the project and
  * global wrappers. Byte-preserving: it writes only into an absent target or a
  * copy it exactly owns, and removes only an owned, unmodified copy.
@@ -210,7 +250,23 @@ function reconcileCore(
     const onDisk = sha256File(targetFile);
 
     if (onDisk === null) {
-      // Absent (or an unsafe non-file entity) — free to generate.
+      // `sha256File` returns null for an absent target AND for a non-regular-file
+      // occupant. An absent target is free to generate, but a symlink (at the
+      // file or at the `<id>` directory) must never be written through — that
+      // would follow the link and clobber its target (data loss / boundary
+      // escape). Preserve any such occupant as a collision, mirroring the
+      // workflow ledger's `containsSymlinkInChain` guard.
+      if (targetOccupiedByUnsafeEntity(targetDir, targetFile)) {
+        result.skipped.push({
+          id: item.id,
+          skillScope: item.skillScope,
+          targetPath: targetFile,
+          reason: 'collision',
+          message: `Skipped learned skill "${item.id}" for ${toolLabel}: ${targetFile} (or its directory) is a symlink or other non-regular-file occupant, not the exact copy Rasen generated; left unchanged.`,
+        });
+        continue;
+      }
+      // Absent — free to generate.
       writeMaterialized(targetFile, item.content);
       const entry: TrackedMaterialization = {
         id: item.id,
@@ -244,6 +300,23 @@ function reconcileCore(
 
     if (onDisk === desiredSha) {
       // Owned and unchanged.
+      next.push({ ...prior, contentDigest: item.contentDigest });
+      continue;
+    }
+
+    // Owned and the canonical content changed. If the `<id>` directory is a
+    // symlink, an in-place refresh would write THROUGH it into the link target,
+    // so skip and keep the prior ownership record untouched (parity with the
+    // create-branch guard; ownership limits this to Rasen's own relocated copy,
+    // never an arbitrary file, but it must still not be written through).
+    if (targetDirIsSymlink(targetDir)) {
+      result.skipped.push({
+        id: item.id,
+        skillScope: item.skillScope,
+        targetPath: targetFile,
+        reason: 'collision',
+        message: `Skipped refreshing learned skill "${item.id}" for ${toolLabel}: its "${item.id}" directory is a symlink; left unchanged.`,
+      });
       next.push({ ...prior, contentDigest: item.contentDigest });
       continue;
     }

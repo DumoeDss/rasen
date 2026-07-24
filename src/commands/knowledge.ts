@@ -166,6 +166,20 @@ async function applyCommand(options: {
   let approveGlobal = options.approveGlobal === true;
   if (plan.requiresGlobalApproval && !approveGlobal) {
     if (process.stdout.isTTY && !options.json) {
+      // Show the human the actual plan before they approve a global write
+      // (design D4/D8): description, applicability markers, and the distinct
+      // contributing projects — not just the id. The deterministic global gates
+      // (self-declared project ids; portability-only applicability checks) are
+      // weak, so this informed approval is the primary backstop.
+      const manifest = plan.commit?.manifest;
+      if (manifest) {
+        const projects = new Set(manifest.evidence.map((entry) => entry.projectId));
+        console.error(`  ${manifest.description}`);
+        console.error(
+          `  ${messages.showApplicability(manifest.applicability.mode, manifest.applicability.markers.join(', '))}`
+        );
+        console.error(`  ${messages.provenanceSummary(manifest.evidence.length, projects.size)}`);
+      }
       const { confirm } = await import('@inquirer/prompts');
       approveGlobal = await confirm({ message: messages.globalApprovalPrompt(plan.id), default: false });
       if (!approveGlobal) {

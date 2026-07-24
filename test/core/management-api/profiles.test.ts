@@ -144,6 +144,28 @@ describe('profiles API (ui-profile-workflow-split profile-http-api design D1)', 
       expect(workflows).not.toContain('review');
     });
 
+    it('update preserves the stored retention when the body omits it (no silent codify->off)', async () => {
+      const h = await startServer();
+      // A codify profile created through the API.
+      const created = await post(h.port, {
+        op: 'create',
+        name: 'my-codify',
+        workflows: ['review'],
+        retention: 'codify',
+      });
+      expect(created.status).toBe(200);
+      const file = path.join(getNamedProfilesDir(), 'my-codify.yaml');
+      expect(fs.readFileSync(file, 'utf-8')).toContain('retention: codify');
+
+      // Editing only workflow membership (no retention in the body, as the UI
+      // does today) must NOT downgrade the retention policy to `off`.
+      const updated = await post(h.port, { op: 'update', name: 'my-codify', workflows: ['cso', 'qa'] });
+      expect(updated.status).toBe(200);
+      const after = fs.readFileSync(file, 'utf-8');
+      expect(after).toContain('retention: codify');
+      expect(after).not.toContain('retention: off');
+    });
+
     it('delete removes a saved profile from the listing', async () => {
       const h = await startServer();
       await post(h.port, { op: 'create', name: 'my-set', workflows: ['review'] });

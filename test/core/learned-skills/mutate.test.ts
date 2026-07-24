@@ -63,6 +63,24 @@ describe('learned-skill core mutation and resolution', () => {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
+  it('does not clobber a directory that appears on the id between plan and commit (TOCTOU)', async () => {
+    const plan = await planLearnedSkillMutation(upsertRequest(projectId), context);
+    expect(plan.action).toBe('create');
+
+    // An unmanaged (human-authored) directory appears on the id AFTER planning
+    // but before commit. The commit-time re-check under the lock must refuse to
+    // overwrite it rather than treating any existing dir as a rewrite.
+    const dir = plan.commit!.directory;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), 'human authored\n');
+
+    const result = await commitLearnedSkillPlan(plan, context);
+    expect(result.outcome).toBe('blocked');
+    expect(result.block?.code).toBe('ownership_collision');
+    // The human file is left byte-for-byte unchanged.
+    expect(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8')).toBe('human authored\n');
+  });
+
   it('creates a project record, is idempotent on the same evidence, and rewrites on new evidence', async () => {
     const created = await commitLearnedSkillPlan(
       await planLearnedSkillMutation(upsertRequest(projectId), context),

@@ -97,6 +97,57 @@ describe('learned-skill materialization', () => {
 
   const targetFile = (id: string): string => path.join(skillsRoot, id, 'SKILL.md');
 
+  it.runIf(process.platform !== 'win32')(
+    'skips a symlinked target instead of writing through it (byte-for-byte preservation)',
+    async () => {
+      await commit(projectUpsert(PROJECT_ID, ['package.json']));
+
+      // Plant a symlink where the materialized SKILL.md would go, pointing at an
+      // out-of-home file that must never be clobbered by writing through the link.
+      const outside = path.join(projectRoot, 'precious.txt');
+      fs.writeFileSync(outside, 'do not touch\n');
+      const dir = path.join(skillsRoot, PROJECT_ID);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.symlinkSync(outside, targetFile(PROJECT_ID));
+
+      const result = await reconcile();
+
+      expect(result.created).toEqual([]);
+      expect(result.skipped.map((entry) => entry.id)).toContain(PROJECT_ID);
+      // The symlink and its target are untouched.
+      expect(fs.readFileSync(outside, 'utf-8')).toBe('do not touch\n');
+      expect(fs.lstatSync(targetFile(PROJECT_ID)).isSymbolicLink()).toBe(true);
+    }
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'skips an in-place refresh through a symlinked <id> directory (never writes through the link)',
+    async () => {
+      await commit(projectUpsert(PROJECT_ID, ['package.json']));
+      await reconcile(); // materialize v1
+      const dir = path.join(skillsRoot, PROJECT_ID);
+      const materializedBefore = fs.readFileSync(targetFile(PROJECT_ID), 'utf-8');
+
+      // Relocate the owned dir and symlink `<id>` at it: the regular SKILL.md
+      // inside still byte-matches the ledger (ownership holds), but the id dir
+      // is now a symlink.
+      const relocated = path.join(projectRoot, 'relocated-skill');
+      fs.renameSync(dir, relocated);
+      fs.symlinkSync(relocated, dir, 'dir');
+
+      // Change the canonical content so a refresh would be attempted.
+      await commit(
+        projectUpsert(PROJECT_ID, ['package.json'], '## When\nDifferent.\n## Steps\nChanged.\n## Done\nDone.')
+      );
+      const result = await reconcile();
+
+      expect(result.updated).toEqual([]);
+      expect(result.skipped.map((entry) => entry.id)).toContain(PROJECT_ID);
+      // The relocated file is NOT rewritten through the symlink.
+      expect(fs.readFileSync(path.join(relocated, 'SKILL.md'), 'utf-8')).toBe(materializedBefore);
+    }
+  );
+
   it('materializes an applicable project skill, records the ledger, and stamps ownership frontmatter', async () => {
     await commit(projectUpsert(PROJECT_ID, ['package.json']));
 

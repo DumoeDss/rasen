@@ -65,13 +65,23 @@ export const FORBIDDEN_LEARNED_SKILL_ID_TOKENS: readonly string[] = [
  *   guards runaway evidence copied into a candidate.
  * - CONTENT: total UTF-8 bytes of one skill's description + instructions —
  *   guards an over-long generated body.
- * - ACTIVE_DESCRIPTION: total UTF-8 bytes of always-loaded descriptions across
- *   one project-local materialization set — guards accumulating context load.
+ * - ACTIVE_DESCRIPTION: RESERVED / not yet enforced (see the constant below).
+ *   The only budgets the specs require — and the only ones enforced — are
+ *   CONTEXT and CONTENT (both gated in `planLearnedSkillMutation`).
  * - MAX_EVIDENCE_ENTRIES: canonical evidence-entry cap; overflow is summarized
  *   by count + digest rather than copied indefinitely.
  */
 export const LEARNED_SKILL_CONTEXT_BUDGET = 64 * 1024;
 export const LEARNED_SKILL_CONTENT_BUDGET = 8 * 1024;
+/**
+ * RESERVED — NOT YET ENFORCED. A future materialization-time cap on the total
+ * always-loaded description bytes per project-local set (design D7's "context
+ * grows as learned skills accumulate" mitigation). No code reads this today;
+ * per-skill growth is already bounded by CONTENT + rewrite/retire. Enabling it
+ * is a follow-up: sum active materialized descriptions in
+ * `reconcileProjectLearnedSkillsForTool` and skip/warn when a set exceeds it.
+ * Kept as a named constant so that guard has a single source of truth.
+ */
 export const LEARNED_SKILL_ACTIVE_DESCRIPTION_BUDGET = 4 * 1024;
 export const LEARNED_SKILL_MAX_EVIDENCE_ENTRIES = 16;
 

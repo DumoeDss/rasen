@@ -11,7 +11,7 @@ import { Buffer } from 'node:buffer';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { acquireFileLock, releaseFileLock } from '../file-state.js';
+import { acquireFileLock, releaseFileLock, writeFileAtomically } from '../file-state.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
   buildCanonicalContent,
@@ -480,9 +480,48 @@ export async function commitLearnedSkillPlan(
       new Error(`learned-skill registry is busy or unwritable (${info.lockPath})`),
   });
   try {
+    // Re-verify the ownership precondition UNDER the lock. The plan-time read
+    // was unlocked, so the target may have changed in the plan→commit window (a
+    // human-authored directory appearing on the id, a concurrent writer, or a
+    // deletion). Never clobber whatever now occupies the id — enforce the
+    // action's precondition or abort without writing (design D7/D8).
+    const current = readCanonicalRecord(payload.directory, payload.scope);
+    const changedUnderLock = ((): LearnedSkillBlock | undefined => {
+      if (payload.action === 'create' || payload.action === 'rename') {
+        if (current.kind !== 'absent') {
+          return {
+            code: 'ownership_collision',
+            message: `cannot ${payload.action} learned skill "${plan.id}": "${payload.directory}" was occupied after planning; re-run to merge or resolve the collision`,
+          };
+        }
+      } else if (current.kind === 'absent') {
+        return {
+          code: 'not_found',
+          message: `learned skill "${plan.id}" disappeared after planning; nothing to ${payload.action}`,
+        };
+      } else if (current.kind === 'unmanaged') {
+        return { code: 'not_managed', message: `cannot ${payload.action} "${plan.id}": ${current.reason}` };
+      }
+      if (payload.action === 'rename' && payload.fromDirectory) {
+        const from = readCanonicalRecord(payload.fromDirectory, payload.scope);
+        if (from.kind === 'absent') {
+          return { code: 'not_found', message: `rename source for "${plan.id}" disappeared after planning` };
+        }
+        if (from.kind === 'unmanaged') {
+          return { code: 'not_managed', message: `cannot rename into "${plan.id}": source ${from.reason}` };
+        }
+      }
+      return undefined;
+    })();
+    if (changedUnderLock) {
+      return { outcome: 'blocked', scope: plan.scope, id: plan.id, block: changedUnderLock };
+    }
+
     if (payload.action === 'retire') {
       // Retirement flips canonical status while preserving content + provenance.
-      await FileSystemUtils.writeFile(
+      // Atomic write (temp + rename) so a crash mid-write cannot corrupt the
+      // manifest and permanently wedge the record as unmanaged.
+      await writeFileAtomically(
         FileSystemUtils.joinPath(payload.directory, 'learned-skill.yaml'),
         serializeManifest(payload.manifest!)
       );

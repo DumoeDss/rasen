@@ -22,7 +22,7 @@ import {
   PROFILE_DEFINITION_VERSION_V1,
   type AvailableProfile,
 } from '../named-profiles.js';
-import { isRetentionMode } from '../retention.js';
+import { isRetentionMode, type RetentionMode } from '../retention.js';
 import type {
   ProfileListResponse,
   ProfileMutationRequest,
@@ -107,14 +107,25 @@ export function handleProfileMutation(request: unknown): ProfileApiResult<Profil
     }
 
     // `parseProfileDefinition` validates membership (unknown id → invalid_file →
-    // 400) and returns the normalized, dependency-closed definition. A `retention`
-    // value in the body writes a version-2 definition directly; without one the
-    // input is treated as version 1 and migrated (absent retro-command → `off`),
-    // preserving the pre-retention editor behavior.
+    // 400) and returns the normalized, dependency-closed definition. An explicit
+    // `retention` in the body writes a version-2 definition directly. When it is
+    // omitted on an update we PRESERVE the profile's stored retention rather than
+    // treating the input as version 1 — a v1 migration would reset a `codify`/
+    // `report` profile to `off` (retro-command no longer appears in any workflow
+    // list), silently discarding the policy and propagating that downgrade to
+    // every profile-locked project on its next update. Only a genuinely
+    // retention-less create falls back to version-1 migration.
     const retention = (body as { retention?: unknown }).retention;
+    let effectiveRetention: RetentionMode | undefined = isRetentionMode(retention)
+      ? retention
+      : undefined;
+    if (effectiveRetention === undefined && body.op === 'update') {
+      effectiveRetention = listAvailableProfiles().find((entry) => entry.name === body.name)
+        ?.definition?.retention;
+    }
     const definition = parseProfileDefinition(
-      isRetentionMode(retention)
-        ? { version: PROFILE_DEFINITION_VERSION, workflows, retention }
+      effectiveRetention !== undefined
+        ? { version: PROFILE_DEFINITION_VERSION, workflows, retention: effectiveRetention }
         : { version: PROFILE_DEFINITION_VERSION_V1, workflows },
       'profile definition'
     );
