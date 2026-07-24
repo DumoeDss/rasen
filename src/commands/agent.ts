@@ -51,7 +51,7 @@ import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-h
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
-import { isCodexAuditResult, type AuditResult } from '../core/token-audit/types.js';
+import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
 
 /** Human-readable rendering of a dual-form threshold for the text-mode verdict line. */
 function formatThresholdDisplay(threshold: ThresholdValue): string {
@@ -83,6 +83,10 @@ export interface AgentAuditOptions {
   runtime?: string;
   json?: boolean;
   open?: boolean;
+  /** Zed runtime only: resolve the session by its first user command. */
+  match?: string;
+  /** Zed runtime only: override the `threads.db` path. */
+  db?: string;
 }
 
 /**
@@ -162,6 +166,14 @@ function summarizeAuditResult(result: AuditResult): string {
       `requests=${t.requests} input=${formatMillions(t.rawTokens.inputTokens)} ` +
       `cachedInput=${formatMillions(t.rawTokens.cachedInputTokens)} output=${formatMillions(t.rawTokens.outputTokens)} ` +
       `cacheHitRatio=${(t.cacheHitRatio * 100).toFixed(1)}%`
+    );
+  }
+  if (isZedAuditResult(result)) {
+    const t = result.totals;
+    return (
+      `threads=${result.session.agentCount} retainedRequests=${t.retainedRequests} ` +
+      `input=${formatMillions(t.rawTokens.inputTokens)} cachedInput=${formatMillions(t.rawTokens.cachedInputTokens)} ` +
+      `output=${formatMillions(t.rawTokens.outputTokens)} cacheHitRatio=${(t.cacheHitRatio * 100).toFixed(1)}%`
     );
   }
   const t = result.totals;
@@ -245,6 +257,8 @@ export class AgentCommand {
         projectsDir: options.projectsDir,
         outPath: options.out,
         runtime: options.runtime,
+        match: options.match,
+        db: options.db,
       });
       if (options.json) {
         console.log(JSON.stringify(result));

@@ -1294,9 +1294,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'audit',
         description:
-          "Analyze a session's token spend from its transcript (experimental: parses an internal, undocumented transcript format that may change with harness updates)",
+          "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
         acceptsPositional: true,
-        positionals: [{ name: 'sessionId|path' }],
+        positionals: [{ name: 'sessionId|path', optional: true }],
         flags: [
           {
             name: 'projects-dir',
@@ -1310,7 +1310,17 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           },
           {
             name: 'runtime',
-            description: 'Force detection to "claude" or "codex" instead of sniffing the file',
+            description: 'Force the runtime: "claude", "codex", or "zed" (Zed reads its local threads.db; experimental, format may change)',
+            takesValue: true,
+          },
+          {
+            name: 'match',
+            description: 'Zed only: resolve the session by its first user command instead of a thread id',
+            takesValue: true,
+          },
+          {
+            name: 'db',
+            description: "Zed only: override the threads.db path (default: Zed's per-OS location)",
             takesValue: true,
           },
           COMMON_FLAGS.json,
