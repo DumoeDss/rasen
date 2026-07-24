@@ -35,7 +35,7 @@ import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { CORE_WORKFLOWS, ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../core/profiles.js';
-import { isRetentionMode, resolveMigratedRetention } from '../core/retention.js';
+import { resolveCurrentProfileState } from './profile-editor.js';
 import { isPromptCancellationError } from './shared-output.js';
 import { runUiLaunch } from './ui-launch.js';
 import { runLegacyConfigProfileCommand } from './profile.js';
@@ -531,21 +531,13 @@ export function registerConfigCommand(program: Command): void {
           } else {
             console.log(`  workflows: ${messages.noneValue}`);
           }
-          // Retention: an explicit value wins; otherwise it is migrated from
-          // the resolved selection (built-in `full` carried retro-command →
-          // report; `core` → off), matching the effective-retention resolver.
+          // Retention: an explicit value wins; otherwise the effective value
+          // comes from the profile (full → report, core → off) or a custom v1
+          // migration — resolved once by `resolveCurrentProfileState`.
           const retentionSource = rawConfig.retention !== undefined
             ? messages.explicitSource
             : messages.defaultSource;
-          const effectiveRetention = isRetentionMode(config.retention)
-            ? config.retention
-            : resolveMigratedRetention(
-                config.profile === 'full'
-                  ? [...ALL_WORKFLOWS]
-                  : config.profile === 'core'
-                    ? [...CORE_WORKFLOWS]
-                    : config.workflows ?? []
-              );
+          const effectiveRetention = resolveCurrentProfileState(config).retention;
           console.log(`  retention: ${effectiveRetention} ${retentionSource}`);
         }
       });

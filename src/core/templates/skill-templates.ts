@@ -23,7 +23,13 @@ export { getFeedbackSkillTemplate } from './workflows/feedback.js';
 export { getOfficeHoursCommandSkillTemplate } from './workflows/office-hours.js';
 export { getVerifyEnhancedSkillTemplate } from './workflows/verify-enhanced.js';
 export { getShipCommandSkillTemplate } from './workflows/ship.js';
-export { getRetroCommandSkillTemplate } from './workflows/retro.js';
+export { getRetainCommandSkillTemplate } from './workflows/retain.js';
+// The retro export now returns the temporary user-invoked compatibility wrapper
+// (report-forcing, disable-model-invocation), not a selectable workflow.
+export {
+  getRetroCommandSkillTemplate,
+  RETRO_COMPAT_WRAPPER_DIR_NAME,
+} from './workflows/retro.js';
 export { getAutoCommandSkillTemplate } from './workflows/auto.js';
 export { getReviewCycleSkillTemplate } from './workflows/review-cycle.js';
 export { getHandoffSkillTemplate } from './workflows/handoff.js';

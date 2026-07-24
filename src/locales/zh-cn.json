@@ -296,10 +296,6 @@
           "name": "交付变更",
           "description": "通过 PR、推送或本地交接提交并交付已完成的变更"
         },
-        "retro-command": {
-          "name": "复盘",
-          "description": "回顾已交付工作，沉淀模式、决策和经验"
-        },
         "auto-command": {
           "name": "自动驾驶",
           "description": "编排专用智能体，端到端完成整个工作流"

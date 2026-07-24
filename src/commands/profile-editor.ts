@@ -20,11 +20,16 @@ import {
 import {
   RETENTION_MODES,
   RETIRED_RETRO_WORKFLOW_ID,
+  builtInProfileRetention,
   isRetentionMode,
   resolveMigratedRetention,
   type RetentionMode,
 } from '../core/retention.js';
-import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
+import {
+  loadWorkflowCatalog,
+  portablePathCollisionKey,
+  RETENTION_RUNNER_WORKFLOW_ID,
+} from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/shared/retired-command-paths.js';
 import { resolveExpertSelectionExplicitReadOnly } from '../core/expert-selection-state.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
@@ -100,20 +105,19 @@ function normalizedSelectedWorkflows(workflows: readonly string[]): string[] {
 
 /**
  * The effective retention for a current-config selection: an explicit
- * `retention` value wins; otherwise it is migrated from the resolved v1
- * workflow selection — a selection that carried the retired `retro-command`
- * maps to `report`, and any other selection to `off` (see
- * {@link resolveMigratedRetention}). This makes the built-in defaults
- * (`full` → report, `core` → off) fall out of historical membership without a
- * separate table, and never persists on read alone.
+ * `retention` value wins; otherwise a built-in profile resolves to its coupled
+ * default (`full` → report, `core` → off), and a `custom`/saved selection is
+ * migrated from its v1 workflow list — a selection that carried the retired
+ * `retro-command` maps to `report`, any other to `off`. Never persists on read.
  */
 function resolveCurrentRetention(
   config: GlobalConfig,
-  resolvedWorkflows: readonly string[]
+  profile: string,
+  customWorkflows: readonly string[] | undefined
 ): RetentionMode {
-  return isRetentionMode(config.retention)
-    ? config.retention
-    : resolveMigratedRetention(resolvedWorkflows);
+  if (isRetentionMode(config.retention)) return config.retention;
+  if (profile === 'full' || profile === 'core') return builtInProfileRetention(profile);
+  return resolveMigratedRetention(customWorkflows ?? []);
 }
 
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
@@ -121,7 +125,7 @@ export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
   const expertSelectionExplicit = config.expertSelectionExplicit === true;
   const customWorkflows = config.workflows ? [...config.workflows] : undefined;
   const finalize = (resolved: string[]): ProfileState => {
-    const retention = resolveCurrentRetention(config, resolved);
+    const retention = resolveCurrentRetention(config, raw, customWorkflows);
     // The retired `retro-command` never appears in a v2 selection; retention
     // carries its former meaning.
     const workflows = resolved.filter((id) => id !== RETIRED_RETRO_WORKFLOW_ID);
@@ -258,7 +262,11 @@ export function workflowChoices(
   SeparatorCtor: InquirerPrompts['Separator']
 ): Array<WorkflowChoice | PromptSeparator> {
   const catalog = loadWorkflowCatalog();
-  const definitions = catalog.definitions;
+  // The retention runner is installed by dependency closure but is never a
+  // profile checkbox — the retention radio is its only control.
+  const definitions = catalog.definitions.filter(
+    (definition) => definition.id !== RETENTION_RUNNER_WORKFLOW_ID
+  );
   // Display ids strip the internal '-command' suffix fusion workflow ids
   // carry (e.g. `ship-command` -> `ship`) so the picker shows the friendly
   // public name — independent of the (now-retired) command file surface.
@@ -462,6 +470,7 @@ export function unselectedBuiltInWorkflowDisplayIds(currentState: ProfileState):
       (definition) =>
         definition.source === 'built-in' &&
         definition.kind !== 'expert' &&
+        definition.id !== RETENTION_RUNNER_WORKFLOW_ID &&
         !selectedIds.has(definition.id)
     )
     .map((definition) => getCommandFileId(definition.id) ?? definition.id);

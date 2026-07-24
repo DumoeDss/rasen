@@ -209,6 +209,8 @@ describe('config profile interactive flow', () => {
       'rasen-archive-change',
       'rasen-auto',
       'rasen-help',
+      // auto-command's workflow dependency installs the internal retention runner.
+      'rasen-retain',
     ];
     for (const dirName of coreSkillDirs) {
       const skillPath = path.join(projectDir, '.claude', 'skills', dirName, 'SKILL.md');

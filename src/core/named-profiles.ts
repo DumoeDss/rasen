@@ -29,6 +29,7 @@ import {
 } from './workflow-package/index.js';
 import { formatZodIssues } from './zod-issues.js';
 import {
+  RETENTION_RUNNER_WORKFLOW_ID,
   WorkflowCatalog,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
@@ -81,6 +82,9 @@ function validateProfileMembership(
 ): string | null {
   const seen = new Set<string>();
   for (const workflow of definition.workflows) {
+    // The retired retro id is tolerated on read (a v1 selection may carry it)
+    // and stripped during normalization — never a membership error.
+    if (workflow === RETIRED_RETRO_WORKFLOW_ID) continue;
     if (!catalog.has(workflow)) return `Unknown workflow ID "${workflow}"`;
     if (seen.has(workflow)) {
       return `Duplicate workflow ID "${workflow}"`;
@@ -196,10 +200,15 @@ export function normalizeProfileDefinition(
   const withoutRetired = definition.workflows.filter(
     (workflow) => workflow !== RETIRED_RETRO_WORKFLOW_ID
   );
-  const expanded = resolveWorkflowSelection(catalog, withoutRetired);
+  // A snapshot lists exactly the chosen ids; the internal retention runner is
+  // never a profile member, so drop it even though `auto-command`'s
+  // `requires.workflows` pulls it into the dependency-resolved order.
+  const expanded = resolveWorkflowSelection(catalog, withoutRetired)
+    .map((workflow) => workflow.id)
+    .filter((id) => id !== RETENTION_RUNNER_WORKFLOW_ID);
   return {
     version: PROFILE_DEFINITION_VERSION,
-    workflows: expanded.map((workflow) => workflow.id),
+    workflows: expanded,
     retention,
   };
 }

@@ -13,7 +13,7 @@
   { "id": "office-hours-command", "skillName": "rasen-office-hours-command", "dirName": "rasen-office-hours-command", "kind": "task" },
   { "id": "verify-enhanced-command", "skillName": "rasen-verify-enhanced", "dirName": "rasen-verify-enhanced", "kind": "task" },
   { "id": "ship-command", "skillName": "rasen-ship", "dirName": "rasen-ship", "kind": "task" },
-  { "id": "retro-command", "skillName": "rasen-retro", "dirName": "rasen-retro", "kind": "task" },
+  { "id": "retain-command", "skillName": "rasen-retain", "dirName": "rasen-retain", "kind": "internal" },
   { "id": "auto-command", "skillName": "rasen-auto", "dirName": "rasen-auto", "kind": "driver" },
   { "id": "review-cycle", "skillName": "rasen-review-cycle", "dirName": "rasen-review-cycle", "kind": "task" },
   { "id": "handoff", "skillName": "rasen-handoff", "dirName": "rasen-handoff", "kind": "task" },

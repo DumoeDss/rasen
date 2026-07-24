@@ -28,10 +28,12 @@ describe('resolveWorkflowSelection includeSkillDependencies', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('default (workflow-only) path stays byte-identical: no expert is pulled in without the flag', () => {
+  it('default (workflow-only) path pulls only workflow deps (retain-command), not skill experts', () => {
     const catalog = loadWorkflowCatalog();
     const selected = resolveWorkflowSelection(catalog, ['auto-command']).map((d) => d.id);
-    expect(selected).toEqual(['auto-command']);
+    // auto-command's requires.workflows names the internal retention runner,
+    // which is always resolved; review (a requires.skills expert) is not.
+    expect(selected.sort()).toEqual(['auto-command', 'retain-command'].sort());
     expect(selected).not.toContain('review');
   });
 
@@ -40,7 +42,7 @@ describe('resolveWorkflowSelection includeSkillDependencies', () => {
     const selected = resolveWorkflowSelection(catalog, ['auto-command'], {
       includeSkillDependencies: true,
     }).map((d) => d.id);
-    expect(selected.sort()).toEqual(['auto-command', 'review'].sort());
+    expect(selected.sort()).toEqual(['auto-command', 'retain-command', 'review'].sort());
   });
 
   it('with the flag, review-cycle also pulls review; verify-enhanced-command pulls all five', () => {

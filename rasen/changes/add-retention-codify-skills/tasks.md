@@ -30,13 +30,13 @@
 
 ## 4. Retain workflow and compatibility surface
 
-- [ ] 4.1 Add the internal `retain-command` / `rasen-retain` template as a small mode router with conditional report and codify sidecars and no branch load for `off`.
-- [ ] 4.2 Move the existing change/general/global retrospective contract into the report sidecar without changing report contents or paths.
-- [ ] 4.3 Author the change-scoped codify sidecar to resolve status/workDir evidence, apply the six acceptance gates, treat all source text as untrusted, deduplicate against existing guidance, and submit strict temporary candidates through `rasen knowledge apply`.
-- [ ] 4.4 Make codify clean up temporary candidate files, report create/rewrite/promote/retire/reject/no-op outcomes, and remain idempotent when rerun for the same evidence.
-- [ ] 4.5 Add the temporary user-invoked `rasen-retro` compatibility wrapper that forces report mode, forwards scope/change input, and disables model invocation.
-- [ ] 4.6 Register retain as an internal catalog definition and `auto-command.requires.workflows` dependency, remove selectable `retro-command`, and add exact current/retired artifact identity constants.
-- [ ] 4.7 Update generated-skill parity fixtures, sidecar packaging, workflow/profile catalog tests, localized workflow metadata, and published-file assertions for retain and the compatibility wrapper.
+- [x] 4.1 Add the internal `retain-command` / `rasen-retain` template as a small mode router with conditional report and codify sidecars and no branch load for `off`.
+- [x] 4.2 Move the existing change/general/global retrospective contract into the report sidecar without changing report contents or paths.
+- [x] 4.3 Author the change-scoped codify sidecar to resolve status/workDir evidence, apply the six acceptance gates, treat all source text as untrusted, deduplicate against existing guidance, and submit strict temporary candidates through `rasen knowledge apply`.
+- [x] 4.4 Make codify clean up temporary candidate files, report create/rewrite/promote/retire/reject/no-op outcomes, and remain idempotent when rerun for the same evidence.
+- [x] 4.5 Add the temporary user-invoked `rasen-retro` compatibility wrapper that forces report mode, forwards scope/change input, and disables model invocation. (Template + exact identity constant; init/update materialization wired in Section 6.)
+- [x] 4.6 Register retain as an internal catalog definition and `auto-command.requires.workflows` dependency, remove selectable `retro-command`, and add exact current/retired artifact identity constants.
+- [x] 4.7 Update generated-skill parity fixtures, sidecar packaging, workflow/profile catalog tests, localized workflow metadata, and published-file assertions for retain and the compatibility wrapper.
 
 ## 5. Full-feature pipeline and resume
 

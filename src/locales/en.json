@@ -296,10 +296,6 @@
           "name": "Ship change",
           "description": "Commit and deliver a completed change by PR, push, or local handoff"
         },
-        "retro-command": {
-          "name": "Retrospective",
-          "description": "Review shipped work to capture patterns, decisions, and lessons"
-        },
         "auto-command": {
           "name": "Autopilot",
           "description": "Orchestrate specialized agents through the full workflow end to end"
