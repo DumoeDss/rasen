@@ -8,6 +8,8 @@ import {
   readRunState,
   writeRunState,
   completedStages,
+  frozenRetentionMode,
+  RETAIN_STAGE_ID,
   normalizeWorker,
   stageWorkers,
   stagesWithStatus,
@@ -950,6 +952,91 @@ describe('pipeline run-state', () => {
       });
       // The omitted name-only propose worker is exactly what resume now warns on.
       expect(stagesLackingDurableHandle(s)).toContainEqual({ stage: 'propose', keys: ['name'] });
+    });
+  });
+
+  describe('retention (design D2)', () => {
+    it('accepts and reads back a frozen retention mode', () => {
+      const s = parseRunState('{"pipeline":"full-feature","retention":"codify"}');
+      expect(s.retention).toBe('codify');
+      expect(frozenRetentionMode(s)).toBe('codify');
+    });
+
+    it('rejects an invalid retention value', () => {
+      expect(() => parseRunState('{"pipeline":"full-feature","retention":"always"}')).toThrow();
+    });
+
+    it('reports no frozen mode before the retain stage has run', () => {
+      const s = parseRunState('{"pipeline":"full-feature"}');
+      expect(frozenRetentionMode(s)).toBeUndefined();
+    });
+
+    it('migrates a completed legacy retro stage to a completed retain stage (report), never re-running', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          stages: {
+            ship: { status: 'done' },
+            archive: { status: 'done' },
+            retro: { status: 'done' },
+          },
+        })
+      );
+      expect(s.stages?.retro).toBeUndefined();
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('done');
+      expect(frozenRetentionMode(s)).toBe('report');
+      // A completed retain stays completed for resume (not re-run).
+      expect(completedStages(s)).toContain(RETAIN_STAGE_ID);
+    });
+
+    it('maps an incomplete legacy retro stage to retain in forced report mode', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          stages: {
+            ship: { status: 'done' },
+            retro: { status: 'in_progress' },
+          },
+        })
+      );
+      expect(s.stages?.retro).toBeUndefined();
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('in_progress');
+      expect(frozenRetentionMode(s)).toBe('report');
+      // An incomplete retain is not treated as completed.
+      expect(completedStages(s)).not.toContain(RETAIN_STAGE_ID);
+    });
+
+    it('does not infer retain from configuration when neither retro nor retain is recorded', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'full-feature', stages: { ship: { status: 'done' } } })
+      );
+      expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
+      expect(frozenRetentionMode(s)).toBeUndefined();
+    });
+
+    it('prefers an explicitly recorded retention over the legacy retro default', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          retention: 'codify',
+          stages: { retro: { status: 'in_progress' } },
+        })
+      );
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('in_progress');
+      // An explicit recorded mode is not overwritten by the report default.
+      expect(frozenRetentionMode(s)).toBe('codify');
+    });
+
+    it('leaves an already-migrated retain stage untouched', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          retention: 'off',
+          stages: { retain: { status: 'done' } },
+        })
+      );
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('done');
+      expect(frozenRetentionMode(s)).toBe('off');
     });
   });
 });

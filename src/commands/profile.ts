@@ -38,7 +38,7 @@ import {
 import { createConfigDiagnosticReporter } from './config-messages.js';
 import {
   applyProfileState,
-  deriveProfileFromWorkflowSelection,
+  deriveProfileFromSelection,
   diffProfileState,
   printProfileApplyGuidance,
   promptForNewProfileState,
@@ -49,8 +49,9 @@ import {
 
 function profileStateFromDefinition(definition: ProfileDefinition): ProfileState {
   return {
-    profile: deriveProfileFromWorkflowSelection(definition.workflows),
+    profile: deriveProfileFromSelection(definition.workflows, definition.retention),
     workflows: [...definition.workflows],
+    retention: definition.retention,
   };
 }
 
@@ -58,11 +59,13 @@ function profileDefinitionFromState(state: ProfileState): ProfileDefinition {
   return {
     version: PROFILE_DEFINITION_VERSION,
     workflows: [...state.workflows],
+    retention: state.retention,
   };
 }
 
 function definitionsMatch(left: ProfileDefinition, right: ProfileDefinition): boolean {
   return (
+    left.retention === right.retention &&
     left.workflows.length === right.workflows.length &&
     left.workflows.every((workflow, index) => workflow === right.workflows[index])
   );
@@ -143,7 +146,7 @@ function availableProfileChoices(): Array<{
     return {
       value: profile.name,
       name: profile.name,
-      description: `${messages.profileSource(profile.builtIn)} · ${messages.workflowCount(profile.definition.workflows.length)}`,
+      description: `${messages.profileSource(profile.builtIn)} · ${messages.workflowCount(profile.definition.workflows.length)} · ${messages.retentionMode(profile.definition.retention)}`,
     };
   });
 }
@@ -341,7 +344,7 @@ function listProfiles(options: { json?: boolean }): void {
     }
     const source = messages.profileSource(profile.builtIn);
     console.log(
-      `${marker} ${profile.name} [${source}] ${messages.workflowCount(profile.definition.workflows.length)}`
+      `${marker} ${profile.name} [${source}] ${messages.workflowCount(profile.definition.workflows.length)} · ${messages.retentionMode(profile.definition.retention)}`
     );
   }
   console.log(messages.matchesCurrentSettings);

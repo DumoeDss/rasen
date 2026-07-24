@@ -1,5 +1,41 @@
 {
   "locale": "ja",
+  "knowledge": {
+    "commandDescription": "証跡ゲート付きの学習スキルを管理します",
+    "applyDescription": "絶対パスの JSON ファイルから学習スキル候補を適用します",
+    "listDescription": "正規の学習スキルを一覧表示します",
+    "showDescription": "正規の学習スキルを表示します",
+    "retireDescription": "管理対象の学習スキルを廃止します",
+    "candidatePathRequired": "候補ファイルが必要です。--from <絶対パスのJSONファイル> を指定してください。",
+    "candidatePathMustBeAbsolute": "候補パスは絶対パスである必要があります: {path}",
+    "candidateNotFound": "候補ファイルが見つかりません: {path}",
+    "candidateNotFile": "候補パスがファイルではありません: {path}",
+    "candidateTooLarge": "候補ファイルが大きすぎます（{size} バイト。最大 {maximum}）。",
+    "candidateInvalid": "候補が無効です: {detail}",
+    "approveGlobalNotForProject": "--approve-global はグローバルの変更にのみ適用され、プロジェクトの変更には使えません。",
+    "codifyRequired": "プロジェクトの学習スキル変更には、有効なプロファイルの retention が 'codify' である必要があります（現在は '{retention}'）。",
+    "projectRequired": "このディレクトリに Rasen プロジェクトが見つかりません。まず `rasen init` を実行してください。",
+    "plan": "プラン: {summary}",
+    "blocked": "ブロック: {message}",
+    "globalApprovalPrompt": "複数プロジェクトの証跡からグローバル学習スキル「{id}」を作成・更新しますか?",
+    "globalApprovalRequiredNonInteractive": "「{id}」のグローバル変更には承認が必要です。--approve-global を付けて再実行してください。",
+    "globalApprovalDeclined": "グローバル承認が得られませんでした。グローバル学習スキルの状態は変更されていません。",
+    "created": "{scope} 学習スキル「{id}」を作成しました。",
+    "rewritten": "{scope} 学習スキル「{id}」を更新しました。",
+    "retired": "{scope} 学習スキル「{id}」を廃止しました。",
+    "renamed": "学習スキルを「{id}」に改名しました。",
+    "noop": "変更なし: 「{id}」はすでにこの証跡を反映しています。",
+    "listHeading": "学習スキル",
+    "listEmpty": "学習スキルが見つかりません。",
+    "listRow": "{marker} {id} [{scope}/{status}] {description}",
+    "provenanceSummary": "{projects} プロジェクトからの証跡 {count} 件",
+    "showNotFound": "{scope} スコープに学習スキル「{id}」がありません。",
+    "showApplicability": "適用条件（{mode}）: {markers}",
+    "retireConfirm": "{scope} 学習スキル「{id}」を廃止しますか?",
+    "retireRequiresConfirmation": "廃止には確認が必要です。非対話で廃止するには --yes を指定してください。",
+    "retireCancelled": "廃止をキャンセルしました。",
+    "cancelled": "キャンセルしました。"
+  },
   "expertSkills": {
     "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、独立レビュー、ユーザー承認後のimportで安全に作成します",
     "workflowReview": "インストール可能なワークフローの意味的品質、セキュリティ境界、移植性、依存関係、完了条件を独立してレビューします"
@@ -260,10 +296,6 @@
           "name": "変更をリリース",
           "description": "完了した変更をコミットし、PR、push、またはローカル引き渡しで届けます"
         },
-        "retro-command": {
-          "name": "ふりかえり",
-          "description": "リリース済みの作業を振り返り、パターン、判断、学びを記録します"
-        },
         "auto-command": {
           "name": "自動進行",
           "description": "専門エージェントを編成し、ワークフロー全体を最初から最後まで進めます"
@@ -384,7 +416,22 @@
         }
       },
       "workflowsGroupLabel": "-- ワークフロー --",
-      "expertsGroupLabel": "-- エキスパート --"
+      "expertsGroupLabel": "-- エキスパート --",
+      "retentionPickerMessage": "保持ポリシー（ship の後、archive の前に実行）:",
+      "retention": {
+        "off": {
+          "name": "off",
+          "description": "保持ステップなし — ship 後に何も書き込みません。"
+        },
+        "report": {
+          "name": "report",
+          "description": "変更の振り返りレポートを書き出します（従来の retro の動作）。"
+        },
+        "codify": {
+          "name": "codify",
+          "description": "変更を評価して管理対象の学習スキルを作成・書き換え・廃止、または何もしません。"
+        }
+      }
     },
     "ui": {
       "errorPrefix": "エラー:",
@@ -465,7 +512,14 @@
       "diffWorkflowsAdded": "ワークフロー: 追加 {items}",
       "diffWorkflowsRemoved": "ワークフロー: 削除 {items}",
       "diffWorkflowsBoth": "ワークフロー: 追加 {added}、削除 {removed}",
-      "diffWorkflowsEmpty": "ワークフロー: "
+      "diffWorkflowsEmpty": "ワークフロー: ",
+      "retentionLabel": "保持",
+      "retentionModes": {
+        "off": "off（保持なし）",
+        "report": "report（振り返りレポート）",
+        "codify": "codify（管理対象の学習スキル）"
+      },
+      "diffRetention": "保持: {before} → {after}"
     },
     "errors": {
       "invalidName": "プロファイル名は1〜64文字で、小文字英数字から始め、小文字英数字・ドット・アンダースコア・ハイフンだけを使用してください。",
@@ -712,6 +766,15 @@
     "helpCommand": "指定したコマンドのヘルプを表示します"
   },
   "commandDescriptions": {
+    "Manage evidence-gated learned skills": "証跡ゲート付きの学習スキルを管理します",
+    "Apply a learned-skill candidate from an absolute JSON file": "絶対パスの JSON ファイルから学習スキル候補を適用します",
+    "List canonical learned skills": "正規の学習スキルを一覧表示します",
+    "Show a canonical learned skill": "正規の学習スキルを表示します",
+    "Retire a managed learned skill": "管理対象の学習スキルを廃止します",
+    "Absolute path to a candidate JSON file": "候補 JSON ファイルの絶対パス",
+    "Approve a global create or promotion non-interactively": "グローバルの作成・昇格を非対話で承認します",
+    "project or global": "project または global",
+    "Skip the confirmation prompt": "確認プロンプトをスキップします",
     "AI-native system for spec-driven development": "仕様駆動開発のためのAIネイティブシステム",
     "Alias for --deltas-only (deprecated, change-specific)": "--deltas-only の別名（非推奨、変更専用）",
     "Allow setting unknown keys": "未知のキーの設定を許可します",

@@ -10,6 +10,7 @@ import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig } from './global
 import { getCommandFilePathCandidates } from './shared/retired-command-paths.js';
 import { WORKFLOW_TO_SKILL_DIR } from './profile-sync-drift.js';
 import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from './profiles.js';
+import { RETIRED_RETRO_WORKFLOW_ID, resolveMigratedRetention } from './retention.js';
 import { resolveToolSkillsRoot } from './shared/index.js';
 import path from 'path';
 import * as fs from 'fs';
@@ -106,12 +107,21 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
 
   // Scan for installed workflows
   const artifacts = scanInstalledWorkflowArtifacts(projectPath, tools);
-  const installedWorkflows = artifacts.workflows;
+  const detectedWorkflows = artifacts.workflows;
 
-  if (installedWorkflows.length === 0) {
+  if (detectedWorkflows.length === 0) {
     // No workflows installed, new user — defaults will apply
     return;
   }
+
+  // Map the detected v1 selection onto the version-2 model: a detected retired
+  // `retro-command` becomes retention `report` (its former meaning), otherwise
+  // retention is `off`, and the retired id is dropped from the persisted
+  // selection. No other workflow file is added or removed by migration.
+  const retention = resolveMigratedRetention(detectedWorkflows);
+  const installedWorkflows = detectedWorkflows.filter(
+    (workflowId) => workflowId !== RETIRED_RETRO_WORKFLOW_ID
+  );
 
   // Migrate: set profile to custom with detected workflows. Seed the
   // known-built-in-workflows baseline at the same time — this is a selection
@@ -119,6 +129,7 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
   // this migration, never one absent from the detected legacy set.
   config.profile = 'custom';
   config.workflows = installedWorkflows;
+  config.retention = retention;
   config.knownBuiltInWorkflows = getCurrentBuiltInWorkflowIds();
   saveGlobalConfig(config);
 

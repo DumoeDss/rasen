@@ -96,10 +96,21 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
   const sourceId =
     getExpertSkillDefinitions().find((definition) => definition.id === workflowId)
       ?.sidecarSourceId ?? workflowId;
-  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
-  if (!existsSync(sourceDir)) return;
+  const expertSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
+  if (existsSync(expertSourceDir)) {
+    copySidecarTree(expertSourceDir, targetSkillDir);
+  }
 
-  copySidecarTree(sourceDir, targetSkillDir);
+  // Built-in workflows may ship sidecars under `skills/workflows/<dirName>`
+  // (e.g. rasen-retain's report/codify branch bodies), keyed by the installed
+  // skill directory name rather than the workflow id.
+  const dirName = userDefinition?.skill.dirName;
+  if (dirName) {
+    const workflowSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'workflows', dirName);
+    if (existsSync(workflowSourceDir)) {
+      copySidecarTree(workflowSourceDir, targetSkillDir);
+    }
+  }
 }
 
 /**

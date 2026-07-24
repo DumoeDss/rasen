@@ -1,4 +1,3 @@
-import { WORKSPACE_DIR_NAME } from './config.js';
 import { promises as fs } from 'fs';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import path from 'path';
@@ -813,7 +812,7 @@ export class ArchiveCommand {
 
     // Quality capture: scan archived directory for quality artifact files
     // (path-agnostic — runs against wherever the directory landed)
-    await this.captureQuality(archivePath, root.path, json);
+    await this.captureQuality(archivePath, json);
 
     if (!json) {
       const destinationNote = destination === 'external' ? ' (external, machine home)' : '';
@@ -837,10 +836,18 @@ export class ArchiveCommand {
   }
 
   /**
-   * Scan archived change directory for quality artifact files and capture metrics/rules.
-   * Quality files are those matching *-review.md, *-report.md, *-audit.md.
+   * Scan the archived change directory for quality artifact files and capture
+   * their quality summary (scanned files + metric-line counts) into the
+   * archive's `.openspec.yaml`. Quality files match *-review.md, *-report.md,
+   * *-audit.md.
+   *
+   * Archive is NOT a codification step: it does not interpret `[RULE]` markers
+   * as reusable guidance, never mutates the project's `quality-rules`, and
+   * reports no extracted-rule count. Evidence-gated learned-skill creation is
+   * the `codify` mode of `rasen-retain`. Existing `quality-rules` remain
+   * untouched and continue normal instruction injection.
    */
-  private async captureQuality(archivePath: string, projectRoot: string, quiet = false): Promise<void> {
+  private async captureQuality(archivePath: string, quiet = false): Promise<void> {
     try {
       const entries = await fs.readdir(archivePath, { withFileTypes: true });
       const qualityFiles = entries
@@ -853,7 +860,6 @@ export class ArchiveCommand {
       if (qualityFiles.length === 0) return;
 
       const qualityMetrics: Record<string, number> = {};
-      const extractedRules: string[] = [];
 
       for (const qf of qualityFiles) {
         const filePath = path.join(archivePath, qf.name);
@@ -861,7 +867,8 @@ export class ArchiveCommand {
           const content = await fs.readFile(filePath, 'utf-8');
           const lines = content.split('\n');
 
-          // Count lines matching metric patterns
+          // Count lines matching metric patterns. `[RULE]` lines are ordinary
+          // artifact content here — they are not extracted or interpreted.
           let findings = 0;
           let issues = 0;
           let scenarios = 0;
@@ -871,12 +878,6 @@ export class ArchiveCommand {
             if (trimmed.match(/findings:/i)) findings++;
             if (trimmed.match(/issues:/i)) issues++;
             if (trimmed.match(/scenarios:/i)) scenarios++;
-
-            // Extract lines starting with [RULE] as reusable rules
-            const ruleMatch = line.trim().match(/^\[RULE\]\s*(.*)/);
-            if (ruleMatch && ruleMatch[1].trim()) {
-              extractedRules.push(ruleMatch[1].trim());
-            }
           }
 
           qualityMetrics[qf.name] = findings + issues + scenarios;
@@ -900,40 +901,9 @@ export class ArchiveCommand {
       metaData.quality = {
         files: qualityFiles.map(f => f.name),
         metrics: qualityMetrics,
-        rulesExtracted: extractedRules.length,
       };
 
       writeFileSync(metaPath, stringifyYaml(metaData), 'utf-8');
-
-      // Append extracted rules to project config.yaml's quality-rules array (no duplicates)
-      if (extractedRules.length > 0) {
-        try {
-          const config = readProjectConfig(projectRoot);
-          const existingRules = config?.['quality-rules'] ?? [];
-          const existingSet = new Set(existingRules);
-          const newRules = extractedRules.filter(r => !existingSet.has(r));
-
-          if (newRules.length > 0) {
-            // Read raw config yaml to preserve other fields
-            let configPath = path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yaml');
-            if (!existsSync(configPath)) {
-              configPath = path.join(projectRoot, WORKSPACE_DIR_NAME, 'config.yml');
-            }
-            if (existsSync(configPath)) {
-              const rawContent = readFileSync(configPath, 'utf-8');
-              const rawConfig = (parseYaml(rawContent) as Record<string, unknown>) || {};
-              const allRules = [...existingRules, ...newRules];
-              rawConfig['quality-rules'] = allRules;
-              writeFileSync(configPath, stringifyYaml(rawConfig), 'utf-8');
-              if (!quiet) {
-                console.log(chalk.green(`  Added ${newRules.length} new quality rule(s) to config.yaml`));
-              }
-            }
-          }
-        } catch {
-          // Non-fatal: config update is best-effort
-        }
-      }
 
       // Display quality summary (suppressed in JSON mode: stdout carries one document)
       if (!quiet) {
@@ -943,9 +913,6 @@ export class ArchiveCommand {
           if (count > 0) {
             console.log(chalk.cyan(`  ${file}: ${count} metric line(s)`));
           }
-        }
-        if (extractedRules.length > 0) {
-          console.log(chalk.cyan(`  Rules extracted: ${extractedRules.length}`));
         }
       }
     } catch {

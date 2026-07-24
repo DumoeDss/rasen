@@ -17,7 +17,7 @@ import {
   getOfficeHoursCommandSkillTemplate,
   getOnboardSkillTemplate,
   getOpsxProposeSkillTemplate,
-  getRetroCommandSkillTemplate,
+  getRetainCommandSkillTemplate,
   getReviewCycleSkillTemplate,
   getShipCommandSkillTemplate,
   getSyncSpecsSkillTemplate,
@@ -53,7 +53,6 @@ export const BUILT_IN_WORKFLOW_IDS = [
   'office-hours-command',
   'verify-enhanced-command',
   'ship-command',
-  'retro-command',
   'auto-command',
   'review-cycle',
   'handoff',
@@ -64,10 +63,26 @@ export const BUILT_IN_WORKFLOW_IDS = [
   'audit',
 ] as const;
 
+/**
+ * Internal built-in workflows that live in the catalog (so dependency closure
+ * can install them) but are NOT selectable: they never appear in
+ * `BUILT_IN_WORKFLOW_IDS`, the `full` profile, or the profile picker.
+ * `retain-command` (the policy-driven retention runner) is installed only via
+ * `auto-command`'s `requires.workflows`; the retention radio is its only
+ * profile control.
+ */
+export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command'] as const;
+
+/** The retention runner's workflow id (internal, non-selectable). */
+export const RETENTION_RUNNER_WORKFLOW_ID = 'retain-command';
+/** The retention runner's canonical skill-directory name. */
+export const RETAIN_SKILL_DIR_NAME = 'rasen-retain';
+
 export type BuiltInWorkflowId = (typeof BUILT_IN_WORKFLOW_IDS)[number];
+type BuiltInAdapterId = BuiltInWorkflowId | (typeof INTERNAL_BUILTIN_WORKFLOW_IDS)[number];
 
 interface BuiltInWorkflowAdapter {
-  id: BuiltInWorkflowId;
+  id: BuiltInAdapterId;
   dirName: string;
   skill: () => SkillTemplate;
   kind?: WorkflowKind;
@@ -96,13 +111,19 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     },
   },
   { id: 'ship-command', dirName: 'rasen-ship', skill: getShipCommandSkillTemplate },
-  { id: 'retro-command', dirName: 'rasen-retro', skill: getRetroCommandSkillTemplate },
+  {
+    id: 'retain-command',
+    dirName: RETAIN_SKILL_DIR_NAME,
+    skill: getRetainCommandSkillTemplate,
+    kind: 'internal',
+  },
   {
     id: 'auto-command',
     dirName: 'rasen-auto',
     skill: getAutoCommandSkillTemplate,
     kind: 'driver',
     requires: {
+      workflows: ['retain-command'],
       skills: ['rasen-review'],
       pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
     },

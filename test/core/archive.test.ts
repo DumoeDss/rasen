@@ -1708,4 +1708,94 @@ The system SHALL do the thing differently.
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
   });
+
+  describe('quality capture and retention (archive no longer codifies)', () => {
+    async function archivedDir(): Promise<string> {
+      const archiveRoot = path.join(tempDir, 'rasen', 'changes', 'archive');
+      const entries = await fs.readdir(archiveRoot);
+      expect(entries).toHaveLength(1);
+      return path.join(archiveRoot, entries[0]);
+    }
+
+    it('preserves existing quality-rules byte-for-byte and never appends [RULE] markers', async () => {
+      const configPath = path.join(tempDir, 'rasen', 'config.yaml');
+      const configBefore = 'schema: spec-driven\nquality-rules:\n  - Always run the locale sweep\n';
+      await fs.writeFile(configPath, configBefore);
+
+      const changeName = 'rule-marker-feature';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      await fs.writeFile(
+        path.join(changeDir, 'code-review.md'),
+        '# Review\n\nFindings: 2\n[RULE] Prefer path.join over string concat\n[RULE] Add a regression test\n'
+      );
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      // The project config is untouched — no rule appended, no reordering.
+      expect(await fs.readFile(configPath, 'utf-8')).toBe(configBefore);
+
+      // The [RULE] lines survive as ordinary archived artifact content.
+      const archived = await archivedDir();
+      const reviewText = await fs.readFile(path.join(archived, 'code-review.md'), 'utf-8');
+      expect(reviewText).toContain('[RULE] Prefer path.join over string concat');
+
+      // Quality summary is captured, but no extracted-rule count is reported.
+      const meta = await fs.readFile(path.join(archived, '.openspec.yaml'), 'utf-8');
+      expect(meta).toContain('quality:');
+      expect(meta).toContain('code-review.md');
+      expect(meta).not.toContain('rulesExtracted');
+    });
+
+    it('does not create a quality-rules key when the project has none', async () => {
+      const configPath = path.join(tempDir, 'rasen', 'config.yaml');
+      await fs.writeFile(configPath, 'schema: spec-driven\n');
+
+      const changeName = 'no-rules-feature';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      await fs.writeFile(
+        path.join(changeDir, 'security-audit.md'),
+        '# Audit\n\nIssues: 1\n[RULE] Validate untrusted input at the boundary\n'
+      );
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      expect(await fs.readFile(configPath, 'utf-8')).not.toContain('quality-rules');
+    });
+
+    it('does not report an extracted-rule count in its summary output', async () => {
+      const changeName = 'summary-feature';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      await fs.writeFile(path.join(changeDir, 'qa-report.md'), '# Report\n\nScenarios: 3\n[RULE] X\n');
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => call.join(' '))
+        .join('\n');
+      expect(logged).not.toContain('Rules extracted');
+      expect(logged).not.toMatch(/quality rule\(s\) to config/);
+    });
+
+    it('archives a report-mode retro.md as ordinary change content', async () => {
+      const changeName = 'report-mode-feature';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      // report mode writes retro.md before archive begins.
+      await fs.writeFile(path.join(changeDir, 'retro.md'), '# Retrospective\n\nWhat went well.\n');
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      const archived = await archivedDir();
+      expect(await fs.readFile(path.join(archived, 'retro.md'), 'utf-8')).toContain('Retrospective');
+      // The original change dir is gone (retro.md moved with the rest).
+      await expect(fs.access(path.join(changeDir, 'retro.md'))).rejects.toThrow();
+    });
+  });
 });

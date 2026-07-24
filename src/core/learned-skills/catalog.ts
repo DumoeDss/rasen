@@ -1,0 +1,178 @@
+/**
+ * Canonical catalog mechanics: reading managed records, distinguishing an
+ * unmanaged/human-owned collision from an absent id, content/manifest digests,
+ * evidence-tuple deduplication with bounded overflow provenance, and building
+ * the canonical SKILL.md + manifest. The stable knowledge key is supplied by
+ * the candidate (the agent synthesizes it); the core only re-checks identity.
+ */
+
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
+
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+
+import { FileSystemUtils } from '../../utils/file-system.js';
+import { isOsJunkEntryName } from '../workflow-registry/path-policy.js';
+import {
+  LEARNED_SKILL_CONTENT_FILE,
+  LEARNED_SKILL_GENERATED_BY,
+  LEARNED_SKILL_MANIFEST_FILE,
+  LEARNED_SKILL_MANIFEST_VERSION,
+  LEARNED_SKILL_MAX_EVIDENCE_ENTRIES,
+} from './constants.js';
+import { LearnedSkillManifestSchema } from './schema.js';
+import type { ResolvedStore } from './stores.js';
+import type {
+  Applicability,
+  CanonicalLearnedSkill,
+  EvidenceReference,
+  LearnedSkillManifest,
+  LearnedSkillScope,
+} from './types.js';
+
+/** sha256:<hex> over UTF-8 bytes — the one digest form used across the module. */
+export function digestContent(content: string): string {
+  return `sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`;
+}
+
+/** Stable tuple key for evidence deduplication (NUL-separated, collision-safe). */
+export function evidenceTupleKey(entry: EvidenceReference): string {
+  return [entry.projectId, entry.change, entry.artifact, entry.digest].join('\u0000');
+}
+
+export interface DedupedEvidence {
+  entries: EvidenceReference[];
+  overflow?: { count: number; digest: string };
+}
+
+/**
+ * Deduplicates evidence by its stable tuple and caps it at
+ * {@link LEARNED_SKILL_MAX_EVIDENCE_ENTRIES}. Overflow is summarized by count
+ * and a digest over the dropped tuple keys rather than copied indefinitely, so
+ * provenance stays bounded (design D3). Dedup is order-preserving.
+ */
+export function dedupeEvidence(evidence: readonly EvidenceReference[]): DedupedEvidence {
+  const seen = new Set<string>();
+  const unique: EvidenceReference[] = [];
+  for (const entry of evidence) {
+    const key = evidenceTupleKey(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(entry);
+  }
+  if (unique.length <= LEARNED_SKILL_MAX_EVIDENCE_ENTRIES) {
+    return { entries: unique };
+  }
+  const kept = unique.slice(0, LEARNED_SKILL_MAX_EVIDENCE_ENTRIES);
+  const dropped = unique.slice(LEARNED_SKILL_MAX_EVIDENCE_ENTRIES);
+  const digest = digestContent(dropped.map(evidenceTupleKey).join('\n'));
+  return { entries: kept, overflow: { count: dropped.length, digest } };
+}
+
+/** The distinct stable project ids present in an evidence set. */
+export function distinctProjectIds(evidence: readonly EvidenceReference[]): Set<string> {
+  return new Set(evidence.map((entry) => entry.projectId));
+}
+
+/** Builds the canonical SKILL.md: frontmatter (name = id, description) + synthesized body. */
+export function buildCanonicalContent(id: string, description: string, instructions: string): string {
+  const frontmatter = stringifyYaml({ name: id, description }, { lineWidth: 0 }).trimEnd();
+  return `---\n${frontmatter}\n---\n\n${instructions.trim()}\n`;
+}
+
+/** Serializes a manifest to YAML with a stable key order. */
+export function serializeManifest(manifest: LearnedSkillManifest): string {
+  return stringifyYaml(manifest, { lineWidth: 0 });
+}
+
+export type CanonicalRecordRead =
+  | { kind: 'managed'; record: CanonicalLearnedSkill }
+  | { kind: 'unmanaged'; reason: string }
+  | { kind: 'absent' };
+
+/**
+ * Reads the record occupying a canonical directory. `managed` requires a valid
+ * manifest carrying the exact {@link LEARNED_SKILL_GENERATED_BY} marker; any
+ * other occupant (a human-authored skill, a differently-owned or malformed
+ * manifest) is `unmanaged` — a collision codify must not overwrite. A directory
+ * that does not exist is `absent`.
+ */
+export function readCanonicalRecord(directory: string, scope: LearnedSkillScope): CanonicalRecordRead {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'absent' };
+    throw error;
+  }
+  if (!stat.isDirectory()) {
+    return { kind: 'unmanaged', reason: `${directory} exists and is not a directory` };
+  }
+
+  const manifestPath = FileSystemUtils.joinPath(directory, LEARNED_SKILL_MANIFEST_FILE);
+  const contentPath = FileSystemUtils.joinPath(directory, LEARNED_SKILL_CONTENT_FILE);
+  if (!fs.existsSync(manifestPath)) {
+    return { kind: 'unmanaged', reason: `${directory} has no ${LEARNED_SKILL_MANIFEST_FILE} (not Rasen-managed)` };
+  }
+
+  let parsedManifest: unknown;
+  try {
+    parsedManifest = parseYaml(fs.readFileSync(manifestPath, 'utf-8'));
+  } catch (error) {
+    return { kind: 'unmanaged', reason: `${manifestPath} is not valid YAML: ${(error as Error).message}` };
+  }
+  const result = LearnedSkillManifestSchema.safeParse(parsedManifest);
+  if (!result.success) {
+    return { kind: 'unmanaged', reason: `${manifestPath} is not a valid managed manifest` };
+  }
+  if (result.data.generatedBy !== LEARNED_SKILL_GENERATED_BY) {
+    return { kind: 'unmanaged', reason: `${directory} is owned by "${result.data.generatedBy}", not Rasen` };
+  }
+  const content = fs.existsSync(contentPath) ? fs.readFileSync(contentPath, 'utf-8') : '';
+  return {
+    kind: 'managed',
+    record: { manifest: result.data as LearnedSkillManifest, scope, directory, content },
+  };
+}
+
+/** Loads every managed record in a store (unmanaged/absent entries are skipped). */
+export function loadStoreCatalog(store: ResolvedStore, scope: LearnedSkillScope): CanonicalLearnedSkill[] {
+  if (!fs.existsSync(store.dir)) return [];
+  const entries = fs.readdirSync(store.dir, { withFileTypes: true });
+  const records: CanonicalLearnedSkill[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || isOsJunkEntryName(entry.name)) continue;
+    const read = readCanonicalRecord(FileSystemUtils.joinPath(store.dir, entry.name), scope);
+    if (read.kind === 'managed') records.push(read.record);
+  }
+  return records;
+}
+
+/** Builds a fresh manifest for a create/rewrite (timestamps supplied by the caller). */
+export function buildManifest(input: {
+  id: string;
+  knowledgeKey: string;
+  scope: LearnedSkillScope;
+  contentDigest: string;
+  description: string;
+  applicability: Applicability;
+  evidence: DedupedEvidence;
+  createdAt: string;
+  updatedAt: string;
+}): LearnedSkillManifest {
+  return {
+    version: LEARNED_SKILL_MANIFEST_VERSION,
+    id: input.id,
+    knowledgeKey: input.knowledgeKey,
+    scope: input.scope,
+    status: 'active',
+    generatedBy: LEARNED_SKILL_GENERATED_BY,
+    contentDigest: input.contentDigest,
+    description: input.description,
+    applicability: input.applicability,
+    evidence: input.evidence.entries,
+    ...(input.evidence.overflow ? { evidenceOverflow: input.evidence.overflow } : {}),
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+  };
+}

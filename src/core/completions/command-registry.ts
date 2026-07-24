@@ -719,6 +719,77 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'knowledge',
+    description: 'Manage evidence-gated learned skills',
+    flags: [],
+    subcommands: [
+      {
+        name: 'apply',
+        description: 'Apply a learned-skill candidate from an absolute JSON file',
+        flags: [
+          {
+            name: 'from',
+            description: 'Absolute path to a candidate JSON file',
+            takesValue: true,
+          },
+          {
+            name: 'approve-global',
+            description: 'Approve a global create or promotion non-interactively',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'list',
+        description: 'List canonical learned skills',
+        flags: [
+          {
+            name: 'scope',
+            description: 'project or global',
+            takesValue: true,
+            values: ['project', 'global'],
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'show',
+        description: 'Show a canonical learned skill',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'scope',
+            description: 'project or global',
+            takesValue: true,
+            values: ['project', 'global'],
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'retire',
+        description: 'Retire a managed learned skill',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'scope',
+            description: 'project or global',
+            takesValue: true,
+            values: ['project', 'global'],
+          },
+          {
+            name: 'yes',
+            short: 'y',
+            description: 'Skip the confirmation prompt',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'workflow',
     description: 'Manage installable workflows in the user-wide library',
     flags: [],
