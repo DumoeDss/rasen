@@ -14,7 +14,7 @@ import {
   getAutoCommandSkillTemplate,
   getReviewCycleSkillTemplate,
 } from '../../src/core/templates/skill-templates.js';
-import { ORCHESTRATION_PLAYBOOK } from '../../src/core/templates/workflows/_orchestration.js';
+import { AUTO_ORCHESTRATION_PLAYBOOK as ORCHESTRATION_PLAYBOOK } from '../../src/core/templates/workflows/_orchestration.js';
 
 const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
   confirmMock: vi.fn(),

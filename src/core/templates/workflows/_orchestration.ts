@@ -1,15 +1,15 @@
 /**
  * Shared LEAD Orchestration Playbook
  *
- * One playbook, embedded by the workflows that drive a pipeline of stages
- * (`auto`, `review-cycle`). It tells the executing agent to act as the LEAD —
- * the sole orchestrator — and dispatch each stage to a role-isolated leaf
- * worker that invokes the stage's existing Rasen skill. It defines capability
- * tiers (A/B/C), role isolation + the structural author!=verifier invariant,
- * the change-directory blackboard + run-state, interpretation of
- * gate/loop/parallelGroup/condition stage metadata, the bounded
- * review->fix loop with a LEAD-first escalation ladder, and the context
- * sensing + handoff protocol (Step H).
+ * This complete playbook is the canonical semantic source. Workflow-specific
+ * bundles select modules from it for `auto`, `goal`, and `review-cycle` while
+ * preserving the complete auto rendering byte-for-byte. It tells the executing
+ * agent to act as the LEAD — the sole orchestrator — and dispatch each stage
+ * to a role-isolated leaf worker that invokes the stage's existing Rasen skill.
+ * It defines capability tiers (A/B/C), role isolation + the structural
+ * author!=verifier invariant, the change-directory blackboard + run-state,
+ * stage metadata, bounded review and goal loops, portfolio orchestration, and
+ * the context sensing + handoff protocol (Step H).
  *
  * HOW (this playbook) is intentionally decoupled from WHAT (the pipeline
  * definition). The pipeline DAG is supplied inline today and from the
@@ -329,3 +329,666 @@ A probe reporting \`limit: 0\` (no window known — e.g. a Codex rollout with ze
 - **Generation cap.** \`sessionHandoff.n\` at \`maxRelays\` (resolved config, default 3) stops auto-relay: present the relay history and recommend decomposing the change (Step G) — repeated session relays are the decompose signal, same as worker relays (H.5).
 - **No cross-session worker resurrection.** The successor never addresses the predecessor's workers (dead agentIds); it re-creates what it needs via the Step F.1 ladder — handoff document first, recorded transcript second, change-directory cold reconstruction last.
 - **Codex workers are unaffected by a LEAD session relay.** A session relay is a Claude-LEAD mechanism only — Codex worker threads are not tied to the LEAD's session, so the successor LEAD simply resumes their recorded \`threadId\`s (Step B.2) exactly as it would mid-session; nothing about the relay itself touches Codex state. (If the LEAD role itself ever inverts to run on Codex, \`codex resume [SESSION_ID] [PROMPT]\` and \`codex fork --last\` are the candidate primitives for that future mechanism — named here only, not designed. Both would carry \`--dangerously-bypass-approvals-and-sandbox\` — the Codex analogue of \`--dangerously-skip-permissions\`, verified accepted by \`codex resume\` and \`codex fork\` on codex-cli 0.144.1 — so an authorized unattended Codex-LEAD relay is not blocked by an approval prompt either.)`;
+
+export interface OrchestrationFeatureSet {
+  readonly persistentPlanner: boolean;
+  readonly stageMetadata: boolean;
+  readonly reviewLoop: boolean;
+  readonly goalLoop: boolean;
+  readonly portfolio: boolean;
+}
+
+type OrchestrationModuleId =
+  | 'header'
+  | 'A'
+  | 'A.1'
+  | 'B'
+  | 'B.1'
+  | 'B.2'
+  | 'B.3'
+  | 'B.4'
+  | 'C'
+  | 'D'
+  | 'E'
+  | 'L'
+  | 'F'
+  | 'F.1'
+  | 'G'
+  | 'G.1'
+  | 'H';
+
+const ORCHESTRATION_MODULE_ORDER: readonly OrchestrationModuleId[] = [
+  'header',
+  'A',
+  'A.1',
+  'B',
+  'B.1',
+  'B.2',
+  'B.3',
+  'B.4',
+  'C',
+  'D',
+  'E',
+  'L',
+  'F',
+  'F.1',
+  'G',
+  'G.1',
+  'H',
+];
+
+const STEP_HEADING_PATTERN =
+  /^### Step (A\.1|B\.1|B\.2|B\.3|B\.4|F\.1|G\.1|[A-HL])\b.*$/gm;
+
+function splitCanonicalModules(
+  source: string
+): Readonly<Record<OrchestrationModuleId, string>> {
+  const headings = [...source.matchAll(STEP_HEADING_PATTERN)];
+  const firstHeading = headings[0];
+  if (!firstHeading || firstHeading.index === undefined) {
+    throw new Error('Orchestration playbook is missing its first step heading');
+  }
+
+  const modules = new Map<OrchestrationModuleId, string>();
+  modules.set('header', source.slice(0, firstHeading.index));
+
+  for (const [index, heading] of headings.entries()) {
+    const moduleId = heading[1] as OrchestrationModuleId;
+    const start = heading.index;
+    const end = headings[index + 1]?.index ?? source.length;
+    if (start === undefined) {
+      throw new Error(`Orchestration module ${moduleId} has no source offset`);
+    }
+    modules.set(moduleId, source.slice(start, end));
+  }
+
+  for (const moduleId of ORCHESTRATION_MODULE_ORDER) {
+    if (!modules.has(moduleId)) {
+      throw new Error(`Orchestration playbook is missing module ${moduleId}`);
+    }
+  }
+
+  return Object.fromEntries(modules) as Record<OrchestrationModuleId, string>;
+}
+
+const ORCHESTRATION_MODULES = splitCanonicalModules(ORCHESTRATION_PLAYBOOK);
+
+function replaceExactlyOnce(
+  source: string,
+  search: string | RegExp,
+  replacement: string,
+  label: string
+): string {
+  let count = 0;
+
+  if (typeof search === 'string') {
+    if (search.length === 0) {
+      throw new Error(`Orchestration replacement "${label}" has an empty search`);
+    }
+
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(search, offset);
+      if (index === -1) {
+        break;
+      }
+      count += 1;
+      offset = index + search.length;
+    }
+  } else {
+    const flags = search.flags.includes('g')
+      ? search.flags
+      : `${search.flags}g`;
+    count = [...source.matchAll(new RegExp(search.source, flags))].length;
+  }
+
+  if (count !== 1) {
+    throw new Error(
+      `Orchestration replacement "${label}" expected exactly one match, found ${count}`
+    );
+  }
+
+  return source.replace(search, replacement);
+}
+
+function includesModule(
+  moduleId: OrchestrationModuleId,
+  features: OrchestrationFeatureSet
+): boolean {
+  switch (moduleId) {
+    case 'B.1':
+      return features.persistentPlanner;
+    case 'D':
+      return features.stageMetadata;
+    case 'E':
+      return features.reviewLoop;
+    case 'L':
+      return features.goalLoop;
+    case 'G':
+    case 'G.1':
+      return features.portfolio;
+    default:
+      return true;
+  }
+}
+
+function renderHeader(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  if (features.reviewLoop) {
+    return source;
+  }
+
+  return replaceExactlyOnce(
+    source,
+    /\*\*Exception:\*\*[\s\S]*?never by you\. /,
+    '',
+    'header review-loop exception'
+  );
+}
+
+function renderDispatchCore(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  if (features.goalLoop) {
+    return source;
+  }
+
+  return replaceExactlyOnce(
+    source,
+    ' (or the evaluate-gate schema, for a goal-loop evaluate dispatch)',
+    '',
+    'dispatch evaluate-gate schema'
+  );
+}
+
+function renderCodexLifecycle(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  if (features.goalLoop) {
+    return source;
+  }
+
+  return replaceExactlyOnce(
+    source,
+    ' (e.g. a completion-shaped "finish the remaining tasks" nudge still needs the leaf-return/evaluate-gate contract; omit it only for a genuinely free-form conversational nudge)',
+    ' (a completion-shaped "finish the remaining tasks" nudge still needs the leaf-return contract; omit it only for a genuinely free-form conversational nudge)',
+    'Codex resume evaluate-gate contract'
+  );
+}
+
+function renderStageMetadata(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  if (features.reviewLoop) {
+    return source;
+  }
+
+  return replaceExactlyOnce(
+    source,
+    /^- \*\*loop:\*\*.*$/m,
+    '- **loop:** Run a goal-loop stage as bounded iteration toward its configured gate condition (Step L).',
+    'stage metadata goal-only loop'
+  );
+}
+
+function renderReviewLoop(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  if (features.goalLoop) {
+    return source;
+  }
+
+  let rendered = replaceExactlyOnce(
+    source,
+    /^- \*\*`loop\.kind === 'goal'`\*\*.*\r?\n/m,
+    '',
+    'review loop goal-kind branch'
+  );
+  rendered = replaceExactlyOnce(
+    rendered,
+    'This is the ONLY loop kind that existed before goal-loop; the steps are unchanged.',
+    'The steps are unchanged.',
+    'review-loop historical goal reference'
+  );
+  return rendered;
+}
+
+function renderGoalLoop(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  let rendered = source;
+
+  if (!features.portfolio) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      'new approach, different tool, decompose the obstruction',
+      'new approach, different tool, isolate the obstruction',
+      'goal-loop decomposition strategy'
+    );
+  }
+
+  if (!features.reviewLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      ' — not a review-clean diff. It is isomorphic to review-cycle\'s single-dispatch-per-round shape:',
+      ', using a single-dispatch-per-round shape:',
+      'goal-loop review-cycle comparison'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      ' (the SAME worker, like review-cycle reuses the fixer thread; rounds do NOT each cost a fresh relay)',
+      ' (the SAME worker; rounds do NOT each cost a fresh relay)',
+      'goal-loop review-cycle reuse comparison'
+    );
+  }
+
+  return rendered;
+}
+
+function renderRunState(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  let rendered = source;
+
+  if (!features.portfolio) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      ' / portfolio-run.json',
+      '',
+      'run-state portfolio artifact'
+    );
+  }
+
+  if (!features.goalLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      ' / the goal-loop run artifact',
+      '',
+      'run-state goal-loop artifact'
+    );
+  }
+
+  if (!features.reviewLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      'Also record review `rounds`, `openFindings`, any skips/escalations,',
+      'Also record any skips/escalations,',
+      'run-state review fields'
+    );
+  }
+
+  if (!features.stageMetadata) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      / \*\*autopilot-gate-policy:\*\*.*?leaves `gateDecision` unset\./,
+      '',
+      'run-state gate policy'
+    );
+  }
+
+  return rendered;
+}
+
+function renderKeepalive(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  let rendered = source;
+
+  if (!features.reviewLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^- \*\*LOOP_BOUND\*\*.*\r?\n/m,
+      '',
+      'keepalive review-loop horizon'
+    );
+  }
+
+  if (!features.persistentPlanner && !features.portfolio) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^- \*\*MILESTONE_BOUND\*\*.*\r?\n/m,
+      '',
+      'keepalive planner horizon'
+    );
+  }
+
+  if (!features.portfolio) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      'a full child pipeline',
+      'a long intervening stage',
+      'keepalive child-pipeline gap'
+    );
+  }
+
+  return rendered;
+}
+
+function renderResume(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  let rendered = source;
+
+  if (!features.portfolio) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      / For a decomposed parent it returns the per-child `runnableChildren` \(start fresh\), `interruptedChildren` \(warm-seed-resume\), `escalatedChildren` \(human attention\), and `completedChildren`\./,
+      '',
+      'resume decomposed-parent child fields'
+    );
+  }
+
+  if (!features.reviewLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      ', and `openFindings` (unresolved Blocker/Major — never ship past them)',
+      '',
+      'resume review findings'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      '(e.g. re-review a fix, or continue an interrupted stage)',
+      '(e.g. continue an interrupted stage)',
+      'resume review example'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      'functionally a resumed reviewer',
+      'functionally a resumed worker',
+      'resume reviewer role'
+    );
+  }
+
+  return rendered;
+}
+
+function renderHandoff(
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  if (
+    features.persistentPlanner &&
+    features.stageMetadata &&
+    features.reviewLoop &&
+    features.goalLoop &&
+    features.portfolio
+  ) {
+    return source;
+  }
+
+  let rendered = replaceExactlyOnce(
+    source,
+    /\*\*Two threshold families, two decisions\.\*\*[\s\S]*?These are different numbers for a reason; do NOT apply the handoff threshold to a reuse decision or vice-versa\.\r?\n\r?\n/,
+    '**Context threshold.** A mid-task relay ("should this worker keep going on the task in hand?") compares occupancy to the **handoff** threshold (`handoff.roles[<role>]` > `handoff` > project config role/scalar > global config role/scalar > model preset > default **0.5**).\n\n',
+    'handoff reuse-threshold family'
+  );
+
+  if (!features.reviewLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^\| \*\*review rounds\*\*.*\r?\n/m,
+      '',
+      'handoff review counter row'
+    );
+  }
+
+  if (!features.goalLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^\| \*\*goal-loop rounds\*\*.*\r?\n/m,
+      '',
+      'handoff goal-round counter row'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^\| \*\*goal stall\*\*.*\r?\n/m,
+      '',
+      'handoff goal-stall counter row'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^\| \*\*blocked streak\*\*.*\r?\n/m,
+      '',
+      'handoff blocked-streak counter row'
+    );
+  }
+
+  const roundCounters = [
+    features.reviewLoop ? 'review rounds' : '',
+    features.goalLoop ? 'goal rounds' : '',
+  ].filter(Boolean).join(', ');
+  rendered = replaceExactlyOnce(
+    rendered,
+    '| review rounds, goal rounds |',
+    `| ${roundCounters} |`,
+    'handoff relay-counter independence'
+  );
+
+  if (!features.goalLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      '| `loopStallLimit` (which counts rounds) |',
+      '| review rounds |',
+      'handoff stall-counter independence'
+    );
+  }
+
+  const continuationExamples = features.reviewLoop
+    ? 'delta re-review or any Tier A continuation'
+    : 'any Tier A continuation';
+  rendered = replaceExactlyOnce(
+    rendered,
+    /\*\*H\.2 Warm-continue guard\.\*\*[\s\S]*?\r?\n\r?\n\*\*H\.3 Worker self-handoff/,
+    `**H.2 Warm-continue guard.** Before EVERY \`SendMessage\` to an existing worker (${continuationExamples}), probe that worker's recorded transcript. Below its resolved handoff threshold → continue warm (cheapest). At or above → retire it via handoff: make the worker's FINAL \`SendMessage\` task "write your handoff document (rasen-handoff template) to \`<workDir>/handoff/<role>-<n>.md\` (sticky-legacy fallback: the change directory)", then spawn a fresh successor seeded from that document. Seed from the raw transcript only when the document cannot be produced (worker already dead).\n\n**H.3 Worker self-handoff`,
+    'handoff warm-continue guard'
+  );
+
+  if (!features.persistentPlanner) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      /The LEAD relays these findings VERBATIM into the dispatch of the planner that proposes a dependent or subsequent child change \(Step B\.1\), so implementation discoveries feed the next proposal\./,
+      'The LEAD carries these findings forward so later work benefits from durable implementation discoveries.',
+      'handoff persistent-planner findings'
+    );
+  }
+
+  if (!features.goalLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      / And for a \*\*goal loop\*\* the relevant stall counter is `loopStallLimit` over ROUNDS \(Step L\), NOT `stallLimit` over relays — they are independent counters\./,
+      '',
+      'handoff goal-loop stall clause'
+    );
+  }
+
+  if (!features.reviewLoop) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      '**H.6 Strategy budget & non-blocking escalation (shared with Step E\'s loop termination).**',
+      '**H.6 Strategy budget & non-blocking escalation.**',
+      'handoff review-loop escalation heading'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      'When it is exhausted (or Step E\'s round cap is hit and the ladder is exhausted):',
+      'When it is exhausted:',
+      'handoff review-loop round cap'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      ' (open Blocker/Major findings block `ship`, per the guardrails)',
+      '',
+      'handoff review-loop ship guard'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      '; never report clean while a Blocker/Major is open',
+      '',
+      'handoff review-loop clean report'
+    );
+  }
+
+  if (!features.portfolio) {
+    rendered = replaceExactlyOnce(
+      rendered,
+      /mark the stage `escalated` in run-state with the full relay\/strategy\/finding history, PARK it, and CONTINUE unblocked work — other portfolio children always; later stages of the same change only when the parked problem does not block them/,
+      'mark the stage `escalated` in run-state with the full relay/strategy/finding history, PARK it, and CONTINUE later stages only when the parked problem does not block them',
+      'handoff portfolio escalation'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      '(3) isolate — split the stubborn remainder into its own task or child change so the main line can move.',
+      '(3) isolate — split the stubborn remainder into its own independent task so the main line can move.',
+      'handoff child-change strategy'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      /^- \*\*Quiesce first\.\*\*.*$/m,
+      '- **Quiesce first.** Relay ONLY at a stage boundary: every dispatched worker has returned `DONE`/`HANDOFF` and run-state is persisted. A probe that fires mid-stage waits for the worker\'s structured return (H.3 covers the worker\'s own exhaustion) before the handoff-plus-relay sequence.',
+      'handoff portfolio quiescence'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      'present the relay history and recommend decomposing the change (Step G) — repeated session relays are the decompose signal',
+      'present the relay history and stop — repeated session relays are the signal to narrow the work before another run',
+      'handoff decomposition recommendation'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      'STOP auto-relay and recommend decompose (H.7)',
+      'STOP auto-relay and surface the relay history (H.7)',
+      'handoff session-counter decomposition'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      'a session that keeps self-relaying to generation N is the decompose signal',
+      'a session that keeps self-relaying to generation N is the signal to narrow scope',
+      'handoff relay-asymmetry decomposition'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      'spend the decompose budget on transient faults',
+      'spend the relay budget on transient faults',
+      'handoff infra-revival decomposition'
+    );
+  }
+
+  return rendered;
+}
+
+function renderModule(
+  moduleId: OrchestrationModuleId,
+  source: string,
+  features: OrchestrationFeatureSet
+): string {
+  switch (moduleId) {
+    case 'header':
+      return renderHeader(source, features);
+    case 'B':
+      return renderDispatchCore(source, features);
+    case 'B.2':
+      return renderCodexLifecycle(source, features);
+    case 'D':
+      return renderStageMetadata(source, features);
+    case 'E':
+      return renderReviewLoop(source, features);
+    case 'L':
+      return renderGoalLoop(source, features);
+    case 'B.4':
+      return renderKeepalive(source, features);
+    case 'F':
+      return renderRunState(source, features);
+    case 'F.1':
+      return renderResume(source, features);
+    case 'H':
+      return renderHandoff(source, features);
+    default:
+      return source;
+  }
+}
+
+function assertReferenceClosure(
+  playbook: string,
+  features: OrchestrationFeatureSet
+): void {
+  const omittedReferences: Array<[boolean, RegExp, string]> = [
+    [features.persistentPlanner, /Step B\.1\b/, 'B.1'],
+    [features.stageMetadata, /Step D\b/, 'D'],
+    [features.reviewLoop, /Step E(?:\b|\.)/, 'E'],
+    [features.goalLoop, /Step L\b/, 'L'],
+    [features.portfolio, /Step G(?:\b|\.)/, 'G'],
+  ];
+
+  for (const [included, pattern, step] of omittedReferences) {
+    if (!included && pattern.test(playbook)) {
+      throw new Error(
+        `Orchestration bundle references omitted Step ${step}`
+      );
+    }
+  }
+}
+
+export function composeOrchestrationPlaybook(
+  features: OrchestrationFeatureSet
+): string {
+  if (
+    features.persistentPlanner &&
+    features.stageMetadata &&
+    features.reviewLoop &&
+    features.goalLoop &&
+    features.portfolio
+  ) {
+    return ORCHESTRATION_PLAYBOOK;
+  }
+
+  const playbook = ORCHESTRATION_MODULE_ORDER
+    .filter(moduleId => includesModule(moduleId, features))
+    .map(moduleId =>
+      renderModule(moduleId, ORCHESTRATION_MODULES[moduleId], features)
+    )
+    .join('');
+
+  assertReferenceClosure(playbook, features);
+  return playbook;
+}
+
+const AUTO_FEATURES: OrchestrationFeatureSet = {
+  persistentPlanner: true,
+  stageMetadata: true,
+  reviewLoop: true,
+  goalLoop: true,
+  portfolio: true,
+};
+
+const GOAL_FEATURES: OrchestrationFeatureSet = {
+  persistentPlanner: false,
+  stageMetadata: true,
+  reviewLoop: false,
+  goalLoop: true,
+  portfolio: false,
+};
+
+const REVIEW_CYCLE_FEATURES: OrchestrationFeatureSet = {
+  persistentPlanner: false,
+  stageMetadata: false,
+  reviewLoop: true,
+  goalLoop: false,
+  portfolio: false,
+};
+
+export const AUTO_ORCHESTRATION_PLAYBOOK =
+  composeOrchestrationPlaybook(AUTO_FEATURES);
+export const GOAL_ORCHESTRATION_PLAYBOOK =
+  composeOrchestrationPlaybook(GOAL_FEATURES);
+export const REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK =
+  composeOrchestrationPlaybook(REVIEW_CYCLE_FEATURES);
