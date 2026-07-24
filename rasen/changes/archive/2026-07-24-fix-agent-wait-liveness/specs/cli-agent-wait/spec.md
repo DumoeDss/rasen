@@ -29,7 +29,7 @@ The context floor SHALL default to 0, meaning the floor gate is disabled: with d
 - **WHEN** `rasen agent wait --context-tokens 60000` is invoked with default configuration
 - **THEN** the beat proceeds under the remaining gates (no context-below-floor stand-down)
 
-#### Scenario: Configured floor stands small contexts down
+#### Scenario: Small context stands down
 - **WHEN** `keepalive.contextFloor` is configured to 100000 and `rasen agent wait --context-tokens 60000` is invoked
 - **THEN** the command returns `{ "standDown": true, "reason": "context-below-floor" }` immediately
 
