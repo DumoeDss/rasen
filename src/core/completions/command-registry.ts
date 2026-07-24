@@ -733,6 +733,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           {
+            name: 'approve-store',
+            description: 'Approve a store publication non-interactively',
+          },
+          {
             name: 'approve-global',
             description: 'Approve a global create or promotion non-interactively',
           },
@@ -760,9 +764,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',
@@ -790,9 +794,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',
@@ -820,6 +824,40 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
+            description: 'project, store, or global',
+            takesValue: true,
+            values: ['project', 'store', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          {
+            name: 'yes',
+            description: 'Skip the confirmation prompt',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'rename',
+        description: 'Rename an exact managed project or global learned skill',
+        acceptsPositional: true,
+        positionals: [{ name: 'from-id' }, { name: 'to-id' }],
+        flags: [
+          {
+            name: 'scope',
             description: 'project or global',
             takesValue: true,
             values: ['project', 'global'],
@@ -841,7 +879,6 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           },
           {
             name: 'yes',
-            short: 'y',
             description: 'Skip the confirmation prompt',
           },
           COMMON_FLAGS.json,

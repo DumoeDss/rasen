@@ -137,15 +137,16 @@ describe('learned-skill execution context', () => {
       root: projectRoot,
     });
 
-    await expect(
-      resolveLearnedSkillExecutionContext({
-        launchDirectory: projectRoot,
-        selector: { store: 'platform' },
-        requestedScope: 'project',
-        globalDataDir,
-      })
-    ).rejects.toMatchObject({
-      diagnostic: { code: 'knowledge_store_scope_unavailable' },
+    const selectedStore = await resolveLearnedSkillExecutionContext({
+      launchDirectory: projectRoot,
+      selector: { store: 'platform' },
+      requestedScope: 'store',
+      globalDataDir,
+    });
+    expect(selectedStore.owner).toMatchObject({
+      type: 'store',
+      id: 'platform',
+      root: storeRoot,
     });
   });
 
@@ -191,8 +192,7 @@ describe('learned-skill execution context', () => {
       })
     ).rejects.toMatchObject({
       diagnostic: {
-        code: 'knowledge_store_scope_unavailable',
-        owner: { type: 'store', id: 'platform' },
+        code: 'knowledge_owner_scope_mismatch',
       },
     });
   });

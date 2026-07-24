@@ -220,9 +220,19 @@ describe('learned-skill core mutation and resolution', () => {
       evidence: [evidence(projectId)],
     };
 
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
     const oneProject = await planLearnedSkillMutation(globalBase, context);
     expect(oneProject.action).toBe('blocked');
     expect(oneProject.block?.code).toBe('global_evidence_insufficient');
+
+    const secondContext = { projectRoot: second.root, globalDataDir };
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(second.projectId), secondContext),
+      secondContext
+    );
 
     const twoProjects = {
       ...globalBase,

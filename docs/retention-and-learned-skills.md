@@ -2,7 +2,7 @@
 
 Rasen turns what a completed change *taught* into guidance future work can reuse. Two pieces cooperate: a **retention policy** on the active profile that decides whether (and how) a finished change is retained, and a **learned-skill registry** that stores the durable, evidence-gated results as managed Agent Skills.
 
-This page covers the retention model, the profile v2 format and its downgrade limits, where learned skills live, how project and global scope work, applicability markers, ownership safeguards, context budgets, and the archive behavior break. The command surface is `rasen knowledge` (see [CLI reference](cli.md#rasen-knowledge)).
+This page covers the retention model, profile downgrade limits, versioned learned-skill records, project/store/global scope, verified publication evidence, applicability, ownership safeguards, and budgets. The command surface is `rasen knowledge` (see [CLI reference](cli.md#rasen-knowledge)).
 
 ## The retention policy
 
@@ -51,6 +51,7 @@ Learned skills are **registry records, not workflows.** They never appear in a p
 ```text
 <global data dir>/learned-skills/<id>/         # global scope
 <project machine home>/learned-skills/<id>/    # project scope
+<registered store root>/rasen/learned-skills/<id>/ # store scope, shared/reviewable
 ```
 
 Each canonical directory holds a strict `learned-skill.yaml` manifest (identity, stable knowledge key, scope, status, generated-ownership marker, content digest, applicability, evidence references, timestamps) and a generated `SKILL.md`. A project-scoped write requires a registered project with a resolved machine home — there is no in-repository fallback; an unregistered project gets `rasen init` guidance instead.
@@ -60,9 +61,10 @@ plan in `store:team` while its private learned skills remain owned by
 `project:web`. `rasen knowledge --project <id>` and `--store <id>` select that
 typed owner only; they never relocate the change. The flags are mutually
 exclusive, same bare ids remain distinct across namespaces, and direct store
-launches refuse to guess a member project. Store-owned persistence is reserved
-for the store-scope follow-up and currently returns the stable
-`knowledge_store_scope_unavailable` diagnostic without creating a catalog.
+launches refuse to guess a member project. Store reads and mutations always
+address one explicit registered store; they never enumerate all stores. A
+successful store mutation reports the store root and exact changed canonical
+files, and never commits, fetches, or pushes that repository.
 
 Retain/codify freezes a versioned `{planningRoot, owner}` identity in
 `auto-run.json`. Only typed ids are persisted; canonical paths are re-resolved
@@ -70,14 +72,41 @@ and revalidated on resume by passing pipeline resume's absolute `runStateDir`
 to project-scope knowledge commands as `--run-state-dir`. Existing run-state without the field remains
 readable and gains the context conservatively at its first knowledge operation.
 
-## Scope and global promotion
+## Version 1 / version 2 compatibility
 
-An accepted candidate defaults to **project scope** in the owning project's machine home. A **global** create or promotion is gated:
+Strict candidate and manifest version 1 remains the exact project/global
+compatibility shape. Reads normalize its project evidence and canonical owner
+to typed in-memory records without rewriting any bytes. Project/global
+mutations whose meaning remains v1-representable continue to write v1.
 
-1. equivalent accepted evidence carrying the same stable knowledge key,
-2. from at least **two distinct stable project ids** (multiple changes or clones sharing one id count once),
-3. applicability that carries no project-private path/name/domain/policy, and
-4. explicit user approval at the `rasen knowledge apply` seam (interactive prompt, or `--approve-global` in a non-interactive run).
+Version 2 adds typed owners, typed evidence, exact source-record locators, and
+store scope. Store records and global records with store provenance require
+v2. Both versions reject unknown fields. Older CLIs leave v2 data untouched
+but cannot manage it; downgrade by retaining the v2 canonical directories and
+using a supporting CLI when management is needed.
+
+## Scope and publication
+
+An accepted candidate defaults to **project scope** in the owning project's
+machine home. Cross-owner publication never trusts contributor claims in the
+candidate. Every named source must resolve to the exact active Rasen-managed
+record, typed owner, skill id, knowledge key, and stored content digest.
+
+A **store** create or rewrite requires:
+
+1. at least two distinct stable project owners,
+2. exact active source records with the same knowledge key,
+3. a current explicit `project:` membership edge from the target store to each
+   source project (no unprefixed or transitive membership), and
+4. store-specific informed approval (`--approve-store` outside a TTY).
+
+A **global** create or promotion requires:
+
+1. exact active sources from at least two distinct projects or at least two
+   distinct stores,
+2. one homogeneous source class (project/store mixing is rejected),
+3. one stable knowledge key and valid stored digests, and
+4. global-specific informed approval (`--approve-global` outside a TTY).
 
 An active `codify` profile authorizes project-scope create/rewrite/retire without an extra prompt, but never authorizes a global operation.
 
@@ -101,7 +130,7 @@ Materialization uses applicability to decide what to install into a project-loca
 
 Materialization and codification are exact, never name-based. Rasen refreshes or removes a materialized copy **only** when its artifact ledger records that exact path as Rasen's generated copy *and* the on-disk bytes still match what Rasen wrote. A human-authored directory, or a generated copy the user has since edited, blocks the operation and is preserved byte-for-byte with a diagnostic naming the skill, tool, and path. Ownership lives in the manifest's `generatedBy` marker and the ledger — never in an id prefix — so a similarly named skill is treated as unowned.
 
-Canonical mutations replace the complete managed `SKILL.md` and manifest atomically (never append), lock per registry, re-verify the staged digest, and roll back on failure. Retirement flips status to `retired`, preserves provenance, and makes recorded materializations eligible for exact ledger-based removal.
+Canonical mutations replace the complete managed `SKILL.md` and manifest atomically (never append), use machine-data per-owner locks, stage beside the target for same-volume replacement, re-verify ownership/source/membership and content digests under lock, and roll back on failure. Retirement flips status to `retired` while preserving provenance.
 
 ## Context budgets
 

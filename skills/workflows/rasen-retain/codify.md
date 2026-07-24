@@ -98,7 +98,7 @@ The candidate schema (version 1):
 }
 ```
 
-- Default `scope` to `project`. Request `global` (or `promote`) only when the same bounded knowledge is evidenced in **two or more distinct projects**; global commits require explicit approval, which the CLI enforces.
+- Default `scope` to `project`. Version 1 remains the exact project/global compatibility format. Store publication uses candidate version 2 with a typed `owner`, typed `evidence`, and exact `sources` locators; it requires two current explicit member-project records and `--approve-store` outside a TTY. Global publication requires two exact homogeneous project or store sources and `--approve-global`. Candidate contributor ids are locators, never proof.
 - Do NOT write canonical or tool skill directories directly — the CLI is the only writer.
 - The CLI shows the deterministic plan and enforces id/ownership/budget/evidence gates; treat a `blocked` result as a rejection to report, not to work around.
 

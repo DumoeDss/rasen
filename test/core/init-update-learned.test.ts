@@ -12,6 +12,7 @@ import {
   type LearnedSkillMutationRequest,
 } from '../../src/core/learned-skills/index.js';
 import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
 
 const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
   confirmMock: vi.fn(),
@@ -30,6 +31,7 @@ function loggedOutput(): string {
 }
 
 async function commitProjectSkill(projectRoot: string): Promise<void> {
+  const home = await resolveProjectHome(projectRoot);
   const request: LearnedSkillMutationRequest = {
     operation: 'upsert',
     scope: 'project',
@@ -38,7 +40,7 @@ async function commitProjectSkill(projectRoot: string): Promise<void> {
     description: 'Route diagnostics through the locale catalogs.',
     instructions: '## When\nEditing i18n routing.\n## Steps\nAdd every locale key.\n## Done\nParity test passes.',
     applicability: { mode: 'all', markers: ['package.json'] },
-    evidence: [{ projectId: 'p', change: 'add-thing', artifact: 'proposal', digest: `sha256:${'a'.repeat(64)}` }],
+    evidence: [{ projectId: home!.projectId, change: 'add-thing', artifact: 'proposal', digest: `sha256:${'a'.repeat(64)}` }],
   };
   const context = { projectRoot };
   const result = await commitLearnedSkillPlan(await planLearnedSkillMutation(request, context), context);

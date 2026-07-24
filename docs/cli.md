@@ -624,10 +624,11 @@ In the full delivery flow, archive runs **after** the profile's retention step (
 Inspect and mutate canonical **learned skills** — the durable, evidence-gated guidance `rasen-retain`'s `codify` mode produces. This group is the only seam that writes learned-skill state; agents submit a strict candidate rather than editing skill directories directly.
 
 ```bash
-rasen knowledge apply --from <absolute-json-file> [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--approve-global] [--json]
-rasen knowledge list [--scope project|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
-rasen knowledge show <id> [--scope project|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
-rasen knowledge retire <id> [--scope project|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--yes] [--json]
+rasen knowledge apply --from <absolute-json-file> [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--approve-store | --approve-global] [--json]
+rasen knowledge list [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
+rasen knowledge show <id> [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
+rasen knowledge retire <id> [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--yes] [--json]
+rasen knowledge rename <from-id> <to-id> [--scope project|global] [--project <id>] [--run-state-dir <absolute-dir>] [--yes] [--json]
 ```
 
 **Subcommands:**
@@ -638,21 +639,23 @@ rasen knowledge retire <id> [--scope project|global] [--project <id> | --store <
 | `list` | List canonical learned skills in a scope, including active and retired status. |
 | `show <id>` | Show one learned skill's provenance, applicability, evidence, and status. |
 | `retire <id>` | Retire a managed learned skill (requires `--yes` outside a TTY). |
+| `rename <from-id> <to-id>` | Rename one exact managed project/global identity (requires `--yes` outside a TTY). Store rename is intentionally unsupported. |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
 | `--from <path>` | Absolute path to the candidate JSON file (`apply`). |
-| `--scope project\|global` | Which canonical registry to read or mutate (default: `project`). |
+| `--scope project\|store\|global` | Which canonical registry to read or mutate (default: the explicitly selected owner, otherwise `project`). |
 | `--project <id>` | Select the typed project knowledge owner without changing the active planning root. Mutually exclusive with `--store`. |
-| `--store <id>` | Select the typed store knowledge owner. Store persistence currently returns `knowledge_store_scope_unavailable`. Mutually exclusive with `--project`. |
+| `--store <id>` | Select exactly one typed registered store knowledge owner. Store records live at `<store root>/rasen/learned-skills`; no command implicitly scans every store. Mutually exclusive with `--project`. |
 | `--run-state-dir <absolute-dir>` | Load `auto-run.json` from the exact directory returned as `runStateDir` by `rasen pipeline resume`, then revalidate and use its frozen planning root and owner. A project/store selector becomes a consistency check and cannot override the frozen owner. |
-| `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). Rejected for a project mutation so consent cannot be reused. |
+| `--approve-store` | Consent to a store publication in a non-interactive run (`apply`). It cannot authorize project or global mutation. |
+| `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). It cannot authorize project or store mutation. |
 | `--yes` | Skip the retirement confirmation (`retire`). |
 | `--json` | Emit a single JSON document on stdout (agent contract). |
 
-Knowledge-owner selection and planning-root selection are independent. A pointer project may report `owner=project:web` while its change planning root is `store:team`; a direct store launch never guesses one member project. Human and JSON output report both typed identities. Project mutations are authorized by an active `codify` profile. A **global** create or promotion additionally requires equivalent evidence from at least two distinct project ids **and** explicit approval (interactive prompt or `--approve-global`). See [Retention and learned skills](retention-and-learned-skills.md) for the scope, promotion, applicability, ownership, and budget rules.
+Knowledge-owner selection and planning-root selection are independent. A pointer project may report `owner=project:web` while its change planning root is `store:team`; a direct store launch never guesses one member project. Human and JSON output report typed target/source identities. Project mutations are authorized by an active `codify` profile. Store publication requires exact active records from two current explicit member projects plus store-specific approval. Global promotion requires exact active records from two distinct homogeneous project owners or two distinct homogeneous store owners plus global-specific approval. Candidate-declared contributor ids are only locators and never proof.
 
 ---
 

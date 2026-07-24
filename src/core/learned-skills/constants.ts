@@ -15,10 +15,11 @@ export const LEARNED_SKILL_MANIFEST_FILE = 'learned-skill.yaml';
 export const LEARNED_SKILL_CONTENT_FILE = 'SKILL.md';
 
 /** Current manifest schema version. */
-export const LEARNED_SKILL_MANIFEST_VERSION = 1 as const;
+export const LEARNED_SKILL_MANIFEST_VERSION = 2 as const;
 
 /** Current candidate (knowledge apply input) schema version. */
-export const LEARNED_SKILL_CANDIDATE_VERSION = 1 as const;
+export const LEARNED_SKILL_CANDIDATE_VERSION = 2 as const;
+export const LEARNED_SKILL_V1_VERSION = 1 as const;
 
 /**
  * Ownership marker written to `generatedBy`. Only a canonical manifest carrying
@@ -85,5 +86,12 @@ export const LEARNED_SKILL_CONTENT_BUDGET = 8 * 1024;
 export const LEARNED_SKILL_ACTIVE_DESCRIPTION_BUDGET = 4 * 1024;
 export const LEARNED_SKILL_MAX_EVIDENCE_ENTRIES = 16;
 
-/** Distinct stable project IDs required before a global create/promotion is allowed. */
-export const LEARNED_SKILL_GLOBAL_PROMOTION_MIN_PROJECTS = 2;
+/** Distinct stable owners required before store/global publication is allowed. */
+export const LEARNED_SKILL_PROMOTION_MIN_SOURCES = 2;
+export const LEARNED_SKILL_GLOBAL_PROMOTION_MIN_PROJECTS =
+  LEARNED_SKILL_PROMOTION_MIN_SOURCES;
+
+/** Exact machine-data/private staging names used by the persistence layer. */
+export const LEARNED_SKILL_LOCKS_DIR_NAME = 'learned-skill-locks';
+export const LEARNED_SKILL_STAGING_PREFIX = '.rasen-learned-skill-staging-';
+export const LEARNED_SKILL_BACKUP_PREFIX = '.rasen-learned-skill-backup-';

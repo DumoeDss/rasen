@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { registerKnowledgeCommand } from '../../src/commands/knowledge.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
+import { appendStoreReference } from '../../src/core/project-config.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 import { getStoreMetadataPath } from '../../src/core/store/foundation.js';
 import {
@@ -88,6 +89,30 @@ describe('rasen knowledge command', () => {
 
   function projectStoreDir(): string {
     return path.join(projectHomeDir, 'learned-skills');
+  }
+
+  async function createPromotionSources(): Promise<[string, string]> {
+    const ids: string[] = [];
+    for (const name of ['promotion-a', 'promotion-b']) {
+      const root = path.join(tempHome, name);
+      fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      fs.writeFileSync(path.join(root, 'go.mod'), `module ${name}\n`);
+      const home = await resolveProjectHome(root, { globalDataDir: tempHome });
+      ids.push(home!.projectId);
+      await runKnowledge([
+        'apply',
+        '--from',
+        writeCandidate(projectCandidate({ evidence: [evidence(home!.projectId)] })),
+        '--project',
+        home!.projectId,
+        '--json',
+      ]);
+      process.exitCode = undefined;
+    }
+    logSpy.mockClear();
+    errSpy.mockClear();
+    return ids as [string, string];
   }
 
   async function createFrozenPointerFixture(name: string): Promise<{
@@ -250,10 +275,11 @@ describe('rasen knowledge command', () => {
 
   it('requires explicit consent for a global promotion outside a TTY', async () => {
     (process.stdout as unknown as { isTTY?: boolean }).isTTY = false;
+    const [first, second] = await createPromotionSources();
     const globalCandidate = projectCandidate({
       operation: 'promote',
       scope: 'global',
-      evidence: [evidence('project-a'), evidence('project-b')],
+      evidence: [evidence(first), evidence(second)],
     });
     await runKnowledge(['apply', '--from', writeCandidate(globalCandidate), '--json']);
     expect(process.exitCode).toBe(1);
@@ -271,12 +297,64 @@ describe('rasen knowledge command', () => {
     expect(lastJson()).toMatchObject({ ok: true, outcome: 'created', scope: 'global', id: ID });
   });
 
+  it('combines project and global records for default list/show reads', async () => {
+    const [first, second] = await createPromotionSources();
+    await runKnowledge([
+      'apply',
+      '--from',
+      writeCandidate(
+        projectCandidate({
+          operation: 'promote',
+          scope: 'global',
+          evidence: [evidence(first), evidence(second)],
+        })
+      ),
+      '--approve-global',
+      '--json',
+    ]);
+    process.exitCode = undefined;
+    await runKnowledge([
+      'apply',
+      '--from',
+      writeCandidate(
+        projectCandidate({
+          id: 'project-only-routing',
+          knowledgeKey: 'project-only-routing',
+        })
+      ),
+      '--json',
+    ]);
+
+    logSpy.mockClear();
+    await runKnowledge(['list', '--json']);
+    expect(lastJson()).toMatchObject({
+      context: { owner: { type: 'project', id: projectId } },
+      learnedSkills: [
+        {
+          identity: {
+            owner: { type: 'project', id: projectId },
+            id: 'project-only-routing',
+          },
+        },
+        { identity: { owner: { type: 'global' }, id: ID } },
+      ],
+    });
+
+    logSpy.mockClear();
+    await runKnowledge(['show', ID, '--json']);
+    expect(lastJson()).toMatchObject({
+      identity: { owner: { type: 'global' }, id: ID },
+      context: { owner: { type: 'project', id: projectId } },
+    });
+  });
+
   it('honors an interactive global approval prompt (accept and decline)', async () => {
     const { confirm } = await promptMocks();
+    const [first, second] = await createPromotionSources();
     const globalCandidate = projectCandidate({
       operation: 'promote',
       scope: 'global',
-      evidence: [evidence('project-a'), evidence('project-b')],
+      evidence: [evidence(first), evidence(second)],
     });
 
     confirm.mockResolvedValueOnce(false);
@@ -523,22 +601,188 @@ describe('rasen knowledge command', () => {
     expect(fs.existsSync(path.join(tempHome, 'learned-skills', ID))).toBe(false);
   });
 
-  it('reports the temporary store-scope diagnostic without creating a store catalog', async () => {
+  it('lists only the explicitly selected store without creating a catalog', async () => {
     const storeRoot = path.join(tempHome, 'team-store');
     fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
     fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes'), { recursive: true });
     fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     await registerStore({ id: 'team', localPath: storeRoot, globalDataDir: tempHome });
 
-    await runKnowledge(['list', '--scope', 'project', '--store', 'team', '--json']);
+    await runKnowledge(['list', '--scope', 'store', '--store', 'team', '--json']);
+    expect(lastJson()).toMatchObject({
+      context: { owner: { type: 'store', id: 'team' } },
+      learnedSkills: [],
+    });
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'learned-skills'))).toBe(false);
+  });
+
+  it('applies, reads, rejects rename, and retires an explicitly selected store record', async () => {
+    const sourceIds: string[] = [];
+    const storeRoot = path.join(tempHome, 'team-store-lifecycle');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes'), { recursive: true });
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    await registerStore({ id: 'team', localPath: storeRoot, globalDataDir: tempHome });
+    const canonicalStoreRoot = fs.realpathSync.native(storeRoot);
+
+    for (const alias of ['member-a', 'member-b']) {
+      const root = path.join(tempHome, alias);
+      fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      fs.writeFileSync(path.join(root, 'go.mod'), `module ${alias}\n`);
+      const home = (await resolveProjectHome(root, { globalDataDir: tempHome }))!;
+      sourceIds.push(home.projectId);
+      await commitStoreRegistration({
+        id: alias,
+        type: 'project',
+        backend: { type: 'git', local_path: root },
+        writeMetadataIfMissing: true,
+        globalDataDir: tempHome,
+      });
+      appendStoreReference(storeRoot, alias, { type: 'project' });
+      await runKnowledge([
+        'apply',
+        '--from',
+        writeCandidate(projectCandidate({ evidence: [evidence(home.projectId)] })),
+        '--project',
+        alias,
+        '--json',
+      ]);
+      process.exitCode = undefined;
+    }
+    logSpy.mockClear();
+    errSpy.mockClear();
+
+    const storeCandidate = writeCandidate({
+      version: 2,
+      operation: 'upsert',
+      scope: 'store',
+      owner: { type: 'store', id: 'team' },
+      id: ID,
+      knowledgeKey: 'go-sql-tx-locking',
+      description: 'Lock rows in a transaction with SELECT ... FOR UPDATE.',
+      instructions: '## When\nConcurrent updates.\n## Steps\nUse FOR UPDATE.',
+      applicability: { mode: 'all', markers: ['go.mod'] },
+      evidence: [],
+      sources: sourceIds.map((id) => ({
+        owner: { type: 'project', id },
+        id: ID,
+        knowledgeKey: 'go-sql-tx-locking',
+      })),
+    });
+
+    await runKnowledge([
+      'apply',
+      '--from',
+      storeCandidate,
+      '--store',
+      'team',
+      '--json',
+    ]);
     expect(lastJson()).toMatchObject({
       ok: false,
-      error: {
-        code: 'knowledge_store_scope_unavailable',
-        owner: { type: 'store', id: 'team' },
-      },
+      error: { code: 'store_approval_required' },
     });
-    expect(fs.existsSync(path.join(storeRoot, 'learned-skills'))).toBe(false);
+
+    logSpy.mockClear();
+    await runKnowledge([
+      'apply',
+      '--from',
+      storeCandidate,
+      '--store',
+      'team',
+      '--approve-global',
+      '--json',
+    ]);
+    expect(lastJson()).toMatchObject({
+      ok: false,
+      error: { code: 'consent_scope_mismatch' },
+    });
+
+    logSpy.mockClear();
+    await runKnowledge([
+      'apply',
+      '--from',
+      storeCandidate,
+      '--store',
+      'team',
+      '--approve-store',
+      '--json',
+    ]);
+    expect(lastJson()).toMatchObject({
+      ok: true,
+      outcome: 'created',
+      identity: { owner: { type: 'store', id: 'team' }, id: ID },
+      storeRoot: canonicalStoreRoot,
+      changedFiles: [
+        path.join(canonicalStoreRoot, 'rasen', 'learned-skills', ID, 'learned-skill.yaml'),
+        path.join(canonicalStoreRoot, 'rasen', 'learned-skills', ID, 'SKILL.md'),
+      ],
+    });
+
+    logSpy.mockClear();
+    await runKnowledge(['list', '--scope', 'store', '--store', 'team', '--json']);
+    expect(lastJson()).toMatchObject({
+      learnedSkills: [
+        { identity: { owner: { type: 'store', id: 'team' }, id: ID } },
+      ],
+    });
+
+    const renamedId = 'go-sql-row-locking';
+    logSpy.mockClear();
+    await runKnowledge([
+      'rename',
+      ID,
+      renamedId,
+      '--scope',
+      'store',
+      '--store',
+      'team',
+      '--yes',
+      '--json',
+    ]);
+    expect(lastJson()).toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    });
+    expect(
+      fs.existsSync(path.join(storeRoot, 'rasen', 'learned-skills', ID))
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(storeRoot, 'rasen', 'learned-skills', renamedId))
+    ).toBe(false);
+
+    logSpy.mockClear();
+    await runKnowledge([
+      'show',
+      ID,
+      '--scope',
+      'store',
+      '--store',
+      'team',
+      '--json',
+    ]);
+    expect(lastJson()).toMatchObject({
+      identity: { owner: { type: 'store', id: 'team' }, id: ID },
+      status: 'active',
+    });
+
+    logSpy.mockClear();
+    await runKnowledge([
+      'retire',
+      ID,
+      '--scope',
+      'store',
+      '--store',
+      'team',
+      '--yes',
+      '--json',
+    ]);
+    expect(lastJson()).toMatchObject({
+      ok: true,
+      outcome: 'retired',
+      identity: { owner: { type: 'store', id: 'team' }, id: ID },
+    });
   });
 
   it('prevents a known candidate project id from redirecting the selected owner', async () => {

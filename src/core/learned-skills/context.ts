@@ -386,10 +386,7 @@ function assertScopeAgreement(
       }
     );
   }
-  if (
-    (requestedScope === 'project' || requestedScope === 'mixed') &&
-    owner.type === 'global'
-  ) {
+  if (requestedScope === 'project' && owner.type !== 'project') {
     fail(
       'knowledge_owner_scope_mismatch',
       'Project learned-skill scope requires a project owner.',
@@ -400,12 +397,23 @@ function assertScopeAgreement(
       }
     );
   }
-  if (owner.type === 'store') {
+  if (requestedScope === 'store' && owner.type !== 'store') {
     fail(
-      'knowledge_store_scope_unavailable',
-      `Store owner '${owner.id}' resolved successfully, but store-scoped learned-skill persistence is not available in this context slice.`,
+      'knowledge_owner_scope_mismatch',
+      'Store learned-skill scope requires a store owner.',
       {
         owner: ownerIdentity(owner),
+        ...(planningRoot ? { planningRoot: planningIdentity(planningRoot) } : {}),
+        selectorGuidance,
+      }
+    );
+  }
+  if (requestedScope === 'mixed' && owner.type === 'global') {
+    fail(
+      'knowledge_owner_scope_mismatch',
+      'A mixed owner-scoped learned-skill read requires a project or store owner.',
+      {
+        owner: { type: 'global' },
         ...(planningRoot ? { planningRoot: planningIdentity(planningRoot) } : {}),
         selectorGuidance,
       }

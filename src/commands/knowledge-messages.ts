@@ -13,6 +13,7 @@ export interface KnowledgeMessages {
   listDescription: string;
   showDescription: string;
   retireDescription: string;
+  renameDescription: string;
   projectSelectorDescription: string;
   storeSelectorDescription: string;
   runStateDirDescription: string;
@@ -24,6 +25,7 @@ export interface KnowledgeMessages {
   candidateTooLarge: (size: number, maximum: number) => string;
   candidateInvalid: (detail: string) => string;
   approveGlobalNotForProject: string;
+  consentScopeMismatch: string;
   codifyRequired: (retention: string) => string;
   projectRequired: string;
   plan: (summary: string) => string;
@@ -31,6 +33,9 @@ export interface KnowledgeMessages {
   globalApprovalPrompt: (id: string) => string;
   globalApprovalRequiredNonInteractive: (id: string) => string;
   globalApprovalDeclined: string;
+  storeApprovalPrompt: (id: string) => string;
+  storeApprovalRequiredNonInteractive: (id: string) => string;
+  storeApprovalDeclined: string;
   created: (scope: string, id: string) => string;
   rewritten: (scope: string, id: string) => string;
   retired: (scope: string, id: string) => string;
@@ -43,6 +48,7 @@ export interface KnowledgeMessages {
   showNotFound: (id: string, scope: string) => string;
   showApplicability: (mode: string, markers: string) => string;
   retireConfirm: (scope: string, id: string) => string;
+  renameConfirm: (scope: string, fromId: string, toId: string) => string;
   retireRequiresConfirmation: string;
   retireCancelled: string;
   cancelled: string;
@@ -58,6 +64,7 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     listDescription: raw.listDescription,
     showDescription: raw.showDescription,
     retireDescription: raw.retireDescription,
+    renameDescription: raw.renameDescription,
     projectSelectorDescription: raw.projectSelectorDescription,
     storeSelectorDescription: raw.storeSelectorDescription,
     runStateDirDescription: raw.runStateDirDescription,
@@ -70,6 +77,7 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     candidateTooLarge: (size, maximum) => format(raw.candidateTooLarge, { size, maximum }),
     candidateInvalid: (detail) => format(raw.candidateInvalid, { detail }),
     approveGlobalNotForProject: raw.approveGlobalNotForProject,
+    consentScopeMismatch: raw.consentScopeMismatch,
     codifyRequired: (retention) => format(raw.codifyRequired, { retention }),
     projectRequired: raw.projectRequired,
     plan: (summary) => format(raw.plan, { summary }),
@@ -78,6 +86,10 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     globalApprovalRequiredNonInteractive: (id) =>
       format(raw.globalApprovalRequiredNonInteractive, { id }),
     globalApprovalDeclined: raw.globalApprovalDeclined,
+    storeApprovalPrompt: (id) => format(raw.storeApprovalPrompt, { id }),
+    storeApprovalRequiredNonInteractive: (id) =>
+      format(raw.storeApprovalRequiredNonInteractive, { id }),
+    storeApprovalDeclined: raw.storeApprovalDeclined,
     created: (scope, id) => format(raw.created, { scope, id }),
     rewritten: (scope, id) => format(raw.rewritten, { scope, id }),
     retired: (scope, id) => format(raw.retired, { scope, id }),
@@ -91,6 +103,8 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     showNotFound: (id, scope) => format(raw.showNotFound, { id, scope }),
     showApplicability: (mode, markers) => format(raw.showApplicability, { mode, markers }),
     retireConfirm: (scope, id) => format(raw.retireConfirm, { scope, id }),
+    renameConfirm: (scope, fromId, toId) =>
+      format(raw.renameConfirm, { scope, fromId, toId }),
     retireRequiresConfirmation: raw.retireRequiresConfirmation,
     retireCancelled: raw.retireCancelled,
     cancelled: raw.cancelled,

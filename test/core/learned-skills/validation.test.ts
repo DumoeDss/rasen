@@ -126,6 +126,75 @@ describe('candidate and manifest schemas', () => {
   it('rejects a manifest missing required fields', () => {
     expect(LearnedSkillManifestSchema.safeParse({ version: 1, id: 'x' }).success).toBe(false);
   });
+
+  it('accepts strict store-capable v2 candidates and manifests with typed identities', () => {
+    const owner = { type: 'store' as const, id: 'team' };
+    const source = {
+      owner: { type: 'project' as const, id: 'project-a' },
+      id: 'go-sql-transaction-locking',
+      knowledgeKey: 'go-sql-tx-locking',
+    };
+    const typedEvidence = {
+      owner: { type: 'project' as const, id: 'project-a' },
+      change: 'add-thing',
+      artifact: 'proposal',
+      digest: DIGEST,
+    };
+    const candidate = {
+      version: 2,
+      operation: 'upsert' as const,
+      scope: 'store' as const,
+      owner,
+      id: 'go-sql-transaction-locking',
+      knowledgeKey: 'go-sql-tx-locking',
+      description: 'Use SELECT ... FOR UPDATE to lock rows in a transaction.',
+      instructions: '## When\n...\n## Steps\n...',
+      applicability: { mode: 'all' as const, markers: ['go.mod'] },
+      evidence: [typedEvidence],
+      sources: [source],
+    };
+    expect(LearnedSkillCandidateSchema.safeParse(candidate).success).toBe(true);
+    expect(LearnedSkillCandidateSchema.safeParse({ ...candidate, extra: true }).success).toBe(false);
+
+    const manifest = {
+      version: 2,
+      id: candidate.id,
+      knowledgeKey: candidate.knowledgeKey,
+      scope: candidate.scope,
+      owner,
+      status: 'active',
+      generatedBy: 'rasen-learned-skill',
+      contentDigest: DIGEST,
+      description: candidate.description,
+      applicability: candidate.applicability,
+      evidence: [typedEvidence],
+      sources: [source],
+      createdAt: '2026-07-25T00:00:00.000Z',
+      updatedAt: '2026-07-25T00:00:00.000Z',
+    };
+    expect(LearnedSkillManifestSchema.safeParse(manifest).success).toBe(true);
+    expect(
+      LearnedSkillManifestSchema.safeParse({
+        ...manifest,
+        owner: { type: 'project', id: 'team' },
+      }).success
+    ).toBe(false);
+  });
+
+  it('keeps the exact v1 boundary closed to v2-only owner and source fields', () => {
+    expect(
+      LearnedSkillCandidateSchema.safeParse({
+        ...validUpsert,
+        owner: { type: 'project', id: 'project-a' },
+      }).success
+    ).toBe(false);
+    expect(
+      LearnedSkillCandidateSchema.safeParse({
+        ...validUpsert,
+        sources: [],
+      }).success
+    ).toBe(false);
+  });
 });
 
 describe('evidence dedup and provenance', () => {

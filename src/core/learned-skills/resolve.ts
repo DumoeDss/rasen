@@ -8,7 +8,12 @@
  */
 
 import { loadStoreCatalog } from './catalog.js';
-import { resolveGlobalStore, resolveProjectStore } from './stores.js';
+import {
+  resolveGlobalStore,
+  resolveProjectStore,
+  resolveRegisteredKnowledgeStore,
+  resolveCanonicalStore,
+} from './stores.js';
 import type { CanonicalLearnedSkill, LearnedSkillContext, ResolvedLearnedSkillSet } from './types.js';
 
 const isActive = (record: CanonicalLearnedSkill): boolean => record.manifest.status === 'active';
@@ -19,24 +24,28 @@ export async function resolveLearnedSkills(
   const global = loadStoreCatalog(resolveGlobalStore(context), 'global').filter(isActive);
 
   let project: CanonicalLearnedSkill[] = [];
+  let store: CanonicalLearnedSkill[] = [];
   if (context.execution?.owner.type === 'project' || context.projectRoot) {
     const resolution = await resolveProjectStore(context);
     if (resolution.ok) {
       project = loadStoreCatalog(resolution.store, 'project').filter(isActive);
     }
   }
+  if (context.execution?.owner.type === 'store') {
+    const resolution = await resolveRegisteredKnowledgeStore(context);
+    if (resolution.ok) {
+      store = loadStoreCatalog(resolution.store, 'store').filter(isActive);
+    }
+  }
 
-  return { project, global };
+  return { project, store, global };
 }
 
 /** Lists every record (active and retired) in a scope — powers `knowledge list`/`show`. */
 export async function listCanonicalLearnedSkills(
-  scope: 'project' | 'global',
+  scope: 'project' | 'store' | 'global',
   context: LearnedSkillContext = {}
 ): Promise<CanonicalLearnedSkill[]> {
-  if (scope === 'global') {
-    return loadStoreCatalog(resolveGlobalStore(context), 'global');
-  }
-  const resolution = await resolveProjectStore(context);
-  return resolution.ok ? loadStoreCatalog(resolution.store, 'project') : [];
+  const resolution = await resolveCanonicalStore(scope, context);
+  return resolution.ok ? loadStoreCatalog(resolution.store, scope) : [];
 }

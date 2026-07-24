@@ -274,6 +274,21 @@ describe('learned-skill materialization', () => {
       const second = await makeProject();
       secondRoot = second.root;
       const id = 'go-sql-transaction-locking';
+      const source = (ownerId: string): LearnedSkillMutationRequest => ({
+        operation: 'upsert',
+        scope: 'project',
+        id,
+        knowledgeKey: 'go-sql-tx-locking',
+        description: 'Lock rows in a transaction with SELECT ... FOR UPDATE.',
+        instructions: '## When\nConcurrent updates.\n## Steps\nUse FOR UPDATE.\n## Done\nNo lost update.',
+        applicability: { mode: 'all', markers: ['go.mod'] },
+        evidence: [evidence(ownerId)],
+      });
+      await commit(source(projectId), context);
+      await commit(source(second.projectId), {
+        projectRoot: second.root,
+        globalDataDir,
+      });
       const globalRequest: LearnedSkillMutationRequest = {
         operation: 'upsert',
         scope: 'global',

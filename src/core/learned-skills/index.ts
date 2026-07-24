@@ -31,23 +31,37 @@ export {
 export {
   learnedSkillDir,
   probeStoreWritable,
+  resolveCanonicalStore,
   resolveGlobalStore,
   resolveProjectStore,
+  resolveRegisteredKnowledgeStore,
   type ProjectStoreResolution,
   type ResolvedStore,
 } from './stores.js';
 export {
   buildCanonicalContent,
+  buildManifestV1,
+  buildManifestV2,
   dedupeEvidence,
+  dedupeTypedEvidence,
   digestContent,
   distinctProjectIds,
   evidenceTupleKey,
   loadStoreCatalog,
+  normalizeEvidence,
   readCanonicalRecord,
   serializeManifest,
   type CanonicalRecordRead,
   type DedupedEvidence,
 } from './catalog.js';
+export {
+  promotionSnapshotsEqual,
+  queryStoreMemberProjects,
+  resolvePromotionSources,
+  type ResolvedPromotionSources,
+  type StoreMemberProject,
+  type StoreMemberQuery,
+} from './authority.js';
 export { commitLearnedSkillPlan, planLearnedSkillMutation } from './mutate.js';
 export { listCanonicalLearnedSkills, resolveLearnedSkills } from './resolve.js';
 export {
