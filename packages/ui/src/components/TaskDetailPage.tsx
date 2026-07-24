@@ -7,6 +7,7 @@ import { BOARD_COLUMNS, deriveColumn, sessionsForTask, sessionStage } from '../b
 import type { BoardColumn } from '../board/columns.js';
 import { SessionRow } from './SessionRow.js';
 import { LaunchSessionDialog } from './LaunchSessionDialog.js';
+import { renderInlineCode } from './ui/inline-code.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
 
 /**
@@ -64,18 +65,81 @@ function ChildRow({ child }: { child: TaskChildDetail }) {
   );
 }
 
+/**
+ * A single change's task checklist as a structured card (task-detail-ui spec):
+ * a progress summary header, the open (unchecked) items always listed, and the
+ * completed items collapsed behind a disclosure whenever at least one is
+ * complete — so a fully-done change reads as a one-line summary until expanded.
+ * Task text renders backtick spans as `<code>` (no markdown library).
+ */
 function ChildChecklist({ child }: { child: TaskChildDetail }) {
+  const [showCompleted, setShowCompleted] = useState(false);
   if (child.tasks.length === 0) {
     return <p class="task-detail__checklist-empty">No tasks recorded for this change.</p>;
   }
+  const total = child.tasks.length;
+  const openItems = child.tasks.filter((t) => !t.done);
+  const doneItems = child.tasks.filter((t) => t.done);
+  const completed = doneItems.length;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
   return (
-    <ul class="task-detail__checklist" data-testid="task-detail-checklist">
-      {child.tasks.map((item, i) => (
-        <li key={i} class={`task-detail__task task-detail__task--${item.done ? 'done' : 'open'}`}>
-          <span aria-hidden="true">{item.done ? '☑' : '☐'}</span> {item.text}
-        </li>
-      ))}
-    </ul>
+    <div class="task-checklist" data-testid="task-detail-checklist">
+      <div class="task-checklist__header">
+        <span class="task-checklist__label">Tasks</span>
+        <span class="task-checklist__count" data-testid="task-checklist-count">
+          {completed}/{total}
+        </span>
+      </div>
+      <div
+        class="task-checklist__progress"
+        role="progressbar"
+        aria-valuenow={completed}
+        aria-valuemin={0}
+        aria-valuemax={total}
+      >
+        <div class="task-checklist__progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+
+      {openItems.length > 0 && (
+        <ul class="task-checklist__list" data-testid="task-checklist-open">
+          {openItems.map((item, i) => (
+            <li key={i} class="task-checklist__item task-checklist__item--open">
+              <span class="task-checklist__box" aria-hidden="true">
+                ☐
+              </span>
+              <span class="task-checklist__text">{renderInlineCode(item.text)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {doneItems.length > 0 && (
+        <div class="task-checklist__completed">
+          <button
+            type="button"
+            class="task-checklist__disclosure btn--ghost"
+            data-testid="task-checklist-toggle"
+            aria-expanded={showCompleted}
+            onClick={() => setShowCompleted((s) => !s)}
+          >
+            {showCompleted ? `Hide ${completed} completed` : `Show ${completed} completed`}
+          </button>
+          {showCompleted && (
+            <ul class="task-checklist__list task-checklist__list--done" data-testid="task-checklist-completed">
+              {doneItems.map((item, i) => (
+                <li key={i} class="task-checklist__item task-checklist__item--done">
+                  <span class="task-checklist__box" aria-hidden="true">
+                    ☑
+                  </span>
+                  <span class="task-checklist__text">{renderInlineCode(item.text)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -233,10 +297,10 @@ export function TaskDetailPage() {
 
         <section class="task-detail__sessions" aria-label="Sessions">
           <div class="task-detail__sessions-toolbar">
-            <button type="button" onClick={() => setDialogOpen(true)}>
+            <button type="button" class="btn--primary" onClick={() => setDialogOpen(true)}>
               Launch run
             </button>
-            <button type="button" onClick={refresh}>
+            <button type="button" class="btn--ghost" onClick={refresh}>
               Refresh
             </button>
           </div>

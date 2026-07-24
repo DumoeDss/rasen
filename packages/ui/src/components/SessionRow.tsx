@@ -199,16 +199,16 @@ export function SessionRow({
       {canKill && (
         <div class="session-row__kill">
           {!confirmingKill ? (
-            <button type="button" onClick={() => setConfirmingKill(true)}>
+            <button type="button" class="btn--ghost" onClick={() => setConfirmingKill(true)}>
               Kill
             </button>
           ) : (
             <div class="session-row__kill-confirm" role="group" aria-label="Confirm kill">
               <span>Kill this session?</span>
-              <button type="button" onClick={handleConfirmKill} disabled={killing}>
+              <button type="button" class="btn--danger" onClick={handleConfirmKill} disabled={killing}>
                 {killing ? 'Killing…' : 'Confirm kill'}
               </button>
-              <button type="button" onClick={() => setConfirmingKill(false)} disabled={killing}>
+              <button type="button" class="btn--ghost" onClick={() => setConfirmingKill(false)} disabled={killing}>
                 Cancel
               </button>
             </div>

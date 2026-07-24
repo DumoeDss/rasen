@@ -266,6 +266,55 @@ describe('ConfigEntryRow', () => {
     expect(container.textContent).not.toContain('Inherited from default: undefined');
   });
 
+  it('renders an array-valued (read-only) key as item chips, not a raw JSON array string', () => {
+    const listKey: WireConfigEntry = {
+      definition: {
+        key: 'profile.workflows',
+        scopes: ['global'],
+        type: 'array',
+        defaultValue: [],
+        description: 'Explicit workflow selection',
+        group: 'Profile',
+        constraints: { type: 'array' },
+      },
+      value: ['propose', 'explore', 'apply'],
+      source: 'global',
+      scopeValues: { global: ['propose', 'explore', 'apply'] },
+    };
+    mount(listKey, container, { mode: 'global', spaceType: 'project' });
+
+    const chips = [...container.querySelectorAll('.control--readonly .value-display__chip')].map((c) => c.textContent);
+    expect(chips).toEqual(['propose', 'explore', 'apply']);
+    // Never the bracketed JSON array text.
+    expect(container.querySelector('.control--readonly')!.textContent).not.toContain('["');
+  });
+
+  it('summarizes an inherited array value by item count, not a second JSON dump', () => {
+    const inheritedList: WireConfigEntry = {
+      definition: {
+        key: 'profile.workflows',
+        scopes: ['global', 'store', 'project'],
+        type: 'array',
+        defaultValue: [],
+        description: 'Explicit workflow selection',
+        group: 'Profile',
+        constraints: { type: 'array' },
+      },
+      value: ['propose', 'explore', 'apply', 'ship'],
+      source: 'global',
+      scopeValues: { global: ['propose', 'explore', 'apply', 'ship'] },
+    };
+    mount(inheritedList, container, { mode: 'local', spaceType: 'project' });
+    // The inherited-from-global annotation summarizes the list by its count.
+    const summary = container.querySelector('[data-testid="value-summary-toggle"]');
+    expect(summary).not.toBeNull();
+    expect(summary!.textContent).toContain('4 items');
+    // The annotation must not repeat the serialized array.
+    const annotation = container.querySelector('.config-entry__shadowed')!;
+    expect(annotation.textContent).toContain('Inherited from global');
+    expect(annotation.textContent).not.toContain('["');
+  });
+
   it('config-page-coherence: renders a models.* key as a text input with a datalist of known suggestions', () => {
     const modelKey: WireConfigEntry = {
       definition: {

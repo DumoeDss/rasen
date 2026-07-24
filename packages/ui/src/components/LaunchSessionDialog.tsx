@@ -113,10 +113,10 @@ export function LaunchSessionDialog({
           </p>
         )}
         <div class="launch-session-dialog__actions">
-          <button type="button" onClick={onCancel} disabled={submitting}>
+          <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" disabled={submitting}>
+          <button type="submit" class="btn--primary" disabled={submitting}>
             {submitting ? 'Launching…' : 'Launch'}
           </button>
         </div>

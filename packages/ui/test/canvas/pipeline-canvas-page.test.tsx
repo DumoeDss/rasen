@@ -33,8 +33,9 @@ vi.mock('@xyflow/react', () => ({
     nodes: MockNode[];
     onNodeClick?: (e: unknown, n: MockNode) => void;
     onPaneClick?: () => void;
+    proOptions?: { hideAttribution?: boolean };
   }) => (
-    <div data-testid="mock-reactflow-wrapper">
+    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
       <div data-testid="mock-reactflow-controls">
         {props.nodes
@@ -331,6 +332,137 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="pipeline-canvas-save-collision"]')).toBeNull();
     // Save succeeded — back in view mode.
     expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
+  });
+
+  it('passes proOptions.hideAttribution so the third-party watermark never renders', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(pipelineDetailFixture);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    expect(
+      container.querySelector('[data-testid="mock-reactflow-wrapper"]')!.getAttribute('data-hide-attribution')
+    ).toBe('true');
+  });
+
+  it('shows a visible "no issues" chip on a clean validate, and clears it when the draft is edited', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({ valid: true, issues: [] });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const chip = container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!;
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toContain('No issues');
+
+    // Editing the draft invalidates the previous result — the chip clears.
+    const description = container.querySelector('[data-testid="pipeline-canvas-description"]') as HTMLInputElement;
+    await act(async () => {
+      description.value = 'edited';
+      description.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).toBeNull();
+  });
+
+  it('counts errors and warnings in the result chip and lists them in the visible drawer', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [
+        { severity: 'error', path: '/stages/0/skill', message: 'Missing reviewer stage.' },
+        { severity: 'warning', path: '/stages/1/skill', message: 'Consider a stricter verify policy.' },
+      ],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const chip = container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!;
+    expect(chip.textContent).toContain('1 error');
+    expect(chip.textContent).toContain('1 warning');
+    // The issue list is present within the editor viewport.
+    expect(container.querySelectorAll('[data-testid="issues-drawer-item"]')).toHaveLength(2);
+  });
+
+  it('keeps the error visible when the validation API fails during save (no silent reset to idle)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    // The server hiccups while validating on Save.
+    vi.mocked(client.validatePipeline).mockRejectedValueOnce(
+      new ApiError(500, { error: { code: 'internal_error', message: 'Validation service unavailable.' } })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    // The error surface stays visible — the Save path never goes silent.
+    const err = container.querySelector('[data-testid="pipeline-canvas-save-error"]');
+    expect(err).not.toBeNull();
+    expect(err!.textContent).toContain('Validation service unavailable.');
+    expect(client.mutatePipeline).not.toHaveBeenCalled();
+  });
+
+  it('clears the issue drawer (not just the chip) when the draft is edited after findings', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [{ severity: 'error', path: '/stages/0/skill', message: 'Missing reviewer stage.' }],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+
+    const description = container.querySelector('[data-testid="pipeline-canvas-description"]') as HTMLInputElement;
+    await act(async () => {
+      description.value = 'edited after findings';
+      description.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    // Both the chip AND the drawer clear — no stale findings survive the edit.
+    expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
+  });
+
+  it('dismissing the drawer also clears the blocked-save message it referenced', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [{ severity: 'error', path: '/stages/0/skill', message: 'Missing reviewer stage.' }],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-save-blocked"]')).not.toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-dismiss"]'));
+    // The message that pointed "below" must not orphan once its issues are gone.
+    expect(container.querySelector('[data-testid="pipeline-canvas-save-blocked"]')).toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
+  });
+
+  it('blocked save shows the blocking message together with the visible issues panel', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [{ severity: 'error', path: '/stages/0/skill', message: 'Missing reviewer stage.' }],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const blocked = container.querySelector('[data-testid="pipeline-canvas-save-blocked"]')!;
+    expect(blocked).not.toBeNull();
+    expect(blocked.textContent).toContain('below');
+    // The blocking issues are visible alongside the message.
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer-item"]')!.textContent).toContain(
+      'Missing reviewer stage.'
+    );
+    expect(client.mutatePipeline).not.toHaveBeenCalled();
   });
 
   it('renders returned issues in the drawer and lets a click select the mapped stage', async () => {

@@ -7,6 +7,7 @@ import { tabbedEntries } from '../config/grouping.js';
 import type { ConfigMode } from '../config/controls.js';
 import { useSpace } from '../store/use-space.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
+import { PageHeader } from './ui/PageHeader.js';
 import { TelemetryDisclosure } from './TelemetryDisclosure.js';
 
 /**
@@ -92,24 +93,29 @@ export function ConfigPage() {
         </p>
       )}
 
-      <div class="config-page__mode" role="group" aria-label="Configuration scope" data-testid="config-mode">
-        <button
-          type="button"
-          class={`member-chip${mode === 'global' ? ' member-chip--selected' : ''}`}
-          aria-pressed={mode === 'global'}
-          onClick={() => setMode('global')}
-        >
-          Global
-        </button>
-        <button
-          type="button"
-          class={`member-chip${mode === 'local' ? ' member-chip--selected' : ''}`}
-          aria-pressed={mode === 'local'}
-          onClick={() => setMode('local')}
-        >
-          Local
-        </button>
-      </div>
+      <PageHeader
+        title="Configuration"
+        actions={
+          <div class="config-page__mode" role="group" aria-label="Configuration scope" data-testid="config-mode">
+            <button
+              type="button"
+              class={`member-chip${mode === 'global' ? ' member-chip--selected' : ''}`}
+              aria-pressed={mode === 'global'}
+              onClick={() => setMode('global')}
+            >
+              Global
+            </button>
+            <button
+              type="button"
+              class={`member-chip${mode === 'local' ? ' member-chip--selected' : ''}`}
+              aria-pressed={mode === 'local'}
+              onClick={() => setMode('local')}
+            >
+              Local
+            </button>
+          </div>
+        }
+      />
 
       {tabs.length > 0 && (
         <div class="config-page__tabs" role="tablist" aria-label="Configuration sections" data-testid="config-tabs">

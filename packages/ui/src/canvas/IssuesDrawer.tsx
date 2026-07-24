@@ -12,16 +12,32 @@ export function IssuesDrawer({
   issues,
   draft,
   onSelectStage,
+  onDismiss,
 }: {
   issues: PipelineValidationIssue[];
   draft: WirePipelineDefinition;
   onSelectStage: (stageId: string) => void;
+  /** Dismiss the drawer (clears the current issue list) — optional. */
+  onDismiss?: () => void;
 }) {
   if (issues.length === 0) return null;
 
   return (
     <div class="issues-drawer" data-testid="issues-drawer">
-      <h4 class="issues-drawer__title">Issues ({issues.length})</h4>
+      <div class="issues-drawer__header">
+        <h4 class="issues-drawer__title">Issues ({issues.length})</h4>
+        {onDismiss && (
+          <button
+            type="button"
+            class="issues-drawer__dismiss btn--ghost"
+            data-testid="issues-drawer-dismiss"
+            aria-label="Dismiss issues"
+            onClick={onDismiss}
+          >
+            ✕
+          </button>
+        )}
+      </div>
       <ul class="issues-drawer__list">
         {issues.map((issue, i) => {
           const target = issuePathTarget(issue.path, draft.stages.length);

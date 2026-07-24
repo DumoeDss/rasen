@@ -23,6 +23,8 @@ import {
 } from '../config/controls.js';
 import { errorSurface } from '../config/errors.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
+import { PageHeader } from './ui/PageHeader.js';
+import { ValueDisplay } from './ui/ValueDisplay.js';
 
 /**
  * The Pipelines page (pipelines-ui spec). A space-PREFIXED route
@@ -163,23 +165,30 @@ export function PipelinesPage() {
         </p>
       )}
 
-      <div class="pipelines-page__toolbar">
-        <h2 class="pipelines-page__title">Pipelines</h2>
-        <div class="pipelines-page__actions">
-          <button type="button" data-testid="pipeline-new" onClick={() => setDialog({ kind: 'init' })}>
-            New pipeline
-          </button>
-          <button type="button" data-testid="pipeline-assemble" onClick={() => setDialog({ kind: 'assemble' })}>
-            Assemble in canvas
-          </button>
-          <button type="button" data-testid="pipeline-import" onClick={() => setDialog({ kind: 'import' })}>
-            Import…
-          </button>
-          <button type="button" data-testid="pipeline-refresh" onClick={refreshAll}>
-            Refresh
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Pipelines"
+        actions={
+          <>
+            {/* Single creation entry (pipelines-ui spec): the name-first canvas
+                assembly flow. The scaffold-to-disk init dialog is retired from
+                the UI; `rasen pipeline init` remains the CLI path. */}
+            <button
+              type="button"
+              class="btn--primary"
+              data-testid="pipeline-new"
+              onClick={() => setDialog({ kind: 'assemble' })}
+            >
+              New pipeline
+            </button>
+            <button type="button" data-testid="pipeline-import" onClick={() => setDialog({ kind: 'import' })}>
+              Import…
+            </button>
+            <button type="button" class="btn--ghost" data-testid="pipeline-refresh" onClick={refreshAll}>
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       <div class="pipelines-page__mode" role="group" aria-label="Configuration scope" data-testid="pipelines-mode">
         <button
@@ -249,7 +258,6 @@ export function PipelinesPage() {
         ))}
       </section>
 
-      {dialog?.kind === 'init' && <InitDialog onClose={() => setDialog(null)} onDone={refreshAll} />}
       {dialog?.kind === 'assemble' && space && (
         <AssembleDialog
           onClose={() => setDialog(null)}
@@ -270,18 +278,18 @@ export function PipelinesPage() {
 }
 
 type Dialog =
-  | { kind: 'init' }
   | { kind: 'assemble' }
   | { kind: 'import' }
   | { kind: 'export'; name: string }
   | { kind: 'delete'; name: string };
 
 /**
- * "Assemble in canvas" — the name-first entry into the canvas editor's
- * new-draft flow (pipeline-canvas-edit design D6): grammar-checked
- * client-side, then hands off to the graph route via the in-memory
- * pending-draft hint. No reserved URL segment — a pipeline named `new` is
- * never shadowed.
+ * "New pipeline" — the single creation entry (pipelines-ui spec): a name-first
+ * dialog that hands off to the canvas editor's new-draft flow
+ * (pipeline-canvas-edit design D6). The name is grammar-checked client-side,
+ * then the graph route opens with an empty draft via the in-memory
+ * pending-draft hint. No reserved URL segment — a pipeline named `new` is never
+ * shadowed.
  */
 function AssembleDialog({ onClose, onStart }: { onClose: () => void; onStart: (name: string) => void }) {
   const [name, setName] = useState('');
@@ -298,7 +306,7 @@ function AssembleDialog({ onClose, onStart }: { onClose: () => void; onStart: (n
   }
 
   return (
-    <DialogShell title="Assemble in canvas" onClose={onClose}>
+    <DialogShell title="New pipeline" onClose={onClose}>
       <form class="pipeline-dialog__form" onSubmit={submit}>
         <label class="pipeline-dialog__field">
           <span>Pipeline name</span>
@@ -313,9 +321,10 @@ function AssembleDialog({ onClose, onStart }: { onClose: () => void; onStart: (n
             }}
           />
         </label>
+        <p class="pipeline-dialog__hint">Opens the canvas editor with an empty draft to assemble.</p>
         {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
         <div class="pipeline-dialog__actions">
-          <button type="submit" data-testid="pipeline-assemble-submit">
+          <button type="submit" class="btn--primary" data-testid="pipeline-assemble-submit">
             Start assembling
           </button>
         </div>
@@ -536,15 +545,11 @@ function HandoffCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCel
 
 /** A store-inherited key: read-only value plus an edit-in-store link (design D3), the compact analogue of ConfigEntryRow's store handling. */
 function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; storeRef: StoreLayerRef }) {
-  const display =
-    entry.value == null
-      ? 'not set'
-      : typeof entry.value === 'object'
-        ? JSON.stringify(entry.value)
-        : String(entry.value);
   return (
     <div class="defaults-cell defaults-cell--readonly" title={entry.definition.description}>
-      <span class="defaults-cell__value">{display}</span>
+      <span class="defaults-cell__value">
+        <ValueDisplay value={entry.value} />
+      </span>
       <a
         class="config-entry__store-edit"
         href={spaceHref({ type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` }, 'config')}
@@ -582,6 +587,11 @@ function PipelineSection({
   const isUserLibrary = pipeline.sourceLayer === 'user';
   const lockTitle =
     pipeline.sourceLayer === 'package' ? 'Built-in — locked' : 'Project layer — locked (read-only here)';
+  // Per-pipeline configuration (runtimes + per-stage overrides) is collapsed
+  // behind an explicit disclosure so the list reads as a scannable library
+  // rather than a wall of controls (pipelines-ui spec). Independent per
+  // pipeline — expanding one never collapses another.
+  const [configureOpen, setConfigureOpen] = useState(false);
   // Per-role runtime: a role's stages share one runtime, so read the effective
   // runtime off the first stage carrying each role (design D4).
   const roleStages = new Map<string, WirePipelineStage>();
@@ -636,37 +646,54 @@ function PipelineSection({
         ))}
       </ol>
 
-      {/* Per-role runtime controls. */}
-      {roleStages.size > 0 && (
-        <div class="pipeline-runtimes" data-testid="pipeline-runtimes">
-          <h4>Runtimes</h4>
-          {[...roleStages.entries()].map(([role, stage]) => (
-            <RoleRuntimeControl
-              key={role}
-              pipeline={pipeline.name}
-              role={role}
-              stage={stage}
-              scope={scope}
-              selector={selector}
-              onWrite={onWrite}
-            />
-          ))}
+      <button
+        type="button"
+        class="pipeline-section__configure btn--ghost"
+        data-testid="pipeline-configure"
+        aria-expanded={configureOpen}
+        onClick={() => setConfigureOpen((o) => !o)}
+      >
+        <span class={`pipeline-section__chevron${configureOpen ? ' pipeline-section__chevron--open' : ''}`} aria-hidden="true">
+          ›
+        </span>
+        {configureOpen ? 'Hide configuration' : 'Configure'}
+      </button>
+
+      {configureOpen && (
+        <div class="pipeline-section__config" data-testid="pipeline-config">
+          {/* Per-role runtime controls. */}
+          {roleStages.size > 0 && (
+            <div class="pipeline-runtimes" data-testid="pipeline-runtimes">
+              <h4>Runtimes</h4>
+              {[...roleStages.entries()].map(([role, stage]) => (
+                <RoleRuntimeControl
+                  key={role}
+                  pipeline={pipeline.name}
+                  role={role}
+                  stage={stage}
+                  scope={scope}
+                  selector={selector}
+                  onWrite={onWrite}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Per-stage gate / model / handoff overrides. */}
+          <div class="pipeline-stages" data-testid="pipeline-stages">
+            {pipeline.stages.map((stage) => (
+              <StageOverrideRow
+                key={stage.id}
+                pipeline={pipeline.name}
+                stage={stage}
+                scope={scope}
+                selector={selector}
+                onWrite={onWrite}
+              />
+            ))}
+          </div>
         </div>
       )}
-
-      {/* Per-stage gate / model / handoff overrides. */}
-      <div class="pipeline-stages" data-testid="pipeline-stages">
-        {pipeline.stages.map((stage) => (
-          <StageOverrideRow
-            key={stage.id}
-            pipeline={pipeline.name}
-            stage={stage}
-            scope={scope}
-            selector={selector}
-            onWrite={onWrite}
-          />
-        ))}
-      </div>
     </div>
   );
 }
@@ -973,7 +1000,7 @@ function DialogShell({ title, onClose, children }: { title: string; onClose: () 
         <h3 class="pipeline-dialog__title">{title}</h3>
         {children}
         <div class="pipeline-dialog__dismiss">
-          <button type="button" data-testid="pipeline-dialog-close" onClick={onClose}>
+          <button type="button" class="btn--ghost" data-testid="pipeline-dialog-close" onClick={onClose}>
             Close
           </button>
         </div>
@@ -1013,63 +1040,6 @@ function cliMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [name, setName] = useState('');
-  const [output, setOutput] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [createdPath, setCreatedPath] = useState<string | null>(null);
-
-  async function submit(event: Event) {
-    event.preventDefault();
-    if (submitting) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const result = (await client.mutatePipeline({ op: 'init', name, output })) as { pipeline: { output: string } };
-      setCreatedPath(result.pipeline.output);
-      onDone();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) return;
-      setSubmitting(false);
-      setError(cliMessage(err, 'Failed to scaffold the pipeline.'));
-    }
-  }
-
-  return (
-    <DialogShell title="New pipeline" onClose={onClose}>
-      {createdPath ? (
-        <div class="pipeline-dialog__result" data-testid="pipeline-init-result">
-          <p>Pipeline scaffolded at:</p>
-          <p class="pipeline-dialog__mono">{createdPath}</p>
-          <p class="pipeline-dialog__hint">Edit the draft, then import it to install.</p>
-        </div>
-      ) : (
-        <form class="pipeline-dialog__form" onSubmit={submit}>
-          <label class="pipeline-dialog__field">
-            <span>Pipeline name</span>
-            <input
-              type="text"
-              data-testid="pipeline-init-name"
-              value={name}
-              disabled={submitting}
-              required
-              onInput={(e) => setName((e.target as HTMLInputElement).value)}
-            />
-          </label>
-          <PathField label="Output directory" testid="pipeline-init-output" value={output} onInput={setOutput} disabled={submitting} />
-          {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
-          <div class="pipeline-dialog__actions">
-            <button type="submit" data-testid="pipeline-init-submit" disabled={submitting}>
-              {submitting ? 'Creating…' : 'Create pipeline'}
-            </button>
-          </div>
-        </form>
-      )}
-    </DialogShell>
-  );
-}
-
 function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [path, setPath] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1105,7 +1075,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <PathField label="Pipeline directory or package" testid="pipeline-import-path" value={path} onInput={setPath} disabled={submitting} />
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
-            <button type="submit" data-testid="pipeline-import-submit" disabled={submitting}>
+            <button type="submit" class="btn--primary" data-testid="pipeline-import-submit" disabled={submitting}>
               {submitting ? 'Importing…' : 'Import'}
             </button>
             {refused && (
@@ -1175,7 +1145,7 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
           </label>
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
-            <button type="submit" data-testid="pipeline-export-submit" disabled={submitting}>
+            <button type="submit" class="btn--primary" data-testid="pipeline-export-submit" disabled={submitting}>
               {submitting ? 'Exporting…' : 'Export'}
             </button>
             {refused && (
@@ -1221,7 +1191,7 @@ function DeleteDialog({ name, onClose, onDone }: { name: string; onClose: () => 
           </p>
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
-            <button type="button" data-testid="pipeline-delete-confirm" disabled={submitting} onClick={() => run(false)}>
+            <button type="button" class="btn--danger" data-testid="pipeline-delete-confirm" disabled={submitting} onClick={() => run(false)}>
               {submitting ? 'Deleting…' : 'Delete'}
             </button>
           </div>
@@ -1241,7 +1211,7 @@ function DeleteDialog({ name, onClose, onDone }: { name: string; onClose: () => 
             <div class="pipeline-dialog__form">
               <p>Force-deleting leaves its referrers dangling. Are you sure?</p>
               <div class="pipeline-dialog__actions">
-                <button type="button" data-testid="pipeline-delete-force-confirm" disabled={submitting} onClick={() => run(true)}>
+                <button type="button" class="btn--danger" data-testid="pipeline-delete-force-confirm" disabled={submitting} onClick={() => run(true)}>
                   {submitting ? 'Deleting…' : 'Force delete'}
                 </button>
               </div>

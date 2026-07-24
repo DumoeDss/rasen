@@ -111,10 +111,10 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
         )}
 
         <div class="create-space-dialog__actions">
-          <button type="button" onClick={onCancel} disabled={submitting}>
+          <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" disabled={submitting || !target}>
+          <button type="submit" class="btn--primary" disabled={submitting || !target}>
             {submitting ? 'Creating…' : `Create ${kind}`}
           </button>
         </div>

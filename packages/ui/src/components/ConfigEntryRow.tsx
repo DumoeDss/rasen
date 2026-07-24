@@ -15,12 +15,7 @@ import {
 import { errorSurface } from '../config/errors.js';
 import { labelFor } from '../config/labels.js';
 import { spaceHref } from '../store/use-space.js';
-
-/** Renders a value for display — objects (e.g. a `{ remainingTokens: N }` threshold) as JSON, an unset value as "not set" (never the literal "undefined"), everything else via `String()`. */
-function formatDisplayValue(value: unknown): string {
-  if (value === undefined || value === null) return 'not set';
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
-}
+import { ValueDisplay, ValueSummary } from './ui/ValueDisplay.js';
 
 /** An input's `value` attribute — an unset (null/undefined) draft renders as an empty field, never the literal "undefined". */
 function inputValue(value: unknown): string {
@@ -123,7 +118,11 @@ export function ConfigEntryRow({
 
   function renderControl() {
     if (control.readonly) {
-      return <span class="control control--readonly">{formatDisplayValue(entry.value)}</span>;
+      return (
+        <span class="control control--readonly">
+          <ValueDisplay value={entry.value} testid="config-value" />
+        </span>
+      );
     }
 
     switch (control.kind) {
@@ -307,15 +306,21 @@ export function ConfigEntryRow({
       return (
         <p class="config-entry__shadowed">
           Environment variable overrides every scope
-          {entry.scopeValues.global !== undefined
-            ? ` (global value: ${formatDisplayValue(entry.scopeValues.global)})`
-            : ''}
-          {entry.scopeValues.store !== undefined
-            ? ` (store value: ${formatDisplayValue(entry.scopeValues.store)})`
-            : ''}
-          {entry.scopeValues.project !== undefined
-            ? ` (project value: ${formatDisplayValue(entry.scopeValues.project)})`
-            : ''}
+          {entry.scopeValues.global !== undefined && (
+            <>
+              {' '}(global value: <ValueSummary value={entry.scopeValues.global} />)
+            </>
+          )}
+          {entry.scopeValues.store !== undefined && (
+            <>
+              {' '}(store value: <ValueSummary value={entry.scopeValues.store} />)
+            </>
+          )}
+          {entry.scopeValues.project !== undefined && (
+            <>
+              {' '}(project value: <ValueSummary value={entry.scopeValues.project} />)
+            </>
+          )}
         </p>
       );
     }
@@ -332,7 +337,7 @@ export function ConfigEntryRow({
       if (entry.scopeValues.store !== undefined && storeRef) {
         return (
           <p class="config-entry__shadowed">
-            Inherited from store {storeRef.id}: {formatDisplayValue(entry.scopeValues.store)}
+            Inherited from store {storeRef.id}: <ValueSummary value={entry.scopeValues.store} />
             {storeInherited && (
               <>
                 {' '}
@@ -353,16 +358,13 @@ export function ConfigEntryRow({
       if (entry.scopeValues.global !== undefined) {
         return (
           <p class="config-entry__shadowed">
-            Inherited from global: {formatDisplayValue(entry.scopeValues.global)}
+            Inherited from global: <ValueSummary value={entry.scopeValues.global} />
           </p>
         );
       }
       return (
         <p class="config-entry__shadowed">
-          Inherited from default:{' '}
-          {entry.definition.defaultValue === undefined
-            ? 'not set'
-            : formatDisplayValue(entry.definition.defaultValue)}
+          Inherited from default: <ValueDisplay value={entry.definition.defaultValue} />
         </p>
       );
     }
@@ -375,7 +377,7 @@ export function ConfigEntryRow({
         <>
           {shadowed.map((s) => (
             <p key={s} class="config-entry__shadowed">
-              {s === 'store' ? 'Store' : 'Global'} value: {formatDisplayValue(entry.scopeValues[s])} (shadowed by{' '}
+              {s === 'store' ? 'Store' : 'Global'} value: <ValueSummary value={entry.scopeValues[s]} /> (shadowed by{' '}
               {entry.source})
             </p>
           ))}

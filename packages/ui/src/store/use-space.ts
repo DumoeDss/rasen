@@ -66,6 +66,21 @@ export function spaceSection(path: string | undefined): string {
 }
 
 /**
+ * Whether the path addresses a single pipeline's canvas route — a space-prefixed
+ * `pipelines/<name>` (view or edit), NOT the `pipelines` list page. The canvas
+ * route is viewport-locked (pipelines-ui spec); every other route scrolls
+ * normally, so this is the single predicate the shell uses to apply the lock.
+ * Pure cross-platform string logic (route segments only, never a filesystem
+ * path) so it is unit-testable without a router.
+ */
+export function isPipelineCanvasPath(path: string | undefined): boolean {
+  const segments = segmentsOf(path);
+  const prefix = segments[0];
+  if (prefix !== 'p' && prefix !== 's') return false;
+  return segments[2] === 'pipelines' && Boolean(segments[3]);
+}
+
+/**
  * Builds a space-scoped route: `/p/<id>/<section>` or `/s/<id>/<section>`,
  * with an optional trailing sub-segment (e.g. a task's change name). The id
  * and sub-segment are `encodeURIComponent`-guarded for path safety only —
