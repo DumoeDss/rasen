@@ -239,6 +239,8 @@ function render(j) {
   renderCaveats(j);
   if (runtime === 'codex') {
     renderCodex(j);
+  } else if (runtime === 'zed') {
+    renderZed(j);
   } else {
     renderClaude(j);
   }
@@ -682,6 +684,104 @@ function renderCodexSidePanel(j, hasRebuilds) {
     `<div class="meta" style="margin-top:10px">Codex has no cache-write TTL tiers; the "idle-gap" rebuild cause is an approximation from request spacing, and a rebuild attributed to injection means a user message arrived — never a message-chain fork.</div>`;
 
   if (hasRebuilds) renderCodexTurnsTable(j, 'codexTurnsSide');
+}
+
+// ---------- Zed runtime (first-class runtime: "zed") ----------
+// Zed stores only aggregate totals (uncached/cached input + output) per
+// thread, no per-request detail — so no composition/timeline card, one row
+// per thread, and the data limits render visibly (top caveat banner + the
+// side "Zed data limits" panel), never hidden.
+function renderZed(j) {
+  document.getElementById('secondTableTitle').textContent = 'Zed token totals';
+  document.getElementById('sidePanelsTitle').textContent = 'Zed data limits';
+  renderZedMeta(j);
+  renderZedTiles(j);
+  renderZedThreadTable(j);
+  renderZedTotalsTable(j);
+  renderZedLimits(j);
+}
+
+function renderZedMeta(j) {
+  const s = j.session;
+  const extra = [];
+  if (s.workingDir) extra.push(`dir <b>${esc(s.workingDir)}</b>`);
+  if (s.firstUserCommand) {
+    const fc = s.firstUserCommand;
+    extra.push(`first command “${esc(fc.slice(0, 80))}${fc.length > 80 ? '…' : ''}”`);
+  }
+  document.getElementById('sessionMeta').innerHTML =
+    `zed session <b>${esc(s.title || s.id)}</b> · ${s.start ? new Date(s.start).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '?'} · ` +
+    `duration <b>${s.durationMs ? durStr(s.durationMs) : '?'}</b> · <b>${s.agentCount}</b> threads · generated ${esc(j.generatedAt).slice(0, 16)}` +
+    (extra.length ? `<div class="meta" style="margin-top:4px">${extra.join(' · ')}</div>` : '');
+}
+
+function renderZedTiles(j) {
+  const t = j.totals.rawTokens;
+  const tiles = [
+    [fmt(t.inputTokens), 'input tokens', 'uncached'],
+    [fmt(t.cachedInputTokens), 'cached input tokens', 'cache read'],
+    [fmt(t.outputTokens), 'output tokens', ''],
+    [(j.totals.cacheHitRatio * 100).toFixed(1) + '%', 'cache hit ratio', 'cached / (uncached + cached)'],
+    [fmtInt(j.totals.retainedRequests), 'retained requests', 'not a complete API count'],
+    [fmtInt(j.session.agentCount), 'threads', 'root + descendants'],
+  ];
+  document.getElementById('tiles').innerHTML = tiles.map(([v, l, sub]) =>
+    `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`).join('');
+}
+
+function renderZedThreadTable(j) {
+  const rows = j.threads.map((t) => ({
+    idx: t.index, title: t.title || t.threadId.slice(0, 8), kind: t.kind, model: t.model || '',
+    input: t.rawTokens.inputTokens, cached: t.rawTokens.cachedInputTokens, output: t.rawTokens.outputTokens,
+    hitRatio: t.cacheHitRatio, retained: t.retainedRequests,
+    parent: t.parentThreadId ? t.parentThreadId.slice(0, 8) : '—',
+  }));
+  sortable('agentTableWrap', [
+    ['idx', '#'], ['title', 'thread', true], ['kind', 'kind', true], ['model', 'model', true],
+    ['input', 'input'], ['cached', 'cached'], ['output', 'output'], ['hitRatio', 'hit ratio'],
+    ['retained', 'retained reqs'], ['parent', 'parent', true],
+  ], rows, (r) =>
+    `<tr><td>${r.idx}</td><td class="left">${esc(r.title)}</td><td class="left">${esc(r.kind)}</td>` +
+    `<td class="left">${esc(r.model)}</td><td>${fmt(r.input)}</td><td>${fmt(r.cached)}</td>` +
+    `<td>${fmt(r.output)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td><td>${fmtInt(r.retained)}</td>` +
+    `<td class="left">${esc(r.parent)}</td></tr>`,
+    'input');
+}
+
+function renderZedTotalsTable(j) {
+  const t = j.totals.rawTokens;
+  const rows = [
+    ['input tokens (uncached)', fmt(t.inputTokens)],
+    ['cached input tokens', fmt(t.cachedInputTokens)],
+    ['total input tokens', fmt(t.inputTokens + t.cachedInputTokens)],
+    ['output tokens', fmt(t.outputTokens)],
+    ['cache hit ratio', (j.totals.cacheHitRatio * 100).toFixed(1) + '%'],
+    ['retained requests', fmtInt(j.totals.retainedRequests)],
+    ['threads', fmtInt(j.session.agentCount)],
+  ].map(([l, v]) => `<tr><td class="left">${l}</td><td>${v}</td></tr>`).join('');
+  document.getElementById('churnTableWrap').innerHTML =
+    `<table><thead><tr><th class="left">field</th><th>value</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderZedLimits(j) {
+  const src = j.source || {};
+  const provRows = [
+    ['adapter', esc(src.adapter || 'zed-threads-db')],
+    ['data version', esc(src.dataVersion || 'unknown')],
+    ['database', esc(j.session.mainTranscript || '?')],
+  ].map(([l, v]) => `<tr><td class="left">${l}</td><td class="left">${v}</td></tr>`).join('');
+  const disclosure =
+    `<div class="caveat-banner" style="border-color:var(--baseline);background:color-mix(in srgb,var(--baseline) 12%,var(--surface));margin-top:12px">` +
+    `<b>Zed data limits</b><ul>` +
+    `<li>No reasoning-output or cache-write totals — omitted, not zero.</li>` +
+    `<li>Request counts are retained entries; they can undercount after a compaction.</li>` +
+    `<li>One aggregate entry per thread — no per-request or per-turn timeline.</li>` +
+    `<li>Only parent_id-linked Zed threads are included; external Claude/Codex tools are not.</li>` +
+    `</ul></div>`;
+  document.getElementById('sidePanels').innerHTML =
+    `<table><thead><tr><th class="left">provenance</th><th class="left">value</th></tr></thead><tbody>${provRows}</tbody></table>` +
+    disclosure +
+    `<div class="meta" style="margin-top:10px">Zed's threads.db is an internal, undocumented format; these figures are experimental and may change with Zed updates.</div>`;
 }
 </script>
 </body>
