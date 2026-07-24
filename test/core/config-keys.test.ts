@@ -216,9 +216,9 @@ describe('config-keys registry', () => {
   });
 
   describe('keepalive.beatSeconds (keepalive-beat-config key)', () => {
-    it('is a global-only number key defaulting to 270 in the Pipelines group', () => {
+    it('is a global+project number key defaulting to 270 in the Pipelines group', () => {
       expect(validateConfigKeyPath('keepalive.beatSeconds', 'global').valid).toBe(true);
-      expect(validateConfigKeyPath('keepalive.beatSeconds', 'project').valid).toBe(false);
+      expect(validateConfigKeyPath('keepalive.beatSeconds', 'project').valid).toBe(true);
       expect(validateConfigKeyPath('keepalive.beatSeconds', 'store').valid).toBe(false);
       const def = findConfigKeyDefinition('keepalive.beatSeconds', 'global')!;
       expect(def.type).toBe('number');
@@ -245,6 +245,15 @@ describe('config-keys registry', () => {
     it('round-trips a valid beatSeconds through the global config schema and rejects out-of-range', () => {
       expect(GlobalConfigSchema.safeParse({ keepalive: { beatSeconds: 120 } }).success).toBe(true);
       expect(GlobalConfigSchema.safeParse({ keepalive: { beatSeconds: 300 } }).success).toBe(false);
+    });
+
+    it('round-trips a valid beatSeconds through the project config schema and rejects out-of-range', () => {
+      expect(
+        ProjectConfigSchema.safeParse({ schema: 'spec-driven', keepalive: { beatSeconds: 120 } }).success
+      ).toBe(true);
+      expect(
+        ProjectConfigSchema.safeParse({ schema: 'spec-driven', keepalive: { beatSeconds: 300 } }).success
+      ).toBe(false);
     });
   });
 
@@ -314,7 +323,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-    it('assigns exactly 9 global-only, 2 global+project, 3 store+project, and 14 all-three keys', () => {
+    it('assigns exactly 8 global-only, 3 global+project, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -323,17 +332,16 @@ describe('config-keys registry', () => {
       const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
 
       // Guards a future key from silently missing the store scope.
-      // 9 = the machine-level keys from the store-scope re-scope plus
+      // 8 = the machine-level keys from the store-scope re-scope plus
       // ui.pinnedSpaces (spaces-page pins, deliberately global-only) plus the
-      // 4 keepalive keys (runtimes.claude/codex + contextFloor + beatSeconds —
-      // machine-level gates/tuning for `rasen agent wait`, deliberately
-      // global-only) — `delivery` was retired from this bucket, `workflows`
-      // moved to global+project (space-workflow-enablement), and `profile`
-      // moved to global+project (init-profile-lock: a project-scope value is the
-      // locked profile).
-      expect(globalOnly.length).toBe(9);
-      expect(globalProject.length).toBe(2);
-      expect(globalProject.map((def) => def.key).sort()).toEqual(['profile', 'workflows']);
+      // 3 keepalive keys still global-only (runtimes.claude/codex + contextFloor
+      // — machine-level gates for `rasen agent wait`). beatSeconds moved to
+      // global+project (per-project beat tuning) alongside `workflows`
+      // (space-workflow-enablement) and `profile` (init-profile-lock: a
+      // project-scope value is the locked profile). `delivery` was retired.
+      expect(globalOnly.length).toBe(8);
+      expect(globalProject.length).toBe(3);
+      expect(globalProject.map((def) => def.key).sort()).toEqual(['keepalive.beatSeconds', 'profile', 'workflows']);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
       // Five wildcard families: featureFlags (the sole global-only wildcard)

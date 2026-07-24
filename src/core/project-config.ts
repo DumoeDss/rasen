@@ -156,6 +156,27 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Context-handoff threshold configuration'),
 
+  // Optional: keepalive gate for `rasen agent wait` (cli-agent-wait spec).
+  // Only `beatSeconds` is project-settable (the registry marks
+  // runtimes/contextFloor global-only — machine-level runtime params); project
+  // scope wins over the global config value of the same name (see
+  // effective-config.ts). Mirrors the GlobalConfigSchema keepalive block so the
+  // two share a shape; runtimes/contextFloor are accepted here only for forward
+  // compatibility and are not project-settable.
+  keepalive: z
+    .object({
+      runtimes: z
+        .object({
+          claude: z.boolean().optional(),
+          codex: z.boolean().optional(),
+        })
+        .optional(),
+      contextFloor: z.number().int().nonnegative().optional(),
+      beatSeconds: z.number().int().min(90).max(280).optional(),
+    })
+    .optional()
+    .describe('Keepalive gate configuration (project scope; only beatSeconds is project-settable)'),
+
   // Optional: per-agent model configuration. `default` is the base model for
   // all roles; `roles` overrides it per role. Project scope wins over the
   // global config value of the same name (see effective-config.ts). Model

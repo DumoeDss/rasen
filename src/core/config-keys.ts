@@ -268,7 +268,7 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   {
     key: 'keepalive.beatSeconds',
-    scopes: ['global'],
+    scopes: ['global', 'project'],
     type: 'number',
     validate: (value) =>
       typeof value === 'number' && Number.isInteger(value) && value >= 90 && value <= 280
