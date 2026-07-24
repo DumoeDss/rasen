@@ -25,6 +25,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 
 import { LocationProvider } from 'preact-iso';
 import { ConfigPage } from '../../src/components/ConfigPage.js';
+import { guardedRoute } from '../../src/store/use-navigation-guard.js';
 import * as client from '../../src/api/client.js';
 import {
   configListFixture,
@@ -263,6 +264,15 @@ describe('ConfigPage SpaceProfileSelector (config-ui-package)', () => {
     await settle();
   }
 
+  async function clickUpdate(): Promise<void> {
+    const btn = container.querySelector('[data-testid="config-profile-update"]') as HTMLButtonElement;
+    await act(async () => {
+      btn.click();
+      await flush();
+    });
+    await settle();
+  }
+
   it('renders only in the Local Project tab at a project space (not Global)', async () => {
     (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
     await mountLocalProject();
@@ -284,14 +294,19 @@ describe('ConfigPage SpaceProfileSelector (config-ui-package)', () => {
     expect(client.getWorkflowEnablement).toHaveBeenCalledWith('/home/u/space-a');
   });
 
-  it('requires explicit confirmation before replacing a space override with a profile', async () => {
+  it('requires explicit confirmation at Update time before replacing a space override', async () => {
     (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'override', units: [] });
     (client.mutateWorkflowEnablement as any).mockResolvedValue({ mode: 'locked-profile', lockedProfile: 'core', units: [] });
     await mountLocalProject();
 
     expect(container.querySelector('[data-testid="config-profile-override"]')).not.toBeNull();
     await pick('core');
-    // Confirmation first — no mutation yet.
+    // A pick only stages a draft — no confirmation and no mutation yet.
+    expect(container.querySelector('[data-testid="config-profile-confirm"]')).toBeNull();
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+
+    // The replace-confirmation is folded into Update, still no mutation until confirmed.
+    await clickUpdate();
     expect(container.querySelector('[data-testid="config-profile-confirm"]')).not.toBeNull();
     expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
 
@@ -302,14 +317,59 @@ describe('ConfigPage SpaceProfileSelector (config-ui-package)', () => {
     expect(client.mutateWorkflowEnablement).toHaveBeenCalledWith({ root: '/home/u/space-a', op: 'set-profile', profile: 'core' });
   });
 
-  it('clears the lock when the user picks "Follow global profile"', async () => {
+  it('shows the override honestly as "custom (this space’s own selection)"', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'override', units: [] });
+    await mountLocalProject();
+    const picker = container.querySelector('[data-testid="config-profile-picker"]') as HTMLSelectElement;
+    const selectedOption = picker.options[picker.selectedIndex];
+    expect(selectedOption.textContent).toContain('custom (this space’s own selection)');
+    expect(selectedOption.disabled).toBe(true);
+  });
+
+  it('clears the lock when the user stages "Follow global profile" and clicks Update', async () => {
     (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'locked-profile', lockedProfile: 'core', units: [] });
     (client.mutateWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
     await mountLocalProject();
 
     await pick('');
+    // Staged, not applied.
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+    await clickUpdate();
     expect(client.mutateWorkflowEnablement).toHaveBeenCalledWith({ root: '/home/u/space-a', op: 'clear-profile' });
     expect(container.querySelector('[data-testid="config-profile-mode"]')!.textContent).toContain('user-wide profile');
+  });
+
+  it('a pick stages a draft without mutating; Update applies it and clears the reminder', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    (client.mutateWorkflowEnablement as any).mockResolvedValue({ mode: 'locked-profile', lockedProfile: 'my-set', units: [] });
+    await mountLocalProject();
+
+    // No draft yet → Update disabled, no reminder.
+    expect((container.querySelector('[data-testid="config-profile-update"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(container.querySelector('[data-testid="config-profile-reminder"]')).toBeNull();
+
+    await pick('my-set');
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="config-profile-reminder"]')!.textContent).toContain('my-set');
+    expect((container.querySelector('[data-testid="config-profile-update"]') as HTMLButtonElement).disabled).toBe(false);
+
+    await clickUpdate();
+    expect(client.mutateWorkflowEnablement).toHaveBeenCalledWith({ root: '/home/u/space-a', op: 'set-profile', profile: 'my-set' });
+    expect(container.querySelector('[data-testid="config-profile-reminder"]')).toBeNull();
+    expect(container.querySelector('[data-testid="config-profile-mode"]')!.textContent).toContain('my-set');
+  });
+
+  it('re-picking the applied value clears the reminder and disables Update', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'locked-profile', lockedProfile: 'core', units: [] });
+    await mountLocalProject();
+
+    await pick('my-set');
+    expect(container.querySelector('[data-testid="config-profile-reminder"]')).not.toBeNull();
+    // Re-selecting the currently-applied value drops the draft delta.
+    await pick('core');
+    expect(container.querySelector('[data-testid="config-profile-reminder"]')).toBeNull();
+    expect((container.querySelector('[data-testid="config-profile-update"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
   });
 
   it('lists every saved profile including a broken one, rendered non-selectable', async () => {
@@ -342,8 +402,177 @@ describe('ConfigPage SpaceProfileSelector (config-ui-package)', () => {
     await mountLocalProject();
 
     await pick('core');
+    await clickUpdate();
     expect(container.querySelector('[data-testid="config-profile-mutate-error"]')!.textContent).toContain('disk full');
     // The selector re-renders from the error's carried post-write state.
     expect(container.querySelector('[data-testid="config-profile-mode"]')!.textContent).toContain('core');
+  });
+
+  it('asks to discard an unapplied draft before switching to Global mode; stay leaves it', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    await mountLocalProject();
+    await pick('my-set');
+
+    // Attempt to leave Local via the mode switch — guarded.
+    await act(async () => {
+      clickChip(container, 'Global').click();
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-leave-dialog"]')).not.toBeNull();
+    // Still on Local Project with the selector and draft intact.
+    expect(container.querySelector('[data-testid="config-profile-selector"]')).not.toBeNull();
+
+    // Stay: dialog closes, draft preserved.
+    await act(async () => {
+      (container.querySelector('[data-testid="config-leave-stay"]') as HTMLElement).click();
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-leave-dialog"]')).toBeNull();
+    expect(container.querySelector('[data-testid="config-profile-reminder"]')).not.toBeNull();
+
+    // Discard: switch proceeds, selector unmounts (Global mode).
+    await act(async () => {
+      clickChip(container, 'Global').click();
+      await flush();
+    });
+    await act(async () => {
+      (container.querySelector('[data-testid="config-leave-discard"]') as HTMLElement).click();
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-profile-selector"]')).toBeNull();
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+  });
+
+  it('intercepts an in-app navigation click while a draft is unapplied', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    await mountLocalProject();
+    await pick('my-set');
+
+    // A same-origin anchor to a different path is intercepted (capture-phase).
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', '/workflows');
+    container.appendChild(anchor);
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-leave-dialog"]')).not.toBeNull();
+    expect(window.location.pathname).toBe('/p/proj_x/config');
+    anchor.remove();
+  });
+
+  it('confirm-discard on a route-leave completes the navigation via route()', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    await mountLocalProject();
+    await pick('my-set');
+
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', '/workflows');
+    container.appendChild(anchor);
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-leave-dialog"]')).not.toBeNull();
+
+    await act(async () => {
+      (container.querySelector('[data-testid="config-leave-discard"]') as HTMLElement).click();
+      await flush();
+    });
+    // Discard routes to the stashed href; nothing was ever applied.
+    expect(window.location.pathname).toBe('/workflows');
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+    anchor.remove();
+  });
+
+  it('switching section tabs with a staged draft asks first (discard vs stay)', async () => {
+    // A second project-settable key in the Advanced-tab group gives the Local
+    // view a second tab to switch to, exercising the requestTab guard (task 3.4;
+    // the Project and Archive groups both fold into one tab, so a distinct-tab
+    // key is needed to reach the tab-switch path).
+    (client.listConfig as any).mockResolvedValue({
+      ...configWithProjectKey,
+      entries: [
+        ...configWithProjectKey.entries,
+        {
+          definition: {
+            key: 'test.advanced.key',
+            scopes: ['project'],
+            type: 'string',
+            defaultValue: '',
+            description: 'A project-scoped advanced key (test fixture)',
+            group: 'Advanced',
+            constraints: { type: 'string' },
+          },
+          value: '',
+          source: 'default',
+          scopeValues: {},
+        },
+      ],
+    });
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    await mountLocalProject();
+    await pick('my-set');
+
+    // Switch to the Advanced tab — guarded.
+    await act(async () => {
+      clickChip(container, 'Advanced').click();
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-leave-dialog"]')).not.toBeNull();
+    // Stay: still on Project with the selector + draft.
+    await act(async () => {
+      (container.querySelector('[data-testid="config-leave-stay"]') as HTMLElement).click();
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-profile-selector"]')).not.toBeNull();
+
+    // Discard: the tab switch proceeds and the selector unmounts.
+    await act(async () => {
+      clickChip(container, 'Advanced').click();
+      await flush();
+    });
+    await act(async () => {
+      (container.querySelector('[data-testid="config-leave-discard"]') as HTMLElement).click();
+      await flush();
+    });
+    expect(container.querySelector('[data-testid="config-profile-selector"]')).toBeNull();
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+  });
+
+  it('programmatic navigation (guardedRoute) is intercepted while a draft is unapplied', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    await mountLocalProject();
+    await pick('my-set');
+
+    // A space switch / Manage-spaces navigates via route() (no anchor click the
+    // capture listener could see); guardedRoute must consult the active guard.
+    const spyRoute = vi.fn();
+    await act(async () => {
+      guardedRoute(spyRoute, '/spaces');
+      await flush();
+    });
+    expect(spyRoute).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="config-leave-dialog"]')).not.toBeNull();
+  });
+
+  it('override + Follow global + Update confirms and issues follow-global (not the no-op clear-profile)', async () => {
+    (client.getWorkflowEnablement as any).mockResolvedValue({ mode: 'override', units: [] });
+    (client.mutateWorkflowEnablement as any).mockResolvedValue({ mode: 'profile', units: [] });
+    await mountLocalProject();
+
+    // Stage "Follow global profile" from override mode.
+    await pick('');
+    await clickUpdate();
+    // A distinct follow-global confirm (not the replace confirm), no mutation yet.
+    expect(container.querySelector('[data-testid="config-profile-follow-global-confirm"]')).not.toBeNull();
+    expect(client.mutateWorkflowEnablement).not.toHaveBeenCalled();
+
+    await act(async () => {
+      (container.querySelector('[data-testid="config-profile-follow-global-yes"]') as HTMLElement).click();
+      await flush();
+    });
+    // Clears BOTH layers via the dedicated op — never the silent clear-profile.
+    expect(client.mutateWorkflowEnablement).toHaveBeenCalledWith({ root: '/home/u/space-a', op: 'follow-global' });
   });
 });

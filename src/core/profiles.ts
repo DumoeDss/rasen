@@ -122,29 +122,85 @@ export interface ResolveDesiredWorkflowSelectionResult {
   ids: string[];
   /** Stored ids the catalog no longer recognizes (e.g. a retired built-in). */
   unknown: string[];
+  /**
+   * Present when the user-wide profile named a saved profile that could not be
+   * resolved on this machine, so resolution fell back to the `full` profile.
+   * Callers (update, init) print it as a diagnostic; resolution never writes.
+   */
+  profileWarning?: UserWideProfileWarning;
+}
+
+/**
+ * Why the user-wide (global) profile could not govern resolution: it names a
+ * saved profile whose definition is missing or invalid on this machine.
+ * Mirrors the `unresolvable` shape of {@link ProfileLockWarning}; resolution
+ * falls back to the default `full` profile and carries this on the result.
+ */
+export type UserWideProfileWarning = { kind: 'unresolvable'; profile: string; detail: string };
+
+/**
+ * The un-expanded base workflow list the user-wide `profile` setting denotes,
+ * the global-scope analogue of {@link resolveLockedProfileBase}: `full`,
+ * `core`, and `custom` behave exactly as before (via `getProfileWorkflows`,
+ * with `custom` reading the global `workflows` list); any other string reads
+ * the saved definition's stored ids verbatim. An unresolvable saved name
+ * returns a warning — callers fall back to the default `full` profile, never a
+ * hard error, mirroring the project-lock fallback so a machine missing a
+ * profile file keeps working. Shared by `resolveDesiredWorkflowSelection` and
+ * the management API's base-selection reads so none can disagree about what a
+ * user-wide profile means.
+ */
+export function resolveUserWideProfileBase(
+  profile: string,
+  customWorkflows: string[] | undefined,
+  expertSelectionExplicit: boolean
+): { ok: true; workflows: string[] } | { ok: false; warning: UserWideProfileWarning } {
+  if (profile === 'full' || profile === 'core' || profile === 'custom') {
+    return {
+      ok: true,
+      workflows: [...getProfileWorkflows(profile, customWorkflows, { expertSelectionExplicit })],
+    };
+  }
+  try {
+    return { ok: true, workflows: [...readNamedProfile(profile).workflows] };
+  } catch (error) {
+    return {
+      ok: false,
+      warning: {
+        kind: 'unresolvable',
+        profile,
+        detail: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 /**
  * The single desired-set resolver shared by `init` and `update` (design.md
- * D3): resolves the profile's default workflow+expert ids, drops any the
- * catalog no longer recognizes, then closes over `requires.workflows` AND
- * (opt-in here) `requires.skills` so a lean profile still installs the
+ * D3): resolves the profile's default workflow+expert ids — through
+ * {@link resolveUserWideProfileBase} so a saved profile name is first-class at
+ * global scope (unresolvable → `full` with a warning on the result) — drops
+ * any the catalog no longer recognizes, then closes over `requires.workflows`
+ * AND (opt-in here) `requires.skills` so a lean profile still installs the
  * experts its selected workflows require. Threading one resolved array to
  * both the install path (`getSkillTemplates`) and the removal seam
  * (`removeUnselectedSkillDirs`/drift) keeps them from ever disagreeing.
  */
 export function resolveDesiredWorkflowSelection(
   catalog: WorkflowCatalog,
-  profile: Profile,
+  profile: string,
   customWorkflows: string[] | undefined,
   expertSelectionExplicit: boolean
 ): ResolveDesiredWorkflowSelectionResult {
-  const base = getProfileWorkflows(profile, customWorkflows, { expertSelectionExplicit });
+  const baseResult = resolveUserWideProfileBase(profile, customWorkflows, expertSelectionExplicit);
+  const base = baseResult.ok
+    ? baseResult.workflows
+    : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
   const { known, unknown } = filterKnownWorkflowRoots(catalog, base);
   const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
     (definition) => definition.id
   );
-  return { ids, unknown };
+  return { ids, unknown, ...(baseResult.ok ? {} : { profileWarning: baseResult.warning }) };
 }
 
 /**
@@ -226,6 +282,23 @@ export function profileLockWarningToDiagnostic(warning: ProfileLockWarning): Con
   }
 }
 
+/**
+ * Maps a {@link UserWideProfileWarning} to its localized config-diagnostic —
+ * the global-scope analogue of {@link profileLockWarningToDiagnostic}. Surfaced
+ * by `update`/`init` when the user-wide profile named an unresolvable saved
+ * profile and resolution fell back to `full`.
+ */
+export function userWideProfileWarningToDiagnostic(
+  warning: UserWideProfileWarning
+): ConfigDiagnostic {
+  return {
+    key: 'userWideProfileUnresolvable',
+    values: { profile: warning.profile, detail: warning.detail },
+    fallback: `Warning: user-wide profile '${warning.profile}' could not be resolved (${warning.detail}); using the default 'full' profile instead.`,
+    output: 'warn',
+  };
+}
+
 /** Result of {@link resolveProjectWorkflowSelection}, naming which layer produced the set. */
 export interface ResolveProjectWorkflowSelectionResult extends ResolveDesiredWorkflowSelectionResult {
   /**
@@ -259,7 +332,7 @@ export interface ResolveProjectWorkflowSelectionResult extends ResolveDesiredWor
 export function resolveProjectWorkflowSelection(
   catalog: WorkflowCatalog,
   projectRoot: string,
-  profile: Profile,
+  profile: string,
   customWorkflows: string[] | undefined,
   expertSelectionExplicit: boolean
 ): ResolveProjectWorkflowSelectionResult {

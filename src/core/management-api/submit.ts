@@ -216,7 +216,7 @@ function runSubmission(
     // CLI option (design D3, injection posture).
     const argv = [cliEntry, 'new', 'change', name, `--proposal=${description}`, '--json'];
 
-    const child = spawn(process.execPath, argv, { cwd, shell: false });
+    const child = spawn(process.execPath, argv, { cwd, shell: false, windowsHide: true });
 
     let stdout = '';
     let stderr = '';

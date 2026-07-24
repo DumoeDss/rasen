@@ -26,7 +26,17 @@ import { getStoreMetadataDir } from './foundation.js';
 import { StoreError } from './errors.js';
 
 const fs = nodeFs.promises;
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+// Route every git spawn through here so `windowsHide` is always set — no
+// console window flashes when a console-less parent runs a git probe
+// (windows-process-launch spec; mirrors store/git.ts:24).
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { cwd?: string } = {}
+): Promise<{ stdout: string; stderr: string }> {
+  return execFilePromise(file, args, { ...options, windowsHide: true });
+}
 
 // -----------------------------------------------------------------------------
 // Planning-directory layout constants

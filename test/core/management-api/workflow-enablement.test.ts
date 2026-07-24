@@ -311,6 +311,29 @@ describe('workflow-enablement API (space-workflow-enablement design D4/D5)', () 
       expect(res.json().mode).toBe('override');
     }, 30_000);
 
+    it('follow-global clears BOTH the override and the lock, returning to the profile (M1)', async () => {
+      // A space carrying BOTH its own override and a lock: follow-global must
+      // clear both so the space genuinely follows the user-wide profile —
+      // unlike clear-profile (lock only) or reset (override only).
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nprofile: core\nworkflows:\n  - review\n'
+      );
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'follow-global' }),
+      });
+      expect(res.status).toBe(200);
+      const config = readProjectConfig(projectRoot);
+      expect(config?.profile).toBeUndefined();
+      expect(config?.workflows).toBeUndefined();
+      expect(res.json().mode).toBe('profile');
+    }, 30_000);
+
     it('a concurrent mutation is refused as busy', async () => {
       const h = await startServer();
       const first = req(h.port, {

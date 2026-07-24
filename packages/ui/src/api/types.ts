@@ -38,6 +38,13 @@ export interface StoreLayerRef {
 export interface WireConstraints {
   type: ConfigValueType;
   enumValues?: readonly string[];
+  /**
+   * Per-scope allowed values for an enum key whose domain differs by scope
+   * (today only `profile`). Present only for such keys; the editor renders the
+   * list for the scope it is writing to and falls back to `enumValues` when
+   * this map is absent. Mirror of the core wire type (config-http-api spec).
+   */
+  enumValuesByScope?: Partial<Record<ConfigScope, readonly string[]>>;
   /** For `type: 'number'`, or the fraction branch of `type: 'threshold'`. */
   range?: { gt: number; lte: number };
   /**
@@ -650,6 +657,20 @@ export interface WorkflowListResponse {
   diagnostics: WorkflowDiagnostic[];
 }
 
+/** One workflow's dependency associations (mirror of the core wire type; design D7). */
+export interface WorkflowDependencyEntryWire {
+  id: string;
+  /** The transitive strong dependency closure (excludes `id`; each id once). */
+  requires: string[];
+  /** The workflow ids this unit weakly enhances. */
+  enhances: string[];
+}
+
+/** `GET /api/v1/workflow-dependencies` response — the advisory dependency graph. */
+export interface WorkflowDependenciesResponse {
+  dependencies: WorkflowDependencyEntryWire[];
+}
+
 /** The full definition from `GET /api/v1/workflows/<id>` (mirrors `workflowDefinitionForJson`). */
 export interface WorkflowDefinitionWire {
   id: string;
@@ -750,7 +771,10 @@ export type WorkflowEnablementMutationRequest =
   | { root: string; op: 'reset' }
   // ui-profile-workflow-split design D2: switch a space's profile lock.
   | { root: string; op: 'set-profile'; profile: string }
-  | { root: string; op: 'clear-profile' };
+  | { root: string; op: 'clear-profile' }
+  // ui-profile-polish M1: clear BOTH the override and the lock so the space
+  // follows the user-wide profile (distinct from reset/clear-profile).
+  | { root: string; op: 'follow-global' };
 
 // ---- Named workflow profiles (ui-profile-workflow-split profile-http-api) ----
 // Mirror of the CLI's `management-api/wire-types.ts` shapes (mirror discipline).

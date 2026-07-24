@@ -194,10 +194,11 @@ function spawnAgentCli(bin: string, argv: string[], options: SpawnOptions): Chil
     return spawn(comSpec, ['/d', '/s', '/c', `"${commandLine}"`], {
       ...options,
       shell: false,
+      windowsHide: true,
       windowsVerbatimArguments: true,
     });
   }
-  return spawn(bin, argv, { ...options, shell: false });
+  return spawn(bin, argv, { ...options, shell: false, windowsHide: true });
 }
 
 export function createSessionSupervisor(options: CreateSessionSupervisorOptions): SessionSupervisor {

@@ -26,7 +26,17 @@ import {
   type SpecUpdate,
 } from './specs-apply.js';
 
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+// Route every git spawn through here so `windowsHide` is always set — no
+// console window flashes when the daemon (a console-less parent on Windows)
+// runs an archive git probe (windows-process-launch spec; store/git.ts:24).
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { cwd?: string } = {}
+): Promise<{ stdout: string; stderr: string }> {
+  return execFilePromise(file, args, { ...options, windowsHide: true });
+}
 
 function isMissingPathError(error: unknown): boolean {
   return (

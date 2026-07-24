@@ -36,6 +36,7 @@ import type {
   SubmitChangeRequest,
   SubmitChangeResponse,
   TaskDetailResponse,
+  WorkflowDependenciesResponse,
   WorkflowDetailResponse,
   WorkflowEnablementMutationRequest,
   WorkflowEnablementResponse,
@@ -356,6 +357,11 @@ export function killSession(id: string): Promise<SessionActionResponse> {
 /** The user-wide workflow library (mirrors `workflow list --json`). */
 export function listWorkflows(): Promise<WorkflowListResponse> {
   return request<WorkflowListResponse>('/api/v1/workflows');
+}
+
+/** The advisory workflow dependency graph (strong closure + weak enhances per unit; design D7). */
+export function getWorkflowDependencies(): Promise<WorkflowDependenciesResponse> {
+  return request<WorkflowDependenciesResponse>('/api/v1/workflow-dependencies');
 }
 
 /** One workflow's full definition and usage (mirrors `workflow show --json`); id used verbatim, only percent-encoded. */

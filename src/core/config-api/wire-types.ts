@@ -28,6 +28,15 @@ export interface StoreLayerRef {
 export interface WireConstraints {
   type: ConfigValueType;
   enumValues?: readonly string[];
+  /**
+   * Per-scope allowed values for an enum key whose domain differs by scope
+   * (today only `profile`: global adds `custom`, both scopes add saved names).
+   * Present only for such keys; covers exactly the scopes the key is settable
+   * in. A client renders the value list for the scope it is writing to and
+   * falls back to the static `enumValues` when this map is absent, so an older
+   * client stays correct (config-http-api spec).
+   */
+  enumValuesByScope?: Partial<Record<ConfigScope, readonly string[]>>;
   /** For `type: 'number'`, or the fraction branch of `type: 'threshold'`. */
   range?: { gt: number; lte: number };
   /**

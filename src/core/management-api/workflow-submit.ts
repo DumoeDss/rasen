@@ -230,7 +230,7 @@ function runMutation(
 ): Promise<WorkflowSubmitResult> {
   return new Promise((resolve) => {
     const argv = [cliEntry, ...argvSuffix];
-    const child = spawn(process.execPath, argv, { cwd, shell: false });
+    const child = spawn(process.execPath, argv, { cwd, shell: false, windowsHide: true });
 
     let stdout = '';
     let stderr = '';

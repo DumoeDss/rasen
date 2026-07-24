@@ -34,6 +34,7 @@ import {
   getProfileWorkflows,
   resolveLockedProfileBase,
   resolveProjectWorkflowSelection,
+  resolveUserWideProfileBase,
 } from '../profiles.js';
 import { resolveProfileDefinition } from '../named-profiles.js';
 import {
@@ -121,9 +122,16 @@ function resolveBaseSelectionIds(
       return [...filterKnownWorkflowRoots(catalog, lockBase.workflows).known];
     }
   }
-  const base = getProfileWorkflows(globalConfig.profile ?? 'full', globalConfig.workflows, {
-    expertSelectionExplicit,
-  });
+  // Route through the user-wide seam so a saved profile name is resolved (an
+  // unresolvable one degrades to `full`, exactly as the seam's own fallback).
+  const userWide = resolveUserWideProfileBase(
+    globalConfig.profile ?? 'full',
+    globalConfig.workflows,
+    expertSelectionExplicit
+  );
+  const base = userWide.ok
+    ? userWide.workflows
+    : getProfileWorkflows('full', undefined, { expertSelectionExplicit });
   return [...filterKnownWorkflowRoots(catalog, base).known];
 }
 
@@ -210,13 +218,14 @@ export function createWorkflowEnablementSubmitter(
       body.op !== 'disable' &&
       body.op !== 'reset' &&
       body.op !== 'set-profile' &&
-      body.op !== 'clear-profile'
+      body.op !== 'clear-profile' &&
+      body.op !== 'follow-global'
     ) {
       return {
         ok: false,
         status: 400,
         code: 'invalid_input',
-        message: 'op must be "enable", "disable", "reset", "set-profile", or "clear-profile".',
+        message: 'op must be "enable", "disable", "reset", "set-profile", "clear-profile", or "follow-global".',
       };
     }
 
@@ -310,6 +319,18 @@ function writeSelection(
       return { ok: true, response: undefined };
     }
 
+    if (request.op === 'follow-global') {
+      // Clear BOTH the override and the lock in one atomic write (ui-profile-polish
+      // M1): from override mode, clearing only the lock (`clear-profile`) would be
+      // a silent no-op because the override still governs. This genuinely returns
+      // the space to the user-wide profile.
+      updateProjectConfigKeys(root, [
+        { keyPath: 'workflows', value: undefined },
+        { keyPath: 'profile', value: undefined },
+      ]);
+      return { ok: true, response: undefined };
+    }
+
     if (request.op === 'set-profile') {
       // Write the lock AND clear any `workflows` override in ONE write (design
       // D2/D4 "same write step"): an override always shadows the lock, so
@@ -328,11 +349,17 @@ function writeSelection(
     const existingOverride = projectConfig?.workflows;
     // D2: first toggle materializes a snapshot of the current effective
     // (un-expanded) selection; a space already carrying an override just
-    // updates that list.
-    const base =
-      existingOverride !== undefined
-        ? [...existingOverride]
-        : [...getProfileWorkflows(globalConfig.profile ?? 'full', globalConfig.workflows)];
+    // updates that list. The user-wide base (which reads a saved profile file
+    // off disk) is resolved ONLY when there is no override to snapshot (t6).
+    const resolveBase = (): string[] => {
+      const userWideBase = resolveUserWideProfileBase(
+        globalConfig.profile ?? 'full',
+        globalConfig.workflows,
+        false
+      );
+      return userWideBase.ok ? userWideBase.workflows : [...getProfileWorkflows('full', undefined)];
+    };
+    const base = existingOverride !== undefined ? [...existingOverride] : resolveBase();
     const { known } = filterKnownWorkflowRoots(catalog, base);
     const nextSet = new Set(known);
     if (request.op === 'enable') {
@@ -362,7 +389,7 @@ function runUpdate(
   killGraceMs: number
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliEntry, 'update'], { cwd, shell: false });
+    const child = spawn(process.execPath, [cliEntry, 'update'], { cwd, shell: false, windowsHide: true });
 
     let stdout = '';
     let stderr = '';

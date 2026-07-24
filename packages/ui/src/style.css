@@ -669,6 +669,11 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .config-profile__hint { color: var(--muted); font-size: var(--text-sm); max-width: 80ch; }
 .config-profile__picker { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
 .config-profile__picker select { min-width: 220px; font-weight: 600; }
+/* The select and its Update button share a row under the label span. */
+.config-profile__picker { align-items: flex-start; }
+.config-profile__picker select { display: inline-block; }
+.config-profile__picker .btn--primary { margin-top: var(--space-1); }
+.config-profile__reminder { color: var(--accent); font-size: var(--text-sm); font-weight: 600; margin: 0; }
 .config-profile__mode-text { color: var(--fg-2); font-size: var(--text-sm); }
 .config-profile__override, .config-profile__confirm-replace { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-sm); }
 .config-profile__confirm { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; color: var(--muted); }
@@ -1068,8 +1073,11 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .profiles-editbar__clean { color: var(--meta); font-size: var(--text-sm); }
 .profiles-editbar__saved { color: var(--muted); font-size: var(--text-sm); max-width: 60ch; }
 .profiles-editbar__error { color: var(--danger-fg); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.profiles-editbar__bulk { display: inline-flex; gap: var(--space-2); }
+.profiles-editbar__cascade { color: var(--accent); font-size: var(--text-sm); max-width: 60ch; }
 
 .workflow-card__toggle-reason { color: var(--meta); font-size: var(--text-xs); }
+.workflow-card__enhances { color: var(--accent); font-size: var(--text-xs); font-weight: 600; }
 
 /* ═══ 25. Pipelines page (pipelines-ui spec) ════════════════════════════════ */
 /* Layout/structure only — reuses the app tokens and idioms: panels = the

@@ -4,6 +4,7 @@ import * as client from '../api/client.js';
 import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/types.js';
 import { parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces, recordSpaceVisit } from '../store/recent-spaces.js';
+import { guardedRoute } from '../store/use-navigation-guard.js';
 
 /** The header switcher shows at most this many space entries (spaces-ui design D2); "All spaces…" escapes to the full page. */
 const SWITCHER_CAP = 8;
@@ -125,12 +126,14 @@ export function SpaceSwitcher() {
 
   function onChange(event: Event) {
     const value = (event.target as HTMLSelectElement).value;
+    // Programmatic navigation must pass through the guard (m2): a dirty profile
+    // draft gets the same discard/stay confirmation an anchor click would.
     if (value === ALL_SPACES) {
-      route('/spaces');
+      guardedRoute(route, '/spaces');
       return;
     }
     const selected = parseSelector(value);
-    if (selected) route(spaceHref(selected, section));
+    if (selected) guardedRoute(route, spaceHref(selected, section));
   }
 
   return (

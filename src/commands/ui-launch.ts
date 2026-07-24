@@ -69,7 +69,7 @@ function openInBrowser(url: string): void {
       command = 'xdg-open';
       args = [url];
     }
-    const child = spawn(command, args, { stdio: 'ignore', detached: true, shell: false });
+    const child = spawn(command, args, { stdio: 'ignore', detached: true, shell: false, windowsHide: true });
     child.on('error', () => {
       // Best-effort: the URL is already printed for manual opening.
     });

@@ -10,11 +10,16 @@ import * as path from 'node:path';
 // platform, never synchronously) — every other test in this file passes
 // through to the real `child_process.spawn` untouched.
 let mockSpawnShouldThrowSync = false;
+// Records every spawn's arguments so a test can assert the options passed
+// (e.g. windowsHide). `mock`-prefixed so vitest's hoisted factory may close
+// over it.
+const mockSpawnCalls: Array<Parameters<typeof import('node:child_process').spawn>> = [];
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
     spawn: (...args: Parameters<typeof actual.spawn>) => {
+      mockSpawnCalls.push(args);
       if (mockSpawnShouldThrowSync) {
         throw Object.assign(new Error('ENOENT (simulated synchronous spawn failure)'), { code: 'ENOENT' });
       }
@@ -96,6 +101,24 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(finalRecord.state).toBe('exited');
     expect(finalRecord.terminationReason).toBe('exit');
     expect(finalRecord.exitCode).toBe(0);
+  }, 10_000);
+
+  it('spawns the agent CLI with windowsHide set (no console window flash on Windows)', async () => {
+    mockSpawnCalls.length = 0;
+    const supervisor = makeSupervisor();
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen-auto',
+      task: 'MODE=fast-exit x',
+      cwd,
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const options = mockSpawnCalls.at(-1)?.[2] as { windowsHide?: boolean } | undefined;
+    expect(options?.windowsHide).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
   }, 10_000);
 
   it('captures agentSessionId from the stream-json init event', async () => {

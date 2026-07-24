@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { serializeConfigEntry } from '../../../src/core/config-api/serialize.js';
 import { findConfigKeyDefinition } from '../../../src/core/config-keys.js';
+import { saveNamedProfile } from '../../../src/core/named-profiles.js';
 import type { EffectiveConfigEntry } from '../../../src/core/effective-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
 
@@ -47,6 +51,12 @@ describe('serializeConfigEntry', () => {
       enumValues: ['solo', 'collaborative'],
       range: undefined,
     });
+  });
+
+  it('a scope-invariant enum carries no enumValuesByScope', () => {
+    const entry = entryFor('repoMode', 'global');
+    const wire = serializeConfigEntry(entry);
+    expect(wire.definition.constraints.enumValuesByScope).toBeUndefined();
   });
 
   it('exposes every canonical language through config API metadata', () => {
@@ -99,6 +109,34 @@ describe('serializeConfigEntry', () => {
     const wire = serializeConfigEntry(entry);
     expect(wire.value).toBe(5); // never clamped or rewritten
     expect(wire.warnings).toEqual([expect.stringContaining('Invalid store value on disk for "handoff.threshold"')]);
+  });
+
+  describe('profile per-scope enum domains (config-http-api spec)', () => {
+    let tempDir: string;
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-serialize-profile-'));
+      originalEnv = { ...process.env };
+      process.env.RASEN_HOME = tempDir;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('profile entry serves both scope domains, saved names included', () => {
+      saveNamedProfile('my-set', { version: 1, workflows: ['propose'] });
+      const entry = entryFor('profile', 'global', { value: 'full', source: 'default' });
+      const wire = serializeConfigEntry(entry);
+      const byScope = wire.definition.constraints.enumValuesByScope;
+      expect(byScope).toBeDefined();
+      expect(byScope!.global).toEqual(['full', 'core', 'custom', 'my-set']);
+      expect(byScope!.project).toEqual(['full', 'core', 'my-set']);
+      // The static list stays for backward compatibility.
+      expect(wire.definition.constraints.enumValues).toEqual(['full', 'core', 'custom']);
+    });
   });
 
   it('ignores a scope value the definition does not support', () => {

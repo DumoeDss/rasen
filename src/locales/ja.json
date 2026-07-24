@@ -610,7 +610,8 @@
       "skillVersionMismatch": "警告: インストール済みのスキルは rasen v{stampVersion} で生成されたものですが、実行中の CLI は v{cliVersion} です。`rasen update` を実行してください。",
       "profileLockShadowedByOverride": "注: ロックされたプロファイル '{profile}' は、このプロジェクトの workflows オーバーライドにより無効化されています。",
       "profileLockCustom": "警告: 'custom' はロックできるプロファイルではありません。ユーザー全体のプロファイルを代わりに使用します。",
-      "profileLockUnresolvable": "警告: ロックされたプロファイル '{profile}' を解決できませんでした（{detail}）。ユーザー全体のプロファイルを代わりに使用します。"
+      "profileLockUnresolvable": "警告: ロックされたプロファイル '{profile}' を解決できませんでした（{detail}）。ユーザー全体のプロファイルを代わりに使用します。",
+      "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。"
     }
   },
   "completion": {

@@ -610,7 +610,8 @@
       "skillVersionMismatch": "警告：已安装的技能由 rasen v{stampVersion} 生成；当前运行的 CLI 版本为 v{cliVersion}。请运行 `rasen update`。",
       "profileLockShadowedByOverride": "注：锁定的配置方案 '{profile}' 已被此项目的 workflows 覆盖设置遮蔽。",
       "profileLockCustom": "警告：'custom' 不能作为锁定的配置方案；将改用用户全局配置方案。",
-      "profileLockUnresolvable": "警告：无法解析锁定的配置方案 '{profile}'（{detail}）；将改用用户全局配置方案。"
+      "profileLockUnresolvable": "警告：无法解析锁定的配置方案 '{profile}'（{detail}）；将改用用户全局配置方案。",
+      "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。"
     }
   },
   "completion": {

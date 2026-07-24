@@ -139,10 +139,17 @@ export function ConfigEntryRow({
             }}
           />
         );
-      case 'select':
+      case 'select': {
+        // A current value outside the active scope's domain (e.g. a saved
+        // profile deleted after being set, or a hand-edited value) stays
+        // visible as an annotated, non-reselectable option rather than snapping
+        // to a wrong value or vanishing (config-ui-package spec, design D3).
+        const current = inputValue(draft);
+        const options = control.enumValues ?? [];
+        const missing = current !== '' && !options.includes(current);
         return (
           <select
-            value={inputValue(draft)}
+            value={current}
             disabled={pending}
             onChange={(e) => {
               const value = (e.target as HTMLSelectElement).value;
@@ -150,13 +157,19 @@ export function ConfigEntryRow({
               commit(value);
             }}
           >
-            {control.enumValues?.map((v) => (
+            {missing && (
+              <option key={current} value={current} disabled>
+                {current} (not found)
+              </option>
+            )}
+            {options.map((v) => (
               <option key={v} value={v}>
                 {v}
               </option>
             ))}
           </select>
         );
+      }
       case 'ranged-number':
         return (
           <input

@@ -288,7 +288,7 @@ function runCreation(
     // (design D5). Unlike change submission there is no space-root cwd to lock
     // to, because the space does not exist yet; the target path travels only
     // as a validated argv token.
-    const child = spawn(process.execPath, argv, { cwd: process.cwd(), shell: false });
+    const child = spawn(process.execPath, argv, { cwd: process.cwd(), shell: false, windowsHide: true });
 
     let stdout = '';
     let stderr = '';

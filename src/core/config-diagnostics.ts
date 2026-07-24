@@ -33,6 +33,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'profileLockShadowedByOverride',
   'profileLockCustom',
   'profileLockUnresolvable',
+  'userWideProfileUnresolvable',
 ] as const;
 
 export type ConfigDiagnosticKey = (typeof CONFIG_DIAGNOSTIC_KEYS)[number];

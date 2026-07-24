@@ -12,6 +12,7 @@ import {
   QUALITY_FLOOR_EXPERTS,
   getCurrentBuiltInWorkflowIds,
   getProfileWorkflows,
+  resolveUserWideProfileBase,
 } from '../core/profiles.js';
 import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
 import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
@@ -39,7 +40,13 @@ type PromptSeparator = InstanceType<InquirerPrompts['Separator']>;
 type ProfileAction = 'workflows' | 'keep';
 
 export interface ProfileState {
-  profile: Profile;
+  /**
+   * The three preset literals OR a saved profile name (widened for the
+   * user-wide-saved-profile case, m4): the editor displays it verbatim and
+   * preserves it on save when the selection is unchanged, rather than coercing
+   * a saved name to a preset.
+   */
+  profile: Profile | string;
   workflows: string[];
 }
 
@@ -80,13 +87,22 @@ function normalizedSelectedWorkflows(workflows: readonly string[]): string[] {
 }
 
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
-  const profile = config.profile || 'full';
-  const workflows = [
-    ...getProfileWorkflows(profile, config.workflows ? [...config.workflows] : undefined, {
-      expertSelectionExplicit: config.expertSelectionExplicit === true,
-    }),
-  ];
-  return { profile, workflows };
+  const raw = config.profile || 'full';
+  const expertSelectionExplicit = config.expertSelectionExplicit === true;
+  const customWorkflows = config.workflows ? [...config.workflows] : undefined;
+  if (raw === 'full' || raw === 'core' || raw === 'custom') {
+    const workflows = [...getProfileWorkflows(raw, customWorkflows, { expertSelectionExplicit })];
+    return { profile: raw, workflows };
+  }
+  // A user-wide profile set to a saved name (m4): display it verbatim and
+  // resolve its actual stored workflow set (not `full`'s), so the editor never
+  // misrepresents the current profile. An unresolvable name falls back to
+  // `full`'s set for the picker but keeps showing the name as current.
+  const base = resolveUserWideProfileBase(raw, customWorkflows, expertSelectionExplicit);
+  const workflows = base.ok
+    ? [...base.workflows]
+    : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
+  return { profile: raw, workflows };
 }
 
 /**
@@ -111,7 +127,7 @@ export function deriveProfileFromWorkflowSelection(selectedWorkflows: string[]):
 
 export function formatWorkflowSummary(
   workflows: readonly string[],
-  profile: Profile,
+  profile: Profile | string,
   locale?: CliLocale
 ): string {
   return getProfileUiMessages(locale).workflowSummary(workflows.length, profile);
@@ -138,6 +154,15 @@ function stableWorkflowOrder(workflows: readonly string[]): string[] {
   }
 
   return ordered;
+}
+
+/** Set-equality over two workflow-id lists (order- and duplicate-insensitive). */
+function sameWorkflowSet(a: readonly string[], b: readonly string[]): boolean {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  if (setA.size !== setB.size) return false;
+  for (const id of setA) if (!setB.has(id)) return false;
+  return true;
 }
 
 export function diffProfileState(
@@ -432,7 +457,15 @@ export async function runInteractiveProfileEditor(): Promise<void> {
       workflowPickerOptions(currentState, messages, Separator)
     );
     nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows);
-    nextState.profile = deriveProfileFromWorkflowSelection(selectedWorkflows);
+    // Preserve a saved-name global profile when the selection is unchanged (m4):
+    // only reclassify to a preset when the user actually edited the set, so a
+    // no-op pass through the picker never clobbers `my-set` into `custom`.
+    const isReserved = currentState.profile === 'full' || currentState.profile === 'core' || currentState.profile === 'custom';
+    const selectionUnchanged = sameWorkflowSet(nextState.workflows, currentState.workflows);
+    nextState.profile =
+      !isReserved && selectionUnchanged
+        ? currentState.profile
+        : deriveProfileFromWorkflowSelection(selectedWorkflows);
 
     const diff = diffProfileState(currentState, nextState);
     if (!diff.hasChanges) {
@@ -460,6 +493,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
           execSync(`"${process.execPath}" "${process.argv[1]}" update`, {
             stdio: 'inherit',
             cwd: projectDir,
+            windowsHide: true,
           });
           console.log(ui.updateOtherProjects);
         } catch {
