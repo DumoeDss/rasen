@@ -452,11 +452,12 @@ describe('Workflows nav entry (Layout)', () => {
     const nav = container.querySelector('[data-testid="nav-workflows"]');
     expect(nav).not.toBeNull();
     expect(nav!.getAttribute('href')).toBe('/workflows');
-    // Space-scoped links are absent with no space resolved; the two
-    // space-agnostic entries (Workflows, Profiles) remain.
+    // Space-scoped links are absent with no space resolved; the three
+    // installation-wide entries (Workflows, Profiles, Audit) remain.
     expect(Array.from(container.querySelectorAll('nav a')).map((a) => a.textContent)).toEqual([
       'Workflows',
       'Profiles',
+      'Audit',
     ]);
   });
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { SessionListEntry, SessionRecordWire, StageStatus } from '../api/types.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * One session's row (design.md D3/D5 of `slice3-sessions-ui`): kind/task/
@@ -26,6 +27,7 @@ function formatTime(ms: number): string {
 }
 
 function TerminationBadge({ session }: { session: SessionRecordWire }) {
+  const t = useT();
   const reason = session.terminationReason ?? 'unknown';
   return (
     <span
@@ -33,17 +35,18 @@ function TerminationBadge({ session }: { session: SessionRecordWire }) {
       data-testid="session-termination-reason"
     >
       {reason}
-      {typeof session.exitCode === 'number' ? ` (exit ${session.exitCode})` : ''}
-      {session.exitSignal ? ` (signal ${session.exitSignal})` : ''}
+      {typeof session.exitCode === 'number' ? t('session.exit_code', { code: session.exitCode }) : ''}
+      {session.exitSignal ? t('session.exit_signal', { signal: session.exitSignal }) : ''}
     </span>
   );
 }
 
 function RunProgress({ runState }: { runState: SessionListEntry['runState'] }) {
+  const t = useT();
   if (runState.kind === 'absent') {
     return (
       <p class="session-row__run-note" data-testid="session-run-absent">
-        No change linked — progress will appear on the board once the run creates one.
+        {t('session.run_absent')}
       </p>
     );
   }
@@ -67,7 +70,7 @@ function RunProgress({ runState }: { runState: SessionListEntry['runState'] }) {
   if (runState.autoRun.kind === 'absent') {
     return (
       <p class="session-row__run-note" data-testid="session-run-absent">
-        No run state recorded yet for {runState.name}.
+        {t('session.run_no_state', { name: runState.name })}
       </p>
     );
   }
@@ -77,13 +80,13 @@ function RunProgress({ runState }: { runState: SessionListEntry['runState'] }) {
   if (stageIds.length === 0) {
     return (
       <p class="session-row__run-note" data-testid="session-run-no-stages">
-        {runState.autoRun.state.pipeline} — no stages reported yet.
+        {t('session.run_no_stages', { pipeline: runState.autoRun.state.pipeline })}
       </p>
     );
   }
 
   return (
-    <ul class="session-row__stages" data-testid="session-run-stages" aria-label="Pipeline progress">
+    <ul class="session-row__stages" data-testid="session-run-stages" aria-label={t('session.stages_label')}>
       {stageIds.map((id) => {
         const status = stages[id]!.status;
         return (
@@ -116,6 +119,7 @@ export function SessionRow({
   onKilled: (id: string, outcome: KillOutcome) => void;
 }) {
   const { session, runState } = entry;
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [tails, setTails] = useState<{ stdout: string; stderr: string } | null>(null);
   const [tailsError, setTailsError] = useState<string | null>(null);
@@ -137,7 +141,7 @@ export function SessionRow({
         })
         .catch((err) => {
           if (cancelled) return;
-          setTailsError(err instanceof ApiError ? err.message : 'Failed to load session output.');
+          setTailsError(err instanceof ApiError ? err.message : 'status.error.session_output');
         });
     }
 
@@ -166,7 +170,7 @@ export function SessionRow({
         onKilled(session.id, { kind: 'gone' });
         return;
       }
-      setKillError(err instanceof ApiError ? err.message : 'Failed to kill the session.');
+      setKillError(err instanceof ApiError ? err.message : 'status.error.session_kill');
     } finally {
       setKilling(false);
     }
@@ -190,8 +194,8 @@ export function SessionRow({
         <p class="session-row__task">{session.task}</p>
       </div>
       <div class="session-row__meta">
-        <span>Started {formatTime(session.startedAt)}</span>
-        <span>Last output {formatTime(session.lastOutputAt)}</span>
+        <span>{t('session.started', { time: formatTime(session.startedAt) })}</span>
+        <span>{t('session.last_output', { time: formatTime(session.lastOutputAt) })}</span>
         {isEnded && <TerminationBadge session={session} />}
         {session.changeName && <span class="session-row__change">{session.changeName}</span>}
       </div>
@@ -200,36 +204,36 @@ export function SessionRow({
         <div class="session-row__kill">
           {!confirmingKill ? (
             <button type="button" class="btn--ghost" onClick={() => setConfirmingKill(true)}>
-              Kill
+              {t('session.kill')}
             </button>
           ) : (
-            <div class="session-row__kill-confirm" role="group" aria-label="Confirm kill">
-              <span>Kill this session?</span>
+            <div class="session-row__kill-confirm" role="group" aria-label={t('session.kill_confirm_label')}>
+              <span>{t('session.kill_question')}</span>
               <button type="button" class="btn--danger" onClick={handleConfirmKill} disabled={killing}>
-                {killing ? 'Killing…' : 'Confirm kill'}
+                {killing ? t('session.killing') : t('session.confirm_kill')}
               </button>
               <button type="button" class="btn--ghost" onClick={() => setConfirmingKill(false)} disabled={killing}>
-                Cancel
+                {t('session.cancel')}
               </button>
             </div>
           )}
           {killError && (
             <p class="session-row__kill-error" role="alert">
-              {killError}
+              {t(killError)}
             </p>
           )}
         </div>
       )}
       {expanded && (
         <div class="session-row__detail" data-testid="session-detail">
-          {tailsError && <p class="session-row__tail-error">{tailsError}</p>}
+          {tailsError && <p class="session-row__tail-error">{t(tailsError)}</p>}
           {tails && (
             <>
-              <pre class="session-row__tail" aria-label="stdout tail">
-                {tails.stdout || '(no output yet)'}
+              <pre class="session-row__tail" aria-label={t('session.stdout_tail')}>
+                {tails.stdout || t('session.no_output')}
               </pre>
               {tails.stderr && (
-                <pre class="session-row__tail session-row__tail--stderr" aria-label="stderr tail">
+                <pre class="session-row__tail session-row__tail--stderr" aria-label={t('session.stderr_tail')}>
                   {tails.stderr}
                 </pre>
               )}

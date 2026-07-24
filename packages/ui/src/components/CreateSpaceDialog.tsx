@@ -5,6 +5,7 @@ import { ApiError } from '../api/client.js';
 import type { CreateSpaceResponse } from '../api/types.js';
 import { spaceHref, type Space } from '../store/use-space.js';
 import { LocalPathPicker } from './LocalPathPicker.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * Create-space flow (spaces-ui design D3/D4). A kind toggle (project | store),
@@ -21,6 +22,7 @@ import { LocalPathPicker } from './LocalPathPicker.js';
  * the server-spawned CLI.
  */
 export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
+  const t = useT();
   const { route } = useLocation();
 
   const [kind, setKind] = useState<'project' | 'store'>('project');
@@ -54,16 +56,16 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
       // to unmount this dialog.
       if (err instanceof ApiError && err.status === 401) return;
       setSubmitting(false);
-      setSubmitError(err instanceof ApiError ? err.message : 'Failed to create the space.');
+      setSubmitError(err instanceof ApiError ? err.message : 'status.error.space_create');
     }
   }
 
   return (
     <div class="create-space-dialog__overlay">
-      <form class="create-space-dialog" onSubmit={handleSubmit} aria-label="Create space">
-        <h2 class="create-space-dialog__title">New space</h2>
+      <form class="create-space-dialog" onSubmit={handleSubmit} aria-label={t('spaces.create.aria')}>
+        <h2 class="create-space-dialog__title">{t('spaces.create.title')}</h2>
 
-        <div class="create-space-dialog__kind" role="group" aria-label="Space kind">
+        <div class="create-space-dialog__kind" role="group" aria-label={t('spaces.create.kind_label')}>
           <button
             type="button"
             class={`create-space-dialog__kind-btn${kind === 'project' ? ' create-space-dialog__kind-btn--selected' : ''}`}
@@ -71,7 +73,7 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
             disabled={submitting}
             onClick={() => setKind('project')}
           >
-            Project
+            {t('spaces.create.project')}
           </button>
           <button
             type="button"
@@ -80,7 +82,7 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
             disabled={submitting}
             onClick={() => setKind('store')}
           >
-            Store
+            {t('spaces.create.store')}
           </button>
         </div>
 
@@ -92,13 +94,13 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
 
         {kind === 'store' && (
           <label class="create-space-dialog__field">
-            <span>Store id</span>
+            <span>{t('spaces.create.store_id')}</span>
             <input
               type="text"
               name="storeId"
               value={storeId}
               disabled={submitting}
-              placeholder="required for a fresh store"
+              placeholder={t('spaces.create.store_id_placeholder')}
               onInput={(e) => setStoreId((e.target as HTMLInputElement).value)}
             />
           </label>
@@ -106,16 +108,16 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
 
         {submitError && (
           <p class="create-space-dialog__error" role="alert" data-testid="create-error">
-            {submitError}
+            {t(submitError)}
           </p>
         )}
 
         <div class="create-space-dialog__actions">
           <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
-            Cancel
+            {t('spaces.create.cancel')}
           </button>
           <button type="submit" class="btn--primary" disabled={submitting || !target}>
-            {submitting ? 'Creating…' : `Create ${kind}`}
+            {submitting ? t('spaces.create.creating') : t('spaces.create.create', { kind })}
           </button>
         </div>
       </form>

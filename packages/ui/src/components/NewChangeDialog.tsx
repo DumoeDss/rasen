@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * Board-embedded submission form (design D4 of
@@ -22,6 +23,7 @@ export function NewChangeDialog({
   onCancel: () => void;
   onCreated: (changeId: string) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -42,16 +44,19 @@ export function NewChangeDialog({
       // there is nothing useful to show locally.
       if (err instanceof ApiError && err.status === 401) return;
       setSubmitting(false);
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to submit the change.');
+      // An authored fallback stored as an i18n KEY; rendered through `t()`
+      // below (a server ApiError.message is plain text that `t()` passes
+      // through unchanged — see i18n/catalog.translate).
+      setErrorMessage(err instanceof ApiError ? err.message : 'status.error.change_submit');
     }
   }
 
   return (
     <div class="new-change-dialog__overlay">
-      <form class="new-change-dialog" onSubmit={handleSubmit} aria-label="New change">
-        <h2 class="new-change-dialog__title">New change</h2>
+      <form class="new-change-dialog" onSubmit={handleSubmit} aria-label={t('dialog.new_change.aria')}>
+        <h2 class="new-change-dialog__title">{t('dialog.new_change.title')}</h2>
         <label class="new-change-dialog__field">
-          <span>Name</span>
+          <span>{t('dialog.new_change.name')}</span>
           <input
             type="text"
             name="name"
@@ -62,7 +67,7 @@ export function NewChangeDialog({
           />
         </label>
         <label class="new-change-dialog__field">
-          <span>Description</span>
+          <span>{t('dialog.new_change.description')}</span>
           <textarea
             name="description"
             value={description}
@@ -74,15 +79,15 @@ export function NewChangeDialog({
         </label>
         {errorMessage && (
           <p class="new-change-dialog__error" role="alert">
-            {errorMessage}
+            {t(errorMessage)}
           </p>
         )}
         <div class="new-change-dialog__actions">
           <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
-            Cancel
+            {t('dialog.new_change.cancel')}
           </button>
           <button type="submit" class="btn--primary" disabled={submitting}>
-            {submitting ? 'Submitting…' : 'Create'}
+            {submitting ? t('dialog.new_change.submitting') : t('dialog.new_change.create')}
           </button>
         </div>
       </form>

@@ -5,6 +5,7 @@ import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/type
 import { parseSpacePath, spaceHref, type Space } from '../store/use-space.js';
 import { useLocation } from 'preact-iso';
 import { CreateSpaceDialog } from './CreateSpaceDialog.js';
+import { useT } from '../i18n/store.js';
 
 const PINNED_KEY = 'ui.pinnedSpaces';
 
@@ -43,6 +44,7 @@ function spaceOf(entry: SpaceEntry): Space {
  * new visual language.
  */
 export function SpacesPage() {
+  const t = useT();
   const { path: currentPath } = useLocation();
   const [spaces, setSpaces] = useState<SpaceEntry[] | null>(null);
   // The FULL pinned-selector array as stored in config, including selectors
@@ -73,7 +75,7 @@ export function SpacesPage() {
         if (err instanceof ApiError) {
           setPageError({ message: err.message, fix: err.fix });
         } else {
-          setPageError({ message: 'Failed to load spaces.' });
+          setPageError({ message: 'status.error.spaces_load' });
         }
       })
       .finally(() => {
@@ -100,23 +102,23 @@ export function SpacesPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setPins(previous);
-      setPinError(err instanceof ApiError ? err.message : 'Failed to update pins.');
+      setPinError(err instanceof ApiError ? err.message : 'status.error.pins_update');
     }
   }
 
   if (loading) {
-    return <p class="spaces-page__loading">Loading spaces…</p>;
+    return <p class="spaces-page__loading">{t('spaces.page.loading')}</p>;
   }
 
   if (pageError) {
     return (
       <div class="spaces-page__error">
         <p>
-          {pageError.message}
+          {t(pageError.message)}
           {pageError.fix ? ` — ${pageError.fix}` : ''}
         </p>
         <button type="button" onClick={refresh}>
-          Retry
+          {t('status.retry')}
         </button>
       </div>
     );
@@ -155,33 +157,33 @@ export function SpacesPage() {
         <input
           type="search"
           class="spaces-page__search"
-          placeholder="Search by id, name, or path…"
-          aria-label="Search spaces"
+          placeholder={t('spaces.page.search_placeholder')}
+          aria-label={t('spaces.page.search_label')}
           data-testid="spaces-search"
           value={query}
           onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
         />
         <button type="button" onClick={() => setCreating(true)} data-testid="new-space">
-          New space
+          {t('spaces.page.new_space')}
         </button>
         <button type="button" onClick={refresh}>
-          Refresh
+          {t('spaces.page.refresh')}
         </button>
       </div>
 
       {pinError && (
         <p class="spaces-page__pin-error" role="alert">
-          {pinError}
+          {t(pinError)}
         </p>
       )}
 
       {all.length === 0 ? (
         <div class="spaces-page__empty" data-testid="spaces-empty">
-          <p>No spaces yet — create one to get started.</p>
+          <p>{t('spaces.page.empty')}</p>
         </div>
       ) : ordered.length === 0 ? (
         <p class="spaces-page__no-matches" data-testid="spaces-no-matches">
-          No spaces match the current search.
+          {t('spaces.page.no_matches')}
         </p>
       ) : (
         <ul class="spaces-page__list" data-testid="spaces-list">
@@ -201,10 +203,10 @@ export function SpacesPage() {
                   href={spaceHref(spaceOf(space), 'board')}
                 >
                   <span class="space-row__name">{space.name}</span>
-                  <span class="space-row__type">{space.type === 'store' ? 'Store' : 'Project'}</span>
+                  <span class="space-row__type">{space.type === 'store' ? t('spaces.page.type_store') : t('spaces.page.type_project')}</span>
                   {space.type === 'project' && space.worktreeCount !== undefined && space.worktreeCount >= 2 && (
                     <span class="space-row__worktrees" data-testid="worktree-badge">
-                      {space.worktreeCount} worktrees
+                      {t('spaces.page.worktrees', { count: space.worktreeCount })}
                     </span>
                   )}
                   <span class="space-row__root">{space.root}</span>
@@ -222,7 +224,7 @@ export function SpacesPage() {
                   type="button"
                   class={`space-row__pin${pinned ? ' space-row__pin--pinned' : ''}`}
                   aria-pressed={pinned}
-                  aria-label={pinned ? `Unpin ${space.name}` : `Pin ${space.name}`}
+                  aria-label={pinned ? t('spaces.page.unpin', { name: space.name }) : t('spaces.page.pin', { name: space.name })}
                   data-testid="pin-toggle"
                   onClick={() => togglePin(selector)}
                 >

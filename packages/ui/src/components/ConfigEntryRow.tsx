@@ -15,6 +15,7 @@ import {
 import { errorSurface } from '../config/errors.js';
 import { labelFor } from '../config/labels.js';
 import { spaceHref } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
 import { ValueDisplay, ValueSummary } from './ui/ValueDisplay.js';
 
 /** An input's `value` attribute — an unset (null/undefined) draft renders as an empty field, never the literal "undefined". */
@@ -60,6 +61,23 @@ export function ConfigEntryRow({
 }: Props) {
   const key = entry.definition.key;
   const writeScope = modeScope(mode, spaceType);
+  const t = useT();
+
+  // Language endonyms (ui-i18n design D8): the `language` enum row shows each
+  // locale in its OWN script (English / 日本語 / 简体中文) while the option's
+  // underlying value stays the raw code (`en` / `ja` / `zh-cn`) — a reader who
+  // doesn't read English must still recognize their language to pick it. `auto`
+  // is the single label that localizes (it has no endonym). Non-`language`
+  // enums render the raw value as before.
+  const LANGUAGE_ENDONYMS: Record<string, string> = {
+    en: 'English',
+    ja: '日本語',
+    'zh-cn': '简体中文',
+  };
+  function languageOptionLabel(value: string): string {
+    if (value === 'auto') return t('language.option.auto');
+    return LANGUAGE_ENDONYMS[value] ?? value;
+  }
   // A store-inherited key is read-only with an "edit in store" link (design
   // D3): the UI does not offer project-level overrides of store-set keys.
   const storeInherited = isStoreInherited(entry, mode, spaceType) && storeRef !== null;
@@ -112,7 +130,7 @@ export function ConfigEntryRow({
         setFieldError({ message: err.message, fix: err.fix });
       }
     } else {
-      setFieldError({ message: 'Unexpected error' });
+      setFieldError({ message: 'config.error.unexpected' });
     }
   }
 
@@ -159,12 +177,12 @@ export function ConfigEntryRow({
           >
             {missing && (
               <option key={current} value={current} disabled>
-                {current} (not found)
+                {current} {t('config.select.not_found')}
               </option>
             )}
             {options.map((v) => (
               <option key={v} value={v}>
-                {v}
+                {key === 'language' ? languageOptionLabel(v) : v}
               </option>
             ))}
           </select>
@@ -218,7 +236,7 @@ export function ConfigEntryRow({
                   commit(value);
                 }}
               />
-              Fraction
+              {t('config.threshold.fraction')}
             </label>
             <label>
               <input
@@ -232,7 +250,7 @@ export function ConfigEntryRow({
                   commit(value);
                 }}
               />
-              Remaining tokens
+              {t('config.threshold.remaining_tokens')}
             </label>
             {!isAbsolute ? (
               <input
@@ -318,20 +336,20 @@ export function ConfigEntryRow({
     if (entry.source === 'env-override') {
       return (
         <p class="config-entry__shadowed">
-          Environment variable overrides every scope
+          {t('config.annotation.env_override')}
           {entry.scopeValues.global !== undefined && (
             <>
-              {' '}(global value: <ValueSummary value={entry.scopeValues.global} />)
+              {' '}{t('config.annotation.value_global_prefix')}<ValueSummary value={entry.scopeValues.global} />)
             </>
           )}
           {entry.scopeValues.store !== undefined && (
             <>
-              {' '}(store value: <ValueSummary value={entry.scopeValues.store} />)
+              {' '}{t('config.annotation.value_store_prefix')}<ValueSummary value={entry.scopeValues.store} />)
             </>
           )}
           {entry.scopeValues.project !== undefined && (
             <>
-              {' '}(project value: <ValueSummary value={entry.scopeValues.project} />)
+              {' '}{t('config.annotation.value_project_prefix')}<ValueSummary value={entry.scopeValues.project} />)
             </>
           )}
         </p>
@@ -350,7 +368,7 @@ export function ConfigEntryRow({
       if (entry.scopeValues.store !== undefined && storeRef) {
         return (
           <p class="config-entry__shadowed">
-            Inherited from store {storeRef.id}: <ValueSummary value={entry.scopeValues.store} />
+            {t('config.annotation.inherited_store', { store: storeRef.id })}: <ValueSummary value={entry.scopeValues.store} />
             {storeInherited && (
               <>
                 {' '}
@@ -361,7 +379,7 @@ export function ConfigEntryRow({
                     'config'
                   )}
                 >
-                  Edit in store {storeRef.id} →
+                  {t('config.annotation.edit_in_store', { store: storeRef.id })}
                 </a>
               </>
             )}
@@ -371,13 +389,13 @@ export function ConfigEntryRow({
       if (entry.scopeValues.global !== undefined) {
         return (
           <p class="config-entry__shadowed">
-            Inherited from global: <ValueSummary value={entry.scopeValues.global} />
+            {t('config.annotation.inherited_global')}: <ValueSummary value={entry.scopeValues.global} />
           </p>
         );
       }
       return (
         <p class="config-entry__shadowed">
-          Inherited from default: <ValueDisplay value={entry.definition.defaultValue} />
+          {t('config.annotation.inherited_default')}: <ValueDisplay value={entry.definition.defaultValue} />
         </p>
       );
     }
@@ -390,8 +408,9 @@ export function ConfigEntryRow({
         <>
           {shadowed.map((s) => (
             <p key={s} class="config-entry__shadowed">
-              {s === 'store' ? 'Store' : 'Global'} value: <ValueSummary value={entry.scopeValues[s]} /> (shadowed by{' '}
-              {entry.source})
+              {t('config.annotation.shadowed_prefix', {
+                scope: s === 'store' ? t('config.scope.store') : t('config.scope.global'),
+              })}: <ValueSummary value={entry.scopeValues[s]} />{t('config.annotation.shadowed_suffix', { source: entry.source })}
             </p>
           ))}
         </>
@@ -424,14 +443,14 @@ export function ConfigEntryRow({
 
       {fieldError && (
         <p class="config-entry__error">
-          {fieldError.message}
+          {t(fieldError.message)}
           {fieldError.fix ? ` — ${fieldError.fix}` : ''}
         </p>
       )}
 
       {!control.readonly && entry.scopeValues[writeScope] !== undefined && (
         <button type="button" disabled={pending} onClick={() => unset()}>
-          Unset {writeScope} value
+          {t('config.unset', { scope: writeScope })}
         </button>
       )}
     </div>

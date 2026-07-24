@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Component coverage for the Keepalive beat control (pipelines-ui spec): preset
- * writes (fast 100 / economy 270), a bounded custom write, client-side
+ * write (economy 270), a bounded custom write, client-side
  * out-of-range rejection, the derived tool-timeout hint (beat + 50s), and the
  * effective-value-driven selection state. Writes ride the ordinary config API
  * (`putKey`/`deleteKey`) exactly like the autopilot Defaults rows.
@@ -42,10 +42,8 @@ function entryFor(value: number, source: WireConfigEntry['source'] = 'default'):
 
 describe('KeepaliveBeatControl', () => {
   let container: HTMLElement;
-  let updated: WireConfigEntry | null;
 
   function mount(entry: WireConfigEntry): void {
-    updated = null;
     act(() => {
       render(
         <KeepaliveBeatControl
@@ -55,9 +53,7 @@ describe('KeepaliveBeatControl', () => {
           selector="project:proj_x"
           storeRef={null}
           onPageError={() => {}}
-          onEntryUpdated={(e) => {
-            updated = e;
-          }}
+          onEntryUpdated={() => {}}
         />,
         container
       );
@@ -90,18 +86,9 @@ describe('KeepaliveBeatControl', () => {
   it('reflects the effective value in the preset selection state', () => {
     mount(entryFor(270));
     expect(container.querySelector('[data-testid="keepalive-preset-economy"]')!.getAttribute('aria-pressed')).toBe('true');
-    expect(container.querySelector('[data-testid="keepalive-preset-fast"]')!.getAttribute('aria-pressed')).toBe('false');
 
     mount(entryFor(100, 'global'));
-    expect(container.querySelector('[data-testid="keepalive-preset-fast"]')!.getAttribute('aria-pressed')).toBe('true');
     expect(container.querySelector('[data-testid="keepalive-preset-economy"]')!.getAttribute('aria-pressed')).toBe('false');
-  });
-
-  it('writes the fast preset (100) at the global scope', async () => {
-    mount(entryFor(270));
-    await click(container.querySelector('[data-testid="keepalive-preset-fast"]'));
-    expect(client.putKey).toHaveBeenCalledWith('keepalive.beatSeconds', { scope: 'global', value: 100 }, 'project:proj_x');
-    expect(updated!.value).toBe(100);
   });
 
   it('writes a bounded custom value and derives the tool-timeout hint (beat + 50)', async () => {

@@ -3,12 +3,13 @@ import { useRoute } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { SessionListEntry, TaskChildDetail, TaskDetailResponse } from '../api/types.js';
-import { BOARD_COLUMNS, deriveColumn, sessionsForTask, sessionStage } from '../board/columns.js';
+import { deriveColumn, sessionsForTask, sessionStage } from '../board/columns.js';
 import type { BoardColumn } from '../board/columns.js';
 import { SessionRow } from './SessionRow.js';
 import { LaunchSessionDialog } from './LaunchSessionDialog.js';
 import { renderInlineCode } from './ui/inline-code.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * Task detail page (ui-space-redesign-task-detail design D1/D4). The route's
@@ -21,9 +22,13 @@ import { spaceHref, useSpace } from '../store/use-space.js';
  * change context. Every read is scoped to the URL's opaque-token space.
  */
 
-const COLUMN_LABELS: Record<BoardColumn, string> = Object.fromEntries(
-  BOARD_COLUMNS.map((c) => [c.id, c.label])
-) as Record<BoardColumn, string>;
+/** Lifecycle column id → its i18n key (the label renders through `t()`). */
+const COLUMN_LABEL_KEYS: Record<BoardColumn, string> = {
+  planning: 'board.column.planning',
+  ready: 'board.column.ready',
+  'in-progress': 'board.column.in_progress',
+  done: 'board.column.done',
+};
 
 /** A child's lifecycle column: archived ⇒ done; otherwise the same derivation the board uses; a load-failed child has no summary → planning. */
 function childColumn(child: TaskChildDetail): BoardColumn {
@@ -33,6 +38,7 @@ function childColumn(child: TaskChildDetail): BoardColumn {
 }
 
 function ChildRow({ child }: { child: TaskChildDetail }) {
+  const t = useT();
   const column = childColumn(child);
   const { total, completed } = child.taskProgress;
   return (
@@ -40,19 +46,19 @@ function ChildRow({ child }: { child: TaskChildDetail }) {
       <div class="task-detail__child-head">
         <span class="task-detail__child-name">{child.name}</span>
         <span class={`task-detail__child-column task-detail__child-column--${column}`}>
-          {COLUMN_LABELS[column]}
+          {t(COLUMN_LABEL_KEYS[column])}
         </span>
         {child.archived && child.archivedAt && (
-          <span class="task-detail__child-archived">archived {child.archivedAt}</span>
+          <span class="task-detail__child-archived">{t('task_detail.child_archived', { date: child.archivedAt })}</span>
         )}
       </div>
       <div class="task-detail__child-meta">
         <span class="task-detail__child-progress">
-          {total > 0 ? `${completed}/${total} tasks` : 'No tasks'}
+          {total > 0 ? t('task.progress.tasks', { done: completed, total }) : t('task.progress.no_tasks')}
         </span>
         {child.dependsOn.length > 0 && (
           <span class="task-detail__child-deps" data-testid="task-detail-child-deps">
-            depends on {child.dependsOn.join(', ')}
+            {t('task_detail.child_deps', { deps: child.dependsOn.join(', ') })}
           </span>
         )}
       </div>
@@ -73,20 +79,21 @@ function ChildRow({ child }: { child: TaskChildDetail }) {
  * Task text renders backtick spans as `<code>` (no markdown library).
  */
 function ChildChecklist({ child }: { child: TaskChildDetail }) {
+  const t = useT();
   const [showCompleted, setShowCompleted] = useState(false);
   if (child.tasks.length === 0) {
-    return <p class="task-detail__checklist-empty">No tasks recorded for this change.</p>;
+    return <p class="task-detail__checklist-empty">{t('task_detail.checklist_empty')}</p>;
   }
   const total = child.tasks.length;
-  const openItems = child.tasks.filter((t) => !t.done);
-  const doneItems = child.tasks.filter((t) => t.done);
+  const openItems = child.tasks.filter((task) => !task.done);
+  const doneItems = child.tasks.filter((task) => task.done);
   const completed = doneItems.length;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
     <div class="task-checklist" data-testid="task-detail-checklist">
       <div class="task-checklist__header">
-        <span class="task-checklist__label">Tasks</span>
+        <span class="task-checklist__label">{t('task_detail.checklist_label')}</span>
         <span class="task-checklist__count" data-testid="task-checklist-count">
           {completed}/{total}
         </span>
@@ -123,7 +130,9 @@ function ChildChecklist({ child }: { child: TaskChildDetail }) {
             aria-expanded={showCompleted}
             onClick={() => setShowCompleted((s) => !s)}
           >
-            {showCompleted ? `Hide ${completed} completed` : `Show ${completed} completed`}
+            {showCompleted
+              ? t('task_detail.checklist_hide', { count: completed })
+              : t('task_detail.checklist_show', { count: completed })}
           </button>
           {showCompleted && (
             <ul class="task-checklist__list task-checklist__list--done" data-testid="task-checklist-completed">
@@ -144,6 +153,7 @@ function ChildChecklist({ child }: { child: TaskChildDetail }) {
 }
 
 export function TaskDetailPage() {
+  const t = useT();
   const space = useSpace();
   const selector = space?.selector;
   const { params } = useRoute();
@@ -182,7 +192,7 @@ export function TaskDetailPage() {
           } else if (err instanceof ApiError) {
             setPageError({ message: err.message, fix: err.fix });
           } else {
-            setPageError({ message: 'Failed to load the Task.' });
+            setPageError({ message: 'status.error.task_load' });
           }
         })
         .finally(() => {
@@ -205,17 +215,17 @@ export function TaskDetailPage() {
   const backHref = space ? spaceHref(space, 'board') : '/';
 
   if (loading) {
-    return <p class="task-detail__loading">Loading Task…</p>;
+    return <p class="task-detail__loading">{t('status.loading.task')}</p>;
   }
 
   if (notFound) {
     return (
       <div class="task-detail__not-found" data-testid="task-detail-not-found">
-        <h2>Task not found</h2>
+        <h2>{t('task_detail.not_found_title')}</h2>
         <p>
-          No Task named <code>{taskId}</code> in this space.
+          {t('task_detail.not_found_body_pre')}<code>{taskId}</code>{t('task_detail.not_found_body_post')}
         </p>
-        <a href={backHref}>← Back to board</a>
+        <a href={backHref}>{t('task_detail.back_to_board')}</a>
       </div>
     );
   }
@@ -224,13 +234,13 @@ export function TaskDetailPage() {
     return (
       <div class="task-detail__error">
         <p>
-          {pageError?.message ?? 'Failed to load the Task.'}
+          {t(pageError?.message ?? 'status.error.task_load')}
           {pageError?.fix ? ` — ${pageError.fix}` : ''}
         </p>
         <button type="button" onClick={refresh}>
-          Retry
+          {t('status.retry')}
         </button>
-        <a href={backHref}>← Back to board</a>
+        <a href={backHref}>{t('task_detail.back_to_board')}</a>
       </div>
     );
   }
@@ -252,10 +262,10 @@ export function TaskDetailPage() {
     <div class="task-detail" data-testid="task-detail-page">
       <header class="task-detail__header">
         <a class="task-detail__back" href={backHref}>
-          ← Board
+          {t('task_detail.back')}
         </a>
         <h2 class="task-detail__title">{task.label}</h2>
-        <span class="task-detail__kind">{isPortfolio ? 'Portfolio' : 'Change'}</span>
+        <span class="task-detail__kind">{isPortfolio ? t('task_detail.kind_portfolio') : t('task_detail.kind_change')}</span>
         {liveStage && (
           <span class="task-detail__live" data-testid="task-detail-live">
             ⦿ {liveStage}
@@ -264,28 +274,28 @@ export function TaskDetailPage() {
       </header>
 
       <div class="task-detail__columns">
-        <section class="task-detail__children" aria-label="Children">
+        <section class="task-detail__children" aria-label={t('task_detail.children_label')}>
           {isPortfolio ? (
             <>
               <p class="task-detail__progress" data-testid="task-detail-progress">
-                {doneCount}/{children.length} changes
+                {t('task_detail.progress', { done: doneCount, total: children.length })}
               </p>
               {children.length === 0 ? (
-                <p class="task-detail__children-empty">This portfolio has no changes yet.</p>
+                <p class="task-detail__children-empty">{t('task_detail.children_empty')}</p>
               ) : (
                 children.map((child) => <ChildRow key={child.name} child={child} />)
               )}
               {children.every((c) => c.dependsOn.length === 0) && (
                 <p class="task-detail__no-deps" data-testid="task-detail-no-deps">
-                  No declared dependencies.
+                  {t('task_detail.no_deps')}
                 </p>
               )}
             </>
           ) : (
             children[0] && <ChildChecklist child={children[0]} />
           )}
-          {errors.length > 0 && (
-            <div class="task-detail__load-errors" aria-label="Children that failed to load">
+          {errors.length >  0 && (
+            <div class="task-detail__load-errors" aria-label={t('task_detail.load_errors_label')}>
               {errors.map((e) => (
                 <p key={e.name} class="task-detail__load-error" role="alert">
                   {e.name}: {e.message}
@@ -295,17 +305,17 @@ export function TaskDetailPage() {
           )}
         </section>
 
-        <section class="task-detail__sessions" aria-label="Sessions">
+        <section class="task-detail__sessions" aria-label={t('task_detail.sessions_label')}>
           <div class="task-detail__sessions-toolbar">
             <button type="button" class="btn--primary" onClick={() => setDialogOpen(true)}>
-              Launch run
+              {t('task_detail.launch_run')}
             </button>
             <button type="button" class="btn--ghost" onClick={refresh}>
-              Refresh
+              {t('task_detail.refresh')}
             </button>
           </div>
           {ordered.length === 0 ? (
-            <p class="task-detail__sessions-empty">No sessions for this Task.</p>
+            <p class="task-detail__sessions-empty">{t('task_detail.sessions_empty')}</p>
           ) : (
             ordered.map((entry) => (
               <SessionRow key={entry.session.id} entry={entry} onKilled={() => refresh()} />

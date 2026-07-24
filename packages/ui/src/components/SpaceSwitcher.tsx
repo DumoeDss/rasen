@@ -5,6 +5,7 @@ import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/type
 import { parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces, recordSpaceVisit } from '../store/recent-spaces.js';
 import { guardedRoute } from '../store/use-navigation-guard.js';
+import { useT } from '../i18n/store.js';
 
 /** The header switcher shows at most this many space entries (spaces-ui design D2); "All spaces…" escapes to the full page. */
 const SWITCHER_CAP = 8;
@@ -70,6 +71,7 @@ function buildVisible(spaces: SpaceEntry[], pins: string[], recents: string[], c
  * writes configuration.
  */
 export function SpaceSwitcher() {
+  const t = useT();
   const { path, route } = useLocation();
   const space = parseSpacePath(path);
   const section = spaceSection(path);
@@ -109,13 +111,13 @@ export function SpaceSwitcher() {
   }, [space?.selector]);
 
   if (spaces === null && !failed) {
-    return <div class="space-switcher space-switcher--loading">Loading spaces…</div>;
+    return <div class="space-switcher space-switcher--loading">{t('spaces.switcher.loading')}</div>;
   }
 
   if (failed || (spaces && spaces.length === 0)) {
     return (
       <div class="space-switcher space-switcher--empty" data-testid="space-switcher-empty">
-        No spaces — run <code>rasen ui</code> inside a Rasen project.
+        {t('spaces.switcher.empty_pre')}<code>rasen ui</code>{t('spaces.switcher.empty_post')}
       </div>
     );
   }
@@ -139,15 +141,15 @@ export function SpaceSwitcher() {
   return (
     <div class="space-switcher">
       <label>
-        Space
+        {t('spaces.switcher.label')}
         <select value={space?.selector ?? ''} onChange={onChange} data-testid="space-switcher-select">
           {!space && (
             <option value="" disabled>
-              Select a space…
+              {t('spaces.switcher.placeholder')}
             </option>
           )}
           {projects.length > 0 && (
-            <optgroup label="Projects">
+            <optgroup label={t('spaces.switcher.group.projects')}>
               {projects.map((p) => (
                 // Keyed by the row-unique root, not the selector: worktrees of
                 // one repo share a selector, and `buildVisible` already dedupes
@@ -161,7 +163,7 @@ export function SpaceSwitcher() {
             </optgroup>
           )}
           {stores.length > 0 && (
-            <optgroup label="Stores">
+            <optgroup label={t('spaces.switcher.group.stores')}>
               {stores.map((s) => (
                 <option key={s.root} value={`store:${s.id}`}>
                   {s.name}
@@ -170,7 +172,7 @@ export function SpaceSwitcher() {
             </optgroup>
           )}
           <option value={ALL_SPACES} data-testid="space-switcher-all">
-            All spaces…
+            {t('spaces.switcher.all')}
           </option>
         </select>
       </label>

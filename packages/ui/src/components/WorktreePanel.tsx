@@ -1,5 +1,6 @@
 import type { SessionListEntry, SpaceWorktreeEntry } from '../api/types.js';
 import { isUnderRoot } from '../board/columns.js';
+import { useT } from '../i18n/store.js';
 
 /** The tail segment (basename) of a path, for a compact worktree label. */
 function pathTail(root: string): string {
@@ -32,9 +33,10 @@ export function WorktreePanel({
   selectedRoot: string | null;
   onSelect: (root: string | null) => void;
 }) {
+  const t = useT();
   return (
-    <div class="worktree-panel" role="group" aria-label="Switch worktree" data-testid="worktree-panel">
-      <span class="worktree-panel__eyebrow">Worktrees</span>
+    <div class="worktree-panel" role="group" aria-label={t('worktree.group_label')} data-testid="worktree-panel">
+      <span class="worktree-panel__eyebrow">{t('worktree.label')}</span>
       <div class="worktree-panel__strip">
         {worktrees.map((worktree) => {
           const selected = worktree.isMain
@@ -52,9 +54,9 @@ export function WorktreePanel({
               onClick={() => onSelect(worktree.isMain ? null : worktree.root)}
             >
               <span class="worktree-chip__label">{pathTail(worktree.root)}</span>
-              <span class="worktree-chip__branch">{worktree.branch ?? 'detached'}</span>
-              {worktree.isMain && <span class="worktree-chip__main">MAIN</span>}
-              <span class="worktree-chip__changes">{worktree.activeChangeCount} changes</span>
+              <span class="worktree-chip__branch">{worktree.branch ?? t('worktree.detached')}</span>
+              {worktree.isMain && <span class="worktree-chip__main">{t('worktree.main')}</span>}
+              <span class="worktree-chip__changes">{t('worktree.changes', { count: worktree.activeChangeCount })}</span>
               {liveSessions > 0 && (
                 <span class="worktree-chip__sessions" data-testid="worktree-sessions">
                   ⦿ {liveSessions}

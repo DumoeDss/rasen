@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import type { SessionListEntry, SessionRecordWire } from '../api/types.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
 
 const POLL_INTERVAL_MS = 3000;
 const LIVE_SESSION_STATES: SessionRecordWire['state'][] = ['starting', 'running', 'exiting'];
@@ -18,10 +19,10 @@ const LIVE_SESSION_STATES: SessionRecordWire['state'][] = ['starting', 'running'
  */
 
 /** A short stage descriptor from the run-state join: the pipeline and its in-progress stage, when known. */
-function describeStage(entry: SessionListEntry): string {
+function describeStage(entry: SessionListEntry, noChangeLabel: string): string {
   const { runState } = entry;
   if (runState.kind !== 'ok' || runState.autoRun.kind !== 'ok') {
-    return entry.session.changeName ?? 'no change yet';
+    return entry.session.changeName ?? noChangeLabel;
   }
   const { pipeline, stages } = runState.autoRun.state;
   const active = stages
@@ -42,6 +43,7 @@ function formatDuration(fromMs: number, nowMs: number): string {
 }
 
 export function RunningSessionsMenu() {
+  const t = useT();
   const space = useSpace();
   const selector = space?.selector;
 
@@ -97,10 +99,10 @@ export function RunningSessionsMenu() {
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        ⦿ {live.length} running
+        ⦿ {t('running.toggle', { count: live.length })}
       </button>
       {open && (
-        <ul class="running-sessions-menu__list" aria-label="Running sessions">
+        <ul class="running-sessions-menu__list" aria-label={t('running.list_label')}>
           {live.map((entry) => {
             const { session } = entry;
             const href =
@@ -110,7 +112,7 @@ export function RunningSessionsMenu() {
             const body = (
               <>
                 <span class="running-sessions-menu__task">{session.task}</span>
-                <span class="running-sessions-menu__stage">{describeStage(entry)}</span>
+                <span class="running-sessions-menu__stage">{describeStage(entry, t('running.no_change'))}</span>
                 <span class="running-sessions-menu__duration">
                   {formatDuration(session.startedAt, now)}
                 </span>

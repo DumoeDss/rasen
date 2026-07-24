@@ -11,6 +11,7 @@ import type {
 } from '../api/types.js';
 import { tabbedEntries } from '../config/grouping.js';
 import type { ConfigMode } from '../config/controls.js';
+import { refreshLocale, useT } from '../i18n/store.js';
 import { useSpace, type Space } from '../store/use-space.js';
 import { useNavigationGuard } from '../store/use-navigation-guard.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
@@ -36,6 +37,7 @@ const OVERRIDE_SELECT_VALUE = '__override__';
  * lines) and, for store-inherited keys, an edit-in-store link.
  */
 export function ConfigPage() {
+  const t = useT();
   const space = useSpace();
   const [entries, setEntries] = useState<WireConfigEntry[] | null>(null);
   const [storeRef, setStoreRef] = useState<StoreLayerRef | null>(null);
@@ -78,7 +80,7 @@ export function ConfigPage() {
         if (err instanceof ApiError) {
           setPageError({ message: err.message, fix: err.fix });
         } else {
-          setPageError({ message: 'Failed to load configuration' });
+          setPageError({ message: 'status.error.config_load' });
         }
       })
       .finally(() => {
@@ -95,6 +97,15 @@ export function ConfigPage() {
         ? current.map((e) => (e.definition.key === updated.definition.key ? updated : e))
         : current
     );
+    // Live re-localization (ui-i18n spec req 2): a successful `language` write
+    // re-resolves the locale store so the whole UI swaps languages in place —
+    // no reload, no token re-entry, no route change. `refreshLocale` re-reads
+    // the effective value and is defensive (a failed read leaves the locale
+    // as-is). Only the `language` key triggers this; every other write is just
+    // a row refresh.
+    if (updated.definition.key === 'language') {
+      void refreshLocale();
+    }
   }
 
   // Route-leave guard (design D5): while a profile draft is unapplied, an in-app
@@ -103,7 +114,7 @@ export function ConfigPage() {
   useNavigationGuard(profileDirty, (href) => setPendingLeave({ kind: 'route', href }));
 
   if (loading) {
-    return <p>Loading configuration…</p>;
+    return <p>{t('status.loading.config')}</p>;
   }
 
   const tabs = entries ? tabbedEntries(entries, mode, spaceType) : [];
@@ -146,22 +157,22 @@ export function ConfigPage() {
     <div>
       {pageError && (
         <p class="config-page__error">
-          {pageError.message}
-          {pageError.fix ? ` — ${pageError.fix}` : ''} Use the space switcher above.
+          {t(pageError.message)}
+          {pageError.fix ? ` — ${pageError.fix}` : ''} {t('config.error_use_switcher')}
         </p>
       )}
 
       <PageHeader
-        title="Configuration"
+        title={t('config.title')}
         actions={
-          <div class="config-page__mode" role="group" aria-label="Configuration scope" data-testid="config-mode">
+          <div class="config-page__mode" role="group" aria-label={t('config.mode_label')} data-testid="config-mode">
             <button
               type="button"
               class={`member-chip${mode === 'global' ? ' member-chip--selected' : ''}`}
               aria-pressed={mode === 'global'}
               onClick={() => requestMode('global')}
             >
-              Global
+              {t('config.mode.global')}
             </button>
             <button
               type="button"
@@ -169,14 +180,14 @@ export function ConfigPage() {
               aria-pressed={mode === 'local'}
               onClick={() => requestMode('local')}
             >
-              Local
+              {t('config.mode.local')}
             </button>
           </div>
         }
       />
 
       {tabs.length > 0 && (
-        <div class="config-page__tabs" role="tablist" aria-label="Configuration sections" data-testid="config-tabs">
+        <div class="config-page__tabs" role="tablist" aria-label={t('config.tabs_label')} data-testid="config-tabs">
           {tabs.map((t) => (
             <button
               key={t.tab}
@@ -222,15 +233,12 @@ export function ConfigPage() {
 
       {pendingLeave && (
         <div class="workflow-dialog__overlay" data-testid="config-leave-dialog">
-          <div class="workflow-dialog" role="dialog" aria-label="Discard profile draft">
-            <h3 class="workflow-dialog__title">Discard unapplied profile change?</h3>
-            <p>
-              You picked a profile for this space but haven’t applied it. Leaving now discards that
-              draft — nothing is installed or removed.
-            </p>
+          <div class="workflow-dialog" role="dialog" aria-label={t('config.leave.aria')}>
+            <h3 class="workflow-dialog__title">{t('config.leave.title')}</h3>
+            <p>{t('config.leave.body')}</p>
             <div class="workflow-dialog__dismiss">
               <button type="button" data-testid="config-leave-discard" onClick={confirmLeave}>
-                Discard draft
+                {t('config.leave.discard')}
               </button>
               <button
                 type="button"
@@ -238,7 +246,7 @@ export function ConfigPage() {
                 data-testid="config-leave-stay"
                 onClick={() => setPendingLeave(null)}
               >
-                Stay
+                {t('config.leave.stay')}
               </button>
             </div>
           </div>
@@ -271,6 +279,7 @@ function SpaceProfileSelector({
   space: Space;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const t = useT();
   const [root, setRoot] = useState<string | null>(null);
   const [rootResolved, setRootResolved] = useState(false);
   const [enablement, setEnablement] = useState<WorkflowEnablementResponse | null>(null);
@@ -327,7 +336,7 @@ function SpaceProfileSelector({
         setProfiles(profs.profiles);
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(cliMessage(err, 'Failed to load this space’s profile state.'));
+        if (!cancelled) setLoadError(cliMessage(err, 'status.error.profile_load'));
       });
     return () => {
       cancelled = true;
@@ -373,7 +382,7 @@ function SpaceProfileSelector({
       setResetConfirming(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
-      setMutateError(cliMessage(err, 'Failed to switch this space’s profile.'));
+      setMutateError(cliMessage(err, 'status.error.profile_switch'));
       if (err instanceof ApiError && err.state) setEnablement(err.state as WorkflowEnablementResponse);
     } finally {
       setMutating(false);
@@ -414,7 +423,7 @@ function SpaceProfileSelector({
     return (
       <div class="config-profile" data-testid="config-profile-selector">
         <p class="config-profile__error" role="alert" data-testid="config-profile-error">
-          Could not resolve this space’s filesystem root.
+          {t('config.profile.error_root')}
         </p>
       </div>
     );
@@ -426,34 +435,31 @@ function SpaceProfileSelector({
   // would refuse it at validation anyway, but the user must see it exists.
   const saved = (profiles ?? []).filter((p) => !p.builtIn);
   // The staged profile's human label for the unapplied-change reminder.
-  const draftLabel = draftPick === '' ? 'Follow global profile' : draftPick;
+  const draftLabel = draftPick === '' ? t('config.profile.follow_global') : draftPick;
 
   return (
     <section class="config-profile" data-testid="config-profile-selector">
-      <h2>Profile</h2>
-      <p class="config-profile__hint">
-        Switch this space to a named profile — installing and removing workflows to match. Manage the profiles
-        themselves on the Profiles page.
-      </p>
+      <h2>{t('config.profile.title')}</h2>
+      <p class="config-profile__hint">{t('config.profile.hint')}</p>
 
       {loadError && (
-        <p class="config-profile__error" role="alert" data-testid="config-profile-error">{loadError}</p>
+        <p class="config-profile__error" role="alert" data-testid="config-profile-error">{t(loadError)}</p>
       )}
 
       <label class="config-profile__picker">
-        <span>Space profile</span>
+        <span>{t('config.profile.space_profile')}</span>
         <select
           data-testid="config-profile-picker"
           value={selected}
           disabled={mutating || !enablement}
           onChange={(e) => onPick((e.target as HTMLSelectElement).value)}
         >
-          <option value="">Follow global profile</option>
+          <option value="">{t('config.profile.follow_global')}</option>
           {applied === OVERRIDE_SELECT_VALUE && (
             // The space's own selection has no dropdown referent — surface it
             // honestly as the current, non-selectable state (design D4).
             <option value={OVERRIDE_SELECT_VALUE} disabled>
-              custom (this space’s own selection)
+              {t('config.profile.custom_option')}
             </option>
           )}
           {builtIns.map((p) => (
@@ -461,7 +467,7 @@ function SpaceProfileSelector({
           ))}
           {saved.map((p) => (
             <option key={p.name} value={p.name} disabled={p.error !== undefined}>
-              {p.name}{p.error !== undefined ? ' (broken)' : ''}
+              {p.name}{p.error !== undefined ? t('config.profile.broken_suffix') : ''}
             </option>
           ))}
         </select>
@@ -472,24 +478,23 @@ function SpaceProfileSelector({
           disabled={!dirty || mutating || !root}
           onClick={onUpdate}
         >
-          {mutating ? 'Updating…' : 'Update'}
+          {mutating ? t('config.profile.updating') : t('config.profile.update')}
         </button>
       </label>
 
       {dirty && (
         <p class="config-profile__reminder" role="status" data-testid="config-profile-reminder">
-          Profile changed to <strong>{draftLabel}</strong> — not applied yet. Click Update to install/remove
-          workflows.
+          {t('config.profile.reminder_pre')}<strong>{draftLabel}</strong>{t('config.profile.reminder_post')}
         </p>
       )}
 
       {enablement && (
         <p class="config-profile__mode-text" data-testid="config-profile-mode">
           {enablement.mode === 'locked-profile'
-            ? `Locked to profile "${enablement.lockedProfile}".`
+            ? t('config.profile.mode_locked', { name: enablement.lockedProfile ?? '' })
             : enablement.mode === 'override'
-              ? 'This space uses its own workflow selection.'
-              : 'This space follows the user-wide profile.'}
+              ? t('config.profile.mode_override')
+              : t('config.profile.mode_follow')}
         </p>
       )}
 
@@ -502,21 +507,21 @@ function SpaceProfileSelector({
               disabled={mutating}
               onClick={() => setResetConfirming(true)}
             >
-              Reset to profile
+              {t('config.profile.reset')}
             </button>
           ) : (
             <span class="config-profile__confirm">
-              Discard this space’s own selection and follow the user-wide profile?
+              {t('config.profile.reset_confirm')}
               <button
                 type="button"
                 data-testid="config-profile-reset-confirm"
                 disabled={mutating}
                 onClick={() => root && mutate({ root, op: 'reset' })}
               >
-                {mutating ? 'Resetting…' : 'Yes, reset'}
+                {mutating ? t('config.profile.resetting') : t('config.profile.reset_yes')}
               </button>
               <button type="button" disabled={mutating} onClick={() => setResetConfirming(false)}>
-                Cancel
+                {t('config.profile.cancel')}
               </button>
             </span>
           )}
@@ -526,7 +531,7 @@ function SpaceProfileSelector({
       {confirmingReplace && draftPick && draftPick !== '' && (
         <div class="config-profile__confirm-replace" data-testid="config-profile-confirm">
           <p>
-            This space uses its own workflow selection. Switching to <strong>{draftPick}</strong> will replace it.
+            {t('config.profile.replace_pre')}<strong>{draftPick}</strong>{t('config.profile.replace_post')}
           </p>
           <button
             type="button"
@@ -534,35 +539,33 @@ function SpaceProfileSelector({
             disabled={mutating}
             onClick={() => root && mutate({ root, op: 'set-profile', profile: draftPick })}
           >
-            {mutating ? 'Switching…' : 'Replace and switch'}
+            {mutating ? t('config.profile.switching') : t('config.profile.replace_yes')}
           </button>
           <button type="button" disabled={mutating} onClick={() => setConfirmingReplace(false)}>
-            Cancel
+            {t('config.profile.cancel')}
           </button>
         </div>
       )}
 
       {confirmingFollowGlobal && (
         <div class="config-profile__confirm-replace" data-testid="config-profile-follow-global-confirm">
-          <p>
-            This space will follow the global profile. Its own workflow selection will be removed.
-          </p>
+          <p>{t('config.profile.follow_body')}</p>
           <button
             type="button"
             data-testid="config-profile-follow-global-yes"
             disabled={mutating}
             onClick={() => root && mutate({ root, op: 'follow-global' })}
           >
-            {mutating ? 'Switching…' : 'Follow global profile'}
+            {mutating ? t('config.profile.switching') : t('config.profile.follow_yes')}
           </button>
           <button type="button" disabled={mutating} onClick={() => setConfirmingFollowGlobal(false)}>
-            Cancel
+            {t('config.profile.cancel')}
           </button>
         </div>
       )}
 
       {mutateError && (
-        <p class="config-profile__error" role="alert" data-testid="config-profile-mutate-error">{mutateError}</p>
+        <p class="config-profile__error" role="alert" data-testid="config-profile-mutate-error">{t(mutateError)}</p>
       )}
     </section>
   );

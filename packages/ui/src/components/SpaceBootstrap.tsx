@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { spaceRouteFromSelector } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * The `/` (and unknown-path) bootstrap (management-ui-shell design D1). It
@@ -19,6 +20,7 @@ import { spaceRouteFromSelector } from '../store/use-space.js';
  * `route(…, true)` (replace) guards against a redirect loop.
  */
 export function SpaceBootstrap() {
+  const t = useT();
   const { route } = useLocation();
   const [empty, setEmpty] = useState(false);
 
@@ -72,10 +74,12 @@ export function SpaceBootstrap() {
   if (empty) {
     return (
       <div class="space-bootstrap__empty" data-testid="no-space-empty-state">
-        <p>No planning space registered — run <code>rasen ui</code> inside a Rasen project.</p>
+        <p>
+          {t('spaces.bootstrap.empty_pre')}<code>rasen ui</code>{t('spaces.bootstrap.empty_post')}
+        </p>
       </div>
     );
   }
 
-  return <p class="space-bootstrap__resolving">Resolving planning space…</p>;
+  return <p class="space-bootstrap__resolving">{t('spaces.bootstrap.resolving')}</p>;
 }
