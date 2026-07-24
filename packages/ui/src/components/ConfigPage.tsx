@@ -17,6 +17,7 @@ import { useNavigationGuard } from '../store/use-navigation-guard.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { TelemetryDisclosure } from './TelemetryDisclosure.js';
+import { ThemeControl } from './ThemeControl.js';
 
 /** A pending navigation blocked by an unapplied profile draft (design D5). */
 type PendingLeave =
@@ -216,15 +217,23 @@ export function ConfigPage() {
             // (style.css) still strips the top border/padding from only the first
             // row of the group rather than from every row.
             <Fragment key={entry.definition.key}>
-              <ConfigEntryRow
-                entry={entry}
-                mode={mode}
-                spaceType={spaceType}
-                spaceSelector={selector ?? ''}
-                storeRef={storeRef}
-                onPageError={(message, fix) => setPageError({ message, fix })}
-                onEntryUpdated={updateEntry}
-              />
+              {entry.definition.key === 'ui.theme' && mode === 'global' ? (
+                <ThemeControl
+                  entry={entry}
+                  spaceSelector={selector ?? ''}
+                  onEntryUpdated={updateEntry}
+                />
+              ) : (
+                <ConfigEntryRow
+                  entry={entry}
+                  mode={mode}
+                  spaceType={spaceType}
+                  spaceSelector={selector ?? ''}
+                  storeRef={storeRef}
+                  onPageError={(message, fix) => setPageError({ message, fix })}
+                  onEntryUpdated={updateEntry}
+                />
+              )}
               {entry.definition.key === 'telemetry.enabled' && <TelemetryDisclosure />}
             </Fragment>
           ))}

@@ -78,6 +78,56 @@ describe('api client', () => {
     expect(result.projects).toHaveLength(2);
   });
 
+  it('uses the typed theme catalog/import routes and sends raw JSON bytes', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce(jsonResponse(200, { themes: [], skipped: [] }))
+      .mockResolvedValueOnce(jsonResponse(201, {
+        theme: {
+          schemaVersion: 1,
+          id: 'forest-paper',
+          name: 'Forest Paper',
+          mode: 'light',
+          tokens: { light: {} },
+          effects: [],
+        },
+      }));
+    expect(await client.listThemes()).toEqual({ themes: [], skipped: [] });
+    const document = '{"schemaVersion":1}';
+    expect((await client.importTheme(document)).theme.id).toBe('forest-paper');
+    const [url, init] = (fetch as any).mock.calls[1];
+    expect(url).toBe('/api/v1/themes/import');
+    expect(init.method).toBe('POST');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(init.body).toBe(document);
+  });
+
+  it('passes startup AbortSignals through config and theme catalog reads', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce(jsonResponse(200, { entry: configListFixture.entries[0] }))
+      .mockResolvedValueOnce(jsonResponse(200, { themes: [], skipped: [] }));
+    const controller = new AbortController();
+    await Promise.all([
+      client.getKey('ui.theme', undefined, controller.signal),
+      client.listThemes(controller.signal),
+    ]);
+    expect((fetch as any).mock.calls[0][1].signal).toBe(controller.signal);
+    expect((fetch as any).mock.calls[1][1].signal).toBe(controller.signal);
+  });
+
+  it('preserves stable theme validation details on ApiError', async () => {
+    (fetch as any).mockResolvedValueOnce(jsonResponse(400, {
+      error: {
+        code: 'invalid_theme',
+        message: 'Theme manifest failed validation.',
+        details: [{ path: 'tokens.dark.canvas', code: 'invalid_token', message: 'Invalid color.' }],
+      },
+    }));
+    await expect(client.importTheme('{}')).rejects.toMatchObject({
+      code: 'invalid_theme',
+      details: [{ path: 'tokens.dark.canvas', code: 'invalid_token' }],
+    });
+  });
+
   it('narrows a non-2xx body to ApiError with code/message/fix', async () => {
     const { status, body } = errorsFixture.invalid_scope;
     (fetch as any).mockResolvedValueOnce(jsonResponse(status, body));

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "forest-paper",
+  "name": "Forest Paper",
+  "description": "A safe partial adaptive theme.",
+  "mode": "adaptive",
+  "tokens": {
+    "light": {
+      "canvas": "#f1f4ec",
+      "accent": "#386641",
+      "radius": 10
+    },
+    "dark": {
+      "canvas": "#172019",
+      "accent": "#a7c957",
+      "radius": 10
+    }
+  },
+  "effects": ["uppercase-metadata"]
+}
