@@ -13,8 +13,10 @@ import {
 import {
   getWorkflowArtifactLedgerPath,
   hasWorkflowArtifactLedgerDrift,
+  persistToolLearnedArtifacts,
   readWorkflowArtifactLedger,
   syncWorkflowArtifactLedger,
+  type LearnedArtifactEntry,
 } from '../../src/core/workflow-artifact-ledger.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 
@@ -64,6 +66,40 @@ describe('workflow artifact ledger', () => {
     fs.writeFileSync(sidecar, 'checklist\n');
     return { skill, sidecar, directory };
   }
+
+  it('preserves both sections when a tool carries a workflow entry and a learned entry (cross-section)', async () => {
+    // Reproduces the combined case the codify change relies on: one tool ledger
+    // holding BOTH a user-workflow entry and a learned-skill entry. A learned
+    // reconcile must keep the workflow section, and a workflow re-sync must keep
+    // the learned section — neither owner may drop the other's data.
+    await installWorkflow('cross-ledger');
+    materialize('cross-ledger');
+    syncWorkflowArtifactLedger(project, 'claude', ['cross-ledger']);
+
+    const learnedEntry: LearnedArtifactEntry = {
+      skillScope: 'project',
+      contentDigest: `sha256:${'a'.repeat(64)}`,
+      file: {
+        scope: 'project',
+        path: '.claude/skills/typescript-cli-i18n-routing/SKILL.md',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+    };
+
+    // persistToolLearnedArtifacts must keep the existing workflow section.
+    persistToolLearnedArtifacts(project, 'claude', {
+      'typescript-cli-i18n-routing': learnedEntry,
+    });
+    let ledger = readWorkflowArtifactLedger(project)!;
+    expect(ledger.tools.claude.workflows['cross-ledger']).toBeDefined();
+    expect(ledger.tools.claude.learned?.['typescript-cli-i18n-routing']).toEqual(learnedEntry);
+
+    // syncWorkflowArtifactLedger must keep the existing learned section.
+    syncWorkflowArtifactLedger(project, 'claude', ['cross-ledger']);
+    ledger = readWorkflowArtifactLedger(project)!;
+    expect(ledger.tools.claude.workflows['cross-ledger']).toBeDefined();
+    expect(ledger.tools.claude.learned?.['typescript-cli-i18n-routing']).toEqual(learnedEntry);
+  });
 
   it('records source, digest, generated files, and detects content drift', async () => {
     await installWorkflow('team-ledger');

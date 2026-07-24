@@ -34,8 +34,8 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 23 workflows (11 base + 5 Rasen fusion + review-cycle + handoff + 4 goal-loop + audit)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(23);
+    it('should contain all 22 selectable workflows (11 base + 4 Rasen fusion + review-cycle + handoff + 4 goal-loop + audit; retro retired, retain internal)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(22);
     });
 
     it('should contain expected workflow IDs', () => {
@@ -44,7 +44,7 @@ describe('profiles', () => {
         'sync', 'archive', 'bulk-archive', 'verify', 'onboard', 'help',
         // Rasen fusion workflow commands
         'office-hours-command', 'verify-enhanced-command', 'ship-command',
-        'retro-command', 'auto-command',
+        'auto-command',
         // Iterative review loop (opt-in)
         'review-cycle',
         // Context handoff (opt-in)

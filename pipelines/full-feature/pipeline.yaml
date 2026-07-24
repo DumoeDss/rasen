@@ -2,7 +2,7 @@ name: full-feature
 description: >-
   Full feature delivery pipeline: office hours validation, proposal with lead
   review, apply, a parallel fan-out of conditional expert reviews, a review
-  cycle to drive fixes, then ship, archive, and retrospective.
+  cycle to drive fixes, then ship, retention, and archive.
 stages:
   - id: office-hours
     skill: rasen-office-hours-command
@@ -80,13 +80,14 @@ stages:
     gate: true
     model: sonnet
 
-  - id: archive
-    skill: rasen-archive-change
-    role: shipper
+  - id: retain
+    skill: rasen-retain
+    role: reviewer
     requires: [ship]
     model: sonnet
 
-  - id: retro
-    skill: rasen-retro
-    role: reviewer
-    requires: [archive]
+  - id: archive
+    skill: rasen-archive-change
+    role: shipper
+    requires: [retain]
+    model: sonnet

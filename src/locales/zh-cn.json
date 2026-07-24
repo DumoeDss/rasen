@@ -1,5 +1,41 @@
 {
   "locale": "zh-cn",
+  "knowledge": {
+    "commandDescription": "管理有证据门槛的学习技能",
+    "applyDescription": "从绝对路径的 JSON 文件应用学习技能候选",
+    "listDescription": "列出规范的学习技能",
+    "showDescription": "显示规范的学习技能",
+    "retireDescription": "退役受管的学习技能",
+    "candidatePathRequired": "需要候选文件。请传入 --from <绝对路径的JSON文件>。",
+    "candidatePathMustBeAbsolute": "候选路径必须是绝对路径：{path}",
+    "candidateNotFound": "未找到候选文件：{path}",
+    "candidateNotFile": "候选路径不是文件：{path}",
+    "candidateTooLarge": "候选文件过大（{size} 字节；最大 {maximum}）。",
+    "candidateInvalid": "候选无效：{detail}",
+    "approveGlobalNotForProject": "--approve-global 仅适用于全局变更，不适用于项目变更。",
+    "codifyRequired": "项目级学习技能变更要求当前生效的配置方案 retention 为 'codify'（当前为 '{retention}'）。",
+    "projectRequired": "此目录中未找到 Rasen 项目。请先运行 `rasen init`。",
+    "plan": "计划：{summary}",
+    "blocked": "已阻止：{message}",
+    "globalApprovalPrompt": "根据多项目证据创建或更新全局学习技能 \"{id}\"？",
+    "globalApprovalRequiredNonInteractive": "\"{id}\" 的全局变更需要批准。请加上 --approve-global 重新运行。",
+    "globalApprovalDeclined": "未获得全局批准。全局学习技能状态未更改。",
+    "created": "已创建 {scope} 学习技能 \"{id}\"。",
+    "rewritten": "已更新 {scope} 学习技能 \"{id}\"。",
+    "retired": "已退役 {scope} 学习技能 \"{id}\"。",
+    "renamed": "已将学习技能改名为 \"{id}\"。",
+    "noop": "无变更：\"{id}\" 已反映该证据。",
+    "listHeading": "学习技能",
+    "listEmpty": "未找到学习技能。",
+    "listRow": "{marker} {id} [{scope}/{status}] {description}",
+    "provenanceSummary": "来自 {projects} 个项目的 {count} 条证据",
+    "showNotFound": "{scope} 范围中没有学习技能 \"{id}\"。",
+    "showApplicability": "适用条件（{mode}）：{markers}",
+    "retireConfirm": "退役 {scope} 学习技能 \"{id}\"？",
+    "retireRequiresConfirmation": "退役需要确认。要非交互式退役请传入 --yes。",
+    "retireCancelled": "已取消退役。",
+    "cancelled": "已取消。"
+  },
   "expertSkills": {
     "workflowAuthor": "通过暂存、静态校验、独立审查和经用户批准的导入，安全地编写可安装工作流",
     "workflowReview": "从语义质量、安全边界、可移植性、依赖关系和完整性方面独立审查可安装工作流"
@@ -260,10 +296,6 @@
           "name": "交付变更",
           "description": "通过 PR、推送或本地交接提交并交付已完成的变更"
         },
-        "retro-command": {
-          "name": "复盘",
-          "description": "回顾已交付工作，沉淀模式、决策和经验"
-        },
         "auto-command": {
           "name": "自动驾驶",
           "description": "编排专用智能体，端到端完成整个工作流"
@@ -384,7 +416,22 @@
         }
       },
       "workflowsGroupLabel": "-- 工作流 --",
-      "expertsGroupLabel": "-- 专家 --"
+      "expertsGroupLabel": "-- 专家 --",
+      "retentionPickerMessage": "保留策略（在 ship 之后、archive 之前运行）：",
+      "retention": {
+        "off": {
+          "name": "off",
+          "description": "无保留步骤 —— ship 之后不写入任何内容。"
+        },
+        "report": {
+          "name": "report",
+          "description": "为该变更写入回顾报告（原 retro 行为）。"
+        },
+        "codify": {
+          "name": "codify",
+          "description": "评估该变更以创建、重写、退役受管学习技能，或不做任何操作。"
+        }
+      }
     },
     "ui": {
       "errorPrefix": "错误：",
@@ -465,7 +512,14 @@
       "diffWorkflowsAdded": "工作流：已添加 {items}",
       "diffWorkflowsRemoved": "工作流：已移除 {items}",
       "diffWorkflowsBoth": "工作流：已添加 {added}；已移除 {removed}",
-      "diffWorkflowsEmpty": "工作流："
+      "diffWorkflowsEmpty": "工作流：",
+      "retentionLabel": "保留",
+      "retentionModes": {
+        "off": "off（无保留）",
+        "report": "report（回顾报告）",
+        "codify": "codify（受管学习技能）"
+      },
+      "diffRetention": "保留：{before} -> {after}"
     },
     "errors": {
       "invalidName": "配置方案名称必须为 1-64 个字符，以小写字母或数字开头，并且只能包含小写字母、数字、点、下划线或连字符。",
@@ -712,6 +766,15 @@
     "helpCommand": "显示指定命令的帮助"
   },
   "commandDescriptions": {
+    "Manage evidence-gated learned skills": "管理有证据门槛的学习技能",
+    "Apply a learned-skill candidate from an absolute JSON file": "从绝对路径的 JSON 文件应用学习技能候选",
+    "List canonical learned skills": "列出规范的学习技能",
+    "Show a canonical learned skill": "显示规范的学习技能",
+    "Retire a managed learned skill": "退役受管的学习技能",
+    "Absolute path to a candidate JSON file": "候选 JSON 文件的绝对路径",
+    "Approve a global create or promotion non-interactively": "非交互式批准全局创建或提升",
+    "project or global": "project 或 global",
+    "Skip the confirmation prompt": "跳过确认提示",
     "AI-native system for spec-driven development": "面向规格驱动开发的 AI 原生系统",
     "Alias for --deltas-only (deprecated, change-specific)": "--deltas-only 的别名（已弃用，仅适用于变更）",
     "Allow setting unknown keys": "允许设置未知键",

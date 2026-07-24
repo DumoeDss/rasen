@@ -17,7 +17,8 @@
         { "title": "Concepts", "slug": "core-concepts", "source": "concepts.md" },
         { "title": "Workflows", "slug": "the-workflow", "source": "workflows.md" },
         { "title": "Artifact Workflow", "slug": "artifact-workflow", "source": "artifact-workflow.md" },
-        { "title": "Explore First", "slug": "explore", "source": "explore.md" }
+        { "title": "Explore First", "slug": "explore", "source": "explore.md" },
+        { "title": "Retention & Learned Skills", "slug": "retention-and-learned-skills", "source": "retention-and-learned-skills.md" }
       ]
     },
     {

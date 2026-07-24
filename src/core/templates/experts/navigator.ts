@@ -20,8 +20,10 @@ The route most work travels. **\`rasen-auto\`** drives this whole flow autonomou
 3. **\`rasen-apply-change\`** — implement the tasks against the change.
 4. **\`rasen-review-cycle\`** — iterate review → triage → fix → re-review the delta until it's clean or escalates. Lighter gate: **\`rasen-verify-change\`** checks the implementation matches the artifacts. Heavier: **\`rasen-verify-enhanced\`** adds code-review, security, and browser passes, auto-scaled to the change size.
 5. **\`rasen-ship\`** — resolve the delivery mode (pr / push / local), test only when evidence demands it, then deliver.
-6. **\`rasen-archive-change\`** — fold the delta specs into the main specs once the change has merged.
-7. **\`rasen-retro\`** — look back at what shipped and what to learn from it.
+6. **\`rasen-retain\`** — the profile's retention step, run after ship and before archive. **report** and **codify** are mutually exclusive profile-policy choices: report preserves the retrospective in \`retro.md\`; codify completes evidence-gated learned-skill decisions (create / rewrite / retire / no-op); \`off\` does neither.
+7. **\`rasen-archive-change\`** — fold the delta specs into the main specs once the change has merged; runs after retention and never codifies.
+
+> \`rasen-retro\` remains only as a temporary user-invoked compatibility alias for \`rasen-retain\` **report** mode. It is not part of the main flow and is neither profile-selectable nor model-invoked.
 
 ## On-ramps
 

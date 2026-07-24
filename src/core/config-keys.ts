@@ -17,6 +17,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { RETENTION_MODES } from './retention.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 import { getGlobalConfigDir } from './global-config.js';
 
@@ -192,6 +193,16 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     defaultValue: [],
     description:
       'Explicit workflow selection (global: edit via `rasen profile`; project: a per-space override that replaces the user-wide profile for that space only)',
+    group: 'Profile',
+  },
+  {
+    key: 'retention',
+    scopes: ['global'],
+    type: 'enum',
+    enumValues: [...RETENTION_MODES],
+    defaultValue: 'off',
+    description:
+      'Retention policy run after ship, before archive: off (no retention), report (retrospective report), or codify (managed learned skills). Edit via `rasen profile`.',
     group: 'Profile',
   },
   {

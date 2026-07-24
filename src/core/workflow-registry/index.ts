@@ -1,6 +1,9 @@
 export {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
+  INTERNAL_BUILTIN_WORKFLOW_IDS,
+  RETENTION_RUNNER_WORKFLOW_ID,
+  RETAIN_SKILL_DIR_NAME,
   getBuiltInWorkflowDefinitions,
   type BuiltInWorkflowId,
 } from './builtins.js';

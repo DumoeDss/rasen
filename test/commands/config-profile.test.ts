@@ -82,28 +82,36 @@ describe('diffProfileState workflow formatting', () => {
   });
 });
 
-describe('deriveProfileFromWorkflowSelection', () => {
+describe('deriveProfileFromSelection', () => {
   it('returns custom for an empty workflow selection', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection([])).toBe('custom');
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection([], 'off')).toBe('custom');
   });
 
   it('returns custom when selection is a superset of core workflows', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection(['propose', 'explore', 'apply', 'sync', 'archive', 'new'])).toBe('custom');
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection(['propose', 'explore', 'apply', 'sync', 'archive', 'new'], 'off')).toBe('custom');
   });
 
   it('returns custom when selection has exactly the core workflows but no quality-floor experts', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection(['archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help'])).toBe('custom');
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection(['archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help'], 'off')).toBe('custom');
   });
 
   it('returns core when selection has exactly core workflows plus the quality-floor experts, in different order', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection([
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection([
       'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
       'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
-    ])).toBe('core');
+    ], 'off')).toBe('core');
+  });
+
+  it('returns custom when core membership carries a non-off retention mode', async () => {
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection([
+      'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
+      'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
+    ], 'report')).toBe('custom');
   });
 });
 
@@ -140,6 +148,39 @@ describe('resolveCurrentProfileState — saved-name global profile (m4)', () => 
     expect(state.profile).toBe('core');
     expect(state.workflows).toContain('propose');
   });
+
+  it('resolves retention from the profile when no explicit value is stored (full → report, core → off)', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    expect(resolveCurrentProfileState({ profile: 'full' }).retention).toBe('report');
+    expect(resolveCurrentProfileState({ profile: 'core' }).retention).toBe('off');
+  });
+
+  it('prefers an explicit retention value over the profile default', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({ profile: 'full', retention: 'codify' });
+    expect(state.retention).toBe('codify');
+  });
+
+  it('migrates a v1 custom selection carrying retro-command to report and drops the id', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({
+      profile: 'custom',
+      workflows: ['propose', 'retro-command', 'apply'],
+      expertSelectionExplicit: true,
+    });
+    expect(state.retention).toBe('report');
+    expect(state.workflows).not.toContain('retro-command');
+  });
+
+  it('migrates a v1 custom selection without retro-command to off', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({
+      profile: 'custom',
+      workflows: ['propose', 'apply'],
+      expertSelectionExplicit: true,
+    });
+    expect(state.retention).toBe('off');
+  });
 });
 
 describe('config profile interactive flow', () => {
@@ -168,6 +209,8 @@ describe('config profile interactive flow', () => {
       'rasen-archive-change',
       'rasen-auto',
       'rasen-help',
+      // auto-command's workflow dependency installs the internal retention runner.
+      'rasen-retain',
     ];
     for (const dirName of coreSkillDirs) {
       const skillPath = path.join(projectDir, '.claude', 'skills', dirName, 'SKILL.md');
@@ -284,11 +327,14 @@ describe('config profile interactive flow', () => {
     saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
 
     try {
       await runConfigCommand(['profile']);
 
-      expect(select).toHaveBeenCalledTimes(1);
+      // Two selects now: the action picker and the retention radio (delivery
+      // is retired; retention replaces it as the only non-checkbox choice).
+      expect(select).toHaveBeenCalledTimes(2);
       expect(checkbox).toHaveBeenCalledTimes(1);
       const checkboxCall = checkbox.mock.calls[0][0];
       expect(checkboxCall.pageSize).toBe(19);
@@ -482,6 +528,8 @@ describe('config profile interactive flow', () => {
     fs.mkdirSync(path.join(tempDir, 'rasen'), { recursive: true });
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+    // Retention unchanged (custom selection with no retro-command resolves to off).
+    select.mockResolvedValueOnce('off');
 
     await runConfigCommand(['profile']);
 
@@ -532,6 +580,7 @@ describe('config profile interactive flow', () => {
     setupDriftedProjectArtifacts(tempDir);
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+    select.mockResolvedValueOnce('off');
 
     await runConfigCommand(['profile']);
 
@@ -564,6 +613,7 @@ describe('config profile interactive flow', () => {
 
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(false);
 
     await runConfigCommand(['profile']);
@@ -584,6 +634,7 @@ describe('config profile interactive flow', () => {
 
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(true);
 
     await runConfigCommand(['profile']);

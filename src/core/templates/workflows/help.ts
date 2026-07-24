@@ -70,7 +70,7 @@ When the user wants Rasen to drive the loop instead of stepping manually:
 - **\`rasen-review-cycle <name>\`** — adversarial review loop over a change until findings run dry.
 - **\`rasen-ship <name>\`** — finalize: commit, sync specs, archive.
 - **\`rasen-goal <goal>\`** — goal-driven iteration (plan → iterate → report) toward a measurable target; for "make X faster/better" work rather than a defined feature.
-- **\`rasen-retro\`** — retrospective over recent work.
+- **\`rasen-retain\`** — the profile's retention step, run after ship and before archive. \`report\` and \`codify\` are mutually exclusive profile-policy choices: report writes a retrospective (\`retro.md\`), codify turns durable evidence into managed learned skills, \`off\` does neither. (\`rasen-retro\` remains only a temporary user-invoked compatibility alias for report mode — not profile-selectable or model-invoked.)
 
 Resuming and inspecting a run: \`rasen pipeline resume <change>\` shows a change's run-state (next/remaining stages); \`rasen-auto\` picks up where it left off.
 

@@ -72,6 +72,25 @@ describe('pipeline-registry/built-ins', () => {
     });
   }
 
+  describe('full-feature retention tail (design D2)', () => {
+    it('runs retain between ship and archive with no post-archive retro stage', () => {
+      const pipeline = loadPipelineByName('full-feature');
+      const ids = pipeline.stages.map((s) => s.id);
+      expect(ids).toContain('retain');
+      expect(ids).not.toContain('retro');
+
+      const retain = pipeline.stages.find((s) => s.id === 'retain')!;
+      const archive = pipeline.stages.find((s) => s.id === 'archive')!;
+      expect(retain.skill).toBe('rasen-retain');
+      // retain runs after ship; archive is gated on retain completing (so archive
+      // cannot begin until the retention operation succeeds).
+      expect(retain.requires).toContain('ship');
+      expect(archive.requires).toContain('retain');
+      // archive no longer depends directly on ship (retain is interposed).
+      expect(archive.requires).not.toContain('ship');
+    });
+  });
+
   // autopilot-gate-policy: the stage gate is a plain boolean; the existing
   // boolean gate stages of the three non-goal-loop built-ins are unchanged.
   describe('backward-compat: existing gate: true stages are unchanged', () => {

@@ -27,16 +27,37 @@ const WorkflowEntrySchema = z.strictObject({
   files: z.array(ArtifactFileSchema),
 });
 
+/**
+ * One materialized learned-skill copy generated into a tool's skill home.
+ * Keyed in the ledger by the canonical learned-skill id, it records the source
+ * scope, the canonical content digest (the refresh key), and the exact target
+ * file (path + sha256) so update/init can refresh or prune ONLY the exact copy
+ * Rasen generated — never a similarly named or human-authored directory.
+ */
+const LearnedArtifactSchema = z.strictObject({
+  /** Canonical scope the materialization came from. */
+  skillScope: z.enum(['project', 'global']),
+  /** Canonical content digest of the source learned skill (refresh key). */
+  contentDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  /** Exact generated target file (the materialized SKILL.md). */
+  file: ArtifactFileSchema,
+});
+
+const ToolLedgerSchema = z.strictObject({
+  workflows: z.record(z.string(), WorkflowEntrySchema),
+  /** Learned-skill materializations (absent when none are tracked for the tool). */
+  learned: z.record(z.string(), LearnedArtifactSchema).optional(),
+});
+
 const LedgerSchema = z.strictObject({
   version: z.literal(WORKFLOW_ARTIFACT_LEDGER_VERSION),
   workflows: z.array(z.string()),
-  tools: z.record(z.string(), z.strictObject({
-    workflows: z.record(z.string(), WorkflowEntrySchema),
-  })),
+  tools: z.record(z.string(), ToolLedgerSchema),
 });
 
 type ArtifactFile = z.infer<typeof ArtifactFileSchema>;
 type WorkflowEntry = z.infer<typeof WorkflowEntrySchema>;
+export type LearnedArtifactEntry = z.infer<typeof LearnedArtifactSchema>;
 export type WorkflowArtifactLedger = z.infer<typeof LedgerSchema>;
 
 export class WorkflowArtifactLedgerError extends Error {
@@ -85,7 +106,7 @@ export function readWorkflowArtifactLedger(projectRoot: string): WorkflowArtifac
   return result.data;
 }
 
-function sha256File(filePath: string): string | null {
+export function sha256File(filePath: string): string | null {
   try {
     const stats = fs.lstatSync(filePath);
     if (!stats.isFile() || stats.isSymbolicLink()) return null;
@@ -100,7 +121,7 @@ function isWithin(parent: string, candidate: string): boolean {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
-function storedArtifactFile(projectRoot: string, filePath: string): Omit<ArtifactFile, 'sha256'> {
+export function storedArtifactFile(projectRoot: string, filePath: string): Omit<ArtifactFile, 'sha256'> {
   const absolute = path.resolve(filePath);
   if (isWithin(projectRoot, absolute)) {
     return {
@@ -111,7 +132,7 @@ function storedArtifactFile(projectRoot: string, filePath: string): Omit<Artifac
   return { scope: 'absolute', path: absolute };
 }
 
-function resolveArtifactFile(projectRoot: string, file: ArtifactFile): string | null {
+export function resolveArtifactFile(projectRoot: string, file: ArtifactFile): string | null {
   if (file.scope === 'absolute') return path.isAbsolute(file.path) ? path.resolve(file.path) : null;
   if (path.isAbsolute(file.path) || file.path.split('/').includes('..')) return null;
   const resolved = path.resolve(projectRoot, ...file.path.split('/'));
@@ -161,10 +182,12 @@ function buildWorkflowEntry(
   };
 }
 
-function writeLedger(projectRoot: string, ledger: WorkflowArtifactLedger): void {
+export function writeWorkflowArtifactLedger(projectRoot: string, ledger: WorkflowArtifactLedger): void {
   const ledgerPath = getWorkflowArtifactLedgerPath(projectRoot);
   const hasEntries = Object.values(ledger.tools).some(
-    (tool) => Object.keys(tool.workflows).length > 0
+    (tool) =>
+      Object.keys(tool.workflows).length > 0 ||
+      (tool.learned !== undefined && Object.keys(tool.learned).length > 0)
   );
   if (!hasEntries) {
     fs.rmSync(ledgerPath, { force: true });
@@ -291,13 +314,64 @@ export function syncWorkflowArtifactLedger(
     }
   }
 
-  if (Object.keys(next).length > 0) ledger.tools[toolId] = { workflows: next };
-  else delete ledger.tools[toolId];
+  // Preserve any learned-skill materializations recorded for this tool — the
+  // workflow reconciliation owns only the `workflows` section.
+  const existingLearned = ledger.tools[toolId]?.learned;
+  const hasLearned = existingLearned !== undefined && Object.keys(existingLearned).length > 0;
+  if (Object.keys(next).length > 0 || hasLearned) {
+    ledger.tools[toolId] = { workflows: next, ...(hasLearned ? { learned: existingLearned } : {}) };
+  } else {
+    delete ledger.tools[toolId];
+  }
   ledger.workflows = [...new Set(
     Object.values(ledger.tools).flatMap((tool) => Object.keys(tool.workflows))
   )].sort();
-  writeLedger(resolvedProject, ledger);
+  writeWorkflowArtifactLedger(resolvedProject, ledger);
   return { removedFiles };
+}
+
+/**
+ * Reads the learned-skill materializations recorded for one tool, or an empty
+ * map when the ledger is absent, unreadable, or has no learned section for it.
+ * A read failure is treated as "nothing tracked" so a corrupt ledger never
+ * blocks reconciliation (materialization re-derives desired state and rewrites).
+ */
+export function readToolLearnedArtifacts(
+  projectRoot: string,
+  toolId: string
+): Record<string, LearnedArtifactEntry> {
+  let ledger: WorkflowArtifactLedger | null;
+  try {
+    ledger = readWorkflowArtifactLedger(projectRoot);
+  } catch {
+    return {};
+  }
+  return ledger?.tools[toolId]?.learned ?? {};
+}
+
+/**
+ * Persists the learned-skill materializations for one tool, preserving that
+ * tool's workflow section. Passing an empty map clears the tool's learned
+ * section (and removes the tool entry entirely when it then has no workflows).
+ */
+export function persistToolLearnedArtifacts(
+  projectRoot: string,
+  toolId: string,
+  learned: Record<string, LearnedArtifactEntry>
+): void {
+  const resolvedProject = path.resolve(projectRoot);
+  const ledger = readWorkflowArtifactLedger(resolvedProject) ?? emptyLedger();
+  const workflows = ledger.tools[toolId]?.workflows ?? {};
+  const hasLearned = Object.keys(learned).length > 0;
+  if (Object.keys(workflows).length === 0 && !hasLearned) {
+    delete ledger.tools[toolId];
+  } else {
+    ledger.tools[toolId] = { workflows, ...(hasLearned ? { learned } : {}) };
+  }
+  ledger.workflows = [...new Set(
+    Object.values(ledger.tools).flatMap((tool) => Object.keys(tool.workflows))
+  )].sort();
+  writeWorkflowArtifactLedger(resolvedProject, ledger);
 }
 
 export function hasWorkflowArtifactLedgerDrift(

@@ -40,6 +40,7 @@ import {
   formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
   pruneRetiredWorkflowSkillDirs,
+  pruneRetiredRetentionSkillDirs,
   RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import {
@@ -54,6 +55,18 @@ import {
   copySkillSidecars,
   type ToolSkillStatus,
 } from './shared/index.js';
+import {
+  getRetroCommandSkillTemplate,
+  RETRO_COMPAT_WRAPPER_DIR_NAME,
+} from './templates/skill-templates.js';
+import { resolveLearnedSkills, type ResolvedLearnedSkillSet } from './learned-skills/index.js';
+import {
+  learnedReconcileHasActivity,
+  mergeLearnedReconcileResult,
+  reconcileGlobalLearnedSkillsForTool,
+  reconcileProjectLearnedSkillsForTool,
+  type LearnedReconcileResult,
+} from './learned-skill-materialization.js';
 import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
 import {
@@ -270,8 +283,16 @@ export class InitCommand {
       writeExpertSelectionAck(machineHome.homeDir);
     }
 
+    // Materialize applicable learned skills into the tools just configured
+    // (after machine-home registration so the project store resolves). Learned
+    // ids never enter the profile or workflow selection.
+    const learned = await this.reconcileLearnedSkills(projectPath, [
+      ...results.createdTools,
+      ...results.refreshedTools,
+    ]);
+
     // Display success message
-    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome);
+    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome, learned);
   }
 
   /**
@@ -775,6 +796,77 @@ export class InitCommand {
     }
   }
 
+  /**
+   * Writes the temporary `rasen-retro` compatibility wrapper into a tool's
+   * skills root by its exact named identity ({@link RETRO_COMPAT_WRAPPER_DIR_NAME}).
+   * The wrapper forces `rasen-retain` report mode and is user-invoked only; it
+   * is deliberately outside the selectable workflow catalog.
+   */
+  private async generateRetroCompatWrapper(
+    skillsDir: string,
+    transformer: (text: string) => string
+  ): Promise<void> {
+    const content = generateSkillContent(
+      getRetroCommandSkillTemplate(),
+      OPENSPEC_VERSION,
+      transformer,
+      false
+    );
+    await FileSystemUtils.writeFile(
+      path.join(skillsDir, RETRO_COMPAT_WRAPPER_DIR_NAME, 'SKILL.md'),
+      content
+    );
+  }
+
+  /**
+   * Resolves the active learned skills and materializes the applicable ones
+   * into each successfully configured tool, tracking exact ownership in the
+   * artifact ledgers. Learned-skill ids are NOT added to the profile or
+   * workflow selection. Best-effort: a resolution or per-tool failure never
+   * fails init — the repo-side setup has already completed.
+   */
+  private async reconcileLearnedSkills(
+    projectPath: string,
+    tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
+  ): Promise<LearnedReconcileResult> {
+    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
+    let resolved: ResolvedLearnedSkillSet;
+    try {
+      resolved = await resolveLearnedSkills({ projectRoot: projectPath });
+    } catch {
+      return aggregate;
+    }
+
+    for (const tool of tools) {
+      const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
+      const skillsRoot = resolveToolSkillsRoot(
+        toolDefinition ?? { name: tool.name, value: tool.value, available: true, skillsDir: tool.skillsDir },
+        projectPath
+      );
+      try {
+        const result =
+          toolDefinition?.skillsHome === 'global'
+            ? reconcileGlobalLearnedSkillsForTool({
+                toolId: tool.value,
+                toolLabel: tool.name,
+                skillsRoot,
+                resolved,
+              })
+            : reconcileProjectLearnedSkillsForTool({
+                projectRoot: projectPath,
+                toolId: tool.value,
+                toolLabel: tool.name,
+                skillsRoot,
+                resolved,
+              });
+        mergeLearnedReconcileResult(aggregate, result);
+      } catch {
+        // Best-effort per tool.
+      }
+    }
+    return aggregate;
+  }
+
   private async generateSkillsAndCommands(
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
@@ -823,7 +915,22 @@ export class InitCommand {
         // workflows (e.g. `ff` → `rasen-ff-change`); the registry-derived
         // cleanup below can no longer reach a retired id.
         await pruneRetiredWorkflowSkillDirs(skillsDir);
+        // Clean retired retention skill dirs by exact name, preserving the
+        // currently shipped `rasen-retro` compatibility wrapper.
+        await pruneRetiredRetentionSkillDirs(skillsDir, [RETRO_COMPAT_WRAPPER_DIR_NAME]);
         await this.pruneRetiredWorkflowCommandFiles(projectPath, tool.value);
+
+        // Chain transformers once per tool: embed config values, then
+        // tool-specific transforms (hyphen-based command references for tools
+        // where filename = command name). Reused by every skill and the retro
+        // compatibility wrapper below.
+        const configTransform = (text: string) => text
+          .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+          .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+        const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+        const transformer = toolTransform
+          ? (text: string) => toolTransform(configTransform(text))
+          : configTransform;
 
         // Create skill directories and SKILL.md files
         for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
@@ -831,15 +938,6 @@ export class InitCommand {
           const skillFile = path.join(skillDir, 'SKILL.md');
 
           // Generate SKILL.md content with YAML frontmatter including generatedBy
-          // Chain transformers: embed config values, then tool-specific transforms
-          // (hyphen-based command references for tools where filename = command name)
-          const configTransform = (text: string) => text
-            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
-            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
-          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-          const transformer = toolTransform
-            ? (text: string) => toolTransform(configTransform(text))
-            : configTransform;
           const skillContent = generateSkillContent(
             template,
             OPENSPEC_VERSION,
@@ -854,6 +952,13 @@ export class InitCommand {
           // scripts) so its relative-path references resolve at the install target.
           copySkillSidecars(workflowId, skillDir);
         }
+
+        // Generate the temporary `rasen-retro` compatibility wrapper by its
+        // exact named identity. It is NOT a selectable workflow (absent from
+        // the catalog), so it is materialized explicitly here rather than
+        // through the skill-template loop, and retired later by the same
+        // named identity — never a prefix scan.
+        await this.generateRetroCompatWrapper(skillsDir, transformer);
 
         // The command surface is retired: skills are the only delivery
         // format now. A fresh init still opportunistically cleans up any
@@ -959,7 +1064,8 @@ export class InitCommand {
       removedCommandCount: number;
     },
     configStatus: 'created' | 'exists' | 'skipped',
-    machineHome: { homeDir: string } | { warning: string }
+    machineHome: { homeDir: string } | { warning: string },
+    learned: LearnedReconcileResult
   ): void {
     console.log();
     console.log(chalk.bold('Rasen Setup Complete'));
@@ -1024,6 +1130,17 @@ export class InitCommand {
       console.log(`Machine home: ${machineHome.homeDir}`);
     } else {
       console.log(chalk.yellow(`  ⚠ ${machineHome.warning}`));
+    }
+
+    // Learned-skill materialization (reported separately from workflow skills).
+    if (learnedReconcileHasActivity(learned)) {
+      const materialized = learned.created.length + learned.updated.length;
+      if (materialized > 0) {
+        console.log(`Learned skills: ${materialized} materialized`);
+      }
+      for (const skip of learned.skipped) {
+        console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+      }
     }
 
     // Profile lock (init-profile-lock spec): an explicit --profile value
