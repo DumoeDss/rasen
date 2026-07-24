@@ -529,6 +529,29 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .member-chip--selected { color: var(--accent-on); background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .member-chip--selected:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
 
+/* ═══ 10b. Keepalive beat control (pipelines-ui) ══════════════════════════ */
+/* A Defaults-section card: label + preset chips + a custom input on one
+   wrapping strip, with the timeout hint / error / source / reset falling to
+   their own full-width row. Reuses --space-* tokens and the member-chip look. */
+.keepalive-beat {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-muted); border-radius: var(--radius);
+}
+.keepalive-beat__label { font-weight: 600; margin-right: var(--space-1); }
+.keepalive-beat__presets { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
+.keepalive-beat__custom { display: inline-flex; align-items: center; gap: var(--space-2); }
+.keepalive-beat__custom > span { font-size: var(--text-xs); color: var(--muted); }
+.keepalive-beat__input {
+  width: 9ch; padding: 6px var(--space-2); font-size: var(--text-sm, inherit);
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--ring);
+}
+.keepalive-beat__desc { flex-basis: 100%; font-size: var(--text-xs); color: var(--muted); line-height: 1.45; }
+.keepalive-beat__hint,
+.keepalive-beat__error { flex-basis: 100%; font-size: var(--text-xs); }
+.keepalive-beat__hint { color: var(--muted); }
+.keepalive-beat__error { color: var(--danger, #d33); }
+
 /* Worktrees panel (worktree-aware-spaces D4 / board-ui spec): one labeled,
    structured control group — an eyebrow over a single aligned strip of
    uniform-height chips, each presenting its facts in a fixed order (name ·
