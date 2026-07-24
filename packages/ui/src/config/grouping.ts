@@ -88,6 +88,14 @@ const MAPPED_GROUPS = new Set(TAB_MAP.flatMap((t) => [...t.groups]));
  * visible entries is omitted, and any group outside the map lands in a
  * trailing {@link OTHER_TAB} bucket (groups there ordered by {@link groupEntries}).
  * Pure — no DOM, no registry-count assumptions (portfolio rule).
+ *
+ * In Local mode the `Profile` group's raw rows (the `profile` lock and the
+ * `workflows` selection) are excluded (ui-profile-workflow-split config-ui-package
+ * spec, design D7): a space's profile is chosen through the Project tab's
+ * Profile selector instead. Since `profile`/`workflows` are the only
+ * project-scope keys in the General tab's groups, the General tab then has no
+ * locally-visible entries and disappears via the empty-tab omission rule. Global
+ * mode keeps the rows.
  */
 export function tabbedEntries(
   entries: WireConfigEntry[],
@@ -95,11 +103,13 @@ export function tabbedEntries(
   spaceType: SpaceType
 ): TabbedEntries[] {
   const visible = entries.filter((e) => isVisibleInMode(e, mode, spaceType));
+  const hideRawProfileRows = mode === 'local';
   const tabs: TabbedEntries[] = [];
 
   for (const { tab, groups } of TAB_MAP) {
     const tabGroups: GroupedEntries[] = [];
     for (const group of groups) {
+      if (hideRawProfileRows && group === 'Profile') continue;
       const groupEntries = visible.filter((e) => e.definition.group === group);
       if (groupEntries.length > 0) tabGroups.push({ group, entries: groupEntries });
     }

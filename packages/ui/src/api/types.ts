@@ -738,6 +738,8 @@ export interface WorkflowEnablementResponse {
    * selection override, or a profile lock in its config.
    */
   mode: 'profile' | 'override' | 'locked-profile';
+  /** The profile name a `locked-profile` space is locked to (ui-profile-workflow-split); absent otherwise. */
+  lockedProfile?: string;
   units: WorkflowEnablementUnit[];
 }
 
@@ -745,7 +747,37 @@ export interface WorkflowEnablementResponse {
 export type WorkflowEnablementMutationRequest =
   | { root: string; op: 'enable'; id: string }
   | { root: string; op: 'disable'; id: string }
-  | { root: string; op: 'reset' };
+  | { root: string; op: 'reset' }
+  // ui-profile-workflow-split design D2: switch a space's profile lock.
+  | { root: string; op: 'set-profile'; profile: string }
+  | { root: string; op: 'clear-profile' };
+
+// ---- Named workflow profiles (ui-profile-workflow-split profile-http-api) ----
+// Mirror of the CLI's `management-api/wire-types.ts` shapes (mirror discipline).
+
+/** One available profile from `GET /api/v1/profiles`. A broken saved file carries `error` instead of `workflows`. */
+export interface WireProfileEntry {
+  name: string;
+  builtIn: boolean;
+  /** The normalized (closure-expanded) workflow membership; absent when the file failed to parse. */
+  workflows?: string[];
+  /** A parse/validation error description for a broken saved profile. */
+  error?: string;
+}
+
+/** `GET /api/v1/profiles` response. */
+export interface ProfileListResponse {
+  profiles: WireProfileEntry[];
+}
+
+/** `POST /api/v1/profiles` request, discriminated by `op`. */
+export type ProfileMutationRequest =
+  | { op: 'create'; name: string; workflows: string[] }
+  | { op: 'update'; name: string; workflows: string[] }
+  | { op: 'delete'; name: string };
+
+/** `POST /api/v1/profiles` success response: the normalized entry for create/update, or the deleted name. */
+export type ProfileMutationResponse = { profile: WireProfileEntry } | { deleted: string };
 
 // ---- Pipeline definition (pipeline-definition-api, pipeline-canvas-view) ----
 // Mirrors `WirePipelineDefinition` / `PipelineDetailResponse` in the CLI's

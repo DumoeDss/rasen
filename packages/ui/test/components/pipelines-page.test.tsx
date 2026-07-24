@@ -327,11 +327,16 @@ describe('Pipelines nav entry (Layout)', () => {
   });
 
   it('locks the content area to the viewport on a pipeline canvas route, but not on the list route', async () => {
+    // ui-profile-workflow-split design D8: the viewport lock now clamps BOTH the
+    // shell (definite height) and the content (flexed, min-height:0), so assert
+    // both modifier classes on the canvas route and neither off it.
     await mountLayout('/p/proj_x/pipelines/small-feature');
+    expect(container.querySelector('.app-shell')!.classList.contains('app-shell--canvas')).toBe(true);
     expect(container.querySelector('main')!.classList.contains('app-content--canvas')).toBe(true);
 
     render(null, container);
     await mountLayout('/p/proj_x/pipelines');
+    expect(container.querySelector('.app-shell')!.classList.contains('app-shell--canvas')).toBe(false);
     expect(container.querySelector('main')!.classList.contains('app-content--canvas')).toBe(false);
   });
 

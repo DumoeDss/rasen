@@ -102,6 +102,26 @@ describe('tabbedEntries', () => {
     expect(names).not.toContain('Workflow');
   });
 
+  it('hides the raw Profile-group rows in Local mode even when project-scoped, keeping them in Global (ui-profile-workflow-split)', () => {
+    // A project-scoped `profile` lock key in the Profile group — the real key's
+    // shape. In Local mode it must NOT render as a config row (the Project-tab
+    // selector owns it); since it is the only project-scope key in the General
+    // tab's groups, the General tab disappears. Global mode still shows it.
+    const projectProfileEntry: WireConfigEntry = {
+      ...entries[0]!,
+      definition: { ...entries[0]!.definition, key: 'profile', group: 'Profile', scopes: ['global', 'project'] },
+    };
+
+    const globalTabs = tabbedEntries([...entries, projectProfileEntry], 'global', 'project');
+    const globalGeneral = globalTabs.find((t) => t.tab === 'General');
+    expect(globalGeneral).toBeDefined();
+    expect(globalGeneral!.groups.some((g) => g.group === 'Profile')).toBe(true);
+
+    const localTabs = tabbedEntries([...entries, projectProfileEntry], 'local', 'project');
+    expect(localTabs.map((t) => t.tab)).not.toContain('General');
+    expect(localTabs.flatMap((t) => t.groups.map((g) => g.group))).not.toContain('Profile');
+  });
+
   it('routes a genuinely unmapped, non-excluded group into the trailing Other bucket', () => {
     const withUnmapped: WireConfigEntry[] = [
       ...entries,

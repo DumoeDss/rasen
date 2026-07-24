@@ -657,6 +657,13 @@ export interface WorkflowEnablementResponse {
    * selection override, or a profile lock in its config (init-profile-lock).
    */
   mode: 'profile' | 'override' | 'locked-profile';
+  /**
+   * The profile name a `locked-profile` space is locked to
+   * (ui-profile-workflow-split design D2): `full`, `core`, or a saved profile
+   * name. Absent for the `profile`/`override` modes so the client can show
+   * *which* profile governs, not merely that a lock exists.
+   */
+  lockedProfile?: string;
   units: WorkflowEnablementUnit[];
 }
 
@@ -670,4 +677,45 @@ export interface WorkflowEnablementResponse {
 export type WorkflowEnablementMutationRequest =
   | { root: string; op: 'enable'; id: string }
   | { root: string; op: 'disable'; id: string }
-  | { root: string; op: 'reset' };
+  | { root: string; op: 'reset' }
+  // ui-profile-workflow-split design D2: switch a space's profile lock. `set-profile`
+  // writes the project `profile` key to `full`/`core`/a saved name AND clears the
+  // `workflows` override in the same write (D4); `clear-profile` unsets the lock only.
+  | { root: string; op: 'set-profile'; profile: string }
+  | { root: string; op: 'clear-profile' };
+
+// -----------------------------------------------------------------------
+// Named workflow profiles (ui-profile-workflow-split profile-http-api design
+// D1) — `GET`/`POST /api/v1/profiles`. An in-process wrapper over
+// `named-profiles.ts` (the same code path the `rasen profile` CLI uses):
+// profile writes touch only a YAML file, so no bounded-CLI bridge is involved.
+// -----------------------------------------------------------------------
+
+/** One available profile as reported by `GET /api/v1/profiles`. A broken saved file carries `error` instead of `workflows`. */
+export interface WireProfileEntry {
+  name: string;
+  builtIn: boolean;
+  /** The (normalized, closure-expanded) workflow membership; absent when the file failed to parse. */
+  workflows?: string[];
+  /** A parse/validation error description for a broken saved profile; absent when the entry is valid. */
+  error?: string;
+}
+
+/** `GET /api/v1/profiles` response. */
+export interface ProfileListResponse {
+  profiles: WireProfileEntry[];
+}
+
+/**
+ * `POST /api/v1/profiles` request body, discriminated by `op` (design D1).
+ * `create`/`update` carry the desired membership list (validated + normalized
+ * server-side); `delete` names the saved profile to remove. Built-in and
+ * reserved names are refused by the library's own validation.
+ */
+export type ProfileMutationRequest =
+  | { op: 'create'; name: string; workflows: string[] }
+  | { op: 'update'; name: string; workflows: string[] }
+  | { op: 'delete'; name: string };
+
+/** `POST /api/v1/profiles` success response: the normalized entry for create/update, or the deleted name. */
+export type ProfileMutationResponse = { profile: WireProfileEntry } | { deleted: string };

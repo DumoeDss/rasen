@@ -342,9 +342,19 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 
 /* Canvas route (pipelines-ui spec): a viewport-locked content area — the page
    itself never scrolls; the editor's side panels scroll within their own
-   bounds and the flow fills the remainder. Only this route is locked. */
+   bounds and the flow fills the remainder. Only this route is locked.
+
+   ui-profile-workflow-split design D8 (root cause, verified in real Chrome):
+   the shell itself must be given a DEFINITE height (`.app-shell--canvas`) so the
+   content flex item can resolve `flex: 1` + `min-height: 0` and be bounded by
+   the viewport. The old `height: calc(100vh - 60px)` here was dead code — a
+   `height` on a `flex: 1` item does not constrain the flexed main size when the
+   shell's own height is indefinite (`min-height: 100vh` only), so `main` grew to
+   its content height and the whole document scrolled. Do NOT reintroduce a
+   `calc(100vh …)` here; the definite height lives on the shell now. */
+.app-shell--canvas { height: 100vh; }
 .app-content--canvas {
-  max-width: none; height: calc(100vh - 60px);
+  max-width: none; flex: 1; min-height: 0;
   padding: var(--space-4) var(--gutter);
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -643,6 +653,26 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 }
 .config-page__mode { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
 .config-page__tabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+
+/* The Local Project tab's Profile selector (config-ui-package spec) — the same
+   card substrate as a config group, all token-only. */
+.config-profile {
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xl); box-shadow: var(--shadow);
+  padding: var(--space-5) var(--space-6); margin-bottom: var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.config-profile > h2 {
+  font-size: var(--text-lg); padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.config-profile__hint { color: var(--muted); font-size: var(--text-sm); max-width: 80ch; }
+.config-profile__picker { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
+.config-profile__picker select { min-width: 220px; font-weight: 600; }
+.config-profile__mode-text { color: var(--fg-2); font-size: var(--text-sm); }
+.config-profile__override, .config-profile__confirm-replace { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-sm); }
+.config-profile__confirm { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; color: var(--muted); }
+.config-profile__error { color: var(--danger-fg); font-size: var(--text-sm); overflow-wrap: anywhere; }
 
 .config-entry { padding: var(--space-4) 0; border-top: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: var(--space-2); }
 .config-entry:first-of-type { border-top: none; padding-top: 0; }
@@ -1012,6 +1042,34 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .workflow-dialog__result { font-size: var(--text-sm); color: var(--fg-2); display: flex; flex-direction: column; gap: var(--space-2); }
 .workflow-valid { color: var(--success-fg); font-weight: 600; }
 .workflow-invalid { color: var(--danger-fg); font-weight: 600; }
+
+/* ═══ 24b. Profiles page (profiles-ui spec) ═════════════════════════════════ */
+/* Reuses the workflows-page section/card substrate and the workflow-dialog
+   overlay; only the page-level toolbar and edit bar are new, all token-only. */
+.profiles-page { max-width: var(--container-max); margin: 0 auto; padding: var(--space-6) var(--gutter); }
+.profiles-page__loading, .profiles-page__error { padding: var(--space-6) var(--gutter); color: var(--muted); }
+.profiles-page__error { color: var(--danger-fg); }
+.profiles-page__hint { color: var(--meta); font-size: var(--text-sm); max-width: 80ch; margin-bottom: var(--space-4); }
+.profiles-page__readonly { color: var(--muted); font-size: var(--text-sm); margin-bottom: var(--space-3); }
+.profiles-page__error[role="alert"] { font-size: var(--text-sm); margin-bottom: var(--space-3); }
+
+.profiles-toolbar {
+  display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.profiles-toolbar__picker { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
+.profiles-toolbar__picker select { min-width: 220px; font-weight: 600; }
+
+.profiles-editbar {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.profiles-editbar__dirty { color: var(--accent); font-weight: 600; font-size: var(--text-sm); }
+.profiles-editbar__clean { color: var(--meta); font-size: var(--text-sm); }
+.profiles-editbar__saved { color: var(--muted); font-size: var(--text-sm); max-width: 60ch; }
+.profiles-editbar__error { color: var(--danger-fg); font-size: var(--text-sm); overflow-wrap: anywhere; }
+
+.workflow-card__toggle-reason { color: var(--meta); font-size: var(--text-xs); }
 
 /* ═══ 25. Pipelines page (pipelines-ui spec) ════════════════════════════════ */
 /* Layout/structure only — reuses the app tokens and idioms: panels = the

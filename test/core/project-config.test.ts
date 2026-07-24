@@ -14,6 +14,7 @@ import {
   resolveAutopilotGatePolicy,
   resolveAutopilotSelectionPolicy,
   updateProjectConfigKey,
+  updateProjectConfigKeys,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -1885,6 +1886,61 @@ rules:
 
     it('throws with guidance when no config file exists', () => {
       expect(() => updateProjectConfigKey(tempDir, 'autopilot.gates', 'off')).toThrow(/rasen init/);
+    });
+  });
+
+  describe('updateProjectConfigKeys (batched single write)', () => {
+    function writeConfig(content: string): string {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(configPath, content);
+      return configPath;
+    }
+
+    it('sets one key and unsets another in a single write, preserving comments', () => {
+      // The set-profile shape: write the profile lock AND clear the workflows
+      // override together, so the two can never be left in a partial state.
+      const configPath = writeConfig(
+        '# keep me\nschema: spec-driven\nworkflows:\n  - review\n'
+      );
+
+      const result = updateProjectConfigKeys(tempDir, [
+        { keyPath: 'profile', value: 'core' },
+        { keyPath: 'workflows', value: undefined },
+      ]);
+
+      expect(result.existed).toBe(true); // the workflows override was removed
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      expect(raw).toContain('# keep me');
+      // Both edits landed in the one document the caller wrote.
+      const config = readProjectConfig(tempDir);
+      expect(config?.profile).toBe('core');
+      expect(config?.workflows).toBeUndefined();
+    });
+
+    it('applies edits in order (a later edit to the same key wins)', () => {
+      writeConfig('schema: spec-driven\n');
+      updateProjectConfigKeys(tempDir, [
+        { keyPath: 'profile', value: 'full' },
+        { keyPath: 'profile', value: 'core' },
+      ]);
+      expect(readProjectConfig(tempDir)?.profile).toBe('core');
+    });
+
+    it('reports existed=false when no unset edit removed a present key', () => {
+      writeConfig('schema: spec-driven\n');
+      const result = updateProjectConfigKeys(tempDir, [
+        { keyPath: 'profile', value: 'core' },
+        { keyPath: 'workflows', value: undefined },
+      ]);
+      expect(result.existed).toBe(false);
+    });
+
+    it('throws with guidance when no config file exists', () => {
+      expect(() =>
+        updateProjectConfigKeys(tempDir, [{ keyPath: 'profile', value: 'core' }])
+      ).toThrow(/rasen init/);
     });
   });
 });
