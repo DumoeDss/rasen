@@ -8,7 +8,7 @@ import { readdirSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../templates/skill-templates.js';
-import { quoteYamlValue } from './yaml.js';
+import { quoteYamlValue, yamlScalar } from './yaml.js';
 import {
   getExpertSkillDefinitions,
   loadWorkflowCatalog,
@@ -151,7 +151,11 @@ export function generateSkillContent(
   const disableModelInvocationLine = template.disableModelInvocation
     ? 'disable-model-invocation: true\n'
     : '';
-  const scalar = (value: string): string => escapeFrontmatter ? quoteYamlValue(value) : value;
+  // User-authored frontmatter is always quoted (trusted-input policy for
+  // imported skills); built-in frontmatter is quoted only when a value is
+  // unsafe as a YAML plain scalar (e.g. contains a ": " sequence), keeping the
+  // common case unquoted and the output always valid YAML.
+  const scalar = (value: string): string => escapeFrontmatter ? quoteYamlValue(value) : yamlScalar(value);
   const version = template.metadata?.version || '1.0';
   const customMetadataLines = Object.entries(template.metadata ?? {})
     .filter(([key]) => key !== 'author' && key !== 'version' && key !== 'generatedBy')

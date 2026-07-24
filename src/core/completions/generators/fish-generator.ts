@@ -39,12 +39,21 @@ export class FishGenerator implements CompletionGenerator {
     // Dynamic completion helpers from template
     const dynamicHelpers = FISH_DYNAMIC_HELPERS;
 
+    // Disable Fish's default filename fallback for `rasen`. Without this, Fish
+    // suggests files from the cwd at every position where no other completion
+    // applies (e.g. `rasen <TAB>` lists subcommands AND local paths). Path
+    // arguments re-enable filename completion explicitly via `-F` (see
+    // generatePositionalCompletion's 'path' case).
+    const noFileFallback = "complete -c rasen -f";
+
     // Assemble final script with template literal
     return `# Fish completion script for Rasen CLI
 # Auto-generated - do not edit manually
 
 ${helperFunctions}
 ${dynamicHelpers}
+${noFileFallback}
+
 ${topLevelCommands}
 
 ${commandCompletions}`;
@@ -179,7 +188,9 @@ ${commandCompletions}`;
         lines.push(`complete -c rasen -n '${condition}' -a 'zsh bash fish powershell' -f`);
         break;
       case 'path':
-        // Fish automatically completes files, no need to specify
+        // Force filename completion back on for path arguments, overriding the
+        // command-level `complete -c rasen -f` no-files directive.
+        lines.push(`complete -c rasen -n '${condition}' -F`);
         break;
     }
 
