@@ -12,6 +12,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { AgentRuntimeSandboxSchema, AgentRuntimeSchema } from './types.js';
+import { RETENTION_MODES, type RetentionMode } from '../retention.js';
+
+/** The full-feature retention stage id and the retired legacy retro stage id. */
+export const RETAIN_STAGE_ID = 'retain';
+const LEGACY_RETRO_STAGE_ID = 'retro';
 
 export const RUN_STATE_FILENAME = 'auto-run.json';
 
@@ -148,6 +153,10 @@ export const RunStateSchema = z
       })
       .optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),
+    // The retention mode frozen on first entry to the retain stage (design D2).
+    // Once recorded, resume prefers it over a later profile edit so a mid-run
+    // profile change never switches the retain branch.
+    retention: z.enum(RETENTION_MODES).optional(),
     sessionHandoff: SessionHandoffSchema.optional(),
     completed: z.array(z.string()).optional(),
     rounds: z.number().int().nonnegative().optional(),
@@ -282,6 +291,26 @@ export function normalizeRunStateWorkerRecord(raw: unknown): unknown {
   return obj;
 }
 
+/**
+ * Migrates an in-flight legacy full-feature run whose tail was recorded against
+ * the retired post-archive `retro` stage (design D2): the `retro` stage entry is
+ * moved to `retain` (its status preserved — a completed legacy retro stays
+ * completed rather than re-running, an incomplete one resumes as retain), and
+ * the frozen retention mode is set to `report` (legacy retro was report
+ * behavior) unless an explicit `retention` is already recorded. Completion is
+ * NEVER inferred from configuration. No-op when there is no legacy `retro`
+ * stage or a `retain` stage already exists.
+ */
+function migrateLegacyRetroStage(
+  obj: Record<string, unknown>,
+  stages: Record<string, unknown>
+): void {
+  if (!(LEGACY_RETRO_STAGE_ID in stages) || RETAIN_STAGE_ID in stages) return;
+  stages[RETAIN_STAGE_ID] = stages[LEGACY_RETRO_STAGE_ID];
+  delete stages[LEGACY_RETRO_STAGE_ID];
+  if (obj.retention === undefined) obj.retention = 'report';
+}
+
 /** Normalize the raw run-state JSON's per-stage `worker` records before validation. */
 function normalizeRunStateJson(json: unknown): unknown {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return json;
@@ -296,6 +325,7 @@ function normalizeRunStateJson(json: unknown): unknown {
       }
       stages[id] = s;
     }
+    migrateLegacyRetroStage(obj, stages);
     obj.stages = stages;
   }
   return obj;
@@ -405,6 +435,16 @@ export function completedStages(state: RunState): string[] {
       .map(([id]) => id);
   }
   return state.completed ?? [];
+}
+
+/**
+ * The retention mode frozen for this run (design D2): the mode the retain stage
+ * recorded on first entry. Resume prefers this over the current profile so a
+ * mid-run profile edit never switches the retain branch. Undefined when no
+ * retain stage has run yet (the router then reads the active profile).
+ */
+export function frozenRetentionMode(state: RunState): RetentionMode | undefined {
+  return state.retention;
 }
 
 /**

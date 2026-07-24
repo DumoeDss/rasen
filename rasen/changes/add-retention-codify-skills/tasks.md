@@ -40,11 +40,11 @@
 
 ## 5. Full-feature pipeline and resume
 
-- [ ] 5.1 Change the built-in full-feature DAG tail to `ship → retain → archive` with the retain stage referencing `rasen-retain`.
-- [ ] 5.2 Freeze the selected retention mode in run-state on first retain entry and make resume prefer that recorded mode over later profile edits.
-- [ ] 5.3 Add explicit legacy run-state migration from incomplete/completed `retro` stages to forced-report/completed retain state without inferring completion from configuration.
-- [ ] 5.4 Update pipeline resume artifact hints and orchestration instructions so zero-output codify relies on authoritative run-state and interrupted codify safely reruns reconciliation.
-- [ ] 5.5 Add pipeline registry/auto/resume tests for all three modes, archive blocking on retention failure, idempotent codify retry, legacy run-state mapping, and no post-archive retro stage.
+- [x] 5.1 Change the built-in full-feature DAG tail to `ship → retain → archive` with the retain stage referencing `rasen-retain`.
+- [x] 5.2 Freeze the selected retention mode in run-state on first retain entry and make resume prefer that recorded mode over later profile edits.
+- [x] 5.3 Add explicit legacy run-state migration from incomplete/completed `retro` stages to forced-report/completed retain state without inferring completion from configuration.
+- [x] 5.4 Update pipeline resume artifact hints and orchestration instructions so zero-output codify relies on authoritative run-state and interrupted codify safely reruns reconciliation.
+- [x] 5.5 Add pipeline registry/auto/resume tests for all three modes, archive blocking on retention failure, idempotent codify retry, legacy run-state mapping, and no post-archive retro stage.
 
 ## 6. Tool materialization and ledgers
 
