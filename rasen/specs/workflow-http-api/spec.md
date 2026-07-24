@@ -2,9 +2,7 @@
 
 ## Purpose
 Provide a loopback-bound, bearer-secured HTTP surface over the user-wide workflow library — listing, detail, validation, and CLI-backed mutation (import, init, export, delete) — served under the management-http-api security posture and mirroring the `rasen workflow` CLI commands exactly, so the page and the CLI never disagree.
-
 ## Requirements
-
 ### Requirement: Workflow listing endpoint mirrors the CLI listing
 
 The management server SHALL serve `GET /api/v1/workflows` returning the user-wide workflow catalog from a fresh read at request time: valid workflows each carrying `id`, `source` (built-in or user), `sourcePath`, `digest`, `kind` (task, driver, expert, or internal), `skillName`, and an `unused` marker; invalid user entries with their diagnostics; and catalog-level diagnostics. The `unused` marker SHALL be computed exactly as `rasen workflow list` computes it — a user workflow with no detected machine-level consumer — so the page and the CLI never disagree. The endpoint SHALL answer under the management security posture (loopback bind, bearer token, 405 for non-GET methods other than the admitted mutation POST).
@@ -166,3 +164,23 @@ The management server SHALL serve `GET /api/v1/workflow-enablement?root=<absolut
 
 - **WHEN** the spawned update flow fails after the selection write succeeded
 - **THEN** the response carries the CLI's own error message and the space's actual current enablement state, so the client can see the selection changed but the apply did not complete
+
+### Requirement: Workflow dependency graph read
+
+The management API SHALL offer an authenticated read that serves, for every workflow in the catalog, its strong dependency closure and its weak enhancement associations, derived from existing registry data: a workflow's declared required workflows and required skills, plus — through its required pipelines — the workflows owning each unconditional pipeline stage's skill, form the strong set (served transitively closed, so a client can cascade without walking the graph); the workflows owning condition-gated stages' skills form the weak set, served inverted as the list of workflows each unit enhances. The computation SHALL be tolerant of imperfect data: self-references are dropped, dependency cycles do not fail the read, and a pipeline that cannot be loaded or a skill with no owning catalog unit is skipped rather than erroring — the graph is advisory. The read SHALL reflect the current catalog freshly on each request and SHALL write nothing.
+
+#### Scenario: Strong closure is transitive and complete for a driver
+
+- **WHEN** a client requests the dependency graph
+- **THEN** the auto driver's entry lists a strong closure including the workflows owning its pipelines' unconditional stage skills (proposal, apply, review-cycle, ship, archive, retro, office-hours, and the always-dispatched review expert), each listed once, with no self-reference
+
+#### Scenario: Conditional experts appear as enhancements
+
+- **WHEN** a client requests the dependency graph
+- **THEN** experts dispatched only under a condition in some workflow's pipelines (for example the security expert in the full-feature pipeline) list that workflow in their enhances list and do not appear in its strong closure
+
+#### Scenario: Broken references degrade silently
+
+- **WHEN** the catalog contains a workflow whose required pipeline is missing, or a pipeline stage naming a skill no catalog unit owns
+- **THEN** the read succeeds, that reference contributes nothing, and every resolvable edge is still served
+

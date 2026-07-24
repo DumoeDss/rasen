@@ -76,7 +76,7 @@ Choosing a value in the selector SHALL only stage a draft: no write and no apply
 
 Leaving with an unapplied draft SHALL ask first: switching the page-level scope mode, switching the section tab, or navigating away from the Config route with a staged draft SHALL open a confirmation dialog (the app's existing dialog convention) offering to discard the draft and proceed, or stay; discarding SHALL never perform the apply. Store spaces SHALL NOT render the selector.
 
-#### Scenario: Picking a profile stages a draft, Update applies it
+#### Scenario: Picking a profile switches the space
 
 - **WHEN** the user picks saved profile `my-set` in the Project tab's Profile selector at a project space with no override
 - **THEN** nothing is written or installed yet, an unapplied-change reminder names `my-set`, and only activating Update writes the space's profile lock and applies it, after which the selector shows the space locked to `my-set`
@@ -86,7 +86,7 @@ Leaving with an unapplied draft SHALL ask first: switching the page-level scope 
 - **WHEN** the user has staged a profile pick without applying, and then re-picks the currently applied value
 - **THEN** the reminder shows while the draft differs from the applied state and clears when it no longer does, with Update disabled whenever there is nothing to apply
 
-#### Scenario: Override replacement requires confirmation at Update time
+#### Scenario: Override replacement requires confirmation
 
 - **WHEN** the space carries its own workflow selection override and the user stages a profile and activates Update
 - **THEN** the selector states the space uses its own selection and asks for explicit confirmation that it will be replaced before switching

@@ -2,14 +2,12 @@
 
 ## Purpose
 Defines a single declarative registry of every CLI-settable configuration key — its path, scopes, type, constraints, default, description, and display group — so that `config set`/`unset`, the interactive editor, and effective-config resolution all derive their key knowledge from one source and cannot drift from the parse schemas.
-
 ## Requirements
-
 ### Requirement: Declarative registry of settable configuration keys across three scopes
 
 The system SHALL maintain a single declarative registry of every CLI-settable configuration key, where each entry declares the key path, the scopes it may be set in (any subset of `global`, `store`, and `project`), its value type (boolean, number, string, enum with allowed values, array, or the dual-form `threshold` type), any extra validation constraint, its built-in default, a one-line description, and a display group. Key validation for `config set`/`unset`, the interactive editor, the config HTTP API, and effective-config resolution SHALL all derive their key knowledge from this registry. The retired `delivery` key SHALL NOT appear in the registry as a settable key.
 
-Scope assignment SHALL be: every key previously settable in both `global` and `project` scope (the `autopilot.gates`/`autopilot.selection` pair, `handoff.threshold` plus the five `handoff.roles.<role>` keys, and `models.default` plus the five `models.roles.<role>` keys) is settable in `global`, `store`, and `project`; every key previously project-only (`schema`, `archive.timing`, `archive.destination`) is settable in `store` and `project`; the `workflows` selection key is settable in `global` and `project` — a project-scope value is the space's own workflow selection override; the remaining machine-level global-only keys (`profile`, `language`, `featureFlags.<name>`, `proactive`, `repoMode`, `telemetry.enabled`) remain global-only, including the `featureFlags` wildcard family.
+Scope assignment SHALL be: every key previously settable in both `global` and `project` scope (the `autopilot.gates`/`autopilot.selection` pair, `handoff.threshold` plus the five `handoff.roles.<role>` keys, and `models.default` plus the five `models.roles.<role>` keys) is settable in `global`, `store`, and `project`; every key previously project-only (`schema`, `archive.timing`, `archive.destination`) is settable in `store` and `project`; the `workflows` selection key is settable in `global` and `project` — a project-scope value is the space's own workflow selection override; the `profile` key is settable in `global` (the user-wide profile) and `project` (the space's profile lock, per the init-profile-lock behavior), with scope-dependent allowed values; the remaining machine-level global-only keys (`language`, `featureFlags.<name>`, `proactive`, `repoMode`, `telemetry.enabled`) remain global-only, including the `featureFlags` wildcard family.
 
 #### Scenario: Registry drives set validation in every scope
 
@@ -166,3 +164,23 @@ The configuration key registry SHALL include the keepalive keys: `keepalive.runt
 #### Scenario: Unset beat seconds resolves to the registry default
 - **WHEN** no layer sets `keepalive.beatSeconds` and the effective configuration is resolved
 - **THEN** the effective value is `270` with a default source annotation
+
+### Requirement: The profile key's allowed values are scope-aware and include saved profiles
+
+The `profile` key SHALL validate against a scope-dependent value set. At `global` scope the allowed values SHALL be `full`, `core`, `custom`, and every saved profile name on the machine — the user-wide profile can name a saved profile. At `project` scope the allowed values SHALL be `full`, `core`, and every saved profile name — `custom` remains excluded because a lock needs a stable referent. Scope-aware validation SHALL govern every write path that knows its scope (CLI `config set`, the interactive editor, and the config HTTP API), and the saved-name portion of both sets SHALL reflect the profiles saved at validation time.
+
+#### Scenario: Global scope accepts a saved profile name
+
+- **WHEN** a saved profile `my-set` exists and `profile` is set to `my-set` at `global` scope
+- **THEN** the write is accepted and persisted
+
+#### Scenario: Custom is global-only
+
+- **WHEN** `profile` is set to `custom` at `global` scope and then at `project` scope
+- **THEN** the global write is accepted and the project write is rejected with the allowed values named
+
+#### Scenario: Unknown names are rejected in both scopes
+
+- **WHEN** `profile` is set to a name that is neither reserved nor a saved profile, in either scope
+- **THEN** validation rejects the value with a message listing the allowed values
+
