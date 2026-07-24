@@ -66,11 +66,11 @@
 
 ## 8. End-to-end and release verification
 
-- [ ] 8.1 Add an end-to-end fixture that completes a change in codify mode, creates a project learned skill through the CLI seam, archives the change, and materializes the skill on the next configured-tool reconciliation.
-- [ ] 8.2 Add adversarial end-to-end coverage showing prompt-like evidence is not copied verbatim, global promotion cannot bypass two-project evidence/approval, and human-authored skill directories are never modified.
-- [ ] 8.3 Run focused profile, learned-skill, knowledge-command, workflow-template, pipeline, init/update, and archive test files after each implementation slice.
-- [ ] 8.4 Run `pnpm run build`, `pnpm exec tsc --noEmit`, and `pnpm lint`; resolve only diagnostics caused by this change.
-- [ ] 8.5 Run the complete suite with `env -u ZSH pnpm test` and record any unrelated pre-existing failures separately.
-- [ ] 8.6 Run or add Windows CI coverage for candidate/store/marker/ledger paths, atomic replacement, case-insensitive collisions, and profile import/export path handling.
-- [ ] 8.7 Run `npm pack --dry-run --json` and verify retain sidecars, locale catalogs, profile compatibility, and no canonical machine data are included in the package.
-- [ ] 8.8 Run `rasen validate add-retention-codify-skills --type change --strict` and review the final diff for unintended workflow/profile/archive contract changes.
+- [x] 8.1 Add an end-to-end fixture that completes a change in codify mode, creates a project learned skill through the CLI seam, archives the change, and materializes the skill on the next configured-tool reconciliation.
+- [x] 8.2 Add adversarial end-to-end coverage showing prompt-like evidence is not copied verbatim, global promotion cannot bypass two-project evidence/approval, and human-authored skill directories are never modified.
+- [x] 8.3 Run focused profile, learned-skill, knowledge-command, workflow-template, pipeline, init/update, and archive test files after each implementation slice.
+- [x] 8.4 Run `pnpm run build`, `pnpm exec tsc --noEmit`, and `pnpm lint`; resolve only diagnostics caused by this change.
+- [x] 8.5 Run the complete suite with `env -u ZSH pnpm test` and record any unrelated pre-existing failures separately.
+- [x] 8.6 Run or add Windows CI coverage for candidate/store/marker/ledger paths, atomic replacement, case-insensitive collisions, and profile import/export path handling.
+- [x] 8.7 Run `npm pack --dry-run --json` and verify retain sidecars, locale catalogs, profile compatibility, and no canonical machine data are included in the package.
+- [x] 8.8 Run `rasen validate add-retention-codify-skills --type change --strict` and review the final diff for unintended workflow/profile/archive contract changes.
