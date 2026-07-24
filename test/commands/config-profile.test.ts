@@ -107,6 +107,41 @@ describe('deriveProfileFromWorkflowSelection', () => {
   });
 });
 
+describe('resolveCurrentProfileState — saved-name global profile (m4)', () => {
+  let tempDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-resolve-current-profile-'));
+    originalEnv = { ...process.env };
+    process.env.RASEN_HOME = tempDir;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('displays a saved-name global profile verbatim and resolves its actual workflows (never coerced to full)', async () => {
+    const { saveNamedProfile } = await import('../../src/core/named-profiles.js');
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    saveNamedProfile('my-set', { version: 1, workflows: ['propose', 'apply'] });
+
+    const state = resolveCurrentProfileState({ profile: 'my-set', expertSelectionExplicit: true });
+    // Name shown as-is, not the 'full' preset.
+    expect(state.profile).toBe('my-set');
+    // Workflows are the saved set, not full's catalog.
+    expect([...state.workflows].sort()).toEqual(['apply', 'propose']);
+  });
+
+  it('a reserved global profile still resolves to its preset set', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({ profile: 'core', expertSelectionExplicit: true });
+    expect(state.profile).toBe('core');
+    expect(state.workflows).toContain('propose');
+  });
+});
+
 describe('config profile interactive flow', () => {
   let tempDir: string;
   let originalEnv: NodeJS.ProcessEnv;
@@ -559,6 +594,8 @@ describe('config profile interactive flow', () => {
     expect(execSync).toHaveBeenCalledWith(`"${process.execPath}" "${process.argv[1]}" update`, {
       stdio: 'inherit',
       cwd: fs.realpathSync(tempDir),
+      // windows-process-launch: the apply subprocess hides its console window.
+      windowsHide: true,
     });
   });
 

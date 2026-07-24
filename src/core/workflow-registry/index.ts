@@ -5,6 +5,11 @@ export {
   type BuiltInWorkflowId,
 } from './builtins.js';
 export { WorkflowCatalog, WorkflowCatalogError } from './catalog.js';
+export {
+  computeWorkflowDependencyGraph,
+  type WorkflowDependencyEntry,
+  type WorkflowDependencyGraph,
+} from './dependency-graph.js';
 export { computeWorkflowDigest, sha256 } from './digest.js';
 export {
   getBuiltInExpertDefinitions,

@@ -167,6 +167,38 @@ describe('management-api workflow read endpoints (workflow-http-api design D3)',
     });
   });
 
+  describe('GET /api/v1/workflow-dependencies', () => {
+    it('serves the advisory dependency graph: one entry per unit with strong closure and enhances', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/workflow-dependencies',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json();
+      expect(Array.isArray(body.dependencies)).toBe(true);
+      const auto = body.dependencies.find((e: any) => e.id === 'auto-command');
+      expect(auto).toBeDefined();
+      expect(auto.requires).toContain('review');
+      expect(Array.isArray(auto.enhances)).toBe(true);
+      const cso = body.dependencies.find((e: any) => e.id === 'cso');
+      expect(cso.enhances).toContain('auto-command');
+    });
+
+    it('401s without a token and 405s a non-GET', async () => {
+      const h = await startServer();
+      const noAuth = await req(h.port, { method: 'GET', path: '/api/v1/workflow-dependencies' });
+      expect(noAuth.status).toBe(401);
+      const post = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-dependencies',
+        headers: authed(),
+      });
+      expect(post.status).toBe(405);
+    });
+  });
+
   describe('GET /api/v1/workflows/<id> (detail)', () => {
     it('returns the definition and usage for a built-in, one segment deep', async () => {
       const h = await startServer();

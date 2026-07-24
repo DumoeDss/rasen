@@ -23,6 +23,14 @@ export interface ToggleContext {
   onToggle(id: string, checked: boolean): void;
 }
 
+/**
+ * Optional per-card "enhances …" hint provider (profiles-ui spec / design D8).
+ * Returns the workflow ids the given unit weakly enhances that are relevant on
+ * this surface (i.e. present in the draft). Only the Profiles page supplies it;
+ * the Workflows page leaves it undefined so its render is byte-identical.
+ */
+export type HintProvider = (id: string) => string[];
+
 export function WorkflowSection({
   heading,
   testid,
@@ -32,6 +40,7 @@ export function WorkflowSection({
   onExport,
   onDelete,
   toggle,
+  hintFor,
 }: {
   heading: string;
   testid: string;
@@ -43,6 +52,8 @@ export function WorkflowSection({
   onDelete: (id: string) => void;
   /** Optional corner-switch driver (design D6); absent = pure library view (empty switch slot). */
   toggle?: ToggleContext;
+  /** Optional weak-enhancement hint provider (design D8); only the Profiles page supplies it. */
+  hintFor?: HintProvider;
 }) {
   const internalEntries = internal ?? [];
   // An empty category renders no section; the driver section still appears if
@@ -54,7 +65,7 @@ export function WorkflowSection({
       <ul class="workflows-group__list">
         {entries.map((entry) => (
           <li key={entry.id}>
-            <WorkflowCard entry={entry} onOpen={onOpen} onExport={onExport} onDelete={onDelete} toggle={toggle} />
+            <WorkflowCard entry={entry} onOpen={onOpen} onExport={onExport} onDelete={onDelete} toggle={toggle} hintFor={hintFor} />
           </li>
         ))}
       </ul>
@@ -116,17 +127,20 @@ export function WorkflowCard({
   onExport,
   onDelete,
   toggle,
+  hintFor,
 }: {
   entry: WorkflowListEntry;
   onOpen: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
   toggle?: ToggleContext;
+  hintFor?: HintProvider;
 }) {
   const isBuiltIn = entry.source === 'built-in';
   // Internal-kind units never get a switch (existing rule); otherwise the
   // context decides whether this unit is switchable on this surface.
   const toggleState = toggle && entry.kind !== 'internal' ? toggle.stateFor(entry.id) : null;
+  const enhances = hintFor?.(entry.id) ?? [];
   return (
     <div class="workflow-card" data-testid="workflow-card" data-id={entry.id} data-source={entry.source}>
       <div class="workflow-card__header">
@@ -167,6 +181,16 @@ export function WorkflowCard({
         {toggleState?.reason && (
           <span class="workflow-card__toggle-reason" data-testid="workflow-card-toggle-reason">
             {toggleState.reason}
+          </span>
+        )}
+        {enhances.length > 0 && (
+          <span
+            class="workflow-card__enhances"
+            data-testid="workflow-card-enhances"
+            title={`enhances ${enhances.join(', ')}`}
+          >
+            enhances {enhances[0]}
+            {enhances.length > 1 ? ` +${enhances.length - 1}` : ''}
           </span>
         )}
       </div>

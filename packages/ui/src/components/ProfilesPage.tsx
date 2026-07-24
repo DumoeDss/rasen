@@ -7,6 +7,7 @@ import { WorkflowSection, type ToggleContext } from './workflow-cards.js';
 import type {
   ProfileListResponse,
   WireProfileEntry,
+  WorkflowDependenciesResponse,
   WorkflowListEntry,
   WorkflowListResponse,
 } from '../api/types.js';
@@ -39,6 +40,7 @@ function validateProfileName(name: string): string | null {
 export function ProfilesPage() {
   const [profilesData, setProfilesData] = useState<ProfileListResponse | null>(null);
   const [workflowsData, setWorkflowsData] = useState<WorkflowListResponse | null>(null);
+  const [depsData, setDepsData] = useState<WorkflowDependenciesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -56,15 +58,19 @@ export function ProfilesPage() {
   // next apply — profiles-ui spec "Saving a profile does not re-apply locked
   // spaces", design D5).
   const [justSaved, setJustSaved] = useState(false);
+  // A transient note naming workflows the last enable auto-added and the unit
+  // that required them (design D8); cleared on any new edit / selection change.
+  const [cascadeNote, setCascadeNote] = useState<{ trigger: string; added: string[] } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setPageError(null);
-    Promise.all([client.listProfiles(), client.listWorkflows()])
-      .then(([profiles, workflows]) => {
+    Promise.all([client.listProfiles(), client.listWorkflows(), client.getWorkflowDependencies()])
+      .then(([profiles, workflows, deps]) => {
         if (cancelled) return;
         setProfilesData(profiles);
         setWorkflowsData(workflows);
+        setDepsData(deps);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -91,13 +97,28 @@ export function ProfilesPage() {
     setStored(members);
   }, [selected?.name, selected?.workflows]);
 
-  // Clear the transient per-selection state (save error, just-saved note) ONLY
-  // when the selected profile itself changes — NOT when a save patches the
-  // current profile's membership in place (that must keep the note visible).
+  // Clear the transient per-selection state (save error, just-saved note,
+  // cascade note) ONLY when the selected profile itself changes — NOT when a
+  // save patches the current profile's membership in place (that must keep the
+  // note visible).
   useEffect(() => {
     setSaveError(null);
     setJustSaved(false);
+    setCascadeNote(null);
   }, [selected?.name]);
+
+  // Per-unit dependency associations from the graph read: `requires` is the
+  // transitive strong closure (cascade target), `enhances` the weak edges.
+  const depByReqId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const entry of depsData?.dependencies ?? []) map.set(entry.id, entry.requires);
+    return map;
+  }, [depsData]);
+  const enhancesById = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const entry of depsData?.dependencies ?? []) map.set(entry.id, entry.enhances);
+    return map;
+  }, [depsData]);
 
   function refresh() {
     setRefreshNonce((n) => n + 1);
@@ -130,12 +151,26 @@ export function ProfilesPage() {
         onToggle: (id, checked) => {
           if (!editable) return;
           setJustSaved(false);
-          setDraft((prev) => {
-            const next = new Set(prev);
-            if (checked) next.add(id);
-            else next.delete(id);
-            return next;
-          });
+          if (checked) {
+            // Cascade on enable ONLY (design D8): pull in the strong closure the
+            // graph serves, minus members already present. Never on disable.
+            const closure = depByReqId.get(id) ?? [];
+            const added = closure.filter((dep) => dep !== id && !draft.has(dep));
+            setDraft((prev) => {
+              const next = new Set(prev);
+              next.add(id);
+              for (const dep of added) next.add(dep);
+              return next;
+            });
+            setCascadeNote(added.length > 0 ? { trigger: id, added } : null);
+          } else {
+            setDraft((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+            setCascadeNote(null);
+          }
         },
       }
     : undefined;
@@ -157,6 +192,7 @@ export function ProfilesPage() {
       setStored(normalized);
       setDraft(normalized);
       setJustSaved(true);
+      setCascadeNote(null);
       // Keep the in-memory listing authoritative WITHOUT a full re-fetch: patch
       // the saved profile's entry with the normalized membership. Otherwise
       // `profilesData` stays at the pre-save snapshot, and switching away and
@@ -183,7 +219,41 @@ export function ProfilesPage() {
     setDraft(new Set(stored));
     setSaveError(null);
     setJustSaved(false);
+    setCascadeNote(null);
   }
+
+  // Bulk membership actions (design D8): both act on the draft only, over the
+  // toggleable (non-internal) units. Internal-kind units are governed by
+  // save-time normalization and are left untouched.
+  const toggleableIds = workflows.filter((w) => w.kind !== 'internal').map((w) => w.id);
+  function selectAll() {
+    if (!editable) return;
+    setJustSaved(false);
+    setCascadeNote(null);
+    setDraft((prev) => {
+      const next = new Set(prev);
+      for (const id of toggleableIds) next.add(id);
+      return next;
+    });
+  }
+  function invert() {
+    if (!editable) return;
+    setJustSaved(false);
+    setCascadeNote(null);
+    setDraft((prev) => {
+      const next = new Set(prev);
+      for (const id of toggleableIds) {
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  // Weak-enhancement hint provider (design D8): an expert's enhances edges that
+  // are actually in the draft. Only supplied to the Profiles membership editor.
+  const hintFor = (id: string): string[] =>
+    (enhancesById.get(id) ?? []).filter((workflowId) => draft.has(workflowId));
 
   return (
     <div class="profiles-page" data-testid="profiles-page">
@@ -298,6 +368,19 @@ export function ProfilesPage() {
           <button type="button" data-testid="profile-discard" disabled={!dirty || saving} onClick={discard}>
             Discard
           </button>
+          <span class="profiles-editbar__bulk">
+            <button type="button" class="btn--ghost" data-testid="profile-select-all" disabled={saving} onClick={selectAll}>
+              Select all
+            </button>
+            <button type="button" class="btn--ghost" data-testid="profile-invert" disabled={saving} onClick={invert}>
+              Invert
+            </button>
+          </span>
+          {cascadeNote && (
+            <span class="profiles-editbar__cascade" role="status" data-testid="profiles-cascade-note">
+              Also enabled: {cascadeNote.added.join(', ')} (required by {cascadeNote.trigger})
+            </span>
+          )}
           {saveError && (
             <span class="profiles-editbar__error" role="alert" data-testid="profile-save-error">{saveError}</span>
           )}
@@ -305,7 +388,7 @@ export function ProfilesPage() {
       )}
 
       {selected && selected.error === undefined && (
-        <ProfileMembership workflows={workflows} toggle={toggle} />
+        <ProfileMembership workflows={workflows} toggle={toggle} hintFor={editable ? hintFor : undefined} />
       )}
 
       {dialog?.kind === 'create' && (
@@ -342,9 +425,11 @@ type Dialog =
 function ProfileMembership({
   workflows,
   toggle,
+  hintFor,
 }: {
   workflows: WorkflowListEntry[];
   toggle?: ToggleContext;
+  hintFor?: (id: string) => string[];
 }) {
   const drivers = workflows.filter((w) => w.kind === 'driver');
   const internalWorkflows = workflows.filter((w) => w.kind === 'internal');
@@ -353,9 +438,9 @@ function ProfileMembership({
   const noop = () => {};
   return (
     <div data-testid="profiles-membership">
-      <WorkflowSection heading="Driver" testid="workflows-section-driver" entries={drivers} internal={internalWorkflows} onOpen={noop} onExport={noop} onDelete={noop} toggle={toggle} />
-      <WorkflowSection heading="Task" testid="workflows-section-task" entries={tasks} onOpen={noop} onExport={noop} onDelete={noop} toggle={toggle} />
-      <WorkflowSection heading="Expert" testid="workflows-section-expert" entries={experts} onOpen={noop} onExport={noop} onDelete={noop} toggle={toggle} />
+      <WorkflowSection heading="Driver" testid="workflows-section-driver" entries={drivers} internal={internalWorkflows} onOpen={noop} onExport={noop} onDelete={noop} toggle={toggle} hintFor={hintFor} />
+      <WorkflowSection heading="Task" testid="workflows-section-task" entries={tasks} onOpen={noop} onExport={noop} onDelete={noop} toggle={toggle} hintFor={hintFor} />
+      <WorkflowSection heading="Expert" testid="workflows-section-expert" entries={experts} onOpen={noop} onExport={noop} onDelete={noop} toggle={toggle} hintFor={hintFor} />
     </div>
   );
 }

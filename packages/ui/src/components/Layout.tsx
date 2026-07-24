@@ -36,7 +36,12 @@ export function Layout({ children }: { children: ComponentChildren }) {
   // stay reachable; the truly-first visit with no recency still degrades to
   // the switcher-only header.
   const space = routeSpace ?? parseSelector(getRecentSpaces()[0] ?? '');
-  const section = spaceSection(path);
+  // Active-state derives from the URL's OWN space, not the recent-space
+  // fallback: on a space-agnostic route (/profiles, /workflows, /spaces, /) the
+  // space-scoped entries still render (reachability is a feature) but none is
+  // the current route, so `section` is null and Board/Archive/Config/Pipelines
+  // get no aria-current — only Workflows/Profiles highlight themselves.
+  const section = routeSpace ? spaceSection(path) : null;
   const onWorkflows = path.startsWith('/workflows');
   const onProfiles = path.startsWith('/profiles');
   // The pipeline canvas route is viewport-locked (pipelines-ui spec): the shell

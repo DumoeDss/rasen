@@ -24,6 +24,7 @@ export function probeCodexAvailability(): boolean {
       timeout: CODEX_PROBE_TIMEOUT_MS,
       shell: true,
       stdio: 'ignore',
+      windowsHide: true,
     });
     if (result.error) {
       return false;

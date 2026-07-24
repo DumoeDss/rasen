@@ -560,6 +560,21 @@ export interface WorkflowListResponse {
   diagnostics: WorkflowDiagnostic[];
 }
 
+/** One workflow's dependency associations (workflow-http-api spec / design D7). */
+export interface WorkflowDependencyEntryWire {
+  /** The workflow id this entry describes. */
+  id: string;
+  /** The transitive strong dependency closure (excludes `id`; each id once). */
+  requires: string[];
+  /** The workflow ids this unit weakly enhances. */
+  enhances: string[];
+}
+
+/** `GET /api/v1/workflow-dependencies` response — the advisory dependency graph. */
+export interface WorkflowDependenciesResponse {
+  dependencies: WorkflowDependencyEntryWire[];
+}
+
 /** The full definition as reported by `GET /api/v1/workflows/<id>` (mirrors `workflowDefinitionForJson`). */
 export interface WorkflowDefinitionWire {
   id: string;
@@ -682,7 +697,14 @@ export type WorkflowEnablementMutationRequest =
   // writes the project `profile` key to `full`/`core`/a saved name AND clears the
   // `workflows` override in the same write (D4); `clear-profile` unsets the lock only.
   | { root: string; op: 'set-profile'; profile: string }
-  | { root: string; op: 'clear-profile' };
+  | { root: string; op: 'clear-profile' }
+  // ui-profile-polish M1: make a space follow the user-wide profile — clears BOTH
+  // the `workflows` override AND the `profile` lock in one atomic write. Distinct
+  // from `reset` (clears the override only, revealing any lock) and from
+  // `clear-profile` (clears the lock only, leaving an override in place): those
+  // two are silent no-ops when the *other* layer still governs, so a space in
+  // override mode needs this to genuinely return to the global profile.
+  | { root: string; op: 'follow-global' };
 
 // -----------------------------------------------------------------------
 // Named workflow profiles (ui-profile-workflow-split profile-http-api design

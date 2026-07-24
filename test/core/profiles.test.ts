@@ -12,6 +12,7 @@ import {
   getProfileWorkflows,
   resolveDesiredWorkflowSelection,
   resolveProjectWorkflowSelection,
+  resolveUserWideProfileBase,
 } from '../../src/core/profiles.js';
 import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import {
@@ -365,5 +366,82 @@ describe('resolveProjectWorkflowSelection profile lock (init-profile-lock)', () 
       resolveProjectWorkflowSelection(catalog, projectDir, 'full', undefined, true);
       expect(fs.existsSync(globalConfigPath)).toBe(false);
     }
+  });
+});
+
+describe('resolveUserWideProfileBase / saved-name user-wide profile', () => {
+  let tempDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-userwide-profile-'));
+    originalEnv = { ...process.env };
+    process.env.RASEN_HOME = path.join(tempDir, 'home');
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('reserved literals resolve byte-identically to getProfileWorkflows (regression pin)', () => {
+    for (const profile of ['full', 'core', 'custom'] as const) {
+      for (const explicit of [true, false]) {
+        const custom = profile === 'custom' ? ['explore', 'apply'] : undefined;
+        const base = resolveUserWideProfileBase(profile, custom, explicit);
+        expect(base.ok).toBe(true);
+        if (base.ok) {
+          expect([...base.workflows].sort()).toEqual(
+            [...getProfileWorkflows(profile, custom, { expertSelectionExplicit: explicit })].sort()
+          );
+        }
+      }
+    }
+  });
+
+  it('a saved name resolves to its stored workflow list verbatim', () => {
+    saveNamedProfile('my-set', { version: 1, workflows: ['propose', 'apply', 'archive'] });
+    const base = resolveUserWideProfileBase('my-set', undefined, true);
+    expect(base.ok).toBe(true);
+    if (base.ok) expect(base.workflows).toEqual(['propose', 'apply', 'archive']);
+  });
+
+  it('an unresolvable name returns a warning descriptor', () => {
+    const base = resolveUserWideProfileBase('no-such-profile', undefined, true);
+    expect(base.ok).toBe(false);
+    if (!base.ok) {
+      expect(base.warning.kind).toBe('unresolvable');
+      expect(base.warning.profile).toBe('no-such-profile');
+      expect(typeof base.warning.detail).toBe('string');
+    }
+  });
+
+  it('resolveDesiredWorkflowSelection follows a saved user-wide profile (plus closure)', () => {
+    // `verify-enhanced-command` pulls quality experts via its skill closure —
+    // a saved user-wide name must include them exactly like a project lock.
+    saveNamedProfile('leanteam', { version: 1, workflows: ['verify-enhanced-command'] });
+    const { ids, profileWarning } = resolveDesiredWorkflowSelection(
+      loadWorkflowCatalog(),
+      'leanteam',
+      undefined,
+      true
+    );
+    expect(profileWarning).toBeUndefined();
+    expect(ids).toContain('verify-enhanced-command');
+    expect(ids).toContain('review');
+    // A lean saved set does not pull in the whole catalog.
+    expect(ids).not.toContain('audit');
+  });
+
+  it('an unresolvable saved user-wide profile degrades to full with a warning', () => {
+    const catalog = loadWorkflowCatalog();
+    const result = resolveDesiredWorkflowSelection(catalog, 'no-such-profile', undefined, true);
+    const fullFallback = resolveDesiredWorkflowSelection(catalog, 'full', undefined, true);
+
+    expect(result.profileWarning).toMatchObject({
+      kind: 'unresolvable',
+      profile: 'no-such-profile',
+    });
+    expect([...result.ids].sort()).toEqual([...fullFallback.ids].sort());
   });
 });

@@ -17,6 +17,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     ...actual,
     listProfiles: vi.fn(),
     listWorkflows: vi.fn(),
+    getWorkflowDependencies: vi.fn(),
     mutateProfile: vi.fn(),
   };
 });
@@ -36,6 +37,18 @@ const profilesFixture = {
     { name: 'broken', builtIn: false, error: 'Invalid profile definition: workflows must be an array' },
   ],
 } satisfies ProfileListResponse;
+
+// plan-build strongly requires team-flow; deep-research (expert) weakly
+// enhances plan-build. resolve-deps (internal) participates in nothing.
+const depsFixture = {
+  dependencies: [
+    { id: 'review-cycle', requires: [], enhances: [] },
+    { id: 'plan-build', requires: ['team-flow'], enhances: [] },
+    { id: 'team-flow', requires: [], enhances: [] },
+    { id: 'deep-research', requires: [], enhances: ['plan-build'] },
+    { id: 'resolve-deps', requires: [], enhances: [] },
+  ],
+};
 
 async function flushMicrotasks(times = 10): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -86,6 +99,7 @@ describe('ProfilesPage', () => {
     document.body.appendChild(container);
     (client.listProfiles as any).mockResolvedValue(profilesFixture);
     (client.listWorkflows as any).mockResolvedValue(workflowsListFixture);
+    (client.getWorkflowDependencies as any).mockResolvedValue(depsFixture);
   });
 
   afterEach(() => {
@@ -153,6 +167,91 @@ describe('ProfilesPage', () => {
     const savedNote = container.querySelector('[data-testid="profiles-saved-note"]')!;
     expect(savedNote).not.toBeNull();
     expect(savedNote.textContent!.toLowerCase()).toContain('next apply');
+  });
+
+  describe('dependency cascade, hints, and bulk actions (design D8)', () => {
+    const cardToggle = (id: string) =>
+      container.querySelector(`[data-id="${id}"] [data-testid="workflow-card-toggle"]`) as HTMLButtonElement;
+    const cardEnhances = (id: string) =>
+      container.querySelector(`[data-id="${id}"] [data-testid="workflow-card-enhances"]`);
+
+    it('enabling a workflow cascades its strong closure into the draft and names it', async () => {
+      (client.listProfiles as any).mockResolvedValue({
+        profiles: [{ name: 'lean', builtIn: false, workflows: ['deep-research'] }],
+      });
+      await mount(container);
+      await selectProfile(container, 'lean');
+
+      expect(cardToggle('plan-build').getAttribute('aria-checked')).toBe('false');
+      expect(cardToggle('team-flow').getAttribute('aria-checked')).toBe('false');
+
+      await clickAndFlush(cardToggle('plan-build'));
+      // plan-build ON pulls its strong closure (team-flow) in with it.
+      expect(cardToggle('plan-build').getAttribute('aria-checked')).toBe('true');
+      expect(cardToggle('team-flow').getAttribute('aria-checked')).toBe('true');
+      const note = container.querySelector('[data-testid="profiles-cascade-note"]')!;
+      expect(note).not.toBeNull();
+      expect(note.textContent).toContain('team-flow');
+      expect(note.textContent).toContain('plan-build');
+    });
+
+    it('an already-satisfied enable adds nothing extra and shows no cascade note', async () => {
+      (client.listProfiles as any).mockResolvedValue({
+        profiles: [{ name: 'lean', builtIn: false, workflows: ['team-flow'] }],
+      });
+      await mount(container);
+      await selectProfile(container, 'lean');
+
+      await clickAndFlush(cardToggle('plan-build'));
+      expect(cardToggle('plan-build').getAttribute('aria-checked')).toBe('true');
+      expect(container.querySelector('[data-testid="profiles-cascade-note"]')).toBeNull();
+    });
+
+    it('disabling a workflow never cascades — only that workflow leaves the draft', async () => {
+      await mount(container);
+      await selectProfile(container, 'my-set'); // [plan-build, team-flow]
+
+      await clickAndFlush(cardToggle('plan-build'));
+      expect(cardToggle('plan-build').getAttribute('aria-checked')).toBe('false');
+      // team-flow (which plan-build strongly requires) is NOT removed.
+      expect(cardToggle('team-flow').getAttribute('aria-checked')).toBe('true');
+      expect(container.querySelector('[data-testid="profiles-cascade-note"]')).toBeNull();
+    });
+
+    it('a weak enhancer shows an "enhances" hint only while the enhanced workflow is in the draft', async () => {
+      await mount(container);
+      await selectProfile(container, 'my-set'); // has plan-build
+      // deep-research weakly enhances plan-build, which is in the draft.
+      const chip = cardEnhances('deep-research')!;
+      expect(chip).not.toBeNull();
+      expect(chip.textContent).toContain('plan-build');
+
+      // Drop plan-build from the draft → the hint disappears.
+      await clickAndFlush(cardToggle('plan-build'));
+      expect(cardEnhances('deep-research')).toBeNull();
+    });
+
+    it('Select all fills the draft with every toggleable unit; Invert then clears it', async () => {
+      await mount(container);
+      await selectProfile(container, 'my-set');
+
+      await clickAndFlush(container.querySelector('[data-testid="profile-select-all"]'));
+      for (const id of ['plan-build', 'team-flow', 'deep-research', 'review-cycle']) {
+        expect(cardToggle(id).getAttribute('aria-checked'), id).toBe('true');
+      }
+
+      await clickAndFlush(container.querySelector('[data-testid="profile-invert"]'));
+      for (const id of ['plan-build', 'team-flow', 'deep-research', 'review-cycle']) {
+        expect(cardToggle(id).getAttribute('aria-checked'), id).toBe('false');
+      }
+    });
+
+    it('bulk actions are absent for a built-in profile', async () => {
+      await mount(container);
+      await selectProfile(container, 'full');
+      expect(container.querySelector('[data-testid="profile-select-all"]')).toBeNull();
+      expect(container.querySelector('[data-testid="profile-invert"]')).toBeNull();
+    });
   });
 
   it('keeps the listing authoritative after save: switching away and back reflects the saved membership', async () => {

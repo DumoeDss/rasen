@@ -831,7 +831,10 @@ export function registerConfigCommand(program: Command): void {
 
       // Spawn editor and wait for it to close
       // Avoid shell parsing to correctly handle paths with spaces in both
-      // the editor path and config path
+      // the editor path and config path.
+      // windowsHide is deliberately OMITTED here: this is the one interactive
+      // child process (the user's $EDITOR) that MUST keep its window — it is the
+      // sole entry on the windows-process-launch guard's allowlist.
       const child = spawn(editor, [configPath], {
         stdio: 'inherit',
         shell: false,

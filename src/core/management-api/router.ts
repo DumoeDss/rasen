@@ -31,6 +31,7 @@ import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor
 import { createChangeSubmitter } from './submit.js';
 import { createSpaceCreator } from './create-space.js';
 import {
+  handleWorkflowDependenciesRead,
   handleWorkflowDetail,
   handleWorkflowValidation,
   handleWorkflowsList,
@@ -85,6 +86,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/local-paths',
   '/api/v1/workflows',
   '/api/v1/workflow-validation',
+  '/api/v1/workflow-dependencies',
   '/api/v1/workflow-enablement',
   '/api/v1/profiles',
   '/api/v1/pipelines',
@@ -650,6 +652,16 @@ export function createManagementRouter(
 
     if (pathname === '/api/v1/workflows' && req.method === 'GET') {
       const result = handleWorkflowsList();
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/workflow-dependencies' && req.method === 'GET') {
+      const result = handleWorkflowDependenciesRead();
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;

@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 function isGhInstalled(): boolean {
   try {
     const command = process.platform === 'win32' ? 'where gh' : 'which gh';
-    execSync(command, { stdio: 'pipe' });
+    execSync(command, { stdio: 'pipe', windowsHide: true });
     return true;
   } catch {
     return false;
@@ -23,7 +23,7 @@ function isGhInstalled(): boolean {
  */
 function isGhAuthenticated(): boolean {
   try {
-    execSync('gh auth status', { stdio: 'pipe' });
+    execSync('gh auth status', { stdio: 'pipe', windowsHide: true });
     return true;
   } catch {
     return false;
@@ -138,7 +138,7 @@ function submitViaGhCli(title: string, body: string): void {
         '--label',
         'feedback',
       ],
-      { encoding: 'utf-8', stdio: 'pipe' }
+      { encoding: 'utf-8', stdio: 'pipe', windowsHide: true }
     );
 
     const issueUrl = result.trim();

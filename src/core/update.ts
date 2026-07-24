@@ -35,11 +35,12 @@ import {
   RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
-import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type Profile, type RepoMode } from './global-config.js';
+import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type RepoMode } from './global-config.js';
 import {
   getCurrentBuiltInWorkflowIds,
   profileLockWarningToDiagnostic,
   resolveProjectWorkflowSelection,
+  userWideProfileWarningToDiagnostic,
 } from './profiles.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
@@ -184,6 +185,7 @@ export class UpdateCommand {
       mode: selectionMode,
       lockedProfile,
       lockWarning,
+      profileWarning,
     } = resolveProjectWorkflowSelection(
       catalog,
       resolvedProjectPath,
@@ -204,6 +206,12 @@ export class UpdateCommand {
     if (lockWarning) {
       reportConfigDiagnostic(
         profileLockWarningToDiagnostic(lockWarning),
+        createConfigDiagnosticReporter()
+      );
+    }
+    if (profileWarning) {
+      reportConfigDiagnostic(
+        userWideProfileWarningToDiagnostic(profileWarning),
         createConfigDiagnosticReporter()
       );
     }
@@ -504,7 +512,7 @@ export class UpdateCommand {
    * Suggest opting back into core when a custom profile still matches the old
    * pre-sync core set. Keep custom profiles user-owned; do not mutate them.
    */
-  private displayOldCoreCustomProfileNote(profile: Profile, workflows?: readonly string[]): void {
+  private displayOldCoreCustomProfileNote(profile: string, workflows?: readonly string[]): void {
     if (profile !== 'custom' || !workflows) {
       return;
     }

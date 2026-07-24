@@ -315,6 +315,57 @@ describe('ConfigEntryRow', () => {
     expect(annotation.textContent).not.toContain('["');
   });
 
+  describe('scope-aware enum domain (profile key)', () => {
+    const profileEntry = (value: string): WireConfigEntry => ({
+      definition: {
+        key: 'profile',
+        scopes: ['global', 'project'],
+        type: 'enum',
+        enumValues: ['full', 'core', 'custom'],
+        defaultValue: 'full',
+        description: 'Workflow profile',
+        group: 'Profile',
+        constraints: {
+          type: 'enum',
+          enumValues: ['full', 'core', 'custom'],
+          enumValuesByScope: {
+            global: ['full', 'core', 'custom', 'my-set'],
+            project: ['full', 'core', 'my-set'],
+          },
+        },
+      },
+      value,
+      source: 'global',
+      scopeValues: { global: value },
+    });
+
+    const optionValues = () =>
+      [...container.querySelectorAll('select option')].map((o) => (o as HTMLOptionElement).value);
+
+    it('Global mode offers the global domain including saved names and custom', () => {
+      mount(profileEntry('full'), container, { mode: 'global', spaceType: 'project' });
+      expect(optionValues()).toEqual(['full', 'core', 'custom', 'my-set']);
+    });
+
+    it('Local project mode offers the project domain (no custom)', () => {
+      mount(profileEntry('full'), container, { mode: 'local', spaceType: 'project' });
+      expect(optionValues()).toEqual(['full', 'core', 'my-set']);
+    });
+
+    it('a current value outside the active scope domain renders as an annotated, disabled option', () => {
+      mount(profileEntry('deleted-set'), container, { mode: 'global', spaceType: 'project' });
+      const options = [...container.querySelectorAll('select option')] as HTMLOptionElement[];
+      const missing = options.find((o) => o.value === 'deleted-set')!;
+      expect(missing).toBeTruthy();
+      expect(missing.textContent).toContain('(not found)');
+      expect(missing.disabled).toBe(true);
+      // The real domain options are still present and selectable.
+      expect(options.find((o) => o.value === 'core')!.disabled).toBe(false);
+      const select = container.querySelector('select') as HTMLSelectElement;
+      expect(select.value).toBe('deleted-set');
+    });
+  });
+
   it('config-page-coherence: renders a models.* key as a text input with a datalist of known suggestions', () => {
     const modelKey: WireConfigEntry = {
       definition: {

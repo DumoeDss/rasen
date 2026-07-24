@@ -230,13 +230,22 @@ describe('config-keys registry', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
-    it('global scope keeps full/core/custom and rejects a saved profile name', () => {
+    it('global scope accepts full/core/custom AND a saved profile name', () => {
       saveNamedProfile('team-web', { version: 1, workflows: ['propose'] });
       const def = findConfigKeyDefinition('profile', 'global')!;
-      for (const value of ['full', 'core', 'custom']) {
+      for (const value of ['full', 'core', 'custom', 'team-web']) {
         expect(validateConfigValue(def, value, 'global')).toBeNull();
       }
-      expect(validateConfigValue(def, 'team-web', 'global')).toContain('must be one of');
+    });
+
+    it('global scope rejects an unknown name, naming the value and listing the available profiles', () => {
+      saveNamedProfile('team-web', { version: 1, workflows: ['propose'] });
+      const def = findConfigKeyDefinition('profile', 'global')!;
+      const unknownError = validateConfigValue(def, 'no-such-profile', 'global');
+      expect(unknownError).toContain('must be one of');
+      expect(unknownError).toContain('"no-such-profile"');
+      expect(unknownError).toContain('custom'); // custom IS a global value
+      expect(unknownError).toContain('team-web');
     });
 
     it('project scope accepts full, core, and a saved profile name', () => {

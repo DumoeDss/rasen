@@ -169,16 +169,20 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     scopes: ['global', 'project'],
     type: 'enum',
     enumValues: ['full', 'core', 'custom'],
-    // Project scope is the locked profile (init-profile-lock spec): `custom`
-    // has no stable referent and cannot be locked, while a saved profile
-    // name can; global scope keeps its historical three values.
+    // Value domain is scope-aware. Global (the user-wide profile) accepts a
+    // saved profile name in addition to full/core/custom — `custom` at global
+    // scope has a real referent (the global `workflows` list) that existing
+    // users depend on. Project scope (the init-profile-lock) excludes `custom`
+    // because a lock needs a stable referent, but likewise accepts a saved
+    // profile name. Both saved-name portions reflect the profiles on disk at
+    // validation time.
     enumValuesForScope: (scope) =>
       scope === 'project'
         ? ['full', 'core', ...listSavedProfileNames()]
-        : ['full', 'core', 'custom'],
+        : ['full', 'core', 'custom', ...listSavedProfileNames()],
     defaultValue: 'full',
     description:
-      'Workflow profile (global: the user-wide profile; project: the locked profile — full, core, or a saved profile name)',
+      'Workflow profile (global: the user-wide profile — full, core, custom, or a saved profile name; project: the locked profile — full, core, or a saved profile name)',
     group: 'Profile',
   },
   {

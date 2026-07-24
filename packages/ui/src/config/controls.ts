@@ -110,8 +110,14 @@ export function selectControl(
   switch (constraints.type) {
     case 'boolean':
       return { kind: 'toggle', readonly: false };
-    case 'enum':
-      return { kind: 'select', readonly: false, enumValues: constraints.enumValues };
+    case 'enum': {
+      // Scope-accurate domain: an enum whose values differ by scope (the
+      // profile key) carries a per-scope map; render the list for the scope
+      // the active mode writes to, falling back to the static list otherwise.
+      const scope = modeScope(mode, spaceType);
+      const enumValues = constraints.enumValuesByScope?.[scope] ?? constraints.enumValues;
+      return { kind: 'select', readonly: false, enumValues };
+    }
     case 'number':
       return { kind: 'ranged-number', readonly: false, range: constraints.range };
     case 'threshold':

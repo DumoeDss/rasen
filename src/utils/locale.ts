@@ -73,6 +73,7 @@ function readDarwinOsLocale(): string | undefined {
         execSync('defaults read -g AppleLocale', {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'ignore'],
+          windowsHide: true,
         }).trim() || undefined;
     } catch {
       darwinOsLocale = undefined;

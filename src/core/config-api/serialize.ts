@@ -3,7 +3,11 @@
  * API serves — the only translation layer between `resolveEffectiveConfig()`
  * and HTTP JSON (design.md D2/D3 of `unified-config-api`).
  */
-import { validateConfigValue, type ConfigKeyDefinition } from '../config-keys.js';
+import {
+  resolveEnumValues,
+  validateConfigValue,
+  type ConfigKeyDefinition,
+} from '../config-keys.js';
 import type { EffectiveConfigEntry } from '../effective-config.js';
 import type { WireConfigEntry, WireConstraints } from './wire-types.js';
 
@@ -26,9 +30,21 @@ const REMAINING_TOKENS_CONSTRAINTS: Record<string, number> = {
 };
 
 function deriveConstraints(definition: ConfigKeyDefinition): WireConstraints {
+  // A scope-varying enum key (only `profile` today) carries a per-scope map
+  // computed from the same registry source the write path validates against,
+  // so the offered list can never disagree with what a write would accept.
+  // Scope-invariant enums leave this undefined and serialize exactly as before.
+  let enumValuesByScope: Partial<Record<(typeof definition.scopes)[number], readonly string[]>> | undefined;
+  if (definition.type === 'enum' && definition.enumValuesForScope) {
+    enumValuesByScope = {};
+    for (const scope of definition.scopes) {
+      enumValuesByScope[scope] = resolveEnumValues(definition, scope);
+    }
+  }
   return {
     type: definition.type,
     enumValues: definition.enumValues,
+    enumValuesByScope,
     range: RANGE_CONSTRAINTS[definition.key],
     remainingTokensGt:
       definition.type === 'threshold' ? REMAINING_TOKENS_CONSTRAINTS[definition.key] : undefined,

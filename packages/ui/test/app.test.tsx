@@ -116,6 +116,27 @@ describe('App routing', () => {
       expect(container.querySelector('nav a[href="/p/proj_x/pipelines"]')).not.toBeNull();
       const workflowsLink = container.querySelector('nav a[href="/workflows"]');
       expect(workflowsLink!.getAttribute('aria-current')).toBe('page');
+      // The recent-space entries stay rendered/reachable but none is the
+      // current route, so none carries active marking (nav active-state bug).
+      for (const href of ['/p/proj_x/board', '/p/proj_x/archive', '/p/proj_x/config', '/p/proj_x/pipelines']) {
+        expect(container.querySelector(`nav a[href="${href}"]`)!.getAttribute('aria-current')).toBeNull();
+      }
+    } finally {
+      localStorage.removeItem('rasen.recentSpaces');
+    }
+  });
+
+  it('highlights only Profiles on /profiles, with no space-scoped entry active', async () => {
+    localStorage.setItem('rasen.recentSpaces', JSON.stringify(['project:proj_x']));
+    try {
+      await mountAt(container, '/profiles');
+      const profilesLink = container.querySelector('nav a[href="/profiles"]');
+      expect(profilesLink!.getAttribute('aria-current')).toBe('page');
+      for (const href of ['/p/proj_x/board', '/p/proj_x/archive', '/p/proj_x/config', '/p/proj_x/pipelines']) {
+        expect(container.querySelector(`nav a[href="${href}"]`)!.getAttribute('aria-current')).toBeNull();
+      }
+      // The Workflows entry (also space-agnostic) is not the current route either.
+      expect(container.querySelector('nav a[href="/workflows"]')!.getAttribute('aria-current')).toBeNull();
     } finally {
       localStorage.removeItem('rasen.recentSpaces');
     }

@@ -19,8 +19,12 @@ import {
   validateWorkflowInput,
   workflowDefinitionForJson,
 } from '../workflow-library.js';
-import { loadWorkflowCatalog } from '../workflow-registry/index.js';
+import {
+  computeWorkflowDependencyGraph,
+  loadWorkflowCatalog,
+} from '../workflow-registry/index.js';
 import type {
+  WorkflowDependenciesResponse,
   WorkflowDetailResponse,
   WorkflowListResponse,
   WorkflowValidationResponse,
@@ -63,6 +67,18 @@ export function handleWorkflowsList(): WorkflowReadResult<WorkflowListResponse> 
     diagnostics: record.diagnostics,
   }));
   return { ok: true, response: { workflows, invalid, diagnostics: [...catalog.diagnostics] } };
+}
+
+/**
+ * `GET /api/v1/workflow-dependencies` (workflow-http-api spec / design D7).
+ * Fresh catalog read; serves every unit's transitive strong closure and its
+ * inverted weak (enhances) associations, computed by
+ * `computeWorkflowDependencyGraph`. Advisory and read-only — a broken user
+ * pipeline degrades silently (the graph builder skips it) rather than erroring.
+ */
+export function handleWorkflowDependenciesRead(): WorkflowReadResult<WorkflowDependenciesResponse> {
+  const graph = computeWorkflowDependencyGraph(loadWorkflowCatalog());
+  return { ok: true, response: { dependencies: graph.entries } };
 }
 
 /**

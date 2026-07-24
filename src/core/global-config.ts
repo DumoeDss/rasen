@@ -74,7 +74,13 @@ export function isRetiredDeliveryValue(raw: unknown): raw is unknown {
 // TypeScript interfaces
 export interface GlobalConfig {
   featureFlags?: Record<string, boolean>;
-  profile?: Profile;
+  /**
+   * The user-wide profile. Widened from the {@link Profile} union to accept a
+   * saved profile name (resolved by `resolveUserWideProfileBase`); the three
+   * reserved literals still carry their special meaning. The YAML/JSON parser
+   * already stores whatever string is on disk.
+   */
+  profile?: Profile | string;
   workflows?: string[];
   language?: Language;
   proactive?: boolean;
