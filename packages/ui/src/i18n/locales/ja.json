@@ -1,4 +1,9 @@
 {
+  "keepalive.enabled_label": "keepalive を有効化",
+  "keepalive.enabled_description": "対象となる Claude パイプラインワーカーを待機状態に保ち、プロンプトキャッシュを維持します。",
+  "keepalive.enabled_on": "オン",
+  "keepalive.enabled_off": "オフ",
+  "keepalive.enabled_aria": "待機ワーカーの keepalive を有効にする",
   "nav.board": "ボード",
   "nav.archive": "アーカイブ",
   "nav.config": "設定",

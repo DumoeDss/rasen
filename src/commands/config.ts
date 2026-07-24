@@ -31,6 +31,10 @@ import {
   resolveEffectiveConfig,
   type EffectiveConfigEntry,
 } from '../core/effective-config.js';
+import {
+  contextResolveOptions,
+  resolveRootConfigContext,
+} from '../core/config-api/config-context.js';
 import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from '../core/project-config.js';
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
@@ -140,11 +144,15 @@ function formatSetDisplayValue(value: unknown): string {
 async function printEffectiveConfigView(): Promise<void> {
   const locale = getCliLocale();
   const ui = getConfigEditorMessages(locale);
-  const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
-  const storeLayer = await resolveConfigStoreLayer(projectRoot);
+  const planningRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
+  const contextOptions = planningRoot
+    ? contextResolveOptions(await resolveRootConfigContext(planningRoot))
+    : {};
   const entries = resolveEffectiveConfig({
-    projectRoot,
-    store: storeLayer,
+    ...contextOptions,
+    // The CLI effective view historically omits wildcard-family templates and
+    // instances; contextResolveOptions enables them for API callers only.
+    includeWildcards: false,
     reporter: createConfigDiagnosticReporter(locale),
   });
 

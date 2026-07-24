@@ -540,6 +540,7 @@
   },
   "config": {
     "descriptions": {
+      "keepalive.enabled": "为符合条件的 Claude 流水线阶段启用停驻工作器保活节拍",
       "profile": "控制可用操作的工作流配置方案（profile）",
       "workflows": "显式选择工作流（通过 `rasen profile` 编辑）",
       "language": "交互提示和 CLI 帮助所用的语言（`auto` 检测系统语言环境）",

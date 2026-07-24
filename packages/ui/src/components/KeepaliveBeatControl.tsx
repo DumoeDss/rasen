@@ -7,14 +7,9 @@ import { errorSurface } from '../config/errors.js';
 import { useT } from '../i18n/store.js';
 
 /**
- * Keepalive beat control (pipelines-ui spec). A dedicated Defaults-section
- * control for the global-only `keepalive.beatSeconds` key: one built-in preset
- * — 270s (economy, the registry default) — plus a bounded 90–280 custom input. Writes
- * go through the ordinary config API (`putKey`/`deleteKey`) exactly like the
- * autopilot Defaults rows; the control re-renders from the re-resolved entry on
- * every write. The derived tool-timeout hint (beat + 50s) is informational only
- * — it names the shell tool timeout the caller should raise, never a written
- * setting (design D2/D3).
+ * Keepalive control (pipelines-ui spec). The effective `keepalive.enabled`
+ * switch and retained `keepalive.beatSeconds` cadence share one Defaults card,
+ * while writes, reset state, errors, and API re-resolution remain per-key.
  */
 
 /** The configurable beat range (mirrors `keepalive.beatSeconds` registry validation). */
@@ -26,7 +21,8 @@ const ECONOMY_PRESET = 270;
 const TIMEOUT_MARGIN_SECONDS = 50;
 
 interface KeepaliveBeatControlProps {
-  entry: WireConfigEntry;
+  enabledEntry?: WireConfigEntry;
+  beatEntry?: WireConfigEntry;
   mode: ConfigMode;
   spaceType: SpaceType;
   selector: string;
@@ -44,29 +40,36 @@ function validateBeat(value: number, t: (key: string, values?: Record<string, st
 }
 
 export function KeepaliveBeatControl({
-  entry,
+  enabledEntry,
+  beatEntry,
   mode,
   spaceType,
   selector,
   onPageError,
   onEntryUpdated,
 }: KeepaliveBeatControlProps) {
-  const key = entry.definition.key;
   const writeScope = modeScope(mode, spaceType);
   const t = useT();
-  const effective = typeof entry.value === 'number' ? entry.value : ECONOMY_PRESET;
+  const effectiveEnabled = enabledEntry?.value !== false;
+  const effectiveBeat = typeof beatEntry?.value === 'number' ? beatEntry.value : ECONOMY_PRESET;
 
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [custom, setCustom] = useState<string>(String(effective));
+  const [enabledPending, setEnabledPending] = useState(false);
+  const [enabledError, setEnabledError] = useState<string | null>(null);
+  const [beatPending, setBeatPending] = useState(false);
+  const [beatError, setBeatError] = useState<string | null>(null);
+  const [custom, setCustom] = useState<string>(String(effectiveBeat));
 
   // Re-sync the custom input to the effective value whenever a write re-resolves
   // the entry (the control reflects the effective value on load and after each write).
   useEffect(() => {
-    setCustom(String(effective));
-  }, [effective]);
+    setCustom(String(effectiveBeat));
+  }, [effectiveBeat]);
 
-  async function run(fn: () => Promise<{ entry: WireConfigEntry }>) {
+  async function run(
+    fn: () => Promise<{ entry: WireConfigEntry }>,
+    setPending: (pending: boolean) => void,
+    setError: (error: string | null) => void
+  ) {
     setPending(true);
     setError(null);
     try {
@@ -88,88 +91,167 @@ export function KeepaliveBeatControl({
   function commit(value: number) {
     const invalid = validateBeat(value, t);
     if (invalid) {
-      setError(invalid);
+      setBeatError(invalid);
       return;
     }
-    void run(() => client.putKey(key, { scope: writeScope, value }, selector));
+    if (!beatEntry) return;
+    void run(
+      () => client.putKey(beatEntry.definition.key, { scope: writeScope, value }, selector),
+      setBeatPending,
+      setBeatError
+    );
   }
 
-  function unset() {
-    void run(() => client.deleteKey(key, writeScope, selector));
+  function setEnabled(value: boolean) {
+    if (!enabledEntry) return;
+    void run(
+      () => client.putKey(enabledEntry.definition.key, { scope: writeScope, value }, selector),
+      setEnabledPending,
+      setEnabledError
+    );
+  }
+
+  function unsetEntry(
+    entry: WireConfigEntry,
+    setPending: (pending: boolean) => void,
+    setError: (error: string | null) => void
+  ) {
+    void run(
+      () => client.deleteKey(entry.definition.key, writeScope, selector),
+      setPending,
+      setError
+    );
   }
 
   // The hint tracks the value currently in play — the pending custom edit when it
   // parses, otherwise the effective value — so it updates live as the user types.
   const draft = Number(custom);
-  const hintBeat = custom.trim() !== '' && !Number.isNaN(draft) ? draft : effective;
-  const active = effective === ECONOMY_PRESET ? 'economy' : 'custom';
+  const hintBeat = custom.trim() !== '' && !Number.isNaN(draft) ? draft : effectiveBeat;
+  const active = effectiveBeat === ECONOMY_PRESET ? 'economy' : 'custom';
 
   return (
-    <div class="keepalive-beat" data-testid="keepalive-beat-control" data-key={key} title={entry.definition.description}>
-      <span class="keepalive-beat__label">{t('keepalive.label')}</span>
-      <span class="keepalive-beat__desc">{t('keepalive.description')}</span>
-      <div class="keepalive-beat__presets" role="group" aria-label={t('keepalive.presets_label')}>
-        <button
-          type="button"
-          class={`member-chip${active === 'economy' ? ' member-chip--selected' : ''}`}
-          data-testid="keepalive-preset-economy"
-          title={t('keepalive.preset_economy_title')}
-          aria-pressed={active === 'economy'}
-          disabled={pending}
-          onClick={() => commit(ECONOMY_PRESET)}
-        >
-          {t('keepalive.preset_economy', { seconds: ECONOMY_PRESET })}
-        </button>
-      </div>
-      <label class="keepalive-beat__custom">
-        <span>{t('keepalive.custom')}</span>
-        <input
-          type="number"
-          min={BEAT_MIN}
-          max={BEAT_MAX}
-          step="1"
-          class="keepalive-beat__input"
-          data-testid="keepalive-custom-input"
-          value={custom}
-          disabled={pending}
-          onInput={(e) => {
-            setCustom((e.target as HTMLInputElement).value);
-            setError(null);
-          }}
-        />
-        <button
-          type="button"
-          data-testid="keepalive-custom-set"
-          disabled={pending}
-          onClick={() => {
-            if (custom.trim() === '') {
-              setError(t('keepalive.error_range', { min: BEAT_MIN, max: BEAT_MAX }));
-              return;
-            }
-            commit(Number(custom));
-          }}
-        >
-          {t('keepalive.set')}
-        </button>
-      </label>
-      <span class="keepalive-beat__hint" data-testid="keepalive-timeout-hint">
-        {t('keepalive.hint', { total: hintBeat + TIMEOUT_MARGIN_SECONDS, margin: TIMEOUT_MARGIN_SECONDS })}
-      </span>
-      <span
-        class={`config-entry__source config-entry__source--${entry.source}`}
-        data-testid="keepalive-source"
-      >
-        {entry.source}
-      </span>
-      {entry.source !== 'default' && (
-        <button type="button" data-testid="keepalive-unset" disabled={pending} onClick={unset}>
-          {t('keepalive.reset')}
-        </button>
+    <div
+      class={`keepalive-beat${effectiveEnabled ? '' : ' keepalive-beat--disabled'}`}
+      data-testid="keepalive-beat-control"
+      data-enabled={String(effectiveEnabled)}
+    >
+      {enabledEntry && (
+        <div class="keepalive-beat__enabled" title={enabledEntry.definition.description}>
+          <div class="keepalive-beat__enabled-copy">
+            <span class="keepalive-beat__label">{t('keepalive.enabled_label')}</span>
+            <span class="keepalive-beat__desc">{t('keepalive.enabled_description')}</span>
+          </div>
+          <button
+            type="button"
+            class={`keepalive-beat__toggle${effectiveEnabled ? ' keepalive-beat__toggle--on' : ''}`}
+            role="switch"
+            aria-checked={effectiveEnabled}
+            aria-label={t('keepalive.enabled_aria')}
+            data-testid="keepalive-enabled-toggle"
+            disabled={enabledPending}
+            onClick={() => setEnabled(!effectiveEnabled)}
+          >
+            {effectiveEnabled ? t('keepalive.enabled_on') : t('keepalive.enabled_off')}
+          </button>
+          <span
+            class={`config-entry__source config-entry__source--${enabledEntry.source}`}
+            data-testid="keepalive-enabled-source"
+          >
+            {enabledEntry.source}
+          </span>
+          {enabledEntry.scopeValues[writeScope] !== undefined && (
+            <button
+              type="button"
+              data-testid="keepalive-enabled-unset"
+              disabled={enabledPending}
+              onClick={() => unsetEntry(enabledEntry, setEnabledPending, setEnabledError)}
+            >
+              {t('keepalive.reset')}
+            </button>
+          )}
+          {enabledError && (
+            <span class="keepalive-beat__error" role="alert" data-testid="keepalive-enabled-error">
+              {t(enabledError)}
+            </span>
+          )}
+        </div>
       )}
-      {error && (
-        <span class="keepalive-beat__error" role="alert" data-testid="keepalive-error">
-          {t(error)}
-        </span>
+      {beatEntry && (
+        <div class="keepalive-beat__cadence" title={beatEntry.definition.description}>
+          <span class="keepalive-beat__label">{t('keepalive.label')}</span>
+          <span class="keepalive-beat__desc">{t('keepalive.description')}</span>
+          <div class="keepalive-beat__presets" role="group" aria-label={t('keepalive.presets_label')}>
+            <button
+              type="button"
+              class={`member-chip${active === 'economy' ? ' member-chip--selected' : ''}`}
+              data-testid="keepalive-preset-economy"
+              title={t('keepalive.preset_economy_title')}
+              aria-pressed={active === 'economy'}
+              disabled={beatPending}
+              onClick={() => commit(ECONOMY_PRESET)}
+            >
+              {t('keepalive.preset_economy', { seconds: ECONOMY_PRESET })}
+            </button>
+          </div>
+          <label class="keepalive-beat__custom">
+            <span>{t('keepalive.custom')}</span>
+            <input
+              type="number"
+              min={BEAT_MIN}
+              max={BEAT_MAX}
+              step="1"
+              class="keepalive-beat__input"
+              data-testid="keepalive-custom-input"
+              value={custom}
+              disabled={beatPending}
+              onInput={(e) => {
+                setCustom((e.target as HTMLInputElement).value);
+                setBeatError(null);
+              }}
+            />
+            <button
+              type="button"
+              data-testid="keepalive-custom-set"
+              disabled={beatPending}
+              onClick={() => {
+                if (custom.trim() === '') {
+                  setBeatError(t('keepalive.error_range', { min: BEAT_MIN, max: BEAT_MAX }));
+                  return;
+                }
+                commit(Number(custom));
+              }}
+            >
+              {t('keepalive.set')}
+            </button>
+          </label>
+          <span class="keepalive-beat__hint" data-testid="keepalive-timeout-hint">
+            {t('keepalive.hint', {
+              total: hintBeat + TIMEOUT_MARGIN_SECONDS,
+              margin: TIMEOUT_MARGIN_SECONDS,
+            })}
+          </span>
+          <span
+            class={`config-entry__source config-entry__source--${beatEntry.source}`}
+            data-testid="keepalive-source"
+          >
+            {beatEntry.source}
+          </span>
+          {beatEntry.scopeValues[writeScope] !== undefined && (
+            <button
+              type="button"
+              data-testid="keepalive-unset"
+              disabled={beatPending}
+              onClick={() => unsetEntry(beatEntry, setBeatPending, setBeatError)}
+            >
+              {t('keepalive.reset')}
+            </button>
+          )}
+          {beatError && (
+            <span class="keepalive-beat__error" role="alert" data-testid="keepalive-error">
+              {t(beatError)}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

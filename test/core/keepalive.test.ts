@@ -179,6 +179,13 @@ describe('runtime detection and gate', () => {
       DEFAULT_KEEPALIVE_CONFIG.contextFloor
     );
   });
+
+  it('resolves keepalive enabled as true by default and preserves explicit booleans', () => {
+    expect(DEFAULT_KEEPALIVE_CONFIG.enabled).toBe(true);
+    expect(resolveKeepaliveConfig(undefined).enabled).toBe(true);
+    expect(resolveKeepaliveConfig({ enabled: true }).enabled).toBe(true);
+    expect(resolveKeepaliveConfig({ enabled: false }).enabled).toBe(false);
+  });
 });
 
 describe('beatSeconds resolution', () => {

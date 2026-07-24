@@ -9,6 +9,7 @@
  * consumers.
  */
 import {
+  isRegisteredStoreRoot,
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
@@ -17,6 +18,7 @@ import {
 } from '../effective-config.js';
 import { readProjectConfig, resolveAutopilotGatePolicy } from '../project-config.js';
 import { getGlobalConfig } from '../global-config.js';
+import { listRegisteredStores } from '../store/registry.js';
 import type { EffectiveStageInputs } from '../pipeline-registry/index.js';
 import { resolveProjectSelector, resolveSpaceSelector } from './project-addressing.js';
 import type { ConfigApiContext } from './router.js';
@@ -71,6 +73,35 @@ export type ConfigContext =
   | { kind: 'store'; storeId: string; storeRoot: string };
 
 export type ConfigContextResult = { ok: true; context: ConfigContext } | ProjectContextErr;
+
+/**
+ * Classifies a concrete planning root for config resolution. A root registered
+ * in the store namespace is addressed as that store's own context (no project
+ * layer); every other planning root remains a project context and may inherit
+ * its declared store layer.
+ */
+export async function resolveRootConfigContext(root: string): Promise<ConfigContext> {
+  const stores = await listRegisteredStores();
+  const registeredStore = stores.find(
+    (candidate) =>
+      candidate.type === 'store' && isRegisteredStoreRoot(root, [candidate])
+  );
+
+  if (registeredStore) {
+    return {
+      kind: 'store',
+      storeId: registeredStore.id,
+      storeRoot: registeredStore.storeRoot,
+    };
+  }
+
+  return {
+    kind: 'project',
+    root,
+    ref: null,
+    storeLayer: await resolveConfigStoreLayer(root),
+  };
+}
 
 /**
  * Resolves the config context from the optional `space` and `project`

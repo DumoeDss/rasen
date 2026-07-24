@@ -1,4 +1,9 @@
 {
+  "keepalive.enabled_label": "启用保活",
+  "keepalive.enabled_description": "允许符合条件的 Claude 流水线工作器保持停驻并维持提示缓存。",
+  "keepalive.enabled_on": "开",
+  "keepalive.enabled_off": "关",
+  "keepalive.enabled_aria": "启用停驻工作器保活",
   "nav.board": "看板",
   "nav.archive": "归档",
   "nav.config": "配置",

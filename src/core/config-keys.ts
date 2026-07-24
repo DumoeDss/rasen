@@ -250,6 +250,14 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     group: 'Telemetry',
   },
   {
+    key: 'keepalive.enabled',
+    scopes: ['global', 'project'],
+    type: 'boolean',
+    defaultValue: true,
+    description: 'Enable parked-worker keepalive beats for eligible Claude pipeline stages',
+    group: 'Pipelines',
+  },
+  {
     key: 'keepalive.runtimes.claude',
     scopes: ['global'],
     type: 'boolean',
