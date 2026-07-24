@@ -12,9 +12,11 @@ import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
+  resolveThresholdBindingLayers,
   type ResolveEffectiveConfigOptions,
   type StoreConfigLayer,
 } from '../effective-config.js';
+import { loadThresholdSchemeSnapshot } from '../threshold-resolver.js';
 import { readProjectConfig, resolveAutopilotGatePolicy } from '../project-config.js';
 import { getGlobalConfig } from '../global-config.js';
 import type { EffectiveStageInputs } from '../pipeline-registry/index.js';
@@ -186,6 +188,10 @@ export function pipelineResolutionBundle(context: ConfigContext): PipelineResolu
         basePolicy,
         configLayers: resolveHandoffThresholdLayers(undefined, storeRoot),
         modelLayers: resolveModelConfigLayers(undefined, storeRoot),
+        thresholdContext: {
+          bindings: resolveThresholdBindingLayers(undefined, storeRoot),
+          schemes: loadThresholdSchemeSnapshot(),
+        },
       },
     };
   }
@@ -203,6 +209,10 @@ export function pipelineResolutionBundle(context: ConfigContext): PipelineResolu
       basePolicy,
       configLayers: resolveHandoffThresholdLayers(root, storeRoot),
       modelLayers: resolveModelConfigLayers(root, storeRoot),
+      thresholdContext: {
+        bindings: resolveThresholdBindingLayers(root, storeRoot),
+        schemes: loadThresholdSchemeSnapshot(),
+      },
     },
   };
 }

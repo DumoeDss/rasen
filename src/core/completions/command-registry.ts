@@ -1262,6 +1262,25 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'scheme',
+    description: 'Inspect machine-level threshold schemes',
+    flags: [],
+    subcommands: [
+      {
+        name: 'list',
+        description: 'List threshold schemes',
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'show',
+        description: 'Show one threshold scheme',
+        acceptsPositional: true,
+        positionals: [{ name: 'name' }],
+        flags: [COMMON_FLAGS.json],
+      },
+    ],
+  },
+  {
     name: 'work',
     description: 'Machine-home work-directory maintenance (migrate legacy in-repo ephemera)',
     flags: [],

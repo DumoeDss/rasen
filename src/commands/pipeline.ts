@@ -59,6 +59,7 @@ import {
   type MaskedGateSource,
   type ResolvedReuseConfig,
   type ThresholdValue,
+  type ThresholdResolutionContext,
   type RunStateWorker,
   type Stage,
   type StageRole,
@@ -67,7 +68,9 @@ import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
+  resolveThresholdBindingLayers,
 } from '../core/effective-config.js';
+import { loadThresholdSchemeSnapshot } from '../core/threshold-resolver.js';
 import { getGlobalConfig } from '../core/global-config.js';
 import {
   readProjectConfig,
@@ -290,11 +293,25 @@ export class PipelineCommand {
       projectRoot,
       store: storeLayer,
     });
+    const thresholdContext = this.thresholdContext(
+      pipeline,
+      overrides,
+      projectRoot,
+      storeLayer?.storeRoot
+    );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
     const stages: StageView[] = pipeline.stages.map((s) =>
-      this.toStageView(s, pipeline, configLayers, modelLayers, overrides, basePolicy)
+      this.toStageView(
+        s,
+        pipeline,
+        configLayers,
+        modelLayers,
+        overrides,
+        basePolicy,
+        thresholdContext
+      )
     );
-    const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
+    const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
 
     const result = {
       name: pipeline.name,
@@ -839,6 +856,12 @@ export class PipelineCommand {
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
+    const thresholdContext = this.thresholdContext(
+      pipeline,
+      overrides,
+      projectRoot,
+      storeLayer?.storeRoot
+    );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
 
     // Effective runtime per role: family instance (project > store > global) >
@@ -863,7 +886,15 @@ export class PipelineCommand {
       agents: pipeline.agents ?? {},
       effectiveRoles,
       stages: pipeline.stages.map((s) =>
-        this.toStageView(s, pipeline, configLayers, modelLayers, overrides, basePolicy)
+        this.toStageView(
+          s,
+          pipeline,
+          configLayers,
+          modelLayers,
+          overrides,
+          basePolicy,
+          thresholdContext
+        )
       ),
     };
   }
@@ -892,7 +923,8 @@ export class PipelineCommand {
     configLayers?: HandoffConfigLayers,
     modelLayers?: ModelConfigLayers,
     overrides?: PipelineStageOverrides,
-    basePolicy?: ResolvedGatePolicy
+    basePolicy?: ResolvedGatePolicy,
+    thresholdContext?: ThresholdResolutionContext
   ): StageView {
     const stageOverrides = this.stageConfigOverrides(stage, overrides);
     const runtime = resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides);
@@ -924,7 +956,34 @@ export class PipelineCommand {
       model: runtime.model ?? null,
       modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
-      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers, modelLayers, stageOverrides),
+      handoff: resolveStageHandoffConfig(
+        stage,
+        pipeline,
+        configLayers,
+        modelLayers,
+        stageOverrides,
+        thresholdContext
+      ),
+    };
+  }
+
+  private thresholdContext(
+    pipeline: PipelineYaml,
+    overrides: PipelineStageOverrides,
+    projectRoot: string,
+    storeRoot?: string | null
+  ): ThresholdResolutionContext {
+    const runtimes: Partial<Record<StageRole, AgentRuntime>> = {};
+    for (const role of STAGE_ROLES) {
+      runtimes[role] =
+        overrides.runtimes.get(role)?.value ??
+        normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ??
+        'claude';
+    }
+    return {
+      bindings: resolveThresholdBindingLayers(projectRoot, storeRoot),
+      schemes: loadThresholdSchemeSnapshot(),
+      runtimes,
     };
   }
 
@@ -976,6 +1035,7 @@ export class PipelineCommand {
       name: string;
       description: string;
       agents?: PipelineYaml['agents'];
+      reuse: ResolvedReuseConfig;
       buildOrder: string[];
       stages: StageView[];
       origin?: PipelineYaml['origin'];
@@ -984,6 +1044,7 @@ export class PipelineCommand {
     source: PipelineInfo['source'] | undefined,
     messages: PipelineMessages
   ): void {
+    this.printThresholdDiagnostics(result);
     console.log(messages.format('pipelineLabel', { name: result.name }));
     const description = source
       ? messages.description(result.name, source, result.description)
@@ -1068,6 +1129,28 @@ export class PipelineCommand {
           })
         : (stage.skill ?? '');
       console.log(messages.format('stageLine', { id, action, suffix }));
+    }
+  }
+
+  private printThresholdDiagnostics(result: {
+    reuse: ResolvedReuseConfig;
+    stages: StageView[];
+  }): void {
+    const diagnostics = [
+      ...result.stages.flatMap((stage) => stage.handoff.diagnostics ?? []),
+      ...(result.reuse.diagnostics ?? []),
+    ];
+    const seen = new Set<string>();
+    for (const diagnostic of diagnostics) {
+      const key = [
+        diagnostic.code,
+        diagnostic.scope,
+        diagnostic.row,
+        diagnostic.scheme,
+      ].join('\0');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      console.warn(diagnostic.message);
     }
   }
 

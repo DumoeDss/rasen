@@ -40,6 +40,7 @@ export {
   type StageOverrideScope,
   type StageConfigOverrides,
   type ResolvedReuseConfig,
+  type ThresholdResolutionContext,
   type HandoffConfig,
   type ReuseConfig,
   type ReuseMode,

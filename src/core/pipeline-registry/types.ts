@@ -1,5 +1,17 @@
 import { z } from 'zod';
-import { resolveModelPreset, type ThresholdValue } from '../model-presets.js';
+import { resolveModelPreset } from '../model-presets.js';
+import {
+  THRESHOLD_ROLES,
+  thresholdSchema as sharedThresholdSchema,
+  type ThresholdValue,
+} from '../threshold-values.js';
+import {
+  resolveThreshold,
+  type ThresholdBindingLayers,
+  type ThresholdBindingMetadata,
+  type ThresholdDiagnostic,
+  type ThresholdSchemeSnapshot,
+} from '../threshold-resolver.js';
 import {
   DISPATCH_RUNTIMES,
   type DispatchRuntime,
@@ -10,13 +22,7 @@ export type { ThresholdValue };
 /**
  * The role a stage plays in an orchestration pipeline.
  */
-export const StageRoleSchema = z.enum([
-  'planner',
-  'implementer',
-  'reviewer',
-  'fixer',
-  'shipper',
-]);
+export const StageRoleSchema = z.enum(THRESHOLD_ROLES);
 export type StageRole = z.infer<typeof StageRoleSchema>;
 
 /**
@@ -75,21 +81,7 @@ export type PipelineAgentRuntimeOverrides = z.infer<typeof PipelineAgentRuntimeO
  * self-describing per threshold family (cf. HandoffThresholdSchema vs
  * ReuseThresholdSchema).
  */
-export function thresholdSchema(label: string) {
-  return z.union([
-    z.number().gt(0, { error: `${label} must be in (0, 1]` }).lte(1, {
-      error: `${label} must be in (0, 1]`,
-    }),
-    z
-      .object({
-        remainingTokens: z
-          .number()
-          .int({ error: `${label} remainingTokens must be a positive integer` })
-          .positive({ error: `${label} remainingTokens must be a positive integer` }),
-      })
-      .strict(),
-  ]);
-}
+export const thresholdSchema = sharedThresholdSchema;
 
 /**
  * A context-handoff threshold: a fraction of the context window in (0, 1] at or
@@ -664,6 +656,12 @@ export interface ResolvedStageHandoffConfig {
     | 'stage-override-store'
     | 'stage-override-global'
     | 'stage'
+    | 'project-scheme-role'
+    | 'project-scheme'
+    | 'store-scheme-role'
+    | 'store-scheme'
+    | 'global-scheme-role'
+    | 'global-scheme'
     | 'role'
     | 'pipeline'
     | 'project-role'
@@ -674,6 +672,15 @@ export interface ResolvedStageHandoffConfig {
     | 'global-config'
     | 'preset'
     | 'default';
+  binding?: ThresholdBindingMetadata;
+  diagnostics?: ThresholdDiagnostic[];
+}
+
+export interface ThresholdResolutionContext {
+  bindings?: ThresholdBindingLayers;
+  schemes?: ThresholdSchemeSnapshot;
+  /** Effective per-role runtimes after config-family overrides. */
+  runtimes?: Partial<Record<StageRole, AgentRuntime>>;
 }
 
 /**
@@ -697,18 +704,22 @@ export interface HandoffConfigLayers {
  * Resolve the effective handoff config for a stage.
  *
  * Precedence (field-wise):
- * 1. Stage-level `handoff`.
- * 2. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
- * 3. Pipeline-level `handoff`.
- * 4. Project config `handoff.roles[<stage role>]` — threshold ONLY.
- * 5. Project config `handoff.threshold` — threshold ONLY.
- * 6. Store config `handoff.roles[<stage role>]` — threshold ONLY.
- * 7. Store config `handoff.threshold` — threshold ONLY.
- * 8. Global config `handoff.roles[<stage role>]` — threshold ONLY.
- * 9. Global config `handoff.threshold` — threshold ONLY.
- * 10. Model preset (the suggested `handoffThreshold` of the preset matching the
+ * 1. Configured `pipelines.<pipeline>.handoff.<stage>` instance.
+ * 2. Stage-level YAML `handoff`.
+ * 3. Bound threshold scheme: the effective runtime row at project, store, then
+ *    global scope; then the `default` row at project, store, then global scope.
+ *    Within the selected scheme, a stage-role override wins over its scalar.
+ * 4. Pipeline `handoff.roles[<stage role>]` — threshold ONLY.
+ * 5. Pipeline-level `handoff`.
+ * 6. Project config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 7. Project config `handoff.threshold` — threshold ONLY.
+ * 8. Store config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 9. Store config `handoff.threshold` — threshold ONLY.
+ * 10. Global config `handoff.roles[<stage role>]` — threshold ONLY.
+ * 11. Global config `handoff.threshold` — threshold ONLY.
+ * 12. Model preset (the suggested `handoffThreshold` of the preset matching the
  *    stage's resolved model, per `resolveStageRuntimeConfig`) — threshold ONLY.
- * 11. Built-in defaults.
+ * 13. Built-in defaults.
  *
  * `source` names the layer that supplied the resolved THRESHOLD specifically
  * (provenance-first, in this same precedence order), so callers can report
@@ -727,7 +738,8 @@ export function resolveStageHandoffConfig(
   pipeline: PipelineYaml,
   configLayers?: HandoffConfigLayers,
   modelLayers?: ModelConfigLayers,
-  stageOverrides?: StageConfigOverrides
+  stageOverrides?: StageConfigOverrides,
+  thresholdContext?: ThresholdResolutionContext
 ): ResolvedStageHandoffConfig {
   const stageHandoff = stage.handoff;
   const pipelineHandoff = pipeline.handoff;
@@ -737,26 +749,41 @@ export function resolveStageHandoffConfig(
   const globalRoleThreshold = stage.role ? configLayers?.globalRoles?.[stage.role] : undefined;
   // The preset keys off the stage's RESOLVED model, so a per-stage model
   // override must feed the preset lookup too (pass the full override set).
-  const presetThreshold = resolveModelPreset(
-    resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides).model
-  )?.handoffThreshold;
+  const resolvedRuntime = resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides);
+  const presetThreshold = resolveModelPreset(resolvedRuntime.model)?.handoffThreshold;
 
   // A `pipelines.<name>.handoff.<stage>` instance tops the threshold chain.
   const overrideThreshold = stageOverrides?.handoff?.value;
 
-  const threshold =
-    overrideThreshold ??
-    stageHandoff?.threshold ??
-    roleThreshold ??
-    pipelineHandoff?.threshold ??
-    projectRoleThreshold ??
-    configLayers?.projectThreshold ??
-    storeRoleThreshold ??
-    configLayers?.storeThreshold ??
-    globalRoleThreshold ??
-    configLayers?.globalThreshold ??
-    presetThreshold ??
-    DEFAULT_HANDOFF_CONFIG.threshold;
+  const resolvedThreshold = resolveThreshold({
+    family: 'handoff',
+    role: stage.role,
+    runtime: resolvedRuntime.runtime,
+    pipeline: pipeline.name,
+    stage: stage.id,
+    bindings: thresholdContext?.bindings,
+    schemes: thresholdContext?.schemes,
+    nonBinding: {
+      configuredStage: {
+        value: overrideThreshold,
+        source: stageOverrides?.handoff
+          ? `stage-override-${stageOverrides.handoff.scope}`
+          : 'stage-override-project',
+      },
+      stage: { value: stageHandoff?.threshold, source: 'stage' },
+      pipelineRole: { value: roleThreshold, source: 'role' },
+      pipeline: { value: pipelineHandoff?.threshold, source: 'pipeline' },
+      projectRole: { value: projectRoleThreshold, source: 'project-role' },
+      project: { value: configLayers?.projectThreshold, source: 'project-config' },
+      storeRole: { value: storeRoleThreshold, source: 'store-role' },
+      store: { value: configLayers?.storeThreshold, source: 'store-config' },
+      globalRole: { value: globalRoleThreshold, source: 'global-role' },
+      global: { value: configLayers?.globalThreshold, source: 'global-config' },
+      preset: { value: presetThreshold, source: 'preset' },
+      default: { value: DEFAULT_HANDOFF_CONFIG.threshold, source: 'default' },
+    },
+  });
+  const threshold = resolvedThreshold.threshold;
   const maxRelays =
     stageHandoff?.maxRelays ?? pipelineHandoff?.maxRelays ?? DEFAULT_HANDOFF_CONFIG.maxRelays;
   const stallLimit =
@@ -779,36 +806,22 @@ export function resolveStageHandoffConfig(
   // (every field falls through to the built-in default) does source fall
   // back to whichever layer configured maxRelays/stallLimit, preserving the
   // pre-preset behavior for that edge.
-  const source: ResolvedStageHandoffConfig['source'] =
-    overrideThreshold !== undefined
-      ? (`stage-override-${stageOverrides!.handoff!.scope}` as ResolvedStageHandoffConfig['source'])
-      : stageHandoff?.threshold !== undefined
-      ? 'stage'
-      : roleThreshold !== undefined
-        ? 'role'
-        : pipelineHandoff?.threshold !== undefined
-          ? 'pipeline'
-          : projectRoleThreshold !== undefined
-            ? 'project-role'
-            : configLayers?.projectThreshold !== undefined
-              ? 'project-config'
-              : storeRoleThreshold !== undefined
-                ? 'store-role'
-                : configLayers?.storeThreshold !== undefined
-                  ? 'store-config'
-                  : globalRoleThreshold !== undefined
-                    ? 'global-role'
-                    : configLayers?.globalThreshold !== undefined
-                      ? 'global-config'
-                      : presetThreshold !== undefined
-                        ? 'preset'
-                        : hasFields(stageHandoff)
-                          ? 'stage'
-                          : hasFields(pipelineHandoff)
-                            ? 'pipeline'
-                            : 'default';
+  let source = resolvedThreshold.source as ResolvedStageHandoffConfig['source'];
+  if (source === 'default') {
+    if (hasFields(stageHandoff)) source = 'stage';
+    else if (hasFields(pipelineHandoff)) source = 'pipeline';
+  }
 
-  return { threshold, maxRelays, stallLimit, source };
+  return {
+    threshold,
+    maxRelays,
+    stallLimit,
+    source,
+    ...(resolvedThreshold.binding ? { binding: resolvedThreshold.binding } : {}),
+    ...(resolvedThreshold.diagnostics.length > 0
+      ? { diagnostics: resolvedThreshold.diagnostics }
+      : {}),
+  };
 }
 
 /**
@@ -830,44 +843,115 @@ export interface ResolvedReuseConfig {
   threshold: ThresholdValue;
   /** Per-role resolved reuse thresholds. */
   roles: { planner: ThresholdValue; implementer: ThresholdValue };
+  sources?: {
+    threshold: string;
+    roles: { planner: string; implementer: string };
+  };
+  bindings?: {
+    threshold?: ThresholdBindingMetadata;
+    roles?: Partial<Record<'planner' | 'implementer', ThresholdBindingMetadata>>;
+  };
+  diagnostics?: ThresholdDiagnostic[];
 }
 
 /**
  * Resolve the effective reuse config for a pipeline.
  *
  * Precedence (field-wise):
- *  - per-role threshold: `reuse.roles[<role>]` > `reuse.threshold` > model
- *    preset (the suggested `reuseThreshold` of the preset matching that
- *    role's `agents[<role>]` model, when one is configured) > built-in default.
+ *  - per-role threshold: bound threshold scheme for the role's effective
+ *    runtime row at project/store/global, then the `default` row at
+ *    project/store/global (scheme role override > scheme scalar) >
+ *    `reuse.roles[<role>]` > `reuse.threshold` > model preset (the suggested
+ *    `reuseThreshold` of the preset matching that role's `agents[<role>]`
+ *    model, when one is configured) > built-in default.
  *  - mode: `reuse[<role>]` > built-in default.
- *  - top-level threshold: `reuse.threshold` > built-in default (no preset
- *    layer — there is no single pipeline-wide model).
+ *  - top-level threshold: bound threshold scheme from only the `default` row
+ *    at project/store/global (scheme scalar only) > `reuse.threshold` >
+ *    built-in default. Runtime rows and the preset layer do not apply because
+ *    there is no single pipeline-wide runtime/model.
  *
  * Reuse has no stage dimension, so this is pipeline-scoped (unlike the
  * stage-scoped resolveStageHandoffConfig). A role with no configured model, or
  * whose model has no preset (or no suggested reuse threshold), skips the
  * preset layer.
  */
-export function resolvePipelineReuseConfig(pipeline: PipelineYaml): ResolvedReuseConfig {
+export function resolvePipelineReuseConfig(
+  pipeline: PipelineYaml,
+  thresholdContext?: ThresholdResolutionContext
+): ResolvedReuseConfig {
   const reuse = pipeline.reuse;
-  const threshold = reuse?.threshold ?? DEFAULT_REUSE_CONFIG.threshold;
+  const topLevel = resolveThreshold({
+    family: 'reuse',
+    bindingRows: 'default-only',
+    bindings: thresholdContext?.bindings,
+    schemes: thresholdContext?.schemes,
+    nonBinding: {
+      pipeline: { value: reuse?.threshold, source: 'pipeline' },
+      default: { value: DEFAULT_REUSE_CONFIG.threshold, source: 'default' },
+    },
+  });
+  const threshold = topLevel.threshold;
 
-  const roleThreshold = (role: 'planner' | 'implementer'): ThresholdValue => {
-    if (reuse?.roles?.[role] !== undefined) return reuse.roles[role];
-    if (reuse?.threshold !== undefined) return reuse.threshold;
+  const roleThreshold = (role: 'planner' | 'implementer') => {
     const roleModel = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.model;
     const presetThreshold = resolveModelPreset(roleModel)?.reuseThreshold;
-    return presetThreshold ?? DEFAULT_REUSE_CONFIG.threshold;
+    const declaredRuntime =
+      normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ?? 'claude';
+    return resolveThreshold({
+      family: 'reuse',
+      role,
+      runtime: thresholdContext?.runtimes?.[role] ?? declaredRuntime,
+      bindings: thresholdContext?.bindings,
+      schemes: thresholdContext?.schemes,
+      nonBinding: {
+        pipelineRole: { value: reuse?.roles?.[role], source: 'role' },
+        pipeline: { value: reuse?.threshold, source: 'pipeline' },
+        preset: { value: presetThreshold, source: 'preset' },
+        default: { value: DEFAULT_REUSE_CONFIG.threshold, source: 'default' },
+      },
+    });
   };
+
+  const planner = roleThreshold('planner');
+  const implementer = roleThreshold('implementer');
+  const diagnostics = [
+    ...topLevel.diagnostics,
+    ...planner.diagnostics,
+    ...implementer.diagnostics,
+  ].filter(
+    (diagnostic, index, all) =>
+      all.findIndex((candidate) => candidate.message === diagnostic.message) === index
+  );
+  const hasResolutionMetadata =
+    topLevel.binding !== undefined ||
+    planner.binding !== undefined ||
+    implementer.binding !== undefined ||
+    diagnostics.length > 0;
 
   return {
     planner: reuse?.planner ?? DEFAULT_REUSE_CONFIG.planner,
     implementer: reuse?.implementer ?? DEFAULT_REUSE_CONFIG.implementer,
     threshold,
     roles: {
-      planner: roleThreshold('planner'),
-      implementer: roleThreshold('implementer'),
+      planner: planner.threshold,
+      implementer: implementer.threshold,
     },
+    ...(hasResolutionMetadata
+      ? {
+          sources: {
+            threshold: topLevel.source,
+            roles: { planner: planner.source, implementer: implementer.source },
+          },
+          bindings: {
+            ...(topLevel.binding ? { threshold: topLevel.binding } : {}),
+            roles: {
+              ...(planner.binding ? { planner: planner.binding } : {}),
+              ...(implementer.binding ? { implementer: implementer.binding } : {}),
+            },
+          },
+          ...(diagnostics.length > 0 ? { diagnostics } : {}),
+        }
+      : {}),
   };
 }
 

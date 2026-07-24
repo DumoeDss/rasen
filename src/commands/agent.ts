@@ -219,7 +219,14 @@ export class AgentCommand {
       return;
     }
 
-    const handoff = await resolveHandoffThresholdReport(result.pct, result.remainingTokens);
+    const handoff = await resolveHandoffThresholdReport(
+      result.pct,
+      result.remainingTokens,
+      result.runtime
+    );
+    for (const diagnostic of handoff.diagnostics ?? []) {
+      console.warn(diagnostic.message);
+    }
 
     if (options.json) {
       console.log(JSON.stringify(this.toJson(result, handoff)));
@@ -233,7 +240,7 @@ export class AgentCommand {
       ? `handoff recommended (${comparator} ${thresholdDisplay}, ${handoff.thresholdSource})`
       : `handoff not yet needed (${comparator} ${thresholdDisplay} not met, ${handoff.thresholdSource})`;
     console.log(
-      `model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
+      `runtime=${result.runtime} model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
     );
   }
 
@@ -387,6 +394,7 @@ export class AgentCommand {
     handoff: HandoffThresholdReport
   ): {
     available: true;
+    runtime: AgentContextResult['runtime'];
     model: string;
     contextTokens: number;
     limit: number;
@@ -399,6 +407,7 @@ export class AgentCommand {
   } {
     return {
       available: true,
+      runtime: result.runtime,
       model: result.model,
       contextTokens: result.contextTokens,
       limit: result.limit,

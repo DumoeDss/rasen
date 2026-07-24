@@ -1,7 +1,7 @@
 # runtime-adapter-registry Specification
 
 ## Purpose
-TBD - created by archiving change threshold-schemes-runtime-bindings-runtime-registry. Update Purpose after archive.
+Define the capability-based runtime adapter registry so context probing, token auditing, pipeline dispatch, configuration, and wire surfaces consistently accept only runtimes with the required adapter capability while preserving existing runtime behavior.
 ## Requirements
 ### Requirement: Runtime adapters declare independent capabilities
 

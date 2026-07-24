@@ -39,6 +39,7 @@ import {
   type StageOverrideScope,
   type StageRole,
   type ThresholdValue,
+  type ThresholdResolutionContext,
 } from './types.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
 
@@ -209,6 +210,7 @@ export interface EffectiveStageInputs {
   basePolicy: ResolvedGatePolicy;
   configLayers?: HandoffConfigLayers;
   modelLayers?: ModelConfigLayers;
+  thresholdContext?: ThresholdResolutionContext;
 }
 
 /** The `StageConfigOverrides` for one stage: model/handoff by stage id, runtime by role. */
@@ -241,7 +243,8 @@ export function resolveEffectiveStage(
     pipeline,
     inputs.configLayers,
     inputs.modelLayers,
-    stageOverrides
+    stageOverrides,
+    inputs.thresholdContext
   );
   const gate = resolveMaskedStageGate(
     stage.gate,

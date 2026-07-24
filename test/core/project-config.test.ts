@@ -1846,6 +1846,38 @@ pipelines:
     });
   });
 
+  describe('threshold binding parsing', () => {
+    it('preserves explicit/default rows and syntactically valid dangling scheme names', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nthresholds:\n  bindings:\n    claude: missing-locally\n    default: balanced\n'
+      );
+
+      expect(readProjectConfig(tempDir)?.thresholds?.bindings).toEqual({
+        claude: 'missing-locally',
+        default: 'balanced',
+      });
+    });
+
+    it('does not invent a default row and drops audit-only runtime keys', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nthresholds:\n  bindings:\n    codex: focused\n    zed: focused\n'
+      );
+
+      expect(readProjectConfig(tempDir)?.thresholds?.bindings).toEqual({
+        codex: 'focused',
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('thresholds.bindings.zed')
+      );
+    });
+  });
+
   describe('updateProjectConfigKey', () => {
     function writeConfig(content: string): string {
       const configDir = path.join(tempDir, 'rasen');

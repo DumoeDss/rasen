@@ -899,6 +899,144 @@ stages:
       });
     });
 
+    it('loads one runtime-binding scheme snapshot for handoff and reuse', async () => {
+      const home = path.join(testDir, '.binding-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'focused.yaml'),
+        'handoff: 0.55\nhandoffRoles:\n  reviewer: 0.6\nreuse: 0.2\nreuseRoles:\n  planner: 0.3\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'focused' } } }),
+        'utf-8'
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'bound-show');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: bound-show
+agents:
+  planner: codex
+  reviewer: codex
+stages:
+  - id: plan
+    skill: rasen-propose
+    role: planner
+  - id: review
+    skill: rasen-review
+    role: reviewer
+    requires: [plan]
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'bound-show', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.stages.find((stage: any) => stage.id === 'review').handoff).toMatchObject({
+        threshold: 0.6,
+        source: 'global-scheme-role',
+        binding: { row: 'codex', scheme: 'focused' },
+      });
+      expect(json.reuse.roles.planner).toBe(0.3);
+      expect(json.reuse.sources.roles.planner).toBe('global-scheme-role');
+    });
+
+    it('reports dangling bindings and falls back without failing pipeline show', async () => {
+      const home = path.join(testDir, '.dangling-home');
+      await fs.mkdir(home, { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { default: 'missing' } } }),
+        'utf-8'
+      );
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.stages[0].handoff.diagnostics).toEqual([
+        expect.objectContaining({ code: 'missing-scheme', scheme: 'missing' }),
+      ]);
+    });
+
+    it('text show deduplicates stage-handoff and reuse binding warnings while preserving fallback output', async () => {
+      const home = path.join(testDir, '.text-diagnostic-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'broken.yaml'),
+        'handoff: [\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'schemes', 'focused.yaml'),
+        'handoff: 0.55\nreuse: 0.2\n',
+        'utf-8'
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'text-diagnostics');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: text-diagnostics
+agents:
+  planner: claude
+  implementer: claude
+  reviewer: codex
+stages:
+  - id: review
+    skill: rasen-review
+    role: reviewer
+`,
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'broken' } } }),
+        'utf-8'
+      );
+      const stageWarning = await runCLI(['pipeline', 'show', 'text-diagnostics'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(stageWarning.exitCode).toBe(0);
+      expect(stageWarning.stdout).toContain('Pipeline: text-diagnostics');
+      expect(stageWarning.stdout).toContain('review');
+      expect(
+        stageWarning.stderr.match(
+          /Threshold binding global\.codex references invalid scheme "broken"/gu
+        )
+      ).toHaveLength(1);
+
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({
+          thresholds: { bindings: { codex: 'focused', default: 'missing-reuse' } },
+        }),
+        'utf-8'
+      );
+      const reuseWarning = await runCLI(['pipeline', 'show', 'text-diagnostics'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(reuseWarning.exitCode).toBe(0);
+      expect(reuseWarning.stdout).toContain('Pipeline: text-diagnostics');
+      expect(reuseWarning.stdout).toContain('review');
+      expect(
+        reuseWarning.stderr.match(
+          /Threshold binding global\.default references missing scheme "missing-reuse"/gu
+        )
+      ).toHaveLength(1);
+    });
+
     it('surfaces the resolved reuse config as built-in defaults when no block is declared', async () => {
       const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);

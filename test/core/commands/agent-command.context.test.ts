@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { AgentCommand } from '../../../src/commands/agent.js';
+import { saveThresholdScheme } from '../../../src/core/threshold-schemes.js';
 
 function tokenCountLine(totalTokens: number, modelContextWindow: number): string {
   return JSON.stringify({
@@ -68,6 +69,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(parsed.contextTokens).toBe(12_885);
     expect(parsed.limit).toBe(353_400);
     expect(parsed.model).toBe('gpt-5.6-sol');
+    expect(parsed.runtime).toBe('codex');
     expect(parsed.remainingTokens).toBe(353_400 - 12_885);
     expect(parsed.transcript).toBe(p);
   });
@@ -129,7 +131,10 @@ describe('AgentCommand.context — Codex rollout support', () => {
       console.log = orig;
     }
 
-    expect(JSON.parse(logs[0]).contextTokens).toBe(500);
+    expect(JSON.parse(logs[0])).toMatchObject({
+      runtime: 'codex',
+      contextTokens: 500,
+    });
   });
 
   it('--json includes threshold, thresholdSource, and shouldHandoff (MIN6b)', async () => {
@@ -155,6 +160,38 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(parsed.threshold).toBe(0.05);
     expect(parsed.thresholdSource).toBe('global');
     expect(parsed.shouldHandoff).toBe(true);
+  });
+
+  it('uses a runtime-bound scheme scalar and ignores its role overrides', async () => {
+    const { saveGlobalConfig } = await import('../../../src/core/global-config.js');
+    saveThresholdScheme('focused', {
+      handoff: 0.55,
+      handoffRoles: { reviewer: 0.9 },
+      reuse: 0.25,
+    });
+    saveGlobalConfig({
+      thresholds: { bindings: { codex: 'focused' } },
+      handoff: { threshold: 0.8 },
+    });
+    const p = writeRollout('rollout-2026-01-01T00-00-09-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(60_000, 100_000),
+    ]);
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p, json: true });
+    } finally {
+      console.log = orig;
+    }
+    expect(JSON.parse(logs[0]!)).toMatchObject({
+      runtime: 'codex',
+      threshold: 0.55,
+      thresholdSource: 'global-scheme',
+      shouldHandoff: true,
+    });
   });
 
   it('--json includes threshold as the absolute { remainingTokens } form when configured', async () => {

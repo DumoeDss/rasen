@@ -20,7 +20,15 @@ import * as path from 'node:path';
 import { RETENTION_MODES } from './retention.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 import { getGlobalConfigDir } from './global-config.js';
-import { DISPATCH_RUNTIMES } from './runtime-adapters.js';
+import {
+  DISPATCH_RUNTIMES,
+  PROBE_RUNTIMES,
+  hasRuntimeCapability,
+} from './runtime-adapters.js';
+import {
+  listValidThresholdSchemeNames,
+  validateThresholdSchemeName,
+} from './threshold-schemes.js';
 
 export type ConfigScope = 'global' | 'store' | 'project';
 /**
@@ -80,6 +88,11 @@ export interface ConfigKeyDefinition {
    * wildcard entry.
    */
   pattern?: string;
+  /**
+   * Optional family-specific placeholder validation. `index` is the
+   * placeholder's segment index in `pattern`.
+   */
+  validatePlaceholder?: (segment: string, index: number) => string | null;
 }
 
 /** Keys that live in the same config blocks as registry keys but are machine-managed, never CLI-settable. */
@@ -510,6 +523,26 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     description: 'Per-pipeline, per-role agent runtime override (claude | codex)',
     group: 'Pipelines',
   },
+  {
+    key: 'thresholds.bindings.<runtime>',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: [],
+    enumValuesForScope: () => listValidThresholdSchemeNames(),
+    wildcard: true,
+    pattern: 'thresholds.bindings.<runtime>',
+    validatePlaceholder: (segment) =>
+      segment === 'default' || hasRuntimeCapability(segment, 'canProbeContext')
+        ? null
+        : `"${segment}" is not a probe-capable runtime; use default or one of: ${PROBE_RUNTIMES.join(', ')}`,
+    validate: (value) =>
+      typeof value === 'string'
+        ? validateThresholdSchemeName(value)
+        : 'a threshold scheme name is required',
+    defaultValue: undefined,
+    description: 'Runtime-to-threshold-scheme binding',
+    group: 'Thresholds',
+  },
 ];
 
 /** Looks up the exact (non-wildcard) registry entry for a key path settable in the given scope. */
@@ -553,7 +586,12 @@ function parseFamilyPattern(pattern: string): PatternSegment[] {
  */
 export type WildcardClassification =
   | { kind: 'match'; definition: ConfigKeyDefinition }
-  | { kind: 'bad_placeholder'; definition: ConfigKeyDefinition; segment: string }
+  | {
+      kind: 'bad_placeholder';
+      definition: ConfigKeyDefinition;
+      segment: string;
+      reason?: string;
+    }
   | { kind: 'wrong_shape'; definition: ConfigKeyDefinition }
   | { kind: 'none' };
 
@@ -579,6 +617,20 @@ export function classifyWildcardPath(
     );
     if (badPlaceholder !== -1) {
       return { kind: 'bad_placeholder', definition: def, segment: segments[badPlaceholder]! };
+    }
+    const familyPlaceholder = patternSegs.findIndex(
+      (seg, i) =>
+        seg.literal === null &&
+        def.validatePlaceholder !== undefined &&
+        def.validatePlaceholder(segments[i]!, i) !== null
+    );
+    if (familyPlaceholder !== -1) {
+      return {
+        kind: 'bad_placeholder',
+        definition: def,
+        segment: segments[familyPlaceholder]!,
+        reason: def.validatePlaceholder?.(segments[familyPlaceholder]!, familyPlaceholder) ?? undefined,
+      };
     }
     return { kind: 'match', definition: def };
   }
@@ -660,6 +712,10 @@ export function collectFamilyInstancePaths(
         // A placeholder still has to be a well-formed identifier to count as a
         // real instance; a stray key with odd characters is not enumerated.
         if (!PLACEHOLDER_VALUE_RE.test(key)) continue;
+        if (
+          def.validatePlaceholder !== undefined &&
+          def.validatePlaceholder(key, depth) !== null
+        ) continue;
         walk(obj[key], depth + 1, [...prefix, key]);
       }
     }
@@ -697,7 +753,9 @@ export function validateConfigKeyPath(
   if (wildcard.kind === 'bad_placeholder') {
     return {
       valid: false,
-      reason: `"${wildcard.segment}" is not a valid segment for ${wildcard.definition.pattern} (use letters, digits, hyphens, or underscores)`,
+      reason:
+        wildcard.reason ??
+        `"${wildcard.segment}" is not a valid segment for ${wildcard.definition.pattern} (use letters, digits, hyphens, or underscores)`,
     };
   }
   if (wildcard.kind === 'wrong_shape') {

@@ -9,6 +9,7 @@ import {
   type ProjectRegistryState,
 } from './project-registry.js';
 import type { ThresholdValue } from './model-presets.js';
+import type { ProbeRuntime } from './runtime-adapters.js';
 import {
   SUPPORTED_CLI_LOCALES,
   resolveCliLocale,
@@ -146,6 +147,9 @@ export interface GlobalConfig {
       fixer?: ThresholdValue;
       shipper?: ThresholdValue;
     };
+  };
+  thresholds?: {
+    bindings?: Partial<Record<ProbeRuntime | 'default', string>>;
   };
   /**
    * Machine-wide autopilot defaults; project config of the same name wins

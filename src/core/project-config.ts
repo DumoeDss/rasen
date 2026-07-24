@@ -11,9 +11,14 @@ import { isKebabId } from './id.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
   DISPATCH_RUNTIMES,
+  PROBE_RUNTIMES,
   hasRuntimeCapability,
   type DispatchRuntime,
 } from './runtime-adapters.js';
+import {
+  ThresholdSchemeNameSchema,
+  validateThresholdSchemeName,
+} from './threshold-schemes.js';
 import {
   reportConfigDiagnostic,
   type ConfigDiagnostic,
@@ -160,6 +165,23 @@ export const ProjectConfigSchema = z.object({
     })
     .optional()
     .describe('Context-handoff threshold configuration'),
+
+  thresholds: z
+    .object({
+      bindings: z
+        .record(z.string(), ThresholdSchemeNameSchema)
+        .refine(
+          (bindings) =>
+            Object.keys(bindings).every(
+              (runtime) => runtime === 'default' || PROBE_RUNTIMES.includes(runtime as never)
+            ),
+          { error: `binding runtime must be default or one of: ${PROBE_RUNTIMES.join(', ')}` }
+        )
+        .optional()
+        .default({}),
+    })
+    .optional()
+    .describe('Runtime threshold-scheme bindings'),
 
   // Optional: keepalive gate for `rasen agent wait` (cli-agent-wait spec).
   // Only `beatSeconds` is project-settable (the registry marks
@@ -886,6 +908,46 @@ function parseProjectConfigContent(
           },
           reporter
         );
+      }
+    }
+
+    // Runtime threshold bindings preserve syntactically valid scheme names
+    // even when the referenced machine-local scheme is absent. Resolution
+    // reports dangling names; parsing only rejects invalid rows/keys.
+    if (raw.thresholds !== undefined) {
+      if (raw.thresholds && typeof raw.thresholds === 'object' && !Array.isArray(raw.thresholds)) {
+        const thresholdsRaw = raw.thresholds as Record<string, unknown>;
+        const bindingsRaw = thresholdsRaw.bindings;
+        if (bindingsRaw === undefined) {
+          config.thresholds = { bindings: {} };
+        } else if (
+          bindingsRaw &&
+          typeof bindingsRaw === 'object' &&
+          !Array.isArray(bindingsRaw)
+        ) {
+          const bindings: Record<string, string> = {};
+          for (const [runtime, schemeName] of Object.entries(
+            bindingsRaw as Record<string, unknown>
+          )) {
+            const validRuntime =
+              runtime === 'default' || hasRuntimeCapability(runtime, 'canProbeContext');
+            const validScheme =
+              typeof schemeName === 'string' &&
+              validateThresholdSchemeName(schemeName) === null;
+            if (validRuntime && validScheme) {
+              bindings[runtime] = schemeName;
+            } else {
+              console.warn(
+                `Invalid 'thresholds.bindings.${runtime}' field in config (runtime must be default or one of ${PROBE_RUNTIMES.join(', ')} and value must be a valid non-reserved scheme name)`
+              );
+            }
+          }
+          config.thresholds = { bindings };
+        } else {
+          console.warn(`Invalid 'thresholds.bindings' field in config (must be an object)`);
+        }
+      } else {
+        console.warn(`Invalid 'thresholds' field in config (must be an object)`);
       }
     }
 

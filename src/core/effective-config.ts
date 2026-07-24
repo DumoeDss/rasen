@@ -33,6 +33,12 @@ import { parseCliLocale } from '../utils/locale.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 import * as path from 'node:path';
 import type { ConfigDiagnosticReporter } from './config-diagnostics.js';
+import { PROBE_RUNTIMES, hasRuntimeCapability } from './runtime-adapters.js';
+import { validateThresholdSchemeName } from './threshold-schemes.js';
+import type {
+  ThresholdBindingLayers,
+  ThresholdBindings,
+} from './threshold-resolver.js';
 
 const STAGE_ROLES = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const satisfies readonly StageRole[];
 
@@ -335,7 +341,15 @@ function resolveWildcardFamilyEntries(
     if (usesGlobal) {
       const raw = getNestedValue(rawGlobalConfig, instanceKey);
       if (raw !== undefined) {
-        if (validateConfigValue(definition, raw, 'global') === null) {
+        // Binding writes are registry-mediated and therefore require an
+        // existing scheme, but resilient reads deliberately preserve a
+        // syntactically valid dangling name so the configuration heals when
+        // that machine-local scheme is restored.
+        const validationError =
+          definition.key === 'thresholds.bindings.<runtime>' && typeof raw === 'string'
+            ? validateThresholdSchemeName(raw)
+            : validateConfigValue(definition, raw, 'global');
+        if (validationError === null) {
           globalValue = raw;
         } else {
           console.warn(
@@ -464,6 +478,50 @@ export function resolveHandoffThresholdLayers(
     projectRoles: projectConfig?.handoff?.roles,
     storeRoles: storeConfig?.handoff?.roles,
     globalRoles: validateGlobalHandoffRoles(globalConfig.handoff?.roles),
+  };
+}
+
+function validateBindingMap(
+  raw: unknown,
+  scope: 'global' | 'store' | 'project'
+): ThresholdBindings | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    console.warn(`Invalid 'thresholds.bindings' in ${scope} config (must be an object); ignoring it.`);
+    return undefined;
+  }
+  const bindings: ThresholdBindings = {};
+  for (const [runtime, scheme] of Object.entries(raw as Record<string, unknown>)) {
+    if (
+      (runtime === 'default' || hasRuntimeCapability(runtime, 'canProbeContext')) &&
+      typeof scheme === 'string' &&
+      validateThresholdSchemeName(scheme) === null
+    ) {
+      bindings[runtime as keyof ThresholdBindings] = scheme;
+    } else {
+      console.warn(
+        `Invalid 'thresholds.bindings.${runtime}' in ${scope} config (runtime must be default or one of ${PROBE_RUNTIMES.join(', ')} and value must be a valid scheme name); ignoring it.`
+      );
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Expose raw, non-collapsed binding rows at every scope. Explicit runtime and
+ * default rows remain distinct so the pure resolver can apply row-first order.
+ */
+export function resolveThresholdBindingLayers(
+  projectRoot?: string | null,
+  storeRoot?: string | null
+): ThresholdBindingLayers {
+  const globalConfig = getGlobalConfig();
+  const projectConfig = projectRoot ? readProjectConfig(projectRoot) : null;
+  const storeConfig = storeRoot ? readProjectConfig(storeRoot) : null;
+  return {
+    project: validateBindingMap(projectConfig?.thresholds?.bindings, 'project'),
+    store: validateBindingMap(storeConfig?.thresholds?.bindings, 'store'),
+    global: validateBindingMap(globalConfig.thresholds?.bindings, 'global'),
   };
 }
 
