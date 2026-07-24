@@ -54,19 +54,15 @@ export function parsePipeline(yamlContent: string): PipelineYaml {
 }
 
 /**
- * Enforces the quality floor on any origin-stamped pipeline (autonomy-ladder
- * rung 2: composed pipelines, widened by pipeline-definition-api to also cover
- * `origin: 'ui'` UI-assembled pipelines): the pipeline MUST contain at least
- * one stage with `role: 'reviewer'` (verification) and at least one stage with
- * `loop.kind: 'review-cycle'` (review loop) — no machine-assisted assembly
- * path produces an inspection-free pipeline. Scoped to the marker so
- * human-authored pipelines (no `origin`, e.g. the built-in `bug-fix`, which
- * has no review-loop stage) are entirely unaffected. Messages name the
- * pipeline's actual `origin` value so a `ui` violation doesn't read as a
- * `composed` one.
+ * Enforces the autopilot-composed quality floor (autonomy-ladder rung 2):
+ * `origin: 'composed'` pipelines MUST contain at least one stage with
+ * `role: 'reviewer'` (verification) and at least one stage with
+ * `loop.kind: 'review-cycle'` (review loop). `origin: 'ui'` records Canvas
+ * provenance only, so interactive authors can intentionally build lighter
+ * pipelines. Origin-free definitions are likewise unaffected.
  */
 function validateComposedPolicyFloor(pipeline: PipelineYaml): void {
-  if (!pipeline.origin) return;
+  if (pipeline.origin !== 'composed') return;
 
   const hasReviewerStage = pipeline.stages.some(s => s.role === 'reviewer');
   if (!hasReviewerStage) {

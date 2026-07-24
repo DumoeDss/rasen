@@ -327,6 +327,9 @@ describe('PipelineCanvasPage — edit mode', () => {
     await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
 
     expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+    for (const [definition] of vi.mocked(client.validatePipeline).mock.calls as [{ origin?: string }][]) {
+      expect(definition.origin).toBe('ui');
+    }
     const body = vi.mocked(client.mutatePipeline).mock.calls[0][0] as { definition: { origin?: string } };
     expect(body.definition.origin).toBe('ui');
     expect(container.querySelector('[data-testid="pipeline-canvas-save-collision"]')).toBeNull();

@@ -425,14 +425,11 @@ export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
   handoff: HandoffConfigSchema.optional(),
   reuse: ReuseConfigSchema.optional(),
-  // Marks a pipeline assembled by a machine path rather than authored by hand
-  // (autonomy-ladder rung 2: composed pipelines; pipeline-definition-api
-  // widens this to also cover the management UI's canvas). Absent means
-  // human-authored. Every value scopes the quality-floor guard (see
-  // validateComposedPolicyFloor in pipeline.ts) to exactly the machine-assembled
-  // population, leaving human-authored pipelines (built-in or project) unaffected.
+  // Records provenance: `composed` means autopilot-assembled and activates the
+  // hard quality floor; `ui` means Canvas-authored and carries no extra policy.
+  // Absent means no recorded assembly origin.
   origin: z.enum(['composed', 'ui']).optional().describe(
-    "Marks how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's canvas; absent means human-authored. When present, the pipeline MUST contain a reviewer-role stage and a review-cycle loop stage (enforced at parse time)."
+    "Records how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's Canvas; absent means no recorded assembly origin. Only 'composed' activates the required reviewer-role stage and review-cycle loop quality floor."
   ),
   stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
 }));

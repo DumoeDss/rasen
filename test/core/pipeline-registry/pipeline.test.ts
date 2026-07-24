@@ -830,24 +830,34 @@ stages:
       );
     });
 
-    it('parse-chain-rejects ⇔ collector-reports-an-error over shared fixtures: floor scope (composed/ui/origin-free)', () => {
+    it('applies the quality floor only to composed drafts across parse and issue-collector paths', () => {
       const floorFreeStages = [{ id: 'a', skill: 'rasen-propose' }];
 
-      for (const origin of ['composed', 'ui'] as const) {
-        const definition = { name: 'floor-check', origin, stages: floorFreeStages };
-        expect(() => parsePipeline(`name: floor-check\norigin: ${origin}\nstages:\n  - id: a\n    skill: rasen-propose\n`)).toThrow();
-        const issues = validatePipelineDraft(definition, skillSets);
-        expect(issues.some((i) => i.severity === 'error')).toBe(true);
-      }
-
-      // Origin-free: the same floor-free shape is untouched by either path.
-      const originFreeYaml = 'name: floor-check\nstages:\n  - id: a\n    skill: rasen-propose\n';
-      expect(() => parsePipeline(originFreeYaml)).not.toThrow();
-      const originFreeIssues = validatePipelineDraft(
-        { name: 'floor-check', stages: floorFreeStages },
+      const composedYaml = 'name: floor-check\norigin: composed\nstages:\n  - id: a\n    skill: rasen-propose\n';
+      expect(() => parsePipeline(composedYaml)).toThrow(/origin: composed/);
+      const composedIssues = validatePipelineDraft(
+        { name: 'floor-check', origin: 'composed', stages: floorFreeStages },
         skillSets
       );
-      expect(originFreeIssues.filter((i) => i.severity === 'error')).toHaveLength(0);
+      expect(composedIssues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ severity: 'error', message: expect.stringMatching(/origin: composed/) }),
+        ])
+      );
+
+      for (const fixture of [
+        {
+          yaml: 'name: floor-check\norigin: ui\nstages:\n  - id: a\n    skill: rasen-propose\n',
+          definition: { name: 'floor-check', origin: 'ui', stages: floorFreeStages },
+        },
+        {
+          yaml: 'name: floor-check\nstages:\n  - id: a\n    skill: rasen-propose\n',
+          definition: { name: 'floor-check', stages: floorFreeStages },
+        },
+      ]) {
+        expect(() => parsePipeline(fixture.yaml)).not.toThrow();
+        expect(validatePipelineDraft(fixture.definition, skillSets)).toEqual([]);
+      }
     });
 
     it('never throws on an invalid draft — invalidity is data', () => {
@@ -995,7 +1005,7 @@ stages:
       kind: review-cycle
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
-      expect(() => parsePipeline(yaml)).toThrow(/reviewer/);
+      expect(() => parsePipeline(yaml)).toThrow(/origin: composed.*reviewer/);
     });
 
     it('rejects origin: composed missing a review-cycle loop stage', () => {
@@ -1012,7 +1022,7 @@ stages:
     requires: [apply]
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
-      expect(() => parsePipeline(yaml)).toThrow(/review-cycle/);
+      expect(() => parsePipeline(yaml)).toThrow(/origin: composed.*review-cycle/);
     });
 
     it('leaves a pipeline WITHOUT origin unaffected even with no floor stages (bug-fix built-in shape)', () => {
@@ -1045,39 +1055,30 @@ stages:
     skill: rasen-propose
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/origin/);
+      expect(validatePipelineDraft(
+        {
+          name: 'bad-origin',
+          origin: 'hand-authored',
+          stages: [{ id: 'a', skill: 'rasen-propose' }],
+        },
+        {
+          knownSkillNames: new Set(['rasen-propose']),
+          enabledSkillNames: new Set(['rasen-propose']),
+        }
+      )).toContainEqual(expect.objectContaining({ severity: 'error', path: '/origin' }));
     });
 
-    it('parses origin: ui when both floor stages are present, and enforces the same floor as composed', () => {
+    it('treats origin: ui as provenance and accepts a floor-free definition', () => {
       const pipeline = parsePipeline(`
-name: ui-ok
+name: ui-floor-free
 origin: ui
 stages:
   - id: apply
     skill: rasen-apply-change
     role: implementer
-  - id: verify
-    skill: rasen-review
-    role: reviewer
-    requires: [apply]
-    loop:
-      kind: review-cycle
 `);
       expect(pipeline.origin).toBe('ui');
-
-      const missingReviewer = `
-name: ui-no-reviewer
-origin: ui
-stages:
-  - id: apply
-    skill: rasen-apply-change
-    role: implementer
-  - id: review-loop
-    skill: rasen-review-cycle
-    requires: [apply]
-    loop:
-      kind: review-cycle
-`;
-      expect(() => parsePipeline(missingReviewer)).toThrow(/origin: ui/);
     });
   });
 

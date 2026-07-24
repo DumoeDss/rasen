@@ -405,6 +405,46 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(body.issues.filter((i: any) => i.severity === 'error')).toHaveLength(0);
     });
 
+    it('accepts a floor-free ui draft but rejects the equivalent composed draft', async () => {
+      const h = await startServer();
+      const floorFreeDefinition = {
+        name: 'floor-free',
+        stages: [{ id: 'implement', skill: 'rasen-apply-change', role: 'implementer' }],
+      };
+
+      const [uiResponse, composedResponse] = await Promise.all([
+        req(h.port, {
+          method: 'POST',
+          path: '/api/v1/pipeline-validation',
+          headers: authed({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ definition: { ...floorFreeDefinition, origin: 'ui' } }),
+        }),
+        req(h.port, {
+          method: 'POST',
+          path: '/api/v1/pipeline-validation',
+          headers: authed({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ definition: { ...floorFreeDefinition, origin: 'composed' } }),
+        }),
+      ]);
+
+      expect(uiResponse.status).toBe(200);
+      const uiBody = uiResponse.json() as any;
+      expect(uiBody.valid).toBe(true);
+      expect(uiBody.issues.filter((issue: any) => /quality-floor/.test(issue.message))).toHaveLength(0);
+
+      expect(composedResponse.status).toBe(200);
+      const composedBody = composedResponse.json() as any;
+      expect(composedBody.valid).toBe(false);
+      expect(composedBody.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            message: expect.stringMatching(/origin: composed.*quality-floor/),
+          }),
+        ])
+      );
+    });
+
     it('200s an invalid draft reporting all issues (cycle + unknown skill)', async () => {
       const h = await startServer();
       const definition = {
