@@ -345,7 +345,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-      it('assigns exactly 9 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
+      it('assigns exactly 10 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -364,7 +364,7 @@ describe('config-keys registry', () => {
       // global+project (per-project beat tuning) alongside `workflows`
       // (space-workflow-enablement) and `profile` (init-profile-lock: a
       // project-scope value is the locked profile). `delivery` was retired.
-        expect(globalOnly.length).toBe(9);
+        expect(globalOnly.length).toBe(10);
         expect(globalProject.length).toBe(4);
         expect(globalProject.map((def) => def.key).sort()).toEqual([
           'keepalive.beatSeconds',
