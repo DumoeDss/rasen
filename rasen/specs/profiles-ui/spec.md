@@ -1,7 +1,7 @@
 # profiles-ui Specification
 
 ## Purpose
-TBD - created by archiving change ui-profile-workflow-split. Update Purpose after archive.
+The web UI's space-agnostic Profiles page for managing named workflow profile definitions: list the built-in `full` and `core` plus every saved profile, view a profile's workflow membership, and create or delete saved profiles (built-ins are view-only, with duplicate-to-edit). The page edits only the saved definitions — it installs and uninstalls nothing; switching a space to a profile happens on that space's Config page.
 ## Requirements
 ### Requirement: A Profiles page manages named profile definitions
 

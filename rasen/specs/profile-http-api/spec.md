@@ -1,7 +1,7 @@
 # profile-http-api Specification
 
 ## Purpose
-TBD - created by archiving change ui-profile-workflow-split. Update Purpose after archive.
+Expose named workflow profiles over the management HTTP API so authenticated clients (the web UI foremost) can list, inspect, create, update, and delete saved profiles alongside the built-in `full` and `core` — the same profile model the CLI's `rasen profile` commands operate on. A saved profile that fails to parse still appears in the listing, carrying its error, so a broken definition stays visible instead of silently absent.
 ## Requirements
 ### Requirement: Profiles are listed over the management API
 

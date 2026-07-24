@@ -1,7 +1,7 @@
 # ui-i18n Specification
 
 ## Purpose
-TBD - created by archiving change ui-i18n. Update Purpose after archive.
+Internationalize the web UI: it renders in the locale selected by the existing `language` config key (the same key the CLI's locale follows), re-localizes the whole app without a page reload when that key changes, resolves `auto` from the browser environment, and falls back to English for any unsupported or missing translation — so the UI and CLI share one locale source of truth and the UI never renders a blank or a raw key.
 ## Requirements
 ### Requirement: The UI renders in the language selected by the `language` config key
 
