@@ -48,13 +48,13 @@
 
 ## 6. Tool materialization and ledgers
 
-- [ ] 6.1 Extend the project workflow artifact ledger with an explicit learned-skill section keyed by scope/id/digest and exact target path.
-- [ ] 6.2 Implement project-local learned-skill reconciliation for configured tool homes, including applicability, generated metadata, exact refresh/prune, and byte-preserving human collision refusal.
-- [ ] 6.3 Add a machine-global learned-skill ledger for global-only tool homes; reconcile all approved global records there and skip project records with a diagnostic.
-- [ ] 6.4 Integrate learned-skill resolution/materialization into init after project registration without changing profile workflow ids or selected tools.
-- [ ] 6.5 Integrate learned-skill reconciliation into update without onboarding tools and with separate created/updated/removed/skipped human and JSON summaries.
-- [ ] 6.6 Add exact legacy retro cleanup and migration-window preservation using named identities rather than prefixes, globs, or regular expressions.
-- [ ] 6.7 Add init/update tests across multiple tools and projects for applicability, stale/retired pruning, canonical changes, human collisions, missing machine homes, global-only homes, global ledger ownership, and learned-only updates.
+- [x] 6.1 Extend the project workflow artifact ledger with an explicit learned-skill section keyed by scope/id/digest and exact target path.
+- [x] 6.2 Implement project-local learned-skill reconciliation for configured tool homes, including applicability, generated metadata, exact refresh/prune, and byte-preserving human collision refusal.
+- [x] 6.3 Add a machine-global learned-skill ledger for global-only tool homes; reconcile all approved global records there and skip project records with a diagnostic.
+- [x] 6.4 Integrate learned-skill resolution/materialization into init after project registration without changing profile workflow ids or selected tools.
+- [x] 6.5 Integrate learned-skill reconciliation into update without onboarding tools and with separate created/updated/removed/skipped human and JSON summaries.
+- [x] 6.6 Add exact legacy retro cleanup and migration-window preservation using named identities rather than prefixes, globs, or regular expressions.
+- [x] 6.7 Add init/update tests across multiple tools and projects for applicability, stale/retired pruning, canonical changes, human collisions, missing machine homes, global-only homes, global ledger ownership, and learned-only updates.
 
 ## 7. Archive behavior, navigation, and documentation
 

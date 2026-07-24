@@ -103,6 +103,63 @@ export async function pruneRetiredWorkflowSkillDirs(skillsDir: string): Promise<
 }
 
 /**
+ * Installed skill directory names left behind by RETIRED retention workflows
+ * whose migration window has ENDED — cleaned by exact name, never a prefix,
+ * glob, or regex.
+ *
+ * This set is intentionally EMPTY for the current migration window: the only
+ * retention artifact on disk is the temporary `rasen-retro` compatibility
+ * wrapper, which reuses the retired retro workflow's directory name and is
+ * refreshed (not removed) each init/update. It is distinguished by its exact
+ * named identity and passed as a preserve entry to
+ * {@link pruneRetiredRetentionSkillDirs}. When the wrapper's window ends, add
+ * its exact directory name here and stop generating it (design D1, migration
+ * step 9).
+ */
+export const RETIRED_RETENTION_SKILL_DIRS: readonly string[] = [];
+
+/**
+ * Removes installed skill directories orphaned by a retired retention workflow
+ * — those whose name exactly matches an entry in `dirNames` (default
+ * {@link RETIRED_RETENTION_SKILL_DIRS}) — while preserving any name in
+ * `preserve` (the currently shipped compatibility wrapper). Scoped to exact
+ * names, so it never removes a current skill or a similarly named directory.
+ * Idempotent; a no-op when the skills directory is absent.
+ *
+ * `dirNames` is overridable so the retirement mechanism can be exercised
+ * independently of the (currently empty) production set.
+ *
+ * @returns The directory names that were removed
+ */
+export async function pruneRetiredRetentionSkillDirs(
+  skillsDir: string,
+  preserve: readonly string[] = [],
+  dirNames: readonly string[] = RETIRED_RETENTION_SKILL_DIRS
+): Promise<string[]> {
+  const preserved = new Set(preserve);
+  const removed: string[] = [];
+
+  for (const dirName of dirNames) {
+    if (preserved.has(dirName)) continue;
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      const stat = await fs.stat(dirPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue; // does not exist — nothing to prune
+    }
+    try {
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
+    } catch {
+      // Best-effort cleanup; ignore per-directory failures.
+    }
+  }
+
+  return removed;
+}
+
+/**
  * Legacy config file names from the old ToolRegistry.
  * These were config files created at project root with Rasen markers.
  */
