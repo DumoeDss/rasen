@@ -10,8 +10,13 @@ import {
   relocateArchive,
   homePrune,
   diagnoseMigrationDrift,
+  UNASSIGNED_PROJECT_ID,
 } from '../../../src/core/store/migration-ops.js';
-import { readStorePointer, readProjectConfig } from '../../../src/core/project-config.js';
+import {
+  ensureProjectIdInConfig,
+  readStorePointer,
+  readProjectConfig,
+} from '../../../src/core/project-config.js';
 import {
   moveTreeVerified,
   upsertAdoptionEntry,
@@ -130,6 +135,98 @@ describe('store migration ops', () => {
     expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toEqual([]);
   });
 
+  it('dry-run leaves the tracked config byte-identical (mints no projectId)', async () => {
+    const source = makeSource();
+    const configPath = path.join(source, 'rasen', 'config.yaml');
+    const before = fs.readFileSync(configPath, 'utf-8');
+
+    const preview = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      dryRun: true,
+    });
+
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
+    expect(readProjectConfig(source)?.projectId).toBeUndefined();
+    expect(preview.projectId).toBe(UNASSIGNED_PROJECT_ID);
+    // An already-identified project still previews under its real id.
+    const projectId = await ensureProjectIdInConfig(source, { globalDataDir });
+    const second = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      dryRun: true,
+    });
+    expect(second.projectId).toBe(projectId);
+  });
+
+  it('dry-run previews the real archive move count without moving anything', async () => {
+    const source = makeSource();
+    writeArchived(source, '2026-07-01-old');
+    writeArchived(source, '2026-07-02-older');
+
+    const preview = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      archive: 'move',
+      globalDataDir,
+      dryRun: true,
+    });
+
+    expect(preview.archiveMoves.map((m) => m.name).sort()).toEqual([
+      '2026-07-01-old',
+      '2026-07-02-older',
+    ]);
+    // Inert: the entries are still in the repo and the store archive is empty.
+    expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).toEqual([
+      '2026-07-01-old',
+      '2026-07-02-older',
+    ]);
+    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([]);
+    expect(readStorePointer(source).value).toBeUndefined();
+  });
+
+  it('dry-run previews --archive external without minting a home or writing config', async () => {
+    const source = makeSource();
+    writeArchived(source, '2026-07-01-old');
+
+    const preview = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      archive: 'external',
+      globalDataDir,
+      dryRun: true,
+    });
+
+    expect(preview.archiveMoves.map((m) => m.name)).toEqual(['2026-07-01-old']);
+    // No home directory was created and the destination flip never happened.
+    const { resolveProjectHome } = await import('../../../src/core/project-home.js');
+    const probed = await resolveProjectHome(source, { ensure: false, globalDataDir });
+    expect(probed === null || !fs.existsSync(probed.archiveDir)).toBe(true);
+    expect(readProjectConfig(source)?.archive?.destination).toBeUndefined();
+    expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).toEqual(['2026-07-01-old']);
+  });
+
+  it('still moves the full archive on a real adopt after the dry-run preview', async () => {
+    const source = makeSource();
+    writeArchived(source, '2026-07-01-old');
+    writeArchived(source, '2026-07-02-older');
+
+    await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir, dryRun: true });
+    const result = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+
+    expect(result.archiveMoves.map((m) => m.name).sort()).toEqual([
+      '2026-07-01-old',
+      '2026-07-02-older',
+    ]);
+    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([
+      '2026-07-01-old',
+      '2026-07-02-older',
+    ]);
+    expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).toEqual([]);
+  });
+
   it('round-trips adopt -> eject restoring the same content', async () => {
     const source = makeSource();
     const adopt = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
@@ -211,14 +308,9 @@ describe('store migration ops', () => {
     writeSpec(source, 'billing', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
     writeSpec(source, 'auth', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
     writeChange(source, 'add-thing');
-    // Establish the project's stable id in the manifest key.
-    const first = await adoptProject({
-      sourcePath: source,
-      storeId: 'team-store',
-      globalDataDir,
-      dryRun: true,
-    });
-    const projectId = first.projectId;
+    // Establish the project's stable id in the manifest key. Minted directly:
+    // a dry-run adopt is inert and deliberately mints nothing.
+    const projectId = await ensureProjectIdInConfig(source, { globalDataDir });
 
     // Simulate a crash AFTER the manifest write and AFTER 'billing' moved, but
     // before the rest: billing lives in the store, the manifest records the
