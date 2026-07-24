@@ -798,6 +798,79 @@ rules:
     });
   });
 
+  describe('profile parsing', () => {
+    it('exposes a valid locked profile name', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: team-web\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven', profile: 'team-web' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops a non-string profile with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: [not, a, string]\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'profile' field")
+      );
+    });
+
+    it('drops an empty-string profile with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: ""\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'profile' field")
+      );
+    });
+
+    it('does not warn when profile is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('parses an unknown profile name without error (resolution decides later)', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: no-such-profile\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven', profile: 'no-such-profile' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('archive.timing parsing', () => {
     it('exposes a valid on-merge timing unchanged', () => {
       const configDir = path.join(tempDir, 'rasen');

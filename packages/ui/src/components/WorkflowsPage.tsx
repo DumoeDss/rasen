@@ -364,6 +364,8 @@ function EnablementControls({
                 </span>
               )}
             </>
+          ) : enablement.mode === 'locked-profile' ? (
+            <span data-testid="workflows-enablement-mode">This space is locked to a profile in its config.</span>
           ) : (
             <span data-testid="workflows-enablement-mode">This space follows the user-wide profile.</span>
           )}

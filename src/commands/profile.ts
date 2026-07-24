@@ -11,6 +11,7 @@ import {
 import {
   BUILTIN_PROFILE_NAMES,
   PROFILE_DEFINITION_VERSION,
+  RESERVED_PROFILE_NAMES,
   NamedProfileError,
   assertValidUserProfileName,
   deleteNamedProfile,
@@ -20,6 +21,7 @@ import {
   listAvailableProfiles,
   listUserProfiles,
   namedProfileExists,
+  readNamedProfile,
   resolveProfileDefinition,
   saveNamedProfile,
   validateUserProfileName,
@@ -250,6 +252,53 @@ async function useProfileCommand(nameArgument?: string): Promise<void> {
   useProfile(name);
 }
 
+/**
+ * `rasen profile update [name]` — edits a saved named profile definition in
+ * place (init-profile-lock spec). The picker opens seeded from the stored
+ * definition and the confirmed selection is saved back to the same file.
+ * The current user-wide selection is deliberately never touched
+ * (`applyProfileState` is not called): a saved definition is a snapshot,
+ * and projects locked to it pick the change up on their next `rasen update`.
+ */
+async function updateProfileCommand(nameArgument?: string): Promise<void> {
+  const messages = getProfileUiMessages();
+  if (!process.stdout.isTTY) {
+    throw new NamedProfileError(messages.profileUpdateRequiresTty, 'invalid_name');
+  }
+
+  const name = nameArgument ?? (await chooseUserProfileName(messages.selectProfileToUpdate));
+  if (RESERVED_PROFILE_NAMES.includes(name as (typeof RESERVED_PROFILE_NAMES)[number])) {
+    throw new NamedProfileError(messages.profileCannotUpdate(name), 'reserved_name');
+  }
+  assertValidUserProfileName(name);
+  const storedDefinition = readNamedProfile(name);
+
+  console.log(messages.updatingProfile(name));
+  const storedState = profileStateFromDefinition(storedDefinition);
+  const nextState = await promptForNewProfileState(storedState);
+  const diff = diffProfileState(storedState, nextState);
+
+  if (!diff.hasChanges) {
+    console.log(messages.profileUpdateNoChanges(name));
+    return;
+  }
+  for (const line of diff.lines) console.log(`  ${line}`);
+
+  const { confirm } = await import('@inquirer/prompts');
+  const confirmed = await confirm({
+    message: messages.saveProfileChanges(name),
+    default: true,
+  });
+  if (!confirmed) {
+    console.log(messages.profileUpdateCancelled);
+    return;
+  }
+
+  saveNamedProfile(name, profileDefinitionFromState(nextState), { overwrite: true });
+  console.log(messages.profileUpdated(name));
+  console.log(messages.profileUpdatedGuidance(name));
+}
+
 function profileListPayload(): {
   current: ProfileDefinition;
   profiles: Array<AvailableProfile & { matchesCurrent: boolean }>;
@@ -424,6 +473,13 @@ export function registerProfileCommand(program: Command): void {
     .description('Use a built-in or saved profile')
     .action(async (name?: string) => {
       await runProfileAction(() => useProfileCommand(name));
+    });
+
+  profileCommand
+    .command('update [name]')
+    .description('Edit a saved profile definition interactively')
+    .action(async (name?: string) => {
+      await runProfileAction(() => updateProfileCommand(name));
     });
 
   profileCommand

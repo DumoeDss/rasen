@@ -733,8 +733,11 @@ export interface WorkflowEnablementUnit {
 
 /** `GET /api/v1/workflow-enablement?root=<...>` response. */
 export interface WorkflowEnablementResponse {
-  /** Whether the addressed space follows the user-wide profile or its own selection override. */
-  mode: 'profile' | 'override';
+  /**
+   * Whether the addressed space follows the user-wide profile, its own
+   * selection override, or a profile lock in its config.
+   */
+  mode: 'profile' | 'override' | 'locked-profile';
   units: WorkflowEnablementUnit[];
 }
 

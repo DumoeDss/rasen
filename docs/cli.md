@@ -101,9 +101,9 @@ rasen init [path] [options]
 |--------|-------------|
 | `--tools <list>` | Configure AI tools non-interactively. Use `all`, `none`, or comma-separated list |
 | `--force` | Auto-cleanup legacy files without prompting |
-| `--profile <profile>` | Override global profile for this init run (`full`, `core`, or `custom`) |
+| `--profile <profile>` | Install a profile and lock it into `rasen/config.yaml` (`full`, `core`, a saved profile name, or `custom`) |
 
-`--profile custom` uses whatever workflows are currently selected in global config (`rasen profile`).
+An explicit `--profile` value other than `custom` is persisted as the project's **locked profile** (`profile:` in `rasen/config.yaml`): later `rasen update` runs keep resolving the project's workflows from that profile instead of the user-wide one. `--profile custom` uses whatever workflows are currently selected in global config (`rasen profile`) for this run only and is never persisted. Saved profile names come from `rasen profile new`/`import`; note that saved definitions live per machine (`<global-config-dir>/profiles/`), so a teammate without the named profile sees a warning and falls back to their user-wide profile until they import it.
 
 **Supported tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
 
@@ -124,8 +124,11 @@ rasen init --tools claude,cursor
 # Configure for all supported tools
 rasen init --tools all
 
-# Override profile for this run
+# Install the core profile and lock the project to it
 rasen init --profile core
+
+# Lock the project to a saved named profile
+rasen init --profile team-web
 
 # Skip prompts and auto-cleanup legacy files
 rasen init --force
@@ -1001,6 +1004,7 @@ Edit the current workflow selection or manage reusable named profile snapshots. 
 rasen profile
 rasen profile new [name]
 rasen profile use [name]
+rasen profile update [name]
 rasen profile list [--json]
 rasen profile delete [name] [--yes]
 rasen profile import <path> [--as <name>] [--force]
@@ -1012,12 +1016,15 @@ rasen profile export <path> [--profile <name>] [--thin] [--force]
 | _(none)_ | Edit the current delivery mode and workflow selection interactively |
 | `new [name]` | Create, save, and use a named profile; prompts for the name when omitted |
 | `use [name]` | Use a built-in or saved profile; opens a picker when omitted |
+| `update [name]` | Edit a saved profile definition in place; opens the picker seeded from the stored snapshot and saves back to the same file. Never changes the current user-wide selection or any project — projects locked to the profile pick the change up on their next `rasen update` |
 | `list` | List built-in and saved profiles; add `--json` for structured output |
 | `delete [name]` | Delete a saved profile; add `--yes` to skip confirmation |
 | `import <path>` | Import a self-contained `.rasenpkg`, YAML, or JSON profile; package `name` is authoritative unless `--as` is supplied, and `--force` replaces only the profile snapshot |
 | `export <path>` | Export current settings or the profile selected by `--profile`; profiles with user workflows default to self-contained `.rasenpkg`, while YAML/JSON requires explicit `--thin` |
 
 Named profiles are saved snapshots. Using one copies its delivery and workflows into global configuration, where `profile` remains the effective classification (`full`, `core`, or `custom`) rather than the saved profile name. The saved name is retained by its file in the machine-global profiles directory.
+
+**Locked profiles (project scope).** A project's `rasen/config.yaml` may carry `profile: <full|core|saved-name>` — the locked profile, written by `rasen init --profile <value>` or `rasen config set profile <value> --scope project`. When present, `rasen update`, extend-mode `rasen init`, drift detection, and the management UI resolve that project's workflows from the locked profile instead of the user-wide one. Precedence within a project: the `workflows` override in `config.yaml` (highest, with a warning naming the shadowed lock) → the `profile` lock → the user-wide profile. A lock that cannot be resolved on this machine (deleted or never-imported named profile, or `custom`, which cannot be locked) prints a warning and falls back to the user-wide profile — commands never fail because of a broken lock. Remove a lock with `rasen config unset profile --scope project`.
 
 Self-contained profile packages embed selected user workflows and their user-workflow dependency closure. Built-in workflows remain references. Import reuses an installed workflow only when its digest is identical; a different digest is an error even with `--force`. Thin YAML/JSON import requires every referenced user workflow to be installed already and writes nothing when membership validation fails.
 
@@ -1148,7 +1155,8 @@ rasen config <subcommand> [options]
 
 | Key | Scope | Description |
 |-----|-------|-------------|
-| `profile`, `delivery`, `workflows` | global | Workflow profile (use `rasen profile` to edit) |
+| `profile` | global, project | Workflow profile. Global: the user-wide profile (`full`/`core`/`custom`, use `rasen profile` to edit). Project: the locked profile (`full`, `core`, or a saved profile name — never `custom`) |
+| `workflows` | global, project | Workflow selection. Global: edit via `rasen profile`. Project: a per-space override that replaces the user-wide profile (and shadows a `profile` lock) for that space only |
 | `language` | global | CLI display language: `auto`, `en`, `ja`, or `zh-cn` |
 | `featureFlags.<name>` | global | Feature flag toggle |
 | `proactive` | global | Whether agents proactively suggest next steps |

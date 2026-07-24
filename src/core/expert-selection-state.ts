@@ -29,6 +29,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { getGlobalConfig } from './global-config.js';
+import { resolveProjectHome } from './project-home.js';
+
 /** Exported for tests that need to simulate a project predating this mechanism entirely. */
 export const EXPERT_SELECTION_ACK_FILE_NAME = 'expert-selection-explicit.json';
 
@@ -36,6 +39,25 @@ export const EXPERT_SELECTION_ACK_FILE_NAME = 'expert-selection-explicit.json';
 export function hasExpertSelectionAck(homeDir: string): boolean {
   try {
     return fs.existsSync(path.join(homeDir, EXPERT_SELECTION_ACK_FILE_NAME));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read-only variant of the `expertSelectionExplicit` gate `update.ts`
+ * computes (global marker AND this project's own acknowledgment) — never
+ * writes the acknowledgment file itself; a project that has not yet
+ * acknowledged simply reads as legacy (all-experts), same as its next
+ * `update` would before that project acknowledges. Shared by the management
+ * API's enablement read and the profile editor's drift warning.
+ */
+export async function resolveExpertSelectionExplicitReadOnly(projectRoot: string): Promise<boolean> {
+  const globalConfig = getGlobalConfig();
+  if (globalConfig.expertSelectionExplicit !== true) return false;
+  try {
+    const projectHome = await resolveProjectHome(projectRoot, { ensure: false });
+    return projectHome !== null && hasExpertSelectionAck(projectHome.homeDir);
   } catch {
     return false;
   }

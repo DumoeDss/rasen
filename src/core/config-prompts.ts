@@ -12,6 +12,12 @@ export function serializeConfig(config: Partial<ProjectConfig>): string {
   // Schema (required)
   lines.push(`schema: ${config.schema}`);
 
+  // Locked profile (optional; present when init was run with an explicit
+  // --profile value — see the init-profile-lock spec)
+  if (config.profile) {
+    lines.push(`profile: ${config.profile}`);
+  }
+
   // Project identity (optional; present when the caller already minted one)
   if (config.projectId) {
     lines.push(`projectId: ${config.projectId}`);

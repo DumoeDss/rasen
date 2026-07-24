@@ -335,7 +335,7 @@ function resolveWildcardFamilyEntries(
     if (usesGlobal) {
       const raw = getNestedValue(rawGlobalConfig, instanceKey);
       if (raw !== undefined) {
-        if (validateConfigValue(definition, raw) === null) {
+        if (validateConfigValue(definition, raw, 'global') === null) {
           globalValue = raw;
         } else {
           console.warn(

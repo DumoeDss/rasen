@@ -11,7 +11,7 @@ import ora from 'ora';
 import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
-import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
+import { classifyOpenSpecDir, storePointerProblem, updateProjectConfigKey } from './project-config.js';
 import { resolveProjectHome } from './project-home.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
@@ -56,8 +56,27 @@ import {
 } from './shared/index.js';
 import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
-import { getCurrentBuiltInWorkflowIds, getProfileWorkflows, resolveDesiredWorkflowSelection, CORE_WORKFLOWS } from './profiles.js';
-import { loadWorkflowCatalog } from './workflow-registry/index.js';
+import {
+  getCurrentBuiltInWorkflowIds,
+  profileLockWarningToDiagnostic,
+  resolveDesiredWorkflowSelection,
+  resolveProjectWorkflowSelection,
+  CORE_WORKFLOWS,
+  type ResolveProjectWorkflowSelectionResult,
+} from './profiles.js';
+import {
+  listUserProfiles,
+  namedProfileExists,
+  resolveProfileDefinition,
+  validateUserProfileName,
+} from './named-profiles.js';
+import { reportConfigDiagnostic } from './config-diagnostics.js';
+import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
+import {
+  filterKnownWorkflowRoots,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+} from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
@@ -97,6 +116,8 @@ export class InitCommand {
   private readonly force: boolean;
   private readonly interactiveOption?: boolean;
   private readonly profileOverride?: string;
+  /** Memoized per-run selection — see {@link resolveActiveSelection}. */
+  private activeSelection?: ResolveProjectWorkflowSelectionResult;
 
   constructor(options: InitCommandOptions = {}) {
     this.toolsArg = options.tools;
@@ -200,14 +221,23 @@ export class InitCommand {
     // Resolve the complete catalog selection before creating project files.
     // Missing or invalid selected user workflows therefore fail without a
     // partially generated tool configuration.
-    const effectiveConfig = getGlobalConfig();
-    const effectiveProfile = this.resolveProfileOverride() ?? effectiveConfig.profile ?? 'full';
-    const { unknown: unknownEffectiveWorkflows } = resolveDesiredWorkflowSelection(
-      loadWorkflowCatalog(),
-      effectiveProfile,
-      effectiveConfig.workflows,
-      effectiveConfig.expertSelectionExplicit === true
-    );
+    const {
+      unknown: unknownEffectiveWorkflows,
+      mode: selectionMode,
+      lockedProfile,
+      lockWarning,
+    } = this.resolveActiveSelection(projectPath);
+    if (selectionMode === 'locked-profile' && this.profileOverride === undefined && lockedProfile !== undefined) {
+      console.log(
+        chalk.dim(`Note: this project is locked to profile '${lockedProfile}' (rasen/config.yaml), not the user-wide profile.`)
+      );
+    }
+    if (lockWarning) {
+      reportConfigDiagnostic(
+        profileLockWarningToDiagnostic(lockWarning),
+        createConfigDiagnosticReporter()
+      );
+    }
     if (unknownEffectiveWorkflows.length > 0) {
       console.log(
         chalk.yellow(
@@ -222,8 +252,8 @@ export class InitCommand {
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
-    // Create config.yaml if needed
-    const configStatus = await this.createConfig(openspecPath, extendMode);
+    // Create config.yaml if needed (and persist an explicit profile lock)
+    const configStatus = await this.createConfig(openspecPath, extendMode, projectPath);
 
     // Establish machine-home identity and registration (task 4.1). Best
     // effort: a registration failure never fails init - the repo-side
@@ -287,16 +317,78 @@ export class InitCommand {
     return isInteractive({ interactive: this.interactiveOption });
   }
 
-  private resolveProfileOverride(): Profile | undefined {
+  private resolveProfileOverride():
+    | { kind: 'builtin'; profile: Profile }
+    | { kind: 'named'; name: string }
+    | undefined {
     if (this.profileOverride === undefined) {
       return undefined;
     }
 
     if (this.profileOverride === 'full' || this.profileOverride === 'core' || this.profileOverride === 'custom') {
-      return this.profileOverride;
+      return { kind: 'builtin', profile: this.profileOverride };
     }
 
-    throw new Error(`Invalid profile "${this.profileOverride}". Available profiles: full, core, custom`);
+    // A saved named profile is accepted too (init-profile-lock spec). The
+    // write side validates strictly — a typo fails here, before any tool
+    // setup — while the read side (resolveProjectWorkflowSelection) stays
+    // tolerant for shared configs.
+    if (validateUserProfileName(this.profileOverride) === null && namedProfileExists(this.profileOverride)) {
+      return { kind: 'named', name: this.profileOverride };
+    }
+
+    const savedNames = listUserProfiles().map((profile) => profile.name);
+    const available = ['full', 'core', 'custom', ...savedNames].join(', ');
+    throw new Error(`Invalid profile "${this.profileOverride}". Available profiles: ${available}`);
+  }
+
+  /**
+   * The selection init installs, computed once per run (init-profile-lock
+   * spec): an explicit `--profile` value wins (a built-in resolves like the
+   * user-wide path, a saved name resolves its definition verbatim plus
+   * dependency closure); otherwise the shared per-project seam governs, so
+   * extend mode honors an existing `profile` lock in `rasen/config.yaml`
+   * while a fresh init (no config yet) resolves the user-wide profile
+   * exactly as before.
+   */
+  private resolveActiveSelection(projectPath: string): ResolveProjectWorkflowSelectionResult {
+    if (this.activeSelection) return this.activeSelection;
+
+    const globalConfig = getGlobalConfig();
+    const expertSelectionExplicit = globalConfig.expertSelectionExplicit === true;
+    const catalog = loadWorkflowCatalog();
+    const override = this.resolveProfileOverride();
+
+    let result: ResolveProjectWorkflowSelectionResult;
+    if (override === undefined) {
+      result = resolveProjectWorkflowSelection(
+        catalog,
+        projectPath,
+        globalConfig.profile ?? 'full',
+        globalConfig.workflows,
+        expertSelectionExplicit
+      );
+    } else if (override.kind === 'builtin') {
+      result = {
+        ...resolveDesiredWorkflowSelection(
+          catalog,
+          override.profile,
+          globalConfig.workflows,
+          expertSelectionExplicit
+        ),
+        mode: 'profile',
+      };
+    } else {
+      const definition = resolveProfileDefinition(override.name);
+      const { known, unknown } = filterKnownWorkflowRoots(catalog, definition.workflows);
+      const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+        (workflowDefinition) => workflowDefinition.id
+      );
+      result = { ids, unknown, mode: 'locked-profile', lockedProfile: override.name };
+    }
+
+    this.activeSelection = result;
+    return result;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -699,22 +791,12 @@ export class InitCommand {
     const commandsSkipped: string[] = [];
     let removedCommandCount = 0;
 
-    // Read global config for profile settings (use --profile override if set)
+    // The memoized per-run selection (--profile override, an existing
+    // profile lock, or the user-wide profile — resolveActiveSelection).
+    // Unknown-id warnings were already printed when execute() first
+    // resolved it.
     const globalConfig = getGlobalConfig();
-    const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'full';
-    const { ids: workflows, unknown: unknownProfileWorkflows } = resolveDesiredWorkflowSelection(
-      loadWorkflowCatalog(),
-      profile,
-      globalConfig.workflows,
-      globalConfig.expertSelectionExplicit === true
-    );
-    if (unknownProfileWorkflows.length > 0) {
-      console.log(
-        chalk.yellow(
-          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
-        )
-      );
-    }
+    const { ids: workflows } = this.resolveActiveSelection(projectPath);
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
@@ -813,19 +895,48 @@ export class InitCommand {
   // CONFIG FILE
   // ═══════════════════════════════════════════════════════════
 
-  private async createConfig(openspecPath: string, extendMode: boolean): Promise<'created' | 'exists' | 'skipped'> {
+  private async createConfig(
+    openspecPath: string,
+    extendMode: boolean,
+    projectPath: string
+  ): Promise<'created' | 'exists' | 'skipped'> {
     const configPath = path.join(openspecPath, 'config.yaml');
     const configYmlPath = path.join(openspecPath, 'config.yml');
     const configYamlExists = fs.existsSync(configPath);
     const configYmlExists = fs.existsSync(configYmlPath);
 
+    // An explicit --profile value other than `custom` is persisted as the
+    // project's locked profile (init-profile-lock spec). `custom` names the
+    // mutable global selection, so it stays a one-run choice.
+    const lockValue =
+      this.profileOverride !== undefined && this.profileOverride !== 'custom'
+        ? this.profileOverride
+        : undefined;
+
     if (configYamlExists || configYmlExists) {
+      if (lockValue !== undefined) {
+        try {
+          // Comment-preserving single-key write: every other key and the
+          // file's comments stay untouched.
+          updateProjectConfigKey(projectPath, 'profile', lockValue);
+        } catch (error) {
+          console.log(
+            chalk.yellow(
+              `Warning: could not persist the profile lock to ${WORKSPACE_DIR_NAME}/config.yaml: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            )
+          );
+        }
+      }
       return 'exists';
     }
 
-
     try {
-      const yamlContent = serializeConfig({ schema: DEFAULT_SCHEMA });
+      const yamlContent = serializeConfig({
+        schema: DEFAULT_SCHEMA,
+        ...(lockValue !== undefined ? { profile: lockValue } : {}),
+      });
       await FileSystemUtils.writeFile(configPath, yamlContent);
       return 'created';
     } catch {
@@ -865,14 +976,7 @@ export class InitCommand {
     // Show counts (respecting profile filter)
     const successfulTools = [...results.createdTools, ...results.refreshedTools];
     if (successfulTools.length > 0) {
-      const globalConfig = getGlobalConfig();
-      const profile: Profile = (this.profileOverride as Profile) ?? globalConfig.profile ?? 'full';
-      const { ids: workflows } = resolveDesiredWorkflowSelection(
-        loadWorkflowCatalog(),
-        profile,
-        globalConfig.workflows,
-        globalConfig.expertSelectionExplicit === true
-      );
+      const { ids: workflows } = this.resolveActiveSelection(projectPath);
       // Tools with a machine-global skills home (Hermes) report their
       // resolved global location instead of the project-local `.hermes/`
       // label, so the user knows skills landed outside the project.
@@ -922,10 +1026,14 @@ export class InitCommand {
       console.log(chalk.yellow(`  ⚠ ${machineHome.warning}`));
     }
 
+    // Profile lock (init-profile-lock spec): an explicit --profile value
+    // other than `custom` was persisted into the project config above.
+    if (this.profileOverride !== undefined && this.profileOverride !== 'custom') {
+      console.log(`Profile: locked to '${this.profileOverride}' (${WORKSPACE_DIR_NAME}/config.yaml)`);
+    }
+
     // Getting started (task 7.6: show propose if in profile)
-    const globalCfg = getGlobalConfig();
-    const activeProfile: Profile = (this.profileOverride as Profile) ?? globalCfg.profile ?? 'full';
-    const activeWorkflows = [...getProfileWorkflows(activeProfile, globalCfg.workflows)];
+    const activeWorkflows = this.resolveActiveSelection(projectPath).ids;
     console.log();
     if (activeWorkflows.includes('propose')) {
       console.log(chalk.bold('Getting started:'));

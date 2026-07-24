@@ -18,6 +18,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidStore',
   'invalidProjectId',
   'invalidWorkflows',
+  'invalidProfile',
   'invalidArchiveTiming',
   'invalidArchiveDestination',
   'invalidArchive',
@@ -29,6 +30,9 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'expertSelectionMigration',
   'newBuiltInWorkflowsAvailable',
   'skillVersionMismatch',
+  'profileLockShadowedByOverride',
+  'profileLockCustom',
+  'profileLockUnresolvable',
 ] as const;
 
 export type ConfigDiagnosticKey = (typeof CONFIG_DIAGNOSTIC_KEYS)[number];

@@ -6,7 +6,13 @@
  * install, not how.
  */
 
+import type { ConfigDiagnostic } from './config-diagnostics.js';
 import type { Profile } from './global-config.js';
+// NOTE: named-profiles.ts imports constants from this module, so this is an
+// import cycle. It is ESM-safe: neither module dereferences the other's
+// bindings during module evaluation (all cross-references happen inside
+// functions called at runtime).
+import { readNamedProfile } from './named-profiles.js';
 import { readProjectConfig } from './project-config.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
@@ -141,21 +147,113 @@ export function resolveDesiredWorkflowSelection(
   return { ids, unknown };
 }
 
-/** Result of {@link resolveProjectWorkflowSelection}, naming which layer produced the set. */
-export interface ResolveProjectWorkflowSelectionResult extends ResolveDesiredWorkflowSelectionResult {
-  /** `'override'` when the project carries its own `workflows` selection; `'profile'` otherwise. */
-  mode: 'profile' | 'override';
+/**
+ * Why a project's `profile` lock could not govern resolution: shadowed by a
+ * `workflows` override, pointing at the non-lockable `custom`, or naming a
+ * definition that is missing or invalid on this machine. Carried on the
+ * resolution result so callers (update, init) decide how to print it —
+ * resolution itself never writes to the console.
+ */
+export type ProfileLockWarning =
+  | { kind: 'shadowed-by-override'; profile: string }
+  | { kind: 'custom-lock' }
+  | { kind: 'unresolvable'; profile: string; detail: string };
+
+/**
+ * The un-expanded base workflow list a project's `profile` lock denotes
+ * (init-profile-lock spec): a built-in lock resolves that profile's default
+ * sets with the expert migration marker honored (design D3, non-regressive);
+ * a named lock is the saved definition's stored ids verbatim. Shared by the
+ * selection seam below, drift detection, and the management API's base-
+ * selection read so none of them can disagree about what a lock means.
+ */
+export function resolveLockedProfileBase(
+  lockedProfile: string,
+  expertSelectionExplicit: boolean
+):
+  | { ok: true; workflows: string[] }
+  | { ok: false; warning: Exclude<ProfileLockWarning, { kind: 'shadowed-by-override' }> } {
+  if (lockedProfile === 'custom') {
+    return { ok: false, warning: { kind: 'custom-lock' } };
+  }
+  if (lockedProfile === 'full' || lockedProfile === 'core') {
+    return {
+      ok: true,
+      workflows: [...getProfileWorkflows(lockedProfile, undefined, { expertSelectionExplicit })],
+    };
+  }
+  try {
+    return { ok: true, workflows: [...readNamedProfile(lockedProfile).workflows] };
+  } catch (error) {
+    return {
+      ok: false,
+      warning: {
+        kind: 'unresolvable',
+        profile: lockedProfile,
+        detail: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 /**
- * The per-project entry point (design.md D1/D3, space-workflow-enablement):
- * when the project's own `rasen/config.yaml` carries a `workflows` override,
- * that list resolves verbatim plus dependency closure — bypassing the
- * `expertSelectionExplicit` migration entirely, since an override is always
- * an explicit, individually-authored list, never a legacy all-experts
- * install. When no override is present, resolution is unchanged: the
- * user-wide profile path (`resolveDesiredWorkflowSelection`) governs. Used
- * by both `update.ts` and `profile-sync-drift.ts` so install, removal, and
+ * Maps a {@link ProfileLockWarning} to the localized config-diagnostic it is
+ * reported as. Shared by `update` and `init` so both surface identical
+ * messages for the same lock condition.
+ */
+export function profileLockWarningToDiagnostic(warning: ProfileLockWarning): ConfigDiagnostic {
+  switch (warning.kind) {
+    case 'shadowed-by-override':
+      return {
+        key: 'profileLockShadowedByOverride',
+        values: { profile: warning.profile },
+        fallback: `Note: the locked profile '${warning.profile}' is shadowed by this project's workflows override.`,
+        output: 'warn',
+      };
+    case 'custom-lock':
+      return {
+        key: 'profileLockCustom',
+        fallback: `Warning: 'custom' cannot be a locked profile; using the user-wide profile instead.`,
+        output: 'warn',
+      };
+    case 'unresolvable':
+      return {
+        key: 'profileLockUnresolvable',
+        values: { profile: warning.profile, detail: warning.detail },
+        fallback: `Warning: locked profile '${warning.profile}' could not be resolved (${warning.detail}); using the user-wide profile instead.`,
+        output: 'warn',
+      };
+  }
+}
+
+/** Result of {@link resolveProjectWorkflowSelection}, naming which layer produced the set. */
+export interface ResolveProjectWorkflowSelectionResult extends ResolveDesiredWorkflowSelectionResult {
+  /**
+   * `'override'` when the project carries its own `workflows` selection;
+   * `'locked-profile'` when its `profile` lock governed; `'profile'` when
+   * the user-wide profile did.
+   */
+  mode: 'profile' | 'override' | 'locked-profile';
+  /** The lock name that governed resolution (mode `'locked-profile'` only). */
+  lockedProfile?: string;
+  /** Present when a `profile` lock exists but did not govern resolution. */
+  lockWarning?: ProfileLockWarning;
+}
+
+/**
+ * The per-project entry point (design.md D1/D3, space-workflow-enablement,
+ * init-profile-lock): when the project's own `rasen/config.yaml` carries a
+ * `workflows` override, that list resolves verbatim plus dependency closure
+ * — bypassing the `expertSelectionExplicit` migration entirely, since an
+ * override is always an explicit, individually-authored list, never a
+ * legacy all-experts install. Otherwise a `profile` lock, when present and
+ * resolvable, governs the same way via `resolveLockedProfileBase`; an
+ * unresolvable lock falls back to the user-wide profile with a warning on
+ * the result (never a thrown error — a shared config.yaml may name a
+ * profile this machine does not have). When neither is present, resolution
+ * is unchanged: the user-wide profile path
+ * (`resolveDesiredWorkflowSelection`) governs. Used by `update.ts`,
+ * `profile-sync-drift.ts`, and the management API so install, removal, and
  * drift can never disagree about which space is following what.
  */
 export function resolveProjectWorkflowSelection(
@@ -167,13 +265,39 @@ export function resolveProjectWorkflowSelection(
 ): ResolveProjectWorkflowSelectionResult {
   const projectConfig = readProjectConfig(projectRoot);
   const override = projectConfig?.workflows;
+  const lockedProfile = projectConfig?.profile;
 
   if (override !== undefined) {
     const { known, unknown } = filterKnownWorkflowRoots(catalog, override);
     const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
       (definition) => definition.id
     );
-    return { ids, unknown, mode: 'override' };
+    return {
+      ids,
+      unknown,
+      mode: 'override',
+      ...(lockedProfile !== undefined
+        ? { lockWarning: { kind: 'shadowed-by-override', profile: lockedProfile } }
+        : {}),
+    };
+  }
+
+  if (lockedProfile !== undefined) {
+    const lockBase = resolveLockedProfileBase(lockedProfile, expertSelectionExplicit);
+    if (lockBase.ok) {
+      const { known, unknown } = filterKnownWorkflowRoots(catalog, lockBase.workflows);
+      const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+        (definition) => definition.id
+      );
+      return { ids, unknown, mode: 'locked-profile', lockedProfile };
+    }
+    const fallback = resolveDesiredWorkflowSelection(
+      catalog,
+      profile,
+      customWorkflows,
+      expertSelectionExplicit
+    );
+    return { ...fallback, mode: 'profile', lockWarning: lockBase.warning };
   }
 
   const result = resolveDesiredWorkflowSelection(catalog, profile, customWorkflows, expertSelectionExplicit);

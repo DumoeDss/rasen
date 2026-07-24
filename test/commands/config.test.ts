@@ -549,6 +549,40 @@ describe('config command --scope project and promoted keys', () => {
     expect(raw).not.toContain('maybe');
   });
 
+  it('set --scope project writes a profile lock (init-profile-lock)', async () => {
+    await runConfigCommand(['set', 'profile', 'core', '--scope', 'project']);
+
+    expect(process.exitCode).not.toBe(1);
+    const raw = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(raw).toMatch(/^profile: core$/m);
+    expect(consoleLogSpy).toHaveBeenCalledWith('Set profile = "core"');
+  });
+
+  it('set --scope project rejects an unknown profile lock without writing (init-profile-lock)', async () => {
+    const before = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+
+    await runConfigCommand(['set', 'profile', 'no-such-profile', '--scope', 'project']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"no-such-profile"')
+    );
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).toBe(before);
+    expect(after).not.toContain('profile');
+  });
+
+  it('set --scope project rejects custom as a profile lock without writing (init-profile-lock)', async () => {
+    const before = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+
+    await runConfigCommand(['set', 'profile', 'custom', '--scope', 'project']);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('must be one of'));
+    const after = fs.readFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'utf-8');
+    expect(after).toBe(before);
+  });
+
   it('get/list --scope project reads rasen/config.yaml', async () => {
     fs.writeFileSync(
       path.join(projectDir, 'rasen', 'config.yaml'),

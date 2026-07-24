@@ -23,14 +23,17 @@ import * as path from 'node:path';
 import { AI_TOOLS } from '../config.js';
 import { getGlobalConfig } from '../global-config.js';
 import { getConfiguredTools, resolveToolSkillsRoot } from '../shared/index.js';
-import { hasExpertSelectionAck } from '../expert-selection-state.js';
-import { resolveProjectHome } from '../project-home.js';
+import { resolveExpertSelectionExplicitReadOnly } from '../expert-selection-state.js';
 import {
   readProjectConfig,
   updateProjectConfigKey,
   type ProjectConfig,
 } from '../project-config.js';
-import { getProfileWorkflows, resolveProjectWorkflowSelection } from '../profiles.js';
+import {
+  getProfileWorkflows,
+  resolveLockedProfileBase,
+  resolveProjectWorkflowSelection,
+} from '../profiles.js';
 import {
   filterKnownWorkflowRoots,
   loadWorkflowCatalog,
@@ -76,25 +79,6 @@ async function validateSpaceRoot(root: unknown): Promise<WorkflowEnablementResul
   return { ok: true, response: resolved.root };
 }
 
-/**
- * Read-only variant of the `expertSelectionExplicit` gate `update.ts` computes
- * (global marker AND this project's own acknowledgment) — never writes the
- * acknowledgment file itself (the read/write guarantees of this endpoint
- * forbid it); a project that has not yet acknowledged simply reads as
- * legacy (all-experts), same as its next `update` would before that project
- * acknowledges.
- */
-async function resolveExpertSelectionExplicitReadOnly(projectRoot: string): Promise<boolean> {
-  const globalConfig = getGlobalConfig();
-  if (globalConfig.expertSelectionExplicit !== true) return false;
-  try {
-    const projectHome = await resolveProjectHome(projectRoot, { ensure: false });
-    return projectHome !== null && hasExpertSelectionAck(projectHome.homeDir);
-  } catch {
-    return false;
-  }
-}
-
 /** Whether `id`'s skill artifacts are installed in `root` for ANY configured tool. */
 function isInstalledInAnyConfiguredTool(root: string, dirName: string): boolean {
   const configuredTools = new Set(getConfiguredTools(root));
@@ -122,12 +106,22 @@ function resolveBaseSelectionIds(
   expertSelectionExplicit: boolean
 ): string[] {
   const override = projectConfig?.workflows;
-  const base =
-    override !== undefined
-      ? override
-      : getProfileWorkflows(globalConfig.profile ?? 'full', globalConfig.workflows, {
-          expertSelectionExplicit,
-        });
+  if (override !== undefined) {
+    return [...filterKnownWorkflowRoots(catalog, override).known];
+  }
+  // A resolvable `profile` lock supplies the base (init-profile-lock spec),
+  // mirroring resolveProjectWorkflowSelection's layer order; an unresolvable
+  // lock falls through to the user-wide profile exactly like the seam does.
+  const lockedProfile = projectConfig?.profile;
+  if (lockedProfile !== undefined) {
+    const lockBase = resolveLockedProfileBase(lockedProfile, expertSelectionExplicit);
+    if (lockBase.ok) {
+      return [...filterKnownWorkflowRoots(catalog, lockBase.workflows).known];
+    }
+  }
+  const base = getProfileWorkflows(globalConfig.profile ?? 'full', globalConfig.workflows, {
+    expertSelectionExplicit,
+  });
   return [...filterKnownWorkflowRoots(catalog, base).known];
 }
 

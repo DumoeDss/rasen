@@ -101,9 +101,9 @@ rasen init [path] [options]
 |--------|-------------|
 | `--tools <list>` | 非交互式配置 AI 工具。使用 `all`、`none` 或逗号分隔列表 |
 | `--force` | 自动清理遗留文件，不提示 |
-| `--profile <profile>` | 为本次 init 覆盖全局 profile（`core` 或 `custom`） |
+| `--profile <profile>` | 安装配置方案并将其锁定到 `rasen/config.yaml`（`full`、`core`、已保存的配置方案名，或 `custom`） |
 
-`--profile custom` 使用全局配置中当前选中的 workflows（`rasen config profile`）。
+显式传入 `custom` 以外的 `--profile` 值时，该值会作为项目的**锁定配置方案**写入 `rasen/config.yaml` 的 `profile:` 键：之后的 `rasen update` 会持续按该配置方案（而非用户全局配置方案）解析此项目的工作流。`--profile custom` 仅本次运行使用全局配置中当前选中的 workflows（`rasen profile`），不会被持久化。
 
 **支持的工具 ID（`--tools`）：** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
 
@@ -124,8 +124,11 @@ rasen init --tools claude,cursor
 # 为所有支持的工具配置
 rasen init --tools all
 
-# 为本次运行覆盖 profile
+# 安装 core 配置方案并将项目锁定到它
 rasen init --profile core
+
+# 将项目锁定到已保存的命名配置方案
+rasen init --profile team-web
 
 # 跳过提示并自动清理遗留文件
 rasen init --force

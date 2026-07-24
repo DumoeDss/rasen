@@ -13,8 +13,21 @@ import {
   readWorkflowArtifactLedger,
 } from './workflow-artifact-ledger.js';
 import { readProjectConfig } from './project-config.js';
+import { resolveLockedProfileBase } from './profiles.js';
 
 type WorkflowId = string;
+
+/**
+ * Options shared by the drift entry points. `expertSelectionExplicit` is the
+ * same gate `update.ts` computes (global marker AND this project's own
+ * acknowledgment); it only matters when the project carries a resolvable
+ * built-in `profile` lock, whose expert set depends on the marker. Defaults
+ * to `false` — the safe legacy (all-experts) branch, matching how a project
+ * that has not acknowledged the expert-selection flip resolves.
+ */
+export interface ProfileDriftOptions {
+  expertSelectionExplicit?: boolean;
+}
 
 /**
  * Maps workflow IDs to their skill directory names.
@@ -36,15 +49,29 @@ export const WORKFLOW_TO_SKILL_DIR = Object.fromEntries(
  */
 function resolveClosureDesiredWorkflows(
   workflows: readonly string[],
-  projectPath?: string
+  projectPath?: string,
+  options: ProfileDriftOptions = {}
 ): WorkflowId[] {
   // A project carrying its own `workflows` override (space-workflow-enablement)
   // always wins the closure basis, regardless of what the caller passed in —
   // this is what keeps drift detection from ever disagreeing with `update`'s
   // per-project resolution (design.md D3) when a caller still passes the
   // global/stored selection (e.g. the profile editor's un-expanded state).
-  const override = projectPath ? readProjectConfig(projectPath)?.workflows : undefined;
-  const base = override ?? workflows;
+  // A resolvable `profile` lock is the next layer (init-profile-lock spec);
+  // an unresolvable lock falls through to the caller's selection, exactly
+  // like resolveProjectWorkflowSelection falls back to the user-wide profile.
+  const projectConfig = projectPath ? readProjectConfig(projectPath) : null;
+  const override = projectConfig?.workflows;
+  let base: readonly string[] | undefined = override;
+  const lockedProfile = projectConfig?.profile;
+  if (base === undefined && lockedProfile !== undefined) {
+    const lockBase = resolveLockedProfileBase(
+      lockedProfile,
+      options.expertSelectionExplicit === true
+    );
+    if (lockBase.ok) base = lockBase.workflows;
+  }
+  base ??= workflows;
   const catalog = loadWorkflowCatalog();
   const { known } = filterKnownWorkflowRoots(catalog, base);
   return resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
@@ -85,12 +112,13 @@ export function getConfiguredToolsForProfileSync(projectPath: string): string[] 
 export function hasToolProfileDrift(
   projectPath: string,
   toolId: string,
-  desiredWorkflows: readonly string[]
+  desiredWorkflows: readonly string[],
+  options: ProfileDriftOptions = {}
 ): boolean {
   const tool = AI_TOOLS.find((t) => t.value === toolId);
   if (!tool?.skillsDir) return false;
 
-  const knownDesiredWorkflows = resolveClosureDesiredWorkflows(desiredWorkflows, projectPath);
+  const knownDesiredWorkflows = resolveClosureDesiredWorkflows(desiredWorkflows, projectPath, options);
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
   const definitions = loadWorkflowCatalog().definitions;
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
@@ -124,11 +152,12 @@ export function hasToolProfileDrift(
 export function getToolsNeedingProfileSync(
   projectPath: string,
   desiredWorkflows: readonly string[],
-  configuredTools?: readonly string[]
+  configuredTools?: readonly string[],
+  options: ProfileDriftOptions = {}
 ): string[] {
   const tools = configuredTools ? [...new Set(configuredTools)] : getConfiguredToolsForProfileSync(projectPath);
   return tools.filter((toolId) =>
-    hasToolProfileDrift(projectPath, toolId, desiredWorkflows) ||
+    hasToolProfileDrift(projectPath, toolId, desiredWorkflows, options) ||
     hasWorkflowArtifactLedgerDrift(projectPath, [toolId], desiredWorkflows)
   );
 }
@@ -158,17 +187,18 @@ function getInstalledWorkflowsForTool(projectPath: string, toolId: string): Work
  */
 export function hasProjectConfigDrift(
   projectPath: string,
-  desiredWorkflows: readonly string[]
+  desiredWorkflows: readonly string[],
+  options: ProfileDriftOptions = {}
 ): boolean {
   const configuredTools = getConfiguredToolsForProfileSync(projectPath);
   if (hasWorkflowArtifactLedgerDrift(projectPath, configuredTools, desiredWorkflows)) {
     return true;
   }
-  if (getToolsNeedingProfileSync(projectPath, desiredWorkflows, configuredTools).length > 0) {
+  if (getToolsNeedingProfileSync(projectPath, desiredWorkflows, configuredTools, options).length > 0) {
     return true;
   }
 
-  const desiredSet = new Set(resolveClosureDesiredWorkflows(desiredWorkflows, projectPath));
+  const desiredSet = new Set(resolveClosureDesiredWorkflows(desiredWorkflows, projectPath, options));
 
   for (const toolId of configuredTools) {
     const installed = getInstalledWorkflowsForTool(projectPath, toolId);

@@ -110,6 +110,18 @@ describe('named profiles', () => {
     expect(definition.workflows).not.toContain('review');
   });
 
+  it('saveNamedProfile refuses to replace an existing definition unless overwrite is explicit (profile update path)', () => {
+    saveNamedProfile('team', { version: 1, workflows: ['propose'] });
+
+    expect(() => saveNamedProfile('team', { version: 1, workflows: ['explore'] })).toThrow(
+      'already exists'
+    );
+    expect(readNamedProfile('team')).toEqual({ version: 1, workflows: ['propose'] });
+
+    saveNamedProfile('team', { version: 1, workflows: ['explore'] }, { overwrite: true });
+    expect(readNamedProfile('team')).toEqual({ version: 1, workflows: ['explore'] });
+  });
+
   it('imports JSON using the file basename and refuses an implicit overwrite', () => {
     const importPath = path.join(tempDir, 'minimal.json');
     fs.writeFileSync(
