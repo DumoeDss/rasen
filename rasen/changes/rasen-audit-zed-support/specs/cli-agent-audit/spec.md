@@ -55,15 +55,16 @@ For a Zed session, the report SHALL be a first-class Zed report — its runtime 
 - **AND** SHALL omit (not guess) any of them the data does not provide
 
 ### Requirement: Zed data limits are disclosed
-Because Zed's thread database is an internal, undocumented format that stores only partial usage detail, a Zed report SHALL explicitly disclose its limits so the numbers are not misread: that Zed does not store reasoning-output or cache-write totals (any such field is a compatibility zero, not observed zero usage), that request counts are retained-entry counts that can undercount after a compaction, and that only Zed-linked descendant threads are included while externally launched Claude/Codex tools are not. The command SHALL disclose that Zed support is experimental — an internal format a Zed update can change — in its help text and documentation. When the database is absent, or a thread's stored payload is in a shape the command does not recognize, the command SHALL fail gracefully with an actionable message and a non-zero exit, without an unhandled stack trace, and SHALL NOT silently substitute guessed values.
+Because Zed's thread database is an internal, undocumented format that stores only partial usage detail, a Zed report SHALL explicitly disclose its limits so the numbers are not misread: that Zed does not store reasoning-output or cache-write totals (these dimensions are omitted from the report rather than shown as zero, so their absence cannot be misread as observed zero usage), that request counts are retained-entry counts that can undercount after a compaction, and that only Zed-linked descendant threads are included while externally launched Claude/Codex tools are not. The command SHALL disclose that Zed support is experimental — an internal format a Zed update can change — in its help text and documentation. When the database is absent, or a thread's stored payload is in a shape the command does not recognize, the command SHALL fail gracefully with an actionable message and a non-zero exit, without an unhandled stack trace, and SHALL NOT silently substitute guessed values.
 
 #### Scenario: Limits are disclosed in the report
 - **WHEN** a Zed session's report is generated
 - **THEN** the report SHALL carry explicit caveats naming the partial and unavailable dimensions (reasoning-output/cache-write absence, retained-entry request counts, and descendant-only scope)
 
-#### Scenario: Compatibility zeros are labeled, not read as observed zero usage
-- **WHEN** a Zed report includes fields Zed does not store (reasoning-output or cache-write totals)
-- **THEN** those fields SHALL be presented as compatibility zeros with an accompanying caveat, not as observed zero usage
+#### Scenario: Unavailable dimensions are omitted, not shown as zero
+- **WHEN** a Zed report is generated
+- **THEN** it SHALL NOT include reasoning-output or cache-write token fields
+- **AND** a caveat SHALL state that Zed does not store them, so their absence is not observed zero usage
 
 #### Scenario: Unrecognized payload fails soft
 - **WHEN** a targeted Zed thread's stored payload is in a shape the command does not recognize, or the thread database is absent
