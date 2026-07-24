@@ -3,7 +3,7 @@
 - [x] 1.1 Add typed recent-session discovery for Claude main transcripts, Codex main/non-fork rollouts, and Zed root threads using the existing runtime path/database helpers, with newest-first global ordering, a hard result cap, and per-runtime fail-soft diagnostics.
 - [x] 1.2 Add an exact `{runtime, sessionId}` resolver that re-finds a selected native session only inside its established runtime store and returns the correct `runAudit()` target/options without accepting a browser-provided source path.
 - [x] 1.3 Add an analytics report repository resolved through `getGlobalDataDir()` and `path.join()` that lists direct regular `.json` files, validates supported report shapes, returns newest-first descriptors/skipped counts, and reads detail by an exact safe basename.
-- [ ] 1.4 Cover discovery and report-repository behavior with temporary Claude/Codex/Zed/global-data fixtures, including missing stores, malformed reports, symlinks, traversal, duplicate ids, native separators, and Windows case/path behavior. (Claude duplicate resolution and direct symlinks are covered; a deterministic symlink-swap harness and explicit Codex duplicate fixture remain.)
+- [x] 1.4 Cover discovery and report-repository behavior with temporary Claude/Codex/Zed/global-data fixtures, including missing stores, malformed reports, symlinks, traversal, duplicate ids, native separators, and Windows case/path behavior.
 
 ## 2. Audit execution and import service
 
@@ -24,7 +24,7 @@
 
 - [x] 4.1 Extend `viewer/audit.html` with explicit `?embed=1` chrome hiding, parent-ready/error messages, schema validation, exact same-origin/direct-parent checks, report/theme messages, and dispatch into the existing Claude/Codex/Zed `render()` path.
 - [x] 4.2 Expose the shipped viewer HTML at a fixed management-server asset URL without putting a report path or bearer token in the URL, and ensure development and packaged UI launches resolve the same asset.
-- [ ] 4.3 Add viewer/static-serving tests proving same-origin embed rendering and cross-origin rejection while retaining offline file drop, `?src=`, older-report tolerance, theme behavior, and `rasen agent audit --open`. (Static contracts, sandbox isolation, server serving, and CLI regressions are covered; real-browser viewer execution remains.)
+- [x] 4.3 Add viewer/static-serving tests proving same-origin embed rendering and cross-origin rejection while retaining offline file drop, `?src=`, older-report tolerance, theme behavior, and `rasen agent audit --open`.
 
 ## 5. Audit page and shell integration
 
@@ -39,8 +39,8 @@
 ## 6. UI, integration, and cross-platform verification
 
 - [x] 6.1 Add API-client tests for bearer-authenticated JSON and raw-file audit requests, response narrowing, standard errors, and unauthorized transitions.
-- [ ] 6.2 Add component tests for newest selection, saved-result switching without rerun, partial discovery failure, native analysis success/failure, report/source import, busy/loading states, retry, stale-response suppression, iframe readiness, theme sync, and existing-report preservation. (Core selection, stale response, native failure/success, import busy flow, iframe readiness, and preservation are covered; explicit theme/error/retry branches remain.)
-- [ ] 6.3 Add integration fixtures for Claude, enriched/older Codex, and Zed reports and verify the Web UI and standalone viewer render each runtime through the same viewer dispatch. (Runtime fixtures and source dispatch contracts exist; real-browser shared-renderer execution remains.)
+- [x] 6.2 Add component tests for newest selection, saved-result switching without rerun, partial discovery failure, native analysis success/failure, report/source import, busy/loading states, retry, stale-response suppression, iframe readiness, theme sync, and existing-report preservation.
+- [x] 6.3 Add integration fixtures for Claude, enriched/older Codex, and Zed reports and verify the Web UI and standalone viewer render each runtime through the same viewer dispatch.
 - [x] 6.4 Run the focused token-audit, management-router/server, CLI audit, and UI test suites; build the UI package; then run TypeScript/lint checks required by the repository.
 - [x] 6.5 Verify path/import/list/detail behavior on Windows CI plus the existing non-Windows CI matrix, using `path.join()`/`path.resolve()` expectations and no hardcoded home or separator assumptions.
 - [x] 6.6 Add focused Audit layout/component coverage for collapse/expand state, report-width reclamation, desktop and narrow initial states, keyboard/ARIA semantics, selection preservation, and absence of page-level horizontal overflow at representative desktop widths.
