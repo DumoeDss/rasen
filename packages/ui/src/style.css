@@ -338,6 +338,11 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   width: 100%; max-width: var(--container-max); margin-inline: auto;
   padding: var(--space-8) var(--gutter) var(--space-12); flex: 1;
 }
+.app-content--audit {
+  max-width: 1840px;
+  padding-inline: clamp(12px, 1.8vw, 28px);
+  overflow-x: clip;
+}
 .app-content > p:only-child { color: var(--meta); }
 
 /* Canvas route (pipelines-ui spec): a viewport-locked content area — the page
@@ -961,6 +966,88 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   padding: 8px var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2);
 }
 .theme-toggle:hover:not(:disabled) { color: var(--accent); box-shadow: var(--ring-hover), var(--shadow); background: var(--surface); }
+
+/* ---- Installation-wide session audit ---- */
+.audit-page { display: grid; gap: var(--space-5); min-width: 0; }
+.audit-actions { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: var(--space-4); }
+.audit-action-card,
+.audit-results,
+.audit-detail {
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--ring), var(--shadow);
+}
+.audit-action-card { padding: var(--space-5); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.audit-action-card h2 { flex-basis: 100%; font-size: var(--text-lg); }
+.audit-action-card p { margin: 0; color: var(--muted); }
+.audit-action-card select { min-width: min(100%, 420px); flex: 1; }
+.audit-hint { flex-basis: 100%; font-size: var(--text-xs); }
+.audit-file-input { display: none; }
+.audit-drop { border: 1px dashed var(--border-strong); box-shadow: none; }
+.audit-drop--busy { background: var(--surface-muted); }
+.audit-diagnostics { flex-basis: 100%; margin: 0; padding-left: var(--space-5); color: var(--warn-fg); font-size: var(--text-xs); }
+.audit-error { color: var(--danger-fg); background: var(--danger-bg); border-radius: var(--radius-lg); padding: var(--space-3); }
+.audit-error p { margin: 0 0 var(--space-2); color: inherit; }
+.audit-error--operation { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+.audit-master-detail {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: 680px;
+}
+.audit-master-detail--collapsed { grid-template-columns: minmax(0, 1fr); }
+.audit-results { min-width: 0; padding: var(--space-4); overflow: hidden; }
+.audit-results__header {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.audit-results__header h2 { font-size: var(--text-lg); }
+.audit-results__toggle {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  padding: 0;
+  font-size: var(--text-lg);
+}
+.audit-results--collapsed {
+  position: absolute;
+  z-index: 3;
+  top: var(--space-3);
+  left: var(--space-3);
+  width: 42px;
+  padding: var(--space-1);
+  background: color-mix(in oklab, var(--surface), transparent 4%);
+}
+.audit-results--collapsed .audit-results__header { min-height: 34px; margin: 0; }
+.audit-results__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); max-height: 760px; overflow-y: auto; }
+.audit-result { width: 100%; padding: var(--space-3); display: grid; gap: 2px; text-align: left; background: transparent; box-shadow: none; border: 1px solid var(--border); }
+.audit-result:hover:not(:disabled) { background: var(--surface-muted); }
+.audit-result--active { border-color: var(--accent); background: var(--accent-tint); }
+.audit-result span,
+.audit-result time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--text-xs); }
+.audit-result__title { color: var(--fg) !important; font-size: var(--text-sm) !important; font-weight: 650; }
+.audit-skipped { color: var(--warn-fg); font-size: var(--text-xs); }
+.audit-results__empty { color: var(--muted); }
+.audit-detail { width: 100%; min-width: 0; padding: var(--space-3); position: relative; overflow: hidden; }
+.audit-detail__loading { position: absolute; z-index: 2; top: var(--space-5); left: var(--space-5); padding: var(--space-2); background: var(--surface); border-radius: var(--radius); }
+.audit-viewer { width: 100%; min-width: 0; min-height: 650px; }
+.audit-viewer__empty { padding: var(--space-8); color: var(--muted); text-align: center; }
+.audit-viewer__frame { display: block; width: 100%; max-width: 100%; height: 760px; border: 0; background: transparent; }
+.audit-viewer__frame--empty { display: none; }
+
+@media (max-width: 900px) {
+  .audit-actions,
+  .audit-master-detail { grid-template-columns: 1fr; }
+  .audit-master-detail { min-height: 0; }
+  .audit-results__list { max-height: 360px; }
+  .audit-viewer__frame { height: 680px; }
+}
 
 /* ═══ 24. Workflows page (workflows-ui spec) ════════════════════════════════ */
 /* Library management surface. Reuses the app's tokens and card/dialog idioms —

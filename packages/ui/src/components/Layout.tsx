@@ -44,6 +44,7 @@ export function Layout({ children }: { children: ComponentChildren }) {
   const section = routeSpace ? spaceSection(path) : null;
   const onWorkflows = path.startsWith('/workflows');
   const onProfiles = path.startsWith('/profiles');
+  const onAudit = path.startsWith('/audit');
   // The pipeline canvas route is viewport-locked (pipelines-ui spec): the shell
   // fixes the content height and lets the editor's panels scroll internally.
   // Every other route keeps the normal document-scrolling content area.
@@ -84,12 +85,19 @@ export function Layout({ children }: { children: ComponentChildren }) {
             <a href="/profiles" data-testid="nav-profiles" aria-current={onProfiles ? 'page' : undefined}>
               Profiles
             </a>
+            <a href="/audit" data-testid="nav-audit" aria-current={onAudit ? 'page' : undefined}>
+              Audit
+            </a>
           </nav>
           {routeSpace && <RunningSessionsMenu />}
           <SpaceSwitcher />
         </div>
       </header>
-      <main class={`app-content${onCanvas ? ' app-content--canvas' : ''}`}>{children}</main>
+      <main
+        class={`app-content${onCanvas ? ' app-content--canvas' : ''}${onAudit ? ' app-content--audit' : ''}`}
+      >
+        {children}
+      </main>
       <ThemeToggle />
     </div>
   );

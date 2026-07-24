@@ -46,6 +46,7 @@ export {
   readRolloutConversation,
   readRolloutSessionMeta,
   listRolloutFiles,
+  listStoredRolloutFiles,
   type FindRolloutPathOptions,
   type RolloutOccupancy,
   type RolloutConversation,

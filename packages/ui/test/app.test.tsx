@@ -33,6 +33,9 @@ vi.mock('../src/components/TaskDetailPage.js', async () => {
 vi.mock('../src/components/SpacesPage.js', () => ({
   SpacesPage: () => <div data-testid="spaces-page">spaces</div>,
 }));
+vi.mock('../src/components/AuditPage.js', () => ({
+  AuditPage: () => <div data-testid="audit-page">audit</div>,
+}));
 vi.mock('../src/components/SpaceSwitcher.js', () => ({
   SpaceSwitcher: () => <div data-testid="space-switcher" />,
 }));
@@ -199,6 +202,12 @@ describe('App routing', () => {
     expect(container.querySelector('[data-testid="spaces-page"]')).not.toBeNull();
     // A space-agnostic route: no board/config/archive space view is mounted.
     expect(container.querySelector('[data-testid="board-page"]')).toBeNull();
+  });
+
+  it('renders the installation-wide Audit page and marks its permanent nav entry active', async () => {
+    await mountAt(container, '/audit');
+    expect(container.querySelector('[data-testid="audit-page"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="nav-audit"]')?.getAttribute('aria-current')).toBe('page');
   });
 
   it('the retired /sessions path is not a dead route — it bootstraps and redirects to a resolved space', async () => {

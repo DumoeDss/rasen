@@ -6,6 +6,10 @@
 import { getToken, markUnauthorized } from './token.js';
 import type {
   ApiErrorBody,
+  AuditReportDetailResponse,
+  AuditReportsResponse,
+  AuditRuntime,
+  AuditSessionsResponse,
   ArchiveResponse,
   ChangesResponse,
   ConfigScope,
@@ -228,6 +232,41 @@ export function putKey(
 
 export function getStatus(): Promise<StatusResponse> {
   return request<StatusResponse>('/api/v1/status');
+}
+
+/** Installation-wide recent native sessions; no planning-space selector. */
+export function discoverAuditSessions(limit = 50): Promise<AuditSessionsResponse> {
+  return request<AuditSessionsResponse>(`/api/v1/audits/sessions?limit=${encodeURIComponent(String(limit))}`);
+}
+
+/** Valid direct reports in the machine-wide analytics directory. */
+export function listAuditReports(): Promise<AuditReportsResponse> {
+  return request<AuditReportsResponse>('/api/v1/audits');
+}
+
+export function getAuditReport(id: string): Promise<AuditReportDetailResponse> {
+  return request<AuditReportDetailResponse>(`/api/v1/audits/${encodeURIComponent(id)}`);
+}
+
+export function runSessionAudit(runtime: AuditRuntime, sessionId: string): Promise<AuditReportDetailResponse> {
+  return request<AuditReportDetailResponse>('/api/v1/audits', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify({ runtime, sessionId }),
+  });
+}
+
+/**
+ * Uploads browser-granted bytes, never a server-side path. The raw request
+ * still uses the shared bearer/error/401 seam; the filename is only a
+ * percent-encoded basename/type hint.
+ */
+export function importAuditFile(file: File): Promise<AuditReportDetailResponse> {
+  return request<AuditReportDetailResponse>('/api/v1/audits/import', {
+    method: 'POST',
+    headers: { 'X-Rasen-Filename': encodeURIComponent(file.name) },
+    body: file,
+  });
 }
 
 /** The active changes for the current planning space (design.md D6); no selector = launch-project fallback. */

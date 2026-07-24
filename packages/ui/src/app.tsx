@@ -11,6 +11,7 @@ import { SpacesPage } from './components/SpacesPage.js';
 import { WorkflowsPage } from './components/WorkflowsPage.js';
 import { ProfilesPage } from './components/ProfilesPage.js';
 import { PipelinesPage } from './components/PipelinesPage.js';
+import { AuditPage } from './components/AuditPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
 
@@ -69,6 +70,7 @@ export function App() {
           <Route path="/spaces" component={SpacesPage} />
           <Route path="/workflows" component={WorkflowsPage} />
           <Route path="/profiles" component={ProfilesPage} />
+          <Route path="/audit" component={AuditPage} />
           <Route path="/p/:projectId/board" component={BoardPage} />
           <Route path="/s/:storeId/board" component={BoardPage} />
           <Route path="/p/:projectId/config" component={ConfigPage} />

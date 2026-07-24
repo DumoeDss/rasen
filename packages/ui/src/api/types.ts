@@ -241,6 +241,54 @@ export interface StatusResponse {
   project: ProjectRef | null;
 }
 
+// ---- Session audits (web-ui-session-audit) ----
+
+export type AuditRuntime = 'claude' | 'codex' | 'zed';
+
+export interface RecentAuditSession {
+  runtime: AuditRuntime;
+  sessionId: string;
+  label: string;
+  updatedAt: number;
+  startedAt?: number;
+  workingDir?: string;
+  title?: string;
+}
+
+export interface AuditRuntimeDiagnostic {
+  runtime: AuditRuntime;
+  available: boolean;
+  message?: string;
+}
+
+export interface AuditSessionsResponse {
+  sessions: RecentAuditSession[];
+  diagnostics: AuditRuntimeDiagnostic[];
+  limit: number;
+}
+
+export interface AuditReportDescriptor {
+  id: string;
+  runtime: AuditRuntime;
+  sessionId: string;
+  title?: string;
+  generatedAt: string;
+  sessionStart: number | null;
+  sessionEnd: number | null;
+  memberCount: number;
+  modifiedAt: number;
+}
+
+export interface AuditReportsResponse {
+  reports: AuditReportDescriptor[];
+  skipped: number;
+}
+
+export interface AuditReportDetailResponse {
+  descriptor: AuditReportDescriptor;
+  report: Record<string, unknown>;
+}
+
 export interface ChangeArtifactStatus {
   id: string;
   status: 'done' | 'ready' | 'blocked';

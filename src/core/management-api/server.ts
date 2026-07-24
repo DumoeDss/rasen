@@ -13,6 +13,9 @@
  */
 import * as http from 'node:http';
 import type { Socket } from 'node:net';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
@@ -46,6 +49,11 @@ const SHUTDOWN_GUARD_MS = 2000;
 const SESSION_SHUTDOWN_GUARD_MS = 8000;
 
 const LOOPBACK_HOST = '127.0.0.1';
+export const AUDIT_VIEWER_ASSET_PATH = '/assets/audit-viewer.html';
+
+function auditViewerFile(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../viewer/audit.html');
+}
 
 export function startManagementServer(
   options: StartManagementServerOptions
@@ -89,6 +97,25 @@ export function startManagementServer(
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    if (pathname === AUDIT_VIEWER_ASSET_PATH) {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET' });
+        res.end('Method not allowed');
+        return;
+      }
+      const viewerPath = auditViewerFile();
+      if (!fs.existsSync(viewerPath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Audit viewer not found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      fs.createReadStream(viewerPath).pipe(res);
+      return;
+    }
     if (isManagementPath(pathname)) {
       await managementHandler(req, res, pathname);
       return;

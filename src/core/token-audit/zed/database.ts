@@ -32,6 +32,9 @@ export interface ZedThreadRow {
   data: Uint8Array;
 }
 
+/** Metadata-only row used by management discovery. Deliberately excludes the payload BLOB. */
+export type ZedThreadMetadata = Omit<ZedThreadRow, 'data' | 'dataType'>;
+
 /** Columns every query selects, in a stable order. */
 const THREAD_COLUMNS = ['id', 'summary', 'created_at', 'updated_at', 'data_type', 'parent_id', 'folder_paths', 'data'];
 const SELECT_COLS = THREAD_COLUMNS.join(', ');
@@ -136,4 +139,36 @@ export function queryThreadFamily(db: ZedDatabase, rootId: string): ZedThreadRow
 /** Every thread row (used for the `--match` first-command scan). */
 export function queryAllThreadRows(db: ZedDatabase): ZedThreadRow[] {
   return db.all(`SELECT ${SELECT_COLS} FROM threads ORDER BY created_at, id`).map(mapRow);
+}
+
+/**
+ * Root-thread metadata for discovery. The LIMIT is applied by SQLite before
+ * rows are materialized and the large compressed `data` column is never read.
+ */
+export function queryRecentRootThreadMetadata(db: ZedDatabase, limit: number): ZedThreadMetadata[] {
+  const bounded = Math.max(1, Math.trunc(limit));
+  return db
+    .all(
+      `SELECT id, summary, created_at, updated_at, parent_id, folder_paths
+       FROM threads
+       WHERE parent_id IS NULL
+       ORDER BY COALESCE(updated_at, created_at) DESC, id
+       LIMIT ?`,
+      [bounded]
+    )
+    .map((row) => ({
+      id: String(row.id),
+      summary: toStringOrNull(row.summary),
+      createdAt: toStringOrNull(row.created_at),
+      updatedAt: toStringOrNull(row.updated_at),
+      parentId: toStringOrNull(row.parent_id),
+      folderPaths: toStringOrNull(row.folder_paths),
+    }));
+}
+
+/** Exact metadata-only root lookup used before native audit execution. */
+export function queryRootThreadIds(db: ZedDatabase, id: string): string[] {
+  return db
+    .all('SELECT id FROM threads WHERE parent_id IS NULL AND id = ? LIMIT 2', [id])
+    .map((row) => String(row.id));
 }

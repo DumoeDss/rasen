@@ -188,6 +188,54 @@ export interface StatusResponse {
   project: ProjectRef | null;
 }
 
+// ---- Session audits (web-ui-session-audit) ----
+
+export type AuditRuntimeWire = 'claude' | 'codex' | 'zed';
+
+export interface RecentAuditSessionWire {
+  runtime: AuditRuntimeWire;
+  sessionId: string;
+  label: string;
+  updatedAt: number;
+  startedAt?: number;
+  workingDir?: string;
+  title?: string;
+}
+
+export interface AuditRuntimeDiagnosticWire {
+  runtime: AuditRuntimeWire;
+  available: boolean;
+  message?: string;
+}
+
+export interface AuditSessionsResponse {
+  sessions: RecentAuditSessionWire[];
+  diagnostics: AuditRuntimeDiagnosticWire[];
+  limit: number;
+}
+
+export interface AuditReportDescriptorWire {
+  id: string;
+  runtime: AuditRuntimeWire;
+  sessionId: string;
+  title?: string;
+  generatedAt: string;
+  sessionStart: number | null;
+  sessionEnd: number | null;
+  memberCount: number;
+  modifiedAt: number;
+}
+
+export interface AuditReportsResponse {
+  reports: AuditReportDescriptorWire[];
+  skipped: number;
+}
+
+export interface AuditReportDetailResponse {
+  descriptor: AuditReportDescriptorWire;
+  report: unknown;
+}
+
 /** Per-artifact status, matching `ChangeStatus['artifacts']` from `formatChangeStatus` (design D4). */
 export interface ChangeArtifactStatus {
   id: string;

@@ -92,6 +92,10 @@
   }
   .caveat-banner b { color: var(--ink); }
   .caveat-banner ul { margin: 4px 0 0 18px; padding: 0; }
+  :root[data-embed="true"] body { padding: 0; max-width: none; }
+  :root[data-embed="true"] header,
+  :root[data-embed="true"] #drop,
+  :root[data-embed="true"] footer { display: none !important; }
 </style>
 </head>
 <body>
@@ -150,9 +154,15 @@
 
 <script>
 'use strict';
+const QUERY = new URLSearchParams(location.search);
+const EMBEDDED = QUERY.get('embed') === '1' &&
+  (location.protocol === 'http:' || location.protocol === 'https:') &&
+  window.parent !== window;
+if (EMBEDDED) document.documentElement.dataset.embed = 'true';
+
 // ---------- theme ----------
 { // ?theme=light|dark forces a mode (testing + preference)
-  const th = new URLSearchParams(location.search).get('theme');
+  const th = QUERY.get('theme');
   if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
 }
 const themeBtn = document.getElementById('themeBtn');
@@ -179,8 +189,8 @@ let DATA = null;
 // Edge/Firefox allow a file:// page to fetch a same-directory-or-descendant
 // file:// resource; a report outside that reach still loads fine by drag-drop,
 // and the CLI always prints the report path as a fallback).
-if (location.protocol.startsWith('http') || location.protocol === 'file:') {
-  const src = new URLSearchParams(location.search).get('src');
+if (!EMBEDDED && (location.protocol.startsWith('http') || location.protocol === 'file:')) {
+  const src = QUERY.get('src');
   if (src) fetch(src).then((r) => r.json()).then((j) => {
     DATA = j;
     document.getElementById('loadedName').textContent = src;
@@ -189,11 +199,139 @@ if (location.protocol.startsWith('http') || location.protocol === 'file:') {
     render(j);
   }).catch((e) => alert('Failed to load ' + src + ': ' + e.message));
 }
+function isSupportedReport(j) {
+  const object = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const number = (v) => typeof v === 'number' && Number.isFinite(v);
+  const nullableNumber = (v) => v === null || number(v);
+  const nullableString = (v) => v === null || typeof v === 'string';
+  const numbers = (v, fields) => object(v) && fields.every((field) => number(v[field]));
+  const strings = (v) => Array.isArray(v) && v.every((item) => typeof item === 'string');
+  const numericValues = (v) => object(v) && Object.values(v).every(number);
+  const rebuildRollup = (v) => object(v) && numbers(v, ['events', 'rewroteTokens']) &&
+    object(v.byCause) && Object.values(v.byCause).every((cause) => numbers(cause, ['events', 'rewroteTokens']));
+  const codexRaw = (v) => numbers(v, [
+    'inputTokens', 'cachedInputTokens', 'cacheWriteInputTokens',
+    'outputTokens', 'reasoningOutputTokens', 'totalTokens',
+  ]);
+  if (!object(j) || (j.schema !== 'rasen-token-audit/1' && j.schema !== 'rasen-token-audit/2')) return false;
+  const s = j.session;
+  const runtime = object(s) && (s.runtime || 'claude');
+  if (!object(s) || !['claude', 'codex', 'zed'].includes(runtime) ||
+      typeof s.id !== 'string' || !s.id || typeof s.mainTranscript !== 'string' ||
+      !nullableNumber(s.start) || !nullableNumber(s.end) || !nullableNumber(s.durationMs) ||
+      !number(s.agentCount) || typeof j.generatedAt !== 'string') return false;
+  if (j.caveats !== undefined && !strings(j.caveats)) return false;
+  if (runtime === 'claude') {
+    return numbers(j.pricing, ['cacheReadX', 'cacheWriteMainX', 'cacheWriteSubX']) &&
+      numbers(j.totals, ['requests', 'outputTokens', 'inputRaw', 'cacheWrite', 'cacheRead', 'billedInputEq']) &&
+      object(j.totals.churn) && numbers(j.totals.churn, ['tokens', 'events']) &&
+      object(j.totals.churn.byCause) && numbers(j.totals.resumes, ['hit', 'miss', 'missRewrote']) &&
+      Object.values(j.totals.churn.byCause).every((cause) => numbers(cause, ['tokens', 'events'])) &&
+      object(j.byModel) && Object.values(j.byModel).every((model) =>
+        numbers(model, ['requests', 'outputTokens', 'cacheWrite', 'cacheRead'])) &&
+      numericValues(j.gapHistogram) && Array.isArray(j.agents) &&
+      j.agents.every((a) => object(a) && number(a.index) && typeof a.label === 'string' &&
+        typeof a.roleFamily === 'string' && typeof a.kind === 'string' && numericValues(a.models) &&
+        nullableNumber(a.firstTs) && nullableNumber(a.lastTs) &&
+        numbers(a, ['requests', 'outputTokens', 'cacheWrite', 'cacheRead', 'billedInputEq', 'peakContext', 'spawnWrite']) &&
+        numbers(a.churn, ['tokens', 'events']) && numbers(a.resumes, ['hit', 'miss'])) &&
+      object(j.requests) && strings(j.requests.columns) && strings(j.requests.classes) &&
+      Array.isArray(j.requests.rows) && j.requests.rows.every((row) =>
+        Array.isArray(row) && row.every((cell) => cell === null || number(cell))) &&
+      Array.isArray(j.churnEvents) && j.churnEvents.every((event) => object(event) &&
+        typeof event.cause === 'string' && number(event.agent) && nullableNumber(event.ts) &&
+        nullableNumber(event.gapMin) && numbers(event, ['rewrote', 'prevPrefix', 'readNow']) &&
+        typeof event.forked === 'boolean' && typeof event.injected === 'boolean');
+  }
+  if (runtime === 'codex') {
+    return object(j.totals) && number(j.totals.requests) && number(j.totals.cacheHitRatio) &&
+      codexRaw(j.totals.rawTokens) &&
+      (j.totals.rebuilds === undefined || rebuildRollup(j.totals.rebuilds)) &&
+      (s.forkedFrom === undefined || typeof s.forkedFrom === 'string') &&
+      Array.isArray(j.agents) && j.agents.every((a) => object(a) && number(a.index) &&
+        typeof a.label === 'string' && typeof a.kind === 'string' && number(a.requests) &&
+        number(a.cacheHitRatio) && codexRaw(a.rawTokens) && Array.isArray(a.turns) &&
+        a.turns.every((turn) => object(turn) && (turn.turnId === null || typeof turn.turnId === 'string') &&
+          nullableNumber(turn.start) && nullableNumber(turn.end) && number(turn.requests) &&
+          number(turn.cacheHitRatio) && codexRaw(turn.rawTokens) &&
+          (turn.aborted === undefined || typeof turn.aborted === 'boolean')) &&
+        (a.peakContext === undefined || number(a.peakContext)) &&
+        (a.modelContextWindow === undefined || nullableNumber(a.modelContextWindow)) &&
+        (a.bursts === undefined || Array.isArray(a.bursts)) &&
+        (a.rebuilds === undefined || rebuildRollup(a.rebuilds))) &&
+      (j.requests === undefined || (object(j.requests) && strings(j.requests.columns) &&
+        strings(j.requests.classes) && Array.isArray(j.requests.rows) &&
+        j.requests.rows.every((row) => Array.isArray(row) &&
+          row.every((cell) => cell === null || number(cell))))) &&
+      (j.rebuildEvents === undefined || (Array.isArray(j.rebuildEvents) &&
+        j.rebuildEvents.every((event) => object(event) && typeof event.cause === 'string' &&
+          number(event.agent) && nullableNumber(event.ts) && nullableNumber(event.gapMin) &&
+          numbers(event, ['rewrote', 'prevPrefix', 'readNow']) &&
+          (event.compacted === undefined || typeof event.compacted === 'boolean') &&
+          (event.injected === undefined || typeof event.injected === 'boolean') &&
+          (event.rolledBack === undefined || typeof event.rolledBack === 'boolean')))) &&
+      (j.unsupportedDimensions === undefined || (Array.isArray(j.unsupportedDimensions) &&
+        j.unsupportedDimensions.every((dimension) => object(dimension) &&
+          typeof dimension.dimension === 'string' && typeof dimension.reason === 'string')));
+  }
+  return object(j.totals) && number(j.totals.retainedRequests) && number(j.totals.cacheHitRatio) &&
+    numbers(j.totals.rawTokens, ['inputTokens', 'cachedInputTokens', 'outputTokens']) &&
+    [s.title, s.workingDir, s.firstUserCommand].every((value) => value === undefined || nullableString(value)) &&
+    Array.isArray(j.threads) && j.threads.every((t) => object(t) && number(t.index) &&
+      typeof t.threadId === 'string' && typeof t.kind === 'string' && number(t.retainedRequests) &&
+      number(t.cacheHitRatio) && numbers(t.rawTokens, ['inputTokens', 'cachedInputTokens', 'outputTokens']) &&
+      [t.title, t.model, t.parentThreadId, t.workingDir, t.firstUserCommand]
+        .every((value) => value === undefined || nullableString(value))) &&
+    object(j.source) && j.source.adapter === 'zed-threads-db' && nullableString(j.source.dataVersion);
+}
+
+if (EMBEDDED) {
+  // A sandboxed embed has an opaque ("null") origin, so outbound messages
+  // target only the already-verified direct parent window.
+  const sendParent = (message) => window.parent.postMessage(message, '*');
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent || event.origin !== location.origin) return;
+    const message = event.data;
+    if (!message || typeof message !== 'object') return;
+    if (message.type === 'rasen-audit-ping') {
+      sendParent({ type: 'rasen-audit-ready' });
+      return;
+    }
+    if (message.type === 'rasen-audit-theme') {
+      if (message.theme === 'light' || message.theme === 'dark') {
+        document.documentElement.dataset.theme = message.theme;
+        if (DATA) render(DATA);
+      }
+      return;
+    }
+    if (message.type !== 'rasen-audit-report') return;
+    try {
+      if (!isSupportedReport(message.report)) {
+        throw new Error('Not a supported rasen-token-audit report.');
+      }
+      if (message.theme === 'light' || message.theme === 'dark') {
+        document.documentElement.dataset.theme = message.theme;
+      }
+      DATA = message.report;
+      document.getElementById('loadedName').textContent = '';
+      document.getElementById('app').classList.remove('hidden');
+      render(DATA);
+    } catch (error) {
+      sendParent({
+        type: 'rasen-audit-error',
+        code: 'invalid_audit_report',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+  sendParent({ type: 'rasen-audit-ready' });
+}
+
 function loadFile(f) {
   if (!f) return;
   f.text().then((t) => {
     const j = JSON.parse(t);
-    if (!j.schema || !String(j.schema).startsWith('rasen-token-audit/')) {
+    if (!isSupportedReport(j)) {
       alert('Not a rasen-token-audit JSON (missing schema tag).'); return;
     }
     DATA = j;
@@ -206,9 +344,9 @@ function loadFile(f) {
 
 // ---------- helpers ----------
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
-const fmtInt = (n) => n.toLocaleString('en-US');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n) => esc(n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n));
+const fmtInt = (n) => esc(n.toLocaleString('en-US'));
 const hhmm = (ts) => new Date(ts).toISOString().slice(11, 16);
 const hhmmss = (ts) => new Date(ts).toISOString().slice(11, 19);
 const durStr = (ms) => { const h = Math.floor(ms / 3.6e6), m = Math.round(ms % 3.6e6 / 6e4); return (h ? h + 'h ' : '') + m + 'm'; };
@@ -285,7 +423,7 @@ function renderMeta(j) {
   const s = j.session;
   document.getElementById('sessionMeta').innerHTML =
     `session <b>${esc(s.id)}</b> · ${s.start ? new Date(s.start).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '?'} · ` +
-    `duration <b>${s.durationMs ? durStr(s.durationMs) : '?'}</b> · <b>${s.agentCount}</b> agents · generated ${esc(j.generatedAt).slice(0, 16)}`;
+    `duration <b>${s.durationMs ? esc(durStr(s.durationMs)) : '?'}</b> · <b>${esc(s.agentCount)}</b> agents · generated ${esc(j.generatedAt).slice(0, 16)}`;
 }
 
 function renderTiles(j) {
@@ -300,7 +438,7 @@ function renderTiles(j) {
     [`${t.resumes.hit} / ${t.resumes.miss}`, 'resumes HIT / MISS', `miss rewrote ${fmt(t.resumes.missRewrote)}`],
   ];
   document.getElementById('tiles').innerHTML = tiles.map(([v, l, sub]) =>
-    `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`).join('');
+    `<div class="tile"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`).join('');
 }
 
 function renderComposition(j) {
@@ -408,7 +546,7 @@ function renderTimeline(j, opts) {
       html: `<b>${esc(agents[ai].label)}</b> · ${hhmmss(ts)}<br>` +
         `<span class="t2">${esc(st.label)}</span><br>` +
         `context ${fmt(ctx)} · read ${fmt(r[col[readCol]])} · write ${fmt(r[col.cacheWrite])} · out ${fmt(r[col.output])}` +
-        (ev ? `<br><span class="t2">gap ${ev.gapMin ?? '?'}m · rewrote ${fmt(ev.rewrote)} · prevPrefix ${fmt(ev.prevPrefix)}${evidence(ev)}</span>` : ''),
+        (ev ? `<br><span class="t2">gap ${esc(ev.gapMin ?? '?')}m · rewrote ${fmt(ev.rewrote)} · prevPrefix ${fmt(ev.prevPrefix)}${esc(evidence(ev))}</span>` : ''),
     });
   }
   for (const arr of tlHover.rows) arr.sort((a, b) => a.x - b.x);
@@ -482,10 +620,10 @@ function renderAgentTable(j) {
     ['billed', 'billed-eq'], ['peak', 'peak ctx'], ['spawn', 'spawn payload'],
     ['churnT', 'churn tok'], ['churnE', 'ev'], ['hit', 'HIT'], ['miss', 'MISS'],
   ], rows, (r) =>
-    `<tr><td>${r.idx}</td><td class="left">${esc(r.label)}</td><td class="left">${esc(r.role)}</td><td class="left">${esc(r.model)}</td>` +
+    `<tr><td>${esc(r.idx)}</td><td class="left">${esc(r.label)}</td><td class="left">${esc(r.role)}</td><td class="left">${esc(r.model)}</td>` +
     `<td>${fmtInt(r.requests)}</td><td>${fmt(r.output)}</td><td>${fmt(r.cw)}</td><td>${fmt(r.cr)}</td>` +
     `<td>${fmt(r.billed)}</td><td>${fmt(r.peak)}</td><td>${fmt(r.spawn)}</td>` +
-    `<td>${fmt(r.churnT)}</td><td>${r.churnE}</td><td>${r.hit}</td><td>${r.miss}</td></tr>`,
+    `<td>${fmt(r.churnT)}</td><td>${esc(r.churnE)}</td><td>${esc(r.hit)}</td><td>${esc(r.miss)}</td></tr>`,
     'billed');
 }
 
@@ -502,7 +640,7 @@ function renderChurnTable(j) {
     const st = CLASS_STYLE[r.cause] || CLASS_STYLE.unattributed;
     return `<tr><td class="left">${r.ts ? hhmmss(r.ts) : '?'}</td><td class="left">${esc(r.agent)}</td>` +
       `<td class="left"><span class="cause" style="background:${css(st.v)}">${esc(r.cause)}</span></td>` +
-      `<td>${r.gap ?? '?'}</td><td>${fmt(r.rewrote)}</td><td>${fmt(r.prevPrefix)}</td><td>${fmt(r.readNow)}</td><td class="left">${r.flags || '—'}</td></tr>`;
+      `<td>${esc(r.gap ?? '?')}</td><td>${fmt(r.rewrote)}</td><td>${fmt(r.prevPrefix)}</td><td>${fmt(r.readNow)}</td><td class="left">${esc(r.flags || '—')}</td></tr>`;
   }, 'rewrote');
 }
 
@@ -511,9 +649,9 @@ function renderSidePanels(j) {
     `<tr><td class="left">${esc(m.replace(/^claude-/, ''))}</td><td>${fmtInt(v.requests)}</td><td>${fmt(v.outputTokens)}</td><td>${fmt(v.cacheWrite)}</td><td>${fmt(v.cacheRead)}</td></tr>`).join('');
   const causes = Object.entries(j.totals.churn.byCause).sort((a, b) => b[1].tokens - a[1].tokens).map(([c, v]) => {
     const st = CLASS_STYLE[c] || CLASS_STYLE.unattributed;
-    return `<tr><td class="left"><span class="cause" style="background:${css(st.v)}">${esc(c)}</span></td><td>${v.events}</td><td>${fmt(v.tokens)}</td></tr>`;
+    return `<tr><td class="left"><span class="cause" style="background:${css(st.v)}">${esc(c)}</span></td><td>${esc(v.events)}</td><td>${fmt(v.tokens)}</td></tr>`;
   }).join('');
-  const gaps = Object.entries(j.gapHistogram).map(([b, n]) => `<tr><td class="left">${b}</td><td>${fmtInt(n)}</td></tr>`).join('');
+  const gaps = Object.entries(j.gapHistogram).map(([b, n]) => `<tr><td class="left">${esc(b)}</td><td>${fmtInt(n)}</td></tr>`).join('');
   document.getElementById('sidePanels').innerHTML =
     `<table style="margin-bottom:14px"><thead><tr><th class="left">model</th><th>reqs</th><th>output</th><th>cacheW</th><th>cacheR</th></tr></thead><tbody>${models}</tbody></table>
      <table style="margin-bottom:14px"><thead><tr><th class="left">churn cause</th><th>events</th><th>tokens</th></tr></thead><tbody>${causes}</tbody></table>
@@ -582,7 +720,7 @@ function renderCodexTiles(j) {
     tiles.push(['n/a', 'peak context occupancy', 'window not reported']);
   }
   document.getElementById('tiles').innerHTML = tiles.map(([v, l, sub]) =>
-    `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`).join('');
+    `<div class="tile"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`).join('');
 }
 
 function renderCodexAgentTable(j) {
@@ -606,11 +744,11 @@ function renderCodexAgentTable(j) {
     ['output', 'output'], ['hitRatio', 'hit ratio'], ['peak', 'peak ctx'], ['occ', 'occupancy'],
     ['bursts', 'bursts'], ['rebuilds', 'rebuilds'], ['turns', 'turns'],
   ], rows, (r) =>
-    `<tr><td>${r.idx}</td><td class="left">${esc(r.label)}</td><td class="left">${esc(r.kind)}</td>` +
+    `<tr><td>${esc(r.idx)}</td><td class="left">${esc(r.label)}</td><td class="left">${esc(r.kind)}</td>` +
     `<td>${fmtInt(r.requests)}</td><td>${fmt(r.input)}</td><td>${fmt(r.cached)}</td>` +
     `<td>${fmt(r.output)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td><td>${r.peak === null ? 'n/a' : fmt(r.peak)}</td>` +
     `<td>${r.occ < 0 ? 'n/a' : (r.occ * 100).toFixed(0) + '%'}</td>` +
-    `<td>${r.bursts}</td><td>${r.rebuilds}</td><td>${r.turns}</td></tr>`,
+    `<td>${esc(r.bursts)}</td><td>${esc(r.rebuilds)}</td><td>${esc(r.turns)}</td></tr>`,
     'input');
 }
 
@@ -627,7 +765,7 @@ function renderCodexRebuildTable(j) {
     const st = CODEX_CLASS_STYLE[r.cause] || CODEX_CLASS_STYLE.unattributed;
     return `<tr><td class="left">${r.ts ? hhmmss(r.ts) : '?'}</td><td class="left">${esc(r.agent)}</td>` +
       `<td class="left"><span class="cause" style="background:${css(st.v)}">${esc(r.cause)}</span></td>` +
-      `<td>${r.gap ?? '?'}</td><td>${fmt(r.rewrote)}</td><td>${fmt(r.prevPrefix)}</td><td>${fmt(r.readNow)}</td><td class="left">${r.evidence || '—'}</td></tr>`;
+      `<td>${esc(r.gap ?? '?')}</td><td>${fmt(r.rewrote)}</td><td>${fmt(r.prevPrefix)}</td><td>${fmt(r.readNow)}</td><td class="left">${esc(r.evidence || '—')}</td></tr>`;
   }, 'rewrote');
 }
 
@@ -711,7 +849,7 @@ function renderZedMeta(j) {
   }
   document.getElementById('sessionMeta').innerHTML =
     `zed session <b>${esc(s.title || s.id)}</b> · ${s.start ? new Date(s.start).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '?'} · ` +
-    `duration <b>${s.durationMs ? durStr(s.durationMs) : '?'}</b> · <b>${s.agentCount}</b> threads · generated ${esc(j.generatedAt).slice(0, 16)}` +
+    `duration <b>${s.durationMs ? esc(durStr(s.durationMs)) : '?'}</b> · <b>${esc(s.agentCount)}</b> threads · generated ${esc(j.generatedAt).slice(0, 16)}` +
     (extra.length ? `<div class="meta" style="margin-top:4px">${extra.join(' · ')}</div>` : '');
 }
 
@@ -726,7 +864,7 @@ function renderZedTiles(j) {
     [fmtInt(j.session.agentCount), 'threads', 'root + descendants'],
   ];
   document.getElementById('tiles').innerHTML = tiles.map(([v, l, sub]) =>
-    `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`).join('');
+    `<div class="tile"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`).join('');
 }
 
 function renderZedThreadTable(j) {
@@ -741,7 +879,7 @@ function renderZedThreadTable(j) {
     ['input', 'input'], ['cached', 'cached'], ['output', 'output'], ['hitRatio', 'hit ratio'],
     ['retained', 'retained reqs'], ['parent', 'parent', true],
   ], rows, (r) =>
-    `<tr><td>${r.idx}</td><td class="left">${esc(r.title)}</td><td class="left">${esc(r.kind)}</td>` +
+    `<tr><td>${esc(r.idx)}</td><td class="left">${esc(r.title)}</td><td class="left">${esc(r.kind)}</td>` +
     `<td class="left">${esc(r.model)}</td><td>${fmt(r.input)}</td><td>${fmt(r.cached)}</td>` +
     `<td>${fmt(r.output)}</td><td>${(r.hitRatio * 100).toFixed(1)}%</td><td>${fmtInt(r.retained)}</td>` +
     `<td class="left">${esc(r.parent)}</td></tr>`,

@@ -42,6 +42,13 @@ import { handleProfileMutation, handleProfilesRead } from './profiles.js';
 import { handleListPipelines, handlePipelineCatalog, handlePipelineDetail, handlePipelineValidation } from './pipelines.js';
 import { createPipelineSubmitter } from './pipeline-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
+import {
+  AuditManagementService,
+  AuditServiceError,
+  MAX_RECENT_AUDIT_LIMIT,
+  type AuditManagementOptions,
+  type AuditRuntime,
+} from '../token-audit/management.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
@@ -64,6 +71,8 @@ export interface ManagementRouterOptions {
   resolveAgentCliOverride?: () => Promise<string | null>;
   maxConcurrentSessions?: number;
   sessionKillGraceMs?: number;
+  /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
+  audit?: AuditManagementOptions;
 }
 
 export interface ManagementRouterHandle {
@@ -92,12 +101,16 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/pipelines',
   '/api/v1/pipeline-validation',
   '/api/v1/pipeline-catalog',
+  '/api/v1/audits',
+  '/api/v1/audits/sessions',
+  '/api/v1/audits/import',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
 const WORKFLOW_ID_PATH_PREFIX = '/api/v1/workflows/';
 const PIPELINE_ID_PATH_PREFIX = '/api/v1/pipelines/';
+const AUDIT_ID_PATH_PREFIX = '/api/v1/audits/';
 
 /**
  * Matches `/api/v1/tasks/<id>` exactly one segment deep (mirrors
@@ -162,6 +175,17 @@ function matchPipelineIdPath(pathname: string): string | null {
   }
 }
 
+function matchAuditIdPath(pathname: string): string | null {
+  if (!pathname.startsWith(AUDIT_ID_PATH_PREFIX)) return null;
+  const rest = pathname.slice(AUDIT_ID_PATH_PREFIX.length);
+  if (rest.length === 0 || rest.includes('/') || rest === 'sessions' || rest === 'import') return null;
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return null;
+  }
+}
+
 /** Session ids are server-minted `randomUUID()` values (design D2) — any RFC 4122 textual form is accepted, not just v4, since the format check exists to reject junk, not to pin a version. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -184,6 +208,10 @@ function matchSessionIdPath(pathname: string): string | null {
 
 /** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (matchAuditIdPath(pathname) !== null) return method === 'GET';
+  if (pathname === '/api/v1/audits') return method === 'GET' || method === 'POST';
+  if (pathname === '/api/v1/audits/sessions') return method === 'GET';
+  if (pathname === '/api/v1/audits/import') return method === 'POST';
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
   }
@@ -290,7 +318,8 @@ export function isManagementPath(pathname: string): boolean {
     matchSessionIdPath(stripped) !== null ||
     matchTaskIdPath(stripped) !== null ||
     matchWorkflowIdPath(stripped) !== null ||
-    matchPipelineIdPath(stripped) !== null
+    matchPipelineIdPath(stripped) !== null ||
+    matchAuditIdPath(stripped) !== null
   );
 }
 
@@ -344,6 +373,7 @@ export function createManagementRouter(
   // whitelist. GET /api/v1/pipelines is this router's own read handler; POST
   // rides this bridge.
   const submitPipeline = createPipelineSubmitter(context);
+  const audits = new AuditManagementService(options.audit);
 
   // One supervisor per server instance (design D4/task 2.4): its own
   // registry, its own concurrency cap, its own agent-CLI resolution cache.
@@ -409,6 +439,136 @@ export function createManagementRouter(
 
     if (!isMethodAdmitted(pathname, req.method)) {
       sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on ${pathname}.`);
+      return;
+    }
+
+    const sendAuditFailure = (error: unknown): void => {
+      if (error instanceof AuditServiceError) {
+        sendError(res, error.status, error.code, error.message, error.fix);
+        return;
+      }
+      sendError(res, 500, 'internal_error', error instanceof Error ? error.message : String(error));
+    };
+
+    if (pathname === '/api/v1/audits/sessions' && req.method === 'GET') {
+      const rawLimit = url.searchParams.get('limit');
+      let limit: number | undefined;
+      if (rawLimit !== null) {
+        limit = Number(rawLimit);
+        if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RECENT_AUDIT_LIMIT) {
+          sendError(
+            res,
+            400,
+            'invalid_limit',
+            `limit must be an integer between 1 and ${MAX_RECENT_AUDIT_LIMIT}.`
+          );
+          return;
+        }
+      }
+      try {
+        sendJson(res, 200, await audits.discover(limit));
+      } catch (error) {
+        sendAuditFailure(error);
+      }
+      return;
+    }
+
+    if (pathname === '/api/v1/audits' && req.method === 'GET') {
+      try {
+        sendJson(res, 200, audits.reports.list());
+      } catch (error) {
+        sendAuditFailure(error);
+      }
+      return;
+    }
+
+    const auditId = matchAuditIdPath(pathname);
+    if (auditId !== null && req.method === 'GET') {
+      try {
+        sendJson(res, 200, audits.reports.read(auditId));
+      } catch (error) {
+        sendAuditFailure(error);
+      }
+      return;
+    }
+
+    if (pathname === '/api/v1/audits' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const record =
+        typeof body.value === 'object' && body.value !== null && !Array.isArray(body.value)
+          ? (body.value as Record<string, unknown>)
+          : null;
+      const keys = record ? Object.keys(record) : [];
+      const runtime = record?.runtime;
+      const sessionId = record?.sessionId;
+      if (
+        !record ||
+        keys.some((key) => key !== 'runtime' && key !== 'sessionId') ||
+        (runtime !== 'claude' && runtime !== 'codex' && runtime !== 'zed') ||
+        typeof sessionId !== 'string' ||
+        sessionId.length === 0
+      ) {
+        sendError(res, 400, 'invalid_audit_request', 'Submit only an exact runtime and sessionId.');
+        return;
+      }
+      try {
+        sendJson(res, 200, await audits.runNative(runtime as AuditRuntime, sessionId));
+      } catch (error) {
+        sendAuditFailure(error);
+      }
+      return;
+    }
+
+    if (pathname === '/api/v1/audits/import' && req.method === 'POST') {
+      const rejectImport = (
+        status: number,
+        code: string,
+        message: string,
+        fix?: string
+      ): void => {
+        res.once('finish', () => {
+          const teardown = setTimeout(() => req.destroy(), 10);
+          teardown.unref();
+        });
+        sendError(res, status, code, message, fix);
+        // Terminate only after Node has flushed the response. Destroying the
+        // request synchronously can reset a slow client's socket before it
+        // receives the JSON error.
+        // This handles both declared oversize rejection and a streamed body
+        // crossing the cap without retaining the socket/request indefinitely.
+      };
+      const filenameHeader = req.headers['x-rasen-filename'];
+      if (!filenameHeader || Array.isArray(filenameHeader)) {
+        rejectImport(400, 'invalid_audit_filename', 'The X-Rasen-Filename header is required.');
+        return;
+      }
+      let filename: string;
+      try {
+        filename = decodeURIComponent(filenameHeader);
+      } catch {
+        rejectImport(400, 'invalid_audit_filename', 'The audit filename header is malformed.');
+        return;
+      }
+      const lengthHeader = req.headers['content-length'];
+      const declared = typeof lengthHeader === 'string' ? Number(lengthHeader) : undefined;
+      try {
+        sendJson(
+          res,
+          200,
+          await audits.importStream(req, filename, Number.isFinite(declared) ? declared : undefined)
+        );
+      } catch (error) {
+        if (error instanceof AuditServiceError) {
+          rejectImport(error.status, error.code, error.message, error.fix);
+        } else {
+          rejectImport(500, 'internal_error', error instanceof Error ? error.message : String(error));
+        }
+      }
       return;
     }
 
