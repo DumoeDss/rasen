@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { SessionRecordWire } from '../api/types.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * Launch flow (design.md D4 of `slice3-sessions-ui`): kind + task + optional
@@ -31,12 +32,13 @@ export function LaunchSessionDialog({
   const [changeName, setChangeName] = useState(changeNamePrefill ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const t = useT();
 
   async function handleSubmit(event: Event) {
     event.preventDefault();
     if (submitting) return;
     if (task.trim().length === 0) {
-      setErrorMessage('Task is required.');
+      setErrorMessage('dialog.launch.task_required');
       return;
     }
     setSubmitting(true);
@@ -52,16 +54,18 @@ export function LaunchSessionDialog({
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setSubmitting(false);
-      setErrorMessage(err instanceof ApiError ? err.message : 'Failed to launch the session.');
+      // Authored fallback stored as an i18n KEY; rendered through `t()` (a
+      // server ApiError.message passes through unchanged).
+      setErrorMessage(err instanceof ApiError ? err.message : 'status.error.session_launch');
     }
   }
 
   return (
     <div class="launch-session-dialog__overlay">
-      <form class="launch-session-dialog" onSubmit={handleSubmit} aria-label="Launch session">
-        <h2 class="launch-session-dialog__title">Launch session</h2>
+      <form class="launch-session-dialog" onSubmit={handleSubmit} aria-label={t('dialog.launch.aria')}>
+        <h2 class="launch-session-dialog__title">{t('dialog.launch.title')}</h2>
         <fieldset class="launch-session-dialog__field launch-session-dialog__kind" disabled={submitting}>
-          <legend>Kind</legend>
+          <legend>{t('dialog.launch.kind')}</legend>
           <label>
             <input
               type="radio"
@@ -70,7 +74,7 @@ export function LaunchSessionDialog({
               checked={kind === 'auto'}
               onChange={() => setKind('auto')}
             />
-            auto
+            {t('dialog.launch.kind_auto')}
           </label>
           <label>
             <input
@@ -80,11 +84,11 @@ export function LaunchSessionDialog({
               checked={kind === 'goal'}
               onChange={() => setKind('goal')}
             />
-            goal
+            {t('dialog.launch.kind_goal')}
           </label>
         </fieldset>
         <label class="launch-session-dialog__field">
-          <span>Task</span>
+          <span>{t('dialog.launch.task')}</span>
           <textarea
             name="task"
             value={task}
@@ -95,7 +99,7 @@ export function LaunchSessionDialog({
           />
         </label>
         <label class="launch-session-dialog__field">
-          <span>Change name (optional)</span>
+          <span>{t('dialog.launch.change_name')}</span>
           <input
             type="text"
             name="changeName"
@@ -103,21 +107,19 @@ export function LaunchSessionDialog({
             disabled={submitting}
             onInput={(e) => setChangeName((e.target as HTMLInputElement).value)}
           />
-          <small class="launch-session-dialog__hint">
-            Links to an existing change for live progress.
-          </small>
+          <small class="launch-session-dialog__hint">{t('dialog.launch.hint')}</small>
         </label>
         {errorMessage && (
           <p class="launch-session-dialog__error" role="alert">
-            {errorMessage}
+            {t(errorMessage)}
           </p>
         )}
         <div class="launch-session-dialog__actions">
           <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
-            Cancel
+            {t('dialog.launch.cancel')}
           </button>
           <button type="submit" class="btn--primary" disabled={submitting}>
-            {submitting ? 'Launching…' : 'Launch'}
+            {submitting ? t('dialog.launch.launching') : t('dialog.launch.launch')}
           </button>
         </div>
       </form>

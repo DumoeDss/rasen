@@ -13,6 +13,7 @@ import { ProfilesPage } from './components/ProfilesPage.js';
 import { PipelinesPage } from './components/PipelinesPage.js';
 import { AuditPage } from './components/AuditPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
+import { LocaleBootstrap } from './i18n/LocaleBootstrap.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
 
 /**
@@ -64,8 +65,9 @@ export function App() {
 
   return (
     <LocationProvider>
-      <Layout>
-        <Router>
+      <LocaleBootstrap>
+        <Layout>
+          <Router>
           <Route path="/" component={SpaceBootstrap} />
           <Route path="/spaces" component={SpacesPage} />
           <Route path="/workflows" component={WorkflowsPage} />
@@ -87,7 +89,8 @@ export function App() {
           <Route path="/s/:storeId" component={SpaceRootRedirect} />
           <Route default component={SpaceBootstrap} />
         </Router>
-      </Layout>
+        </Layout>
+      </LocaleBootstrap>
     </LocationProvider>
   );
 }

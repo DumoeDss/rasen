@@ -1,4 +1,5 @@
 import type { SpaceMember } from '../api/types.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * The store-space member chip row (ui-space-redesign-task-board design D4 /
@@ -18,15 +19,16 @@ export function MemberChips({
   selected: string | null;
   onSelect: (memberId: string | null) => void;
 }) {
+  const t = useT();
   return (
-    <div class="member-chips" role="group" aria-label="Filter by member" data-testid="member-chips">
+    <div class="member-chips" role="group" aria-label={t('member.group_label')} data-testid="member-chips">
       <button
         type="button"
         class={`member-chip${selected === null ? ' member-chip--selected' : ''}`}
         aria-pressed={selected === null}
         onClick={() => onSelect(null)}
       >
-        All
+        {t('member.all')}
       </button>
       {members.map((member) => (
         <button

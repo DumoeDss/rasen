@@ -11,6 +11,7 @@ import { groupArchivedTasks, tasksForMember, type ArchivedTask } from '../board/
 import { MemberChips } from './MemberChips.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * The Archive page (ui-space-redesign-archive-page design D4). Behind the
@@ -25,6 +26,7 @@ import { spaceHref, useSpace } from '../store/use-space.js';
  * states, mirroring BoardPage / TaskDetailPage.
  */
 export function ArchivePage() {
+  const t = useT();
   const space = useSpace();
   const selector = space?.selector;
   const [changes, setChanges] = useState<ArchivedChangeSummary[] | null>(null);
@@ -58,7 +60,7 @@ export function ArchivePage() {
         if (err instanceof ApiError) {
           setPageError({ message: err.message, fix: err.fix });
         } else {
-          setPageError({ message: 'Failed to load the archive.' });
+          setPageError({ message: 'status.error.archive_load' });
         }
       })
       .finally(() => {
@@ -96,18 +98,18 @@ export function ArchivePage() {
   }
 
   if (loading) {
-    return <p class="archive-page__loading">Loading archive…</p>;
+    return <p class="archive-page__loading">{t('archive.loading')}</p>;
   }
 
   if (pageError) {
     return (
       <div class="archive-page__error">
         <p>
-          {pageError.message}
+          {t(pageError.message)}
           {pageError.fix ? ` — ${pageError.fix}` : ''}
         </p>
         <button type="button" onClick={refresh}>
-          Retry
+          {t('status.retry')}
         </button>
       </div>
     );
@@ -116,8 +118,8 @@ export function ArchivePage() {
   if (!changes || changes.length === 0) {
     return (
       <div class="archive-page__empty" data-testid="archive-empty">
-        <h2>Archive</h2>
-        <p>No archived changes in this space yet.</p>
+        <h2>{t('archive.title')}</h2>
+        <p>{t('archive.empty')}</p>
       </div>
     );
   }
@@ -148,20 +150,20 @@ export function ArchivePage() {
   return (
     <div class="archive-page" data-testid="archive-page">
       <PageHeader
-        title="Archive"
+        title={t('archive.title')}
         actions={
           <>
             <input
               type="search"
               class="archive-page__search"
-              placeholder="Search by name…"
-              aria-label="Search archived Tasks by name"
+              placeholder={t('archive.search_placeholder')}
+              aria-label={t('archive.search_label')}
               data-testid="archive-search"
               value={query}
               onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
             />
             <button type="button" class="btn--ghost" onClick={refresh}>
-              Refresh
+              {t('archive.refresh')}
             </button>
           </>
         }
@@ -171,7 +173,7 @@ export function ArchivePage() {
       )}
       {tasks.length === 0 ? (
         <p class="archive-page__no-matches" data-testid="archive-no-matches">
-          No archived Tasks match the current filter.
+          {t('archive.no_matches')}
         </p>
       ) : (
         <ul class="archive-page__list" data-testid="archive-list">
@@ -184,11 +186,13 @@ export function ArchivePage() {
                 href={space ? spaceHref(space, 'task', task.id) : '/'}
               >
                 <span class="archive-task__name">{task.name}</span>
-                <span class="archive-task__kind">{task.kind === 'portfolio' ? 'Portfolio' : 'Change'}</span>
-                <span class="archive-task__date">archived {task.archivedAt}</span>
+                <span class="archive-task__kind">{task.kind === 'portfolio' ? t('archive.kind_portfolio') : t('archive.kind_change')}</span>
+                <span class="archive-task__date">{t('archive.archived', { date: task.archivedAt })}</span>
                 {task.kind === 'portfolio' && (
                   <span class="archive-task__count">
-                    {task.children.length} change{task.children.length === 1 ? '' : 's'}
+                    {task.children.length === 1
+                      ? t('archive.child_count.one', { count: task.children.length })
+                      : t('archive.child_count.other', { count: task.children.length })}
                   </span>
                 )}
               </a>

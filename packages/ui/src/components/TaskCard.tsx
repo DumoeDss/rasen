@@ -1,5 +1,6 @@
 import type { Task } from '../board/columns.js';
 import { spaceHref, type Space } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * One Task's card on the board (ui-space-redesign-task-board design D6 /
@@ -25,12 +26,13 @@ export function TaskCard({
   space: Space | null;
   highlighted?: boolean;
 }) {
+  const t = useT();
   const progressLabel =
     task.kind === 'portfolio'
-      ? `${task.progress.done}/${task.progress.total} changes`
+      ? t('task.progress.changes', { done: task.progress.done, total: task.progress.total })
       : task.progress.total > 0
-        ? `${task.progress.done}/${task.progress.total} tasks`
-        : 'No tasks';
+        ? t('task.progress.tasks', { done: task.progress.done, total: task.progress.total })
+        : t('task.progress.no_tasks');
 
   const body = (
     <article
@@ -40,15 +42,15 @@ export function TaskCard({
       <div class="board-card__header">
         <h3 class="board-card__name">{task.label}</h3>
         {task.escalated && (
-          <span class="board-card__badge board-card__badge--escalated" title="A run stage is escalated">
-            Escalated
+          <span class="board-card__badge board-card__badge--escalated" title={t('task.badge.escalated_title')}>
+            {t('task.badge.escalated')}
           </span>
         )}
       </div>
       <div class="board-card__footer">
         <span class="board-card__progress">{progressLabel}</span>
         {task.liveStage !== undefined && (
-          <span class="task-card__live" data-testid="task-card-live" title="A live session is running for this Task">
+          <span class="task-card__live" data-testid="task-card-live" title={t('task.live_title')}>
             ⦿ {task.liveStage}
           </span>
         )}

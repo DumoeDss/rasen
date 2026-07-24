@@ -11,8 +11,12 @@
  * telemetry payload the CLI sends in `src/telemetry/index.ts` (`trackCommand`,
  * the `command`/`version`/`distinctId`/`os`/`node_version` object). The parity
  * test `telemetry-disclosure.test.tsx` pins these payload keys against a fixture
- * mirroring that site and fails on any drift in either direction.
+ * mirroring that site and fails on any drift in either direction. The English
+ * field `label` prose is also asserted verbatim by that test, so it is kept as a
+ * fixed literal here (NOT routed through `t()`) — only the surrounding chrome
+ * prose translates.
  */
+import { useT } from '../i18n/store.js';
 
 /** One disclosed payload field: the wire key it corresponds to and its human label. */
 export interface TelemetryPayloadField {
@@ -36,11 +40,12 @@ export const TELEMETRY_PAYLOAD_FIELDS: readonly TelemetryPayloadField[] = [
 ];
 
 export function TelemetryDisclosure() {
+  const t = useT();
   return (
     <details class="telemetry-disclosure" data-testid="telemetry-disclosure">
-      <summary class="telemetry-disclosure__summary">What does enabling telemetry send?</summary>
+      <summary class="telemetry-disclosure__summary">{t('telemetry.summary')}</summary>
       <div class="telemetry-disclosure__body">
-        <p>When telemetry is enabled, each command sends exactly these five fields — nothing more:</p>
+        <p>{t('telemetry.body_intro')}</p>
         <ul class="telemetry-disclosure__fields">
           {TELEMETRY_PAYLOAD_FIELDS.map((f) => (
             <li key={f.payloadKey} data-payload-key={f.payloadKey}>
@@ -48,13 +53,9 @@ export function TelemetryDisclosure() {
             </li>
           ))}
         </ul>
+        <p class="telemetry-disclosure__note">{t('telemetry.note_global')}</p>
         <p class="telemetry-disclosure__note">
-          This setting is global-only — one value for the whole machine.
-        </p>
-        <p class="telemetry-disclosure__note">
-          Environment opt-outs always win over the configured value:{' '}
-          <code>RASEN_TELEMETRY=0</code>, <code>DO_NOT_TRACK=1</code>, and CI
-          environments disable telemetry regardless of this setting.
+          {t('telemetry.note_env_pre')}<code>RASEN_TELEMETRY=0</code>, <code>DO_NOT_TRACK=1</code>{t('telemetry.note_env_post')}
         </p>
       </div>
     </details>

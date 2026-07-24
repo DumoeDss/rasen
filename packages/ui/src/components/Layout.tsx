@@ -5,6 +5,7 @@ import { RunningSessionsMenu } from './RunningSessionsMenu.js';
 import { ThemeToggle } from './ThemeToggle.js';
 import { isPipelineCanvasPath, parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces } from '../store/recent-spaces.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * App layout (management-ui-shell design D7; config-ui-package spec): header
@@ -27,6 +28,7 @@ import { getRecentSpaces } from '../store/recent-spaces.js';
  * only renders when a space is resolved.
  */
 export function Layout({ children }: { children: ComponentChildren }) {
+  const t = useT();
   const { path } = useLocation();
   const routeSpace = parseSpacePath(path);
   // On a space-agnostic route (/workflows, /spaces) the URL carries no space,
@@ -59,31 +61,31 @@ export function Layout({ children }: { children: ComponentChildren }) {
             {space && (
               <>
                 <a href={spaceHref(space, 'board')} aria-current={section === 'board' ? 'page' : undefined}>
-                  Board
+                  {t('nav.board')}
                 </a>
                 <a
                   href={spaceHref(space, 'archive')}
                   aria-current={section === 'archive' ? 'page' : undefined}
                 >
-                  Archive
+                  {t('nav.archive')}
                 </a>
                 <a href={spaceHref(space, 'config')} aria-current={section === 'config' ? 'page' : undefined}>
-                  Config
+                  {t('nav.config')}
                 </a>
                 <a
                   href={spaceHref(space, 'pipelines')}
                   data-testid="nav-pipelines"
                   aria-current={section === 'pipelines' ? 'page' : undefined}
                 >
-                  Pipelines
+                  {t('nav.pipelines')}
                 </a>
               </>
             )}
             <a href="/workflows" data-testid="nav-workflows" aria-current={onWorkflows ? 'page' : undefined}>
-              Workflows
+              {t('nav.workflows')}
             </a>
             <a href="/profiles" data-testid="nav-profiles" aria-current={onProfiles ? 'page' : undefined}>
-              Profiles
+              {t('nav.profiles')}
             </a>
             <a href="/audit" data-testid="nav-audit" aria-current={onAudit ? 'page' : undefined}>
               Audit

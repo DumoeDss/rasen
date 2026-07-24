@@ -23,6 +23,15 @@ import { WorktreePanel } from './WorktreePanel.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
+
+/** Lifecycle column id → its i18n key (the label renders through `t()` at the call site). */
+const COLUMN_LABEL_KEYS: Record<BoardColumnId, string> = {
+  planning: 'board.column.planning',
+  ready: 'board.column.ready',
+  'in-progress': 'board.column.in_progress',
+  done: 'board.column.done',
+};
 
 /**
  * The Done column shows only the most recent N done Tasks, overflowing the rest
@@ -44,6 +53,7 @@ const DONE_COLUMN_LIMIT = 5;
  * distinct explicit states.
  */
 export function BoardPage() {
+  const t = useT();
   const space = useSpace();
   const selector = space?.selector;
   // `query`/`path`/`route` are absent when mounted outside a LocationProvider
@@ -111,7 +121,10 @@ export function BoardPage() {
         if (err instanceof ApiError) {
           setPageError({ message: err.message, fix: err.fix });
         } else {
-          setPageError({ message: 'Failed to load the board.' });
+          // An authored fallback stored as an i18n KEY; rendered through `t()`
+          // at the error site (a server ApiError.message is plain text that
+          // `t()` passes through unchanged — see i18n/catalog.translate).
+          setPageError({ message: 'status.error.board_load' });
         }
       })
       .finally(() => {
@@ -204,18 +217,18 @@ export function BoardPage() {
   }
 
   if (loading) {
-    return <p class="board-page__loading">Loading board…</p>;
+    return <p class="board-page__loading">{t('status.loading.board')}</p>;
   }
 
   if (pageError) {
     return (
       <div class="board-page__error">
         <p>
-          {pageError.message}
+          {t(pageError.message)}
           {pageError.fix ? ` — ${pageError.fix}` : ''}
         </p>
         <button type="button" onClick={refresh}>
-          Retry
+          {t('status.retry')}
         </button>
       </div>
     );
@@ -226,7 +239,7 @@ export function BoardPage() {
   // "zero active changes AND zero load errors".
   const brokenChanges =
     loadErrors.length > 0 ? (
-      <section class="board-page__broken" aria-label="Changes that failed to load">
+      <section class="board-page__broken" aria-label={t('board.broken_label')}>
         {loadErrors.map((e) => (
           <article key={e.name} class="board-card board-card--broken" data-testid="board-card-broken">
             <h3 class="board-card__name">{e.name}</h3>
@@ -243,21 +256,21 @@ export function BoardPage() {
             contract (right-aligned actions, normal tone) instead of inheriting
             the empty state's muted, centered, padded-down presentation (m5). */}
         <PageHeader
-          title="Board"
+          title={t('board.title')}
           actions={
             <>
               <button type="button" class="btn--primary" onClick={() => setDialogOpen(true)}>
-                New change
+                {t('board.new_change')}
               </button>
               <button type="button" class="btn--ghost" onClick={refresh}>
-                Refresh
+                {t('board.refresh')}
               </button>
             </>
           }
         />
         <div class="board-page__empty">
           {worktreePanel}
-          <p>No active changes.</p>
+          <p>{t('board.empty')}</p>
         </div>
         {dialogOpen && (
           <NewChangeDialog space={selector} onCancel={() => setDialogOpen(false)} onCreated={handleChangeCreated} />
@@ -295,14 +308,14 @@ export function BoardPage() {
       data-refreshing={refreshing ? 'true' : undefined}
     >
       <PageHeader
-        title="Board"
+        title={t('board.title')}
         actions={
           <>
             <button type="button" class="btn--primary" onClick={() => setDialogOpen(true)}>
-              New change
+              {t('board.new_change')}
             </button>
             <button type="button" class="btn--ghost" onClick={refresh}>
-              Refresh
+              {t('board.refresh')}
             </button>
           </>
         }
@@ -324,7 +337,7 @@ export function BoardPage() {
               return (
                 <BoardColumn
                   key={col.id}
-                  label={col.label}
+                  label={t(COLUMN_LABEL_KEYS[col.id])}
                   entries={colEntries.slice(-DONE_COLUMN_LIMIT)}
                   space={space}
                   footer={
@@ -334,14 +347,14 @@ export function BoardPage() {
                         data-testid="done-overflow"
                         href={spaceHref(space, 'archive')}
                       >
-                        View all in Archive →
+                        {t('board.done.overflow')}
                       </a>
                     )
                   }
                 />
               );
             }
-            return <BoardColumn key={col.id} label={col.label} entries={colEntries} space={space} />;
+            return <BoardColumn key={col.id} label={t(COLUMN_LABEL_KEYS[col.id])} entries={colEntries} space={space} />;
           })}
         </div>
       )}
