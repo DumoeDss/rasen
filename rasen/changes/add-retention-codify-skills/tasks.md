@@ -10,15 +10,15 @@
 
 ## 2. Learned-skill canonical core
 
-- [ ] 2.1 Create the learned-skill module with strict candidate and manifest schemas, generated-ownership constants, lifecycle/status types, result types, and named evidence/content/description budgets.
-- [ ] 2.2 Implement context-first learned-skill id validation (portable lowercase kebab-case, 3–6 tokens, 64-character limit, forbidden generic/date/change tokens) using existing portable path collision helpers.
-- [ ] 2.3 Add global-data and registered-project-machine-home canonical store resolvers with no repository fallback and actionable init/permission diagnostics.
-- [ ] 2.4 Implement canonical catalog loading for active and retired records, content/manifest digests, stable knowledge keys, evidence tuple deduplication, and bounded provenance summaries.
-- [ ] 2.5 Implement `path-exists` applicability parsing and matching with explicit `all`/`any` composition, portable relative marker validation, and platform-native path resolution.
-- [ ] 2.6 Implement `planLearnedSkillMutation` for upsert, promote, rename, and retire, including ownership/collision checks, exact duplicate checks, distinct-project global evidence, approval requirements, and budget preflight.
-- [ ] 2.7 Implement `commitLearnedSkillPlan` with per-registry locking, private staging, digest re-verification, atomic replacement, rollback, and retained retirement provenance.
-- [ ] 2.8 Implement `resolveLearnedSkills` for owning-project skills, applicable approved global skills, and active/retired filtering without adding identities to workflow/profile resolution.
-- [ ] 2.9 Add unit tests for malformed manifests/candidates, portable collisions, marker traversal/device-name rejection, budget failures, ownership refusal, atomic rollback, idempotent evidence, retirement, and two-project global promotion gates.
+- [x] 2.1 Create the learned-skill module with strict candidate and manifest schemas, generated-ownership constants, lifecycle/status types, result types, and named evidence/content/description budgets.
+- [x] 2.2 Implement context-first learned-skill id validation (portable lowercase kebab-case, 3–6 tokens, 64-character limit, forbidden generic/date/change tokens) using existing portable path collision helpers.
+- [x] 2.3 Add global-data and registered-project-machine-home canonical store resolvers with no repository fallback and actionable init/permission diagnostics.
+- [x] 2.4 Implement canonical catalog loading for active and retired records, content/manifest digests, stable knowledge keys, evidence tuple deduplication, and bounded provenance summaries.
+- [x] 2.5 Implement `path-exists` applicability parsing and matching with explicit `all`/`any` composition, portable relative marker validation, and platform-native path resolution.
+- [x] 2.6 Implement `planLearnedSkillMutation` for upsert, promote, rename, and retire, including ownership/collision checks, exact duplicate checks, distinct-project global evidence, approval requirements, and budget preflight.
+- [x] 2.7 Implement `commitLearnedSkillPlan` with per-registry locking, private staging, digest re-verification, atomic replacement, rollback, and retained retirement provenance.
+- [x] 2.8 Implement `resolveLearnedSkills` for owning-project skills, applicable approved global skills, and active/retired filtering without adding identities to workflow/profile resolution.
+- [x] 2.9 Add unit tests for malformed manifests/candidates, portable collisions, marker traversal/device-name rejection, budget failures, ownership refusal, atomic rollback, idempotent evidence, retirement, and two-project global promotion gates.
 
 ## 3. Knowledge CLI seam
 
