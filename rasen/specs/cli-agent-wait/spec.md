@@ -62,7 +62,7 @@ When `--max-beats` is not given, the cap SHALL be 12 beats for every role key. A
 - **THEN** the applicable cap is 6
 
 ### Requirement: Runtime gating
-The command SHALL detect the invoking agent runtime from the host environment (Claude Code and Codex fingerprints, reusing the existing runtime-detection utilities) and consult the resolved keepalive gate: with defaults, the `claude` runtime is enabled, the `codex` runtime is disabled, and an unrecognized runtime is disabled. When the gate is closed the command SHALL return `{ "standDown": true, "reason": "runtime-not-gated" }` immediately, with no blocking and no beat-state mutation.
+The command SHALL detect the invoking agent runtime from the host environment (Claude Code and Codex fingerprints, reusing the existing runtime-detection utilities) and consult the resolved keepalive gates. When effective `keepalive.enabled` is `false`, the command SHALL return `{ "standDown": true, "reason": "keepalive-disabled" }` immediately, with no blocking and no beat-state mutation. Otherwise, with defaults, the `claude` runtime is enabled, the `codex` runtime is disabled, and an unrecognized runtime is disabled. When the runtime gate is closed the command SHALL return `{ "standDown": true, "reason": "runtime-not-gated" }` immediately, with no blocking and no beat-state mutation.
 
 #### Scenario: Claude runtime is gated on
 - **WHEN** the command runs under a Claude Code environment fingerprint with default configuration
@@ -79,6 +79,14 @@ The command SHALL detect the invoking agent runtime from the host environment (C
 #### Scenario: Configuration overrides the gate
 - **WHEN** the resolved configuration sets `keepalive.runtimes.codex` to `true`
 - **THEN** a Codex-fingerprinted invocation executes beats normally
+
+#### Scenario: Disabled keepalive stands down before runtime gating
+- **WHEN** the effective `keepalive.enabled` value is `false` and `rasen agent wait` is invoked under any runtime
+- **THEN** the command returns `{ "standDown": true, "reason": "keepalive-disabled" }` immediately and writes no beat state
+
+#### Scenario: Project switch overrides the global switch
+- **WHEN** global configuration sets `keepalive.enabled` to `true` and the current project sets it to `false`
+- **THEN** `rasen agent wait` returns the `keepalive-disabled` stand-down outcome without blocking
 
 ### Requirement: Context floor exemption
 The context floor SHALL default to 0, meaning the floor gate is disabled: with default configuration the beat proceeds regardless of `--context-tokens`. When `keepalive.contextFloor` is configured to a positive integer AND `--context-tokens <n>` is provided with `<n>` below the floor, the command SHALL return `{ "standDown": true, "reason": "context-below-floor" }` immediately. When the flag is omitted the check SHALL be skipped. Configuration SHALL accept 0 (explicitly disabled) as well as positive integers.
@@ -116,4 +124,3 @@ On the first beat of a park episode (persisted beat count 0), the command SHALL 
 #### Scenario: Mid-episode signals are never age-filtered
 - **WHEN** a park episode already has at least one recorded beat and a signal file appears
 - **THEN** the signal is delivered regardless of its modification time
-
