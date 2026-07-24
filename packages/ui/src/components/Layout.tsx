@@ -18,9 +18,10 @@ import { getRecentSpaces } from '../store/recent-spaces.js';
  * been visited (the `/` bootstrap or a fresh browser) are the space-scoped
  * controls omitted — the switcher still renders so the user can pick a space.
  *
- * The `Workflows` entry (workflows-ui spec) is space-agnostic and therefore
- * ALWAYS rendered — the installable library is user-wide, reachable from any
- * space or none. The `Pipelines` entry (pipelines-ui spec), by contrast, is
+ * The `Workflows` and `Profiles` entries (workflows-ui / profiles-ui specs) are
+ * space-agnostic and therefore ALWAYS rendered — the installable library and
+ * the named profiles are user-wide, reachable from any space or none. The
+ * `Pipelines` entry (pipelines-ui spec), by contrast, is
  * space-SCOPED (a pipeline's effective configuration resolves against the
  * addressed space), so it sits inside the space-scoped block beside Config and
  * only renders when a space is resolved.
@@ -37,13 +38,14 @@ export function Layout({ children }: { children: ComponentChildren }) {
   const space = routeSpace ?? parseSelector(getRecentSpaces()[0] ?? '');
   const section = spaceSection(path);
   const onWorkflows = path.startsWith('/workflows');
+  const onProfiles = path.startsWith('/profiles');
   // The pipeline canvas route is viewport-locked (pipelines-ui spec): the shell
   // fixes the content height and lets the editor's panels scroll internally.
   // Every other route keeps the normal document-scrolling content area.
   const onCanvas = isPipelineCanvasPath(path);
 
   return (
-    <div class="app-shell">
+    <div class={`app-shell${onCanvas ? ' app-shell--canvas' : ''}`}>
       <header class="app-header">
         <div class="app-header__inner">
           <h1>Rasen</h1>
@@ -73,6 +75,9 @@ export function Layout({ children }: { children: ComponentChildren }) {
             )}
             <a href="/workflows" data-testid="nav-workflows" aria-current={onWorkflows ? 'page' : undefined}>
               Workflows
+            </a>
+            <a href="/profiles" data-testid="nav-profiles" aria-current={onProfiles ? 'page' : undefined}>
+              Profiles
             </a>
           </nav>
           {routeSpace && <RunningSessionsMenu />}

@@ -23,6 +23,9 @@ import type {
   PipelineMutationRequest,
   PipelineMutationResponse,
   PipelineValidationResponse,
+  ProfileListResponse,
+  ProfileMutationRequest,
+  ProfileMutationResponse,
   RunsResponse,
   SessionActionResponse,
   SessionDetailResponse,
@@ -393,14 +396,35 @@ export function getWorkflowEnablement(root: string): Promise<WorkflowEnablementR
 }
 
 /**
- * Enable / disable / reset a workflow in one space. On an apply failure the
- * thrown `ApiError.message` is the CLI's own error text verbatim, and
- * `ApiError.state` carries the space's actual post-write enablement state.
+ * Enable / disable / reset / set-profile / clear-profile a space. On an apply
+ * failure the thrown `ApiError.message` is the CLI's own error text verbatim,
+ * and `ApiError.state` carries the space's actual post-write enablement state.
  */
 export function mutateWorkflowEnablement(
   body: WorkflowEnablementMutationRequest
 ): Promise<WorkflowEnablementResponse> {
   return request<WorkflowEnablementResponse>('/api/v1/workflow-enablement', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+// ---- Named workflow profiles (ui-profile-workflow-split profile-http-api) ----
+// Profile writes touch only a YAML file server-side (no bounded-CLI bridge);
+// both calls route through the single `request()` seam like every other call.
+
+/** Every available profile — built-in `full`/`core` plus saved profiles (a broken file carries its error). */
+export function listProfiles(): Promise<ProfileListResponse> {
+  return request<ProfileListResponse>('/api/v1/profiles');
+}
+
+/**
+ * Create / update / delete a saved profile. On failure the thrown
+ * `ApiError.message` is the library's own validation text, verbatim.
+ */
+export function mutateProfile(body: ProfileMutationRequest): Promise<ProfileMutationResponse> {
+  return request<ProfileMutationResponse>('/api/v1/profiles', {
     method: 'POST',
     json: true,
     body: JSON.stringify(body),

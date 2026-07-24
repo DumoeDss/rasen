@@ -1420,6 +1420,74 @@ export function updateProjectConfigKey(
   return { configPath, existed };
 }
 
+/** One key edit for {@link updateProjectConfigKeys}: `value === undefined` removes the key, any other value sets it. */
+export interface ProjectConfigKeyEdit {
+  keyPath: string;
+  value: unknown;
+}
+
+/**
+ * Applies several project-config key edits (set and/or unset) in ONE
+ * read→parse→write cycle of `rasen/config.yaml`, so a group of related keys can
+ * never be left in a partial state by a crash (or a Windows EBUSY-class error)
+ * between two separate single-key writes. This is the multi-key counterpart to
+ * {@link updateProjectConfigKey} — same comment/ordering preservation via the
+ * document-tree API and the same post-write re-parse sanity check; the ONLY
+ * difference is that every edit lands in a single `writeFileSync`. Edits are
+ * applied in order (a later edit to the same key wins). Callers MUST validate
+ * every key/value against the config-key registry BEFORE calling this.
+ * `existed` reports whether ANY unset edit removed a present key.
+ */
+export function updateProjectConfigKeys(
+  projectRoot: string,
+  edits: ProjectConfigKeyEdit[],
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): UpdateProjectConfigKeyResult {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No rasen/config.yaml found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}. Create the file (e.g. run 'rasen init') before setting project-scope config.`
+    );
+  }
+
+  const originalContent = readFileSync(configPath, 'utf-8');
+  const doc = parseDocument(originalContent);
+
+  let existed = false;
+  for (const edit of edits) {
+    const keys = edit.keyPath.split('.');
+    if (edit.value === undefined) {
+      if (doc.hasIn(keys)) {
+        existed = true;
+        doc.deleteIn(keys);
+      }
+    } else {
+      doc.setIn(keys, edit.value);
+    }
+  }
+
+  const nextContent = String(doc);
+
+  try {
+    parseYaml(nextContent);
+  } catch (error) {
+    const keyList = edits.map((edit) => `"${edit.keyPath}"`).join(', ');
+    throw new Error(
+      `Writing ${keyList} would produce invalid YAML in ${configPath}; the file was not modified (${
+        error instanceof Error ? error.message.split('\n')[0] : String(error)
+      }).`
+    );
+  }
+
+  writeFileSync(configPath, nextContent, 'utf-8');
+
+  // Post-write sanity check via the resilient reader (same rationale as the
+  // single-key path: the registry validated the values already).
+  parseProjectConfigContent(nextContent, projectRoot, options.reporter);
+
+  return { configPath, existed };
+}
+
 // -----------------------------------------------------------------------------
 // References append (store add-project)
 // -----------------------------------------------------------------------------

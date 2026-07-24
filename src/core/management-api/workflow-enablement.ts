@@ -27,6 +27,7 @@ import { resolveExpertSelectionExplicitReadOnly } from '../expert-selection-stat
 import {
   readProjectConfig,
   updateProjectConfigKey,
+  updateProjectConfigKeys,
   type ProjectConfig,
 } from '../project-config.js';
 import {
@@ -34,6 +35,7 @@ import {
   resolveLockedProfileBase,
   resolveProjectWorkflowSelection,
 } from '../profiles.js';
+import { resolveProfileDefinition } from '../named-profiles.js';
 import {
   filterKnownWorkflowRoots,
   loadWorkflowCatalog,
@@ -131,7 +133,7 @@ async function computeEnablementResponse(root: string): Promise<WorkflowEnableme
   const projectConfig = readProjectConfig(root);
   const expertSelectionExplicit = await resolveExpertSelectionExplicitReadOnly(root);
 
-  const { ids, mode } = resolveProjectWorkflowSelection(
+  const { ids, mode, lockedProfile } = resolveProjectWorkflowSelection(
     catalog,
     root,
     globalConfig.profile ?? 'full',
@@ -155,7 +157,7 @@ async function computeEnablementResponse(root: string): Promise<WorkflowEnableme
     };
   });
 
-  return { mode, units };
+  return { mode, ...(lockedProfile !== undefined ? { lockedProfile } : {}), units };
 }
 
 /** `GET /api/v1/workflow-enablement?root=<...>` (design D4 / task 2.2). Fresh read; writes nothing. */
@@ -203,8 +205,19 @@ export function createWorkflowEnablementSubmitter(
       return { ok: false, status: 400, code: 'invalid_input', message: 'Request body must be an object.' };
     }
     const body = request as Partial<WorkflowEnablementMutationRequest>;
-    if (body.op !== 'enable' && body.op !== 'disable' && body.op !== 'reset') {
-      return { ok: false, status: 400, code: 'invalid_input', message: 'op must be "enable", "disable", or "reset".' };
+    if (
+      body.op !== 'enable' &&
+      body.op !== 'disable' &&
+      body.op !== 'reset' &&
+      body.op !== 'set-profile' &&
+      body.op !== 'clear-profile'
+    ) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'invalid_input',
+        message: 'op must be "enable", "disable", "reset", "set-profile", or "clear-profile".',
+      };
     }
 
     const validatedRoot = await validateSpaceRoot(body.root);
@@ -214,6 +227,24 @@ export function createWorkflowEnablementSubmitter(
     const catalog = loadWorkflowCatalog();
     if ((body.op === 'enable' || body.op === 'disable') && (typeof body.id !== 'string' || !catalog.has(body.id))) {
       return { ok: false, status: 400, code: 'invalid_input', message: 'id must be a known catalog unit id.' };
+    }
+    if (body.op === 'set-profile') {
+      if (typeof body.profile !== 'string' || body.profile.length === 0) {
+        return { ok: false, status: 400, code: 'invalid_input', message: 'profile must be a non-empty string.' };
+      }
+      // Accepts `full`, `core`, or a saved profile name; rejects `custom`
+      // (reserved) and unknown names (design D2). The library's own resolution
+      // throws a message naming the problem; surface it verbatim.
+      try {
+        resolveProfileDefinition(body.profile);
+      } catch (error) {
+        return {
+          ok: false,
+          status: 400,
+          code: 'invalid_input',
+          message: error instanceof Error ? error.message : `Unknown profile "${body.profile}".`,
+        };
+      }
     }
 
     // Admission gate through the shared whitelist table (mirrors
@@ -269,6 +300,26 @@ function writeSelection(
   try {
     if (request.op === 'reset') {
       updateProjectConfigKey(root, 'workflows', undefined);
+      return { ok: true, response: undefined };
+    }
+
+    if (request.op === 'clear-profile') {
+      // Unset the lock only — the space returns to the user-wide profile. An
+      // override, if any, is deliberately left untouched (design D4).
+      updateProjectConfigKey(root, 'profile', undefined);
+      return { ok: true, response: undefined };
+    }
+
+    if (request.op === 'set-profile') {
+      // Write the lock AND clear any `workflows` override in ONE write (design
+      // D2/D4 "same write step"): an override always shadows the lock, so
+      // leaving it would make the switch a silent no-op — and two sequential
+      // single-key writes could crash between them and strand exactly that
+      // shadowed state. The profile value was validated as resolvable above.
+      updateProjectConfigKeys(root, [
+        { keyPath: 'profile', value: request.profile },
+        { keyPath: 'workflows', value: undefined },
+      ]);
       return { ok: true, response: undefined };
     }
 

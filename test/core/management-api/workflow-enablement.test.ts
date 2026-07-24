@@ -121,6 +121,32 @@ describe('workflow-enablement API (space-workflow-enablement design D4/D5)', () 
       expect(body.units.length).toBeGreaterThan(0);
     });
 
+    it('names the governing profile lock for a locked space', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\nprofile: core\n');
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: `/api/v1/workflow-enablement?root=${encodeURIComponent(projectRoot)}`,
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json();
+      expect(body.mode).toBe('locked-profile');
+      expect(body.lockedProfile).toBe('core');
+    });
+
+    it('carries no lock name for an unlocked space', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: `/api/v1/workflow-enablement?root=${encodeURIComponent(projectRoot)}`,
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      expect(res.json().lockedProfile).toBeUndefined();
+    });
+
     it('reports mode "override" and marks the override\'s resolved closure once one is set', async () => {
       fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\nworkflows:\n  - review\n');
 
@@ -208,6 +234,83 @@ describe('workflow-enablement API (space-workflow-enablement design D4/D5)', () 
       expect(readProjectConfig(projectRoot)?.workflows).toBeUndefined();
     }, 30_000);
 
+    it('set-profile writes the lock, clears an existing override, and applies', async () => {
+      // Start with a per-space override so we can prove set-profile clears it (D4).
+      fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\nworkflows:\n  - review\n');
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'set-profile', profile: 'core' }),
+      });
+      expect(res.status).toBe(200);
+      const body = res.json();
+      expect(body.mode).toBe('locked-profile');
+      expect(body.lockedProfile).toBe('core');
+      const config = readProjectConfig(projectRoot);
+      expect(config?.profile).toBe('core');
+      expect(config?.workflows).toBeUndefined();
+    }, 30_000);
+
+    it('set-profile refuses a "custom" or unknown profile, writing nothing', async () => {
+      const h = await startServer();
+      const custom = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'set-profile', profile: 'custom' }),
+      });
+      expect(custom.status).toBe(400);
+      const unknown = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'set-profile', profile: 'no-such-profile' }),
+      });
+      expect(unknown.status).toBe(400);
+      expect(readProjectConfig(projectRoot)?.profile).toBeUndefined();
+    });
+
+    it('clear-profile unsets the lock only and returns the space to the profile', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\nprofile: core\n');
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'clear-profile' }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.json().mode).toBe('profile');
+      expect(readProjectConfig(projectRoot)?.profile).toBeUndefined();
+    }, 30_000);
+
+    it('clear-profile leaves an existing workflows override untouched (design D4)', async () => {
+      // A space that carries BOTH a lock and its own override: clearing the
+      // lock must NOT touch the override — the space stays on its own selection.
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nprofile: core\nworkflows:\n  - review\n'
+      );
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'clear-profile' }),
+      });
+      expect(res.status).toBe(200);
+      const config = readProjectConfig(projectRoot);
+      expect(config?.profile).toBeUndefined();
+      expect(config?.workflows).toContain('review');
+      // The override still governs.
+      expect(res.json().mode).toBe('override');
+    }, 30_000);
+
     it('a concurrent mutation is refused as busy', async () => {
       const h = await startServer();
       const first = req(h.port, {
@@ -221,6 +324,25 @@ describe('workflow-enablement API (space-workflow-enablement design D4/D5)', () 
         path: '/api/v1/workflow-enablement',
         headers: authed(),
         body: JSON.stringify({ root: projectRoot, op: 'enable', id: 'cso' }),
+      });
+      const [firstResult, secondResult] = await Promise.all([first, second]);
+      const statuses = [firstResult.status, secondResult.status].sort();
+      expect(statuses).toContain(409);
+    }, 30_000);
+
+    it('the cap-1 slot also covers the new profile ops (a concurrent set-profile is refused)', async () => {
+      const h = await startServer();
+      const first = req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'set-profile', profile: 'core' }),
+      });
+      const second = req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'clear-profile' }),
       });
       const [firstResult, secondResult] = await Promise.all([first, second]);
       const statuses = [firstResult.status, secondResult.status].sort();

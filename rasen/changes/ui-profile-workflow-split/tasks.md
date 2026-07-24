@@ -1,0 +1,49 @@
+# Tasks — ui-profile-workflow-split
+
+Execution environment (LEAD-directed): implementation runs in the separate worktree `E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-profile-wt` (branch `feat/ui-profile-workflow-split` off latest origin/dev/0.1.5; delivery = PR). Before group 1: `pnpm install` at the worktree root AND inside `packages/ui` (it is NOT a workspace member — it installs independently). Baseline includes PR #53 (`init-profile-lock`, d0d7d5c1): `mode: 'locked-profile'` already exists in both wire-type mirrors; do not re-add it — this change adds `lockedProfile` (the name), the profile-switch ops, and `/api/v1/profiles`.
+
+Verification gates: after each group, run the named checks before moving on. Root-repo work is groups 1; packages/ui work is groups 2-6. Wire-type mirror discipline (design D9): every wire change edits `src/core/management-api/wire-types.ts` AND `packages/ui/src/api/types.ts` in the same task.
+
+## 1. Backend — profile HTTP API + enablement profile ops
+
+- [x] 1.1 Add `src/core/management-api/profiles.ts`: `handleProfilesRead` (GET → `{ profiles }` from `listAvailableProfiles()`, mapping `AvailableProfile` to wire shape `{ name, builtIn, workflows?, error? }`) and `handleProfileMutation` (POST ops `create` / `update` / `delete` per design D1 — in-process calls to `named-profiles.ts`: validate with `parseProfileDefinition`, persist with `saveNamedProfile` (`overwrite` only for update after an exists+non-builtin check), `deleteNamedProfile`; map `NamedProfileError.code` → 400/404/409; create/update responses return the normalized definition).
+- [x] 1.2 Wire `/api/v1/profiles` (GET+POST) into `src/core/management-api/router.ts` (KNOWN_PATHS + method dispatch, mirroring the `/api/v1/workflow-enablement` block). Add the wire types (`WireProfileEntry`, `ProfileListResponse`, `ProfileMutationRequest`, `ProfileMutationResponse`) to `src/core/management-api/wire-types.ts` AND mirror them into `packages/ui/src/api/types.ts`.
+- [x] 1.3 Extend `src/core/management-api/workflow-enablement.ts` (design D2): add `lockedProfile` to `computeEnablementResponse` (already returned by `resolveProjectWorkflowSelection`); add mutation ops `set-profile` (validate via `resolveProfileDefinition` — reject `custom`/unknown; write project `profile` key AND unset `workflows` key, then bounded `update` apply) and `clear-profile` (unset `profile` key only, then apply). Update `WorkflowEnablementResponse` / `WorkflowEnablementMutationRequest` in core wire-types AND the UI mirror in the same commit.
+- [x] 1.4 Root-repo tests: new `test/core/management-api/profiles.test.ts` (list includes built-ins + saved + broken-file error entry; create/update/delete happy paths against a temp global-config dir; reserved-name, duplicate-create, update-missing, unknown-workflow refusals; normalization returned) and extend the existing workflow-enablement tests (`lockedProfile` in read; `set-profile` writes lock + clears override + runs apply; `clear-profile` unsets lock only; `custom`/unknown refused; cap-1 busy behavior covers the new ops).
+- [x] 1.5 Gate: root repo `pnpm test -- test/core/management-api` (or the nearest existing test path pattern) green; `pnpm run build` compiles.
+
+## 2. packages/ui — API client + shared card extraction
+
+- [x] 2.1 Add `listProfiles()` / `mutateProfile()` to `packages/ui/src/api/client.ts` following the existing patterns (error mapping through `ApiError`).
+- [x] 2.2 Extract `WorkflowSection`, `WorkflowCard`, `InternalDisclosure` from `WorkflowsPage.tsx` into `packages/ui/src/components/workflow-cards.tsx`, unchanged DOM/classes/testids, with the corner switch driven by the generic optional `ToggleContext` (design D6: `stateFor(id)` → `{ checked, disabled, reason? } | null`, `onToggle`). Keep internal-kind units switchless inside the shared component.
+- [x] 2.3 Update `WorkflowsPage.tsx` to consume the shared components with NO toggle context, and delete `EnablementControls`, `WorkflowEnablementSwitch`, and the space-picker/mode-banner/reset UI (workflows-ui delta: page is library-only; existing testids for library actions unchanged).
+- [x] 2.4 Update/replace the Workflows-page tests that asserted the enablement picker/switches (they now assert their absence + library actions intact); add a test for the shared card module rendering with and without a toggle context.
+
+## 3. packages/ui — Profiles page
+
+- [x] 3.1 Add `ProfilesPage.tsx`: route `/profiles` in `app.tsx` + "Profiles" nav entry in `Layout.tsx` (space-agnostic, beside Workflows). Data: `listProfiles()` + `listWorkflows()`; profile picker (built-ins first, then saved, broken entries shown with their error); selection state.
+- [x] 3.2 Membership editor per profiles-ui spec: draft set seeded from the stored definition; shared card sections with a ToggleContext bound to the draft; dirty chip + Save/Discard; Save → `mutateProfile` update, re-seed switches from the returned normalized definition (design D5 — closure snap-back visible); built-ins read-only (no switches, no save) with "Duplicate to edit…".
+- [x] 3.3 Create dialog (name input with client-side mirror of the CLI name rules for immediate feedback, server authoritative; membership seeded from the selected profile → `create` op) and Delete confirmation (copy states locked spaces fall back to the user-wide profile on next apply).
+- [x] 3.4 New styles in `style.css` — token-only, reusing existing card/section/dialog patterns; both themes + CRT inherit automatically (no hardcoded colors).
+- [x] 3.5 jsdom tests: page lists built-ins + saved; built-in read-only; toggle → dirty → save posts draft and re-renders from normalized response; discard restores; create seeds from selection; delete confirm copy present; nav entry + route render.
+
+## 4. packages/ui — Config page changes
+
+- [x] 4.1 Default mode Global: `ConfigPage.tsx` `useState<ConfigMode>('global')`; update the design-comment; adjust existing tests that assumed Local default and add an explicit opens-on-Global test.
+- [x] 4.2 Local-mode Profile-row removal: exclude the `Profile` registry group in `tabbedEntries` when `mode === 'local'` (src/config/grouping.ts, pure function + unit tests: Local at a project space yields no General tab because `profile`/`workflows` were its only project-scope entries; Global unchanged).
+- [x] 4.3 `SpaceProfileSelector` component (design D7): rendered by ConfigPage above the group sections only when `mode === 'local' && spaceType === 'project'` and the current tab is Project. Root resolution via `listSpaces()` join on the current space; reads `getWorkflowEnablement(root)` (mode + lockedProfile) and `listProfiles()`; dropdown [Follow global profile | full | core | saved…]; `set-profile` / `clear-profile` mutations; override banner + confirm-before-replace + existing `reset` affordance; in-flight lock; CLI error surfaced verbatim with post-failure state.
+- [x] 4.4 jsdom tests: selector renders only in Local Project tab at a project space (not Global, not store spaces, not other tabs); shows locked profile name; pick → confirm flow when override present; clear-profile path; mutation error keeps state.
+
+## 5. Canvas viewport-lock fix (root cause per design D8 — verified in real Chrome)
+
+- [x] 5.1 `Layout.tsx`: shell div class becomes `app-shell${onCanvas ? ' app-shell--canvas' : ''}` (predicate unchanged).
+- [x] 5.2 `style.css`: add `.app-shell--canvas { height: 100vh; }`; rewrite `.app-content--canvas` to `max-width: none; flex: 1; min-height: 0; padding: var(--space-4) var(--gutter); display: flex; flex-direction: column; overflow: hidden;` — DELETE the `height: calc(100vh - 60px)` line (dead code under flex sizing; see design D8).
+- [x] 5.3 Tests: (a) jsdom structure — canvas route renders BOTH `app-shell--canvas` and `app-content--canvas`, non-canvas routes neither; (b) CSS contract pin — a test reading `src/style.css` asserts `.app-shell--canvas` sets `height: 100vh` and the `.app-content--canvas` block contains `min-height: 0` + `overflow: hidden` and does NOT contain `calc(100vh` (comment links the pin to this change's root-cause evidence).
+- [x] 5.4 Real-browser smoke (REQUIRED — jsdom cannot catch this bug class): build packages/ui, serve via `rasen ui` (or `vite preview` against a running management server), open a pipeline canvas editor with a populated palette in real Chrome (rasen-chrome-use/CDP preferred; else headless Chrome measurement like the planning harness at the scratchpad `canvas-repro/`), and record `document.documentElement.scrollHeight <= document.documentElement.clientHeight` on the canvas route plus normal scrolling on the Pipelines list. Save the measured numbers/screenshot to the change work dir as evidence. If no browser is available in the execution environment, mark this task blocked and hand the documented manual steps to the LEAD — do NOT tick it on jsdom evidence.
+
+## 6. Consistency + full gate
+
+- [x] 6.1 Sweep for stale references: no remaining imports/usages of the removed `EnablementControls`/`WorkflowEnablementSwitch`; Workflows-page copy no longer mentions per-space enabling; Profiles page copy points switching at Config; `spaceSection`/nav active-state handles `/profiles` like `/workflows`.
+- [x] 6.2 packages/ui gate: `pnpm run typecheck && pnpm test && pnpm run build` inside packages/ui, all green.
+- [x] 6.3 Root-repo gate: targeted test subset for touched core files (management-api router/enablement/profiles + any completions/registry snapshots that enumerate API paths), plus `pnpm run build`. Full-suite failures unrelated to this change: enumerate the complete FAIL list and isolate per file before attributing (enumerate-full-fail-list discipline).
+- [x] 6.4 Verify no version bumps, no locale-file churn beyond intentional strings, and the delta specs still validate: `node bin/rasen.js validate ui-profile-workflow-split`.

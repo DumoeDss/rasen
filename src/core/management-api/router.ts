@@ -37,6 +37,7 @@ import {
 } from './workflows.js';
 import { createWorkflowSubmitter } from './workflow-submit.js';
 import { createWorkflowEnablementSubmitter, handleWorkflowEnablementRead } from './workflow-enablement.js';
+import { handleProfileMutation, handleProfilesRead } from './profiles.js';
 import { handleListPipelines, handlePipelineCatalog, handlePipelineDetail, handlePipelineValidation } from './pipelines.js';
 import { createPipelineSubmitter } from './pipeline-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
@@ -85,6 +86,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/workflows',
   '/api/v1/workflow-validation',
   '/api/v1/workflow-enablement',
+  '/api/v1/profiles',
   '/api/v1/pipelines',
   '/api/v1/pipeline-validation',
   '/api/v1/pipeline-catalog',
@@ -206,6 +208,9 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/workflow-enablement') {
+    return method === 'GET' || method === 'POST';
+  }
+  if (pathname === '/api/v1/profiles') {
     return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/sessions') {
@@ -513,6 +518,29 @@ export function createManagementRouter(
         return;
       }
       sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/profiles' && req.method === 'GET') {
+      sendJson(res, 200, handleProfilesRead());
+      return;
+    }
+
+    if (pathname === '/api/v1/profiles' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      // In-process wrapper over `named-profiles.ts` (design D1): profile writes
+      // touch only a YAML file, so no bounded-CLI bridge or cap-1 slot is used.
+      const result = handleProfileMutation(body.value ?? {});
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, result.status, result.response);
       return;
     }
 
