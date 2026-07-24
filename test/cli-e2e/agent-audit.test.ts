@@ -5,8 +5,10 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCLI } from '../helpers/run-cli.js';
+import { buildZedDb } from '../helpers/zed-db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ZED_ROOT_ID = 'zedroot1-2222-3333-4444-555555555555';
 const FIXTURES = path.join(__dirname, '..', 'fixtures', 'token-audit');
 const CODEX_MAIN_THREAD_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 const CODEX_FORK_THREAD_ID = 'ffffffff-0000-0000-0000-000000000006';
@@ -152,5 +154,71 @@ describe('CLI: agent audit', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatch(/experimental/i);
     expect(result.stdout).toMatch(/harness/i);
+  });
+
+  // ---- Zed runtime ----
+
+  function buildZedFixture(): string {
+    const dbPath = path.join(workDir, 'threads.db');
+    buildZedDb(dbPath, [
+      {
+        id: ZED_ROOT_ID,
+        summary: 'Zed Root',
+        folderPaths: JSON.stringify(['/w/proj']),
+        createdAt: '2026-07-22T15:00:00Z',
+        updatedAt: '2026-07-22T18:00:00Z',
+        payload: {
+          version: '0.3.0',
+          model: 'opus',
+          cumulative_token_usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 900 },
+          request_token_usage: [{}, {}],
+          messages: [{ User: { content: 'audit my zed session' } }],
+        },
+      },
+    ]);
+    return dbPath;
+  }
+
+  it('analyzes a Zed session by thread id, emitting a first-class runtime:"zed" report', async () => {
+    const dbPath = buildZedFixture();
+    const outPath = path.join(workDir, 'zed.json');
+    const result = await runCLI(
+      ['agent', 'audit', ZED_ROOT_ID, '--runtime', 'zed', '--db', dbPath, '--out', outPath, '--json'],
+      { cwd: workDir }
+    );
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout.trim());
+    expect(parsed.schema).toBe('rasen-token-audit/2');
+    expect(parsed.session.runtime).toBe('zed');
+    expect(parsed.session.agentCount).toBe(1);
+    expect(parsed.totals.rawTokens.inputTokens).toBe(100);
+    expect(Array.isArray(parsed.caveats)).toBe(true);
+    expect(fs.existsSync(outPath)).toBe(true);
+  });
+
+  it('analyzes a Zed session by its first command via --match', async () => {
+    const dbPath = buildZedFixture();
+    const result = await runCLI(
+      ['agent', 'audit', '--runtime', 'zed', '--match', 'audit my zed', '--db', dbPath, '--out', path.join(workDir, 'm.json'), '--json'],
+      { cwd: workDir }
+    );
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout.trim());
+    expect(parsed.session.id).toBe(ZED_ROOT_ID);
+  });
+
+  it('exits non-zero with a friendly message when the Zed database is absent', async () => {
+    const result = await runCLI(
+      ['agent', 'audit', ZED_ROOT_ID, '--runtime', 'zed', '--db', path.join(workDir, 'no-such.db')],
+      { cwd: workDir }
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/not found or unreadable/);
+  });
+
+  it('lists zed as a runtime in --help text', async () => {
+    const result = await runCLI(['agent', 'audit', '--help'], { cwd: workDir });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/zed/i);
   });
 });
