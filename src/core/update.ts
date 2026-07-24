@@ -36,7 +36,11 @@ import {
 } from './legacy-cleanup.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type Profile, type RepoMode } from './global-config.js';
-import { getCurrentBuiltInWorkflowIds, resolveProjectWorkflowSelection } from './profiles.js';
+import {
+  getCurrentBuiltInWorkflowIds,
+  profileLockWarningToDiagnostic,
+  resolveProjectWorkflowSelection,
+} from './profiles.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { resolveProjectHome } from './project-home.js';
@@ -178,6 +182,8 @@ export class UpdateCommand {
       ids: desiredWorkflows,
       unknown: unknownProfileWorkflows,
       mode: selectionMode,
+      lockedProfile,
+      lockWarning,
     } = resolveProjectWorkflowSelection(
       catalog,
       resolvedProjectPath,
@@ -188,6 +194,17 @@ export class UpdateCommand {
     if (selectionMode === 'override') {
       console.log(
         chalk.dim('Note: this space uses its own workflow selection (project override), not the user-wide profile.')
+      );
+    }
+    if (selectionMode === 'locked-profile' && lockedProfile !== undefined) {
+      console.log(
+        chalk.dim(`Note: this project is locked to profile '${lockedProfile}' (rasen/config.yaml), not the user-wide profile.`)
+      );
+    }
+    if (lockWarning) {
+      reportConfigDiagnostic(
+        profileLockWarningToDiagnostic(lockWarning),
+        createConfigDiagnosticReporter()
       );
     }
     if (unknownProfileWorkflows.length > 0) {
@@ -265,7 +282,8 @@ export class UpdateCommand {
     const toolsNeedingConfigSync = getToolsNeedingProfileSync(
       resolvedProjectPath,
       desiredWorkflows,
-      configuredTools
+      configuredTools,
+      { expertSelectionExplicit }
     );
     const toolsToUpdateSet = new Set<string>([
       ...toolsNeedingVersionUpdate,

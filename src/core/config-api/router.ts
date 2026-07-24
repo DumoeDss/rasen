@@ -370,7 +370,7 @@ async function handlePutConfigKey(
   const keyCheck = validateWriteKey(key, scope, res);
   if (!keyCheck.ok) return;
 
-  const valueError = validateConfigValue(keyCheck.definition, value);
+  const valueError = validateConfigValue(keyCheck.definition, value, scope);
   if (valueError) {
     sendError(res, 400, 'invalid_value', valueError);
     return;

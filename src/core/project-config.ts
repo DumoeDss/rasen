@@ -87,6 +87,16 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Per-space workflow selection override (replaces the user-wide profile for this project)'),
 
+  // Optional: the project's locked profile (init-profile-lock spec). A
+  // reference by name — `full`, `core`, or a saved named profile — resolved
+  // where the selection is resolved (profiles.ts), not at parse time. A
+  // `workflows` override, when present, takes precedence over this lock.
+  profile: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("The project's locked profile: full, core, or a saved profile name"),
+
   // Optional: archive behavior configuration. Extensible - future fields
   // join this same map.
   archive: z
@@ -666,6 +676,25 @@ function parseProjectConfigContent(
           {
             key: 'invalidWorkflows',
             fallback: `Invalid 'workflows' field in config (must be an array of strings)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse profile field: an optional locked-profile name (non-empty
+    // string). The value is opaque here — whether it resolves to an
+    // available profile is decided at selection-resolution time
+    // (profiles.ts), never during config loading. Non-string or empty ->
+    // dropped with a warning; valid siblings still parse.
+    if (raw.profile !== undefined) {
+      if (typeof raw.profile === 'string' && raw.profile.length > 0) {
+        config.profile = raw.profile;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidProfile',
+            fallback: `Invalid 'profile' field in config (must be a non-empty profile name string)`,
           },
           reporter
         );

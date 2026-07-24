@@ -6,8 +6,10 @@ import { OPENSPEC_MARKERS } from '../../src/core/config.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 import type { GlobalConfig } from '../../src/core/global-config.js';
 import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../../src/core/profiles.js';
+import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import path from 'path';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
 
@@ -1309,6 +1311,105 @@ content
 
       // Running again with nothing retired left is a no-op (no error).
       await expect(updateCommand.execute(testDir)).resolves.not.toThrow();
+    });
+  });
+
+  describe('locked-profile updates (init-profile-lock)', () => {
+    let homeDir: string;
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      homeDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'rasen-update-lock-home-'));
+      originalEnv = { ...process.env };
+      process.env.RASEN_HOME = homeDir;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+      fsSync.rmSync(homeDir, { recursive: true, force: true });
+    });
+
+    it('resolves from the locked profile instead of the global profile and names the lock', async () => {
+      setMockConfig({ featureFlags: {}, profile: 'core' });
+      saveNamedProfile('team-web', { version: 1, workflows: ['explore', 'new'] });
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nprofile: team-web\n'
+      );
+
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      const consoleSpy = vi.spyOn(console, 'log');
+      await updateCommand.execute(testDir);
+
+      const calls = consoleSpy.mock.calls.map((call) => call.map((arg) => String(arg)).join(' '));
+      expect(calls.some((call) => call.includes("locked to profile 'team-web'"))).toBe(true);
+
+      // The locked selection is installed…
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-new-change', 'SKILL.md')
+      )).toBe(true);
+      // …and the global core profile does NOT govern (propose is core-only).
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-propose', 'SKILL.md')
+      )).toBe(false);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('warns and falls back to the global profile when the locked profile does not exist', async () => {
+      setMockConfig({ featureFlags: {}, profile: 'custom', workflows: ['explore'] });
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nprofile: ghost-profile\n'
+      );
+
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      const warnSpy = vi.spyOn(console, 'warn');
+      await updateCommand.execute(testDir);
+
+      const warnings = warnSpy.mock.calls.map((call) => call.map((arg) => String(arg)).join(' '));
+      expect(warnings.some((warning) => warning.includes("ghost-profile"))).toBe(true);
+
+      // Fallback applied the global custom selection (explore refreshed).
+      const refreshed = await fs.readFile(
+        path.join(skillsDir, 'rasen-explore', 'SKILL.md'),
+        'utf-8'
+      );
+      expect(refreshed).not.toBe('old');
+
+      warnSpy.mockRestore();
+    });
+
+    it('prefers a workflows override over the lock and warns about the shadowed lock', async () => {
+      setMockConfig({ featureFlags: {}, profile: 'core' });
+      saveNamedProfile('team-web', { version: 1, workflows: ['new'] });
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nprofile: team-web\nworkflows:\n  - explore\n'
+      );
+
+      const skillsDir = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsDir, 'rasen-explore'), { recursive: true });
+      await fs.writeFile(path.join(skillsDir, 'rasen-explore', 'SKILL.md'), 'old');
+
+      const warnSpy = vi.spyOn(console, 'warn');
+      await updateCommand.execute(testDir);
+
+      const warnings = warnSpy.mock.calls.map((call) => call.map((arg) => String(arg)).join(' '));
+      expect(warnings.some((warning) => warning.includes('team-web'))).toBe(true);
+
+      // The override governs: only explore is installed, not the lock's `new`.
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsDir, 'rasen-new-change', 'SKILL.md')
+      )).toBe(false);
+
+      warnSpy.mockRestore();
     });
   });
 

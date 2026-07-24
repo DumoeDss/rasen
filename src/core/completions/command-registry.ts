@@ -19,7 +19,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'profile',
-        description: 'Override global config profile (full, core, or custom)',
+        description: 'Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)',
         takesValue: true,
         values: ['full', 'core', 'custom'],
       },
@@ -647,6 +647,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         acceptsPositional: true,
         positionalType: 'profile-name',
         positionals: [{ name: 'name', type: 'profile-name', optional: true }],
+        flags: [],
+      },
+      {
+        name: 'update',
+        description: 'Edit a saved profile definition interactively',
+        acceptsPositional: true,
+        positionalType: 'saved-profile-name',
+        positionals: [{ name: 'name', type: 'saved-profile-name', optional: true }],
         flags: [],
       },
       {

@@ -181,6 +181,148 @@ describe('profile command', () => {
     }
   });
 
+  describe('update subcommand (init-profile-lock)', () => {
+    it('edits a saved definition in place without touching the current global selection', async () => {
+      saveNamedProfile('team', { version: 1, workflows: ['propose', 'apply'] });
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'core',
+        expertSelectionExplicit: true,
+      });
+      const { checkbox, confirm } = await promptMocks();
+      checkbox.mockResolvedValueOnce(['propose', 'explore']);
+      confirm.mockResolvedValueOnce(true);
+
+      await runProfileCommand(['update', 'team']);
+
+      expect(readNamedProfile('team')).toEqual({
+        version: 1,
+        workflows: ['propose', 'explore'],
+      });
+      // The user-wide selection stays as it was (definitions are snapshots).
+      expect(getGlobalConfig()).toMatchObject({ profile: 'core' });
+      expect(consoleLogSpy).toHaveBeenCalledWith('Updated profile "team". Current settings were not changed.');
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Projects locked to "team" apply the change on their next `rasen update`.')
+      );
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it('seeds the picker from the stored definition, not the current global selection', async () => {
+      saveNamedProfile('team', { version: 1, workflows: ['propose'] });
+      saveGlobalConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: ['explore', 'apply'],
+        expertSelectionExplicit: true,
+      });
+      const { checkbox } = await promptMocks();
+      // The unchanged selection short-circuits before any confirm prompt, so
+      // queue nothing on `confirm` (a leftover once-value would leak into a
+      // later test — clearAllMocks does not drop queued once-implementations).
+      checkbox.mockResolvedValueOnce(['propose']);
+
+      await runProfileCommand(['update', 'team']);
+
+      const choices = checkbox.mock.calls[0][0].choices as Array<{
+        value?: string;
+        checked?: boolean;
+      }>;
+      const checked = choices.flatMap((choice) =>
+        typeof choice.value === 'string' && choice.checked === true ? [choice.value] : []
+      );
+      expect(checked).toEqual(['propose']);
+    });
+
+    it('declining the confirmation leaves the definition file byte-identical', async () => {
+      saveNamedProfile('team', { version: 1, workflows: ['propose', 'apply'] });
+      const definitionPath = path.join(tempDir, 'profiles', 'team.yaml');
+      const before = fs.readFileSync(definitionPath, 'utf-8');
+      const { checkbox, confirm } = await promptMocks();
+      checkbox.mockResolvedValueOnce(['explore']);
+      confirm.mockResolvedValueOnce(false);
+
+      await runProfileCommand(['update', 'team']);
+
+      expect(fs.readFileSync(definitionPath, 'utf-8')).toBe(before);
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        'Profile update cancelled. No changes were saved.'
+      );
+    });
+
+    it('an unchanged selection saves nothing', async () => {
+      saveNamedProfile('team', { version: 1, workflows: ['propose'] });
+      const definitionPath = path.join(tempDir, 'profiles', 'team.yaml');
+      const before = fs.readFileSync(definitionPath, 'utf-8');
+      const { checkbox, confirm } = await promptMocks();
+      checkbox.mockResolvedValueOnce(['propose']);
+
+      await runProfileCommand(['update', 'team']);
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(fs.readFileSync(definitionPath, 'utf-8')).toBe(before);
+      expect(consoleLogSpy).toHaveBeenCalledWith('No changes to profile "team". Nothing was saved.');
+    });
+
+    it('rejects built-in and reserved names', async () => {
+      for (const reserved of ['full', 'core', 'custom']) {
+        process.exitCode = undefined;
+        await runProfileCommand(['update', reserved]);
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining(`Profile "${reserved}" is built-in or reserved and cannot be edited.`)
+        );
+        expect(process.exitCode).toBe(1);
+      }
+    });
+
+    it('fails for an unknown saved profile name', async () => {
+      await runProfileCommand(['update', 'ghost']);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('requires an interactive terminal', async () => {
+      saveNamedProfile('team', { version: 1, workflows: ['propose'] });
+      (process.stdout as unknown as { isTTY?: boolean }).isTTY = false;
+
+      await runProfileCommand(['update', 'team']);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('`rasen profile update` requires an interactive terminal.')
+      );
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('prompts among saved profiles when no name is given', async () => {
+      saveNamedProfile('team', { version: 1, workflows: ['propose'] });
+      const { select, checkbox, confirm } = await promptMocks();
+      select.mockResolvedValueOnce('team');
+      checkbox.mockResolvedValueOnce(['explore']);
+      confirm.mockResolvedValueOnce(true);
+
+      await runProfileCommand(['update']);
+
+      expect(select).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Select a profile to update:' })
+      );
+      expect(readNamedProfile('team')).toEqual({ version: 1, workflows: ['explore'] });
+    });
+
+    it('fails with no saved profiles when update is called without a name', async () => {
+      const { select } = await promptMocks();
+
+      await runProfileCommand(['update']);
+
+      expect(select).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No saved profiles are available.')
+      );
+      expect(process.exitCode).toBe(1);
+    });
+  });
+
   it('uses the opening terminal height in the current-profile editor', async () => {
     const { select, checkbox } = await promptMocks();
     const restoreRows = setStdoutRows(24);

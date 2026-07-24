@@ -49,7 +49,7 @@ export function serializeConfigEntry(entry: EffectiveConfigEntry): WireConfigEnt
   for (const scope of ['global', 'store', 'project'] as const) {
     const scopeValue = entry.scopeValues[scope];
     if (scopeValue === undefined || !definition.scopes.includes(scope)) continue;
-    const error = validateConfigValue(definition, scopeValue);
+    const error = validateConfigValue(definition, scopeValue, scope);
     if (error) {
       warnings.push(`Invalid ${scope} value on disk for "${definition.key}": ${error}`);
     }

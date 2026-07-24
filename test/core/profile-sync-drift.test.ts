@@ -7,6 +7,7 @@ import {
   WORKFLOW_TO_SKILL_DIR,
 } from '../../src/core/profile-sync-drift.js';
 import { ALL_WORKFLOWS, CORE_WORKFLOWS } from '../../src/core/profiles.js';
+import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import { InitCommand } from '../../src/core/init.js';
 import { getGlobalConfig, saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveCurrentProfileState } from '../../src/commands/profile-editor.js';
@@ -111,6 +112,64 @@ describe('profile sync drift detection', () => {
 
     const hasDrift = hasProjectConfigDrift(tempDir, ALL_WORKFLOWS);
     expect(hasDrift).toBe(false);
+  });
+});
+
+describe('profile sync drift detection with a project profile lock (init-profile-lock)', () => {
+  const LOCKED_WORKFLOWS = ['propose', 'explore'];
+
+  let tempDir: string;
+  let homeDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-drift-lock-project-'));
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-drift-lock-home-'));
+    originalEnv = { ...process.env };
+    process.env.RASEN_HOME = homeDir;
+    fs.mkdirSync(path.join(tempDir, 'rasen'), { recursive: true });
+    saveNamedProfile('teamdrift', { version: 1, workflows: [...LOCKED_WORKFLOWS] });
+    fs.writeFileSync(
+      path.join(tempDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprofile: teamdrift\n'
+    );
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('reports no drift when the installed set matches the locked profile closure while the passed (global) selection differs', () => {
+    for (const workflow of LOCKED_WORKFLOWS) {
+      writeSkill(tempDir, workflow);
+    }
+    setupClosureExperts(tempDir, LOCKED_WORKFLOWS);
+
+    // The caller passes the user-wide core selection; the lock must win.
+    expect(hasProjectConfigDrift(tempDir, CORE_WORKFLOWS)).toBe(false);
+  });
+
+  it('still reports drift against the locked profile when an extra workflow is installed', () => {
+    for (const workflow of LOCKED_WORKFLOWS) {
+      writeSkill(tempDir, workflow);
+    }
+    setupClosureExperts(tempDir, LOCKED_WORKFLOWS);
+    writeSkill(tempDir, 'new');
+
+    expect(hasProjectConfigDrift(tempDir, CORE_WORKFLOWS)).toBe(true);
+  });
+
+  it('falls back to the passed selection when the locked profile does not exist', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprofile: no-such-profile\n'
+    );
+    setupCoreSkills(tempDir);
+    setupClosureExperts(tempDir, CORE_WORKFLOWS);
+
+    expect(hasProjectConfigDrift(tempDir, CORE_WORKFLOWS)).toBe(false);
   });
 });
 

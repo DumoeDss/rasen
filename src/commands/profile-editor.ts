@@ -16,6 +16,7 @@ import {
 import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
 import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/shared/retired-command-paths.js';
+import { resolveExpertSelectionExplicitReadOnly } from '../core/expert-selection-state.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
 import { readProjectConfig } from '../core/project-config.js';
 import {
@@ -299,20 +300,30 @@ export async function promptForNewProfileState(currentState: ProfileState): Prom
   };
 }
 
-function maybeWarnProjectConfigDrift(
+async function maybeWarnProjectConfigDrift(
   projectDir: string,
   state: ProfileState,
   colorize: (message: string) => string
-): void {
+): Promise<void> {
   const openspecDir = path.join(projectDir, OPENSPEC_DIR_NAME);
   if (!fs.existsSync(openspecDir)) return;
-  if (!hasProjectConfigDrift(projectDir, state.workflows)) return;
+  const expertSelectionExplicit = await resolveExpertSelectionExplicitReadOnly(projectDir);
+  if (!hasProjectConfigDrift(projectDir, state.workflows, { expertSelectionExplicit })) return;
   // A project carrying its own `workflows` override (space-workflow-enablement)
-  // intentionally differs from the user-wide profile — name the override
-  // instead of reporting it as unapplied global config (design.md D3/spec).
-  const hasOverride = readProjectConfig(projectDir)?.workflows !== undefined;
+  // or a `profile` lock (init-profile-lock) intentionally differs from the
+  // user-wide profile — name the override or lock instead of reporting it as
+  // unapplied global config (design.md D3/spec).
+  const projectConfig = readProjectConfig(projectDir);
   const messages = getProfileUiMessages();
-  console.log(colorize(hasOverride ? messages.driftWarningOverride : messages.driftWarning));
+  if (projectConfig?.workflows !== undefined) {
+    console.log(colorize(messages.driftWarningOverride));
+    return;
+  }
+  if (projectConfig?.profile !== undefined) {
+    console.log(colorize(messages.driftWarningLocked(projectConfig.profile)));
+    return;
+  }
+  console.log(colorize(messages.driftWarning));
 }
 
 export function printProfileApplyGuidance(): void {
@@ -408,7 +419,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
 
     if (action === 'keep') {
       console.log(ui.noConfigChanges);
-      maybeWarnProjectConfigDrift(process.cwd(), currentState, chalk.yellow);
+      await maybeWarnProjectConfigDrift(process.cwd(), currentState, chalk.yellow);
       return;
     }
 
@@ -426,7 +437,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     const diff = diffProfileState(currentState, nextState);
     if (!diff.hasChanges) {
       console.log(ui.noConfigChanges);
-      maybeWarnProjectConfigDrift(process.cwd(), nextState, chalk.yellow);
+      await maybeWarnProjectConfigDrift(process.cwd(), nextState, chalk.yellow);
       return;
     }
 

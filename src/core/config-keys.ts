@@ -14,7 +14,11 @@
  * silently diverge.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
+import { getGlobalConfigDir } from './global-config.js';
 
 export type ConfigScope = 'global' | 'store' | 'project';
 /**
@@ -39,6 +43,14 @@ export interface ConfigKeyDefinition {
   type: ConfigValueType;
   /** Allowed values, required when type is 'enum'. */
   enumValues?: readonly string[];
+  /**
+   * Scope-dependent allowed values for an 'enum' key whose value set differs
+   * per scope (e.g. `profile`: global keeps full/core/custom, project accepts
+   * full/core or a saved profile name). Callers that know the write scope
+   * pass it to `validateConfigValue`; without a scope the static
+   * `enumValues` govern, preserving the historical (global) behavior.
+   */
+  enumValuesForScope?: (scope: ConfigScope) => readonly string[];
   /** Extra constraint beyond the type check, e.g. a numeric range. Returns an error message, or null when valid. */
   validate?: (value: unknown) => string | null;
   /** Built-in default (display + resolution). */
@@ -127,15 +139,46 @@ function validateModelId(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Names of the saved profile definitions on this machine
+ * (`<global-config-dir>/profiles/*.yaml`). Listed locally instead of through
+ * `named-profiles.ts` so this registry does not pull in that module's whole
+ * workflow graph (a static-import cycle risk); keep the name pattern in sync
+ * with `PROFILE_NAME_PATTERN` / `RESERVED_PROFILE_NAMES` there.
+ */
+function listSavedProfileNames(): string[] {
+  try {
+    return fs
+      .readdirSync(path.join(getGlobalConfigDir(), 'profiles'), { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.yaml'))
+      .map((entry) => path.basename(entry.name, '.yaml'))
+      .filter(
+        (name) =>
+          /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) && !['full', 'core', 'custom'].includes(name)
+      )
+      .sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
+  }
+}
+
 export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   // ---- global scope ----
   {
     key: 'profile',
-    scopes: ['global'],
+    scopes: ['global', 'project'],
     type: 'enum',
     enumValues: ['full', 'core', 'custom'],
+    // Project scope is the locked profile (init-profile-lock spec): `custom`
+    // has no stable referent and cannot be locked, while a saved profile
+    // name can; global scope keeps its historical three values.
+    enumValuesForScope: (scope) =>
+      scope === 'project'
+        ? ['full', 'core', ...listSavedProfileNames()]
+        : ['full', 'core', 'custom'],
     defaultValue: 'full',
-    description: 'Workflow profile controlling which actions are available',
+    description:
+      'Workflow profile (global: the user-wide profile; project: the locked profile — full, core, or a saved profile name)',
     group: 'Profile',
   },
   {
@@ -645,11 +688,33 @@ export function validateConfigKeyPath(
 }
 
 /**
+ * The enum values in effect for a definition in `scope` — the scope-dependent
+ * set when the entry declares one and the caller knows the scope, otherwise
+ * the static `enumValues`. Exposed so editors can render scope-accurate
+ * choices from the same source validation uses.
+ */
+export function resolveEnumValues(
+  definition: ConfigKeyDefinition,
+  scope?: ConfigScope
+): readonly string[] | undefined {
+  if (scope !== undefined && definition.enumValuesForScope) {
+    return definition.enumValuesForScope(scope);
+  }
+  return definition.enumValues;
+}
+
+/**
  * Validate a coerced value against a registry entry's declared type and any
  * extra constraint. Returns an error message naming the constraint, or null
- * when the value is valid.
+ * when the value is valid. Pass `scope` when known so enum keys with
+ * scope-dependent value sets (see `enumValuesForScope`) validate against the
+ * right set.
  */
-export function validateConfigValue(definition: ConfigKeyDefinition, value: unknown): string | null {
+export function validateConfigValue(
+  definition: ConfigKeyDefinition,
+  value: unknown,
+  scope?: ConfigScope
+): string | null {
   switch (definition.type) {
     case 'boolean':
       if (typeof value !== 'boolean') {
@@ -671,11 +736,17 @@ export function validateConfigValue(definition: ConfigKeyDefinition, value: unkn
         return `${definition.key} must be an array`;
       }
       break;
-    case 'enum':
-      if (typeof value !== 'string' || !definition.enumValues?.includes(value)) {
-        return `${definition.key} must be one of: ${definition.enumValues?.join(', ') ?? ''}`;
+    case 'enum': {
+      const enumValues = resolveEnumValues(definition, scope);
+      if (typeof value !== 'string' || !enumValues?.includes(value)) {
+        // Name the rejected value when it is a string so the user sees what
+        // was refused (e.g. an unknown project-scope profile name), not just
+        // the allowed set (config-key-registry spec).
+        const received = typeof value === 'string' ? `"${value}" ` : '';
+        return `${definition.key} ${received}must be one of: ${enumValues?.join(', ') ?? ''}`;
       }
       break;
+    }
   }
 
   if (definition.validate) {

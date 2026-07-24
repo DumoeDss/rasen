@@ -21,6 +21,7 @@ import {
 import {
   findConfigKeyDefinition,
   findWildcardDefinition,
+  resolveEnumValues,
   validateConfigValue,
   RETIRED_CONFIG_KEYS,
   type ConfigScope,
@@ -257,7 +258,7 @@ async function editConfigEntry(
   } else if (definition.type === 'enum') {
     rawValue = await inquirer.select<string>({
       message: `${definition.key}:`,
-      choices: (definition.enumValues ?? []).map((v) => ({ value: v, name: v })),
+      choices: (resolveEnumValues(definition, scope) ?? []).map((v) => ({ value: v, name: v })),
     });
   } else if (definition.type === 'threshold') {
     // Dual-form: a bare fraction ("0.6") or the absolute object form
@@ -266,7 +267,7 @@ async function editConfigEntry(
     const answer = await inquirer.input({
       message: ui.thresholdPrompt(definition.key),
       validate: (raw: string) => {
-        const error = validateConfigValue(definition, coerceValue(raw));
+        const error = validateConfigValue(definition, coerceValue(raw), scope);
         return error ?? true;
       },
     });
@@ -276,14 +277,14 @@ async function editConfigEntry(
       message: `${definition.key} (${definition.type}):`,
       validate: (raw: string) => {
         const coerced = definition.type === 'number' ? Number(raw) : raw;
-        const error = validateConfigValue(definition, coerced);
+        const error = validateConfigValue(definition, coerced, scope);
         return error ?? true;
       },
     });
     rawValue = definition.type === 'number' ? Number(answer) : answer;
   }
 
-  const valueError = validateConfigValue(definition, rawValue);
+  const valueError = validateConfigValue(definition, rawValue, scope);
   if (valueError) {
     console.error(chalk.red(`${ui.errorPrefix} ${valueError}`));
     return;
@@ -621,7 +622,7 @@ export function registerConfigCommand(program: Command): void {
             const definition =
               findConfigKeyDefinition(key, scope) ?? findWildcardDefinition(key, scope);
             if (definition) {
-              const valueError = validateConfigValue(definition, coercedValue);
+              const valueError = validateConfigValue(definition, coercedValue, scope);
               if (valueError) {
                 console.error(messages.errorWithDetail(valueError));
                 process.exitCode = 1;

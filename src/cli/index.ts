@@ -167,7 +167,7 @@ program
   .description('Initialize Rasen in your project')
   .option('--tools <tools>', toolsOptionDescription)
   .option('--force', 'Auto-cleanup legacy files without prompting')
-  .option('--profile <profile>', 'Override global config profile (full, core, or custom)')
+  .option('--profile <profile>', 'Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)')
   .action(async (targetPath = '.', options?: { tools?: string; force?: boolean; profile?: string }) => {
     try {
       // Validate that the path is a valid directory

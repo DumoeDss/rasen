@@ -38,10 +38,19 @@ export interface ProfileUiMessages {
   profileNamePrompt: string;
   selectProfileToUse: string;
   selectProfileToDelete: string;
+  selectProfileToUpdate: string;
   profileSource: (builtIn: boolean) => string;
   workflowCount: (count: number) => string;
   usingProfile: (name: string) => string;
   profileNewRequiresTty: string;
+  profileUpdateRequiresTty: string;
+  profileCannotUpdate: (name: string) => string;
+  updatingProfile: (name: string) => string;
+  saveProfileChanges: (name: string) => string;
+  profileUpdateCancelled: string;
+  profileUpdateNoChanges: (name: string) => string;
+  profileUpdated: (name: string) => string;
+  profileUpdatedGuidance: (name: string) => string;
   newProfile: (name: string) => string;
   usesCurrentSettings: string;
   saveAndUseProfile: (name: string) => string;
@@ -75,6 +84,7 @@ export interface ProfileUiMessages {
   noConfigChanges: string;
   driftWarning: string;
   driftWarningOverride: string;
+  driftWarningLocked: (name: string) => string;
   profileChangesHeading: string;
   applyToProject: string;
   updateOtherProjects: string;
@@ -110,6 +120,13 @@ export function getProfileUiMessages(locale: CliLocale = getCliLocale()): Profil
       builtIn ? raw.profileSourceBuiltIn : raw.profileSourceSaved,
     workflowCount: (count) => format(raw.workflowCount, { count }),
     usingProfile: (name) => format(raw.usingProfile, { name }),
+    profileCannotUpdate: (name) => format(raw.profileCannotUpdate, { name }),
+    updatingProfile: (name) => format(raw.updatingProfile, { name }),
+    saveProfileChanges: (name) => format(raw.saveProfileChanges, { name }),
+    profileUpdateNoChanges: (name) => format(raw.profileUpdateNoChanges, { name }),
+    profileUpdated: (name) => format(raw.profileUpdated, { name }),
+    profileUpdatedGuidance: (name) => format(raw.profileUpdatedGuidance, { name }),
+    driftWarningLocked: (name) => format(raw.driftWarningLocked, { name }),
     newProfile: (name) => format(raw.newProfile, { name }),
     saveAndUseProfile: (name) => format(raw.saveAndUseProfile, { name }),
     profileCreated: (name) => format(raw.profileCreated, { name }),

@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import {
   CONFIG_KEY_REGISTRY,
@@ -10,6 +13,7 @@ import {
   validateConfigValue,
 } from '../../src/core/config-keys.js';
 import { GlobalConfigSchema } from '../../src/core/config-schema.js';
+import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import { ProjectConfigSchema } from '../../src/core/project-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
 
@@ -49,6 +53,11 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('workflows', 'project').valid).toBe(true);
       expect(projectResult).toBeNull();
       expect(validateConfigKeyPath('workflows', 'store').valid).toBe(false);
+    });
+
+    it('accepts profile at project scope and rejects it at store scope (init-profile-lock)', () => {
+      expect(validateConfigKeyPath('profile', 'project').valid).toBe(true);
+      expect(validateConfigKeyPath('profile', 'store').valid).toBe(false);
     });
 
     it('rejects a global-only key at project scope', () => {
@@ -206,8 +215,64 @@ describe('config-keys registry', () => {
     });
   });
 
+  describe('profile key per-scope values (init-profile-lock)', () => {
+    let tempDir: string;
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-keys-profile-'));
+      originalEnv = { ...process.env };
+      process.env.RASEN_HOME = tempDir;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('global scope keeps full/core/custom and rejects a saved profile name', () => {
+      saveNamedProfile('team-web', { version: 1, workflows: ['propose'] });
+      const def = findConfigKeyDefinition('profile', 'global')!;
+      for (const value of ['full', 'core', 'custom']) {
+        expect(validateConfigValue(def, value, 'global')).toBeNull();
+      }
+      expect(validateConfigValue(def, 'team-web', 'global')).toContain('must be one of');
+    });
+
+    it('project scope accepts full, core, and a saved profile name', () => {
+      saveNamedProfile('team-web', { version: 1, workflows: ['propose'] });
+      const def = findConfigKeyDefinition('profile', 'project')!;
+      for (const value of ['full', 'core', 'team-web']) {
+        expect(validateConfigValue(def, value, 'project')).toBeNull();
+      }
+    });
+
+    it('project scope rejects custom and an unknown name, naming the value and listing the available profiles', () => {
+      saveNamedProfile('team-web', { version: 1, workflows: ['propose'] });
+      const def = findConfigKeyDefinition('profile', 'project')!;
+
+      const customError = validateConfigValue(def, 'custom', 'project');
+      expect(customError).toContain('must be one of');
+      expect(customError).toContain('"custom"'); // names the rejected value
+      expect(customError).toContain('team-web');
+      expect(customError).not.toContain('custom,'); // custom is not an allowed project value
+
+      // The unknown-name rejection names the offending value AND lists the
+      // available profiles (config-key-registry spec).
+      const unknownError = validateConfigValue(def, 'no-such-profile', 'project');
+      expect(unknownError).toContain('must be one of');
+      expect(unknownError).toContain('"no-such-profile"');
+      expect(unknownError).toContain('team-web');
+    });
+
+    it('scope-less validation keeps the historical global enum', () => {
+      const def = findConfigKeyDefinition('profile', 'global')!;
+      expect(validateConfigValue(def, 'custom')).toBeNull();
+    });
+  });
+
   describe('scope assignment', () => {
-    it('assigns exactly 9 global-only, 1 global+project, 3 store+project, and 14 all-three keys', () => {
+    it('assigns exactly 8 global-only, 2 global+project, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -216,19 +281,20 @@ describe('config-keys registry', () => {
       const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
 
       // Guards a future key from silently missing the store scope.
-      // 9 = the 6 machine-level keys from the store-scope re-scope plus
+      // 8 = the machine-level keys from the store-scope re-scope plus
       // ui.pinnedSpaces (spaces-page pins, deliberately global-only) plus the
       // 3 keepalive keys (runtimes.claude/codex + contextFloor — machine-level
       // gates for `rasen agent wait`, deliberately global-only) — `delivery`
-      // was retired from this bucket, and `workflows` moved to global+project
-      // (space-workflow-enablement).
-      expect(globalOnly.length).toBe(9);
-      expect(globalProject.length).toBe(1);
-      expect(globalProject[0].key).toBe('workflows');
+      // was retired from this bucket, `workflows` moved to global+project
+      // (space-workflow-enablement), and `profile` moved to global+project
+      // (init-profile-lock: a project-scope value is the locked profile).
+      expect(globalOnly.length).toBe(8);
+      expect(globalProject.length).toBe(2);
+      expect(globalProject.map((def) => def.key).sort()).toEqual(['profile', 'workflows']);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
-      // Five wildcard families: featureFlags (global-only, the 9th global-only
-      // key) plus the four all-three-scope pipelines.* families
+      // Five wildcard families: featureFlags (the sole global-only wildcard)
+      // plus the four all-three-scope pipelines.* families
       // (gates/models/handoff per stage, runtimes per role).
       const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);
       expect(wildcards.length).toBe(5);
