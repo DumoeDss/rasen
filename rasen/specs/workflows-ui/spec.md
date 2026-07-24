@@ -2,9 +2,7 @@
 
 ## Purpose
 Provide a space-agnostic `/workflows` page in the management web UI for browsing and managing the user-wide installable workflow library — listing, detail, and CLI-backed mutation (init, validate, import, export, delete) — through the workflow-http-api endpoints, using the application's existing visual idioms.
-
 ## Requirements
-
 ### Requirement: A Workflows page lists the installable library in category sections
 
 The web UI SHALL provide a `/workflows` route — space-agnostic, carrying no space prefix, because the workflow library is user-wide — reachable from a header navigation entry that renders whether or not a planning space is resolved. The page SHALL present every catalog unit from the workflow listing endpoint in category sections, in the order: **driver**, **task**, **expert**. The driver section SHALL carry a disclosure, collapsed by default, that reveals the library's **internal** workflows — internal units are driver plumbing, so they live inside the driver section rather than as a fourth top-level section. A category with no workflows SHALL render no section, and the internal disclosure appears only when internal workflows exist. Each card SHALL show the workflow's id, its author-declared display title when the workflow declares one (falling back to the skill name when it declares none — the same fallback rule the CLI's own profile picker applies to the same field), source (built-in or user), an abbreviated digest, and the unused marker on user workflows the library detects no consumer for — the enclosing section conveys the workflow's category, so cards carry no category label of their own. Invalid user entries (when present) SHALL remain in their own section with their diagnostics. A workflow's dependency slots are shown in the detail view rather than on the card, because the listing endpoint mirrors `rasen workflow list --json`, which carries no dependency data. The page SHALL use the application's existing visual idioms without introducing a new visual language.
@@ -103,52 +101,29 @@ Built-in workflows SHALL present no delete affordance — the lock is visible on
 
 ### Requirement: The page manages the library only
 
-The Workflows page SHALL NOT offer model, handoff, or gate controls — a workflow definition carries no such field, and per-stage runtime configuration belongs to the pipeline surface. The page SHALL NOT present pipelines as workflows or merge the two concepts.
+The Workflows page SHALL NOT offer model, handoff, or gate controls — a workflow definition carries no such field, and per-stage runtime configuration belongs to the pipeline surface. The page SHALL NOT present pipelines as workflows or merge the two concepts. The page SHALL NOT offer per-space enablement or profile-membership editing — it is the library's viewing and management surface only (list, detail, init, import, validate, export, delete); selection lives on the Profiles page and each space's Config page.
 
 #### Scenario: No runtime controls on the workflow surface
 
 - **WHEN** the user explores a workflow's card and detail view
 - **THEN** no model, handoff, or gate setting is offered anywhere on the page
 
-### Requirement: The page offers per-space workflow enablement
+#### Scenario: Library management actions remain complete
 
-The Workflows page SHALL let the user pick one of their spaces and, with a space picked, show each workflow card's enabled state in that space and a toggle to enable or disable it there — performed through the per-space enablement endpoints, never by the browser touching the filesystem. Toggling SHALL affect only the picked space. The page SHALL state visibly whether the picked space follows the user-wide profile or its own selection; a space using its own selection SHALL offer a reset back to the user-wide profile behind an explicit confirmation, since resetting discards the space's own list. Units the library manages automatically carry no toggle: internal workflows, invalid entries, and units enabled only because an enabled workflow's dependency closure requires them (the card says the unit is required by an enabled workflow instead of offering a disable that the apply would immediately undo). While an enablement mutation is in flight the page SHALL prevent submitting another, and every failure SHALL show the CLI's own error message verbatim. With no space picked, the page remains exactly the user-wide library manager it is today.
+- **WHEN** the user works the Workflows page after the responsibility split
+- **THEN** listing, detail, New draft, Import, Validate, Export, and Delete all remain available exactly as before
 
-#### Scenario: Toggle enables a workflow in the picked space only
+### Requirement: Workflow cards share a uniform anatomy
 
-- **WHEN** the user picks a space and enables a workflow that was disabled there
-- **THEN** the card reflects the enabled and installed state from the server's post-apply response, and no other space's state is changed
-
-#### Scenario: Override state is visible with a reset
-
-- **WHEN** the picked space carries its own selection override
-- **THEN** the page states the space uses its own selection and offers a reset to the user-wide profile, which takes effect only after an explicit confirmation
-
-#### Scenario: Closure-required unit offers no disable
-
-- **WHEN** the picked space has a workflow enabled whose closure requires an expert
-- **THEN** that expert's card shows it is required by an enabled workflow and offers no disable toggle
-
-#### Scenario: No space picked keeps today's page
-
-- **WHEN** the user has not picked a space
-- **THEN** the page shows the user-wide library with its existing management actions and no enablement toggles
-
-### Requirement: Workflow cards share a uniform anatomy with a corner enablement switch
-
-Workflow cards SHALL share one uniform anatomy: equal card sizes within a section's grid (content differences never producing ragged card heights in a row), a fixed slot order — title and id, metadata badges, actions pinned to a consistent footer position — and, when a space is picked for enablement, the per-space enable/disable control rendered as a switch in the card's top-right corner rather than a labeled button crowded against the state text. The enabled/installed state SHALL read as quiet metadata, not as a competing text line. A unit that cannot be toggled (required by an enabled workflow's dependency closure) SHALL show its switch-position affordance visibly inert with the reason available, preserving the existing no-toggle contract. Library actions on a card (export, delete) SHALL render as quiet actions in the card footer.
+Workflow cards SHALL share one uniform anatomy: equal card sizes within a section's grid (content differences never producing ragged card heights in a row) and a fixed slot order — title and id, metadata badges, actions pinned to a consistent footer position, with library actions (export, delete) rendered as quiet footer actions. The sectioned card presentation (category sections, internal-plumbing disclosure, uniform cards with an optional corner-switch slot) SHALL be a single shared presentation used by both the Workflows page and the Profiles page, so the two surfaces cannot drift apart; on the Workflows page the switch slot stays empty.
 
 #### Scenario: Cards render uniformly despite differing content
 
 - **WHEN** a section's grid renders workflow cards whose titles, ids, and badges differ in length
 - **THEN** the cards in each row share equal heights with title, metadata, and actions in the same positions on every card
 
-#### Scenario: Enablement is a corner switch
+#### Scenario: No enablement switches on the Workflows page
 
-- **WHEN** the user picks a space and views a toggleable workflow card
-- **THEN** the card shows a switch in its top-right corner reflecting the enabled state, and operating the switch performs the same per-space enable/disable as before
+- **WHEN** the user browses the Workflows page
+- **THEN** no card offers an enable/disable switch and no space picker is present
 
-#### Scenario: Closure-required unit shows an inert control
-
-- **WHEN** the picked space requires a unit through an enabled workflow's dependency closure
-- **THEN** that card's switch position shows a visibly inert control with the required-by reason available, and no toggle is possible
