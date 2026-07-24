@@ -151,17 +151,19 @@ describe('profile command', () => {
   });
 
   it('creates, saves, and selects a named profile within a short terminal', async () => {
-    const { checkbox, confirm } = await promptMocks();
+    const { select, checkbox, confirm } = await promptMocks();
     const restoreRows = setStdoutRows(12);
     checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(true);
 
     try {
       await runProfileCommand(['new', 'team']);
 
       expect(readNamedProfile('team')).toEqual({
-        version: 1,
+        version: 2,
         workflows: ['propose', 'explore'],
+        retention: 'off',
       });
       expect(getGlobalConfig()).toMatchObject({
         profile: 'custom',
@@ -189,15 +191,17 @@ describe('profile command', () => {
         profile: 'core',
         expertSelectionExplicit: true,
       });
-      const { checkbox, confirm } = await promptMocks();
+      const { select, checkbox, confirm } = await promptMocks();
       checkbox.mockResolvedValueOnce(['propose', 'explore']);
+      select.mockResolvedValueOnce('off');
       confirm.mockResolvedValueOnce(true);
 
       await runProfileCommand(['update', 'team']);
 
       expect(readNamedProfile('team')).toEqual({
-        version: 1,
+        version: 2,
         workflows: ['propose', 'explore'],
+        retention: 'off',
       });
       // The user-wide selection stays as it was (definitions are snapshots).
       expect(getGlobalConfig()).toMatchObject({ profile: 'core' });
@@ -254,8 +258,9 @@ describe('profile command', () => {
       saveNamedProfile('team', { version: 1, workflows: ['propose'] });
       const definitionPath = path.join(tempDir, 'profiles', 'team.yaml');
       const before = fs.readFileSync(definitionPath, 'utf-8');
-      const { checkbox, confirm } = await promptMocks();
+      const { select, checkbox, confirm } = await promptMocks();
       checkbox.mockResolvedValueOnce(['propose']);
+      select.mockResolvedValueOnce('off');
 
       await runProfileCommand(['update', 'team']);
 
@@ -298,8 +303,11 @@ describe('profile command', () => {
     it('prompts among saved profiles when no name is given', async () => {
       saveNamedProfile('team', { version: 1, workflows: ['propose'] });
       const { select, checkbox, confirm } = await promptMocks();
+      // The name chooser and the retention radio are both `select` prompts,
+      // in that order.
       select.mockResolvedValueOnce('team');
       checkbox.mockResolvedValueOnce(['explore']);
+      select.mockResolvedValueOnce('off');
       confirm.mockResolvedValueOnce(true);
 
       await runProfileCommand(['update']);
@@ -307,7 +315,11 @@ describe('profile command', () => {
       expect(select).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Select a profile to update:' })
       );
-      expect(readNamedProfile('team')).toEqual({ version: 1, workflows: ['explore'] });
+      expect(readNamedProfile('team')).toEqual({
+        version: 2,
+        workflows: ['explore'],
+        retention: 'off',
+      });
     });
 
     it('fails with no saved profiles when update is called without a name', async () => {
@@ -372,15 +384,20 @@ describe('profile command', () => {
     }
   });
 
-  it('uses the Japanese workflow picker when creating a profile (no delivery prompt)', async () => {
+  it('uses the Japanese workflow picker and retention radio when creating a profile (delivery retired)', async () => {
     const { select, checkbox, confirm } = await promptMocks();
     process.env.RASEN_LANG = 'ja';
     checkbox.mockResolvedValueOnce(['propose']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(false);
 
     await runProfileCommand(['new', 'team']);
 
-    expect(select).not.toHaveBeenCalled();
+    // Delivery is retired; the only non-checkbox profile prompt is the
+    // localized retention radio.
+    expect(select).toHaveBeenCalledWith(
+      expect.objectContaining({ message: '保持ポリシー（ship の後、archive の前に実行）:' })
+    );
     expect(checkbox).toHaveBeenCalledWith(
       expect.objectContaining({
         message: '利用可能にするワークフローを選択:',
@@ -405,11 +422,14 @@ describe('profile command', () => {
     const { select, checkbox, confirm } = await promptMocks();
     process.env.RASEN_LANG = 'zh-cn';
     checkbox.mockResolvedValueOnce(['propose']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(false);
 
     await runProfileCommand(['new', 'team']);
 
-    expect(select).not.toHaveBeenCalled();
+    expect(select).toHaveBeenCalledWith(
+      expect.objectContaining({ message: '保留策略（在 ship 之后、archive 之前运行）：' })
+    );
     expect(checkbox).toHaveBeenCalledWith(
       expect.objectContaining({
         message: '选择要启用的工作流：',
@@ -440,9 +460,10 @@ describe('profile command', () => {
       version: 1,
       workflows: ['propose'],
     });
-    const { input, checkbox, confirm } = await promptMocks();
+    const { input, select, checkbox, confirm } = await promptMocks();
     input.mockResolvedValueOnce('fresh');
     checkbox.mockResolvedValueOnce(['propose']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(true);
 
     await runProfileCommand(['new']);
@@ -747,7 +768,7 @@ describe('profile command', () => {
     fs.mkdirSync(profilesDir, { recursive: true });
     fs.writeFileSync(
       path.join(profilesDir, 'broken.yaml'),
-      'version: 2\ndelivery: both\nworkflows: [propose]\n',
+      'version: 9\nworkflows: [propose]\n',
       'utf-8'
     );
     const { select } = await promptMocks();
@@ -761,7 +782,7 @@ describe('profile command', () => {
     }>;
     const broken = choices.find((choice) => choice.value === 'broken');
     expect(broken?.description).toContain('broken.yamlが無効です:');
-    expect(broken?.description).toContain('version:');
+    expect(broken?.description).toContain('version');
   });
 
   it('imports without applying and exports a selected saved profile', async () => {
@@ -784,8 +805,9 @@ describe('profile command', () => {
     const destinationPath = path.join(tempDir, 'exported.json');
     await runProfileCommand(['export', destinationPath, '--profile', 'shared']);
     expect(JSON.parse(fs.readFileSync(destinationPath, 'utf-8'))).toEqual({
-      version: 1,
+      version: 2,
       workflows: ['propose'],
+      retention: 'off',
     });
   });
 

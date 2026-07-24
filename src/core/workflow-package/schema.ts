@@ -26,15 +26,28 @@ export const PackagedWorkflowSchema = z.strictObject({
   files: z.array(PackageFileSchema),
 });
 
-export const PackagedProfileSchema = z.strictObject({
+// A version-1 packaged profile (no retention). The `delivery` dimension is
+// retired (skills are the only delivery surface now): accepted-but-ignored so
+// a `.rasenpkg` produced by an older rasen release still decodes without error.
+// A package created going forward is always version 2.
+const PackagedProfileV1Schema = z.strictObject({
   version: z.literal(1),
-  // The `delivery` dimension is retired (skills are the only delivery
-  // surface now). Accepted-but-ignored so a `.rasenpkg` package produced by
-  // an older rasen release still decodes without error; never re-emitted by
-  // a package created going forward.
   delivery: z.unknown().optional(),
   workflows: z.array(z.string()),
 });
+
+// The current version-2 packaged profile: workflow/expert selection plus
+// exactly one retention mode, so retention survives an export/import round trip.
+const PackagedProfileV2Schema = z.strictObject({
+  version: z.literal(2),
+  workflows: z.array(z.string()),
+  retention: z.enum(['off', 'report', 'codify']),
+});
+
+export const PackagedProfileSchema = z.discriminatedUnion('version', [
+  PackagedProfileV1Schema,
+  PackagedProfileV2Schema,
+]);
 
 export const PackagedPipelineSchema = z.strictObject({
   name: z.string(),

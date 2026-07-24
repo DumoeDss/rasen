@@ -384,7 +384,22 @@
         }
       },
       "workflowsGroupLabel": "-- ワークフロー --",
-      "expertsGroupLabel": "-- エキスパート --"
+      "expertsGroupLabel": "-- エキスパート --",
+      "retentionPickerMessage": "保持ポリシー（ship の後、archive の前に実行）:",
+      "retention": {
+        "off": {
+          "name": "off",
+          "description": "保持ステップなし — ship 後に何も書き込みません。"
+        },
+        "report": {
+          "name": "report",
+          "description": "変更の振り返りレポートを書き出します（従来の retro の動作）。"
+        },
+        "codify": {
+          "name": "codify",
+          "description": "変更を評価して管理対象の学習スキルを作成・書き換え・廃止、または何もしません。"
+        }
+      }
     },
     "ui": {
       "errorPrefix": "エラー:",
@@ -465,7 +480,14 @@
       "diffWorkflowsAdded": "ワークフロー: 追加 {items}",
       "diffWorkflowsRemoved": "ワークフロー: 削除 {items}",
       "diffWorkflowsBoth": "ワークフロー: 追加 {added}、削除 {removed}",
-      "diffWorkflowsEmpty": "ワークフロー: "
+      "diffWorkflowsEmpty": "ワークフロー: ",
+      "retentionLabel": "保持",
+      "retentionModes": {
+        "off": "off（保持なし）",
+        "report": "report（振り返りレポート）",
+        "codify": "codify（管理対象の学習スキル）"
+      },
+      "diffRetention": "保持: {before} → {after}"
     },
     "errors": {
       "invalidName": "プロファイル名は1〜64文字で、小文字英数字から始め、小文字英数字・ドット・アンダースコア・ハイフンだけを使用してください。",

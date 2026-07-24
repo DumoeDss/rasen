@@ -384,7 +384,22 @@
         }
       },
       "workflowsGroupLabel": "-- 工作流 --",
-      "expertsGroupLabel": "-- 专家 --"
+      "expertsGroupLabel": "-- 专家 --",
+      "retentionPickerMessage": "保留策略（在 ship 之后、archive 之前运行）：",
+      "retention": {
+        "off": {
+          "name": "off",
+          "description": "无保留步骤 —— ship 之后不写入任何内容。"
+        },
+        "report": {
+          "name": "report",
+          "description": "为该变更写入回顾报告（原 retro 行为）。"
+        },
+        "codify": {
+          "name": "codify",
+          "description": "评估该变更以创建、重写、退役受管学习技能，或不做任何操作。"
+        }
+      }
     },
     "ui": {
       "errorPrefix": "错误：",
@@ -465,7 +480,14 @@
       "diffWorkflowsAdded": "工作流：已添加 {items}",
       "diffWorkflowsRemoved": "工作流：已移除 {items}",
       "diffWorkflowsBoth": "工作流：已添加 {added}；已移除 {removed}",
-      "diffWorkflowsEmpty": "工作流："
+      "diffWorkflowsEmpty": "工作流：",
+      "retentionLabel": "保留",
+      "retentionModes": {
+        "off": "off（无保留）",
+        "report": "report（回顾报告）",
+        "codify": "codify（受管学习技能）"
+      },
+      "diffRetention": "保留：{before} -> {after}"
     },
     "errors": {
       "invalidName": "配置方案名称必须为 1-64 个字符，以小写字母或数字开头，并且只能包含小写字母、数字、点、下划线或连字符。",

@@ -24,7 +24,6 @@ import {
   type PackageFile,
   type PackageWithoutDigest,
   type PackagedPipeline,
-  type PackagedProfile,
   type PackagedWorkflow,
   type PipelinePackage,
   type ProfilePackage,
@@ -135,7 +134,7 @@ export function createWorkflowPackage(
 
 export function createProfilePackage(
   name: string,
-  profile: Omit<PackagedProfile, 'delivery'>,
+  profile: { version: 2; workflows: readonly string[]; retention: 'off' | 'report' | 'codify' },
   roots: readonly string[],
   definitions: readonly WorkflowDefinition[]
 ): ProfilePackage {
@@ -146,11 +145,16 @@ export function createProfilePackage(
     kind: 'profile',
     name,
     profile: {
-      version: profile.version,
+      version: 2,
       workflows: profileWorkflows,
+      retention: profile.retention,
     },
     roots: normalizeRoots(roots, profileWorkflows),
     workflows: normalizePackagedWorkflows(definitions),
+    // Stamp the minimum rasen version that understands a version-2 profile
+    // package, so an older CLI refuses it with an actionable upgrade message
+    // rather than silently dropping the retention dimension.
+    minRasenVersion: readCliVersion(),
   }) as ProfilePackage;
 }
 

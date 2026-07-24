@@ -19,8 +19,10 @@ import {
   parseProfileDefinition,
   saveNamedProfile,
   PROFILE_DEFINITION_VERSION,
+  PROFILE_DEFINITION_VERSION_V1,
   type AvailableProfile,
 } from '../named-profiles.js';
+import { isRetentionMode } from '../retention.js';
 import type {
   ProfileListResponse,
   ProfileMutationRequest,
@@ -105,9 +107,15 @@ export function handleProfileMutation(request: unknown): ProfileApiResult<Profil
     }
 
     // `parseProfileDefinition` validates membership (unknown id → invalid_file →
-    // 400) and returns the normalized, dependency-closed definition.
+    // 400) and returns the normalized, dependency-closed definition. A `retention`
+    // value in the body writes a version-2 definition directly; without one the
+    // input is treated as version 1 and migrated (absent retro-command → `off`),
+    // preserving the pre-retention editor behavior.
+    const retention = (body as { retention?: unknown }).retention;
     const definition = parseProfileDefinition(
-      { version: PROFILE_DEFINITION_VERSION, workflows },
+      isRetentionMode(retention)
+        ? { version: PROFILE_DEFINITION_VERSION, workflows, retention }
+        : { version: PROFILE_DEFINITION_VERSION_V1, workflows },
       'profile definition'
     );
     // Create refuses an existing name (overwrite:false → already_exists → 409);

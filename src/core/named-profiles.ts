@@ -9,6 +9,14 @@ import { getGlobalConfigDir } from './global-config.js';
 import { acquireFileLock, releaseFileLock } from './file-state.js';
 import { ALL_EXPERTS, ALL_WORKFLOWS, CORE_WORKFLOWS, QUALITY_FLOOR_EXPERTS } from './profiles.js';
 import {
+  RETENTION_MODES,
+  RETIRED_RETRO_WORKFLOW_ID,
+  builtInProfileRetention,
+  isRetentionMode,
+  resolveMigratedRetention,
+  type RetentionMode,
+} from './retention.js';
+import {
   WORKFLOW_PACKAGE_LIMITS,
   commitWorkflowInstall,
   createProfilePackage,
@@ -27,7 +35,10 @@ import {
   type WorkflowRegistryOptions,
 } from './workflow-registry/index.js';
 
-export const PROFILE_DEFINITION_VERSION = 1 as const;
+/** The current profile-definition version written on every normalized save/export. */
+export const PROFILE_DEFINITION_VERSION = 2 as const;
+/** The legacy profile-definition version still accepted (and migrated) on read. */
+export const PROFILE_DEFINITION_VERSION_V1 = 1 as const;
 export const PROFILE_DIR_NAME = 'profiles';
 export const BUILTIN_PROFILE_NAMES = ['full', 'core'] as const;
 export const RESERVED_PROFILE_NAMES = ['full', 'core', 'custom'] as const;
@@ -36,20 +47,36 @@ const MAX_PROFILE_FILE_BYTES = 1024 * 1024;
 const PROFILE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const SUPPORTED_IMPORT_EXTENSIONS = new Set(['.json', '.yaml', '.yml']);
 
-const ProfileDefinitionSchema = z
+// A dedicated version-1 reader kept for migration: `retention` is absent, and a
+// retired `delivery` field is tolerated-but-ignored so a profile file written
+// by an older rasen release still parses. Normalization maps it to version 2.
+const ProfileDefinitionV1Schema = z
   .object({
-    version: z.literal(PROFILE_DEFINITION_VERSION),
-    // The `delivery` dimension is retired (skills are the only delivery
-    // surface now). Accepted-but-ignored here so a profile file written by
-    // an older rasen release still parses without error; normalization
-    // below never re-emits it.
+    version: z.literal(PROFILE_DEFINITION_VERSION_V1),
     delivery: z.unknown().optional(),
     workflows: z.array(z.string()),
   })
   .strict();
 
+// The strict current schema: exactly `version`, `workflows`, and one
+// `retention` value. Unknown fields (including `delivery`) fail.
+const ProfileDefinitionV2Schema = z
+  .object({
+    version: z.literal(PROFILE_DEFINITION_VERSION),
+    workflows: z.array(z.string()),
+    retention: z.enum(RETENTION_MODES),
+  })
+  .strict();
+
+const ProfileDefinitionSchema = z.discriminatedUnion('version', [
+  ProfileDefinitionV1Schema,
+  ProfileDefinitionV2Schema,
+]);
+
+type ParsedProfileDefinition = z.infer<typeof ProfileDefinitionSchema>;
+
 function validateProfileMembership(
-  definition: z.infer<typeof ProfileDefinitionSchema>,
+  definition: ParsedProfileDefinition,
   catalog: WorkflowCatalog
 ): string | null {
   const seen = new Set<string>();
@@ -66,6 +93,16 @@ function validateProfileMembership(
 export interface ProfileDefinition {
   version: typeof PROFILE_DEFINITION_VERSION;
   workflows: string[];
+  /** Exactly one retention mode. Migrated from a v1 `retro-command` selection. */
+  retention: RetentionMode;
+}
+
+/** The loose shape `normalizeProfileDefinition` accepts: a v1 or v2 definition. */
+export interface ProfileDefinitionInput {
+  version: number;
+  workflows: string[];
+  retention?: RetentionMode;
+  delivery?: unknown;
 }
 
 export interface AvailableProfile {
@@ -147,13 +184,23 @@ export function getNamedProfilePath(name: string): string {
 }
 
 export function normalizeProfileDefinition(
-  definition: ProfileDefinition,
+  definition: ProfileDefinitionInput,
   catalog: WorkflowCatalog = loadWorkflowCatalog()
 ): ProfileDefinition {
-  const expanded = resolveWorkflowSelection(catalog, definition.workflows);
+  // Retention is explicit on a v2 input; a v1 input migrates it from whether
+  // the selection contained the retired `retro-command`. Either way the
+  // retired id is stripped from the persisted workflow list.
+  const retention: RetentionMode = isRetentionMode(definition.retention)
+    ? definition.retention
+    : resolveMigratedRetention(definition.workflows);
+  const withoutRetired = definition.workflows.filter(
+    (workflow) => workflow !== RETIRED_RETRO_WORKFLOW_ID
+  );
+  const expanded = resolveWorkflowSelection(catalog, withoutRetired);
   return {
     version: PROFILE_DEFINITION_VERSION,
     workflows: expanded.map((workflow) => workflow.id),
+    retention,
   };
 }
 
@@ -358,13 +405,21 @@ export function deleteNamedProfile(name: string): void {
 export function getBuiltinProfileDefinition(
   name: (typeof BUILTIN_PROFILE_NAMES)[number]
 ): ProfileDefinition {
+  // Experts share the unified workflow id space (D1) — `full` names every
+  // built-in expert, `core` names the quality-floor set. The retired
+  // `retro-command` is dropped (its former meaning is carried by retention),
+  // and the built-in's retention mode is stamped (`full` → report,
+  // `core` → off). Canonical membership order is preserved (no closure
+  // reordering) so a `profile use full`/`core` write stays byte-stable.
+  const workflows = (
+    name === 'full'
+      ? [...ALL_WORKFLOWS, ...ALL_EXPERTS]
+      : [...CORE_WORKFLOWS, ...QUALITY_FLOOR_EXPERTS]
+  ).filter((workflow) => workflow !== RETIRED_RETRO_WORKFLOW_ID);
   return {
     version: PROFILE_DEFINITION_VERSION,
-    // Experts share the unified workflow id space (D1) — `full` names every
-    // built-in expert, `core` names the quality-floor set.
-    workflows: name === 'full'
-      ? [...ALL_WORKFLOWS, ...ALL_EXPERTS]
-      : [...CORE_WORKFLOWS, ...QUALITY_FLOOR_EXPERTS],
+    workflows,
+    retention: builtInProfileRetention(name),
   };
 }
 

@@ -384,7 +384,22 @@
         }
       },
       "workflowsGroupLabel": "-- Workflows --",
-      "expertsGroupLabel": "-- Experts --"
+      "expertsGroupLabel": "-- Experts --",
+      "retentionPickerMessage": "Retention policy (runs after ship, before archive):",
+      "retention": {
+        "off": {
+          "name": "off",
+          "description": "No retention step — nothing is written after ship."
+        },
+        "report": {
+          "name": "report",
+          "description": "Write a retrospective report for the change (the former retro behavior)."
+        },
+        "codify": {
+          "name": "codify",
+          "description": "Evaluate the change for managed learned skills (create, rewrite, retire, or no-op)."
+        }
+      }
     },
     "ui": {
       "errorPrefix": "Error:",
@@ -465,7 +480,14 @@
       "diffWorkflowsAdded": "workflows: added {items}",
       "diffWorkflowsRemoved": "workflows: removed {items}",
       "diffWorkflowsBoth": "workflows: added {added}; removed {removed}",
-      "diffWorkflowsEmpty": "workflows: "
+      "diffWorkflowsEmpty": "workflows: ",
+      "retentionLabel": "Retention",
+      "retentionModes": {
+        "off": "off (no retention)",
+        "report": "report (retrospective report)",
+        "codify": "codify (managed learned skills)"
+      },
+      "diffRetention": "retention: {before} -> {after}"
     },
     "errors": {
       "invalidName": "Profile names must be 1-64 characters, start with a lowercase letter or digit, and contain only lowercase letters, digits, dots, underscores, or hyphens.",

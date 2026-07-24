@@ -7,6 +7,7 @@ import {
   deleteNamedProfile,
   exportProfile,
   exportProfileDefinition,
+  getBuiltinProfileDefinition,
   getNamedProfilePath,
   getNamedProfilesDir,
   importNamedProfile,
@@ -20,6 +21,7 @@ import {
   validateUserProfileName,
 } from '../../src/core/named-profiles.js';
 import { importWorkflow, scaffoldWorkflow } from '../../src/core/workflow-library.js';
+import { decodePackage } from '../../src/core/workflow-package/index.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 
 describe('named profiles', () => {
@@ -54,8 +56,9 @@ describe('named profiles', () => {
     expect(getNamedProfilesDir()).toBe(path.join(tempDir, 'profiles'));
     expect(fs.existsSync(getNamedProfilePath('team'))).toBe(true);
     expect(readNamedProfile('team')).toEqual({
-      version: 1,
+      version: 2,
       workflows: ['propose', 'explore', 'apply'],
+      retention: 'off',
     });
     expect(listAvailableProfiles().map((profile) => profile.name)).toEqual([
       'full',
@@ -116,10 +119,18 @@ describe('named profiles', () => {
     expect(() => saveNamedProfile('team', { version: 1, workflows: ['explore'] })).toThrow(
       'already exists'
     );
-    expect(readNamedProfile('team')).toEqual({ version: 1, workflows: ['propose'] });
+    expect(readNamedProfile('team')).toEqual({
+      version: 2,
+      workflows: ['propose'],
+      retention: 'off',
+    });
 
     saveNamedProfile('team', { version: 1, workflows: ['explore'] }, { overwrite: true });
-    expect(readNamedProfile('team')).toEqual({ version: 1, workflows: ['explore'] });
+    expect(readNamedProfile('team')).toEqual({
+      version: 2,
+      workflows: ['explore'],
+      retention: 'off',
+    });
   });
 
   it('imports JSON using the file basename and refuses an implicit overwrite', () => {
@@ -176,8 +187,9 @@ describe('named profiles', () => {
     exportProfileDefinition(yamlPath, definition);
 
     expect(JSON.parse(fs.readFileSync(jsonPath, 'utf-8'))).toEqual({
-      version: 1,
+      version: 2,
       workflows: ['propose', 'apply'],
+      retention: 'off',
     });
     expect(fs.readFileSync(yamlPath, 'utf-8')).toContain('workflows:');
     expect(() => exportProfileDefinition(jsonPath, definition)).toThrow('already exists');
@@ -247,6 +259,109 @@ describe('named profiles', () => {
       fs.rmSync(cleanHome, { recursive: true, force: true });
       process.env.RASEN_HOME = tempDir;
     }
+  });
+
+  describe('retention (version 2 profile model)', () => {
+    it('migrates a v1 selection containing retro-command to report and strips the id', () => {
+      const definition = parseProfileDefinition({
+        version: 1,
+        workflows: ['propose', 'retro-command', 'apply'],
+      });
+      expect(definition.version).toBe(2);
+      expect(definition.retention).toBe('report');
+      expect(definition.workflows).not.toContain('retro-command');
+      expect(definition.workflows).toEqual(expect.arrayContaining(['propose', 'apply']));
+    });
+
+    it('migrates a v1 selection without retro-command to off', () => {
+      const definition = parseProfileDefinition({ version: 1, workflows: ['propose', 'apply'] });
+      expect(definition).toMatchObject({ version: 2, retention: 'off' });
+    });
+
+    it('tolerates a legacy delivery field on a v1 read and omits it from v2 output', () => {
+      const definition = parseProfileDefinition({
+        version: 1,
+        delivery: 'both',
+        workflows: ['propose'],
+      });
+      expect(definition).toEqual({ version: 2, workflows: ['propose'], retention: 'off' });
+    });
+
+    it('accepts an explicit v2 retention value verbatim', () => {
+      const definition = parseProfileDefinition({
+        version: 2,
+        workflows: ['propose'],
+        retention: 'codify',
+      });
+      expect(definition.retention).toBe('codify');
+    });
+
+    it('rejects an unknown field on a strict v2 definition', () => {
+      expect(() =>
+        parseProfileDefinition({
+          version: 2,
+          workflows: ['propose'],
+          retention: 'off',
+          extra: true,
+        })
+      ).toThrow('Invalid');
+    });
+
+    it('rejects an invalid v2 retention value', () => {
+      expect(() =>
+        parseProfileDefinition({ version: 2, workflows: ['propose'], retention: 'always' })
+      ).toThrow('Invalid');
+    });
+
+    it('gives the built-in profiles their retention defaults without a retro-command id', () => {
+      const full = getBuiltinProfileDefinition('full');
+      const core = getBuiltinProfileDefinition('core');
+      expect(full.retention).toBe('report');
+      expect(core.retention).toBe('off');
+      expect(full.workflows).not.toContain('retro-command');
+    });
+
+    it('does not rewrite a v1 profile file merely because it was read', () => {
+      fs.mkdirSync(getNamedProfilesDir(), { recursive: true });
+      const target = getNamedProfilePath('legacy');
+      fs.writeFileSync(target, 'version: 1\nworkflows:\n  - propose\n', 'utf-8');
+      const before = fs.readFileSync(target, 'utf-8');
+
+      const definition = readNamedProfile('legacy');
+      expect(definition).toMatchObject({ version: 2, retention: 'off' });
+      // Reading migrates in memory only; the file on disk is untouched.
+      expect(fs.readFileSync(target, 'utf-8')).toBe(before);
+    });
+
+    it('round-trips a v2 retention value through a self-contained package and stamps a min version', async () => {
+      const draftRoot = path.join(tempDir, 'drafts', 'retention-pkg');
+      scaffoldWorkflow('retention-pkg', draftRoot);
+      await importWorkflow(draftRoot);
+      const packagePath = path.join(tempDir, 'retention.rasenpkg');
+      exportProfile(packagePath, 'retention-team', {
+        version: 2,
+        workflows: ['propose', 'retention-pkg'],
+        retention: 'codify',
+      });
+
+      const decoded = decodePackage(fs.readFileSync(packagePath), 'profile');
+      expect(decoded.kind).toBe('profile');
+      if (decoded.kind === 'profile') {
+        expect(decoded.profile).toMatchObject({ version: 2, retention: 'codify' });
+      }
+      expect(typeof decoded.minRasenVersion).toBe('string');
+
+      const cleanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-profile-retention-'));
+      process.env.RASEN_HOME = cleanHome;
+      try {
+        const imported = await importProfilePackage(packagePath, { name: 'renamed' });
+        expect(imported.definition.retention).toBe('codify');
+        expect(readNamedProfile('renamed').retention).toBe('codify');
+      } finally {
+        fs.rmSync(cleanHome, { recursive: true, force: true });
+        process.env.RASEN_HOME = tempDir;
+      }
+    });
   });
 
   it('rolls back embedded workflows when the profile commit fails', async () => {

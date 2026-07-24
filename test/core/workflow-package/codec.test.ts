@@ -144,7 +144,7 @@ describe('.rasenpkg codec', () => {
   it('round-trips a profile package without changing its profile order', () => {
     const packageValue = createProfilePackage(
       'team',
-      { version: 1, delivery: 'both', workflows: ['apply', 'team-release'] },
+      { version: 2, retention: 'off', workflows: ['apply', 'team-release'] },
       ['team-release'],
       [definition('team-release')]
     );
@@ -165,7 +165,7 @@ describe('.rasenpkg codec', () => {
       kind: 'profile',
       create: () => createProfilePackage(
         'escaped',
-        { version: 1, delivery: 'both', workflows: ['escaped'] },
+        { version: 2, retention: 'off', workflows: ['escaped'] },
         ['escaped'],
         [escapedContentDefinition('escaped')]
       ),
@@ -191,7 +191,7 @@ describe('.rasenpkg codec', () => {
   it('rejects invalid profile package names and duplicate profile workflow IDs', () => {
     const invalidName = createProfilePackage(
       '../team',
-      { version: 1, delivery: 'both', workflows: ['team-release'] },
+      { version: 2, retention: 'off', workflows: ['team-release'] },
       ['team-release'],
       [definition('team-release')]
     );
@@ -202,7 +202,7 @@ describe('.rasenpkg codec', () => {
 
     const duplicate = createProfilePackage(
       'team',
-      { version: 1, delivery: 'both', workflows: ['team-release', 'team-release'] },
+      { version: 2, retention: 'off', workflows: ['team-release', 'team-release'] },
       ['team-release'],
       [definition('team-release')]
     );
@@ -267,8 +267,8 @@ describe('.rasenpkg codec', () => {
     const value = createProfilePackage(
       'team',
       {
-        version: 1,
-        delivery: 'both',
+        version: 2,
+        retention: 'off',
         workflows: ['team-release', 'base', 'apply'],
       },
       ['team-release', 'base'],
