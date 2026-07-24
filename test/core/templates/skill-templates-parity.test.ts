@@ -80,7 +80,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getGoalIterateSkillTemplate: '4e4c01df15fbc865ea6e8ac3833846d677660bc0821583b302ebe6db69a0417d',
   getGoalReportSkillTemplate: 'a48c1b6c75c5734e051a4aa707ee803c0af73fd2b74b18fb7212e531568a4bed',
   getGoalCommandSkillTemplate: '15a8a18d8b3cb8609fd3eeea7823af1a4669a9400cf6db66fff90a543e4db40b',
-  getHelpSkillTemplate: 'f45bbe71a1a337e3155d30950cc0f8ae77c6cf5c078aa6accc847220c91d0f2e',
+  getHelpSkillTemplate: '0b1eba5abd11471806d9c79f5c4a75f2abb74c114b013335732ce3faba7493ea',
   // Expert skill templates (inlined; see expert-template-inlining)
   getBenchmarkSkillTemplate: 'e532d9adbae401c36d797101b3220fa41a7c89788368e2022734c64219757008',
   getCarefulSkillTemplate: 'e1d464d2b51dda32c0ef37f7e9346ed41dbfec15f5ba56e3f3ecf2dd2045bbec',
@@ -117,7 +117,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-onboard': 'ca929a0dfa8785bc945302d14f14d3f8da0cdde97ff87528c8e845a7021f730f',
   'rasen-propose': '8c3553716a378d012fa781d377a7d20fbe0719cacf2a75cccd16a3ffaaf59bdf',
   // Workflow/orchestration templates (workflow-template-parity)
-  'rasen-office-hours-command': '40abb0f8df06501b21b33f7615b0a36bb65015c0652b4548e30cd6bdd4b19e34',
+  'rasen-office-hours-command': '952a4f8d2f489d599edce569990d1a110157d287d9da464a9c67c35f5404f688',
   'rasen-verify-enhanced': 'd5e3f30b5f03af6979ecb4d3ee6693984135aacac63d218eff2618b8db692d38',
   'rasen-ship': 'cc8e158cc3d3657fe0d531fd74129ce621e59ede1326cffb3e2a3a63e86d5b10',
   'rasen-retro': '458aa2ff649293a5e4c5b711e538d16b02e494e909ff6408ff99c28bb987ff73',
@@ -125,10 +125,10 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-review-cycle': 'e4a46473c553b9928ad55af2d50e6bf04219f3c42cd6be69bea0c177ba5858df',
   'rasen-handoff': '6327278c9f06d21b445ffb3a1cd8868994f9d6da3ab24ed86c3c743843d7eb99',
   'rasen-goal-plan': '675ecc645213d6615d470b7c5f811ec8321012644e36e48532b63a482c6b4401',
-  'rasen-goal-iterate': '36227c2d4f94be204a92edafc9638daedc28c95b7c0f644c238486b06650e9b1',
+  'rasen-goal-iterate': '0bd42b75112906e05cc8f2ff9a0e656ca46ac86bdf8a54ce5a5c1904c5b8fa81',
   'rasen-goal-report': 'cd60a56882984b4babed00f611793b3e1448e54a2bdb94796f8ac06c17445acc',
   'rasen-goal': 'a682bae6b222693bf2a00c5245e246a74f5aaa3902c499eeae79fa1f14e16c6d',
-  'rasen-help': 'd4741dd2c9502d7fdb972d57b8d831d99414d4c138832f763c0bac5a01b5fcd6',
+  'rasen-help': 'f35b26e651607ec7ee4302ccc1429a2c5d972f7481833f517ba044f9fb75d066',
   // Expert skills (inlined; see expert-template-inlining)
   'rasen-benchmark': 'e0b06186a7c28369ebec78d0b8a7b1a68c44b18b1ba06c4bf52d44c6e67bac55',
   'rasen-careful': 'b3f81a672fe3f110fb21574aefe5f4a908fb888ad090901291d83dc542f4ebd8',

@@ -392,5 +392,35 @@ describe('skill-generation', () => {
       expect(content).toContain('Some REPLACED text here.');
       expect(content).not.toContain('PLACEHOLDER');
     });
+
+    it('quotes a built-in description that contains a colon-space sequence', () => {
+      const template = {
+        name: 'colon-skill',
+        description: 'Diagnose token spend. Experimental: parses an internal transcript format.',
+        instructions: 'Body',
+      };
+
+      // escapeFrontmatter=false is the built-in path (the regression's home).
+      const content = generateSkillContent(template, '0.23.0', undefined, false);
+      const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+
+      expect(frontmatter).toContain(
+        'description: "Diagnose token spend. Experimental: parses an internal transcript format."'
+      );
+      expect(parseYaml(frontmatter)).toMatchObject({
+        description: 'Diagnose token spend. Experimental: parses an internal transcript format.',
+      });
+    });
+
+    it('generates strictly-valid YAML frontmatter for every built-in skill', () => {
+      for (const { template, escapeFrontmatter, dirName } of getSkillTemplates()) {
+        const content = generateSkillContent(template, '0.0.0-test', undefined, escapeFrontmatter);
+        const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+        const parsed = parseYaml(frontmatter) as { name: string; description: string };
+        // parseYaml throws on invalid YAML; also assert the values survive intact.
+        expect(parsed.name, dirName).toBe(template.name);
+        expect(parsed.description, dirName).toBe(template.description);
+      }
+    });
   });
 });
