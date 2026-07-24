@@ -69,6 +69,7 @@ export const GlobalConfigSchema = z
           })
           .optional(),
         contextFloor: z.number().int().nonnegative().optional(),
+        beatSeconds: z.number().int().min(90).max(280).optional(),
       })
       .optional(),
     models: z

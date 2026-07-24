@@ -1286,7 +1286,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           },
           {
             name: 'beat-seconds',
-            description: 'Beat duration in seconds (default 270, max 300)',
+            description: 'Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.',
             takesValue: true,
           },
         ],

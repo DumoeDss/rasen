@@ -180,3 +180,25 @@ describe('runtime detection and gate', () => {
     );
   });
 });
+
+describe('beatSeconds resolution', () => {
+  it('defaults to the registry value 270 when unset', () => {
+    expect(DEFAULT_KEEPALIVE_CONFIG.beatSeconds).toBe(270);
+    expect(resolveKeepaliveConfig(undefined).beatSeconds).toBe(270);
+    expect(resolveKeepaliveConfig({}).beatSeconds).toBe(270);
+  });
+
+  it('accepts in-range integers 90–280', () => {
+    expect(resolveKeepaliveConfig({ beatSeconds: 90 }).beatSeconds).toBe(90);
+    expect(resolveKeepaliveConfig({ beatSeconds: 120 }).beatSeconds).toBe(120);
+    expect(resolveKeepaliveConfig({ beatSeconds: 280 }).beatSeconds).toBe(280);
+  });
+
+  it('falls back to the 100s fuse for a present-but-out-of-range or non-integer value', () => {
+    // cli-agent-wait spec: an on-disk value outside 90–280 resolves to the fuse
+    // (100), distinct from the unset default (270).
+    expect(resolveKeepaliveConfig({ beatSeconds: 89 }).beatSeconds).toBe(100);
+    expect(resolveKeepaliveConfig({ beatSeconds: 300 }).beatSeconds).toBe(100);
+    expect(resolveKeepaliveConfig({ beatSeconds: 180.5 }).beatSeconds).toBe(100);
+  });
+});

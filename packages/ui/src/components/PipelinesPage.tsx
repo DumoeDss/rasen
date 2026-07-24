@@ -18,11 +18,13 @@ import {
   KNOWN_MODEL_IDS,
   modeScope,
   isStoreInherited,
+  isVisibleInMode,
   type ConfigMode,
   type SpaceType,
 } from '../config/controls.js';
 import { errorSurface } from '../config/errors.js';
 import { ConfigEntryRow } from './ConfigEntryRow.js';
+import { KeepaliveBeatControl } from './KeepaliveBeatControl.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { ValueDisplay } from './ui/ValueDisplay.js';
 
@@ -241,6 +243,25 @@ export function PipelinesPage() {
             ) : null;
           })}
         </div>
+        {(() => {
+          // Keepalive beat control (pipelines-ui spec): the global-only
+          // `keepalive.beatSeconds` key renders here, after the autopilot keys,
+          // only when visible in the active scope mode (Global).
+          const entry = byKey('keepalive.beatSeconds');
+          return entry && isVisibleInMode(entry, mode, spaceType) ? (
+            <div class="pipelines-defaults__keepalive" data-testid="pipelines-defaults-keepalive">
+              <KeepaliveBeatControl
+                entry={entry}
+                mode={mode}
+                spaceType={spaceType}
+                selector={selector}
+                storeRef={storeRef}
+                onPageError={(message, fix) => setPageError({ message, fix })}
+                onEntryUpdated={updateEntry}
+              />
+            </div>
+          ) : null;
+        })()}
       </section>
 
       <section class="pipelines-list" data-testid="pipelines-list">

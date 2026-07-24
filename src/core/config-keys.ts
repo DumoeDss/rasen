@@ -266,6 +266,18 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     description: 'Context size (tokens) below which `rasen agent wait` stands down instead of keeping the worker warm (0 = floor disabled, the default)',
     group: 'Pipelines',
   },
+  {
+    key: 'keepalive.beatSeconds',
+    scopes: ['global'],
+    type: 'number',
+    validate: (value) =>
+      typeof value === 'number' && Number.isInteger(value) && value >= 90 && value <= 280
+        ? null
+        : 'must be an integer between 90 and 280 (keepalive beat length in seconds)',
+    defaultValue: 270,
+    description: '`rasen agent wait` beat length in seconds (90–280; default 270 ≈ optimal for the 5-minute cache TTL). A `--beat-seconds` flag overrides this. Beats longer than the shell tool default timeout require raising that timeout.',
+    group: 'Pipelines',
+  },
   // ---- project scope ----
   {
     key: 'schema',

@@ -291,5 +291,19 @@ export const pipelinesConfigFixture = {
       source: 'default',
       scopeValues: {},
     },
+    {
+      definition: {
+        key: 'keepalive.beatSeconds',
+        scopes: ['global'],
+        type: 'number',
+        defaultValue: 270,
+        description: '`rasen agent wait` beat length in seconds (90–280; default 270)',
+        group: 'Pipelines',
+        constraints: { type: 'number', range: { gt: 89, lte: 280 } },
+      },
+      value: 270,
+      source: 'default',
+      scopeValues: {},
+    },
   ],
 } satisfies ListConfigResponse;

@@ -4,7 +4,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { AgentCommand } from '../../src/commands/agent.js';
-import { writeSignalAtomic, signalFilePath } from '../../src/core/keepalive/index.js';
+import {
+  DEFAULT_KEEPALIVE_CONFIG,
+  resolveBeatDurationSeconds,
+  resolveKeepaliveConfig,
+  writeSignalAtomic,
+  signalFilePath,
+} from '../../src/core/keepalive/index.js';
 
 const CHANGE = 'wait-test-change';
 
@@ -192,5 +198,39 @@ describe('rasen agent wait', () => {
     writeSignalAtomic(changeRoot, 'reviewer', { kind: 'resume', instruction: 'x' });
     await wait({ beatSeconds: 9999 });
     expect(lastOutcome()).toMatchObject({ resumed: true });
+  });
+
+  it('an explicit flag wins over a configured beatSeconds (returns promptly)', async () => {
+    // keepalive.beatSeconds=250 would make an unflagged beat block for minutes;
+    // the flag (1s) wins, so a timed-out beat returns within a second or two.
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { beatSeconds: 250 } }),
+      'utf-8'
+    );
+    const before = Date.now();
+    await wait({ beatSeconds: 1 });
+    expect(Date.now() - before).toBeLessThan(5_000);
+    expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
+  });
+});
+
+describe('beat duration resolution priority', () => {
+  it('an explicit flag wins over the configured and default beat', () => {
+    const config = resolveKeepaliveConfig({ beatSeconds: 200 });
+    expect(resolveBeatDurationSeconds(120, config)).toBe(120);
+  });
+
+  it('falls back to the configured beat when no flag is given', () => {
+    expect(resolveBeatDurationSeconds(undefined, resolveKeepaliveConfig({ beatSeconds: 150 }))).toBe(150);
+    expect(resolveBeatDurationSeconds(undefined, resolveKeepaliveConfig({ beatSeconds: 280 }))).toBe(280);
+  });
+
+  it('falls back to the registry default (270) when neither flag nor config is set', () => {
+    expect(resolveBeatDurationSeconds(undefined, DEFAULT_KEEPALIVE_CONFIG)).toBe(270);
+  });
+
+  it('clamps a large flag to the 300s hard cap', () => {
+    expect(resolveBeatDurationSeconds(9999, DEFAULT_KEEPALIVE_CONFIG)).toBe(300);
   });
 });

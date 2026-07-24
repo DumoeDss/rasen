@@ -29,9 +29,8 @@ import {
   type HandoffThresholdReport,
 } from '../core/agent-context.js';
 import {
-  DEFAULT_BEAT_SECONDS,
-  MAX_BEAT_SECONDS,
   POLL_INTERVAL_MS,
+  resolveBeatDurationSeconds,
   clearBeatState,
   consumeSignal,
   detectAgentRuntime,
@@ -305,11 +304,6 @@ export class AgentCommand {
     if (options.maxBeats !== undefined && (!Number.isInteger(options.maxBeats) || options.maxBeats < 1)) {
       throw new Error('--max-beats must be a positive integer');
     }
-    const beatSeconds = Math.min(
-      Math.max(options.beatSeconds ?? DEFAULT_BEAT_SECONDS, 1),
-      MAX_BEAT_SECONDS
-    );
-
     const planningHome = resolveCurrentPlanningHomeSync();
     const changeRoot = getChangeDir(planningHome, options.change.trim());
     if (!fs.existsSync(changeRoot)) {
@@ -319,6 +313,12 @@ export class AgentCommand {
     const keepalive = resolveKeepaliveConfig(
       (getGlobalConfig() as { keepalive?: KeepaliveConfigInput }).keepalive
     );
+
+    // Beat resolution (cli-agent-wait spec / design D1): explicit --beat-seconds
+    // flag wins; otherwise the config-resolved keepalive.beatSeconds (registry
+    // default 270 when unset, 100 fuse when the on-disk value is out of range).
+    // Still clamped to the 300s TTL hard cap.
+    const beatSeconds = resolveBeatDurationSeconds(options.beatSeconds, keepalive);
 
     // Gate 1: runtime. Closed or unknown → immediate stand-down, no state mutation.
     const runtime = detectAgentRuntime();

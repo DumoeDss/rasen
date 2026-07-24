@@ -22,14 +22,25 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Beat duration: must return inside BOTH the 5-minute cache TTL and the
- * harness's default Bash tool timeout (120s) — a longer default beat gets the
- * whole wait call killed/backgrounded by the tool timeout when the worker
- * forgets to raise it, which silently defeats the keepalive. Callers may set
- * `--beat-seconds` up to MAX_BEAT_SECONDS, but then MUST also raise the tool
- * timeout on their side.
+ * No-config fuse for the beat duration. This applies ONLY when configuration
+ * cannot be read or the on-disk `keepalive.beatSeconds` is out of range — the
+ * effective default for a normally-configured machine is
+ * `DEFAULT_CONFIG_BEAT_SECONDS` (270), resolved through `resolveKeepaliveConfig`.
+ * The fuse is deliberately 100s so a bare `rasen agent wait` with broken config
+ * still returns inside the harness's default Bash tool timeout (120s) instead of
+ * being killed mid-beat. Playbook-driven callers always raise the tool timeout to
+ * 330000ms, so the configured 270s beat is safe there.
  */
 export const DEFAULT_BEAT_SECONDS = 100;
+/**
+ * Effective beat length for a configured machine (registry default). ~270s is
+ * near the optimal refresh cadence for the 5-minute cache TTL. Callers pairing a
+ * beat this long MUST raise the shell tool timeout (playbook uses 330000ms).
+ */
+export const DEFAULT_CONFIG_BEAT_SECONDS = 270;
+/** Configurable beat range for `keepalive.beatSeconds` (inclusive). */
+export const MIN_CONFIG_BEAT_SECONDS = 90;
+export const MAX_CONFIG_BEAT_SECONDS = 280;
 export const MAX_BEAT_SECONDS = 300;
 /** Signal-file poll cadence within a beat. */
 export const POLL_INTERVAL_MS = 5000;
@@ -252,17 +263,20 @@ export function detectAgentRuntime(env: NodeJS.ProcessEnv = process.env): AgentR
 export interface KeepaliveConfig {
   runtimes: { claude: boolean; codex: boolean };
   contextFloor: number;
+  beatSeconds: number;
 }
 
 export const DEFAULT_KEEPALIVE_CONFIG: KeepaliveConfig = {
   runtimes: { claude: true, codex: false },
   contextFloor: DEFAULT_CONTEXT_FLOOR,
+  beatSeconds: DEFAULT_CONFIG_BEAT_SECONDS,
 };
 
 /** Shape of the optional `keepalive` block in the global config file. */
 export interface KeepaliveConfigInput {
   runtimes?: { claude?: boolean; codex?: boolean };
   contextFloor?: number;
+  beatSeconds?: number;
 }
 
 export function resolveKeepaliveConfig(input?: KeepaliveConfigInput | null): KeepaliveConfig {
@@ -275,7 +289,45 @@ export function resolveKeepaliveConfig(input?: KeepaliveConfigInput | null): Kee
       typeof input?.contextFloor === 'number' && input.contextFloor >= 0
         ? input.contextFloor
         : DEFAULT_KEEPALIVE_CONFIG.contextFloor,
+    beatSeconds: resolveBeatSeconds(input?.beatSeconds),
   };
+}
+
+/**
+ * Resolve the effective beat length from the optional on-disk value:
+ *   - unset (undefined) → registry default 270 (the effective value config
+ *     surfaces report for a normally-configured machine)
+ *   - an in-range integer (90–280) → that value
+ *   - present but out of range or non-integer → the 100s fuse
+ *     (DEFAULT_BEAT_SECONDS), which fits the harness's default 120s tool timeout
+ *     so a hand-broken config never gets its beat killed mid-flight
+ * (cli-agent-wait spec: unset → 270, out-of-range → fuse).
+ */
+export function resolveBeatSeconds(value: number | undefined | null): number {
+  if (value === undefined || value === null) return DEFAULT_CONFIG_BEAT_SECONDS;
+  if (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= MIN_CONFIG_BEAT_SECONDS &&
+    value <= MAX_CONFIG_BEAT_SECONDS
+  ) {
+    return value;
+  }
+  return DEFAULT_BEAT_SECONDS;
+}
+
+/**
+ * Resolve the beat duration `wait()` blocks for (cli-agent-wait spec / design
+ * D1): an explicit `--beat-seconds` flag wins; otherwise the config-resolved
+ * `keepalive.beatSeconds` (registry default 270, or the 100s fuse for an
+ * out-of-range on-disk value — see `resolveBeatSeconds`). The result is floored
+ * at 1s and clamped to the `MAX_BEAT_SECONDS` (300) TTL hard cap.
+ */
+export function resolveBeatDurationSeconds(
+  flagBeatSeconds: number | undefined,
+  config: KeepaliveConfig
+): number {
+  return Math.min(Math.max(flagBeatSeconds ?? config.beatSeconds, 1), MAX_BEAT_SECONDS);
 }
 
 /** True when the detected runtime is allowed to burn keepalive beats. */

@@ -840,7 +840,7 @@ agentCmd
   .requiredOption('--role <key>', 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)')
   .option('--max-beats <n>', 'Override the default beat cap (12)', (v) => parseInt(v, 10))
   .option('--context-tokens <n>', 'Self-reported context size; below the keepalive floor stands down immediately', (v) => parseInt(v, 10))
-  .option('--beat-seconds <s>', 'Beat duration in seconds (default 100 — fits the default Bash tool timeout; max 300)', (v) => parseInt(v, 10))
+  .option('--beat-seconds <s>', 'Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.', (v) => parseInt(v, 10))
   .action(async (options: {
     change: string;
     role: string;
