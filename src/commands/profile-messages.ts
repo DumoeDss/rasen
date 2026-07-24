@@ -3,6 +3,7 @@ import type {
   NamedProfileError,
   NamedProfileMessageDescriptor,
 } from '../core/named-profiles.js';
+import type { RetentionMode } from '../core/retention.js';
 import { getCliLocale } from '../core/cli-locale.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../locales/index.js';
 import type { CliLocale } from '../utils/locale.js';
@@ -23,6 +24,10 @@ export interface ProfilePromptMessages {
   experts: Record<string, WorkflowPromptMeta>;
   workflowsGroupLabel: string;
   expertsGroupLabel: string;
+  /** Prompt shown above the single retention radio. */
+  retentionPickerMessage: string;
+  /** Radio choice metadata (name + description) for each retention mode. */
+  retention: Record<RetentionMode, WorkflowPromptMeta>;
 }
 
 export interface ProfileUiMessages {
@@ -92,6 +97,13 @@ export interface ProfileUiMessages {
   profileCancelled: string;
   diffProfile: (before: string, after: string) => string;
   diffWorkflows: (added: string[], removed: string[]) => string;
+  diffRetention: (before: RetentionMode, after: RetentionMode) => string;
+  /** Localized label for the retention row in the current-settings summary. */
+  retentionLabel: string;
+  /** The localized display label for one retention mode (current settings summary). */
+  retentionSummary: (mode: RetentionMode) => string;
+  /** The localized display label for one retention mode (profile list rows). */
+  retentionMode: (mode: RetentionMode) => string;
   externalError: (code: string, fallback: string) => string;
 }
 
@@ -144,6 +156,9 @@ export function getProfileUiMessages(locale: CliLocale = getCliLocale()): Profil
     availableBuiltInsNote: (workflows) =>
       format(raw.availableBuiltInsNote, { workflows: workflows.join(', ') }),
     diffProfile: (before, after) => format(raw.diffProfile, { before, after }),
+    diffRetention: (before, after) => format(raw.diffRetention, { before, after }),
+    retentionSummary: (mode) => (raw.retentionModes as Record<string, string>)[mode] ?? mode,
+    retentionMode: (mode) => (raw.retentionModes as Record<string, string>)[mode] ?? mode,
     diffWorkflows: (added, removed) => {
       if (added.length > 0 && removed.length > 0) {
         return format(raw.diffWorkflowsBoth, {

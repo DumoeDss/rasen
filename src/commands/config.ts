@@ -35,6 +35,7 @@ import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { CORE_WORKFLOWS, ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../core/profiles.js';
+import { resolveCurrentProfileState } from './profile-editor.js';
 import { isPromptCancellationError } from './shared-output.js';
 import { runUiLaunch } from './ui-launch.js';
 import { runLegacyConfigProfileCommand } from './profile.js';
@@ -49,7 +50,7 @@ import { getCliLocale } from '../core/cli-locale.js';
 import type { CliLocale } from '../utils/locale.js';
 
 export {
-  deriveProfileFromWorkflowSelection,
+  deriveProfileFromSelection,
   diffProfileState,
   formatWorkflowSummary,
   resolveCurrentProfileState,
@@ -530,6 +531,14 @@ export function registerConfigCommand(program: Command): void {
           } else {
             console.log(`  workflows: ${messages.noneValue}`);
           }
+          // Retention: an explicit value wins; otherwise the effective value
+          // comes from the profile (full → report, core → off) or a custom v1
+          // migration — resolved once by `resolveCurrentProfileState`.
+          const retentionSource = rawConfig.retention !== undefined
+            ? messages.explicitSource
+            : messages.defaultSource;
+          const effectiveRetention = resolveCurrentProfileState(config).retention;
+          console.log(`  retention: ${effectiveRetention} ${retentionSource}`);
         }
       });
     });

@@ -217,7 +217,7 @@ After shipping, guidance on archiving is timing- and mode-aware (facts recorded 
 - **on-merge timing, \`push\`/\`local\` mode:** delivery is complete at ship with no merge event to await — suggest running \`rasen-archive-change\` now.
 
 Always suggest:
-- Run \`rasen-retro\` for a retrospective on the change
+- Run \`rasen-retain\` for the profile's retention step — \`report\` writes a retrospective, \`codify\` captures durable learnings as managed skills (\`rasen-retro\` remains a compatibility alias for report mode)
 - Update project documentation (README, architecture notes, changelog) to match what shipped, so the docs do not drift from the release
 
 ## Output
@@ -239,7 +239,7 @@ Always suggest:
 ### Next Steps
 - Monitor CI: gh pr checks 42
 - Deploy: rasen-ship --deploy
-- Retro: rasen-retro <change-name>
+- Retain: rasen-retain <change-name>
 \`\`\``;
 
 export function getShipCommandSkillTemplate(): SkillTemplate {

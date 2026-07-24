@@ -1,176 +1,51 @@
 /**
- * Retro Rasen Workflow Command
+ * Temporary `rasen-retro` compatibility wrapper (design D1 / opsx-retro-command).
  *
- * Engineering retrospective — analyzes commit history, work patterns,
- * and code quality metrics. Supports change-scoped, general, and global
- * retrospective modes. Report saved to the Rasen change directory.
+ * The standalone, profile-selectable, model-invoked retro workflow is retired:
+ * its behavior is the `report` branch of `rasen-retain`. This wrapper remains
+ * for ONE migration window so a user who types `rasen-retro` still gets a
+ * retrospective. It:
+ *   - carries `disable-model-invocation: true` (user-invoked only), and
+ *   - forces the `report` branch regardless of the active profile retention,
+ *     forwarding the user's scope/change argument.
+ *
+ * It is NOT a selectable workflow definition: it does not appear in
+ * `BUILT_IN_WORKFLOW_IDS`, participate in dependency closure, or receive a
+ * catalog kind. init/update materialize and later retire it by its exact named
+ * identity ({@link RETRO_COMPAT_WRAPPER_DIR_NAME}), never by a prefix scan.
  */
 import type { SkillTemplate } from '../types.js';
-import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
-const RETRO_INSTRUCTIONS = `Engineering retrospective — analyze what shipped, patterns, and learnings.
+/** Exact installed directory name of the compatibility wrapper (for materialization + retirement). */
+export const RETRO_COMPAT_WRAPPER_DIR_NAME = 'rasen-retro';
 
-${STORE_SELECTION_GUIDANCE}
+const RETRO_WRAPPER_INSTRUCTIONS = `Temporary compatibility alias for \`rasen-retain\` **report** mode. Retro as a standalone workflow is retired; this wrapper exists only so \`rasen-retro\` keeps working during the migration window.
 
-Supports three scopes: change-scoped, general, and global. Retro report saved to the Rasen change directory.
+## Behavior
 
-## When to Use
+- Forward the user's scope/change argument unchanged:
+  - \`rasen-retro <change-name>\` → change-scoped report
+  - \`rasen-retro\` (no args) → prompt for change-scoped or general
+  - \`rasen-retro global\` → global report
+- Run **only** the report branch of \`rasen-retain\` (read its \`report.md\` sidecar), forcing \`report\` mode regardless of the active profile's retention mode.
+- Do NOT create, update, promote, or retire a learned skill, and do NOT change the saved profile retention mode.
 
-Use when: "retro", "retrospective", "what did we ship?", "weekly retro", "global retro".
+## Migration
 
-## Steps
+Use profile retention \`report\` with \`rasen-retain\` for the canonical workflow. This alias is user-invoked only and will be removed after its announced migration window.`;
 
-### 1. Determine Scope
-
-Parse the input to determine retro scope:
-
-- \`rasen-retro <change-name>\` → **Change-scoped**: analyze a specific change
-- \`rasen-retro\` (no args) → Prompt user to select: change-scoped (pick a change) or general
-- \`rasen-retro global\` → **Global**: cross-project retrospective
-
-### 2A. Change-Scoped Retro
-
-Read all available artifacts:
-
-**Planning Artifacts** (the change directory — \`changeRoot\` from status JSON):
-- \`proposal.md\` — what was planned
-- \`design.md\` — how it was designed
-- \`tasks.md\` — task breakdown and completion status
-- \`specs/\` — delta specifications
-- \`office-hours-design.md\` — product validation session
-
-**Outcome Artifacts** (the work directory — \`workDir\` from status JSON; fall back to the change directory when \`workDir\` is absent or a file already lives there — legacy fallback):
-- \`review-report.md\` — code review findings
-- \`qa-report.md\` — QA findings
-- \`cso-report.md\` — security audit findings
-- \`ship-log.md\` — shipping details (PR URL, deploy status)
-
-**Analysis:**
-- Correlate planning vs outcome: did we build what we planned?
-- Task completion rate and timeline
-- Review iteration count (how many rounds of review?)
-- Issues found during verification vs issues found in production
-- Note which artifacts were missing and what analysis was skipped
-
-### 2B. General Retro
-
-Run a self-contained git-analysis contract over recent repository activity (default window: last 7 days; accept an explicit window like \`24h\`, \`14d\`, \`30d\`). Detect the repo's default branch first (\`gh repo view --json defaultBranchRef -q .defaultBranchRef.name\`, fall back to \`main\`) and analyze \`origin/<default>\`.
-
-**Gather (run these git queries):**
-- Commits with author, timestamp, and per-commit stat: \`git log origin/<default> --since="<window>" --format="%H|%aN|%ae|%ai|%s" --shortstat\`
-- Per-commit numstat for LOC and test-vs-production split (test files match \`test/|spec/|__tests__/\`): \`git log origin/<default> --since="<window>" --format="COMMIT:%H|%aN" --numstat\`
-- File hotspots: \`git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^$' | sort | uniq -c | sort -rn\`
-- Per-author commit counts: \`git shortlog origin/<default> --since="<window>" -sn --no-merges\`
-- Streak (consecutive days with ≥1 commit, counted back from today): \`git log origin/<default> --format="%ad" --date=format:"%Y-%m-%d" | sort -u\`
-
-**Compute:**
-- The metrics table (commits, contributors, insertions/deletions, net LOC, test LOC ratio, active days, streak)
-- A **per-author leaderboard** sorted by commits descending (contributor, commits, +/-, top area), with the current user (\`git config user.name\`) listed first as "You (name)"
-- Commit-type mix (feat/fix/refactor/test/chore/docs), hotspot list, and any notable patterns (peak hours, churn, high fix ratio)
-
-Use all timestamps in the user's local timezone. If the window has zero commits, say so and suggest a different window.
-
-### 2C. Global Retro
-
-Run the same git-analysis contract as 2B, but across every accessible repository (cross-project):
-- For each repo the user has configured or that is reachable, gather the same commit/author/LOC/hotspot/streak data
-- Aggregate shipping streaks and work patterns across projects and compare productivity between them
-- If only the current repo is accessible, note that and report it as a single-project global retro
-
-Do NOT persist legacy \`.context/retros/*.json\` snapshots or run history-compare against them — write only to Rasen's own report path (Step 4).
-
-### 3. Generate Report
-
-**Change-scoped report structure:**
-
-\`\`\`markdown
-# Retro: <change-name>
-
-**Date:** <date>
-**Scope:** Change-scoped
-**Change:** <change-name>
-
-## What Went Well
-- <positive observation 1>
-- <positive observation 2>
-
-## What Could Improve
-- <improvement area 1>
-- <improvement area 2>
-
-## Key Metrics
-- Time from proposal to ship: <duration>
-- Tasks: <completed>/<total>
-- Review iterations: <count>
-- Verification issues found: <count>
-
-## Actionable Takeaways
-1. <takeaway 1>
-2. <takeaway 2>
-3. <takeaway 3>
-\`\`\`
-
-**General / Global report structure:**
-
-\`\`\`markdown
-# Retro: Weekly Summary
-
-**Date:** <date>
-**Scope:** General
-**Period:** <start> to <end>
-
-## Metrics
-| Metric | Value |
-|--------|-------|
-| Commits | <count> |
-| Contributors | <count> |
-| Net LOC | +<ins>/-<del> |
-| Test LOC ratio | <pct>% |
-| Active days | <count> |
-| Streak | <days> consecutive days |
-
-## Per-Author Leaderboard
-| Contributor | Commits | +/- | Top area |
-|-------------|---------|-----|----------|
-| You (<name>) | <n> | +<ins>/-<del> | <dir> |
-| <author> | <n> | +<ins>/-<del> | <dir> |
-
-## Patterns Observed
-- <pattern 1: commit-type mix, peak hours, hotspots>
-- <pattern 2>
-
-## Improvement Suggestions
-1. <suggestion 1>
-2. <suggestion 2>
-3. <suggestion 3>
-\`\`\`
-
-### 4. Write Report
-
-**Change-scoped:** Write to \`rasen/changes/<name>/retro.md\`
-
-**General:** Write to \`rasen/retro-latest.md\`
-
-**Global:** Write to \`rasen/retro-global-latest.md\`
-
-### 5. Display Summary
-
-After writing the report:
-- Display the full report to the user
-- Highlight the **top 3 actionable takeaways**
-- Suggest next steps based on findings
-
-## Integration Notes
-
-- Change-scoped retro is most valuable after \`rasen-ship\` completes
-- The retro report is consumed by \`rasen-archive-change\` as part of the archive quality summary
-- General retro can be run weekly as a habit — suggest it proactively at the end of a work week`;
-
+/**
+ * The compatibility-wrapper skill template. Retains the historical export name
+ * so init/update generation can reference it, but it now returns the
+ * user-invoked, report-forcing wrapper rather than the retired workflow.
+ */
 export function getRetroCommandSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen-retro',
-    description: 'Engineering retrospective — analyze what shipped, patterns, and learnings. Supports change-scoped, general, and global modes.',
-    instructions: RETRO_INSTRUCTIONS,
+    name: RETRO_COMPAT_WRAPPER_DIR_NAME,
+    description:
+      'Temporary compatibility alias for rasen-retain report mode (user-invoked only).',
+    instructions: RETRO_WRAPPER_INSTRUCTIONS,
+    disableModelInvocation: true,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },

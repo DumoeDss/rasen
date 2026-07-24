@@ -39,7 +39,7 @@ describe('computeWorkflowDependencyGraph (design D7) — shipped built-ins', () 
       'review-cycle',
       'ship-command',
       'archive',
-      'retro-command',
+      'retain-command',
       'office-hours-command',
       'review',
     ]) {

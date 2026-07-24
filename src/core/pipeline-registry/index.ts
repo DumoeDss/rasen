@@ -110,6 +110,8 @@ export {
   writeRunState,
   resolveRunStateLocation,
   completedStages,
+  frozenRetentionMode,
+  RETAIN_STAGE_ID,
   normalizeWorker,
   normalizeRunStateWorkerRecord,
   stageWorkers,

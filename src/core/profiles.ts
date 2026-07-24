@@ -17,6 +17,7 @@ import { readProjectConfig } from './project-config.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
+  RETENTION_RUNNER_WORKFLOW_ID,
   filterKnownWorkflowRoots,
   getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
@@ -69,7 +70,14 @@ export const QUALITY_FLOOR_EXPERTS: readonly string[] = [
  */
 export function getCurrentBuiltInWorkflowIds(): string[] {
   return getBuiltInWorkflowDefinitions()
-    .filter((definition) => definition.source === 'built-in' && definition.kind !== 'expert')
+    .filter(
+      (definition) =>
+        definition.source === 'built-in' &&
+        definition.kind !== 'expert' &&
+        // The retention runner is internal and non-selectable — never part of
+        // the selectable-workflow baseline.
+        definition.id !== RETENTION_RUNNER_WORKFLOW_ID
+    )
     .map((definition) => definition.id);
 }
 

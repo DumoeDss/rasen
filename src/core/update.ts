@@ -32,8 +32,21 @@ import {
   formatLegacyCoexistenceNotice,
   pruneRetiredExpertSkillDirs,
   pruneRetiredWorkflowSkillDirs,
+  pruneRetiredRetentionSkillDirs,
   RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
+import {
+  getRetroCommandSkillTemplate,
+  RETRO_COMPAT_WRAPPER_DIR_NAME,
+} from './templates/skill-templates.js';
+import { resolveLearnedSkills, type ResolvedLearnedSkillSet } from './learned-skills/index.js';
+import {
+  learnedReconcileHasActivity,
+  mergeLearnedReconcileResult,
+  reconcileGlobalLearnedSkillsForTool,
+  reconcileProjectLearnedSkillsForTool,
+  type LearnedReconcileResult,
+} from './learned-skill-materialization.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type RepoMode } from './global-config.js';
 import {
@@ -312,6 +325,12 @@ export class UpdateCommand {
       if (!tool?.skillsDir) continue;
       await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
       await pruneRetiredWorkflowSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      // Clean retired retention skill dirs by exact name, preserving the
+      // currently shipped `rasen-retro` compatibility wrapper.
+      await pruneRetiredRetentionSkillDirs(
+        resolveToolSkillsRoot(tool, resolvedProjectPath),
+        [RETRO_COMPAT_WRAPPER_DIR_NAME]
+      );
       await this.pruneRetiredWorkflowCommandFiles(resolvedProjectPath, toolId);
       removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
     }
@@ -319,8 +338,16 @@ export class UpdateCommand {
       console.log(chalk.dim(`Removed: ${removedCommandCount} command files (commands have been consolidated into skills)`));
     }
 
-    if (!this.force && toolsToUpdateSet.size === 0) {
-      // All tools are up to date
+    // Reconcile learned skills for every configured tool (idempotent). This is
+    // the learned-skill materialization action itself — it runs before the
+    // up-to-date short-circuit so a learned-only change is never reported as
+    // "Already up to date." It never onboards a new tool (operates only on the
+    // already-configured set) and never changes the profile/workflow selection.
+    const learned = await this.reconcileLearnedSkills(resolvedProjectPath, configuredTools);
+    const learnedActivity = learnedReconcileHasActivity(learned);
+
+    if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity) {
+      // All tools are up to date and no learned-skill materialization changed.
       this.displayUpToDateMessage(toolStatuses);
 
       // Still check for new tool directories and extra workflows
@@ -330,19 +357,26 @@ export class UpdateCommand {
       return;
     }
 
-    // 8. Display update plan
-    if (this.force) {
-      console.log(`Force updating ${configuredTools.length} tool(s): ${configuredTools.join(', ')}`);
-    } else {
-      this.displayUpdatePlan([...toolsToUpdateSet], statusByTool, toolsUpToDate);
-    }
-    console.log();
-
-    // 9. Skills are the only delivery surface now.
+    // 8. Skills are the only delivery surface now.
     const skillTemplates = getSkillTemplates(desiredWorkflows);
 
-    // 10. Update tools (all if force, otherwise only those needing update)
+    // 9. Tools whose workflow skills need (re)generation (all if force,
+    // otherwise only those needing update). A learned-only change leaves this
+    // empty — the workflow summary then stays empty while the learned summary
+    // reports the change (cli-update spec: learned-only reconciliation).
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
+
+    // Display the update plan only when workflow skills are being regenerated.
+    if (toolsToUpdate.length > 0) {
+      if (this.force) {
+        console.log(`Force updating ${configuredTools.length} tool(s): ${configuredTools.join(', ')}`);
+      } else {
+        this.displayUpdatePlan([...toolsToUpdateSet], statusByTool, toolsUpToDate);
+      }
+      console.log();
+    }
+
+    // 10. Update tools.
     const updatedTools: string[] = [];
     const failedTools: Array<{ name: string; error: string }> = [];
     let removedDeselectedSkillCount = 0;
@@ -356,20 +390,23 @@ export class UpdateCommand {
       try {
         const skillsDir = resolveToolSkillsRoot(tool, resolvedProjectPath);
 
+        // Chain transformers once per tool: embed config values, then
+        // tool-specific transforms (hyphen-based command references for
+        // OpenCode), mirroring init. Reused by every skill and the retro
+        // compatibility wrapper below.
+        const configTransform = (text: string) => text
+          .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+          .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+        const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+        const transformer = toolTransform
+          ? (text: string) => toolTransform(configTransform(text))
+          : configTransform;
+
         // Generate skill files (always installed regardless of delivery)
         for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
-          // Chain transformers: embed config values, then tool-specific transforms
-          // (hyphen-based command references for OpenCode), mirroring init.
-          const configTransform = (text: string) => text
-            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
-            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
-          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-          const transformer = toolTransform
-            ? (text: string) => toolTransform(configTransform(text))
-            : configTransform;
           const skillContent = generateSkillContent(
             template,
             OPENSPEC_VERSION,
@@ -382,6 +419,11 @@ export class UpdateCommand {
           // references resolve at the install target (idempotent overwrite).
           copySkillSidecars(workflowId, skillDir);
         }
+
+        // Refresh the temporary `rasen-retro` compatibility wrapper by its
+        // exact named identity. This overwrites the retired retro workflow's
+        // skill with the report-forcing wrapper during the migration window.
+        await this.generateRetroCompatWrapper(skillsDir, transformer);
 
         removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
 
@@ -414,6 +456,11 @@ export class UpdateCommand {
     if (removedDeselectedSkillCount > 0) {
       console.log(chalk.dim(`Removed: ${removedDeselectedSkillCount} skill directories (deselected workflows)`));
     }
+
+    // Learned-skill summary — reported separately from the workflow summary
+    // (created/updated/removed/skipped) so an empty learned category is never
+    // merged into the workflow counts.
+    this.displayLearnedSummary(learned);
 
     // 12. Detect new tool directories not currently configured
     this.detectNewTools(resolvedProjectPath, configuredTools);
@@ -679,6 +726,96 @@ export class UpdateCommand {
     }
 
     return removed;
+  }
+
+  /**
+   * Writes the temporary `rasen-retro` compatibility wrapper into a tool's
+   * skills root by its exact named identity ({@link RETRO_COMPAT_WRAPPER_DIR_NAME}),
+   * overwriting the retired retro workflow's skill with the report-forcing
+   * wrapper. The wrapper is outside the selectable workflow catalog.
+   */
+  private async generateRetroCompatWrapper(
+    skillsDir: string,
+    transformer: (text: string) => string
+  ): Promise<void> {
+    const content = generateSkillContent(
+      getRetroCommandSkillTemplate(),
+      OPENSPEC_VERSION,
+      transformer,
+      false
+    );
+    await FileSystemUtils.writeFile(
+      path.join(skillsDir, RETRO_COMPAT_WRAPPER_DIR_NAME, 'SKILL.md'),
+      content
+    );
+  }
+
+  /**
+   * Reconciles active learned skills into every already-configured tool,
+   * tracking exact ownership in the artifact ledgers. Never onboards a tool
+   * (operates only on `toolIds`, the configured set) and never changes the
+   * profile or workflow selection. Best-effort: a resolution or per-tool
+   * failure leaves the rest of update unaffected.
+   */
+  private async reconcileLearnedSkills(
+    projectPath: string,
+    toolIds: readonly string[]
+  ): Promise<LearnedReconcileResult> {
+    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
+    let resolved: ResolvedLearnedSkillSet;
+    try {
+      resolved = await resolveLearnedSkills({ projectRoot: projectPath });
+    } catch {
+      return aggregate;
+    }
+
+    for (const toolId of toolIds) {
+      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+      if (!tool?.skillsDir) continue;
+      const skillsRoot = resolveToolSkillsRoot(tool, projectPath);
+      try {
+        const result =
+          tool.skillsHome === 'global'
+            ? reconcileGlobalLearnedSkillsForTool({
+                toolId,
+                toolLabel: tool.name,
+                skillsRoot,
+                resolved,
+              })
+            : reconcileProjectLearnedSkillsForTool({
+                projectRoot: projectPath,
+                toolId,
+                toolLabel: tool.name,
+                skillsRoot,
+                resolved,
+              });
+        mergeLearnedReconcileResult(aggregate, result);
+      } catch {
+        // Best-effort per tool.
+      }
+    }
+    return aggregate;
+  }
+
+  /**
+   * Reports the learned-skill reconciliation result as a section separate from
+   * the workflow summary (created/updated/removed/skipped), so an empty learned
+   * category is never merged into the workflow counts. Prints nothing when
+   * there was no learned activity at all.
+   */
+  private displayLearnedSummary(learned: LearnedReconcileResult): void {
+    if (!learnedReconcileHasActivity(learned)) return;
+    const parts: string[] = [];
+    if (learned.created.length > 0) parts.push(`created: ${learned.created.length}`);
+    if (learned.updated.length > 0) parts.push(`updated: ${learned.updated.length}`);
+    if (learned.removed.length > 0) parts.push(`removed: ${learned.removed.length}`);
+    if (learned.skipped.length > 0) parts.push(`skipped: ${learned.skipped.length}`);
+    if (parts.length > 0) {
+      console.log(chalk.dim(`Learned skills — ${parts.join(', ')}`));
+    }
+    for (const skip of learned.skipped) {
+      console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+    }
   }
 
   /**

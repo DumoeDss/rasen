@@ -611,6 +611,45 @@ rasen archive update-ci-config --skip-specs
 2. Prompts for confirmation (unless `--yes`)
 3. Merges delta specs into `rasen/specs/`
 4. Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/`
+5. Captures a quality summary (scanned files + metric-line counts) into the archive's metadata
+
+In the full delivery flow, archive runs **after** the profile's retention step (`ship → retain → archive`). It preserves whatever retention produced — a report-mode `retro.md` is moved with the rest of the change — but archive itself performs no reporting or codification.
+
+**Behavior break (v0.1.5):** archive no longer interprets `[RULE]` markers in quality artifacts and no longer appends them to the project's `quality-rules`. `[RULE]` lines are ordinary archived content, existing `quality-rules` are preserved exactly and keep participating in instruction injection, and the archive summary no longer reports an extracted-rule count. Evidence-gated durable guidance is now the `codify` mode of `rasen-retain`, stored as managed [learned skills](retention-and-learned-skills.md) rather than config entries.
+
+---
+
+### `rasen knowledge`
+
+Inspect and mutate canonical **learned skills** — the durable, evidence-gated guidance `rasen-retain`'s `codify` mode produces. This group is the only seam that writes learned-skill state; agents submit a strict candidate rather than editing skill directories directly.
+
+```bash
+rasen knowledge apply --from <absolute-json-file> [--approve-global] [--json]
+rasen knowledge list [--scope project|global] [--json]
+rasen knowledge show <id> [--scope project|global] [--json]
+rasen knowledge retire <id> [--scope project|global] [--yes] [--json]
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `apply` | Read a strict versioned candidate from an absolute JSON file, compute the deterministic plan, and commit it (create / rewrite / promote / retire / no-op). |
+| `list` | List canonical learned skills in a scope, including active and retired status. |
+| `show <id>` | Show one learned skill's provenance, applicability, evidence, and status. |
+| `retire <id>` | Retire a managed learned skill (requires `--yes` outside a TTY). |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--from <path>` | Absolute path to the candidate JSON file (`apply`). |
+| `--scope project\|global` | Which canonical registry to read or mutate (default: `project`). |
+| `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). Rejected for a project mutation so consent cannot be reused. |
+| `--yes` | Skip the retirement confirmation (`retire`). |
+| `--json` | Emit a single JSON document on stdout (agent contract). |
+
+Project mutations are authorized by an active `codify` profile. A **global** create or promotion additionally requires equivalent evidence from at least two distinct project ids **and** explicit approval (interactive prompt or `--approve-global`). See [Retention and learned skills](retention-and-learned-skills.md) for the scope, promotion, applicability, ownership, and budget rules.
 
 ---
 

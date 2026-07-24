@@ -8,14 +8,28 @@ import { OPENSPEC_DIR_NAME } from '../core/config.js';
 import {
   ALL_EXPERTS,
   ALL_WORKFLOWS,
-  CORE_WORKFLOWS,
-  QUALITY_FLOOR_EXPERTS,
   getCurrentBuiltInWorkflowIds,
   getProfileWorkflows,
   resolveUserWideProfileBase,
 } from '../core/profiles.js';
-import { normalizeProfileDefinition, PROFILE_DEFINITION_VERSION } from '../core/named-profiles.js';
-import { loadWorkflowCatalog, portablePathCollisionKey } from '../core/workflow-registry/index.js';
+import {
+  getBuiltinProfileDefinition,
+  normalizeProfileDefinition,
+  PROFILE_DEFINITION_VERSION,
+} from '../core/named-profiles.js';
+import {
+  RETENTION_MODES,
+  RETIRED_RETRO_WORKFLOW_ID,
+  builtInProfileRetention,
+  isRetentionMode,
+  resolveMigratedRetention,
+  type RetentionMode,
+} from '../core/retention.js';
+import {
+  loadWorkflowCatalog,
+  portablePathCollisionKey,
+  RETENTION_RUNNER_WORKFLOW_ID,
+} from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/shared/retired-command-paths.js';
 import { resolveExpertSelectionExplicitReadOnly } from '../core/expert-selection-state.js';
 import { hasProjectConfigDrift } from '../core/profile-sync-drift.js';
@@ -48,6 +62,8 @@ export interface ProfileState {
    */
   profile: Profile | string;
   workflows: string[];
+  /** Exactly one retention mode (`off` | `report` | `codify`). */
+  retention: RetentionMode;
 }
 
 export interface ProfileStateDiff {
@@ -83,46 +99,73 @@ function normalizedSelectedWorkflows(workflows: readonly string[]): string[] {
   return normalizeProfileDefinition({
     version: PROFILE_DEFINITION_VERSION,
     workflows: [...workflows],
+    retention: 'off',
   }).workflows;
+}
+
+/**
+ * The effective retention for a current-config selection: an explicit
+ * `retention` value wins; otherwise a built-in profile resolves to its coupled
+ * default (`full` → report, `core` → off), and a `custom`/saved selection is
+ * migrated from its v1 workflow list — a selection that carried the retired
+ * `retro-command` maps to `report`, any other to `off`. Never persists on read.
+ */
+function resolveCurrentRetention(
+  config: GlobalConfig,
+  profile: string,
+  customWorkflows: readonly string[] | undefined
+): RetentionMode {
+  if (isRetentionMode(config.retention)) return config.retention;
+  if (profile === 'full' || profile === 'core') return builtInProfileRetention(profile);
+  return resolveMigratedRetention(customWorkflows ?? []);
 }
 
 export function resolveCurrentProfileState(config: GlobalConfig): ProfileState {
   const raw = config.profile || 'full';
   const expertSelectionExplicit = config.expertSelectionExplicit === true;
   const customWorkflows = config.workflows ? [...config.workflows] : undefined;
+  const finalize = (resolved: string[]): ProfileState => {
+    const retention = resolveCurrentRetention(config, raw, customWorkflows);
+    // The retired `retro-command` never appears in a v2 selection; retention
+    // carries its former meaning.
+    const workflows = resolved.filter((id) => id !== RETIRED_RETRO_WORKFLOW_ID);
+    return { profile: raw, workflows, retention };
+  };
   if (raw === 'full' || raw === 'core' || raw === 'custom') {
-    const workflows = [...getProfileWorkflows(raw, customWorkflows, { expertSelectionExplicit })];
-    return { profile: raw, workflows };
+    return finalize([...getProfileWorkflows(raw, customWorkflows, { expertSelectionExplicit })]);
   }
   // A user-wide profile set to a saved name (m4): display it verbatim and
   // resolve its actual stored workflow set (not `full`'s), so the editor never
   // misrepresents the current profile. An unresolvable name falls back to
   // `full`'s set for the picker but keeps showing the name as current.
   const base = resolveUserWideProfileBase(raw, customWorkflows, expertSelectionExplicit);
-  const workflows = base.ok
-    ? [...base.workflows]
-    : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
-  return { profile: raw, workflows };
+  return finalize(
+    base.ok
+      ? [...base.workflows]
+      : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })]
+  );
 }
 
 /**
- * `full` = every workflow + every built-in expert; `core` = the CORE
- * workflows + the quality-floor experts (design.md D6/D2). Anything else,
- * including a `full`/`core`-shaped workflow set with a different expert
- * selection, is `custom`.
+ * `full` = every workflow + every built-in expert with retention `report`;
+ * `core` = the CORE workflows + the quality-floor experts with retention `off`
+ * (design.md D6/D2). A selection is classified as a built-in only when BOTH its
+ * workflow/expert membership AND its retention mode equal that built-in's
+ * complete version-2 definition — a `full`/`core`-shaped selection with a
+ * different retention mode (or a different expert selection) is `custom`.
  */
-export function deriveProfileFromWorkflowSelection(selectedWorkflows: string[]): Profile {
-  const fullSet = [...ALL_WORKFLOWS, ...ALL_EXPERTS];
-  const isFullMatch =
-    selectedWorkflows.length === fullSet.length &&
-    fullSet.every((id) => selectedWorkflows.includes(id));
-  if (isFullMatch) return 'full';
-
-  const coreSet = [...CORE_WORKFLOWS, ...QUALITY_FLOOR_EXPERTS];
-  const isCoreMatch =
-    selectedWorkflows.length === coreSet.length &&
-    coreSet.every((id) => selectedWorkflows.includes(id));
-  return isCoreMatch ? 'core' : 'custom';
+export function deriveProfileFromSelection(
+  selectedWorkflows: string[],
+  retention: RetentionMode
+): Profile {
+  const normalized = normalizedSelectedWorkflows(selectedWorkflows);
+  const matches = (name: 'full' | 'core'): boolean => {
+    const builtIn = getBuiltinProfileDefinition(name);
+    return retention === builtIn.retention && sameWorkflowSet(normalized, builtIn.workflows);
+  };
+  if (matches('full')) return 'full';
+  if (matches('core')) return 'core';
+  return 'custom';
 }
 
 export function formatWorkflowSummary(
@@ -188,6 +231,10 @@ export function diffProfileState(
     lines.push(messages.diffWorkflows(added, removed));
   }
 
+  if (before.retention !== after.retention) {
+    lines.push(messages.diffRetention(before.retention, after.retention));
+  }
+
   return { hasChanges: lines.length > 0, lines };
 }
 
@@ -215,7 +262,11 @@ export function workflowChoices(
   SeparatorCtor: InquirerPrompts['Separator']
 ): Array<WorkflowChoice | PromptSeparator> {
   const catalog = loadWorkflowCatalog();
-  const definitions = catalog.definitions;
+  // The retention runner is installed by dependency closure but is never a
+  // profile checkbox — the retention radio is its only control.
+  const definitions = catalog.definitions.filter(
+    (definition) => definition.id !== RETENTION_RUNNER_WORKFLOW_ID
+  );
   // Display ids strip the internal '-command' suffix fusion workflow ids
   // carry (e.g. `ship-command` -> `ship`) so the picker shows the friendly
   // public name — independent of the (now-retired) command file surface.
@@ -313,15 +364,40 @@ function workflowPickerOptions(
   };
 }
 
+/**
+ * The shared retention radio: exactly one of `off` | `report` | `codify`,
+ * pre-selecting the source definition's current value. Selecting one value
+ * necessarily deselects the other two (a `select`, not a checkbox), so no
+ * confirmed profile can carry both report and codify.
+ */
+async function promptForRetentionMode(
+  current: RetentionMode,
+  select: InquirerPrompts['select'],
+  messages: ProfilePromptMessages
+): Promise<RetentionMode> {
+  return select<RetentionMode>({
+    message: messages.retentionPickerMessage,
+    default: current,
+    choices: RETENTION_MODES.map((mode) => ({
+      value: mode,
+      name: messages.retention[mode].name,
+      description: messages.retention[mode].description,
+    })),
+  });
+}
+
 export async function promptForNewProfileState(currentState: ProfileState): Promise<ProfileState> {
-  const { checkbox, Separator } = await import('@inquirer/prompts');
+  const { checkbox, select, Separator } = await import('@inquirer/prompts');
   const messages = getProfilePromptMessages();
   const workflows = await checkbox<string>(
     workflowPickerOptions(currentState, messages, Separator)
   );
+  const retention = await promptForRetentionMode(currentState.retention, select, messages);
+  const normalized = normalizedSelectedWorkflows(workflows);
   return {
-    profile: deriveProfileFromWorkflowSelection(workflows),
-    workflows: normalizedSelectedWorkflows(workflows),
+    profile: deriveProfileFromSelection(normalized, retention),
+    workflows: normalized,
+    retention,
   };
 }
 
@@ -371,6 +447,7 @@ export function applyProfileState(state: ProfileState): void {
   const config = getGlobalConfigForProfile();
   config.profile = state.profile;
   config.workflows = [...state.workflows];
+  config.retention = state.retention;
   config.expertSelectionExplicit = true;
   // Record the built-in workflows known at this save, so a later `update`
   // surfaces only workflows added to the catalog after this point, never one
@@ -393,6 +470,7 @@ export function unselectedBuiltInWorkflowDisplayIds(currentState: ProfileState):
       (definition) =>
         definition.source === 'built-in' &&
         definition.kind !== 'expert' &&
+        definition.id !== RETENTION_RUNNER_WORKFLOW_ID &&
         !selectedIds.has(definition.id)
     )
     .map((definition) => getCommandFileId(definition.id) ?? definition.id);
@@ -416,6 +494,7 @@ export async function runInteractiveProfileEditor(): Promise<void> {
 
     console.log(chalk.bold(ui.currentSettingsHeading));
     console.log(`  ${ui.workflowsLabel}: ${formatWorkflowSummary(currentState.workflows, currentState.profile)}`);
+    console.log(`  ${ui.retentionLabel}: ${ui.retentionSummary(currentState.retention)}`);
     console.log(chalk.dim(ui.workflowsExplanation));
 
     // Surface built-in workflows available but not in the current selection,
@@ -451,21 +530,25 @@ export async function runInteractiveProfileEditor(): Promise<void> {
     const nextState: ProfileState = {
       profile: currentState.profile,
       workflows: [...currentState.workflows],
+      retention: currentState.retention,
     };
 
     const selectedWorkflows = await checkbox<string>(
       workflowPickerOptions(currentState, messages, Separator)
     );
     nextState.workflows = normalizedSelectedWorkflows(selectedWorkflows);
+    nextState.retention = await promptForRetentionMode(currentState.retention, select, messages);
     // Preserve a saved-name global profile when the selection is unchanged (m4):
     // only reclassify to a preset when the user actually edited the set, so a
     // no-op pass through the picker never clobbers `my-set` into `custom`.
     const isReserved = currentState.profile === 'full' || currentState.profile === 'core' || currentState.profile === 'custom';
-    const selectionUnchanged = sameWorkflowSet(nextState.workflows, currentState.workflows);
+    const selectionUnchanged =
+      sameWorkflowSet(nextState.workflows, currentState.workflows) &&
+      nextState.retention === currentState.retention;
     nextState.profile =
       !isReserved && selectionUnchanged
         ? currentState.profile
-        : deriveProfileFromWorkflowSelection(selectedWorkflows);
+        : deriveProfileFromSelection(nextState.workflows, nextState.retention);
 
     const diff = diffProfileState(currentState, nextState);
     if (!diff.hasChanges) {

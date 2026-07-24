@@ -81,6 +81,7 @@ describe('built-in workflow catalog', () => {
     expect(byId.get('goal-plan')).toBe('internal');
     expect(byId.get('goal-iterate')).toBe('internal');
     expect(byId.get('goal-report')).toBe('internal');
+    expect(byId.get('retain-command')).toBe('internal');
     expect(byId.get('propose')).toBe('task');
     expect(byId.get('apply')).toBe('task');
   });
@@ -122,7 +123,7 @@ describe('built-in workflow catalog', () => {
       schemas: [],
     });
     expect(byId.get('auto-command')?.requires).toEqual({
-      workflows: [],
+      workflows: ['retain-command'],
       skills: ['rasen-review'],
       pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
       schemas: [],
@@ -134,6 +135,7 @@ describe('built-in workflow catalog', () => {
       schemas: [],
     });
 
+    const knownWorkflowIds = new Set(definitions.map((definition) => definition.id));
     for (const definition of definitions) {
       for (const skill of definition.requires.skills) {
         expect(
@@ -147,7 +149,14 @@ describe('built-in workflow catalog', () => {
           `${definition.id} requires.pipelines "${pipeline}" should resolve to a real pipeline`
         ).not.toBeNull();
       }
-      expect(definition.requires.workflows).toEqual([]);
+      // A declared workflow dependency (e.g. auto-command -> retain-command)
+      // must resolve to a real built-in workflow id.
+      for (const workflow of definition.requires.workflows) {
+        expect(
+          knownWorkflowIds.has(workflow),
+          `${definition.id} requires.workflows "${workflow}" should resolve to a real workflow`
+        ).toBe(true);
+      }
       expect(definition.requires.schemas).toEqual([]);
     }
   });

@@ -20,6 +20,7 @@ import {
   type ConfigDiagnosticReporter,
 } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
+import { isRetentionMode, type RetentionMode } from './retention.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -82,6 +83,14 @@ export interface GlobalConfig {
    */
   profile?: Profile | string;
   workflows?: string[];
+  /**
+   * The single retention mode the `rasen-retain` stage resolves to
+   * (`off` | `report` | `codify`) — the version-2 profile dimension. Absent on
+   * a v1 config; the effective value is then migrated from the workflow
+   * selection (a former `retro-command` selection maps to `report`). Written
+   * only by explicit profile writes, never fabricated on read.
+   */
+  retention?: RetentionMode;
   language?: Language;
   proactive?: boolean;
   repoMode?: RepoMode;
@@ -345,6 +354,12 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
     // Schema evolution: apply defaults for new fields if not present in loaded config
     if (parsed.profile === undefined) {
       merged.profile = DEFAULT_CONFIG.profile;
+    }
+    // Retention is never fabricated on read: an absent value stays absent so
+    // the effective-retention resolver can migrate it from the workflow
+    // selection; only an explicitly-stored invalid value is dropped.
+    if (parsed.retention !== undefined && !isRetentionMode(parsed.retention)) {
+      delete (merged as Record<string, unknown>).retention;
     }
     if (!isLanguage(parsed.language)) {
       merged.language = DEFAULT_CONFIG.language;
