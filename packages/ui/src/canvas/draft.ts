@@ -6,7 +6,11 @@
  * Flow and DOM so cycle logic and field-preservation are unit-testable
  * without a canvas mount, the same reasoning that made `layout.ts` pure.
  */
-import type { WirePipelineDefinition, WirePipelineDefinitionStage } from '../api/types.js';
+import type {
+  ThresholdValue,
+  WirePipelineDefinition,
+  WirePipelineDefinitionStage,
+} from '../api/types.js';
 
 /**
  * Appends a stage to the draft. Callers assemble the full stage object
@@ -73,6 +77,38 @@ export function updateStageFields(
   return {
     ...def,
     stages: def.stages.map((stage) => (stage.id === id ? { ...stage, ...patch } : stage)),
+  };
+}
+
+/**
+ * Sets or clears one stage's nested handoff threshold without replacing the
+ * rest of its handoff block. Canvas intentionally does not expose relay/stall
+ * limits, so those fields (and any future loader field) must survive threshold
+ * edits verbatim. Clearing omits `handoff` only when no defined field remains.
+ */
+export function updateStageHandoffThreshold(
+  def: WirePipelineDefinition,
+  id: string,
+  threshold: ThresholdValue | undefined
+): WirePipelineDefinition {
+  return {
+    ...def,
+    stages: def.stages.map((stage) => {
+      if (stage.id !== id) return stage;
+      const handoff = { ...(stage.handoff ?? {}) };
+      if (threshold !== undefined) {
+        handoff.threshold = threshold;
+        return { ...stage, handoff };
+      }
+
+      delete handoff.threshold;
+      const hasDefinedField = Object.values(handoff).some((value) => value !== undefined);
+      if (hasDefinedField) return { ...stage, handoff };
+
+      const next = { ...stage };
+      delete next.handoff;
+      return next;
+    }),
   };
 }
 

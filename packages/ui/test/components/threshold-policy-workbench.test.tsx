@@ -406,28 +406,19 @@ describe('ThresholdPolicyWorkbench', () => {
     expect(client.deleteKey).not.toHaveBeenCalled();
   });
 
-  it('offers detection-only migration guidance when bindings and explicit legacy values coexist', () => {
+  it('does not render migration guidance or mutate legacy values when bindings coexist', () => {
     mount({
       entries: [
         bindingEntry('codex', 'balanced', 'project', { project: 'balanced' }),
         legacyEntry('handoff.threshold', 0.7, { project: 0.7 }),
       ],
     });
-    const notice = container.querySelector(
-      '[data-testid="threshold-migration-guidance"]'
-    )!;
-    expect(notice.textContent).toContain('Configured stage instances');
-    expect(notice.textContent).toContain('become active again');
-    expect(client.mutateThresholdScheme).not.toHaveBeenCalled();
-    expect(client.putKey).not.toHaveBeenCalled();
-    expect(client.deleteKey).not.toHaveBeenCalled();
-
-    mount({
-      entries: [legacyEntry('handoff.threshold', 0.7, { project: 0.7 })],
-    });
     expect(
       container.querySelector('[data-testid="threshold-migration-guidance"]')
     ).toBeNull();
+    expect(client.mutateThresholdScheme).not.toHaveBeenCalled();
+    expect(client.putKey).not.toHaveBeenCalled();
+    expect(client.deleteKey).not.toHaveBeenCalled();
   });
 
   it.each([

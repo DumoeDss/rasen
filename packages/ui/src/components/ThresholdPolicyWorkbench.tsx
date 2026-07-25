@@ -95,21 +95,7 @@ export function ThresholdPolicyWorkbench(props: WorkbenchProps) {
   const bindingEntries = props.entries.filter((entry) =>
     entry.instanceKey?.startsWith('thresholds.bindings.')
   );
-  const legacyEntries = props.entries.filter(
-    (entry) =>
-      entry.definition.key === 'handoff.threshold' ||
-      entry.definition.key.startsWith('handoff.roles.')
-  );
-  const hasLegacy = legacyEntries.some((entry) =>
-    Object.values(entry.scopeValues).some((value) => value !== undefined)
-  );
   const hasBindings = bindingEntries.length > 0;
-  const validSchemeNames = new Set(validSchemes.map((entry) => entry.name));
-  const hasUsableBindings = bindingEntries.some((entry) =>
-    Object.values(entry.scopeValues).some(
-      (value) => typeof value === 'string' && validSchemeNames.has(value)
-    )
-  );
 
   const openCreate = (seed?: ThresholdScheme, presetId?: string) => {
     setFeedback(null);
@@ -216,20 +202,6 @@ export function ThresholdPolicyWorkbench(props: WorkbenchProps) {
           ))}
         </div>
       </section>
-
-      {hasUsableBindings && hasLegacy && (
-        <aside class="threshold-migration" data-testid="threshold-migration-guidance">
-          <div>
-            <strong>{t('pipelines.threshold.migration.title')}</strong>
-            <p>{t('pipelines.threshold.migration.body')}</p>
-            <p>{t('pipelines.threshold.migration.fallback')}</p>
-          </div>
-          <button type="button" onClick={() => openCreate()}>
-            {t('pipelines.threshold.migration.review_schemes')}
-          </button>
-          <a href="#pipelines-advanced">{t('pipelines.threshold.migration.review_advanced')}</a>
-        </aside>
-      )}
 
       {editor && (
         <ThresholdSchemeEditor
