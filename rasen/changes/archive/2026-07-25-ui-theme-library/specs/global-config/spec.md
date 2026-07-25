@@ -3,15 +3,16 @@
 ### Requirement: Global UI theme preference
 
 The global configuration SHALL accept `ui.theme` as a valid theme identifier
-and SHALL default it to `editorial` when absent, while preserving existing and
-unknown fields in the `ui` block. Loading an unavailable theme identifier SHALL
-preserve that configured value so the UI can report and recover from it rather
-than rewriting configuration as a read side effect.
+and SHALL default it to `crt` (the user-facing Official theme) when absent,
+while preserving existing and unknown fields in the `ui` block. Loading an
+unavailable theme identifier SHALL preserve that configured value so the UI can
+report and recover from it rather than rewriting configuration as a read side
+effect.
 
-#### Scenario: Existing config receives the Editorial default
+#### Scenario: Existing config receives the Official default
 
 - **WHEN** a valid existing global config has no `ui.theme` field
-- **THEN** its effective global theme is `editorial`
+- **THEN** its effective global theme is `crt`
 - **AND** loading does not rewrite the file
 
 #### Scenario: Theme coexists with pinned spaces

@@ -3,10 +3,10 @@
 ### Requirement: Theme preference key
 
 The configuration-key registry SHALL define `ui.theme` as a global-only string
-key in the Appearance group, with the built-in default `editorial` and a
-portable theme-identifier constraint. Registry-driven CLI and HTTP config
-writes SHALL validate identifier syntax while theme availability SHALL be
-reported by the theme catalog and activation experience.
+key in the Appearance group, with the built-in default `crt` (the user-facing
+Official theme) and a portable theme-identifier constraint. Registry-driven CLI
+and HTTP config writes SHALL validate identifier syntax while theme availability
+SHALL be reported by the theme catalog and activation experience.
 
 #### Scenario: Global theme identifier is accepted
 
