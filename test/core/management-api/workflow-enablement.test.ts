@@ -161,6 +161,12 @@ describe('workflow-enablement API (space-workflow-enablement design D4/D5)', () 
       expect(body.mode).toBe('override');
       const reviewUnit = body.units.find((u: any) => u.id === 'review');
       expect(reviewUnit.enabled).toBe(true);
+      const retentionRunner = body.units.find((u: any) => u.id === 'retain-command');
+      expect(retentionRunner).toMatchObject({
+        kind: 'internal',
+        enabled: true,
+        requiredByClosure: true,
+      });
     });
   });
 
@@ -184,6 +190,18 @@ describe('workflow-enablement API (space-workflow-enablement design D4/D5)', () 
         path: '/api/v1/workflow-enablement',
         headers: authed(),
         body: JSON.stringify({ root: projectRoot, op: 'enable', id: 'not-a-real-workflow-id' }),
+      });
+      expect(res.status).toBe(400);
+      expect(readProjectConfig(projectRoot)?.workflows).toBeUndefined();
+    });
+
+    it('400 for an internal compatibility dependency, writing nothing', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/workflow-enablement',
+        headers: authed(),
+        body: JSON.stringify({ root: projectRoot, op: 'enable', id: 'retain-command' }),
       });
       expect(res.status).toBe(400);
       expect(readProjectConfig(projectRoot)?.workflows).toBeUndefined();

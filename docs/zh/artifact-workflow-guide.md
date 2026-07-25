@@ -12,10 +12,10 @@
 制品工作流把「一个需求 → 已实现、已审查、已验证、已交付、已归档」拆成若干阶段。每个阶段既可以由 autopilot 自动串起来，也可以单独手动调用。
 
 ```
- explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ verify ─▶ review-cycle ─▶ ship ─▶ archive ─▶ retro
- (想清楚)   (验证需求)      (写计划)   (实现)  (专家评审) (评审环:修→复审Δ) (交付)  (归档合并)  (复盘)
+ explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ verify ─▶ review-cycle ─▶ ship ─▶ retain ─▶ archive
+ (想清楚)   (验证需求)      (写计划)   (实现)  (专家评审) (评审环:修→复审Δ) (交付)  (沉淀)  (归档合并)
    │            │             │          │        │            │           │         │
-  可选         可选         产出契约   勾选tasks 专家/安全/QA  迭代直到干净  PR/部署  合并spec  学习沉淀
+  可选         可选         产出契约   勾选tasks 专家/安全/QA  迭代直到干净  PR/部署  按策略学习  合并spec
 ```
 
 > 注：在 autopilot 流水线里，`verify`（专家评审，可并行 review/cso/benchmark/design-review/qa）先跑出 findings，再由 `review-cycle`（=`review-loop` 阶段）驱动「triage→修→复审Δ」直到干净。bug-fix 走自适应 verify、不带 review-loop。
@@ -58,15 +58,15 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 
 | 流水线 | 阶段（buildOrder 概要）|
 |---|---|
-| **full-feature** | office-hours → propose(可方向复审) → apply → 并行专家评审(review / cso / benchmark / design-review / qa\|qa-only) → review-loop(评审环) → ship → archive → retro |
+| **full-feature** | office-hours → propose(可方向复审) → apply → 并行专家评审(review / cso / benchmark / design-review / qa\|qa-only) → review-loop(评审环) → ship → retain → archive |
 | **small-feature** _(默认)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → 自适应 verify → ship → archive |
 | **auto-decompose** | **decompose**(条件性首步，LEAD 自审、非人类 gate) → propose → apply → verify → review-loop → ship → archive；取了 decompose 就扇出成多个子 change，每个子跑 `childPipeline`（默认 small-feature，见 §2.7）|
-| **goal-loop-measure** | define-goal → iterate（measure 闸门，循环至达标/maxRounds）→ ship → archive —— 由 `/rasen-goal` 驱动，**见 §9** |
-| **goal-loop-evaluate** | define-goal → iterate（evaluate 闸门，循环）→ ship → archive —— 由 `/rasen-goal` 驱动，**见 §9** |
+| **goal-loop-measure** | define-goal → iterate（measure 闸门，循环至达标/maxRounds）→ ship → retain → archive —— 由 `/rasen-goal` 驱动，**见 §9** |
+| **goal-loop-evaluate** | define-goal → iterate（evaluate 闸门，循环）→ ship → retain → archive —— 由 `/rasen-goal` 驱动，**见 §9** |
 | **goal-loop-research** | define-goal → iterate（evaluate 闸门，循环）→ report —— 由 `/rasen-goal` 驱动，**见 §9** |
 
-> 全部内置流水线的 **ship 和 archive 阶段都显式指定 `model: sonnet`**——这两个阶段是机械执行（跑测试/push/建 PR、归档/合并 spec），不需要大模型推理；不指定 `model` 时 worker 会继承主 agent 的模型，平白多花成本。自定义流水线也建议照此为 ship/archive 写上 `model: sonnet`。
+> 全部内置流水线的 ship 和 archive 阶段，以及含 retention 尾部里的 canonical retain 阶段，**都显式指定 `model: sonnet`**——这些阶段是机械执行（跑测试/push/建 PR、执行 retention 策略、归档/合并 spec），不需要大模型推理；不指定 `model` 时 worker 会继承主 agent 的模型，平白多花成本。自定义流水线声明 ship/retain/archive 阶段时也建议写上 `model: sonnet`。
 
 **怎么选流水线**（显式优先，否则默认 `small-feature`）：
 - **显式指定**：`/rasen-auto --pipeline <名字> <任务>`，或**直接把流水线名放最前面**——`/rasen-auto full-feature 重构鉴权子系统`（首个 token 是已知流水线名就直接用）。
@@ -76,7 +76,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 
 > **Opt-in 自主权**：`--auto-select` 让 LEAD 直接采纳 classify 建议而非走默认；`--auto-compose` 进一步允许在无匹配时从 stage 库组装新流水线（机器强制评审底线）。两者默认关闭；显式选择永远最高。见 [autopilot.md](autopilot.md)。
 
-每个阶段带元数据，LEAD 据此执行：**kind**（`standard` 默认 / `decompose` 扇出点，§2.7）、**skill**（worker 调用的 skill；decompose 阶段无此字段）、**childPipeline**（仅 decompose——每个子 change 跑的流水线，默认 `small-feature`）、**role**（隔离）、**gate**（人类暂停）、**loop**（评审环）、**parallelGroup**（并发扇出，如 verify 的专家组）、**condition**（满足才跑；ui / non-ui 等互斥条件择一）、**leadReview**（LEAD 查方向漂移，§2.3）、**verifyPolicy**（adaptive / standard / light，§2.3）、**model**（该阶段 worker 的模型覆盖；省略则继承主 agent 模型——内置流水线给 ship/archive 写了 `model: sonnet`）。
+每个阶段带元数据，LEAD 据此执行：**kind**（`standard` 默认 / `decompose` 扇出点，§2.7）、**skill**（worker 调用的 skill；decompose 阶段无此字段）、**childPipeline**（仅 decompose——每个子 change 跑的流水线，默认 `small-feature`）、**role**（隔离）、**gate**（人类暂停）、**loop**（评审环）、**parallelGroup**（并发扇出，如 verify 的专家组）、**condition**（满足才跑；ui / non-ui 等互斥条件择一）、**leadReview**（LEAD 查方向漂移，§2.3）、**verifyPolicy**（adaptive / standard / light，§2.3）、**model**（该阶段 worker 的模型覆盖；省略则继承主 agent 模型——内置流水线给 ship/archive，以及存在时的 canonical retain 阶段写了 `model: sonnet`）。
 
 ### 2.3 两个任务相关增强
 
@@ -155,9 +155,10 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 | 深度验证 | `/rasen-verify-enhanced` | 产物检查 + 代码评审 + 安全审计 + 浏览器 QA + 视觉审查（按改动规模自动伸缩）| 各类 report |
 | **迭代评审环** | `/rasen-review-cycle` | review→triage→fix→re-review(Δ)→{pass\|循环\|升级}；也是 `auto` 的 `review-loop` 阶段 | `review-cycle-report.md` |
 | 交付 | `/rasen-ship` | 测试、push、建 PR、可选合并 & 部署；PR 正文取自 proposal（流水线中固定用 `model: sonnet` 跑）| `ship-log.md` |
+| 沉淀 | `/rasen-retain [change]` | 在 ship 后、archive 前执行 profile 的 `off` / `report` / `codify` retention 策略（流水线中固定用 `model: sonnet` 跑）| `retro.md`、managed learned-skill 变更或 no-op |
 | 归档 | `/rasen-archive-change` / `/rasen-bulk-archive-change` | 归档 change，把 delta spec 合并进 canonical specs（流水线中固定用 `model: sonnet` 跑）| 归档目录 + 更新的 specs |
 | 合并 spec | `/rasen-sync-specs` | 把 delta specs 合并进主 specs | 更新的 specs |
-| 复盘 | `/rasen-retro [change]` | 工程复盘：分析交付内容、模式、学习（change/general/global 三种模式）| `retro.md` |
+| 临时 report 模式兼容别名 | `/rasen-retro [change]` | 在一个迁移窗口内强制 `/rasen-retain` 的 `report` 模式；仅供用户手动调用，不是生命周期阶段 | `retro.md` |
 | **交接** | `/rasen-handoff` | 探测上下文占用并写交接文档，供新会话/继任 worker 续作（opt-in）| `handoff/lead-<n>.md` + run-state 指针 |
 | 引导 | `/rasen-onboard` | 走一遍完整工作流的教学 | （教学）|
 
@@ -344,13 +345,15 @@ rasen status --change add-jwt-auth        # 看产物完成度
 # 6) 交付
 /rasen-ship
 
-# 7) 归档（合并 delta spec 进 canonical specs）
+# 7) 在 ship 后、archive 前沉淀（profile 策略：off / report / codify）
+/rasen-retain add-jwt-auth
+
+# 8) 归档（合并 delta spec 进 canonical specs）
 rasen validate add-jwt-auth --strict
 rasen archive add-jwt-auth
-
-# 8) 复盘（可选）
-/rasen-retro add-jwt-auth
 ```
+
+> `/rasen-retro add-jwt-auth` 只是临时、由用户手动调用的兼容别名，在一个迁移窗口内强制执行 `/rasen-retain` 的 report 模式。仅在需要兼容时用它代替 canonical retain 命令；它不是 archive 之后的生命周期阶段。
 
 ---
 
@@ -369,8 +372,9 @@ rasen archive add-jwt-auth
 | 深度验证（代码/安全/QA/视觉）| `/rasen-verify-enhanced`（或 `/rasen-verify-change`）|
 | 单独跑某个专家 | `/review` `/cso` `/qa` `/benchmark` `/design-review` … |
 | 交付（测试/PR/部署）| `/rasen-ship` |
+| 在 ship 后、archive 前执行 retention 策略 | `/rasen-retain [change]` |
 | 归档并合并 spec | `/rasen-archive-change`（或 CLI `rasen archive`）|
-| 复盘 | `/rasen-retro` |
+| 使用临时 report 模式兼容别名 | `/rasen-retro [change]`（强制 report 模式；不是生命周期阶段）|
 | 测上下文占用 / 交接 | `rasen agent context --latest`；`/rasen-handoff` |
 | 看 change 完成度 | `rasen status --change <id>` |
 | 校验 | `rasen validate <id> --strict` |
@@ -471,9 +475,9 @@ stages:
 
 | 任务中的关键词 | 选中的 pipeline | 闸门（考官） | 工作产物 | 尾部 |
 |---|---|---|---|---|
-| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure —— 一条确定性命令产出 `{score, passed}` | 代码 | ship → archive |
-| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate —— 一个 fresh reviewer worker 判 `{satisfied, gaps}` | 代码 | ship → archive |
-| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate —— 一个 fresh reviewer worker 判 | 散文（研究 + 写作） | report |
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure —— 一条确定性命令产出 `{score, passed}` | 代码 | ship → retain → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate —— 一个 fresh reviewer worker 判 `{satisfied, gaps}` | 代码 | ship → retain → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate —— 一个 fresh reviewer worker 判 | 散文（研究 + 写作） | 仅 report |
 
 每条 pipeline 都是**同构**的——恰好一种闸门类型、一种 iterate-skill 风味、一种尾部。没有运行时条件、没有闸门组合。这是刻意的：早先一个把 measure+evaluate 闸门组合在一起的单 pipeline 设计被三个缺陷否决了（AND 语义的 stall 漏洞、未强制的条件尾部、被敷衍的 generic skill）；一族同构 pipeline 把三者一并消解。
 
@@ -490,7 +494,7 @@ rasen pipeline show goal-loop-measure --json  # { name, buildOrder, stages }
 2. **iterate**（implementer，`openspec-goal-iterate`）—— 循环体。LEAD 在首轮前把 `goal-plan.md` 里的具体闸门配置合并进 run-state 的 `loopConfig`。每轮：dispatch **暖复用**的 implementer（所有轮同一个 worker，就像 review-cycle 复用 fixer thread），然后跑闸门：
    - **measure** —— 运行 `gate.command`，解析 `{score, passed, detail}`。命令失败（非零退出 / 超时 / 无法解析的 JSON）记为 `{round, error}` 并按未达标处理——**不会死锁**。
    - **evaluate** —— dispatch 一个 **fresh reviewer worker**（≠ implementer——author ≠ verifier），必须返回结构化的 `{satisfied: boolean, gaps: string[]}`。
-3. **尾部** —— measure/evaluate → `ship` → `archive`（迭代出的代码正常交付）；research → `report`（`openspec-goal-report` skill 把整轮 run 汇总成最终文档——没有代码要 ship）。
+3. **尾部** —— measure/evaluate → `ship` → `retain` → `archive`（迭代出的代码先正常交付，再执行冻结的 retention 策略，最后归档）；research 只运行 `report`（`openspec-goal-report` skill 把整轮 run 汇总成最终文档——不运行 ship、retain 或 archive）。
 
 ### 9.3 `goal-run.json` —— 循环位置的权威脊柱
 
@@ -532,7 +536,7 @@ goal-loop 的 resume 协议读 `goal-run.json` 的**最后一条记录**：
 You: /rasen-goal drive the Lighthouse performance score to 90
 
 AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
-     取 DAG：define-goal -> iterate（measure 闸门）-> ship -> archive
+     取 DAG：define-goal -> iterate（measure 闸门）-> ship -> retain -> archive
      ▸ planner -> goal-plan.md（gate: measure, command: lighthouse --output=json,
         threshold: 90, direction: gte, workProduct: code, maxRounds: 5）
      ⏸ gate：确认 measure 命令？ -> 你：继续
@@ -540,7 +544,7 @@ AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
      ▸ measure 闸门：score 82（未达标）-> 记入 goal-run.json
      ▸ implementer（第 2 轮，暖复用，种子带 score 82）-> 继续改
      ▸ measure 闸门：score 91（达标）-> 记入
-     ▸ ship -> archive   (outcome: satisfied)
+     ▸ ship -> retain -> archive   (outcome: satisfied)
 ```
 
 **evaluate —— 让某模块满足 rubric。**
@@ -556,7 +560,7 @@ AI:  关键词 "rubric" -> goal-loop-evaluate
      ▸ evaluate 闸门：FRESH reviewer worker -> { satisfied: false, gaps: [...] }
      ▸ implementer（第 2 轮，暖复用，种子带 gaps）-> 逐条修
      ▸ evaluate 闸门：FRESH reviewer -> { satisfied: true } -> 记入
-     ▸ ship -> archive   (outcome: satisfied)
+     ▸ ship -> retain -> archive   (outcome: satisfied)
 ```
 
 **research —— 研究并写一份 brief。**
@@ -573,7 +577,7 @@ AI:  关键词 "research" + "write brief" -> goal-loop-research
      ▸ evaluate 闸门：FRESH reviewer -> { satisfied: false, gaps: ["缺浏览器支持矩阵"] }
      ▸ implementer（第 2 轮，暖复用）-> 补上矩阵
      ▸ evaluate 闸门：FRESH reviewer -> { satisfied: true } -> 记入
-     ▸ report -> 最终 brief + run 摘要   (无 ship/archive；outcome: satisfied)
+     ▸ report -> 最终 brief + run 摘要   (仅 report；无 ship/retain/archive；outcome: satisfied)
 ```
 
 > **速查**：`/rasen-goal <任务>`（或 `measure|evaluate|research` 选择子 / `--pipeline goal-loop-<变体>`）；每轮记录落 `goal-run.json`；`maxRounds` 用尽会诚实标注；`rasen pipeline resume <change>` 从最后一条记录续跑。循环语义在 LEAD playbook（Step L），由与 `/rasen-auto` 同一套编排驱动。

@@ -234,8 +234,16 @@ export function createWorkflowEnablementSubmitter(
     const root = validatedRoot.response;
 
     const catalog = loadWorkflowCatalog();
-    if ((body.op === 'enable' || body.op === 'disable') && (typeof body.id !== 'string' || !catalog.has(body.id))) {
-      return { ok: false, status: 400, code: 'invalid_input', message: 'id must be a known catalog unit id.' };
+    if (body.op === 'enable' || body.op === 'disable') {
+      const definition = typeof body.id === 'string' ? catalog.get(body.id) : undefined;
+      if (!definition || definition.kind === 'internal') {
+        return {
+          ok: false,
+          status: 400,
+          code: 'invalid_input',
+          message: 'id must be a known selectable catalog unit id.',
+        };
+      }
     }
     if (body.op === 'set-profile') {
       if (typeof body.profile !== 'string' || body.profile.length === 0) {

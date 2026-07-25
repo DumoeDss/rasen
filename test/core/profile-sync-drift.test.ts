@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import {
+  getConfiguredToolsForProfileSync,
   hasProjectConfigDrift,
   WORKFLOW_TO_SKILL_DIR,
 } from '../../src/core/profile-sync-drift.js';
@@ -11,7 +12,12 @@ import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import { InitCommand } from '../../src/core/init.js';
 import { getGlobalConfig, saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveCurrentProfileState } from '../../src/commands/profile-editor.js';
-import { loadWorkflowCatalog, resolveWorkflowSelection } from '../../src/core/workflow-registry/index.js';
+import {
+  loadWorkflowCatalog,
+  resolveEffectiveWorkflowInstallSelection,
+  RETENTION_RUNNER_WORKFLOW_ID,
+} from '../../src/core/workflow-registry/index.js';
+import { RETRO_COMPAT_WRAPPER_DIR_NAME } from '../../src/core/templates/skill-templates.js';
 
 function writeSkill(projectDir: string, workflowId: string): void {
   // Resolve via the catalog (covers both task workflows and experts) rather
@@ -22,6 +28,11 @@ function writeSkill(projectDir: string, workflowId: string): void {
   const skillPath = path.join(projectDir, '.claude', 'skills', skillDirName, 'SKILL.md');
   fs.mkdirSync(path.dirname(skillPath), { recursive: true });
   fs.writeFileSync(skillPath, `name: ${skillDirName}\n`);
+  if (workflowId === RETENTION_RUNNER_WORKFLOW_ID) {
+    for (const fileName of ['report.md', 'codify.md']) {
+      fs.writeFileSync(path.join(path.dirname(skillPath), fileName), `${fileName}\n`);
+    }
+  }
 }
 
 /**
@@ -33,12 +44,23 @@ function writeSkill(projectDir: string, workflowId: string): void {
  */
 function setupClosureExperts(projectDir: string, workflows: readonly string[]): void {
   const catalog = loadWorkflowCatalog();
-  const closureIds = resolveWorkflowSelection(catalog, [...workflows], { includeSkillDependencies: true }).map(
+  const closureIds = resolveEffectiveWorkflowInstallSelection(catalog, workflows).map(
     (definition) => definition.id
   );
   for (const id of closureIds) {
     if (workflows.includes(id)) continue;
     writeSkill(projectDir, id);
+  }
+  if (closureIds.includes(RETENTION_RUNNER_WORKFLOW_ID)) {
+    const wrapperPath = path.join(
+      projectDir,
+      '.claude',
+      'skills',
+      RETRO_COMPAT_WRAPPER_DIR_NAME,
+      'SKILL.md'
+    );
+    fs.mkdirSync(path.dirname(wrapperPath), { recursive: true });
+    fs.writeFileSync(wrapperPath, 'compatibility wrapper\n');
   }
 }
 
@@ -75,6 +97,20 @@ describe('profile sync drift detection', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it('recognizes ship-only and wrapper-only tools through exact skill identities', () => {
+    writeSkill(tempDir, 'ship-command');
+    expect(getConfiguredToolsForProfileSync(tempDir)).toContain('claude');
+
+    fs.rmSync(path.join(tempDir, '.claude', 'skills', 'rasen-ship'), {
+      recursive: true,
+      force: true,
+    });
+    const wrapperPath = path.join(tempDir, '.claude', 'skills', 'rasen-retro', 'SKILL.md');
+    fs.mkdirSync(path.dirname(wrapperPath), { recursive: true });
+    fs.writeFileSync(wrapperPath, 'wrapper');
+    expect(getConfiguredToolsForProfileSync(tempDir)).toContain('claude');
+  });
+
   it('detects drift when required profile skill files are missing', () => {
     writeSkill(tempDir, 'explore');
 
@@ -92,6 +128,41 @@ describe('profile sync drift detection', () => {
 
     const hasDrift = hasProjectConfigDrift(tempDir, CORE_WORKFLOWS);
     expect(hasDrift).toBe(false);
+  });
+
+  it('detects drift when the compatibility retention runner is missing', () => {
+    setupCoreSkills(tempDir);
+    setupClosureExperts(tempDir, CORE_WORKFLOWS);
+    fs.rmSync(path.join(tempDir, '.claude', 'skills', 'rasen-retain'), {
+      recursive: true,
+      force: true,
+    });
+
+    expect(hasProjectConfigDrift(tempDir, CORE_WORKFLOWS)).toBe(true);
+  });
+
+  it.each(['report.md', 'codify.md'])(
+    'detects drift when retention sidecar %s is missing',
+    (fileName) => {
+      setupCoreSkills(tempDir);
+      setupClosureExperts(tempDir, CORE_WORKFLOWS);
+      fs.rmSync(path.join(tempDir, '.claude', 'skills', 'rasen-retain', fileName));
+
+      expect(hasProjectConfigDrift(tempDir, CORE_WORKFLOWS)).toBe(true);
+    }
+  );
+
+  it('detects drift when the retro compatibility wrapper is missing', () => {
+    setupCoreSkills(tempDir);
+    setupClosureExperts(tempDir, CORE_WORKFLOWS);
+    fs.rmSync(path.join(
+      tempDir,
+      '.claude',
+      'skills',
+      RETRO_COMPAT_WRAPPER_DIR_NAME
+    ), { recursive: true, force: true });
+
+    expect(hasProjectConfigDrift(tempDir, CORE_WORKFLOWS)).toBe(true);
   });
 
   it('detects drift when extra workflows are installed', () => {
@@ -128,7 +199,11 @@ describe('profile sync drift detection with a project profile lock (init-profile
     originalEnv = { ...process.env };
     process.env.RASEN_HOME = homeDir;
     fs.mkdirSync(path.join(tempDir, 'rasen'), { recursive: true });
-    saveNamedProfile('teamdrift', { version: 1, workflows: [...LOCKED_WORKFLOWS] });
+    saveNamedProfile('teamdrift', {
+          version: 2,
+          workflows: [...LOCKED_WORKFLOWS],
+          retention: 'off',
+        });
     fs.writeFileSync(
       path.join(tempDir, 'rasen', 'config.yaml'),
       'schema: spec-driven\nprofile: teamdrift\n'

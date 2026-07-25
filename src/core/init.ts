@@ -92,7 +92,7 @@ import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import {
   filterKnownWorkflowRoots,
   loadWorkflowCatalog,
-  resolveWorkflowSelection,
+  resolveEffectiveWorkflowInstallSelection,
 } from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
@@ -406,7 +406,7 @@ export class InitCommand {
     } else {
       const definition = resolveProfileDefinition(override.name);
       const { known, unknown } = filterKnownWorkflowRoots(catalog, definition.workflows);
-      const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
         (workflowDefinition) => workflowDefinition.id
       );
       result = { ids, unknown, mode: 'locked-profile', lockedProfile: override.name };

@@ -67,9 +67,9 @@ export const BUILT_IN_WORKFLOW_IDS = [
  * Internal built-in workflows that live in the catalog (so dependency closure
  * can install them) but are NOT selectable: they never appear in
  * `BUILT_IN_WORKFLOW_IDS`, the `full` profile, or the profile picker.
- * `retain-command` (the policy-driven retention runner) is installed only via
- * `auto-command`'s `requires.workflows`; the retention radio is its only
- * profile control.
+ * `retain-command` (the policy-driven retention runner) is installed through
+ * strong workflow dependencies and the temporary retro-wrapper compatibility
+ * install root; the retention radio is its only profile control.
  */
 export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command'] as const;
 
@@ -110,7 +110,12 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
       skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
     },
   },
-  { id: 'ship-command', dirName: 'rasen-ship', skill: getShipCommandSkillTemplate },
+  {
+    id: 'ship-command',
+    dirName: 'rasen-ship',
+    skill: getShipCommandSkillTemplate,
+    requires: { workflows: [RETENTION_RUNNER_WORKFLOW_ID] },
+  },
   {
     id: 'retain-command',
     dirName: RETAIN_SKILL_DIR_NAME,
@@ -123,7 +128,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     skill: getAutoCommandSkillTemplate,
     kind: 'driver',
     requires: {
-      workflows: ['retain-command'],
+      workflows: [RETENTION_RUNNER_WORKFLOW_ID],
       skills: ['rasen-review'],
       pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
     },

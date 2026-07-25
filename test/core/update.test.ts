@@ -6,7 +6,7 @@ import { OPENSPEC_MARKERS } from '../../src/core/config.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 import type { GlobalConfig } from '../../src/core/global-config.js';
 import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../../src/core/profiles.js';
-import { saveNamedProfile } from '../../src/core/named-profiles.js';
+import { readNamedProfile, saveNamedProfile } from '../../src/core/named-profiles.js';
 import path from 'path';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -960,6 +960,159 @@ metadata:
       )).toBe(false);
     });
 
+    it('updates a ship-only named profile with one complete retention runner and an unchanged snapshot', async () => {
+      const profileName = `pashifika-${randomUUID().slice(0, 8)}`;
+      saveNamedProfile(profileName, {
+        version: 2,
+        workflows: ['ship-command'],
+        retention: 'codify',
+      });
+      setMockConfig({
+        featureFlags: {},
+        profile: profileName,
+        expertSelectionExplicit: true,
+      });
+
+      const skillsRoot = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsRoot, 'rasen-ship'), { recursive: true });
+      await fs.writeFile(path.join(skillsRoot, 'rasen-ship', 'SKILL.md'), 'old');
+
+      await updateCommand.execute(testDir);
+
+      for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsRoot, 'rasen-retain', fileName)
+        )).toBe(true);
+      }
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsRoot, 'rasen-auto', 'SKILL.md')
+      )).toBe(false);
+      const wrapper = await fs.readFile(
+        path.join(skillsRoot, 'rasen-retro', 'SKILL.md'),
+        'utf-8'
+      );
+      expect(wrapper).toContain('disable-model-invocation: true');
+      expect(readNamedProfile(profileName)).toEqual({
+        version: 2,
+        workflows: ['ship-command'],
+        retention: 'codify',
+      });
+    });
+
+    it('repairs a wrapper-without-runner install even when the profile has neither ship nor auto', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: ['explore'],
+        retention: 'report',
+        expertSelectionExplicit: true,
+      });
+
+      const skillsRoot = path.join(testDir, '.claude', 'skills');
+      await fs.mkdir(path.join(skillsRoot, 'rasen-retro'), { recursive: true });
+      await fs.writeFile(path.join(skillsRoot, 'rasen-retro', 'SKILL.md'), 'old wrapper');
+
+      await updateCommand.execute(testDir);
+
+      for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsRoot, 'rasen-retain', fileName)
+        )).toBe(true);
+      }
+      const wrapper = await fs.readFile(
+        path.join(skillsRoot, 'rasen-retro', 'SKILL.md'),
+        'utf-8'
+      );
+      expect(wrapper).toContain('disable-model-invocation: true');
+      expect(mockState.config.workflows).toEqual(['explore']);
+      expect(mockState.config.workflows).not.toContain('retain-command');
+    });
+
+    it.each([
+      { label: 'report sidecar', pathParts: ['rasen-retain', 'report.md'] },
+      { label: 'codify sidecar', pathParts: ['rasen-retain', 'codify.md'] },
+      { label: 'retro wrapper', pathParts: ['rasen-retro', 'SKILL.md'] },
+    ])('repairs a current installation missing only its $label', async ({ pathParts }) => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: ['ship-command'],
+        retention: 'codify',
+        expertSelectionExplicit: true,
+      });
+
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+      const skillsRoot = path.join(testDir, '.claude', 'skills');
+      const missingPath = path.join(skillsRoot, ...pathParts);
+      await fs.rm(missingPath, { recursive: true, force: true });
+
+      await updateCommand.execute(testDir);
+
+      expect(await FileSystemUtils.fileExists(missingPath)).toBe(true);
+      for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsRoot, 'rasen-retain', fileName)
+        )).toBe(true);
+      }
+      expect(await FileSystemUtils.fileExists(
+        path.join(skillsRoot, 'rasen-retro', 'SKILL.md')
+      )).toBe(true);
+    });
+
+    it('deduplicates auto, ship, and compatibility paths to one retention directory', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: ['auto-command', 'ship-command'],
+        expertSelectionExplicit: true,
+      });
+
+      const skillsRoot = path.join(testDir, '.claude', 'skills');
+      for (const dirName of ['rasen-auto', 'rasen-ship']) {
+        await fs.mkdir(path.join(skillsRoot, dirName), { recursive: true });
+        await fs.writeFile(path.join(skillsRoot, dirName, 'SKILL.md'), 'old');
+      }
+
+      await updateCommand.execute(testDir);
+
+      const entries = await fs.readdir(skillsRoot);
+      expect(entries.filter((entry) => entry === 'rasen-retain')).toEqual(['rasen-retain']);
+      for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsRoot, 'rasen-retain', fileName)
+        )).toBe(true);
+      }
+    });
+
+    it('removes a deselected ship skill while preserving the compatibility runner and wrapper', async () => {
+      setMockConfig({
+        featureFlags: {},
+        profile: 'custom',
+        workflows: ['explore'],
+        expertSelectionExplicit: true,
+      });
+
+      const skillsRoot = path.join(testDir, '.claude', 'skills');
+      for (const dirName of ['rasen-explore', 'rasen-ship', 'rasen-retain', 'rasen-retro']) {
+        await fs.mkdir(path.join(skillsRoot, dirName), { recursive: true });
+        await fs.writeFile(path.join(skillsRoot, dirName, 'SKILL.md'), 'old');
+      }
+
+      await updateCommand.execute(testDir);
+
+      expect(await FileSystemUtils.fileExists(path.join(skillsRoot, 'rasen-ship'))).toBe(false);
+      for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+        expect(await FileSystemUtils.fileExists(
+          path.join(skillsRoot, 'rasen-retain', fileName)
+        )).toBe(true);
+      }
+      const wrapper = await fs.readFile(
+        path.join(skillsRoot, 'rasen-retro', 'SKILL.md'),
+        'utf-8'
+      );
+      expect(wrapper).toContain('disable-model-invocation: true');
+    });
+
     it('should suggest core preset when custom profile preserves the old core workflow set', async () => {
       setMockConfig({
         featureFlags: {},
@@ -1331,7 +1484,11 @@ content
 
     it('resolves from the locked profile instead of the global profile and names the lock', async () => {
       setMockConfig({ featureFlags: {}, profile: 'core' });
-      saveNamedProfile('team-web', { version: 1, workflows: ['explore', 'new'] });
+      saveNamedProfile('team-web', {
+              version: 2,
+              workflows: ['explore', 'new'],
+              retention: 'off',
+            });
       await fs.writeFile(
         path.join(testDir, 'rasen', 'config.yaml'),
         'schema: spec-driven\nprofile: team-web\n'
@@ -1388,7 +1545,11 @@ content
 
     it('prefers a workflows override over the lock and warns about the shadowed lock', async () => {
       setMockConfig({ featureFlags: {}, profile: 'core' });
-      saveNamedProfile('team-web', { version: 1, workflows: ['new'] });
+      saveNamedProfile('team-web', {
+              version: 2,
+              workflows: ['new'],
+              retention: 'off',
+            });
       await fs.writeFile(
         path.join(testDir, 'rasen', 'config.yaml'),
         'schema: spec-driven\nprofile: team-web\nworkflows:\n  - explore\n'

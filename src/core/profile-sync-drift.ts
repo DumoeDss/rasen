@@ -2,11 +2,14 @@ import path from 'path';
 import * as fs from 'fs';
 import { AI_TOOLS } from './config.js';
 import { getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
-import { getBuiltInWorkflowDefinitions } from './workflow-registry/index.js';
+import {
+  getBuiltInWorkflowDefinitions,
+  RETENTION_RUNNER_WORKFLOW_ID,
+} from './workflow-registry/index.js';
 import {
   filterKnownWorkflowRoots,
   loadWorkflowCatalog,
-  resolveWorkflowSelection,
+  resolveEffectiveWorkflowInstallSelection,
 } from './workflow-registry/index.js';
 import {
   hasWorkflowArtifactLedgerDrift,
@@ -14,8 +17,11 @@ import {
 } from './workflow-artifact-ledger.js';
 import { readProjectConfig } from './project-config.js';
 import { resolveLockedProfileBase } from './profiles.js';
+import { RETRO_COMPAT_WRAPPER_DIR_NAME } from './templates/skill-templates.js';
 
 type WorkflowId = string;
+
+const RETENTION_RUNNER_REQUIRED_FILES = ['SKILL.md', 'report.md', 'codify.md'] as const;
 
 /**
  * Options shared by the drift entry points. `expertSelectionExplicit` is the
@@ -74,7 +80,7 @@ function resolveClosureDesiredWorkflows(
   base ??= workflows;
   const catalog = loadWorkflowCatalog();
   const { known } = filterKnownWorkflowRoots(catalog, base);
-  return resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+  return resolveEffectiveWorkflowInstallSelection(catalog, known).map(
     (definition) => definition.id
   );
 }
@@ -85,13 +91,26 @@ function resolveClosureDesiredWorkflows(
  */
 export function getConfiguredToolsForProfileSync(projectPath: string): string[] {
   const skillConfigured = getConfiguredTools(projectPath);
+  const exactSkillDirNames = [
+    ...loadWorkflowCatalog().definitions.map((definition) => definition.skill.dirName),
+    RETRO_COMPAT_WRAPPER_DIR_NAME,
+  ];
+  const catalogConfigured = AI_TOOLS
+    .filter((tool) => tool.skillsDir)
+    .filter((tool) => {
+      const skillsRoot = resolveToolSkillsRoot(tool, projectPath);
+      return exactSkillDirNames.some((dirName) =>
+        fs.existsSync(path.join(skillsRoot, dirName, 'SKILL.md'))
+      );
+    })
+    .map((tool) => tool.value);
   let ledgerConfigured: string[] = [];
   try {
     ledgerConfigured = Object.keys(readWorkflowArtifactLedger(projectPath)?.tools ?? {});
   } catch {
     // An invalid ledger is reported as drift by the generation layer.
   }
-  return [...new Set([...skillConfigured, ...ledgerConfigured])];
+  return [...new Set([...skillConfigured, ...catalogConfigured, ...ledgerConfigured])];
 }
 
 /**
@@ -124,13 +143,23 @@ export function hasToolProfileDrift(
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
   const skillsDir = resolveToolSkillsRoot(tool, projectPath);
 
-  // Skills are forward-required for every selected workflow.
+  // Skills are forward-required for every selected workflow. The retention
+  // runner's sidecars are part of its executable contract, so a partial
+  // runner must trigger ordinary regeneration just like a missing SKILL.md.
   for (const workflow of knownDesiredWorkflows) {
     const dirName = definitionById.get(workflow)!.skill.dirName;
-    const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
-    if (!fs.existsSync(skillFile)) {
+    const requiredFiles = workflow === RETENTION_RUNNER_WORKFLOW_ID
+      ? RETENTION_RUNNER_REQUIRED_FILES
+      : ['SKILL.md'];
+    if (requiredFiles.some((fileName) => !fs.existsSync(path.join(skillsDir, dirName, fileName)))) {
       return true;
     }
+  }
+
+  // The temporary retro wrapper is generated for every configured tool and
+  // must remain resolvable even though it is deliberately outside the catalog.
+  if (!fs.existsSync(path.join(skillsDir, RETRO_COMPAT_WRAPPER_DIR_NAME, 'SKILL.md'))) {
+    return true;
   }
 
   // Deselecting workflows in a profile should trigger sync.

@@ -1,3 +1,4 @@
+import { RETENTION_RUNNER_WORKFLOW_ID } from './builtins.js';
 import type { WorkflowCatalog } from './catalog.js';
 import { portablePathCollisionKey } from './path-policy.js';
 import type { WorkflowDefinition } from './types.js';
@@ -80,6 +81,27 @@ export function resolveWorkflowSelection(
   }
 
   return catalog.definitions.filter((definition) => selected.has(definition.id));
+}
+
+/**
+ * Resolves the effective artifact install set shared by init, update, drift,
+ * removal, and execution enablement. While the temporary `rasen-retro`
+ * wrapper is generated for every configured tool, its exact canonical runner
+ * is an additional compatibility root. Set-based closure deduplicates it when
+ * ship or auto already requires the same workflow.
+ *
+ * Profile normalization intentionally uses {@link resolveWorkflowSelection}
+ * instead so this compatibility-only root never becomes stored membership.
+ */
+export function resolveEffectiveWorkflowInstallSelection(
+  catalog: WorkflowCatalog,
+  roots: readonly string[]
+): WorkflowDefinition[] {
+  return resolveWorkflowSelection(
+    catalog,
+    [...roots, RETENTION_RUNNER_WORKFLOW_ID],
+    { includeSkillDependencies: true }
+  );
 }
 
 /**
