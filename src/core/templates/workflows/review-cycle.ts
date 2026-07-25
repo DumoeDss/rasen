@@ -48,7 +48,7 @@ ${REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK}
 
 ## Cycle report
 
-Track everything in \`review-cycle-report.md\` in the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or the file already lives there): each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the exact test/gate command(s), their result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state they ran against — the ship stage's evidence-based test gate reads this to decide whether tests must be re-run.
+Track everything in \`review-cycle-report.md\` in the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or the file already lives there): each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the required verification scope, a rationale explaining why that scope covers the observed risk, the exact test/gate command(s), their result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state they ran against — the ship stage's evidence-based test gate reads both scope coverage and tree identity before deciding which checks remain.
 
 ## Termination Invariants (non-negotiable)
 

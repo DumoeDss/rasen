@@ -38,12 +38,12 @@ The `ship` workflow (`src/core/templates/workflows/ship.ts`) pre-flight verifica
 
 ### Requirement: Verify records fingerprinted test evidence consumable by ship's skip gate
 
-When a verify variant runs the project test/gate suite as part of verification, it SHALL record into its report a test-evidence block containing the exact command(s) executed, their result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) of the state they ran against — the same schema `review-cycle-report.md` records — so that `ship`'s evidence-based test-skip gate can honor the skip. When a verify variant does NOT run tests, it SHALL record no such block. `ship`'s evidence source list SHALL name `verification-report.md`.
+When a verify variant runs project tests or gates as part of verification, it SHALL record into its report a test-evidence block containing the selected verification scope, why that scope covers the observed risk, the exact command(s) executed, their result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) of the state they ran against — the same schema `review-cycle-report.md` records — so that `ship` can compare both scope coverage and tree identity. When a verify variant does NOT run tests, it SHALL record no such block. `ship`'s evidence source list SHALL name `verification-report.md`.
 
 #### Scenario: verify records tree-fingerprinted test evidence when it runs tests
 
 - **WHEN** the generated `verify-enhanced` (and `verify-change` where it runs tests) output is inspected
-- **THEN** it SHALL record the test command(s), their result, and the `git rev-parse HEAD^{tree}` fingerprint when tests are run
+- **THEN** it SHALL record the verification scope, scope rationale, test command(s), their result, and the `git rev-parse HEAD^{tree}` fingerprint when tests are run
 - **AND** `ship`'s test-skip evidence sources SHALL include `verification-report.md`
 
 ### Requirement: chrome-use covered by the parity golden master
