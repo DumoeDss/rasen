@@ -11,6 +11,7 @@ import { ArchiveCommand } from '../../src/core/archive.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 import { listCanonicalLearnedSkills } from '../../src/core/learned-skills/index.js';
+import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
 import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
 
 vi.mock('@inquirer/prompts', async () => {
@@ -146,9 +147,9 @@ describe('retention codify end-to-end', () => {
     const content = fs.readFileSync(materializedSkill(), 'utf-8');
     expect(content).toContain('generatedBy: "rasen-learned-skill"');
 
-    const ledger = readWorkflowArtifactLedger(projectRoot)!;
-    expect(ledger.tools.claude.learned?.[ID]?.skillScope).toBe('project');
-    expect(ledger.workflows).not.toContain(ID);
+    const learnedLedger = readProjectLearnedLedger(projectRoot)!;
+    expect(learnedLedger.tools.claude.learned?.[ID]?.effectiveScope).toBe('project');
+    expect(readWorkflowArtifactLedger(projectRoot)?.workflows ?? []).not.toContain(ID);
   });
 
   it('does not persist prompt-like evidence verbatim and does not let it escalate scope', async () => {
@@ -223,6 +224,6 @@ describe('retention codify end-to-end', () => {
 
     expect(fs.readFileSync(materializedSkill(), 'utf-8')).toBe(humanBody);
     // The collision was not claimed as Rasen-owned in the ledger.
-    expect(readWorkflowArtifactLedger(projectRoot)?.tools.claude?.learned?.[ID]).toBeUndefined();
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude?.learned?.[ID]).toBeUndefined();
   });
 });

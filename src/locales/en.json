@@ -46,6 +46,17 @@
     "retireCancelled": "Retirement cancelled.",
     "cancelled": "Cancelled."
   },
+  "learnedMaterialization": {
+    "summary": "Learned skills — {details}",
+    "noOp": "Learned skills: already reconciled; no changes.",
+    "deduplicated": "Equivalent store sources deduplicated: {count}.",
+    "conflict": "Learned {kind} conflict \"{id}\": {sources}.",
+    "unavailableStore": "Unavailable store:{id}: {detail}",
+    "deferred": "Deferred {action} for \"{id}\" because a relevant store is unavailable.",
+    "budgetExceeded": "{name} exceeded ({actual}/{limit} bytes): {ids}",
+    "incomplete": "Learned materialization incomplete ({code}): {message}",
+    "repairConflict": "Align, rename, or retire the canonical store records, then run rasen update."
+  },
   "expertSkills": {
     "workflowAuthor": "Author installable workflows safely through staging, static validation, independent review, and user-approved import",
     "workflowReview": "Review installable workflows independently for semantic quality, security boundaries, portability, dependencies, and completion"

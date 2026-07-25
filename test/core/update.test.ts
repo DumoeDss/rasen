@@ -53,11 +53,17 @@ function resetMockConfig() {
 describe('UpdateCommand', () => {
   let testDir: string;
   let updateCommand: UpdateCommand;
+  let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(async () => {
     // Create a temporary test directory
     testDir = path.join(os.tmpdir(), `openspec-test-${randomUUID()}`);
     await fs.mkdir(testDir, { recursive: true });
+    originalEnv = { ...process.env };
+    // Effective learned-skill planning reads the machine store registry.
+    // Give each test its own machine root so parallel store suites cannot
+    // contribute unrelated membership or outage diagnostics.
+    process.env.RASEN_HOME = path.join(testDir, '.rasen-home');
 
     // Create openspec directory
     const openspecDir = path.join(testDir, 'rasen');
@@ -75,6 +81,7 @@ describe('UpdateCommand', () => {
   afterEach(async () => {
     // Restore all mocks after each test
     vi.restoreAllMocks();
+    process.env = originalEnv;
 
     // Clean up test directory
     await fs.rm(testDir, { recursive: true, force: true });

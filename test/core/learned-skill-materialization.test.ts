@@ -7,16 +7,19 @@ import { resolveProjectHome } from '../../src/core/project-home.js';
 import {
   commitLearnedSkillPlan,
   planLearnedSkillMutation,
-  resolveLearnedSkills,
+  resolveEffectiveLearnedSkillPlan,
+  resolveLearnedSkillExecutionContext,
   type EvidenceReference,
   type LearnedSkillContext,
   type LearnedSkillMutationRequest,
 } from '../../src/core/learned-skills/index.js';
 import {
+  emptyLearnedReconcileResult,
+  mergeLearnedReconcileResult,
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
 } from '../../src/core/learned-skill-materialization.js';
-import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
+import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
 import { readGlobalLearnedArtifacts } from '../../src/core/global-learned-skill-ledger.js';
 import { pruneRetiredRetentionSkillDirs } from '../../src/core/legacy-cleanup.js';
 
@@ -32,6 +35,7 @@ const PROJECT_ID = 'typescript-cli-i18n-diagnostic-routing';
 
 describe('learned-skill materialization', () => {
   let globalDataDir: string;
+  let launchProjectRoot: string;
   let projectRoot: string;
   let projectId: string;
   let context: LearnedSkillContext;
@@ -71,7 +75,12 @@ describe('learned-skill materialization', () => {
   beforeEach(async () => {
     globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-gdd-'));
     const project = await makeProject();
-    projectRoot = project.root;
+    launchProjectRoot = project.root;
+    // Production resolves a possibly aliased launch path (/var on macOS or an
+    // 8.3 short path on Windows) to its native canonical owner before deriving
+    // any tool home or persisted ledger path. Keep the fixture on that same
+    // authoritative root.
+    projectRoot = fs.realpathSync.native(launchProjectRoot);
     projectId = project.projectId;
     context = { projectRoot, globalDataDir };
     skillsRoot = path.join(projectRoot, '.claude', 'skills');
@@ -85,13 +94,19 @@ describe('learned-skill materialization', () => {
   });
 
   async function reconcile() {
-    const resolved = await resolveLearnedSkills(context);
+    const execution = await resolveLearnedSkillExecutionContext({
+      launchDirectory: launchProjectRoot,
+      requestedScope: 'mixed',
+      globalDataDir,
+    });
+    const plan = await resolveEffectiveLearnedSkillPlan({ execution });
+    const authoritativeSkillsRoot = path.join(plan.project.root, '.claude', 'skills');
     return reconcileProjectLearnedSkillsForTool({
-      projectRoot,
+      projectRoot: plan.project.root,
       toolId: 'claude',
       toolLabel: 'Claude Code',
-      skillsRoot,
-      resolved,
+      skillsRoot: authoritativeSkillsRoot,
+      plan,
     });
   }
 
@@ -148,6 +163,26 @@ describe('learned-skill materialization', () => {
     }
   );
 
+  it.runIf(process.platform === 'win32')(
+    'skips a Windows junctioned learned-skill directory instead of writing through it',
+    async () => {
+      await commit(projectUpsert(PROJECT_ID, ['package.json']));
+      const outside = path.join(projectRoot, 'junction-target');
+      fs.mkdirSync(outside, { recursive: true });
+      fs.writeFileSync(path.join(outside, 'SKILL.md'), 'do not touch junction target\n');
+      fs.mkdirSync(skillsRoot, { recursive: true });
+      fs.symlinkSync(outside, path.join(skillsRoot, PROJECT_ID), 'junction');
+
+      const result = await reconcile();
+
+      expect(result.created).toEqual([]);
+      expect(result.skipped.map((entry) => entry.id)).toContain(PROJECT_ID);
+      expect(fs.readFileSync(path.join(outside, 'SKILL.md'), 'utf8')).toBe(
+        'do not touch junction target\n'
+      );
+    }
+  );
+
   it('materializes an applicable project skill, records the ledger, and stamps ownership frontmatter', async () => {
     await commit(projectUpsert(PROJECT_ID, ['package.json']));
 
@@ -155,22 +190,31 @@ describe('learned-skill materialization', () => {
 
     expect(result.created.map((entry) => entry.id)).toEqual([PROJECT_ID]);
     const materialized = targetFile(PROJECT_ID);
+    const canonicalProjectRoot = fs.realpathSync.native(launchProjectRoot);
+    expect(projectRoot).toBe(canonicalProjectRoot);
+    expect(skillsRoot).toBe(path.join(canonicalProjectRoot, '.claude', 'skills'));
+    expect(result.created[0]?.targetPath).toBe(materialized);
     expect(fs.existsSync(materialized)).toBe(true);
+    expect(fs.realpathSync.native(result.created[0]!.targetPath)).toBe(materialized);
     const content = fs.readFileSync(materialized, 'utf-8');
     expect(content).toContain('generatedBy: "rasen-learned-skill"');
     expect(content).toContain('learnedSkillScope: "project"');
     expect(content).toContain(`learnedSkillId: "${PROJECT_ID}"`);
 
-    const ledger = readWorkflowArtifactLedger(projectRoot)!;
+    const ledger = readProjectLearnedLedger(projectRoot)!;
     const entry = ledger.tools.claude.learned?.[PROJECT_ID];
-    expect(entry?.skillScope).toBe('project');
+    expect(entry?.effectiveScope).toBe('project');
     expect(entry?.file.path).toBe(`.claude/skills/${PROJECT_ID}/SKILL.md`);
+    const ledgerTarget = path.resolve(projectRoot, entry!.file.path);
+    expect(ledgerTarget).toBe(materialized);
+    expect(fs.realpathSync.native(ledgerTarget)).toBe(materialized);
 
     // Re-running is idempotent — no further create/update/remove.
     const rerun = await reconcile();
     expect(rerun.created).toHaveLength(0);
     expect(rerun.updated).toHaveLength(0);
     expect(rerun.removed).toHaveLength(0);
+    expect(rerun.noOp).toBe(true);
   });
 
   it('does not materialize a skill whose applicability markers do not match', async () => {
@@ -180,7 +224,7 @@ describe('learned-skill materialization', () => {
 
     expect(result.created).toHaveLength(0);
     expect(fs.existsSync(targetFile(PROJECT_ID))).toBe(false);
-    expect(readWorkflowArtifactLedger(projectRoot)).toBeNull();
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude).toBeUndefined();
   });
 
   it('refreshes the exact generated copy when the canonical content changes', async () => {
@@ -215,7 +259,7 @@ describe('learned-skill materialization', () => {
     expect(fs.existsSync(targetFile(PROJECT_ID))).toBe(false);
     // Empty parent directory is pruned too.
     expect(fs.existsSync(path.join(skillsRoot, PROJECT_ID))).toBe(false);
-    expect(readWorkflowArtifactLedger(projectRoot)?.tools.claude?.learned?.[PROJECT_ID]).toBeUndefined();
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude?.learned?.[PROJECT_ID]).toBeUndefined();
   });
 
   it('refuses a human-authored collision and leaves it byte-for-byte unchanged', async () => {
@@ -232,7 +276,64 @@ describe('learned-skill materialization', () => {
     expect(result.skipped.map((entry) => entry.reason)).toEqual(['collision']);
     expect(fs.readFileSync(targetFile(PROJECT_ID), 'utf-8')).toBe(humanBody);
     // No ledger ownership was claimed over the human file.
-    expect(readWorkflowArtifactLedger(projectRoot)?.tools.claude?.learned?.[PROJECT_ID]).toBeUndefined();
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude?.learned?.[PROJECT_ID]).toBeUndefined();
+  });
+
+  it('never removes through a replaced symlink or junction directory', async () => {
+    await commit(projectUpsert(PROJECT_ID, ['package.json']));
+    await reconcile();
+    const managedDir = path.join(skillsRoot, PROJECT_ID);
+    const relocated = path.join(projectRoot, 'relocated-owned-skill');
+    fs.renameSync(managedDir, relocated);
+    fs.symlinkSync(
+      relocated,
+      managedDir,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const relocatedFile = path.join(relocated, 'SKILL.md');
+    const before = fs.readFileSync(relocatedFile, 'utf8');
+    await commit({
+      operation: 'retire',
+      scope: 'project',
+      id: PROJECT_ID,
+      retirementReason: 'obsolete',
+    });
+
+    const result = await reconcile();
+
+    expect(result.removed).toEqual([]);
+    expect(result.skipped).toMatchObject([{ id: PROJECT_ID, reason: 'ledger-invalid' }]);
+    expect(fs.readFileSync(relocatedFile, 'utf8')).toBe(before);
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude.learned[PROJECT_ID]).toBeDefined();
+  });
+
+  it('never injects a managed file into an untracked same-name directory', async () => {
+    await commit(projectUpsert(PROJECT_ID, ['package.json']));
+    const humanDir = path.join(skillsRoot, PROJECT_ID);
+    fs.mkdirSync(humanDir, { recursive: true });
+    fs.writeFileSync(path.join(humanDir, 'notes.txt'), 'human directory\n');
+
+    const result = await reconcile();
+
+    expect(result.created).toEqual([]);
+    expect(result.skipped).toMatchObject([{ id: PROJECT_ID, reason: 'collision' }]);
+    expect(fs.existsSync(targetFile(PROJECT_ID))).toBe(false);
+    expect(fs.readFileSync(path.join(humanDir, 'notes.txt'), 'utf8')).toBe('human directory\n');
+  });
+
+  it('preserves and reports a tracked desired file that a user removed', async () => {
+    await commit(projectUpsert(PROJECT_ID, ['package.json']));
+    await reconcile();
+    const ledgerBefore = readProjectLearnedLedger(projectRoot)!;
+    fs.rmSync(targetFile(PROJECT_ID));
+
+    const result = await reconcile();
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.skipped).toMatchObject([{ id: PROJECT_ID, reason: 'missing' }]);
+    expect(fs.existsSync(targetFile(PROJECT_ID))).toBe(false);
+    expect(readProjectLearnedLedger(projectRoot)).toEqual(ledgerBefore);
   });
 
   it('preserves a generated copy the user has since edited (no overwrite)', async () => {
@@ -247,20 +348,51 @@ describe('learned-skill materialization', () => {
     expect(fs.readFileSync(targetFile(PROJECT_ID), 'utf-8')).toBe(edited);
   });
 
+  it('unions deferred store evidence deterministically across configured tools', () => {
+    const deferred = (storeId: string) => {
+      const result = emptyLearnedReconcileResult();
+      result.deferred = [
+        {
+          id: PROJECT_ID,
+          action: 'remove',
+          stores: [{ type: 'store', id: storeId }],
+          message: `tool saw ${storeId}`,
+        },
+      ];
+      return result;
+    };
+    const merged = (order: string[]) => {
+      const aggregate = emptyLearnedReconcileResult();
+      for (const storeId of order) {
+        mergeLearnedReconcileResult(aggregate, deferred(storeId));
+      }
+      return aggregate.deferred;
+    };
+
+    expect(merged(['beta', 'alpha'])).toEqual(merged(['alpha', 'beta']));
+    expect(merged(['beta', 'alpha'])).toMatchObject([
+      {
+        id: PROJECT_ID,
+        action: 'remove',
+        stores: [
+          { type: 'store', id: 'alpha' },
+          { type: 'store', id: 'beta' },
+        ],
+      },
+    ]);
+  });
+
   it('resolves nothing for an unregistered project without a machine home', async () => {
     const unregistered = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-unreg-'));
     fs.mkdirSync(path.join(unregistered, 'rasen'), { recursive: true });
     try {
-      const resolved = await resolveLearnedSkills({ projectRoot: unregistered, globalDataDir });
-      const result = reconcileProjectLearnedSkillsForTool({
-        projectRoot: unregistered,
-        toolId: 'claude',
-        toolLabel: 'Claude Code',
-        skillsRoot: path.join(unregistered, '.claude', 'skills'),
-        resolved,
-      });
-      expect(result.created).toHaveLength(0);
-      expect(result.skipped).toHaveLength(0);
+      await expect(
+        resolveLearnedSkillExecutionContext({
+          launchDirectory: unregistered,
+          requestedScope: 'mixed',
+          globalDataDir,
+        })
+      ).rejects.toThrow();
     } finally {
       fs.rmSync(unregistered, { recursive: true, force: true });
     }
@@ -316,12 +448,18 @@ describe('learned-skill materialization', () => {
       const globalId = await createGlobalSkill();
       await commit(projectUpsert(PROJECT_ID, ['package.json']));
 
-      const resolved = await resolveLearnedSkills(context);
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: projectRoot,
+        requestedScope: 'mixed',
+        globalDataDir,
+      });
+      const plan = await resolveEffectiveLearnedSkillPlan({ execution });
       const result = reconcileGlobalLearnedSkillsForTool({
         toolId: 'hermes',
         toolLabel: 'Hermes',
         skillsRoot: hermesSkills,
-        resolved,
+        globalRecords: plan.globalRecords,
+        localRecords: plan.skills,
         globalDataDir,
       });
 
@@ -339,24 +477,36 @@ describe('learned-skill materialization', () => {
 
     it('does not remove a shared global copy because another project\'s markers do not match', async () => {
       const globalId = await createGlobalSkill();
-      const resolvedOne = await resolveLearnedSkills(context);
+      const executionOne = await resolveLearnedSkillExecutionContext({
+        launchDirectory: projectRoot,
+        requestedScope: 'mixed',
+        globalDataDir,
+      });
+      const planOne = await resolveEffectiveLearnedSkillPlan({ execution: executionOne });
       reconcileGlobalLearnedSkillsForTool({
         toolId: 'hermes',
         toolLabel: 'Hermes',
         skillsRoot: hermesSkills,
-        resolved: resolvedOne,
+        globalRecords: planOne.globalRecords,
+        localRecords: planOne.skills,
         globalDataDir,
       });
       expect(fs.existsSync(path.join(hermesSkills, globalId, 'SKILL.md'))).toBe(true);
 
       // A different project whose applicability markers do NOT match reconciles
       // the same shared Hermes home — the global copy MUST survive.
-      const resolvedTwo = await resolveLearnedSkills({ projectRoot: secondRoot, globalDataDir });
+      const executionTwo = await resolveLearnedSkillExecutionContext({
+        launchDirectory: secondRoot,
+        requestedScope: 'mixed',
+        globalDataDir,
+      });
+      const planTwo = await resolveEffectiveLearnedSkillPlan({ execution: executionTwo });
       const result = reconcileGlobalLearnedSkillsForTool({
         toolId: 'hermes',
         toolLabel: 'Hermes',
         skillsRoot: hermesSkills,
-        resolved: resolvedTwo,
+        globalRecords: planTwo.globalRecords,
+        localRecords: planTwo.skills,
         globalDataDir,
       });
 

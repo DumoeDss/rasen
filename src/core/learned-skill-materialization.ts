@@ -1,38 +1,22 @@
 /**
- * Learned-skill materialization (design D9).
- *
- * `resolveLearnedSkills` returns the active canonical records; this module
- * generates them into a tool's skill home and tracks each exact generated copy
- * in an artifact ledger. It is the ONLY seam that writes learned skills into a
- * tool directory — init and update call it after ordinary profile/dependency
- * resolution. Learned-skill ids are never added to a profile or workflow
- * closure.
- *
- * Ownership is exact, never inferred by name: a target is refreshed or pruned
- * only when the ledger records it as Rasen's generated copy AND the on-disk
- * bytes still match what Rasen wrote. A human-authored directory, or a
- * generated copy the user has since edited, blocks the operation and is
- * preserved byte-for-byte. Two homes are supported:
- *
- *  - project-local tool homes use the project artifact ledger and materialize
- *    project + global records whose `path-exists` applicability matches;
- *  - a machine-global tool home (Hermes) uses the machine-global ledger,
- *    reconciles every active approved global record independent of any one
- *    project's markers, and skips project-scoped records with a warning.
+ * Effective learned-skill materialization. Planning is a read-only preflight;
+ * this module is the sole target/ledger mutation seam.
  */
-
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { FileSystemUtils } from '../utils/file-system.js';
 import { quoteYamlValue } from './shared/yaml.js';
 import {
   digestContent,
-  matchesApplicability,
   LEARNED_SKILL_GENERATED_BY,
+  type CanonicalKnowledgeIdentity,
   type CanonicalLearnedSkill,
-  type LearnedSkillScope,
-  type ResolvedLearnedSkillSet,
+  type EffectiveDescriptionBudgetFailure,
+  type EffectiveLearnedSkill,
+  type EffectiveLearnedSkillPlan,
+  type EffectiveLearnedSkillScope,
+  type EffectiveStoreUnavailableFact,
+  type StoreSkillConflict,
 } from './learned-skills/index.js';
 import {
   persistToolLearnedArtifacts,
@@ -40,8 +24,14 @@ import {
   resolveArtifactFile,
   sha256File,
   storedArtifactFile,
-  type LearnedArtifactEntry,
 } from './workflow-artifact-ledger.js';
+import {
+  persistProjectLearnedArtifacts,
+  readProjectLearnedArtifacts,
+  readProjectLearnedLedger,
+  type ProjectLearnedArtifactEntry,
+  type ProjectLearnedStoreFact,
+} from './project-learned-skill-ledger.js';
 import {
   persistGlobalLearnedArtifacts,
   readGlobalLearnedArtifacts,
@@ -50,51 +40,99 @@ import {
 } from './global-learned-skill-ledger.js';
 
 export const LEARNED_SKILL_CONTENT_FILE = 'SKILL.md';
-type MaterializedLearnedSkillScope = Exclude<LearnedSkillScope, 'store'>;
 
-/** One materialized copy created, updated, or removed during reconciliation. */
 export interface LearnedMaterializationOutcome {
   id: string;
-  skillScope: MaterializedLearnedSkillScope;
+  /** Compatibility field retained in the public result wire shape. */
+  skillScope: EffectiveLearnedSkillScope;
+  effectiveScope: EffectiveLearnedSkillScope;
+  sources: CanonicalKnowledgeIdentity[];
+  resolutionDigest: string;
   targetPath: string;
 }
 
-/** A learned skill deliberately left unmaterialized, with an actionable reason. */
 export interface LearnedMaterializationSkip {
   id: string;
-  skillScope: MaterializedLearnedSkillScope;
+  skillScope: EffectiveLearnedSkillScope;
+  effectiveScope: EffectiveLearnedSkillScope;
+  sources: CanonicalKnowledgeIdentity[];
   targetPath?: string;
-  reason: 'collision' | 'global-only-home';
+  reason: 'collision' | 'global-only-home' | 'ledger-invalid' | 'missing';
+  message: string;
+}
+
+export interface LearnedDeduplication {
+  id: string;
+  sources: CanonicalKnowledgeIdentity[];
+}
+
+export interface LearnedDeferredAction {
+  id: string;
+  action: 'remove' | 'replace';
+  stores: Array<{ type: 'store'; id: string }>;
   message: string;
 }
 
 export interface LearnedReconcileResult {
+  /** True only when learned reconciliation was complete and made no changes. */
+  noOp: boolean;
   created: LearnedMaterializationOutcome[];
   updated: LearnedMaterializationOutcome[];
   removed: LearnedMaterializationOutcome[];
   skipped: LearnedMaterializationSkip[];
+  deduplicated: LearnedDeduplication[];
+  conflicts: StoreSkillConflict[];
+  unavailableStores: EffectiveStoreUnavailableFact[];
+  deferred: LearnedDeferredAction[];
+  errors: Array<{ code: string; message: string }>;
+  budgetFailure?: EffectiveDescriptionBudgetFailure;
+  planStatus?: EffectiveLearnedSkillPlan['status'];
 }
 
-function emptyResult(): LearnedReconcileResult {
-  return { created: [], updated: [], removed: [], skipped: [] };
+export function emptyLearnedReconcileResult(): LearnedReconcileResult {
+  return {
+    noOp: false,
+    created: [],
+    updated: [],
+    removed: [],
+    skipped: [],
+    deduplicated: [],
+    conflicts: [],
+    unavailableStores: [],
+    deferred: [],
+    errors: [],
+  };
 }
 
-/** True when a reconcile result recorded any change or skip. */
 export function learnedReconcileHasActivity(result: LearnedReconcileResult): boolean {
   return (
     result.created.length > 0 ||
     result.updated.length > 0 ||
     result.removed.length > 0 ||
-    result.skipped.length > 0
+    result.skipped.length > 0 ||
+    result.deduplicated.length > 0 ||
+    result.conflicts.length > 0 ||
+    result.unavailableStores.length > 0 ||
+    result.deferred.length > 0 ||
+    result.errors.length > 0 ||
+    result.budgetFailure !== undefined
   );
 }
 
-/** True when a reconcile result changed the filesystem (create/update/remove). */
 export function learnedReconcileHasChanges(result: LearnedReconcileResult): boolean {
   return result.created.length > 0 || result.updated.length > 0 || result.removed.length > 0;
 }
 
-/** Merges a per-tool result into an aggregate. */
+function identityKey(identity: CanonicalKnowledgeIdentity): string {
+  return identity.owner.type === 'global'
+    ? `global:/${identity.id}`
+    : `${identity.owner.type}:${identity.owner.id}/${identity.id}`;
+}
+
+function uniqueBy<T>(values: readonly T[], key: (value: T) => string): T[] {
+  return [...new Map(values.map((value) => [key(value), value])).values()];
+}
+
 export function mergeLearnedReconcileResult(
   into: LearnedReconcileResult,
   from: LearnedReconcileResult
@@ -103,35 +141,108 @@ export function mergeLearnedReconcileResult(
   into.updated.push(...from.updated);
   into.removed.push(...from.removed);
   into.skipped.push(...from.skipped);
+  into.deduplicated = uniqueBy(
+    [...into.deduplicated, ...from.deduplicated],
+    (item) => item.id
+  );
+  into.conflicts = uniqueBy(
+    [...into.conflicts, ...from.conflicts],
+    (item) => `${item.kind}:${item.id}`
+  );
+  into.unavailableStores = uniqueBy(
+    [...into.unavailableStores, ...from.unavailableStores],
+    (item) => item.store.id
+  );
+  into.deferred = mergeDeferredActions([...into.deferred, ...from.deferred]);
+  into.errors = uniqueBy([...into.errors, ...from.errors], (item) => `${item.code}:${item.message}`);
+  into.budgetFailure ??= from.budgetFailure;
+  into.planStatus ??= from.planStatus;
+  sortResult(into);
+  finalizeNoOp(into);
 }
 
-/** Strips a leading `---\n…\n---\n` YAML frontmatter block, returning the body. */
+function mergeDeferredActions(
+  actions: readonly LearnedDeferredAction[]
+): LearnedDeferredAction[] {
+  const grouped = new Map<string, LearnedDeferredAction>();
+  for (const action of actions) {
+    const key = `${action.action}:${action.id}`;
+    const current = grouped.get(key);
+    const stores = uniqueBy(
+      [...(current?.stores ?? []), ...action.stores],
+      (store) => store.id
+    ).sort((left, right) => left.id.localeCompare(right.id));
+    grouped.set(key, {
+      id: action.id,
+      action: action.action,
+      stores,
+      message: `Deferred ${action.action} for "${action.id}" because relevant unavailable sources ${stores
+        .map((store) => `store:${store.id}`)
+        .join(', ')} may still contribute.`,
+    });
+  }
+  return [...grouped.values()];
+}
+
+function finalizeNoOp(result: LearnedReconcileResult): void {
+  result.noOp =
+    result.planStatus !== 'blocked' &&
+    !learnedReconcileHasActivity(result);
+}
+
 function stripFrontmatter(content: string): string {
   const match = /^---\n[\s\S]*?\n---\n?/.exec(content);
   return match ? content.slice(match[0].length).trim() : content.trim();
 }
 
-/**
- * Renders the materialized `SKILL.md` for a canonical learned skill: the same
- * name/description/body plus string metadata naming generated ownership,
- * scope, learned-skill id, and the canonical content digest (design D7). No
- * executable sidecars — a v1 learned skill is declarative guidance only.
- */
-export function renderMaterializedSkill(record: CanonicalLearnedSkill): string {
-  const { manifest } = record;
+function quoteSources(sources: readonly CanonicalKnowledgeIdentity[]): string {
+  return sources
+    .map(identityKey)
+    .sort()
+    .join(',');
+}
+
+/** Render declarative managed output with stable typed effective provenance. */
+export function renderMaterializedSkill(
+  input: CanonicalLearnedSkill | EffectiveLearnedSkill
+): string {
+  const effective =
+    'canonicalRecord' in input
+      ? input
+      : {
+          id: input.manifest.id,
+          effectiveScope: input.scope as EffectiveLearnedSkillScope,
+          sources: [input.identity],
+          knowledgeKey: input.manifest.knowledgeKey,
+          canonicalContentDigest: input.manifest.contentDigest,
+          resolutionDigest: digestContent(
+            JSON.stringify({
+              id: input.manifest.id,
+              effectiveScope: input.scope,
+              sources: [input.identity],
+              knowledgeKey: input.manifest.knowledgeKey,
+              canonicalContentDigest: input.manifest.contentDigest,
+              content: input.content,
+            })
+          ),
+          canonicalRecord: input,
+        };
+  const record = effective.canonicalRecord;
   const body = stripFrontmatter(record.content);
   return [
     '---',
-    `name: ${quoteYamlValue(manifest.id)}`,
-    `description: ${quoteYamlValue(manifest.description)}`,
+    `name: ${quoteYamlValue(effective.id)}`,
+    `description: ${quoteYamlValue(record.manifest.description)}`,
     'license: MIT',
     'compatibility: Requires rasen CLI.',
     'metadata:',
     '  author: rasen',
     `  generatedBy: ${quoteYamlValue(LEARNED_SKILL_GENERATED_BY)}`,
-    `  learnedSkillScope: ${quoteYamlValue(manifest.scope)}`,
-    `  learnedSkillId: ${quoteYamlValue(manifest.id)}`,
-    `  contentDigest: ${quoteYamlValue(manifest.contentDigest)}`,
+    `  learnedSkillScope: ${quoteYamlValue(effective.effectiveScope)}`,
+    `  learnedSkillId: ${quoteYamlValue(effective.id)}`,
+    `  learnedSkillSources: ${quoteYamlValue(quoteSources(effective.sources))}`,
+    `  contentDigest: ${quoteYamlValue(effective.canonicalContentDigest)}`,
+    `  resolutionDigest: ${quoteYamlValue(effective.resolutionDigest)}`,
     '---',
     '',
     body,
@@ -139,44 +250,73 @@ export function renderMaterializedSkill(record: CanonicalLearnedSkill): string {
   ].join('\n');
 }
 
-/** A learned skill Rasen wants materialized into a skill home. */
 interface DesiredMaterialization {
   id: string;
-  skillScope: MaterializedLearnedSkillScope;
-  contentDigest: string;
+  effectiveScope: EffectiveLearnedSkillScope;
+  sources: CanonicalKnowledgeIdentity[];
+  canonicalContentDigest: string;
+  resolutionDigest: string;
   content: string;
 }
 
-/** A materialized copy the ledger currently tracks (absolute path). */
 interface TrackedMaterialization {
   id: string;
-  skillScope: MaterializedLearnedSkillScope;
-  contentDigest: string;
+  effectiveScope: EffectiveLearnedSkillScope;
+  sources: CanonicalKnowledgeIdentity[];
+  canonicalContentDigest: string;
+  resolutionDigest: string;
   targetPath: string;
   sha256: string;
 }
 
-/** The result of the pure reconcile core: the new tracked set plus outcomes. */
 interface CoreReconcile {
   next: TrackedMaterialization[];
   result: LearnedReconcileResult;
 }
 
-function writeMaterialized(targetFile: string, content: string): void {
-  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-  fs.writeFileSync(targetFile, content, { encoding: 'utf8', mode: 0o600 });
+function outcome(item: DesiredMaterialization | TrackedMaterialization): LearnedMaterializationOutcome {
+  return {
+    id: item.id,
+    skillScope: item.effectiveScope,
+    effectiveScope: item.effectiveScope,
+    sources: item.sources,
+    resolutionDigest: item.resolutionDigest,
+    targetPath: 'targetPath' in item ? item.targetPath : '',
+  };
 }
 
-/**
- * Removes now-empty directories from `start` up to (but not past) `boundary`.
- * Stops at the first non-empty directory. Cross-platform via `path` primitives.
- */
+function writeMaterialized(targetFile: string, content: string): void {
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const temporary = path.join(
+    path.dirname(targetFile),
+    `.${path.basename(targetFile)}.${process.pid}-${Date.now()}.tmp`
+  );
+  fs.writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  const backup = `${temporary}.bak`;
+  try {
+    if (!fs.existsSync(targetFile)) {
+      fs.renameSync(temporary, targetFile);
+      return;
+    }
+    fs.renameSync(targetFile, backup);
+    try {
+      fs.renameSync(temporary, targetFile);
+      fs.rmSync(backup, { force: true });
+    } catch (error) {
+      fs.rmSync(targetFile, { force: true });
+      fs.renameSync(backup, targetFile);
+      throw error;
+    }
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
 function removeEmptyDirsUpTo(start: string, boundary: string): void {
   const stop = path.resolve(boundary);
   let current = path.resolve(start);
   while (current !== stop) {
     const relative = path.relative(stop, current);
-    // Never walk outside the boundary (guards the string-prefix pitfall).
     if (relative.startsWith('..') || path.isAbsolute(relative)) return;
     try {
       fs.rmdirSync(current);
@@ -187,300 +327,652 @@ function removeEmptyDirsUpTo(start: string, boundary: string): void {
   }
 }
 
-/**
- * True when the create branch must NOT write to `targetFile`. `sha256File`
- * returns null both for an absent target AND for a non-regular-file occupant
- * (a symlink, directory, fifo, …). An absent target is free to generate, but a
- * symlink at the file or at the `<id>` directory would make `writeFileSync`
- * follow the link and clobber its target — data loss and a boundary escape.
- * This mirrors the workflow ledger's `containsSymlinkInChain` guard so a
- * human-planted symlink is preserved, never written through.
- */
-function targetOccupiedByUnsafeEntity(targetDir: string, targetFile: string): boolean {
-  try {
-    // If the file exists here at all, it is a non-regular-file occupant
-    // (otherwise `sha256File` would have returned a hash, not null).
-    fs.lstatSync(targetFile);
-    return true;
-  } catch {
-    // targetFile is absent — the `<id>` directory itself may still be a symlink.
-  }
-  try {
-    return fs.lstatSync(targetDir).isSymbolicLink();
-  } catch {
-    return false;
-  }
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+interface TargetInspection {
+  expectedTarget: string;
+  targetDir: string;
+  targetDirExists: boolean;
+  state: 'missing' | 'file' | 'unsafe';
 }
 
 /**
- * True when the `<id>` directory itself is a symlink. An in-place refresh of an
- * owned regular `SKILL.md` reached through a symlinked `<id>` dir would write
- * through the link into its target, so the refresh branch skips instead. (The
- * create branch handles the symlinked-leaf/absent cases via
- * {@link targetOccupiedByUnsafeEntity}; this guards the owned-refresh path.)
+ * Validate the complete managed path below the trusted skills root without
+ * following a symlink/junction/reparse occupant.
  */
-function targetDirIsSymlink(targetDir: string): boolean {
+function inspectManagedTarget(
+  skillsRoot: string,
+  id: string,
+  ledgerTarget?: string
+): TargetInspection {
+  const root = path.resolve(skillsRoot);
+  const targetDir = path.resolve(root, id);
+  const expectedTarget = path.join(targetDir, LEARNED_SKILL_CONTENT_FILE);
+  const relative = path.relative(root, targetDir);
+  if (
+    !id ||
+    relative !== id ||
+    path.isAbsolute(relative) ||
+    relative.startsWith('..') ||
+    relative.includes(path.sep)
+  ) {
+    return { expectedTarget, targetDir, targetDirExists: false, state: 'unsafe' };
+  }
+  if (ledgerTarget !== undefined && !samePath(ledgerTarget, expectedTarget)) {
+    return { expectedTarget, targetDir, targetDirExists: false, state: 'unsafe' };
+  }
   try {
-    return fs.lstatSync(targetDir).isSymbolicLink();
-  } catch {
-    return false;
+    const rootStats = fs.lstatSync(root);
+    if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+      return { expectedTarget, targetDir, targetDirExists: true, state: 'unsafe' };
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      return { expectedTarget, targetDir, targetDirExists: false, state: 'unsafe' };
+    }
+  }
+  let targetDirExists = false;
+  try {
+    const dirStats = fs.lstatSync(targetDir);
+    targetDirExists = true;
+    if (!dirStats.isDirectory() || dirStats.isSymbolicLink()) {
+      return { expectedTarget, targetDir, targetDirExists, state: 'unsafe' };
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      return { expectedTarget, targetDir, targetDirExists, state: 'unsafe' };
+    }
+    return { expectedTarget, targetDir, targetDirExists, state: 'missing' };
+  }
+  try {
+    const fileStats = fs.lstatSync(expectedTarget);
+    return {
+      expectedTarget,
+      targetDir,
+      targetDirExists,
+      state:
+        fileStats.isFile() && !fileStats.isSymbolicLink()
+          ? 'file'
+          : 'unsafe',
+    };
+  } catch (error) {
+    return {
+      expectedTarget,
+      targetDir,
+      targetDirExists,
+      state:
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+          ? 'missing'
+          : 'unsafe',
+    };
   }
 }
 
-/**
- * The pure reconcile core over absolute target paths, shared by the project and
- * global wrappers. Byte-preserving: it writes only into an absent target or a
- * copy it exactly owns, and removes only an owned, unmodified copy.
- */
+function skippedCollision(
+  item: DesiredMaterialization,
+  targetFile: string,
+  message: string
+): LearnedMaterializationSkip {
+  return {
+    id: item.id,
+    skillScope: item.effectiveScope,
+    effectiveScope: item.effectiveScope,
+    sources: item.sources,
+    targetPath: targetFile,
+    reason: 'collision',
+    message,
+  };
+}
+
+function skippedTracked(
+  item: TrackedMaterialization,
+  targetFile: string,
+  reason: LearnedMaterializationSkip['reason'],
+  message: string
+): LearnedMaterializationSkip {
+  return {
+    id: item.id,
+    skillScope: item.effectiveScope,
+    effectiveScope: item.effectiveScope,
+    sources: item.sources,
+    targetPath: targetFile,
+    reason,
+    message,
+  };
+}
+
 function reconcileCore(
   skillsRoot: string,
   desired: readonly DesiredMaterialization[],
   tracked: readonly TrackedMaterialization[],
-  toolLabel: string
+  toolLabel: string,
+  deferredIds: ReadonlySet<string> = new Set()
 ): CoreReconcile {
-  const result = emptyResult();
+  const result = emptyLearnedReconcileResult();
   const next: TrackedMaterialization[] = [];
   const trackedById = new Map(tracked.map((entry) => [entry.id, entry]));
   const desiredIds = new Set(desired.map((entry) => entry.id));
 
   for (const item of desired) {
-    const targetDir = path.join(skillsRoot, item.id);
-    const targetFile = path.join(targetDir, LEARNED_SKILL_CONTENT_FILE);
     const prior = trackedById.get(item.id);
+    const inspected = inspectManagedTarget(skillsRoot, item.id, prior?.targetPath);
+    const targetDir = inspected.targetDir;
+    const targetFile = inspected.expectedTarget;
     const desiredSha = digestContent(item.content);
-    const onDisk = sha256File(targetFile);
+    if (prior && inspected.state === 'unsafe') {
+      result.skipped.push(
+        skippedTracked(
+          prior,
+          targetFile,
+          'ledger-invalid',
+          `Skipped learned skill "${item.id}" for ${toolLabel}: its ledger target is not the exact safe managed path; ownership was preserved for repair.`
+        )
+      );
+      next.push(prior);
+      continue;
+    }
+    if (!prior && inspected.state === 'unsafe') {
+      result.skipped.push(
+        skippedCollision(
+          item,
+          targetFile,
+          `Skipped learned skill "${item.id}" for ${toolLabel}: the target path contains a symlink/junction or non-regular occupant; left unchanged.`
+        )
+      );
+      continue;
+    }
+    const onDisk = inspected.state === 'file' ? sha256File(targetFile) : null;
 
-    if (onDisk === null) {
-      // `sha256File` returns null for an absent target AND for a non-regular-file
-      // occupant. An absent target is free to generate, but a symlink (at the
-      // file or at the `<id>` directory) must never be written through — that
-      // would follow the link and clobber its target (data loss / boundary
-      // escape). Preserve any such occupant as a collision, mirroring the
-      // workflow ledger's `containsSymlinkInChain` guard.
-      if (targetOccupiedByUnsafeEntity(targetDir, targetFile)) {
-        result.skipped.push({
-          id: item.id,
-          skillScope: item.skillScope,
-          targetPath: targetFile,
-          reason: 'collision',
-          message: `Skipped learned skill "${item.id}" for ${toolLabel}: ${targetFile} (or its directory) is a symlink or other non-regular-file occupant, not the exact copy Rasen generated; left unchanged.`,
-        });
+    if (
+      deferredIds.has(item.id) &&
+      prior &&
+      (prior.resolutionDigest !== item.resolutionDigest || onDisk !== desiredSha)
+    ) {
+      next.push(prior);
+      continue;
+    }
+    if (inspected.state === 'missing') {
+      if (prior) {
+        result.skipped.push(
+          skippedTracked(
+            prior,
+            targetFile,
+            'missing',
+            `Skipped learned skill "${item.id}" for ${toolLabel}: the previously tracked file is missing; its absence and ownership record were preserved for repair.`
+          )
+        );
+        next.push(prior);
         continue;
       }
-      // Absent — free to generate.
+      if (inspected.targetDirExists) {
+        result.skipped.push(
+          skippedCollision(
+            item,
+            targetFile,
+            `Skipped learned skill "${item.id}" for ${toolLabel}: an untracked same-name directory already exists; left unchanged.`
+          )
+        );
+        continue;
+      }
+      if (inspectManagedTarget(skillsRoot, item.id).state !== 'missing') {
+        result.skipped.push(
+          skippedCollision(
+            item,
+            targetFile,
+            `Skipped learned skill "${item.id}" for ${toolLabel}: the target path changed during reconciliation; left unchanged.`
+          )
+        );
+        continue;
+      }
       writeMaterialized(targetFile, item.content);
       const entry: TrackedMaterialization = {
         id: item.id,
-        skillScope: item.skillScope,
-        contentDigest: item.contentDigest,
+        effectiveScope: item.effectiveScope,
+        sources: item.sources,
+        canonicalContentDigest: item.canonicalContentDigest,
+        resolutionDigest: item.resolutionDigest,
         targetPath: targetFile,
         sha256: desiredSha,
       };
       next.push(entry);
-      result.created.push({ id: item.id, skillScope: item.skillScope, targetPath: targetFile });
+      result.created.push(outcome(entry));
       continue;
     }
 
     const owned =
       prior !== undefined &&
-      path.resolve(prior.targetPath) === path.resolve(targetFile) &&
+      samePath(prior.targetPath, targetFile) &&
       prior.sha256 === onDisk;
-
     if (!owned) {
-      // A human-authored skill or a generated copy the user has edited — never
-      // overwrite it, and do not claim ownership.
-      result.skipped.push({
-        id: item.id,
-        skillScope: item.skillScope,
-        targetPath: targetFile,
-        reason: 'collision',
-        message: `Skipped learned skill "${item.id}" for ${toolLabel}: ${targetFile} is not the exact copy Rasen generated (human-authored or locally modified); left unchanged.`,
-      });
+      result.skipped.push(
+        skippedCollision(
+          item,
+          targetFile,
+          `Skipped learned skill "${item.id}" for ${toolLabel}: the target is not the exact copy Rasen generated; left unchanged.`
+        )
+      );
       continue;
     }
-
-    if (onDisk === desiredSha) {
-      // Owned and unchanged.
-      next.push({ ...prior, contentDigest: item.contentDigest });
+    if (onDisk === desiredSha && prior.resolutionDigest === item.resolutionDigest) {
+      next.push(prior);
       continue;
     }
-
-    // Owned and the canonical content changed. If the `<id>` directory is a
-    // symlink, an in-place refresh would write THROUGH it into the link target,
-    // so skip and keep the prior ownership record untouched (parity with the
-    // create-branch guard; ownership limits this to Rasen's own relocated copy,
-    // never an arbitrary file, but it must still not be written through).
-    if (targetDirIsSymlink(targetDir)) {
-      result.skipped.push({
-        id: item.id,
-        skillScope: item.skillScope,
-        targetPath: targetFile,
-        reason: 'collision',
-        message: `Skipped refreshing learned skill "${item.id}" for ${toolLabel}: its "${item.id}" directory is a symlink; left unchanged.`,
-      });
-      next.push({ ...prior, contentDigest: item.contentDigest });
+    if (inspectManagedTarget(skillsRoot, item.id, prior.targetPath).state !== 'file') {
+      result.skipped.push(
+        skippedCollision(
+          item,
+          targetFile,
+          `Skipped refreshing learned skill "${item.id}" for ${toolLabel}: its target path changed or became unsafe; left unchanged.`
+        )
+      );
+      next.push(prior);
       continue;
     }
-
-    // Owned and the canonical content changed — refresh in place.
     writeMaterialized(targetFile, item.content);
-    next.push({
+    const entry: TrackedMaterialization = {
       id: item.id,
-      skillScope: item.skillScope,
-      contentDigest: item.contentDigest,
+      effectiveScope: item.effectiveScope,
+      sources: item.sources,
+      canonicalContentDigest: item.canonicalContentDigest,
+      resolutionDigest: item.resolutionDigest,
       targetPath: targetFile,
       sha256: desiredSha,
-    });
-    result.updated.push({ id: item.id, skillScope: item.skillScope, targetPath: targetFile });
+    };
+    next.push(entry);
+    result.updated.push(outcome(entry));
   }
 
   for (const entry of tracked) {
     if (desiredIds.has(entry.id)) continue;
-    const onDisk = sha256File(entry.targetPath);
-    if (onDisk !== null && onDisk === entry.sha256) {
-      fs.rmSync(entry.targetPath, { force: true });
-      removeEmptyDirsUpTo(path.dirname(entry.targetPath), skillsRoot);
-      result.removed.push({ id: entry.id, skillScope: entry.skillScope, targetPath: entry.targetPath });
+    if (deferredIds.has(entry.id)) {
+      next.push(entry);
+      continue;
     }
-    // Otherwise the copy is gone or user-modified: drop tracking without
-    // deleting anything the user now owns.
+    const inspected = inspectManagedTarget(skillsRoot, entry.id, entry.targetPath);
+    if (inspected.state === 'unsafe') {
+      result.skipped.push(
+        skippedTracked(
+          entry,
+          inspected.expectedTarget,
+          'ledger-invalid',
+          `Skipped removing learned skill "${entry.id}" for ${toolLabel}: its ledger target is not the exact safe managed path; ownership was preserved for repair.`
+        )
+      );
+      next.push(entry);
+      continue;
+    }
+    const onDisk =
+      inspected.state === 'file'
+        ? sha256File(inspected.expectedTarget)
+        : null;
+    if (onDisk !== null && onDisk === entry.sha256) {
+      const rechecked = inspectManagedTarget(skillsRoot, entry.id, entry.targetPath);
+      if (rechecked.state !== 'file' || sha256File(rechecked.expectedTarget) !== entry.sha256) {
+        result.skipped.push(
+          skippedTracked(
+            entry,
+            rechecked.expectedTarget,
+            'collision',
+            `Skipped removing learned skill "${entry.id}" for ${toolLabel}: its target changed during reconciliation; left unchanged.`
+          )
+        );
+        next.push(entry);
+        continue;
+      }
+      fs.rmSync(rechecked.expectedTarget, { force: true });
+      removeEmptyDirsUpTo(path.dirname(rechecked.expectedTarget), skillsRoot);
+      result.removed.push(outcome(entry));
+    } else if (inspected.state === 'missing') {
+      result.skipped.push(
+        skippedTracked(
+          entry,
+          inspected.expectedTarget,
+          'missing',
+          `Stopped tracking obsolete learned skill "${entry.id}" for ${toolLabel}: its managed file was already missing.`
+        )
+      );
+    } else {
+      result.skipped.push(
+        skippedTracked(
+          entry,
+          inspected.expectedTarget,
+          'collision',
+          `Stopped tracking obsolete learned skill "${entry.id}" for ${toolLabel}: its bytes no longer match the generated copy; left unchanged.`
+        )
+      );
+    }
   }
-
   return { next, result };
 }
 
-/** The dedup'd, applicability-matched records to materialize for a project-local home. */
-function projectDesiredSet(
-  resolved: ResolvedLearnedSkillSet,
-  projectRoot: string
-): DesiredMaterialization[] {
-  const byId = new Map<string, DesiredMaterialization>();
-  // Global first so an owning project's project-scoped record of the same id
-  // takes precedence (its own copy wins the shared directory name).
-  for (const record of resolved.global) {
-    if (!matchesApplicability(record.manifest.applicability, projectRoot)) continue;
-    byId.set(record.manifest.id, {
-      id: record.manifest.id,
-      skillScope: 'global',
-      contentDigest: record.manifest.contentDigest,
-      content: renderMaterializedSkill(record),
+function desiredFromPlan(plan: EffectiveLearnedSkillPlan): DesiredMaterialization[] {
+  return plan.skills.map((skill) => ({
+    id: skill.id,
+    effectiveScope: skill.effectiveScope,
+    sources: skill.sources,
+    canonicalContentDigest: skill.canonicalContentDigest,
+    resolutionDigest: skill.resolutionDigest,
+    content: renderMaterializedSkill(skill),
+  }));
+}
+
+function storeSnapshot(plan: EffectiveLearnedSkillPlan): Record<string, ProjectLearnedStoreFact> {
+  return Object.fromEntries(
+    plan.stores.map((fact) => [
+      fact.store.id,
+      fact.status === 'unavailable'
+        ? { lastMembership: 'unavailable' as const, relevant: fact.relevant }
+        : { lastMembership: fact.status },
+    ])
+  );
+}
+
+function typedTracked(
+  projectRoot: string,
+  entries: Record<string, ProjectLearnedArtifactEntry>
+): TrackedMaterialization[] {
+  const tracked: TrackedMaterialization[] = [];
+  for (const [id, entry] of Object.entries(entries)) {
+    const targetPath = resolveArtifactFile(projectRoot, entry.file);
+    if (targetPath === null) continue;
+    tracked.push({
+      id,
+      effectiveScope: entry.effectiveScope,
+      sources: entry.sources,
+      canonicalContentDigest: entry.canonicalContentDigest,
+      resolutionDigest: entry.resolutionDigest,
+      targetPath,
+      sha256: entry.file.sha256,
     });
   }
-  for (const record of resolved.project) {
-    if (!matchesApplicability(record.manifest.applicability, projectRoot)) continue;
-    byId.set(record.manifest.id, {
-      id: record.manifest.id,
-      skillScope: 'project',
-      contentDigest: record.manifest.contentDigest,
-      content: renderMaterializedSkill(record),
-    });
-  }
-  return [...byId.values()];
+  return tracked.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 /**
- * Reconciles applicable learned skills for one project-local tool home,
- * persisting exact ownership in the project artifact ledger. Global and
- * project-scoped records both materialize only when their `path-exists`
- * applicability matches the initialized project.
+ * Write-new-before-clear migration. Modified/unsafe legacy files are not
+ * claimed. If both ledgers exist, the typed ledger is authoritative and the
+ * duplicate legacy section is cleared idempotently.
  */
+function migrateLegacyToolEntries(
+  projectRoot: string,
+  projectId: string,
+  toolId: string,
+  stores: Record<string, ProjectLearnedStoreFact>
+): Record<string, ProjectLearnedArtifactEntry> {
+  const existingLedger = readProjectLearnedLedger(projectRoot);
+  const existing = existingLedger?.tools[toolId]?.learned;
+  const legacy = readToolLearnedArtifacts(projectRoot, toolId);
+  if (Object.keys(legacy).length === 0) return existing ?? {};
+  if (existing !== undefined) {
+    // New ledger is authoritative; only the duplicate legacy representation is cleared.
+    persistToolLearnedArtifacts(projectRoot, toolId, {});
+    return existing;
+  }
+  const migrated: Record<string, ProjectLearnedArtifactEntry> = {};
+  for (const [id, entry] of Object.entries(legacy)) {
+    const targetPath = resolveArtifactFile(projectRoot, entry.file);
+    if (!targetPath || sha256File(targetPath) !== entry.file.sha256) continue;
+    const owner =
+      entry.skillScope === 'global'
+        ? ({ type: 'global' } as const)
+        : ({ type: 'project', id: projectId } as const);
+    migrated[id] = {
+      effectiveScope: entry.skillScope,
+      sources: [{ owner, id }],
+      canonicalContentDigest: entry.contentDigest,
+      resolutionDigest: digestContent(
+        JSON.stringify({
+          legacy: true,
+          id,
+          effectiveScope: entry.skillScope,
+          owner,
+          canonicalContentDigest: entry.contentDigest,
+        })
+      ),
+      file: entry.file,
+    };
+  }
+  // Durable typed ownership first, then remove only the legacy learned section.
+  persistProjectLearnedArtifacts(projectRoot, toolId, migrated, stores);
+  persistToolLearnedArtifacts(projectRoot, toolId, {});
+  return migrated;
+}
+
+function planDiagnostics(plan: EffectiveLearnedSkillPlan): LearnedReconcileResult {
+  const result = emptyLearnedReconcileResult();
+  result.planStatus = plan.status;
+  result.conflicts = plan.conflicts;
+  result.unavailableStores = plan.unavailableStores;
+  result.budgetFailure = plan.budgetFailure;
+  result.errors.push(...plan.planningErrors);
+  result.deduplicated = plan.skills
+    .filter((skill) => skill.effectiveScope === 'store' && skill.sources.length > 1)
+    .map((skill) => ({ id: skill.id, sources: skill.sources }));
+  return result;
+}
+
+function unavailableSourceIds(
+  plan: EffectiveLearnedSkillPlan,
+  tracked: readonly TrackedMaterialization[],
+  desired: readonly DesiredMaterialization[]
+): { ids: Set<string>; actions: LearnedDeferredAction[] } {
+  const unavailable = new Set(plan.unavailableStores.map((store) => store.store.id));
+  const relevantUnavailable = plan.unavailableStores
+    .filter((store) => store.relevant || store.relevance.length > 0)
+    .map((store) => store.store.id);
+  const desiredById = new Map(desired.map((item) => [item.id, item]));
+  const ids = new Set<string>();
+  const actions: LearnedDeferredAction[] = [];
+  for (const prior of tracked) {
+    const priorStores = prior.sources
+      .filter(
+        (source): source is CanonicalKnowledgeIdentity & { owner: { type: 'store'; id: string } } =>
+          source.owner.type === 'store' && unavailable.has(source.owner.id)
+      )
+      .map((source) => source.owner.id);
+    const next = desiredById.get(prior.id);
+    // A project winner is authoritative without inspecting a lower store layer.
+    if (next?.effectiveScope === 'project') continue;
+    if (next && next.resolutionDigest === prior.resolutionDigest) continue;
+    const stores = [...new Set([...priorStores, ...relevantUnavailable])]
+      .sort()
+      .map((id) => ({ type: 'store' as const, id }));
+    if (stores.length === 0) continue;
+    ids.add(prior.id);
+    const action = next ? 'replace' : 'remove';
+    actions.push({
+      id: prior.id,
+      action,
+      stores,
+      message: `Deferred ${action} for "${prior.id}" because relevant unavailable sources ${stores
+        .map((store) => `store:${store.id}`)
+        .join(', ')} may still contribute.`,
+    });
+  }
+  return { ids, actions };
+}
+
 export function reconcileProjectLearnedSkillsForTool(params: {
   projectRoot: string;
   toolId: string;
   toolLabel: string;
   skillsRoot: string;
-  resolved: ResolvedLearnedSkillSet;
+  plan: EffectiveLearnedSkillPlan;
 }): LearnedReconcileResult {
-  const { projectRoot, toolId, toolLabel, skillsRoot, resolved } = params;
-  const desired = projectDesiredSet(resolved, projectRoot);
+  const { toolId, toolLabel, skillsRoot, plan } = params;
+  // The typed execution owner is authoritative; a caller path is never allowed
+  // to relocate learned ownership or its ledger.
+  const projectRoot = plan.project.root;
+  const aggregate = planDiagnostics(plan);
+  // Known effective conflict/budget failure: no learned file or ledger write,
+  // including migration and pruning.
+  if (plan.status === 'blocked') return aggregate;
 
-  const tracked: TrackedMaterialization[] = [];
-  for (const [id, entry] of Object.entries(readToolLearnedArtifacts(projectRoot, toolId))) {
-    const targetPath = resolveArtifactFile(projectRoot, entry.file);
-    if (targetPath === null) continue; // unsafe/tampered ledger path — treat as untracked
-    tracked.push({
-      id,
-      skillScope: entry.skillScope,
-      contentDigest: entry.contentDigest,
-      targetPath,
-      sha256: entry.file.sha256,
-    });
-  }
+  const stores = storeSnapshot(plan);
+  const entries = migrateLegacyToolEntries(projectRoot, plan.project.id, toolId, stores);
+  const tracked = typedTracked(projectRoot, entries);
+  const desired = desiredFromPlan(plan);
+  const deferred = unavailableSourceIds(plan, tracked, desired);
+  aggregate.deferred.push(...deferred.actions);
+  const { next, result } = reconcileCore(
+    skillsRoot,
+    desired,
+    tracked,
+    toolLabel,
+    deferred.ids
+  );
+  mergeLearnedReconcileResult(aggregate, result);
 
-  const { next, result } = reconcileCore(skillsRoot, desired, tracked, toolLabel);
-
-  const learned: Record<string, LearnedArtifactEntry> = {};
+  const learned: Record<string, ProjectLearnedArtifactEntry> = {};
   for (const entry of next) {
     learned[entry.id] = {
-      skillScope: entry.skillScope,
-      contentDigest: entry.contentDigest,
+      effectiveScope: entry.effectiveScope,
+      sources: entry.sources,
+      canonicalContentDigest: entry.canonicalContentDigest,
+      resolutionDigest: entry.resolutionDigest,
       file: { ...storedArtifactFile(projectRoot, entry.targetPath), sha256: entry.sha256 },
     };
   }
-  persistToolLearnedArtifacts(projectRoot, toolId, learned);
+  persistProjectLearnedArtifacts(projectRoot, toolId, learned, stores);
+  sortResult(aggregate);
+  finalizeNoOp(aggregate);
+  return aggregate;
+}
 
-  return result;
+function globalDesired(records: readonly CanonicalLearnedSkill[]): DesiredMaterialization[] {
+  return records
+    .filter((record) => record.manifest.status === 'active')
+    .map((record) => {
+      const sources = [{ owner: { type: 'global' as const }, id: record.manifest.id }];
+      const resolutionDigest = digestContent(
+        JSON.stringify({
+          id: record.manifest.id,
+          effectiveScope: 'global',
+          sources,
+          knowledgeKey: record.manifest.knowledgeKey,
+          canonicalContentDigest: record.manifest.contentDigest,
+          content: record.content,
+        })
+      );
+      const skill: EffectiveLearnedSkill = {
+        id: record.manifest.id,
+        effectiveScope: 'global',
+        sources,
+        knowledgeKey: record.manifest.knowledgeKey,
+        canonicalContentDigest: record.manifest.contentDigest,
+        resolutionDigest,
+        canonicalRecord: record,
+      };
+      return {
+        id: skill.id,
+        effectiveScope: 'global' as const,
+        sources,
+        canonicalContentDigest: skill.canonicalContentDigest,
+        resolutionDigest,
+        content: renderMaterializedSkill(skill),
+      };
+    })
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 /**
- * Reconciles learned skills for a machine-global tool home (Hermes). Every
- * active approved global record is reconciled through the machine-global ledger
- * independent of any one project's markers; project-scoped records are skipped
- * with a warning because a global-only home cannot enforce project
- * applicability at install time.
+ * Global-only reconciliation is independent from project applicability,
+ * membership, degradation, and project-local conflicts.
  */
 export function reconcileGlobalLearnedSkillsForTool(params: {
   toolId: string;
   toolLabel: string;
   skillsRoot: string;
-  resolved: ResolvedLearnedSkillSet;
+  globalRecords: readonly CanonicalLearnedSkill[];
+  localRecords?: readonly EffectiveLearnedSkill[];
+  plan?: EffectiveLearnedSkillPlan;
   globalDataDir?: string;
 }): LearnedReconcileResult {
-  const { toolId, toolLabel, skillsRoot, resolved, globalDataDir } = params;
-
-  const desired: DesiredMaterialization[] = resolved.global.map((record) => ({
-    id: record.manifest.id,
-    skillScope: 'global',
-    contentDigest: record.manifest.contentDigest,
-    content: renderMaterializedSkill(record),
-  }));
-
+  const {
+    toolId,
+    toolLabel,
+    skillsRoot,
+    globalRecords,
+    localRecords = [],
+    plan,
+    globalDataDir,
+  } = params;
+  const aggregate = plan ? planDiagnostics(plan) : emptyLearnedReconcileResult();
+  const desired = globalDesired(globalRecords);
   const tracked: TrackedMaterialization[] = [];
   for (const [id, entry] of Object.entries(readGlobalLearnedArtifacts(globalDataDir, toolId))) {
     tracked.push({
       id,
-      skillScope: 'global',
-      contentDigest: entry.contentDigest,
+      effectiveScope: 'global',
+      sources: entry.sources,
+      canonicalContentDigest: entry.canonicalContentDigest,
+      resolutionDigest: entry.resolutionDigest,
       targetPath: entry.path,
       sha256: entry.sha256,
     });
   }
-
   const { next, result } = reconcileCore(skillsRoot, desired, tracked, toolLabel);
-
-  // A global-only home cannot receive project-scoped knowledge; report each as
-  // skipped so the caller can warn.
-  for (const record of resolved.project) {
-    result.skipped.push({
-      id: record.manifest.id,
-      skillScope: 'project',
+  mergeLearnedReconcileResult(aggregate, result);
+  for (const record of localRecords.filter((record) => record.effectiveScope !== 'global')) {
+    aggregate.skipped.push({
+      id: record.id,
+      skillScope: record.effectiveScope,
+      effectiveScope: record.effectiveScope,
+      sources: record.sources,
       reason: 'global-only-home',
-      message: `Skipped project-scoped learned skill "${record.manifest.id}" for ${toolLabel}: project-scoped learned skills require a project-local tool home.`,
+      message: `Skipped ${record.effectiveScope}-scoped learned skill "${record.id}" for ${toolLabel}: global-only homes accept global knowledge only.`,
     });
   }
-
   const learned: Record<string, GlobalLearnedArtifactEntry> = {};
   for (const entry of next) {
+    if (entry.effectiveScope !== 'global' || entry.sources.some((source) => source.owner.type !== 'global')) {
+      throw new Error('Machine-global learned ledger rejected a non-global source.');
+    }
     learned[entry.id] = {
-      contentDigest: entry.contentDigest,
+      effectiveScope: 'global',
+      sources: entry.sources as Array<{ owner: { type: 'global' }; id: string }>,
+      canonicalContentDigest: entry.canonicalContentDigest,
+      resolutionDigest: entry.resolutionDigest,
       path: entry.targetPath,
       sha256: entry.sha256,
     };
   }
   persistGlobalLearnedArtifacts(globalDataDir, toolId, learned);
-
-  return result;
+  sortResult(aggregate);
+  finalizeNoOp(aggregate);
+  return aggregate;
 }
 
-// sha256GlobalFile is re-exported so tests can assert on-disk global copies.
+function sortResult(result: LearnedReconcileResult): void {
+  const byId = <T extends { id: string; targetPath?: string }>(
+    left: T,
+    right: T
+  ): number => {
+    const id = left.id.localeCompare(right.id);
+    return id !== 0
+      ? id
+      : (left.targetPath ?? '').localeCompare(right.targetPath ?? '');
+  };
+  result.created.sort(byId);
+  result.updated.sort(byId);
+  result.removed.sort(byId);
+  result.skipped.sort(byId);
+  result.deduplicated.sort(byId);
+  result.conflicts.sort((left, right) => {
+    const id = left.id.localeCompare(right.id);
+    return id !== 0 ? id : left.kind.localeCompare(right.kind);
+  });
+  result.unavailableStores.sort((left, right) => left.store.id.localeCompare(right.store.id));
+  result.deferred.sort((left, right) => {
+    const id = left.id.localeCompare(right.id);
+    return id !== 0 ? id : left.action.localeCompare(right.action);
+  });
+}
+
 export { sha256GlobalFile };

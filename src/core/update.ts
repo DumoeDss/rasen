@@ -40,17 +40,20 @@ import {
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
 import {
+  EffectiveLearnedSkillPlanningError,
   resolveLearnedSkillExecutionContext,
-  resolveLearnedSkills,
-  type ResolvedLearnedSkillSet,
+  resolveEffectiveLearnedSkillPlan,
 } from './learned-skills/index.js';
 import {
+  emptyLearnedReconcileResult,
   learnedReconcileHasActivity,
   mergeLearnedReconcileResult,
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
   type LearnedReconcileResult,
 } from './learned-skill-materialization.js';
+import { collectProjectLearnedStoreIds } from './project-learned-skill-ledger.js';
+import { learnedMaterializationMessage } from './learned-materialization-locale.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type RepoMode } from './global-config.js';
 import {
@@ -353,6 +356,7 @@ export class UpdateCommand {
     if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity) {
       // All tools are up to date and no learned-skill materialization changed.
       this.displayUpToDateMessage(toolStatuses);
+      this.displayLearnedSummary(learned);
 
       // Still check for new tool directories and extra workflows
       this.detectNewTools(resolvedProjectPath, configuredTools);
@@ -765,42 +769,61 @@ export class UpdateCommand {
     projectPath: string,
     toolIds: readonly string[]
   ): Promise<LearnedReconcileResult> {
-    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
-    let resolved: ResolvedLearnedSkillSet;
+    const aggregate = emptyLearnedReconcileResult();
     try {
       const execution = await resolveLearnedSkillExecutionContext({
         launchDirectory: projectPath,
         requestedScope: 'mixed',
       });
-      resolved = await resolveLearnedSkills({ execution });
-    } catch {
-      return aggregate;
-    }
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStoreIds:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStoreIds(execution.owner.root)
+            : [],
+      });
 
-    for (const toolId of toolIds) {
-      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
-      if (!tool?.skillsDir) continue;
-      const skillsRoot = resolveToolSkillsRoot(tool, projectPath);
-      try {
-        const result =
-          tool.skillsHome === 'global'
-            ? reconcileGlobalLearnedSkillsForTool({
-                toolId,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              })
-            : reconcileProjectLearnedSkillsForTool({
-                projectRoot: projectPath,
-                toolId,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              });
-        mergeLearnedReconcileResult(aggregate, result);
-      } catch {
-        // Best-effort per tool.
+      for (const toolId of toolIds) {
+        const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+        if (!tool?.skillsDir) continue;
+        const authoritativeProjectRoot = plan.project.root;
+        const skillsRoot = resolveToolSkillsRoot(tool, authoritativeProjectRoot);
+        try {
+          const result =
+            tool.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  projectRoot: authoritativeProjectRoot,
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError
+            ? error.code
+            : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return aggregate;
     }
     return aggregate;
   }
@@ -808,21 +831,95 @@ export class UpdateCommand {
   /**
    * Reports the learned-skill reconciliation result as a section separate from
    * the workflow summary (created/updated/removed/skipped), so an empty learned
-   * category is never merged into the workflow counts. Prints nothing when
-   * there was no learned activity at all.
+   * category is never merged into the workflow counts. A complete reconciled
+   * state emits its own learned-specific no-op instead of disappearing into
+   * the generic workflow status.
    */
   private displayLearnedSummary(learned: LearnedReconcileResult): void {
-    if (!learnedReconcileHasActivity(learned)) return;
+    if (!learnedReconcileHasActivity(learned) && !learned.noOp) return;
     const parts: string[] = [];
     if (learned.created.length > 0) parts.push(`created: ${learned.created.length}`);
     if (learned.updated.length > 0) parts.push(`updated: ${learned.updated.length}`);
     if (learned.removed.length > 0) parts.push(`removed: ${learned.removed.length}`);
     if (learned.skipped.length > 0) parts.push(`skipped: ${learned.skipped.length}`);
+    if (learned.deduplicated.length > 0) parts.push(`deduplicated: ${learned.deduplicated.length}`);
+    if (learned.conflicts.length > 0) parts.push(`conflicts: ${learned.conflicts.length}`);
+    if (learned.unavailableStores.length > 0) {
+      parts.push(`unavailable stores: ${learned.unavailableStores.length}`);
+    }
+    if (learned.deferred.length > 0) parts.push(`deferred: ${learned.deferred.length}`);
     if (parts.length > 0) {
-      console.log(chalk.dim(`Learned skills — ${parts.join(', ')}`));
+      console.log(
+        chalk.dim(
+          learnedMaterializationMessage('summary', { details: parts.join(', ') })
+        )
+      );
     }
     for (const skip of learned.skipped) {
       console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+    }
+    for (const conflict of learned.conflicts) {
+      console.log(
+        chalk.yellow(
+          `  ${learnedMaterializationMessage('conflict', {
+            kind: conflict.kind,
+            id: conflict.id,
+            sources: conflict.participants
+              .map(
+                (item) =>
+                  `${item.source.owner.type}:${
+                    item.source.owner.type === 'global' ? '' : item.source.owner.id
+                  }/${item.source.id} (${item.knowledgeKey}, ${item.canonicalContentDigest})`
+              )
+              .join(', '),
+          })} ${learnedMaterializationMessage('repairConflict')}`
+        )
+      );
+    }
+    if (learned.noOp) {
+      console.log(chalk.dim(learnedMaterializationMessage('noOp')));
+    }
+    for (const store of learned.unavailableStores) {
+      console.log(
+        chalk.yellow(
+          `  ${learnedMaterializationMessage('unavailableStore', {
+            id: store.store.id,
+            detail: store.diagnostic,
+          })}`
+        )
+      );
+    }
+    for (const deferred of learned.deferred) {
+      console.log(
+        chalk.yellow(
+          `  ${learnedMaterializationMessage('deferred', {
+            action: deferred.action,
+            id: deferred.id,
+          })}`
+        )
+      );
+    }
+    if (learned.budgetFailure) {
+      console.log(
+        chalk.yellow(
+          `  ${learnedMaterializationMessage('budgetExceeded', {
+            name: learned.budgetFailure.name,
+            actual: learned.budgetFailure.actual,
+            limit: learned.budgetFailure.limit,
+            ids: learned.budgetFailure.ids.join(', '),
+          })}`
+        )
+      );
+    }
+    for (const error of learned.errors) {
+      console.log(
+        chalk.yellow(
+          `  ${learnedMaterializationMessage('incomplete', {
+            code: error.code,
+            message: error.message,
+          })}`
+        )
+      );
     }
   }
 

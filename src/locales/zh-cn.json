@@ -46,6 +46,17 @@
     "retireCancelled": "已取消退役。",
     "cancelled": "已取消。"
   },
+  "learnedMaterialization": {
+    "summary": "学习技能 — {details}",
+    "noOp": "学习技能已完成对齐，无变更。",
+    "deduplicated": "已合并等价的 store 来源：{count} 组。",
+    "conflict": "学习技能存在 {kind} 冲突 \"{id}\"：{sources}。",
+    "unavailableStore": "store:{id} 不可用：{detail}",
+    "deferred": "相关 store 不可用，已推迟对 \"{id}\" 的 {action}。",
+    "budgetExceeded": "{name} 已超限（{actual}/{limit} 字节）：{ids}",
+    "incomplete": "学习技能物化未完成（{code}）：{message}",
+    "repairConflict": "请对齐、重命名或退役 canonical store 记录，然后运行 rasen update。"
+  },
   "expertSkills": {
     "workflowAuthor": "通过暂存、静态校验、独立审查和经用户批准的导入，安全地编写可安装工作流",
     "workflowReview": "从语义质量、安全边界、可移植性、依赖关系和完整性方面独立审查可安装工作流"

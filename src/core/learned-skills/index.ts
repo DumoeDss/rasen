@@ -65,6 +65,25 @@ export {
 export { commitLearnedSkillPlan, planLearnedSkillMutation } from './mutate.js';
 export { listCanonicalLearnedSkills, resolveLearnedSkills } from './resolve.js';
 export {
+  EffectiveLearnedSkillPlanningError,
+  resolveEffectiveLearnedSkillPlan,
+  resolveEffectiveLearnedSkillRecords,
+  type DeferredMaterialization,
+  type EffectiveDescriptionBudgetFailure,
+  type EffectiveLearnedSkill,
+  type EffectiveLearnedSkillPlan,
+  type EffectiveLearnedSkillScope,
+  type EffectiveStoreFact,
+  type EffectiveStoreMemberFact,
+  type EffectiveStoreNotMemberFact,
+  type EffectiveStoreUnavailableFact,
+  type ResolveEffectiveLearnedSkillPlanInput,
+  type ResolveEffectiveLearnedSkillRecordsInput,
+  type EffectiveRecordResolution,
+  type StoreConflictParticipant,
+  type StoreSkillConflict,
+} from './effective.js';
+export {
   KnowledgeContextError,
   freezeKnowledgeContext,
   isKnowledgeContextError,

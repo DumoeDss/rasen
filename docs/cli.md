@@ -105,6 +105,15 @@ rasen init [path] [options]
 
 An explicit `--profile` value other than `custom` is persisted as the project's **locked profile** (`profile:` in `rasen/config.yaml`): later `rasen update` runs keep resolving the project's workflows from that profile instead of the user-wide one. `--profile custom` uses whatever workflows are currently selected in global config (`rasen profile`) for this run only and is never persisted. Saved profile names come from `rasen profile new`/`import`; note that saved definitions live per machine (`<global-config-dir>/profiles/`), so a teammate without the named profile sees a warning and falls back to their user-wide profile until they import it.
 
+After workflow setup, init resolves one authoritative typed project and
+preflights its effective learned-skill set across project, every explicit
+member store, and global scope. Project-local homes receive
+`project > store > global`; exact equivalent store copies deduplicate with all
+sources recorded. A divergent effective store set or post-resolution budget
+failure blocks learned writes but remains separate from ordinary workflow
+installation. Running with only a store owner never guesses one of its member
+projects. Hermes and other global-only homes receive global knowledge only.
+
 **Supported tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
 
 > This list mirrors `AI_TOOLS` in `src/core/config.ts`. See [Supported Tools](supported-tools.md) for each tool's skill and command paths.
@@ -153,6 +162,15 @@ rasen/
 ### `rasen update`
 
 Update rasen instruction files after upgrading the CLI. Re-generates AI tool configuration files using your current global profile, selected workflows, and delivery mode.
+
+Update uses the same learned-skill preflight as init. It refreshes provenance
+transitions, migrates legacy learned ownership to the dedicated typed ledger,
+and prunes only exact unchanged copies whose sources are authoritatively no
+longer effective. Store conflicts block all project-local learned mutations;
+temporarily unavailable prior stores defer only uncertain destructive actions.
+The learned summary reports deduplicated sources, effective/latent conflicts,
+unavailable stores, deferred actions, budget failures, and per-tool errors
+separately from workflow results.
 
 ```
 rasen update [path] [options]

@@ -60,17 +60,20 @@ import {
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
 import {
+  EffectiveLearnedSkillPlanningError,
   resolveLearnedSkillExecutionContext,
-  resolveLearnedSkills,
-  type ResolvedLearnedSkillSet,
+  resolveEffectiveLearnedSkillPlan,
 } from './learned-skills/index.js';
 import {
+  emptyLearnedReconcileResult,
   learnedReconcileHasActivity,
   mergeLearnedReconcileResult,
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
   type LearnedReconcileResult,
 } from './learned-skill-materialization.js';
+import { collectProjectLearnedStoreIds } from './project-learned-skill-ledger.js';
+import { learnedMaterializationMessage } from './learned-materialization-locale.js';
 import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
 import {
@@ -833,44 +836,63 @@ export class InitCommand {
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
   ): Promise<LearnedReconcileResult> {
-    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
-    let resolved: ResolvedLearnedSkillSet;
+    const aggregate = emptyLearnedReconcileResult();
     try {
       const execution = await resolveLearnedSkillExecutionContext({
         launchDirectory: projectPath,
         requestedScope: 'mixed',
       });
-      resolved = await resolveLearnedSkills({ execution });
-    } catch {
-      return aggregate;
-    }
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStoreIds:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStoreIds(execution.owner.root)
+            : [],
+      });
 
-    for (const tool of tools) {
-      const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
-      const skillsRoot = resolveToolSkillsRoot(
-        toolDefinition ?? { name: tool.name, value: tool.value, available: true, skillsDir: tool.skillsDir },
-        projectPath
-      );
-      try {
-        const result =
-          toolDefinition?.skillsHome === 'global'
-            ? reconcileGlobalLearnedSkillsForTool({
-                toolId: tool.value,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              })
-            : reconcileProjectLearnedSkillsForTool({
-                projectRoot: projectPath,
-                toolId: tool.value,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              });
-        mergeLearnedReconcileResult(aggregate, result);
-      } catch {
-        // Best-effort per tool.
+      for (const tool of tools) {
+        const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
+        const authoritativeProjectRoot = plan.project.root;
+        const skillsRoot = resolveToolSkillsRoot(
+          toolDefinition ?? { name: tool.name, value: tool.value, available: true, skillsDir: tool.skillsDir },
+          authoritativeProjectRoot
+        );
+        try {
+          const result =
+            toolDefinition?.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId: tool.value,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  projectRoot: authoritativeProjectRoot,
+                  toolId: tool.value,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError
+            ? error.code
+            : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return aggregate;
     }
     return aggregate;
   }
@@ -1141,13 +1163,85 @@ export class InitCommand {
     }
 
     // Learned-skill materialization (reported separately from workflow skills).
-    if (learnedReconcileHasActivity(learned)) {
+    if (learnedReconcileHasActivity(learned) || learned.noOp) {
       const materialized = learned.created.length + learned.updated.length;
       if (materialized > 0) {
         console.log(`Learned skills: ${materialized} materialized`);
       }
+      if (learned.noOp) {
+        console.log(chalk.dim(learnedMaterializationMessage('noOp')));
+      }
+      if (learned.deduplicated.length > 0) {
+        console.log(
+          chalk.dim(
+            learnedMaterializationMessage('deduplicated', {
+              count: learned.deduplicated.length,
+            })
+          )
+        );
+      }
       for (const skip of learned.skipped) {
         console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+      }
+      for (const conflict of learned.conflicts) {
+        console.log(
+          chalk.yellow(
+            `  ${learnedMaterializationMessage('conflict', {
+              kind: conflict.kind,
+              id: conflict.id,
+              sources: conflict.participants
+                .map(
+                  (item) =>
+                    `${item.source.owner.type}:${
+                      item.source.owner.type === 'global' ? '' : item.source.owner.id
+                    }/${item.source.id} (${item.knowledgeKey}, ${item.canonicalContentDigest})`
+                )
+                .join(', '),
+            })} ${learnedMaterializationMessage('repairConflict')}`
+          )
+        );
+      }
+      for (const store of learned.unavailableStores) {
+        console.log(
+          chalk.yellow(
+            `  ${learnedMaterializationMessage('unavailableStore', {
+              id: store.store.id,
+              detail: store.diagnostic,
+            })}`
+          )
+        );
+      }
+      for (const deferred of learned.deferred) {
+        console.log(
+          chalk.yellow(
+            `  ${learnedMaterializationMessage('deferred', {
+              action: deferred.action,
+              id: deferred.id,
+            })}`
+          )
+        );
+      }
+      if (learned.budgetFailure) {
+        console.log(
+          chalk.yellow(
+            `  ${learnedMaterializationMessage('budgetExceeded', {
+              name: learned.budgetFailure.name,
+              actual: learned.budgetFailure.actual,
+              limit: learned.budgetFailure.limit,
+              ids: learned.budgetFailure.ids.join(', '),
+            })}`
+          )
+        );
+      }
+      for (const error of learned.errors) {
+        console.log(
+          chalk.yellow(
+            `  ${learnedMaterializationMessage('incomplete', {
+              code: error.code,
+              message: error.message,
+            })}`
+          )
+        );
       }
     }
 

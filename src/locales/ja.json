@@ -46,6 +46,17 @@
     "retireCancelled": "廃止をキャンセルしました。",
     "cancelled": "キャンセルしました。"
   },
+  "learnedMaterialization": {
+    "summary": "学習スキル — {details}",
+    "noOp": "学習スキルは調整済みで、変更はありません。",
+    "deduplicated": "同一のストアソースを重複排除しました: {count}。",
+    "conflict": "学習スキルの{kind}競合 \"{id}\": {sources}。",
+    "unavailableStore": "利用できない store:{id}: {detail}",
+    "deferred": "関連ストアを利用できないため \"{id}\" の {action} を延期しました。",
+    "budgetExceeded": "{name} を超過しました ({actual}/{limit} バイト): {ids}",
+    "incomplete": "学習スキルのマテリアライズは未完了です ({code}): {message}",
+    "repairConflict": "正規ストアレコードを整合、改名、または廃止してから rasen update を実行してください。"
+  },
   "expertSkills": {
     "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、独立レビュー、ユーザー承認後のimportで安全に作成します",
     "workflowReview": "インストール可能なワークフローの意味的品質、セキュリティ境界、移植性、依存関係、完了条件を独立してレビューします"

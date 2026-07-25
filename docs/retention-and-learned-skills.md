@@ -124,11 +124,59 @@ applicability:
 
 No glob, regex, shell expansion, or arbitrary detector runs. Markers are validated with the same portable-path rules the workflow registry uses (no absolute paths, `.`/`..`, backslashes, device names, or case/NFC collisions) and resolved with platform path primitives, so a Windows separator and its case-insensitive alias produce the same result.
 
-Materialization uses applicability to decide what to install into a project-local tool home: a global skill installs only where the project matches; a project-scoped skill installs only for its owning project when the project matches. A **global-only tool home** (currently Hermes) cannot enforce project applicability at install time, so it reconciles every active approved global skill through a machine-global ledger and skips project-scoped skills with a warning.
+Materialization evaluates applicability before precedence. For each learned-skill
+ID, the effective order is **project > store > global**. Rasen reverse-discovers
+every healthy registered store that explicitly lists the resolved typed project
+as a `project:` member. The planning store and the project's `store:` config
+pointer do not become exclusive knowledge parents, unprefixed/store references
+do not count as project membership, and membership is not followed
+transitively.
+
+When several member stores publish the same effective ID, Rasen produces one
+copy only if the stable knowledge key and verified canonical bytes/digest are
+identical. The copy records every sorted `store:<id>` source; no store is named
+the winner. Any divergence produces one complete order-independent conflict and
+blocks all project-local learned file and ledger writes for that init/update
+run. An applicable project winner may shadow that disagreement; it is then
+reported as latent rather than used to choose a store. The active-description
+budget is calculated after applicability, precedence, and exact store
+deduplication, so equivalent sources count once.
+
+A **global-only tool home** (currently Hermes) is deliberately independent: it
+reconciles every active approved global skill through a machine-global typed
+ledger, ignores project markers/member stores/project-local conflicts, and
+excludes project and store records. One project's update therefore cannot prune
+a shared Hermes copy because of local membership or applicability.
 
 ## Ownership: Rasen never overwrites human skills
 
-Materialization and codification are exact, never name-based. Rasen refreshes or removes a materialized copy **only** when its artifact ledger records that exact path as Rasen's generated copy *and* the on-disk bytes still match what Rasen wrote. A human-authored directory, or a generated copy the user has since edited, blocks the operation and is preserved byte-for-byte with a diagnostic naming the skill, tool, and path. Ownership lives in the manifest's `generatedBy` marker and the ledger — never in an id prefix — so a similarly named skill is treated as unowned.
+Materialization and codification are exact, never name-based. Project-local
+copies use the dedicated strict
+`rasen/.learned-skill-materializations.json` ledger, separate from workflow
+ownership in `rasen/.workflow-artifacts.json`. Each learned entry records its
+effective scope, every typed canonical source, resolution digest, and exact
+target path/digest. The generated `SKILL.md` frontmatter carries the same
+effective scope, sorted source identities, and resolution digest. A
+provenance-only transition is therefore visible even when the guidance body is
+unchanged.
+
+On first successful reconciliation, legacy learned sections are migrated by
+writing the new ledger atomically before clearing only those sections from the
+workflow ledger. If a crash leaves both representations, the new ledger is
+authoritative and retry clears the duplicate without reclaiming or deleting the
+file. Modified legacy files are never claimed. Older CLIs still read the
+preserved workflow entries and see migrated learned copies as untracked, so
+they leave them alone.
+
+Rasen refreshes or removes a materialized copy **only** when its typed ledger
+records that exact path as Rasen's generated copy *and* the on-disk bytes still
+match what Rasen wrote. A human-authored directory, symlink/reparse occupant,
+non-regular file, missing copy, or locally edited generated copy is preserved
+with a diagnostic. An unavailable store is never treated as empty: if prior
+typed ownership, the config pointer, or frozen planning facts say it may matter,
+same-layer replacement/removal is deferred. A new applicable project winner may
+still replace that unknown lower layer, and unrelated unavailable stores do not
+block unaffected additions.
 
 Canonical mutations replace the complete managed `SKILL.md` and manifest atomically (never append), use machine-data per-owner locks, stage beside the target for same-volume replacement, re-verify ownership/source/membership and content digests under lock, and roll back on failure. Retirement flips status to `retired` while preserving provenance.
 
