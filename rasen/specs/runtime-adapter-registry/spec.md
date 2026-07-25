@@ -73,4 +73,3 @@ When shipped code adds a runtime adapter and marks one of its capabilities true,
 - **WHEN** a runtime-specific consumer needs to read a transcript, database, or process protocol
 - **THEN** that consumer SHALL use an explicit implementation for the selected registered runtime
 - **AND** SHALL NOT infer an implementation solely from the presence of a capability flag
-
