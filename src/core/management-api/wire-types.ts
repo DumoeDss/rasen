@@ -483,6 +483,37 @@ export interface LocalPathsResponse {
   entries: LocalPathEntry[];
 }
 
+/** Selection kinds accepted by the read-only path resolver. */
+export type LocalPathSelectionKind = 'directory' | 'file' | 'file-or-directory';
+
+/** `GET /api/v1/local-paths/resolve` response. */
+export interface ResolveLocalPathResponse {
+  path: string;
+  kind: 'directory' | 'file';
+  separator: string;
+}
+
+/** Fixed chooser modes and filters; callers cannot provide executable text. */
+export interface ChooseLocalPathRequest {
+  kind: 'directory' | 'file';
+  initialDirectory?: string;
+  filter?: 'rasen-package';
+}
+
+/** `POST /api/v1/local-paths/choose` response. */
+export type ChooseLocalPathResponse =
+  | {
+      status: 'selected';
+      path: string;
+      kind: 'directory' | 'file';
+      separator: string;
+    }
+  | { status: 'cancelled' }
+  | {
+      status: 'unavailable';
+      reason: 'unsupported' | 'headless' | 'missing-utility' | 'launch-failed' | 'timeout';
+    };
+
 // -----------------------------------------------------------------------
 // Space creation (space-creation design D4/D5) — `POST /api/v1/spaces`.
 // The server never writes workspace files: it spawns the CLI (init / store
@@ -490,13 +521,10 @@ export interface LocalPathsResponse {
 // -----------------------------------------------------------------------
 
 /** `POST /api/v1/spaces` request body (design D4). */
-export interface CreateSpaceRequest {
-  kind: 'project' | 'store';
-  /** An absolute filesystem path — the space's target directory. */
-  path: string;
-  /** Store id; required only for a fresh store (a directory with no `rasen/` root). */
-  id?: string;
-}
+export type CreateSpaceRequest =
+  | { op: 'create-project'; path: string }
+  | { op: 'create-store'; parent: string; id: string }
+  | { op: 'register-store'; path: string; id?: string };
 
 /** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
 export interface CreateSpaceResponse {

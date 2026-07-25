@@ -6,6 +6,7 @@ import { parseSpacePath, spaceHref, type Space } from '../store/use-space.js';
 import { useLocation } from 'preact-iso';
 import { CreateSpaceDialog } from './CreateSpaceDialog.js';
 import { useT } from '../i18n/store.js';
+import { ensureSpaceCatalog, useSpaceCatalog } from '../store/space-catalog.js';
 
 const PINNED_KEY = 'ui.pinnedSpaces';
 
@@ -46,37 +47,29 @@ function spaceOf(entry: SpaceEntry): Space {
 export function SpacesPage() {
   const t = useT();
   const { path: currentPath } = useLocation();
-  const [spaces, setSpaces] = useState<SpaceEntry[] | null>(null);
+  const {
+    spaces,
+    error: pageError,
+    refresh: refreshCatalog,
+  } = useSpaceCatalog();
   // The FULL pinned-selector array as stored in config, including selectors
   // that match no listed space — those are preserved across writes (a pin to a
   // temporarily-unplugged store must survive), just not rendered.
   const [pins, setPins] = useState<string[]>([]);
-  const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshNonce, setRefreshNonce] = useState(0);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setPageError(null);
     // The pins key read is best-effort: an older server without the key still
     // yields an empty/absent value, and the page must render the listing anyway.
-    Promise.all([client.listSpaces(), client.getKey(PINNED_KEY).catch(() => null)])
-      .then(([spacesRes, pinsRes]) => {
+    Promise.all([ensureSpaceCatalog(), client.getKey(PINNED_KEY).catch(() => null)])
+      .then(([, pinsRes]) => {
         if (cancelled) return;
-        setSpaces(spacesRes.spaces);
         setPins(coercePins(pinsRes?.entry.value));
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err instanceof ApiError) {
-          setPageError({ message: err.message, fix: err.fix });
-        } else {
-          setPageError({ message: 'status.error.spaces_load' });
-        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -84,10 +77,10 @@ export function SpacesPage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshNonce]);
+  }, []);
 
   function refresh() {
-    setRefreshNonce((n) => n + 1);
+    void refreshCatalog();
   }
 
   async function togglePin(selector: string) {
@@ -110,7 +103,7 @@ export function SpacesPage() {
     return <p class="spaces-page__loading">{t('spaces.page.loading')}</p>;
   }
 
-  if (pageError) {
+  if (pageError && spaces === null) {
     return (
       <div class="spaces-page__error">
         <p>
@@ -170,6 +163,22 @@ export function SpacesPage() {
           {t('spaces.page.refresh')}
         </button>
       </div>
+
+      {pageError && (
+        <div
+          class="spaces-page__refresh-error"
+          role="alert"
+          data-testid="spaces-refresh-error"
+        >
+          <p>
+            {t(pageError.message)}
+            {pageError.fix ? ` — ${pageError.fix}` : ''}
+          </p>
+          <button type="button" onClick={refresh}>
+            {t('status.retry')}
+          </button>
+        </div>
+      )}
 
       {pinError && (
         <p class="spaces-page__pin-error" role="alert">

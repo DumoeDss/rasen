@@ -24,6 +24,8 @@ import {
 } from './sessions.js';
 import { handleSpaces, handleSpaceWorktrees } from './spaces.js';
 import { handleLocalPaths } from './local-paths.js';
+import { resolveLocalPath } from './local-path-resolver.js';
+import { createLocalPathChooser } from './local-path-chooser.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
 import { createChangeSubmitter } from './submit.js';
@@ -86,6 +88,7 @@ export interface ManagementRouterOptions {
 export interface ManagementRouterHandle {
   handle: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void>;
   supervisor: SessionSupervisor;
+  shutdownPathChooser: () => Promise<void>;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
@@ -101,6 +104,8 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/spaces',
   '/api/v1/spaces/worktrees',
   '/api/v1/local-paths',
+  '/api/v1/local-paths/resolve',
+  '/api/v1/local-paths/choose',
   '/api/v1/workflows',
   '/api/v1/workflow-validation',
   '/api/v1/workflow-dependencies',
@@ -219,6 +224,8 @@ function matchSessionIdPath(pathname: string): string | null {
 
 /** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (pathname === '/api/v1/local-paths/resolve') return method === 'GET';
+  if (pathname === '/api/v1/local-paths/choose') return method === 'POST';
   if (pathname === '/api/v1/themes') return method === 'GET';
   if (pathname === '/api/v1/themes/import') return method === 'POST';
   if (matchAuditIdPath(pathname) !== null) return method === 'GET';
@@ -404,6 +411,7 @@ export function createManagementRouter(
   // One space creator per server instance (space-creation design D5): its own
   // cap-1 concurrency, independent of change submission's cap.
   const createSpace = createSpaceCreator();
+  const pathChooser = createLocalPathChooser();
   // The workflow mutation bridge (workflow-http-api design D4): its own cap-1
   // state, admitting only the four workflow bounded-cli ops.
   const submitWorkflow = createWorkflowSubmitter(context);
@@ -855,6 +863,35 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/local-paths/resolve') {
+      const result = await resolveLocalPath(
+        url.searchParams.get('path') ?? undefined,
+        url.searchParams.get('kind') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/local-paths/choose') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await pathChooser.choose(body.value);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/local-paths') {
       const pathParam = url.searchParams.get('path') ?? undefined;
       const result = await handleLocalPaths(pathParam);
@@ -1085,5 +1122,5 @@ export function createManagementRouter(
     }
   };
 
-  return { handle, supervisor };
+  return { handle, supervisor, shutdownPathChooser: pathChooser.shutdown };
 }

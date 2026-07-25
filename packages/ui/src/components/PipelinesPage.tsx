@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
@@ -30,6 +30,8 @@ import { PageHeader } from './ui/PageHeader.js';
 import { ValueDisplay } from './ui/ValueDisplay.js';
 import { ThresholdPolicyWorkbench } from './ThresholdPolicyWorkbench.js';
 import { useT } from '../i18n/store.js';
+import { LocalPathPicker } from './LocalPathPicker.js';
+import type { LocalPathSelectionController } from '../store/use-local-path-selection.js';
 
 /**
  * The Pipelines page (pipelines-ui spec). A space-PREFIXED route
@@ -952,38 +954,12 @@ function DialogShell({ title, onClose, children }: { title: string; onClose: () 
   );
 }
 
-function PathField({
-  label,
-  value,
-  onInput,
-  disabled,
-  testid,
-}: {
-  label: string;
-  value: string;
-  onInput: (v: string) => void;
-  disabled?: boolean;
-  testid: string;
-}) {
-  return (
-    <label class="pipeline-dialog__field">
-      <span>{label} (absolute path on this machine)</span>
-      <input
-        type="text"
-        data-testid={testid}
-        value={value}
-        disabled={disabled}
-        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-      />
-    </label>
-  );
-}
-
 function cliMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
 function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const picker = useRef<LocalPathSelectionController | null>(null);
   const [path, setPath] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -995,8 +971,13 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     if (submitting) return;
     setSubmitting(true);
     setError(null);
+    const selectedPath = await picker.current?.resolveForSubmit();
+    if (!selectedPath) {
+      setSubmitting(false);
+      return;
+    }
     try {
-      const res = (await client.mutatePipeline({ op: 'import', path, force })) as { imported: string[] };
+      const res = (await client.mutatePipeline({ op: 'import', path: selectedPath, force })) as { imported: string[] };
       setResult({ imported: res.imported });
       onDone();
     } catch (err) {
@@ -1015,7 +996,17 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         </div>
       ) : (
         <form class="pipeline-dialog__form" onSubmit={(e) => run(false, e)}>
-          <PathField label="Pipeline directory or package" testid="pipeline-import-path" value={path} onInput={setPath} disabled={submitting} />
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            mode="file"
+            currentLabel="Pipeline package"
+            disabled={submitting}
+            controllerRef={picker}
+            onValueChange={setPath}
+          />
+          <p class="pipeline-dialog__hint" data-testid="pipeline-import-path">
+            Selected: <code>{path || 'nothing yet'}</code>
+          </p>
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
             <button type="submit" class="btn--primary" data-testid="pipeline-import-submit" disabled={submitting}>
@@ -1034,7 +1025,9 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
 }
 
 function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) {
+  const picker = useRef<LocalPathSelectionController | null>(null);
   const [dir, setDir] = useState('');
+  const [separator, setSeparator] = useState('/');
   const [filename, setFilename] = useState(`${name}.rasenpkg`);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1042,8 +1035,8 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
   const [refused, setRefused] = useState(false);
 
   function destination(): string {
-    const trimmed = dir.replace(/[/\\]+$/, '');
-    return `${trimmed}/${filename}`;
+    const trimmed = dir.endsWith(separator) ? dir.slice(0, -separator.length) : dir;
+    return `${trimmed}${separator}${filename}`;
   }
 
   async function run(force: boolean, event?: Event) {
@@ -1051,8 +1044,18 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
     if (submitting) return;
     setSubmitting(true);
     setError(null);
+    const selectedDir = await picker.current?.resolveForSubmit();
+    if (!selectedDir) {
+      setSubmitting(false);
+      return;
+    }
+    const selectedSeparator = picker.current?.separator ?? separator;
+    const trimmed = selectedDir.endsWith(selectedSeparator)
+      ? selectedDir.slice(0, -selectedSeparator.length)
+      : selectedDir;
+    const resolvedDestination = `${trimmed}${selectedSeparator}${filename}`;
     try {
-      const res = (await client.mutatePipeline({ op: 'export', name, path: destination(), force })) as {
+      const res = (await client.mutatePipeline({ op: 'export', name, path: resolvedDestination, force })) as {
         pipeline: { path: string };
       };
       setDone(res.pipeline.path);
@@ -1075,7 +1078,19 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
         </div>
       ) : (
         <form class="pipeline-dialog__form" onSubmit={(e) => run(false, e)}>
-          <PathField label="Destination directory" testid="pipeline-export-dir" value={dir} onInput={setDir} disabled={submitting} />
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            currentLabel="Destination directory"
+            disabled={submitting}
+            controllerRef={picker}
+            onValueChange={(value, nextSeparator) => {
+              setDir(value);
+              setSeparator(nextSeparator);
+            }}
+          />
+          <p class="pipeline-dialog__hint" data-testid="pipeline-export-dir">
+            Destination directory: <code>{dir || 'nothing yet'}</code>
+          </p>
           <label class="pipeline-dialog__field">
             <span>Filename</span>
             <input
@@ -1086,6 +1101,11 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
               onInput={(e) => setFilename((e.target as HTMLInputElement).value)}
             />
           </label>
+          {dir && filename && (
+            <p class="pipeline-dialog__hint" data-testid="pipeline-export-destination">
+              Export to: <code>{destination()}</code>
+            </p>
+          )}
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
             <button type="submit" class="btn--primary" data-testid="pipeline-export-submit" disabled={submitting}>

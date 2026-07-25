@@ -13,6 +13,8 @@ import type {
   ArchiveResponse,
   ChangesResponse,
   ConfigScope,
+  ChooseLocalPathRequest,
+  ChooseLocalPathResponse,
   CreateSpaceRequest,
   CreateSpaceResponse,
   GetConfigKeyResponse,
@@ -22,6 +24,7 @@ import type {
   ListPipelinesResponse,
   ListProjectsResponse,
   LocalPathsResponse,
+  LocalPathSelectionKind,
   PipelineCatalogResponse,
   PipelineDetailResponse,
   PipelineMutationRequest,
@@ -31,6 +34,7 @@ import type {
   ProfileMutationRequest,
   ProfileMutationResponse,
   RunsResponse,
+  ResolveLocalPathResponse,
   SessionActionResponse,
   SessionDetailResponse,
   SessionsResponse,
@@ -345,6 +349,22 @@ export function listSpaceWorktrees(space?: string): Promise<SpaceWorktreesRespon
 export function listLocalPaths(path?: string): Promise<LocalPathsResponse> {
   const query = path ? `?path=${encodeURIComponent(path)}` : '';
   return request<LocalPathsResponse>(`/api/v1/local-paths${query}`);
+}
+
+export function resolveLocalPath(
+  path: string,
+  kind: LocalPathSelectionKind
+): Promise<ResolveLocalPathResponse> {
+  const query = new URLSearchParams({ path, kind });
+  return request<ResolveLocalPathResponse>(`/api/v1/local-paths/resolve?${query.toString()}`);
+}
+
+export function chooseLocalPath(body: ChooseLocalPathRequest): Promise<ChooseLocalPathResponse> {
+  return request<ChooseLocalPathResponse>('/api/v1/local-paths/choose', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 /**
