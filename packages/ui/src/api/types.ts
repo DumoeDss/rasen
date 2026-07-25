@@ -607,6 +607,12 @@ export interface LaunchSessionRequest {
   changeName?: string;
   /** Optional planning-space selector (`project:<id|root>` | `store:<id>`); omitted = launch project (planning-space-addressing design D3). */
   space?: string;
+  /**
+   * Runtime-only execution selection. `planning` explicitly runs in a Store's
+   * planning root; `project:<selector>` resolves a registered project or one
+   * of its linked worktrees server-side. Never persisted on the Session.
+   */
+  execution?: 'planning' | `project:${string}`;
   timeoutMs?: number;
   noOutputTimeoutMs?: number;
 }

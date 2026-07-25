@@ -5,3 +5,6 @@
 # specs/ is intentionally NOT collapsed: spec deltas are the part
 # reviewers must see.
 openspec/changes/** linguist-generated=true
+
+# This fixture is spawned directly through its shebang on POSIX.
+test/fixtures/management-api/session-fake-cli.mjs text eol=lf

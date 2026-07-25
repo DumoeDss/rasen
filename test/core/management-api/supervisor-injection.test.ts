@@ -131,6 +131,42 @@ describe.skipIf(!IS_WINDOWS)('spawnAgentCli command-injection hardening (Windows
     }, 10_000);
   }
 
+  it('delivers a metacharacter-bearing attached planning root as one literal --add-dir value', async () => {
+    const attachedCanary = 'ATTACH-PWNED';
+    const planningRoot = path.join(shimDir, `planning & mkdir ${attachedCanary} & rem`);
+    fs.mkdirSync(planningRoot);
+    const supervisor = makeSupervisor();
+    const skill = '/rasen-auto';
+    const task = 'MODE=fast-exit attached-root';
+
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill,
+      task,
+      cwd: workDir,
+      attachedRoots: [planningRoot],
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    expect(fs.existsSync(path.join(workDir, attachedCanary))).toBe(false);
+    const dumped = JSON.parse(fs.readFileSync(path.join(shimDir, ARGV_DUMP), 'utf-8')) as string[];
+    expect(dumped).toEqual([
+      '-p',
+      `${skill} ${task}`,
+      '--dangerously-skip-permissions',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--add-dir',
+      planningRoot,
+    ]);
+  }, 10_000);
+
   // A raw newline cannot survive `cmd.exe /C`: cmd truncates the command line
   // at the first `\n`, silently dropping the rest of the prompt AND the trailing
   // --dangerously-skip-permissions/--output-format/--verbose flags. The Windows

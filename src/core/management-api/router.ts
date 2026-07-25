@@ -10,7 +10,6 @@ import type * as http from 'node:http';
 
 import type { ConfigApiContext } from '../config-api/router.js';
 import { resolveSpaceSelector } from '../config-api/project-addressing.js';
-import { deriveSpaceFromCwd } from '../root-selection.js';
 import type { ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
@@ -22,7 +21,6 @@ import {
   handleKillSession,
   handleLaunchSession,
   handleListSessions,
-  type LaunchSpaceResolution,
 } from './sessions.js';
 import { handleSpaces, handleSpaceWorktrees } from './spaces.js';
 import { handleLocalPaths } from './local-paths.js';
@@ -443,34 +441,6 @@ export function createManagementRouter(
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
     return { ok: true, root: resolved.space.root };
-  };
-
-  // Session-launch space resolution (design D3): an explicit selector sets the
-  // cwd root and the frozen attribution verbatim; an omitted selector falls
-  // back to the launch project with the attribution derived from that cwd (or
-  // synthesized from the launch project ref when derivation finds no identity,
-  // preserving the pre-space run-state join for an unregistered launch project).
-  const resolveSessionSpace = async (selector: string | undefined): Promise<LaunchSpaceResolution> => {
-    if (selector) {
-      const resolved = await resolveSpaceSelector(selector);
-      if (!resolved.ok) return resolved;
-      return {
-        ok: true,
-        root: resolved.space.root,
-        attribution: { type: resolved.space.type, id: resolved.space.id, root: resolved.space.root },
-      };
-    }
-    const root = context.launchProjectRoot ?? undefined;
-    if (!root) {
-      return { ok: true, root: undefined, attribution: undefined };
-    }
-    const derived = await deriveSpaceFromCwd(root);
-    const attribution = derived ?? {
-      type: 'project' as const,
-      id: context.launchProjectRef?.projectId ?? '',
-      root: canonicalizeOrResolve(root),
-    };
-    return { ok: true, root, attribution };
   };
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse, rawPathname: string): Promise<void> => {
@@ -1040,7 +1010,14 @@ export function createManagementRouter(
         return;
       }
       const request = (body.value ?? {}) as Partial<LaunchSessionRequest>;
-      const result = await handleLaunchSession(supervisor, request, resolveSessionSpace);
+      const launchProject = context.launchProjectRoot
+        ? {
+            root: context.launchProjectRoot,
+            projectId: context.launchProjectRef?.projectId ?? '',
+            name: context.launchProjectRef?.name ?? '',
+          }
+        : null;
+      const result = await handleLaunchSession(supervisor, request, launchProject);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;

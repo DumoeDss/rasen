@@ -5,6 +5,7 @@ import {
   groupArchivedTasks,
   groupIntoTasks,
   sessionsForTask,
+  tasksForMember,
 } from '../../src/board/columns.js';
 import type {
   ArchivedChangeSummary,
@@ -298,6 +299,24 @@ describe('sessionsForTask', () => {
     const { live, ended } = sessionsForTask([liveSession('other')], new Set(['api']));
     expect(live).toEqual([]);
     expect(ended).toEqual([]);
+  });
+});
+
+describe('tasksForMember Session provenance', () => {
+  it('uses session.cwd for member chips while leaving Store planning attribution independent', () => {
+    const tasks = groupIntoTasks([change({ name: 'store-change' })], NO_RUNS, []);
+    const storeSession = liveSession('store-change', {
+      cwd: '/projects/member-a/worktree',
+      space: { type: 'store', id: 'team-store', root: '/planning/team-store' },
+    });
+
+    expect(tasksForMember(tasks, [storeSession], '/projects/member-a')).toEqual(tasks);
+    expect(tasksForMember(tasks, [storeSession], '/projects/member-b')).toEqual([]);
+    expect(storeSession.session.space).toEqual({
+      type: 'store',
+      id: 'team-store',
+      root: '/planning/team-store',
+    });
   });
 });
 

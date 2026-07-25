@@ -82,7 +82,10 @@ describe('sessions API (session-supervision design D1/D4)', () => {
     tempConfigHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-sessions-home-'));
     projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-sessions-proj-'));
     fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
-    fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: launch-proj\n'
+    );
 
     originalEnv = { ...process.env };
     delete process.env.RASEN_HOME;

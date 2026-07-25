@@ -39,6 +39,8 @@ export interface LaunchInput {
   skill: string;
   task: string;
   cwd: string;
+  /** Server-resolved planning roots to expose in addition to cwd. */
+  attachedRoots?: readonly string[];
   changeName?: string;
   /** Frozen planning-space attribution for this session (design D3). */
   space?: SessionSpace;
@@ -281,7 +283,15 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     tails.set(record.id, { stdout: '', stderr: '' });
 
     const promptToken = `${input.skill} ${input.task}`;
-    const argv = ['-p', promptToken, '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose'];
+    const argv = [
+      '-p',
+      promptToken,
+      '--dangerously-skip-permissions',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      ...(input.attachedRoots ?? []).flatMap((root) => ['--add-dir', root]),
+    ];
 
     let child;
     try {

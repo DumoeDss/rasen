@@ -1,8 +1,36 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { SessionRecordWire } from '../api/types.js';
+import type { SessionRecordWire, SpaceMember } from '../api/types.js';
 import { useT } from '../i18n/store.js';
+
+type ExecutionValue = '' | 'planning' | `project:${string}`;
+type ExecutionSelection = {
+  value: ExecutionValue;
+  source: 'auto' | 'user';
+};
+
+function automaticExecutionSelection(members: readonly SpaceMember[]): ExecutionSelection {
+  return {
+    value: members.length === 1 ? `project:${members[0]!.root}` : '',
+    source: 'auto',
+  };
+}
+
+function reconcileExecutionSelection(
+  current: ExecutionSelection,
+  members: readonly SpaceMember[]
+): ExecutionSelection {
+  if (current.source === 'user' && current.value === 'planning') return current;
+  if (
+    current.source === 'user' &&
+    current.value !== '' &&
+    members.some((member) => current.value === `project:${member.root}`)
+  ) {
+    return current;
+  }
+  return automaticExecutionSelection(members);
+}
 
 /**
  * Launch flow (design.md D4 of `slice3-sessions-ui`): kind + task + optional
@@ -18,27 +46,65 @@ export function LaunchSessionDialog({
   onCancel,
   onLaunched,
   space,
+  members,
+  memberInventoryStatus,
+  onRetryMemberInventory,
   changeName: changeNamePrefill,
 }: {
   onCancel: () => void;
   onLaunched: (session: SessionRecordWire) => void;
   /** Optional planning-space selector; the launched run is attributed to it (design D4). */
   space?: string;
+  /** Store-only presentation choices. Undefined preserves the project launch path; an empty array is a zero-member Store. */
+  members?: readonly SpaceMember[];
+  /** Store inventory transport state, independent from the last successful member list. */
+  memberInventoryStatus?: 'loading' | 'loaded' | 'error';
+  /** Re-fetches Store inventory without closing the launch dialog. */
+  onRetryMemberInventory?: () => void;
   /** Optional change-name prefill — a single Task's change (blank for a portfolio container). */
   changeName?: string;
 }) {
   const [kind, setKind] = useState<'auto' | 'goal'>('auto');
   const [task, setTask] = useState('');
   const [changeName, setChangeName] = useState(changeNamePrefill ?? '');
+  const [executionSelection, setExecutionSelection] = useState<ExecutionSelection>(
+    members === undefined
+      ? { value: '', source: 'auto' }
+      : automaticExecutionSelection(members)
+  );
+  // Inventory polling can commit new props before passive effects run. Derive
+  // the value used by the rendered controls and submit handler synchronously,
+  // so an automatic or removed project is never actionable during that gap.
+  const effectiveExecutionSelection =
+    members === undefined
+      ? executionSelection
+      : reconcileExecutionSelection(executionSelection, members);
+  const execution = effectiveExecutionSelection.value;
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const t = useT();
+  const effectiveInventoryStatus =
+    members === undefined ? undefined : (memberInventoryStatus ?? 'loaded');
+
+  useEffect(() => {
+    if (members === undefined) return;
+    setExecutionSelection((current) => {
+      const reconciled = reconcileExecutionSelection(current, members);
+      return current.source === reconciled.source && current.value === reconciled.value
+        ? current
+        : reconciled;
+    });
+  }, [members]);
 
   async function handleSubmit(event: Event) {
     event.preventDefault();
     if (submitting) return;
     if (task.trim().length === 0) {
       setErrorMessage('dialog.launch.task_required');
+      return;
+    }
+    if (members !== undefined && execution === '') {
+      setErrorMessage('dialog.launch.execution_required');
       return;
     }
     setSubmitting(true);
@@ -49,6 +115,7 @@ export function LaunchSessionDialog({
         task,
         changeName: changeName.trim().length > 0 ? changeName.trim() : undefined,
         ...(space !== undefined ? { space } : {}),
+        ...(execution !== '' ? { execution } : {}),
       });
       onLaunched(result.session);
     } catch (err) {
@@ -87,6 +154,61 @@ export function LaunchSessionDialog({
             {t('dialog.launch.kind_goal')}
           </label>
         </fieldset>
+        {members !== undefined && (
+          <fieldset class="launch-session-dialog__field launch-session-dialog__execution" disabled={submitting}>
+            <legend>{t('dialog.launch.execution')}</legend>
+            <small class="launch-session-dialog__hint">{t('dialog.launch.execution_hint')}</small>
+            {effectiveInventoryStatus === 'loading' && members.length === 0 && (
+              <p class="launch-session-dialog__inventory-loading">
+                {t('dialog.launch.members_loading')}
+              </p>
+            )}
+            {effectiveInventoryStatus === 'error' && (
+              <div class="launch-session-dialog__inventory-error" role="alert">
+                <span>{t('dialog.launch.members_error')}</span>
+                {onRetryMemberInventory && (
+                  <button type="button" class="btn--ghost" onClick={onRetryMemberInventory}>
+                    {t('status.retry')}
+                  </button>
+                )}
+              </div>
+            )}
+            {effectiveInventoryStatus === 'loaded' && members.length === 0 && (
+              <p class="launch-session-dialog__execution-empty">{t('dialog.launch.members_empty')}</p>
+            )}
+            {members.map((member) => {
+              const value = `project:${member.root}` as const;
+              return (
+                <label key={member.root}>
+                  <input
+                    type="radio"
+                    name="execution"
+                    value={value}
+                    checked={execution === value}
+                    onChange={() => setExecutionSelection({ value, source: 'user' })}
+                  />
+                  <span>
+                    <strong>{member.name}</strong>
+                    <small>{member.root}</small>
+                  </span>
+                </label>
+              );
+            })}
+            <label class="launch-session-dialog__planning-only">
+              <input
+                type="radio"
+                name="execution"
+                value="planning"
+                checked={execution === 'planning'}
+                onChange={() => setExecutionSelection({ value: 'planning', source: 'user' })}
+              />
+              <span>
+                <strong>{t('dialog.launch.planning')}</strong>
+                <small>{t('dialog.launch.planning_hint')}</small>
+              </span>
+            </label>
+          </fieldset>
+        )}
         <label class="launch-session-dialog__field">
           <span>{t('dialog.launch.task')}</span>
           <textarea
@@ -118,7 +240,11 @@ export function LaunchSessionDialog({
           <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
             {t('dialog.launch.cancel')}
           </button>
-          <button type="submit" class="btn--primary" disabled={submitting}>
+          <button
+            type="submit"
+            class="btn--primary"
+            disabled={submitting || (members !== undefined && execution === '')}
+          >
             {submitting ? t('dialog.launch.launching') : t('dialog.launch.launch')}
           </button>
         </div>

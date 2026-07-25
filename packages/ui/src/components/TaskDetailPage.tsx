@@ -2,7 +2,12 @@ import { useEffect, useState } from 'preact/hooks';
 import { useRoute } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { SessionListEntry, TaskChildDetail, TaskDetailResponse } from '../api/types.js';
+import type {
+  SessionListEntry,
+  SpaceMember,
+  TaskChildDetail,
+  TaskDetailResponse,
+} from '../api/types.js';
 import { deriveColumn, sessionsForTask, sessionStage } from '../board/columns.js';
 import type { BoardColumn } from '../board/columns.js';
 import { SessionRow } from './SessionRow.js';
@@ -166,6 +171,12 @@ export function TaskDetailPage() {
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [inventoryRetryNonce, setInventoryRetryNonce] = useState(0);
+  const [storeMemberInventory, setStoreMemberInventory] = useState<{
+    storeId: string;
+    status: 'loading' | 'loaded' | 'error';
+    members: SpaceMember[];
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +218,51 @@ export function TaskDetailPage() {
       clearInterval(interval);
     };
   }, [taskId, selector, refreshNonce]);
+
+  useEffect(() => {
+    if (space?.type !== 'store') {
+      setStoreMemberInventory(null);
+      return;
+    }
+
+    const storeId = space.id;
+    let cancelled = false;
+    setStoreMemberInventory((current) =>
+      current?.storeId === storeId
+        ? { ...current, status: 'loading' }
+        : { storeId, status: 'loading', members: [] }
+    );
+
+    function loadInventory() {
+      client.listSpaces()
+        .then((response) => {
+          if (cancelled) return;
+          const activeStore = response.spaces.find(
+            (entry) => entry.type === 'store' && entry.id === storeId
+          );
+          setStoreMemberInventory({
+            storeId,
+            status: 'loaded',
+            members: activeStore?.type === 'store' ? activeStore.members : [],
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setStoreMemberInventory((current) => ({
+            storeId,
+            status: 'error',
+            members: current?.storeId === storeId ? current.members : [],
+          }));
+        });
+    }
+
+    loadInventory();
+    const interval = setInterval(loadInventory, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [space?.type, space?.id, inventoryRetryNonce]);
 
   function refresh() {
     setRefreshNonce((n) => n + 1);
@@ -327,6 +383,26 @@ export function TaskDetailPage() {
       {dialogOpen && (
         <LaunchSessionDialog
           space={selector}
+          members={
+            space?.type === 'store'
+              ? (storeMemberInventory?.storeId === space.id
+                  ? storeMemberInventory.members
+                  : [])
+              : undefined
+          }
+          memberInventoryStatus={
+            space?.type === 'store' &&
+            storeMemberInventory?.storeId === space.id
+              ? storeMemberInventory.status
+              : space?.type === 'store'
+                ? 'loading'
+                : undefined
+          }
+          onRetryMemberInventory={
+            space?.type === 'store'
+              ? () => setInventoryRetryNonce((nonce) => nonce + 1)
+              : undefined
+          }
           changeName={launchChangeName}
           onCancel={() => setDialogOpen(false)}
           onLaunched={() => {

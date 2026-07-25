@@ -19,7 +19,10 @@ import {
   OVERALL_TIMEOUT_CAP_MS,
   getSupervisedEntry,
 } from './whitelist.js';
-import type { SessionSpace } from './session-registry.js';
+import {
+  resolveSessionLaunchContext,
+  type ResolveSessionLaunchContextInput,
+} from './session-launch-context.js';
 import type { SessionSupervisor } from './supervisor.js';
 import type {
   LaunchSessionRequest,
@@ -34,15 +37,6 @@ const MAX_TASK_LENGTH = 10_000;
 
 export type SessionsResult =
   | { ok: true; status: number; response: unknown }
-  | { ok: false; status: number; code: string; message: string };
-
-/**
- * The launch-space resolution the router threads in (design D3): resolves the
- * request's optional `space` selector (else the launch-project fallback) to a
- * subprocess cwd root plus the frozen attribution to stamp on the record.
- */
-export type LaunchSpaceResolution =
-  | { ok: true; root: string | undefined; attribution: SessionSpace | undefined }
   | { ok: false; status: number; code: string; message: string };
 
 function canonicalizeOrResolve(target: string): string {
@@ -80,7 +74,7 @@ function toWire(record: import('./session-registry.js').SessionRecord): SessionR
 export async function handleLaunchSession(
   supervisor: SessionSupervisor,
   body: Partial<LaunchSessionRequest>,
-  resolveSpace: (selector: string | undefined) => Promise<LaunchSpaceResolution>
+  launchProject: ResolveSessionLaunchContextInput['launchProject']
 ): Promise<SessionsResult> {
   const entry = getSupervisedEntry(body.kind);
   if (!entry) {
@@ -130,31 +124,34 @@ export async function handleLaunchSession(
     noOutputTimeoutMs = body.noOutputTimeoutMs;
   }
 
-  // Space resolution runs last among the pre-spawn steps: an unresolvable
-  // selector rejects the launch with the space error (spawning nothing), and
-  // a resolved space's root becomes the subprocess cwd + the frozen
-  // attribution (design D3). A missing selector falls back to the launch
-  // project; neither selector nor launch project is 409 no_project.
-  const space = await resolveSpace(typeof body.space === 'string' ? body.space : undefined);
-  if (!space.ok) {
-    return { ok: false, status: space.status, code: space.code, message: space.message };
-  }
-  if (!space.root) {
+  // The deep selector-in/facts-out resolver owns every planning/execution
+  // registry, worktree, pointer, path, and attachment rule. This handler
+  // validates only generic request fields and passes launch-ready facts on.
+  const launchContext = await resolveSessionLaunchContext({
+    ...(typeof body.space === 'string' ? { space: body.space } : {}),
+    ...((body as { execution?: unknown }).execution !== undefined
+      ? { execution: (body as { execution?: unknown }).execution }
+      : {}),
+    launchProject,
+  });
+  if (!launchContext.ok) {
     return {
       ok: false,
-      status: 409,
-      code: 'no_project',
-      message: 'No Rasen project is available for this server; select a space or launch `rasen ui` inside a project.',
+      status: launchContext.status,
+      code: launchContext.code,
+      message: launchContext.message,
     };
   }
 
+  const resolved = launchContext.context;
   const result = await supervisor.launch({
     kind: entry.op as 'auto' | 'goal',
     skill: entry.skill,
     task: body.task as string,
-    cwd: space.root,
+    cwd: resolved.cwd,
+    attachedRoots: resolved.attachedRoots,
     ...(changeName !== undefined ? { changeName } : {}),
-    ...(space.attribution !== undefined ? { space: space.attribution } : {}),
+    ...(resolved.planningSpace !== undefined ? { space: resolved.planningSpace } : {}),
     timeoutMs,
     noOutputTimeoutMs,
   });

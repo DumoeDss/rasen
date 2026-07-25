@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
@@ -48,6 +49,14 @@ function writeChange(root: string, name: string, extra?: (changeDir: string) => 
   fs.mkdirSync(changeDir, { recursive: true });
   fs.writeFileSync(path.join(changeDir, 'proposal.md'), '# Proposal\n');
   extra?.(changeDir);
+}
+
+function createPointerProject(root: string, projectId: string, storeId: string): void {
+  fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'rasen', 'config.yaml'),
+    `schema: spec-driven\nprojectId: ${projectId}\nstore: ${storeId}\n`
+  );
 }
 
 describe('sessions space attribution (planning-space-addressing design D3)', () => {
@@ -126,6 +135,204 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     expect((listRes.json() as any).sessions).toEqual([]);
   });
 
+  it('requires explicit Store execution and creates no Session record when it is omitted', async () => {
+    const storeRoot = path.join(tempDir, 'required-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'required-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const h = await startServer();
+    const res = await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit must-not-spawn',
+      space: 'store:required-store',
+    });
+
+    expect(res.status).toBe(409);
+    expect((res.json() as any).error.code).toBe('execution_required');
+    const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
+    expect((listRes.json() as any).sessions).toEqual([]);
+  });
+
+  it('records Store planning attribution while executing in a current member', async () => {
+    const storeRoot = path.join(tempDir, 'member-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'member-store', localPath: storeRoot, globalDataDir: dataDir });
+    const memberRoot = path.join(tempDir, 'member-project');
+    createPointerProject(memberRoot, 'member-project-id', 'member-store');
+    await registerProject(
+      { projectRoot: memberRoot, projectId: 'member-project-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    const h = await startServer();
+    const res = await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit member',
+      space: 'store:member-store',
+      execution: 'project:member-project-id',
+    });
+
+    expect(res.status).toBe(201);
+    const session = (res.json() as any).session;
+    expect(session.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(memberRoot));
+    expect(session.space).toEqual({
+      type: 'store',
+      id: 'member-store',
+      root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
+    });
+  });
+
+  it('records the selected clone root when current Store members share a project id', async () => {
+    const storeRoot = path.join(tempDir, 'clone-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'clone-store', localPath: storeRoot, globalDataDir: dataDir });
+    const cloneA = path.join(tempDir, 'clone-a');
+    const cloneB = path.join(tempDir, 'clone-b');
+    createPointerProject(cloneA, 'shared-clone-id', 'clone-store');
+    createPointerProject(cloneB, 'shared-clone-id', 'clone-store');
+    await registerProject(
+      { projectRoot: cloneA, projectId: 'shared-clone-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    await registerProject(
+      { projectRoot: cloneB, projectId: 'shared-clone-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    const h = await startServer();
+    const res = await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit clone-b',
+      space: 'store:clone-store',
+      execution: `project:${cloneB}`,
+    });
+
+    expect(res.status).toBe(201);
+    const session = (res.json() as any).session;
+    expect(session.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(cloneB));
+    expect(session.cwd).not.toBe(FileSystemUtils.canonicalizeExistingPath(cloneA));
+    expect(session.space).toEqual({
+      type: 'store',
+      id: 'clone-store',
+      root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
+    });
+  });
+
+  it('uses a selected linked member worktree as the observable Session cwd', async () => {
+    const storeRoot = path.join(tempDir, 'worktree-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'worktree-store', localPath: storeRoot, globalDataDir: dataDir });
+    const mainRoot = path.join(tempDir, 'worktree-main');
+    const worktreeRoot = path.join(tempDir, 'worktree-selected');
+    createPointerProject(mainRoot, 'worktree-member-id', 'worktree-store');
+    execFileSync('git', ['init'], { cwd: mainRoot });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: mainRoot });
+    execFileSync('git', ['config', 'user.name', 'Rasen Test'], { cwd: mainRoot });
+    execFileSync('git', ['add', '.'], { cwd: mainRoot });
+    execFileSync('git', ['commit', '-m', 'fixture'], { cwd: mainRoot });
+    execFileSync('git', ['worktree', 'add', '-b', 'api-worktree', worktreeRoot], { cwd: mainRoot });
+    await registerProject(
+      { projectRoot: mainRoot, projectId: 'worktree-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    const h = await startServer();
+    const res = await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit worktree',
+      space: 'store:worktree-store',
+      execution: `project:${worktreeRoot}`,
+    });
+
+    expect(res.status).toBe(201);
+    expect((res.json() as any).session.cwd).toBe(
+      FileSystemUtils.canonicalizeExistingPath(worktreeRoot)
+    );
+  });
+
+  it('uses the Store root for explicit planning-only execution', async () => {
+    const storeRoot = path.join(tempDir, 'planning-only-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'planning-only-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const h = await startServer();
+    const res = await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit planning',
+      space: 'store:planning-only-store',
+      execution: 'planning',
+    });
+
+    expect(res.status).toBe(201);
+    expect((res.json() as any).session.cwd).toBe(
+      FileSystemUtils.canonicalizeExistingPath(storeRoot)
+    );
+  });
+
+  it('rejects a stale Store pointer before creating a Session record', async () => {
+    const storeRoot = path.join(tempDir, 'stale-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'stale-store', localPath: storeRoot, globalDataDir: dataDir });
+    const memberRoot = path.join(tempDir, 'stale-member');
+    createPointerProject(memberRoot, 'stale-member-id', 'other-store');
+    await registerProject(
+      { projectRoot: memberRoot, projectId: 'stale-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    const h = await startServer();
+    const res = await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit must-not-spawn',
+      space: 'store:stale-store',
+      execution: 'project:stale-member-id',
+    });
+
+    expect(res.status).toBe(409);
+    expect((res.json() as any).error.code).toBe('execution_unavailable');
+    const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
+    expect((listRes.json() as any).sessions).toEqual([]);
+  });
+
+  it('filters a member-executed Session by Store space and joins run-state from the Store root', async () => {
+    const storeRoot = path.join(tempDir, 'joined-store');
+    createOpenSpecRoot(storeRoot);
+    writeChange(storeRoot, 'store-change', (dir) =>
+      fs.writeFileSync(
+        path.join(dir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'small-feature', stages: {} })
+      )
+    );
+    await registerStore({ id: 'joined-store', localPath: storeRoot, globalDataDir: dataDir });
+    const memberRoot = path.join(tempDir, 'joined-member');
+    createPointerProject(memberRoot, 'joined-member-id', 'joined-store');
+    await registerProject(
+      { projectRoot: memberRoot, projectId: 'joined-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    const h = await startServer();
+    const launched = (await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit joined',
+      changeName: 'store-change',
+      space: 'store:joined-store',
+      execution: 'project:joined-member-id',
+    })).json() as any;
+
+    const listRes = await req(h.port, {
+      method: 'GET',
+      path: '/api/v1/sessions?space=store%3Ajoined-store',
+      headers: authed(),
+    });
+    const entries = (listRes.json() as any).sessions;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].session.id).toBe(launched.session.id);
+    expect(entries[0].session.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(memberRoot));
+    expect(entries[0].runState.kind).toBe('ok');
+    expect(entries[0].runState.autoRun.state.pipeline).toBe('small-feature');
+  });
+
   it('filters the listing by space; the unfiltered listing returns every session', async () => {
     const projectB = path.join(tempDir, 'filter-b');
     createOpenSpecRoot(projectB);
@@ -136,7 +343,12 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
 
     const h = await startServer();
     const inB = (await launchSession(h.port, { kind: 'auto', task: 'MODE=fast-exit b', space: 'project:filter-b' })).json() as any;
-    const inStore = (await launchSession(h.port, { kind: 'auto', task: 'MODE=fast-exit s', space: 'store:filter-team' })).json() as any;
+    const inStore = (await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit s',
+      space: 'store:filter-team',
+      execution: 'planning',
+    })).json() as any;
 
     const filtered = await req(h.port, { method: 'GET', path: '/api/v1/sessions?space=project:filter-b', headers: authed() });
     const filteredIds = (filtered.json() as any).sessions.map((e: any) => e.session.id);
@@ -176,7 +388,12 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     await registerStore({ id: 'frozen-team', localPath: storeRoot, globalDataDir: dataDir });
 
     const h = await startServer();
-    const launched = (await launchSession(h.port, { kind: 'auto', task: 'MODE=fast-exit x', space: 'store:frozen-team' })).json() as any;
+    const launched = (await launchSession(h.port, {
+      kind: 'auto',
+      task: 'MODE=fast-exit x',
+      space: 'store:frozen-team',
+      execution: 'planning',
+    })).json() as any;
     const id = launched.session.id;
     expect(launched.session.space).toEqual({
       type: 'store',

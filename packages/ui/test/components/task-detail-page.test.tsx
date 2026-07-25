@@ -16,6 +16,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     ...actual,
     getTaskDetail: vi.fn(),
     listSessions: vi.fn(),
+    listSpaces: vi.fn(),
     launchSession: vi.fn(),
     getSession: vi.fn(),
     killSession: vi.fn(),
@@ -75,6 +76,7 @@ describe('TaskDetailPage', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     vi.mocked(client.listSessions).mockResolvedValue({ sessions: [] });
+    vi.mocked(client.listSpaces).mockResolvedValue({ spaces: [] });
   });
 
   afterEach(() => {
@@ -206,5 +208,150 @@ describe('TaskDetailPage', () => {
     expect(client.launchSession).toHaveBeenCalledWith(
       expect.objectContaining({ space: 'project:proj_x', changeName: 'fix-login', task: 'Re-run the fix' })
     );
+    expect(client.launchSession).toHaveBeenCalledWith(
+      expect.not.objectContaining({ execution: expect.anything() })
+    );
+  });
+
+  it('preselects a sole Store member and submits it explicitly as execution', async () => {
+    vi.mocked(client.getTaskDetail).mockResolvedValue(singleTaskDetailFixture);
+    vi.mocked(client.listSpaces).mockResolvedValue({
+      spaces: [
+        {
+          type: 'store',
+          id: 'team-store',
+          name: 'Team Store',
+          root: '/store',
+          members: [{ projectId: 'member-a', name: 'Member A', root: '/projects/a' }],
+        },
+      ],
+    });
+    vi.mocked(client.launchSession).mockResolvedValue({
+      session: { ...liveSession('fix-login').session },
+    });
+    await mountAt(container, '/s/team-store/task/fix-login');
+
+    const launchBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Launch run')!;
+    await act(async () => {
+      launchBtn.click();
+      await flushMicrotasks();
+    });
+
+    const execution = container.querySelector(
+      'input[name="execution"][value="project:/projects/a"]'
+    ) as HTMLInputElement;
+    expect(execution.checked).toBe(true);
+
+    const taskArea = container.querySelector('textarea[name="task"]') as HTMLTextAreaElement;
+    await act(async () => {
+      taskArea.value = 'Run in member A';
+      taskArea.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      (container.querySelector('.launch-session-dialog') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true })
+      );
+      await flushMicrotasks();
+    });
+
+    expect(client.launchSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        space: 'store:team-store',
+        execution: 'project:/projects/a',
+        task: 'Run in member A',
+      })
+    );
+  });
+
+  it('shows a retryable inventory error instead of claiming an initial Store member list is empty', async () => {
+    vi.mocked(client.getTaskDetail).mockResolvedValue(singleTaskDetailFixture);
+    vi.mocked(client.listSpaces).mockRejectedValue(new Error('inventory unavailable'));
+    await mountAt(container, '/s/team-store/task/fix-login');
+
+    const launchBtn = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Launch run'
+    )!;
+    await act(async () => {
+      launchBtn.click();
+      await flushMicrotasks();
+    });
+
+    expect(container.querySelector('.launch-session-dialog__inventory-error')).not.toBeNull();
+    expect(container.querySelector('.launch-session-dialog__execution-empty')).toBeNull();
+    expect(
+      container.querySelector('input[name="execution"][value="planning"]')
+    ).not.toBeNull();
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Retry'
+      )
+    ).toBe(true);
+  });
+
+  it('preserves the last successful Store members across a polling failure and recovers on the next poll', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(client.getTaskDetail).mockResolvedValue(singleTaskDetailFixture);
+      vi.mocked(client.listSpaces)
+        .mockResolvedValueOnce({
+          spaces: [
+            {
+              type: 'store',
+              id: 'team-store',
+              name: 'Team Store',
+              root: '/store',
+              members: [{ projectId: 'shared-id', name: 'Clone A', root: '/projects/clone-a' }],
+            },
+          ],
+        })
+        .mockRejectedValueOnce(new Error('temporary inventory failure'))
+        .mockResolvedValue({
+          spaces: [
+            {
+              type: 'store',
+              id: 'team-store',
+              name: 'Team Store',
+              root: '/store',
+              members: [{ projectId: 'shared-id', name: 'Clone B', root: '/projects/clone-b' }],
+            },
+          ],
+        });
+      await mountAt(container, '/s/team-store/task/fix-login');
+
+      const launchBtn = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Launch run'
+      )!;
+      await act(async () => {
+        launchBtn.click();
+        await flushMicrotasks();
+      });
+      expect(
+        container.querySelector('input[name="execution"][value="project:/projects/clone-a"]')
+      ).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+        await flushMicrotasks();
+      });
+      expect(container.querySelector('.launch-session-dialog__inventory-error')).not.toBeNull();
+      expect(
+        container.querySelector('input[name="execution"][value="project:/projects/clone-a"]')
+      ).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+        await flushMicrotasks();
+      });
+      expect(container.querySelector('.launch-session-dialog__inventory-error')).toBeNull();
+      expect(
+        container.querySelector('input[name="execution"][value="project:/projects/clone-b"]')
+      ).not.toBeNull();
+      expect(
+        container.querySelector('input[name="execution"][value="project:/projects/clone-a"]')
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
