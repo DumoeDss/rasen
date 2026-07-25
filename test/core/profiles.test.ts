@@ -171,6 +171,35 @@ describe('profiles', () => {
     });
   });
 
+  describe('effective install selection compatibility root', () => {
+    it('installs one internal runner for a ship-only selection without changing the profile roots', () => {
+      const roots = ['ship-command'];
+      const { ids } = resolveDesiredWorkflowSelection(
+        loadWorkflowCatalog(),
+        'custom',
+        roots,
+        true
+      );
+
+      expect(roots).toEqual(['ship-command']);
+      expect(ids).toEqual(expect.arrayContaining(['ship-command', 'retain-command']));
+      expect(ids.filter((id) => id === 'retain-command')).toHaveLength(1);
+    });
+
+    it('installs the compatibility runner even when the profile selects neither ship nor auto', () => {
+      const { ids } = resolveDesiredWorkflowSelection(
+        loadWorkflowCatalog(),
+        'custom',
+        ['explore'],
+        true
+      );
+
+      expect(ids).toContain('retain-command');
+      expect(ids).not.toContain('ship-command');
+      expect(ids).not.toContain('auto-command');
+    });
+  });
+
   describe('frozen custom selection excludes a catalog-new built-in (root cause)', () => {
     // Simulate a selection saved before `audit` existed: the stored list is a
     // verbatim snapshot, so `audit` is absent and stays absent through the

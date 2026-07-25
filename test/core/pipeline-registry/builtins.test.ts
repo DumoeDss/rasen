@@ -184,34 +184,27 @@ describe('pipeline-registry/built-ins', () => {
   // Per-pipeline tail divergence. goal-loop-core asserted each pipeline "has a
   // goal loop on iterate" but did not assert the structural tail differences
   // that make each pipeline homogeneous: measure/evaluate ship code (ship →
-  // archive, model: sonnet); research writes prose (report tail, no ship/archive).
+  // retain → archive, model: sonnet); research writes prose (report tail, no
+  // ship/retain/archive).
   describe('goal-loop per-pipeline tail structure', () => {
-    it('goal-loop-measure ends in ship -> archive, each model: sonnet', () => {
+    it('goal-loop-measure ends in ship -> retain -> archive, each model: sonnet', () => {
       const pipeline = loadPipelineByName('goal-loop-measure');
-      const stages = pipeline.stages;
-      const last = stages[stages.length - 1];
-      const secondLast = stages[stages.length - 2];
-      expect(secondLast.id).toBe('ship');
-      expect(secondLast.model).toBe('sonnet');
-      expect(last.id).toBe('archive');
-      expect(last.model).toBe('sonnet');
+      const tail = pipeline.stages.slice(-3);
+      expect(tail.map((stage) => stage.id)).toEqual(['ship', 'retain', 'archive']);
+      expect(tail.every((stage) => stage.model === 'sonnet')).toBe(true);
       // No report stage on a code-tail pipeline.
-      expect(stages.some(s => s.id === 'report')).toBe(false);
+      expect(pipeline.stages.some(s => s.id === 'report')).toBe(false);
     });
 
-    it('goal-loop-evaluate ends in ship -> archive, each model: sonnet', () => {
+    it('goal-loop-evaluate ends in ship -> retain -> archive, each model: sonnet', () => {
       const pipeline = loadPipelineByName('goal-loop-evaluate');
-      const stages = pipeline.stages;
-      const last = stages[stages.length - 1];
-      const secondLast = stages[stages.length - 2];
-      expect(secondLast.id).toBe('ship');
-      expect(secondLast.model).toBe('sonnet');
-      expect(last.id).toBe('archive');
-      expect(last.model).toBe('sonnet');
-      expect(stages.some(s => s.id === 'report')).toBe(false);
+      const tail = pipeline.stages.slice(-3);
+      expect(tail.map((stage) => stage.id)).toEqual(['ship', 'retain', 'archive']);
+      expect(tail.every((stage) => stage.model === 'sonnet')).toBe(true);
+      expect(pipeline.stages.some(s => s.id === 'report')).toBe(false);
     });
 
-    it('goal-loop-research ends in a single report stage (no ship/archive)', () => {
+    it('goal-loop-research ends in a single report stage (no ship/retain/archive)', () => {
       const pipeline = loadPipelineByName('goal-loop-research');
       const stages = pipeline.stages;
       const last = stages[stages.length - 1];
@@ -220,6 +213,7 @@ describe('pipeline-registry/built-ins', () => {
       // Research writes prose — there is no code to ship/archive.
       const ids = stages.map(s => s.id);
       expect(ids).not.toContain('ship');
+      expect(ids).not.toContain('retain');
       expect(ids).not.toContain('archive');
     });
 

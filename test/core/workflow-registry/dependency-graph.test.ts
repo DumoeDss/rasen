@@ -51,11 +51,19 @@ describe('computeWorkflowDependencyGraph (design D7) — shipped built-ins', () 
     expect(new Set(entry.requires).size).toBe(entry.requires.length);
   });
 
-  it('the goal driver’s strong closure includes the goal-loop family', () => {
+  it('the goal driver’s strong closure includes its goal stages and retained ship tail', () => {
     const entry = entryMap().get('goal-command')!;
-    for (const id of ['goal-plan', 'goal-iterate', 'goal-report']) {
+    for (const id of [
+      'goal-plan',
+      'goal-iterate',
+      'goal-report',
+      'ship-command',
+      'retain-command',
+      'archive',
+    ]) {
       expect(entry.requires).toContain(id);
     }
+    expect(new Set(entry.requires).size).toBe(entry.requires.length);
   });
 
   it('the enhanced-verify workflow strongly requires its five quality experts', () => {

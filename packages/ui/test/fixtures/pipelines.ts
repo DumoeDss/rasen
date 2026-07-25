@@ -430,6 +430,20 @@ export const pipelinesConfigFixture = {
     },
     {
       definition: {
+        key: 'keepalive.runtimes.codex',
+        scopes: ['global'],
+        type: 'boolean',
+        defaultValue: false,
+        description: 'Allow keepalive beats under the Codex runtime',
+        group: 'Pipelines',
+        constraints: { type: 'boolean' },
+      },
+      value: false,
+      source: 'default',
+      scopeValues: {},
+    },
+    {
+      definition: {
         key: 'keepalive.contextFloor',
         scopes: ['global'],
         type: 'number',

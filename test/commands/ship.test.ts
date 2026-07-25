@@ -56,9 +56,10 @@ describe('ship workflow (delivery modes + evidence-based test gate)', () => {
 
     it('gates tests on evidence instead of running unconditionally', () => {
       expect(skillText).toContain('Evidence-based test gate');
-      expect(skillText.toLowerCase()).toContain('green test evidence');
+      expect(skillText.toLowerCase()).toContain('scoped green evidence');
       expect(skillText).toContain('review-cycle-report.md');
-      expect(skillText).toContain('skips on proof, never on hope');
+      expect(skillText).toContain('required verification scope');
+      expect(skillText).toContain('Never silently escalate');
       // fresh-verification gate survives the rewrite
       expect(skillText).toContain('Fresh-verification gate');
     });
@@ -70,6 +71,17 @@ describe('ship workflow (delivery modes + evidence-based test gate)', () => {
       // ship log + land-and-deploy are mode-aware
       expect(skillText).toContain('**Mode:** pr | push | local');
       expect(skillText).toContain('Land and Deploy (pr mode only)');
+    });
+
+    it('presents on-merge retention before the later archive action without running it inline', () => {
+      const retention = skillText.indexOf('First, present the installed retention handoff');
+      const archive = skillText.indexOf('Then give timing- and mode-aware archive guidance');
+      expect(retention).toBeGreaterThanOrEqual(0);
+      expect(archive).toBeGreaterThan(retention);
+      expect(skillText).toContain('retention is the next lifecycle action');
+      expect(skillText).toContain('completes before any later archive action');
+      expect(skillText).toContain('does NOT execute retention inline');
+      expect(skillText).toContain('after retention, suggest running `rasen-archive-change`');
     });
   });
 });

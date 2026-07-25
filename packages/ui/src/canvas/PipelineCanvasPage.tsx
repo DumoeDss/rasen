@@ -23,6 +23,7 @@ import type {
   PipelineDetailResponse,
   PipelineSaveResponse,
   PipelineValidationIssue,
+  ThresholdValue,
   WirePipelineDefinition,
   WirePipelineDefinitionStage,
 } from '../api/types.js';
@@ -39,6 +40,7 @@ import {
   renameStage,
   stageIdFor,
   updateStageFields,
+  updateStageHandoffThreshold,
   wouldCreateCycle,
 } from './draft.js';
 import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
@@ -455,6 +457,32 @@ export function PipelineCanvasPage() {
     );
   }
 
+  function patchStageHandoffThreshold(
+    id: string,
+    threshold: ThresholdValue | undefined
+  ) {
+    if (!draft) return;
+    const nextDraft = updateStageHandoffThreshold(draft, id, threshold);
+    setDraft(nextDraft);
+    markDraftChanged();
+    setFlowNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id && node.type === 'stage'
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                effectiveHandoff: {
+                  value: threshold ?? 0.5,
+                  source: 'draft',
+                },
+              },
+            }
+          : node
+      )
+    );
+  }
+
   function renameSelectedStage(newId: string) {
     if (!draft || !selectedStageId) return;
     const nextDraft = renameStage(draft, selectedStageId, newId);
@@ -827,6 +855,9 @@ export function PipelineCanvasPage() {
             fieldIssues={selectedStageFieldIssues}
             onRename={renameSelectedStage}
             onPatch={(patch) => patchStage(selectedStage.id, patch)}
+            onHandoffThreshold={(threshold) =>
+              patchStageHandoffThreshold(selectedStage.id, threshold)
+            }
             onClose={() => setSelectedStageId(null)}
           />
         )}

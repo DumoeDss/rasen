@@ -20,6 +20,8 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     validatePipeline: vi.fn(),
     getPipelineCatalog: vi.fn(),
     mutatePipeline: vi.fn(),
+    putKey: vi.fn(),
+    deleteKey: vi.fn(),
   };
 });
 
@@ -74,7 +76,16 @@ import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
-import type { PipelineCatalogResponse } from '../../src/api/types.js';
+import type {
+  PipelineCatalogResponse,
+  PipelineDetailResponse,
+  ThresholdValue,
+  WirePipelineDefinition,
+} from '../../src/api/types.js';
+import {
+  __resetLocaleForTesting,
+  setLocale,
+} from '../../src/i18n/store.js';
 
 const catalogFixture: PipelineCatalogResponse = {
   roles: ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'],
@@ -117,6 +128,7 @@ describe('PipelineCanvasPage', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    __resetLocaleForTesting();
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -125,6 +137,7 @@ describe('PipelineCanvasPage', () => {
     render(null, container);
     document.body.removeChild(container);
     window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
     vi.clearAllMocks();
   });
 
@@ -231,6 +244,7 @@ describe('PipelineCanvasPage — edit mode', () => {
   };
 
   beforeEach(() => {
+    __resetLocaleForTesting();
     container = document.createElement('div');
     document.body.appendChild(container);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(catalogFixture);
@@ -240,6 +254,7 @@ describe('PipelineCanvasPage — edit mode', () => {
     render(null, container);
     document.body.removeChild(container);
     window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
     vi.clearAllMocks();
   });
 
@@ -250,6 +265,19 @@ describe('PipelineCanvasPage — edit mode', () => {
   async function clickAndFlush(el: Element | null): Promise<void> {
     await act(async () => {
       (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement | HTMLSelectElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
       await flushMicrotasks();
     });
   }
@@ -286,6 +314,235 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(client.getPipelineDetail).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="pipeline-canvas-save"]')).not.toBeNull();
     expect(container.querySelector('.pipeline-canvas__name')?.textContent).toBe('small-feature-copy');
+    await clickAndFlush(
+      [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+        (node) => node.getAttribute('data-node-id') === 'propose'
+      ) ?? null
+    );
+    expect(container.querySelector('[data-testid="stage-panel-handoff"]')).not.toBeNull();
+  });
+
+  it.each([
+    {
+      form: 'fraction',
+      inputTestId: 'stage-panel-handoff-fraction',
+      rawValue: '0.64',
+      expected: 0.64 as ThresholdValue,
+      expectedMin: '0',
+      expectedMax: '1',
+    },
+    {
+      form: 'remaining',
+      inputTestId: 'stage-panel-handoff-remaining',
+      rawValue: '42000',
+      expected: { remainingTokens: 42_000 } as ThresholdValue,
+      expectedMin: '1',
+      expectedMax: null,
+    },
+  ])(
+    'authors a $form threshold as dirty definition data and reloads the saved form',
+    async ({ form, inputTestId, rawValue, expected, expectedMin, expectedMax }) => {
+      const base = structuredClone(editableDetail) as PipelineDetailResponse;
+      let savedDefinition: WirePipelineDefinition | undefined;
+      vi.mocked(client.getPipelineDetail)
+        .mockResolvedValueOnce(base)
+        .mockImplementation(async () => ({ ...base, definition: savedDefinition! }));
+      vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+      vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+        savedDefinition = structuredClone(
+          (request as { definition: WirePipelineDefinition }).definition
+        );
+        return {
+          pipeline: { name: 'small-feature', path: '/pipelines/small-feature' },
+          created: false,
+        };
+      });
+
+      await mountAt(container, '/p/proj_x/pipelines/small-feature');
+      await enterEdit();
+      await clickAndFlush(
+        [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+          (node) => node.getAttribute('data-node-id') === 'propose'
+        ) ?? null
+      );
+      await setValueAndFlush(
+        container.querySelector('[data-testid="stage-panel-handoff-form"]'),
+        form
+      );
+      expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).not.toBeNull();
+      const thresholdInput = container.querySelector(
+        `[data-testid="${inputTestId}"]`
+      ) as HTMLInputElement;
+      expect(thresholdInput.getAttribute('min')).toBe(expectedMin);
+      expect(thresholdInput.getAttribute('max')).toBe(expectedMax);
+      await setValueAndFlush(thresholdInput, rawValue, 'input');
+      await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+      const savedStage = savedDefinition!.stages.find((stage) => stage.id === 'propose')!;
+      expect(savedStage.handoff?.threshold).toEqual(expected);
+      expect(client.putKey).not.toHaveBeenCalled();
+      expect(client.deleteKey).not.toHaveBeenCalled();
+
+      await enterEdit();
+      await clickAndFlush(
+        [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+          (node) => node.getAttribute('data-node-id') === 'propose'
+        ) ?? null
+      );
+      expect(
+        (container.querySelector('[data-testid="stage-panel-handoff-form"]') as HTMLSelectElement)
+          .value
+      ).toBe(form);
+      expect(
+        (container.querySelector(`[data-testid="${inputTestId}"]`) as HTMLInputElement)
+          .value
+      ).toBe(rawValue);
+    }
+  );
+
+  it.each([
+    {
+      form: 'fraction',
+      inputTestId: 'stage-panel-handoff-fraction',
+      initial: 0.8 as ThresholdValue,
+      invalidPrefix: '0',
+      incrementalValues: ['0.6', '0.64'],
+      expected: 0.64 as ThresholdValue,
+    },
+    {
+      form: 'remaining',
+      inputTestId: 'stage-panel-handoff-remaining',
+      initial: { remainingTokens: 60_000 } as ThresholdValue,
+      invalidPrefix: null,
+      incrementalValues: ['4', '42', '420', '4200', '42000'],
+      expected: { remainingTokens: 42_000 } as ThresholdValue,
+    },
+  ])(
+    'keeps a raw edit buffer while incrementally clearing and retyping a $form threshold',
+    async ({
+      inputTestId,
+      initial,
+      invalidPrefix,
+      incrementalValues,
+      expected,
+    }) => {
+      const base = structuredClone(editableDetail) as PipelineDetailResponse;
+      base.definition.stages[0] = {
+        ...base.definition.stages[0],
+        handoff: { threshold: initial },
+      };
+      let savedDefinition: WirePipelineDefinition | undefined;
+      vi.mocked(client.getPipelineDetail).mockResolvedValue(base);
+      vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+      vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+        savedDefinition = structuredClone(
+          (request as { definition: WirePipelineDefinition }).definition
+        );
+        return {
+          pipeline: { name: 'small-feature', path: '/pipelines/small-feature' },
+          created: false,
+        };
+      });
+
+      await mountAt(container, '/p/proj_x/pipelines/small-feature');
+      await enterEdit();
+      await clickAndFlush(
+        [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+          (node) => node.getAttribute('data-node-id') === 'propose'
+        ) ?? null
+      );
+
+      const thresholdInput = container.querySelector(
+        `[data-testid="${inputTestId}"]`
+      ) as HTMLInputElement;
+      await setValueAndFlush(thresholdInput, '', 'input');
+      expect(thresholdInput.value).toBe('');
+      expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).toBeNull();
+
+      if (invalidPrefix !== null) {
+        await setValueAndFlush(thresholdInput, invalidPrefix, 'input');
+        expect(thresholdInput.value).toBe(invalidPrefix);
+        expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).toBeNull();
+      }
+
+      for (const value of incrementalValues) {
+        await setValueAndFlush(thresholdInput, value, 'input');
+        expect(thresholdInput.value).toBe(value);
+      }
+      await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+      expect(savedDefinition!.stages[0].handoff?.threshold).toEqual(expected);
+    }
+  );
+
+  it('clears only the threshold, preserves hidden handoff fields, and never writes a config key', async () => {
+    const base = structuredClone(editableDetail) as PipelineDetailResponse;
+    base.definition.stages[0] = {
+      ...base.definition.stages[0],
+      handoff: { threshold: 0.7, maxRelays: 4, stallLimit: 2 },
+    };
+    let savedDefinition: WirePipelineDefinition | undefined;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce(base)
+      .mockImplementation(async () => ({ ...base, definition: savedDefinition! }));
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      savedDefinition = structuredClone(
+        (request as { definition: WirePipelineDefinition }).definition
+      );
+      return {
+        pipeline: { name: 'small-feature', path: '/pipelines/small-feature' },
+        created: false,
+      };
+    });
+
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+    await clickAndFlush(
+      [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+        (node) => node.getAttribute('data-node-id') === 'propose'
+      ) ?? null
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="stage-panel-handoff-form"]'),
+      'inherit'
+    );
+    expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).not.toBeNull();
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    expect(savedDefinition!.stages[0].handoff).toEqual({
+      maxRelays: 4,
+      stallLimit: 2,
+    });
+    expect(client.putKey).not.toHaveBeenCalled();
+    expect(client.deleteKey).not.toHaveBeenCalled();
+  });
+
+  it('re-localizes the visible Canvas handoff field without remounting the panel', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+    await clickAndFlush(
+      [...container.querySelectorAll('[data-testid="mock-node-click"]')].find(
+        (node) => node.getAttribute('data-node-id') === 'propose'
+      ) ?? null
+    );
+    const panel = container.querySelector('[data-testid="stage-panel"]')!;
+    expect(panel.textContent).toContain('Stage handoff threshold');
+
+    await act(async () => {
+      setLocale('zh-cn');
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="stage-panel"]')).toBe(panel);
+    expect(panel.textContent).toContain('阶段交接阈值');
+
+    await act(async () => {
+      setLocale('ja');
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="stage-panel"]')).toBe(panel);
+    expect(panel.textContent).toContain('ステージの引き継ぎしきい値');
   });
 
   it('offers a Start-assembling recovery affordance on the not-found view and enters edit mode with an empty draft', async () => {
@@ -486,6 +743,27 @@ describe('PipelineCanvasPage — edit mode', () => {
     await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
     // Stage index 1 in the fixture's definition is 'apply'.
     expect(container.querySelector('[data-testid="stage-panel"]')?.getAttribute('data-stage')).toBe('apply');
+  });
+
+  it('highlights the nested handoff field for a server validation issue', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await enterEdit();
+
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [{
+        severity: 'error',
+        path: '/stages/0/handoff/threshold',
+        message: 'Handoff threshold is out of range.',
+      }],
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
+
+    expect(
+      container.querySelector('[data-testid="stage-panel-handoff"]')?.classList
+    ).toContain('stage-panel__field--issue-error');
   });
 
   it('refreshes the Id input to the newly-selected stage when switching selection (no stale carry-over)', async () => {

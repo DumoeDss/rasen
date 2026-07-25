@@ -101,14 +101,44 @@ NEVER resolve an integration base by falling back to the repository's default br
 
 **d. Evidence-based test gate (all modes)**
 
-Run the project's detected test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` / \`pytest\` / etc. — infer from the repo, do not hardcode a runner) ONLY if at least one holds:
-1. Step (c) merged in new commits — the merged state has never been tested.
-2. No green test evidence exists for the current code state. Evidence = a recorded passing test run (in \`verification-report.md\`, \`review-report.md\`, \`review-cycle-report.md\`, another verification report, or run-state) whose recorded content tree fingerprint (\`git rev-parse HEAD^{tree}\`) matches the current one. The tree hash is content-addressed — it changes if and only if the tracked tree content changes — so the commit in (b), which moves HEAD but changes no content, does not invalidate evidence; lint or review fixes change the tree and DO.
-3. The user explicitly asks for a test run.
+First derive the **required verification scope** from the delivered diff,
+project instructions, and any commits merged in step (c):
+- A localized change defaults to its regression test plus directly affected
+  module or package checks.
+- Broaden for shared or global contracts, dependency/build/config/CI changes,
+  concurrency, persistence, migrations, security boundaries, cross-platform
+  behavior, broad multi-module edits, or focused failures outside the expected
+  area.
+- A full repository suite is required only when the user or project
+  instructions explicitly require it, or when affected behavior cannot be
+  bounded more narrowly. A merge in step (c) requires recalculating the scope
+  against the merged diff; it does not by itself prove that the full suite is
+  necessary.
 
-Otherwise SKIP the run and record \`tests: skipped — green at <evidence source>, tree <fingerprint>\` for the ship log. Missing evidence means RUN — the gate skips on proof, never on hope.
+Then inspect \`verification-report.md\`, \`review-report.md\`,
+\`review-cycle-report.md\`, other verification reports, and run-state.
+**Scoped green evidence** is reusable only when it records passing exact
+commands, a scope/rationale that covers the required verification scope, and a
+content tree fingerprint (\`git rev-parse HEAD^{tree}\`) matching the current
+tree. The tree hash is content-addressed, so a commit that changes no content
+does not invalidate evidence; lint, review, merge, or archive fixes that change
+the tree do.
 
-If tests run and any in-branch test fails, **STOP** and do NOT deliver (a genuinely pre-existing failure unrelated to this change's diff may be noted and triaged, but when in doubt treat it as blocking).
+- Matching scoped green evidence → skip already-covered checks.
+- Missing or insufficient evidence → run only the uncovered checks in the
+  required verification scope.
+- The user explicitly requesting tests → run the requested scope; do not
+  reinterpret an unspecified request as an automatic full-suite request.
+
+**Never silently escalate** from focused checks to the project's full detected
+test command (\`pnpm test\` / \`npm test\` / \`bun test\` / \`cargo test\` /
+\`pytest\` / etc.). Before a full suite expected to exceed 60 seconds, state the
+trigger and expected cost. Never repeat an unchanged full-suite command that
+already timed out; shard it, use CI, or ask for direction.
+
+If any required check fails, **STOP** and do NOT deliver (a genuinely
+pre-existing failure unrelated to this change's diff may be noted and triaged,
+but when in doubt treat it as blocking).
 
 **e. Review the diff for obvious structural issues**
 - Scan the change's diff (\`git diff origin/<base>...HEAD\` in pr mode; the commits being delivered otherwise) for accidental debug output, secrets, obviously broken logic, or leftover TODO markers before delivering
@@ -140,7 +170,7 @@ If no proposal.md (and nothing was captured in step (b).1):
 Repo-mode PR bodies are unchanged beyond the store-safe proposal read above.
 
 **f. Fresh-verification gate (before delivery)**
-- If any code changed after the last green test run — for example from review fixes in step (e) or lint fixes in step (b) — re-run the test suite and require fresh passing output before delivering. Stale results are not acceptable.
+- If any code changed after the last green evidence — for example from review fixes in step (e) or lint fixes in step (b) — re-run the invalidated checks from the same required verification scope and require fresh passing output before delivering. Do not widen to the full suite unless a full-suite trigger above now applies. Stale results are not acceptable.
 - If the re-run fails, **STOP** and fix before proceeding — do not deliver.
 
 **g. Deliver per mode**
@@ -173,7 +203,10 @@ After successful delivery in ANY mode, write \`ship-log.md\` to the work directo
 - Tasks: <N/M complete>
 
 ## Test Gate
-- Tests: ran green | skipped — green at <evidence source>, tree <fingerprint>
+- Required scope: <focused commands / package / full repository>
+- Rationale: <why this scope covers the delivered risk>
+- Tests: <exact commands and green result> | skipped — scoped green evidence at <evidence source>
+- Tree: <fingerprint>
 
 ## Archive
 (in-ship timing only — under on-merge timing this section does not exist yet; the archive workflow appends it later, once it runs)
@@ -211,14 +244,16 @@ If CI fails:
 
 ### 6. Post-Ship
 
-After shipping, guidance on archiving is timing- and mode-aware (facts recorded in the ship log, not a re-resolved config value):
-- **in-ship timing:** the change's archive bookkeeping is already done — see the ship log's \`Archived in ship:\` path (in-repo/external) or \`Pruned:\` marker (prune); its \`## Archive\` section already closes the delivery chain for a repo-rooted change (ship commit == archive commit) — no later append is needed. For a store-rooted change, check whether that section's \`Archive commit:\` is \`pending\`; if so, the store-side bookkeeping still needs a commit in the store repo (step (b).5) before the chain is truly closed. Do NOT suggest \`rasen-archive-change\`; because the change directory has already moved or been deleted, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early directory/external/tombstone scan (step 1.5, before it ever calls status) and reports the already-archived-or-pruned outcome, not from a successful status call.
-- **on-merge timing, \`pr\` mode:** the change stays ACTIVE during PR review — status, resume, loop, and fix-forward keep working. Do NOT suggest archiving immediately; state that archive follows merge confirmation (\`rasen-archive-change\` checks the PR's merge state on each invocation, no polling).
-- **on-merge timing, \`push\`/\`local\` mode:** delivery is complete at ship with no merge event to await — suggest running \`rasen-archive-change\` now.
+Present next steps in lifecycle order. First, present the installed retention handoff:
+- Run \`rasen-retain <change-name>\` for the profile's retention step — \`report\` writes a retrospective, \`codify\` captures durable learnings as managed skills, and \`off\` completes as a no-op (\`rasen-retro\` remains a compatibility alias for report mode).
+- Under **on-merge** timing, retention is the next lifecycle action and completes before any later archive action. This ship workflow presents the handoff only; it does NOT execute retention inline.
 
-Always suggest:
-- Run \`rasen-retain\` for the profile's retention step — \`report\` writes a retrospective, \`codify\` captures durable learnings as managed skills (\`rasen-retro\` remains a compatibility alias for report mode)
-- Update project documentation (README, architecture notes, changelog) to match what shipped, so the docs do not drift from the release
+Then give timing- and mode-aware archive guidance from facts recorded in the ship log, not a re-resolved config value:
+- **in-ship timing:** the change's archive bookkeeping is already done — see the ship log's \`Archived in ship:\` path (in-repo/external) or \`Pruned:\` marker (prune); its \`## Archive\` section already closes the delivery chain for a repo-rooted change (ship commit == archive commit) — no later append is needed. For a store-rooted change, check whether that section's \`Archive commit:\` is \`pending\`; if so, the store-side bookkeeping still needs a commit in the store repo (step (b).5) before the chain is truly closed. Do NOT suggest \`rasen-archive-change\`; because the change directory has already moved or been deleted, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early directory/external/tombstone scan (step 1.5, before it ever calls status) and reports the already-archived-or-pruned outcome, not from a successful status call.
+- **on-merge timing, \`pr\` mode:** the change stays ACTIVE during PR review — status, resume, loop, and fix-forward keep working. Do NOT suggest archiving immediately; after retention, state that archive follows merge confirmation (\`rasen-archive-change\` checks the PR's merge state on each invocation, no polling).
+- **on-merge timing, \`push\`/\`local\` mode:** delivery is complete at ship with no merge event to await — after retention, suggest running \`rasen-archive-change\`.
+
+Also suggest updating project documentation (README, architecture notes, changelog) to match what shipped, so the docs do not drift from the release.
 
 ## Output
 
@@ -232,7 +267,7 @@ Always suggest:
 ### Ship
 - Mode: pr
 - Branch: feature/add-auth
-- Tests: skipped — green at review-cycle-report.md, tree <fingerprint>
+- Tests: skipped — scoped green evidence at review-cycle-report.md, tree <fingerprint>
 - PR: https://github.com/org/repo/pull/42
 - Status: Created
 

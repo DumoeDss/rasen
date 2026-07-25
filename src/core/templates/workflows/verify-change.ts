@@ -166,12 +166,16 @@ ${STORE_SELECTION_GUIDANCE}
 
    \`\`\`
    TEST EVIDENCE
+   - scope: <focused commands / package / full repository>
+   - rationale: <why this scope covers the verified risk>
    - command: <exact command(s) run>
    - result: pass | fail
    - tree: <git rev-parse HEAD^{tree}>
    \`\`\`
 
-   If this verification did NOT run tests, write no test-evidence block — ship then correctly re-runs (it skips on proof, never on hope).
+   If this verification did NOT run tests, write no test-evidence block — ship
+   then selects and runs only the uncovered checks in its required verification
+   scope.
 
 **Verification Heuristics**
 

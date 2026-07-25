@@ -4,7 +4,11 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { loadWorkflowCatalog, resolveWorkflowSelection } from '../../../src/core/workflow-registry/index.js';
+import {
+  loadWorkflowCatalog,
+  resolveEffectiveWorkflowInstallSelection,
+  resolveWorkflowSelection,
+} from '../../../src/core/workflow-registry/index.js';
 
 /**
  * `resolveWorkflowSelection`'s opt-in `includeSkillDependencies` closure
@@ -35,6 +39,31 @@ describe('resolveWorkflowSelection includeSkillDependencies', () => {
     // which is always resolved; review (a requires.skills expert) is not.
     expect(selected.sort()).toEqual(['auto-command', 'retain-command'].sort());
     expect(selected).not.toContain('review');
+  });
+
+  it('ship-only closure includes the retention runner exactly once', () => {
+    const catalog = loadWorkflowCatalog();
+    const selected = resolveWorkflowSelection(catalog, ['ship-command']).map((definition) => definition.id);
+
+    expect(selected).toEqual(expect.arrayContaining(['ship-command', 'retain-command']));
+    expect(selected.filter((id) => id === 'retain-command')).toHaveLength(1);
+  });
+
+  it('the effective install set adds the compatibility runner and deduplicates auto/ship paths', () => {
+    const catalog = loadWorkflowCatalog();
+    const compatibilityOnly = resolveEffectiveWorkflowInstallSelection(catalog, []).map(
+      (definition) => definition.id
+    );
+    const duplicatePaths = resolveEffectiveWorkflowInstallSelection(
+      catalog,
+      ['auto-command', 'ship-command', 'retain-command']
+    ).map((definition) => definition.id);
+
+    expect(compatibilityOnly).toEqual(['retain-command']);
+    expect(duplicatePaths).toEqual(
+      expect.arrayContaining(['auto-command', 'ship-command', 'retain-command', 'review'])
+    );
+    expect(duplicatePaths.filter((id) => id === 'retain-command')).toHaveLength(1);
   });
 
   it('with the flag, pulls the expert named by requires.skills (hyphen dirName form)', () => {

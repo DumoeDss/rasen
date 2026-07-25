@@ -737,6 +737,30 @@ describe('InitCommand - profile and detection features', () => {
     expect(await fileExists(proposeSkill)).toBe(false);
   });
 
+  it('installs the retro wrapper and its complete runner for a profile with neither ship nor auto', async () => {
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      workflows: ['explore'],
+      retention: 'off',
+      expertSelectionExplicit: true,
+    });
+
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    const skillsRoot = path.join(testDir, '.claude', 'skills');
+    for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+      expect(await fileExists(path.join(skillsRoot, 'rasen-retain', fileName))).toBe(true);
+    }
+    expect(await fileExists(path.join(skillsRoot, 'rasen-ship', 'SKILL.md'))).toBe(false);
+    expect(await fileExists(path.join(skillsRoot, 'rasen-auto', 'SKILL.md'))).toBe(false);
+
+    const wrapperPath = path.join(skillsRoot, 'rasen-retro', 'SKILL.md');
+    expect(await fs.readFile(wrapperPath, 'utf-8')).toContain('disable-model-invocation: true');
+    expect(getGlobalConfig().workflows).toEqual(['explore']);
+    expect(getGlobalConfig().workflows).not.toContain('retain-command');
+  });
+
   it('should migrate a pre-retirement commands-only extend mode to custom profile, restoring skills and cleaning up the stale command file', async () => {
     await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
     await fs.mkdir(path.join(testDir, '.claude', 'commands', 'rasen'), { recursive: true });

@@ -214,9 +214,9 @@ rules:
 
 | 选择子 / 关键词 | 后端 pipeline | 闸门 | 尾部 |
 |---|---|---|---|
-| `measure` —— `score` `latency` `lighthouse` `benchmark` `p99` `memory` | **goal-loop-measure** | 一条确定性命令产出 `{score, passed}` | ship → archive |
-| `evaluate` —— `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | 一个 fresh reviewer worker 判 `{satisfied, gaps}` | ship → archive |
-| `research` —— `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | 一个 fresh reviewer worker | report（无 ship）|
+| `measure` —— `score` `latency` `lighthouse` `benchmark` `p99` `memory` | **goal-loop-measure** | 一条确定性命令产出 `{score, passed}` | ship → retain → archive |
+| `evaluate` —— `rubric` `quality` `clean` `standard` | **goal-loop-evaluate** | 一个 fresh reviewer worker 判 `{satisfied, gaps}` | ship → retain → archive |
+| `research` —— `research` `investigate` `write brief` `autoresearch` | **goal-loop-research** | 一个 fresh reviewer worker | 仅 report（无 ship、retain 或 archive）|
 
 流程是 **define-goal → iterate → 尾部**：planner 写 `goal-plan.md`（目标、闸门、工作产物、maxRounds），implementer 跨轮暖复用，每轮判定追加进 `goal-run.json`（权威的循环位置），整轮 run 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底。`/rasen-goal` 与 `/rasen-auto` 共用同一套编排手册——平级入口，不是第二套系统。完整章节（含示例、resume 语义、stall 阶梯）见 [artifact-workflow-guide.md §9](artifact-workflow-guide.md#9-目标驱动迭代rasengoal)。
 
