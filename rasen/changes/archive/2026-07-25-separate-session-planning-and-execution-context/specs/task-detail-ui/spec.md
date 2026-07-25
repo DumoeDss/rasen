@@ -19,7 +19,7 @@ The Task detail page SHALL show, in a right column, the supervised sessions belo
 - **WHEN** a user clicks kill on a live session and confirms
 - **THEN** the session is terminated and the column refreshes to reflect its ended state
 
-#### Scenario: Project launch carries space and change context compatibly
+#### Scenario: Launch run carries space and change context
 
 - **WHEN** a user launches a run from a single-item Task detail page in project space `X`
 - **THEN** the launch is submitted with space `X` and the Task's change pre-filled as the run's linked change, with no execution selector required
