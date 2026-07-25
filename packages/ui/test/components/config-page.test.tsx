@@ -65,7 +65,7 @@ const configWithTheme = {
         key: 'ui.theme',
         scopes: ['global'],
         type: 'string',
-        defaultValue: 'editorial',
+        defaultValue: 'crt',
         description: 'Installed UI theme',
         group: 'Appearance',
         constraints: { type: 'string' },

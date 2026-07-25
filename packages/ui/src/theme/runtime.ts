@@ -60,6 +60,7 @@ function builtIn(value: unknown): ThemeManifest {
 
 export const EDITORIAL_THEME = builtIn(editorialJson);
 export const CRT_THEME = builtIn(crtJson);
+export const DEFAULT_THEME = CRT_THEME;
 export const BUILT_IN_THEMES: readonly ThemeManifest[] = [EDITORIAL_THEME, CRT_THEME];
 
 let catalog: ThemeManifest[] = [...BUILT_IN_THEMES];
@@ -217,7 +218,7 @@ export async function initializeTheme(timeoutMs = 1500): Promise<void> {
       timeout,
     ]);
     decodeCatalog(catalogResponse);
-    const configured = typeof keyResponse.entry.value === 'string' ? keyResponse.entry.value : 'editorial';
+    const configured = typeof keyResponse.entry.value === 'string' ? keyResponse.entry.value : DEFAULT_THEME.id;
     const selected = catalog.find((theme) => theme.id === configured);
     if (!selected) {
       warningCode = 'theme_unavailable';

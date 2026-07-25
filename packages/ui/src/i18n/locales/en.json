@@ -276,7 +276,7 @@
   "theme.selector": "Installed theme",
   "theme.editorial.name": "Editorial",
   "theme.editorial.description": "Warm parchment and restrained terracotta.",
-  "theme.crt.name": "CRT",
+  "theme.crt.name": "Official",
   "theme.crt.description": "Dark phosphor terminal.",
   "theme.unavailable": "unavailable",
   "theme.unavailable_help": "The saved theme is unavailable. Editorial is active until you choose an installed theme.",

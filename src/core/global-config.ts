@@ -214,7 +214,7 @@ const DEFAULT_CONFIG: GlobalConfig = {
   language: 'auto',
   proactive: true,
   repoMode: 'collaborative',
-  ui: { theme: 'editorial' },
+  ui: { theme: 'crt' },
 };
 
 export interface GlobalDataDirOptions {
