@@ -639,6 +639,40 @@ rules:
     });
   });
 
+  describe('pipeline runtime parsing', () => {
+    it('keeps Claude/Codex and drops Zed/unknown runtime leaves', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        `schema: spec-driven
+pipelines:
+  runtime-test:
+    runtimes:
+      planner: claude
+      reviewer: codex
+      fixer: zed
+      shipper: unknown
+`
+      );
+
+      expect(readProjectConfig(tempDir)?.pipelines).toEqual({
+        'runtime-test': {
+          runtimes: {
+            planner: 'claude',
+            reviewer: 'codex',
+          },
+        },
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("pipelines.runtime-test.runtimes.fixer")
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("pipelines.runtime-test.runtimes.shipper")
+      );
+    });
+  });
+
   describe('validateConfigRules', () => {
     it('should return no warnings for valid artifact IDs', () => {
       const rules = {
@@ -1821,6 +1855,38 @@ rules:
 
       const config = readProjectConfig(tempDir);
       expect(config?.handoff).toBeUndefined();
+    });
+  });
+
+  describe('threshold binding parsing', () => {
+    it('preserves explicit/default rows and syntactically valid dangling scheme names', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nthresholds:\n  bindings:\n    claude: missing-locally\n    default: balanced\n'
+      );
+
+      expect(readProjectConfig(tempDir)?.thresholds?.bindings).toEqual({
+        claude: 'missing-locally',
+        default: 'balanced',
+      });
+    });
+
+    it('does not invent a default row and drops audit-only runtime keys', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nthresholds:\n  bindings:\n    codex: focused\n    zed: focused\n'
+      );
+
+      expect(readProjectConfig(tempDir)?.thresholds?.bindings).toEqual({
+        codex: 'focused',
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('thresholds.bindings.zed')
+      );
     });
   });
 

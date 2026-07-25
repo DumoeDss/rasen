@@ -517,15 +517,27 @@ stages:
       });
     });
 
-    it('should reject invalid runtime selection', () => {
+    it.each(['zed', 'llama'])('should reject non-dispatch role runtime %s', (runtime) => {
       const yaml = `
 name: bad-runtime
 agents:
-  planner: llama
+  planner: ${runtime}
 stages:
   - id: propose
     skill: rasen-propose
     role: planner
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+
+    it.each(['zed', 'llama'])('should reject non-dispatch stage runtime %s', (runtime) => {
+      const yaml = `
+name: bad-stage-runtime
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+    runtime: ${runtime}
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
     });

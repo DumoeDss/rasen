@@ -194,6 +194,12 @@ describe('audit management core', () => {
     expect(() => validateAuditReport({ ...report(), schema: 'rasen-token-audit/999' })).toThrow(
       /supported/
     );
+    expect(() =>
+      validateAuditReport({
+        ...report(),
+        session: { ...report().session, runtime: 'unknown' },
+      })
+    ).toThrow(/supported runtime/);
 
     const codexHostile = {
       schema: 'rasen-token-audit/2',

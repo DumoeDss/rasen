@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 import { listStoredRolloutFiles, readRolloutSessionMeta, resolveCodexHome } from '../codex/index.js';
 import { getGlobalDataDir, type GlobalDataDirOptions } from '../global-config.js';
+import {
+  hasRuntimeCapability,
+  type AuditRuntime as RegistryAuditRuntime,
+} from '../runtime-adapters.js';
 import { runAudit, type RunAuditOptions, type RunAuditResult } from './audit.js';
 import type { AuditResult } from './types.js';
 import {
@@ -18,7 +22,7 @@ import {
   resolveDefaultZedDbPath,
 } from './zed/database.js';
 
-export type AuditRuntime = 'claude' | 'codex' | 'zed';
+export type AuditRuntime = RegistryAuditRuntime;
 
 export const DEFAULT_RECENT_AUDIT_LIMIT = 50;
 export const MAX_RECENT_AUDIT_LIMIT = 200;
@@ -93,7 +97,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 }
 
 function runtimeOf(value: unknown): AuditRuntime | null {
-  return value === 'claude' || value === 'codex' || value === 'zed' ? value : null;
+  return hasRuntimeCapability(value, 'canAudit') ? value : null;
 }
 
 export function validateAuditReport(value: unknown): AuditResult {

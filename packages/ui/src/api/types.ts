@@ -145,6 +145,36 @@ export type WriteConfigKeyResponse = GetConfigKeyResponse;
  * `{ remainingTokens: N }` headroom. A bare number is ALWAYS a fraction.
  */
 export type ThresholdValue = number | { remainingTokens: number };
+export type ThresholdRole = 'planner' | 'implementer' | 'reviewer' | 'fixer' | 'shipper';
+export type ReuseThresholdRole = 'planner' | 'implementer';
+
+export interface ThresholdScheme {
+  handoff: ThresholdValue;
+  handoffRoles?: Partial<Record<ThresholdRole, ThresholdValue>>;
+  reuse: ThresholdValue;
+  reuseRoles?: Partial<Record<ReuseThresholdRole, ThresholdValue>>;
+}
+
+export type ThresholdSchemeListEntry =
+  | { name: string; valid: true; scheme: ThresholdScheme }
+  | { name: string; valid: false; error: string };
+
+export type ThresholdBindingScope = 'project' | 'store' | 'global';
+export type ThresholdBindingRow = 'claude' | 'codex' | 'default';
+
+export interface ThresholdBindingMetadata {
+  scope: ThresholdBindingScope;
+  row: ThresholdBindingRow;
+  scheme: string;
+}
+
+export interface ThresholdDiagnostic {
+  code: 'missing-scheme' | 'invalid-scheme';
+  scope: ThresholdBindingScope;
+  row: ThresholdBindingRow;
+  scheme: string;
+  message: string;
+}
 
 /**
  * An effective per-stage value plus the scope-qualified layer that supplied it
@@ -156,6 +186,27 @@ export type ThresholdValue = number | { remainingTokens: number };
 export interface WireEffectiveValue<T> {
   value: T;
   source: string;
+}
+
+export interface WireEffectiveThreshold extends WireEffectiveValue<ThresholdValue> {
+  binding?: ThresholdBindingMetadata;
+  diagnostics?: ThresholdDiagnostic[];
+}
+
+export interface WireEffectiveReuse {
+  planner: 'auto' | 'never';
+  implementer: 'auto' | 'never';
+  threshold: ThresholdValue;
+  roles: { planner: ThresholdValue; implementer: ThresholdValue };
+  sources?: {
+    threshold: string;
+    roles: { planner: string; implementer: string };
+  };
+  bindings?: {
+    threshold?: ThresholdBindingMetadata;
+    roles?: Partial<Record<ReuseThresholdRole, ThresholdBindingMetadata>>;
+  };
+  diagnostics?: ThresholdDiagnostic[];
 }
 
 /**
@@ -174,7 +225,7 @@ export interface WirePipelineStage {
   /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
   effectiveGate: WireEffectiveValue<boolean>;
   effectiveModel: WireEffectiveValue<string | null>;
-  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
+  effectiveHandoff: WireEffectiveThreshold;
   effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
 }
 
@@ -188,8 +239,35 @@ export interface WirePipeline {
   description: string;
   provenance: 'built-in' | 'user';
   sourceLayer: 'project' | 'user' | 'package';
+  roleRuntimes: Record<
+    ThresholdRole,
+    WireEffectiveValue<'claude' | 'codex'>
+  >;
+  effectiveReuse: WireEffectiveReuse;
   stages: WirePipelineStage[];
 }
+
+export interface ThresholdPresetSeed {
+  id: string;
+  match: string[];
+  contextWindow: number;
+  seed: ThresholdScheme;
+  sources: { handoff: 'preset' | 'default'; reuse: 'preset' | 'default' };
+}
+
+export interface ThresholdSchemeCatalogResponse {
+  schemes: ThresholdSchemeListEntry[];
+  presets: ThresholdPresetSeed[];
+  bindingRows: ThresholdBindingRow[];
+}
+
+export type ThresholdSchemeMutationRequest =
+  | { op: 'create' | 'update'; name: string; scheme: ThresholdScheme }
+  | { op: 'delete'; name: string };
+
+export type ThresholdSchemeMutationResponse =
+  | { op: 'create' | 'update'; name: string; scheme: ThresholdScheme }
+  | { op: 'delete'; deleted: string };
 
 /** `GET /api/v1/pipelines` response: the addressed space's resolved pipelines. */
 export interface ListPipelinesResponse {

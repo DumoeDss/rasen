@@ -6,8 +6,10 @@ import { ApiError } from '../api/client.js';
 import type {
   ConfigSource,
   StoreLayerRef,
+  ThresholdSchemeCatalogResponse,
   ThresholdValue,
   WireConfigEntry,
+  WireEffectiveValue,
   WirePipeline,
   WirePipelineStage,
 } from '../api/types.js';
@@ -27,6 +29,8 @@ import { ConfigEntryRow } from './ConfigEntryRow.js';
 import { KeepaliveBeatControl } from './KeepaliveBeatControl.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { ValueDisplay } from './ui/ValueDisplay.js';
+import { ThresholdPolicyWorkbench } from './ThresholdPolicyWorkbench.js';
+import { useT } from '../i18n/store.js';
 
 /**
  * The Pipelines page (pipelines-ui spec). A space-PREFIXED route
@@ -49,13 +53,13 @@ import { ValueDisplay } from './ui/ValueDisplay.js';
  * Rendered as a compact table — role down the side, Model and Handoff across —
  * rather than one full-width config row per key.
  */
-const MATRIX_ROLES: ReadonlyArray<{ label: string; modelKey: string; handoffKey: string }> = [
-  { label: 'Default', modelKey: 'models.default', handoffKey: 'handoff.threshold' },
-  { label: 'Planner', modelKey: 'models.roles.planner', handoffKey: 'handoff.roles.planner' },
-  { label: 'Implementer', modelKey: 'models.roles.implementer', handoffKey: 'handoff.roles.implementer' },
-  { label: 'Reviewer', modelKey: 'models.roles.reviewer', handoffKey: 'handoff.roles.reviewer' },
-  { label: 'Fixer', modelKey: 'models.roles.fixer', handoffKey: 'handoff.roles.fixer' },
-  { label: 'Shipper', modelKey: 'models.roles.shipper', handoffKey: 'handoff.roles.shipper' },
+const MATRIX_ROLES: ReadonlyArray<{ role: string; modelKey: string }> = [
+  { role: 'default', modelKey: 'models.default' },
+  { role: 'planner', modelKey: 'models.roles.planner' },
+  { role: 'implementer', modelKey: 'models.roles.implementer' },
+  { role: 'reviewer', modelKey: 'models.roles.reviewer' },
+  { role: 'fixer', modelKey: 'models.roles.fixer' },
+  { role: 'shipper', modelKey: 'models.roles.shipper' },
 ];
 const AUTOPILOT_KEYS = ['autopilot.gates', 'autopilot.selection'];
 
@@ -69,6 +73,7 @@ function formatThreshold(value: ThresholdValue): string {
 }
 
 export function PipelinesPage() {
+  const t = useT();
   const space = useSpace();
   const selector = space?.selector;
   const spaceType: SpaceType = space?.type ?? 'project';
@@ -77,6 +82,8 @@ export function PipelinesPage() {
   const [entries, setEntries] = useState<WireConfigEntry[] | null>(null);
   const [storeRef, setStoreRef] = useState<StoreLayerRef | null>(null);
   const [pipelines, setPipelines] = useState<WirePipeline[] | null>(null);
+  const [thresholdCatalog, setThresholdCatalog] =
+    useState<ThresholdSchemeCatalogResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [mode, setMode] = useState<ConfigMode>('local');
@@ -86,23 +93,29 @@ export function PipelinesPage() {
     if (!selector) {
       setEntries(null);
       setPipelines(null);
+      setThresholdCatalog(null);
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
     setPageError(null);
-    Promise.all([client.listConfig(selector), client.listPipelines(selector)])
-      .then(([config, pipes]) => {
+    Promise.all([
+      client.listConfig(selector),
+      client.listPipelines(selector),
+      client.listThresholdSchemes(),
+    ])
+      .then(([config, pipes, catalog]) => {
         if (cancelled) return;
         setEntries(config.entries);
         setStoreRef(config.store);
         setPipelines(pipes.pipelines);
+        setThresholdCatalog(catalog);
       })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError) setPageError({ message: err.message, fix: err.fix });
-        else setPageError({ message: 'Failed to load pipelines.' });
+        else setPageError({ message: t('pipelines.threshold.load_error') });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -128,10 +141,15 @@ export function PipelinesPage() {
   async function refreshAll() {
     if (!selector) return;
     try {
-      const [config, pipes] = await Promise.all([client.listConfig(selector), client.listPipelines(selector)]);
+      const [config, pipes, catalog] = await Promise.all([
+        client.listConfig(selector),
+        client.listPipelines(selector),
+        client.listThresholdSchemes(),
+      ]);
       setEntries(config.entries);
       setStoreRef(config.store);
       setPipelines(pipes.pipelines);
+      setThresholdCatalog(catalog);
     } catch (err) {
       if (err instanceof ApiError) setPageError({ message: err.message, fix: err.fix });
     }
@@ -152,7 +170,7 @@ export function PipelinesPage() {
   }
 
   if (loading) {
-    return <p data-testid="pipelines-loading">Loading pipelines…</p>;
+    return <p data-testid="pipelines-loading">{t('pipelines.threshold.loading')}</p>;
   }
 
   const writeScope = modeScope(mode, spaceType);
@@ -211,11 +229,24 @@ export function PipelinesPage() {
         </button>
       </div>
 
+      {thresholdCatalog && entries && pipelines && (
+        <ThresholdPolicyWorkbench
+          catalog={thresholdCatalog}
+          entries={entries}
+          pipelines={pipelines}
+          mode={mode}
+          spaceType={spaceType}
+          selector={selector}
+          storeRef={storeRef}
+          onRefresh={refreshAll}
+          onPageError={(message, fix) => setPageError({ message, fix })}
+        />
+      )}
+
       <section class="pipelines-defaults" data-testid="pipelines-defaults">
-        <h3 class="pipelines-defaults__title">Defaults</h3>
+        <h3 class="pipelines-defaults__title">{t('pipelines.threshold.defaults.title')}</h3>
         <p class="pipelines-defaults__legend">
-          The model and context-handoff threshold every pipeline stage inherits, per role. A blank
-          field inherits the wider scope; the badge names where the effective value resolved from.
+          {t('pipelines.threshold.defaults.description')}
         </p>
         <DefaultsMatrix
           entryFor={byKey}
@@ -266,6 +297,18 @@ export function PipelinesPage() {
           ) : null;
         })()}
       </section>
+
+      {entries && (
+        <AdvancedOverrides
+          entries={entries}
+          mode={mode}
+          spaceType={spaceType}
+          selector={selector}
+          storeRef={storeRef}
+          onPageError={(message, fix) => setPageError({ message, fix })}
+          onEntryUpdated={updateEntry}
+        />
+      )}
 
       <section class="pipelines-list" data-testid="pipelines-list">
         {(pipelines ?? []).map((pipeline) => (
@@ -378,31 +421,29 @@ function DefaultsMatrix({
   entryFor,
   ...ctx
 }: { entryFor: (key: string) => WireConfigEntry | undefined } & DefaultsCellCtx) {
+  const t = useT();
   const rows = MATRIX_ROLES.map((role) => ({
     role,
     model: entryFor(role.modelKey),
-    handoff: entryFor(role.handoffKey),
-  })).filter((r) => r.model !== undefined || r.handoff !== undefined);
+  })).filter((r) => r.model !== undefined);
   if (rows.length === 0) return null;
 
   return (
     <table class="defaults-matrix" data-testid="defaults-matrix">
       <thead>
         <tr>
-          <th scope="col">Role</th>
-          <th scope="col">Model</th>
-          <th scope="col">Handoff threshold</th>
+          <th scope="col">{t('pipelines.threshold.defaults.role')}</th>
+          <th scope="col">{t('pipelines.threshold.defaults.model')}</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ role, model, handoff }) => (
-          <tr key={role.label} class="defaults-matrix__row" data-role={role.label.toLowerCase()}>
-            <th scope="row" class="defaults-matrix__role">{role.label}</th>
+        {rows.map(({ role, model }) => (
+          <tr key={role.role} class="defaults-matrix__row" data-role={role.role}>
+            <th scope="row" class="defaults-matrix__role">
+              {t(`pipelines.threshold.role.${role.role}`)}
+            </th>
             <td class="defaults-matrix__cell">
               {model ? <ModelCell entry={model} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
-            </td>
-            <td class="defaults-matrix__cell">
-              {handoff ? <HandoffCell entry={handoff} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
             </td>
           </tr>
         ))}
@@ -500,73 +541,6 @@ function ModelCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCellC
   );
 }
 
-function HandoffCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCellCtx) {
-  const key = entry.definition.key;
-  const w = useDefaultsCell(key, ctx);
-  const value = entry.value as ThresholdValue | null | undefined;
-  const isAbsolute = typeof value === 'object' && value !== null && 'remainingTokens' in value;
-
-  if (cellStoreInherited(entry, ctx)) {
-    return <StoreInheritedCell entry={entry} storeRef={ctx.storeRef!} />;
-  }
-
-  return (
-    <div class="defaults-cell defaults-cell--handoff" data-key={key} title={entry.definition.description}>
-      <div class="defaults-cell__forms">
-        <label>
-          <input
-            type="radio"
-            name={`${key}-defaults-form`}
-            checked={!isAbsolute}
-            disabled={w.pending}
-            onChange={() => w.commit(0.5)}
-          />
-          Fraction
-        </label>
-        <label>
-          <input
-            type="radio"
-            name={`${key}-defaults-form`}
-            checked={isAbsolute}
-            disabled={w.pending}
-            onChange={() => w.commit({ remainingTokens: 50_000 })}
-          />
-          Tokens
-        </label>
-      </div>
-      {!isAbsolute ? (
-        <input
-          type="number"
-          step="any"
-          class="defaults-cell__num"
-          data-testid="defaults-handoff-fraction"
-          value={typeof value === 'number' ? String(value) : '0.5'}
-          disabled={w.pending}
-          onChange={(e) => {
-            const raw = Number((e.target as HTMLInputElement).value);
-            if (!Number.isNaN(raw)) w.commit(raw);
-          }}
-        />
-      ) : (
-        <input
-          type="number"
-          step="1"
-          class="defaults-cell__num"
-          data-testid="defaults-handoff-remaining"
-          value={String((value as { remainingTokens: number }).remainingTokens)}
-          disabled={w.pending}
-          onChange={(e) => {
-            const raw = Number((e.target as HTMLInputElement).value);
-            if (Number.isInteger(raw)) w.commit({ remainingTokens: raw });
-          }}
-        />
-      )}
-      <ConfigSourceBadge source={entry.source} />
-      {w.error && <span class="defaults-cell__error" role="alert">{w.error}</span>}
-    </div>
-  );
-}
-
 /** A store-inherited key: read-only value plus an edit-in-store link (design D3), the compact analogue of ConfigEntryRow's store handling. */
 function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; storeRef: StoreLayerRef }) {
   return (
@@ -581,6 +555,86 @@ function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; store
         Edit in store {storeRef.id} →
       </a>
     </div>
+  );
+}
+
+function AdvancedOverrides({
+  entries,
+  mode,
+  spaceType,
+  selector,
+  storeRef,
+  onPageError,
+  onEntryUpdated,
+}: {
+  entries: WireConfigEntry[];
+} & DefaultsCellCtx) {
+  const t = useT();
+  const advancedKeys = new Set([
+    'handoff.threshold',
+    'handoff.roles.planner',
+    'handoff.roles.implementer',
+    'handoff.roles.reviewer',
+    'handoff.roles.fixer',
+    'handoff.roles.shipper',
+    'keepalive.runtimes.claude',
+    'keepalive.runtimes.codex',
+    'keepalive.contextFloor',
+  ]);
+  const visible = entries.filter(
+    (entry) =>
+      advancedKeys.has(entry.definition.key) &&
+      isVisibleInMode(entry, mode, spaceType)
+  );
+  const localizedDescription = (key: string): string => {
+    if (key === 'handoff.threshold') {
+      return t('pipelines.threshold.advanced.entry.handoff_default');
+    }
+    if (key.startsWith('handoff.roles.')) {
+      const role = key.slice('handoff.roles.'.length);
+      return t('pipelines.threshold.advanced.entry.handoff_role', {
+        role: t(`pipelines.threshold.role.${role}`),
+      });
+    }
+    if (key.startsWith('keepalive.runtimes.')) {
+      const runtime =
+        key.slice('keepalive.runtimes.'.length) === 'claude' ? 'Claude Code' : 'Codex';
+      return t('pipelines.threshold.advanced.entry.keepalive_runtime', {
+        runtime,
+      });
+    }
+    return t('pipelines.threshold.advanced.entry.keepalive_context_floor');
+  };
+  return (
+    <details
+      id="pipelines-advanced"
+      class="pipelines-advanced"
+      data-testid="pipelines-advanced"
+    >
+      <summary>
+        <span>{t('pipelines.threshold.advanced.title')}</span>
+        <small>{t('pipelines.threshold.advanced.summary')}</small>
+      </summary>
+      <p>{t('pipelines.threshold.advanced.description')}</p>
+      <div class="pipelines-advanced__grid">
+        {visible.map((entry) => (
+          <ConfigEntryRow
+            key={entry.definition.key}
+            entry={entry}
+            description={localizedDescription(entry.definition.key)}
+            mode={mode}
+            spaceType={spaceType}
+            spaceSelector={selector}
+            storeRef={storeRef}
+            onPageError={onPageError}
+            onEntryUpdated={onEntryUpdated}
+          />
+        ))}
+      </div>
+      <p class="pipelines-advanced__lifecycle">
+        {t('pipelines.threshold.advanced.keepalive_note')}
+      </p>
+    </details>
   );
 }
 
@@ -604,6 +658,7 @@ function PipelineSection({
   onExport: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
+  const t = useT();
   // Export AND delete are user-library-only in the CLI (`exportPipeline` /
   // `deletePipeline` both refuse `source !== 'user'`), so the affordances gate on
   // the resolved SOURCE LAYER, not provenance: a project-layer copy (provenance
@@ -616,12 +671,15 @@ function PipelineSection({
   // rather than a wall of controls (pipelines-ui spec). Independent per
   // pipeline — expanding one never collapses another.
   const [configureOpen, setConfigureOpen] = useState(false);
-  // Per-role runtime: a role's stages share one runtime, so read the effective
-  // runtime off the first stage carrying each role (design D4).
-  const roleStages = new Map<string, WirePipelineStage>();
-  for (const stage of pipeline.stages) {
-    if (stage.role && !roleStages.has(stage.role)) roleStages.set(stage.role, stage);
-  }
+  // Reuse and runtime controls are role-scoped. Consume the server's shared
+  // role-runtime projection rather than inferring a role winner from whichever
+  // same-role stage happens to appear first.
+  const stageRoles = new Set(
+    pipeline.stages.flatMap((stage) => (stage.role ? [stage.role] : []))
+  );
+  const roleRuntimes = Object.entries(pipeline.roleRuntimes).filter(([role]) =>
+    stageRoles.has(role)
+  );
 
   return (
     <div class="pipeline-section" data-testid="pipeline-section" data-pipeline={pipeline.name}>
@@ -686,15 +744,15 @@ function PipelineSection({
       {configureOpen && (
         <div class="pipeline-section__config" data-testid="pipeline-config">
           {/* Per-role runtime controls. */}
-          {roleStages.size > 0 && (
+          {roleRuntimes.length > 0 && (
             <div class="pipeline-runtimes" data-testid="pipeline-runtimes">
               <h4>Runtimes</h4>
-              {[...roleStages.entries()].map(([role, stage]) => (
+              {roleRuntimes.map(([role, runtime]) => (
                 <RoleRuntimeControl
                   key={role}
                   pipeline={pipeline.name}
                   role={role}
-                  stage={stage}
+                  runtime={runtime}
                   scope={scope}
                   selector={selector}
                   onWrite={onWrite}
@@ -716,6 +774,27 @@ function PipelineSection({
               />
             ))}
           </div>
+          <details
+            class="pipeline-stage-advanced"
+            data-testid="pipeline-stage-advanced"
+          >
+            <summary>{t('pipelines.threshold.advanced.stage_title')}</summary>
+            <p>{t('pipelines.threshold.advanced.stage_description')}</p>
+            <div class="pipeline-stage-advanced__rows">
+              {pipeline.stages.map((stage) => (
+                <div key={stage.id} class="pipeline-stage-advanced__row">
+                  <code>{stage.id}</code>
+                  <StageHandoffControl
+                    pipeline={pipeline.name}
+                    stage={stage}
+                    scope={scope}
+                    selector={selector}
+                    onWrite={onWrite}
+                  />
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
       )}
     </div>
@@ -745,7 +824,6 @@ function StageOverrideRow({
       </div>
       <StageGateControl pipeline={pipeline} stage={stage} scope={scope} selector={selector} onWrite={onWrite} />
       <StageModelControl pipeline={pipeline} stage={stage} scope={scope} selector={selector} onWrite={onWrite} />
-      <StageHandoffControl pipeline={pipeline} stage={stage} scope={scope} selector={selector} onWrite={onWrite} />
     </div>
   );
 }
@@ -898,6 +976,7 @@ function StageHandoffControl({
   selector: string;
   onWrite: () => Promise<void>;
 }) {
+  const t = useT();
   const key = `pipelines.${pipeline}.handoff.${stage.id}`;
   const w = useInstanceWriter(key, scope, selector, onWrite);
   const eff = stage.effectiveHandoff;
@@ -906,7 +985,9 @@ function StageHandoffControl({
 
   return (
     <div class="stage-control stage-control--handoff" data-testid="stage-handoff" data-pipeline={pipeline} data-stage={stage.id}>
-      <span class="stage-control__label">Handoff</span>
+      <span class="stage-control__label">
+        {t('pipelines.threshold.family.handoff')}
+      </span>
       <div class="stage-control__handoff-forms">
         <label>
           <input
@@ -916,7 +997,7 @@ function StageHandoffControl({
             disabled={w.pending}
             onChange={() => w.set(0.5)}
           />
-          Fraction
+          {t('pipelines.threshold.editor.fraction')}
         </label>
         <label>
           <input
@@ -926,7 +1007,7 @@ function StageHandoffControl({
             disabled={w.pending}
             onChange={() => w.set({ remainingTokens: 50_000 })}
           />
-          Remaining tokens
+          {t('pipelines.threshold.editor.remaining_tokens')}
         </label>
       </div>
       {!isAbsolute ? (
@@ -960,7 +1041,7 @@ function StageHandoffControl({
       <SourceBadge source={eff.source} />
       {overridden && (
         <button type="button" data-testid="stage-handoff-inherit" disabled={w.pending} onClick={() => w.clear()}>
-          Inherit
+          {t('pipelines.threshold.action.inherit')}
         </button>
       )}
       {w.error && <span class="stage-control__error" role="alert">{w.error}</span>}
@@ -971,22 +1052,22 @@ function StageHandoffControl({
 function RoleRuntimeControl({
   pipeline,
   role,
-  stage,
+  runtime,
   scope,
   selector,
   onWrite,
 }: {
   pipeline: string;
   role: string;
-  stage: WirePipelineStage;
+  runtime: WireEffectiveValue<'claude' | 'codex'>;
   scope: 'global' | 'store' | 'project';
   selector: string;
   onWrite: () => Promise<void>;
 }) {
   const key = `pipelines.${pipeline}.runtimes.${role}`;
   const w = useInstanceWriter(key, scope, selector, onWrite);
-  const eff = stage.effectiveRuntime;
-  const selectValue = isOverridden(eff.source) ? eff.value : 'inherit';
+  const eff = runtime;
+  const selectValue = eff.source.startsWith('config-') ? eff.value : 'inherit';
 
   return (
     <div class="role-runtime" data-testid="role-runtime" data-pipeline={pipeline} data-role={role}>

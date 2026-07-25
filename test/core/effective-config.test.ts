@@ -9,6 +9,7 @@ import {
   resolveEffectiveConfigWithMetadata,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
+  resolveThresholdBindingLayers,
 } from '../../src/core/effective-config.js';
 import { getGlobalConfigPath, saveGlobalConfig } from '../../src/core/global-config.js';
 import { registerStore } from '../../src/core/store/registry.js';
@@ -38,6 +39,36 @@ describe('effective-config', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'config.yaml'), content);
   }
+
+  it('exposes raw project/store/global binding rows without collapsing default', () => {
+    const projectRoot = path.join(tempDir, 'project-bindings');
+    const storeRoot = path.join(tempDir, 'store-bindings');
+    writeProjectConfig(
+      projectRoot,
+      'schema: spec-driven\nthresholds:\n  bindings:\n    codex: project-code\n    default: project-default\n'
+    );
+    writeProjectConfig(
+      storeRoot,
+      'schema: spec-driven\nthresholds:\n  bindings:\n    claude: store-claude\n'
+    );
+    saveGlobalConfig({
+      thresholds: { bindings: { codex: 'global-code', default: 'global-default' } },
+    });
+
+    expect(resolveThresholdBindingLayers(projectRoot, storeRoot)).toEqual({
+      project: { codex: 'project-code', default: 'project-default' },
+      store: { claude: 'store-claude' },
+      global: { codex: 'global-code', default: 'global-default' },
+    });
+  });
+
+  it('keeps binding maps empty without inventing a default row', () => {
+    expect(resolveThresholdBindingLayers()).toEqual({
+      project: undefined,
+      store: undefined,
+      global: undefined,
+    });
+  });
 
   /** A store's own config is the same `rasen/config.yaml` shape (design D2). */
   function writeStoreConfig(storeRoot: string, content: string): string {
@@ -290,10 +321,11 @@ describe('effective-config', () => {
     it('emits templates only when no instance is set, with no default value', () => {
       const entries = resolveEffectiveConfig({ includeWildcards: true });
       const wildcardEntries = entries.filter((e) => e.definition.wildcard);
-      // featureFlags + four pipelines families (gates/models/handoff/runtimes),
+      // featureFlags + four pipelines families (gates/models/handoff/runtimes)
+      // + runtime threshold bindings,
       // each a template with no instanceKey.
       const templates = wildcardEntries.filter((e) => e.instanceKey === undefined);
-      expect(templates.length).toBe(5);
+      expect(templates.length).toBe(6);
       expect(entries.some((e) => e.instanceKey !== undefined)).toBe(false);
       const gatesTemplate = templates.find(
         (e) => e.definition.key === 'pipelines.<name>.gates.<stage>'
@@ -376,6 +408,17 @@ describe('effective-config', () => {
       expect(inst.value).toBe(true);
       expect(inst.source).toBe('global');
       expect(inst.definition.key).toBe('featureFlags');
+    });
+
+    it('preserves a syntactically valid dangling global threshold binding', () => {
+      saveGlobalConfig({ thresholds: { bindings: { codex: 'restored-later' } } });
+
+      const entries = resolveEffectiveConfig({ includeWildcards: true });
+      const inst = entries.find((e) => e.instanceKey === 'thresholds.bindings.codex')!;
+
+      expect(inst.value).toBe('restored-later');
+      expect(inst.source).toBe('global');
+      expect(inst.definition.key).toBe('thresholds.bindings.<runtime>');
     });
 
     it('drops an invalid on-disk global instance value with a warning, emitting no entry', () => {

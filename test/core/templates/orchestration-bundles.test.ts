@@ -85,6 +85,15 @@ function expectForbiddenSemantics(
   }
 }
 
+function expectOrderedFragments(playbook: string, fragments: readonly string[]): void {
+  const positions = fragments.map((fragment) => {
+    const position = playbook.indexOf(fragment);
+    expect(position, `missing orchestration fragment: ${fragment}`).toBeGreaterThanOrEqual(0);
+    return position;
+  });
+  expect(positions).toEqual([...positions].sort((left, right) => left - right));
+}
+
 describe('selective orchestration bundles', () => {
   it('keeps auto byte-stable and complete', () => {
     expect(AUTO_ORCHESTRATION_PLAYBOOK).toBe(ORCHESTRATION_PLAYBOOK);
@@ -199,6 +208,81 @@ describe('selective orchestration bundles', () => {
       expect(playbook).toContain('Workers NEVER write run-state');
       expect(playbook).toContain(
         'design-level rework — send the problem back to the planner'
+      );
+    }
+  });
+
+  it('states the exact binding-aware handoff order in the canonical playbook', () => {
+    expectOrderedFragments(AUTO_ORCHESTRATION_PLAYBOOK, [
+      'configured `pipelines.<name>.handoff.<stage>` instance',
+      'stage YAML `handoff`',
+      'runtime-bound threshold scheme',
+      'pipeline YAML `handoff.roles[<actual role>]`',
+      'pipeline YAML `handoff.threshold`',
+      'legacy project `handoff.roles[<actual role>]`',
+      'project `handoff.threshold`',
+      'inherited-store role',
+      'inherited-store scalar',
+      'global role',
+      'global scalar',
+      'model preset',
+      'built-in default `0.5`',
+    ]);
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      "the worker's explicit effective-runtime row at project, store, then global scope is exhausted before the `default` row at project, store, then global scope"
+    );
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      'A binding to a missing or invalid scheme emits a diagnostic and falls through'
+    );
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      'Consume the already-resolved threshold, source, binding, and diagnostics from `rasen pipeline show <name> --json`'
+    );
+  });
+
+  it('states role-runtime reuse and default-only top-level reuse without a legacy-only chain', () => {
+    const reuseStart = AUTO_ORCHESTRATION_PLAYBOOK.indexOf(
+      'For each reuse role'
+    );
+    const reuseEnd = AUTO_ORCHESTRATION_PLAYBOOK.indexOf(
+      'These are different numbers for a reason'
+    );
+    const reuseGuidance = AUTO_ORCHESTRATION_PLAYBOOK.slice(reuseStart, reuseEnd);
+    expectOrderedFragments(reuseGuidance, [
+      "scheme bound to that role's actual effective runtime",
+      '`reuseRoles[<role>]` before the scheme scalar',
+      'pipeline YAML `reuse.roles[<role>]`',
+      'pipeline YAML `reuse.threshold`',
+      'model preset',
+      'built-in default **0.25**',
+    ]);
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      'Planner and implementer therefore may resolve different bindings.'
+    );
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      'considers only the `default` binding row at project/store/global (scheme scalar only) > pipeline YAML `reuse.threshold` > built-in default'
+    );
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      'runtime-specific rows and presets do not apply'
+    );
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).not.toContain(
+      '`handoff.roles[<role>]` > `handoff` > project config role/scalar > global config role/scalar'
+    );
+  });
+
+  it('keeps binding/store/fallback semantics in every reduced handoff replacement', () => {
+    for (const playbook of [
+      GOAL_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expect(playbook).toContain(
+        "worker's actual dispatched role and effective runtime"
+      );
+      expect(playbook).toContain('runtime-bound scheme');
+      expect(playbook).toContain('explicit runtime project/store/global rows');
+      expect(playbook).toContain('inherited-store role/scalar');
+      expect(playbook).toContain('Missing or invalid schemes warn and fall through.');
+      expect(playbook).not.toContain(
+        '`handoff.roles[<role>]` > `handoff` > project config role/scalar > global config role/scalar'
       );
     }
   });

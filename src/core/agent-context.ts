@@ -24,11 +24,27 @@ import {
   CODEX_CLI_VERSION_PREMISE,
 } from './codex/index.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
-import { resolveConfigStoreLayer, resolveHandoffThresholdLayers } from './effective-config.js';
+import {
+  resolveConfigStoreLayer,
+  resolveHandoffThresholdLayers,
+  resolveThresholdBindingLayers,
+} from './effective-config.js';
 import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry/types.js';
 import { resolveModelPreset } from './model-presets.js';
+import {
+  PROBE_RUNTIMES,
+  hasRuntimeCapability,
+  type ProbeRuntime,
+} from './runtime-adapters.js';
+import {
+  loadThresholdSchemeSnapshot,
+  resolveThreshold,
+  type ThresholdBindingMetadata,
+  type ThresholdDiagnostic,
+} from './threshold-resolver.js';
 
 export interface AgentContextResult {
+  runtime: ProbeRuntime;
   model: string;
   contextTokens: number;
   limit: number;
@@ -139,6 +155,7 @@ export function computeContextFromTranscript(
   const model = last.message.model ?? 'unknown';
   const limit = options.limit ?? resolveModelLimit(model);
   return {
+    runtime: 'claude',
     model,
     contextTokens,
     limit,
@@ -148,15 +165,16 @@ export function computeContextFromTranscript(
   };
 }
 
-export type TranscriptKind = 'claude' | 'codex';
+export type TranscriptKind = ProbeRuntime;
 
 /** codex-cli's own rollout filename convention — the same one `findRolloutPath` builds paths from. */
 const CODEX_ROLLOUT_BASENAME = /^rollout-.*\.jsonl$/;
 
 function validateRuntime(runtime: string | undefined): TranscriptKind | undefined {
   if (runtime === undefined) return undefined;
-  if (runtime === 'claude' || runtime === 'codex') return runtime;
-  throw new Error(`--runtime must be "claude" or "codex" (got "${runtime}").`);
+  if (hasRuntimeCapability(runtime, 'canProbeContext')) return runtime;
+  const expected = PROBE_RUNTIMES.map((candidate) => `"${candidate}"`).join(' or ');
+  throw new Error(`--runtime must be ${expected} (got "${runtime}").`);
 }
 
 /**
@@ -276,6 +294,7 @@ export function computeContextFromRollout(
   if (!occupancy) {
     const limit = options.limit ?? 0;
     return {
+      runtime: 'codex',
       model,
       contextTokens: 0,
       limit,
@@ -287,6 +306,7 @@ export function computeContextFromRollout(
 
   const limit = options.limit ?? occupancy.modelContextWindow;
   return {
+    runtime: 'codex',
     model,
     contextTokens: occupancy.totalTokens,
     limit,
@@ -434,11 +454,20 @@ export function resolveTranscriptPath(options: ProbeOptions, runtime?: Transcrip
   throw new Error('Specify a transcript to probe: pass --transcript <path> or --latest.');
 }
 
-export type HandoffThresholdSource = 'project' | 'store' | 'global' | 'default';
+export type HandoffThresholdSource =
+  | 'project-scheme'
+  | 'store-scheme'
+  | 'global-scheme'
+  | 'project'
+  | 'store'
+  | 'global'
+  | 'default';
 
 export interface HandoffThresholdReport {
   threshold: ThresholdValue;
   thresholdSource: HandoffThresholdSource;
+  binding?: ThresholdBindingMetadata;
+  diagnostics?: ThresholdDiagnostic[];
   /**
    * True when the probe has crossed `threshold`: for a fraction, `pct >=
    * threshold`; for the absolute `{ remainingTokens }` form, `remainingTokens
@@ -469,34 +498,48 @@ export interface HandoffThresholdReport {
 export async function resolveHandoffThresholdReport(
   pct: number,
   remainingTokens: number,
-  cwd: string = process.cwd()
+  runtimeOrCwd?: ProbeRuntime | string,
+  cwdArg?: string
 ): Promise<HandoffThresholdReport> {
+  const runtime =
+    runtimeOrCwd === 'claude' || runtimeOrCwd === 'codex'
+      ? runtimeOrCwd
+      : undefined;
+  const cwd =
+    runtime === undefined
+      ? runtimeOrCwd ?? process.cwd()
+      : cwdArg ?? process.cwd();
   const projectRoot = findRepoPlanningRootSync(cwd);
   const storeLayer = await resolveConfigStoreLayer(projectRoot);
   const layers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
 
-  let threshold: ThresholdValue;
-  let thresholdSource: HandoffThresholdSource;
-  if (layers.projectThreshold !== undefined) {
-    threshold = layers.projectThreshold;
-    thresholdSource = 'project';
-  } else if (layers.storeThreshold !== undefined) {
-    threshold = layers.storeThreshold;
-    thresholdSource = 'store';
-  } else if (layers.globalThreshold !== undefined) {
-    threshold = layers.globalThreshold;
-    thresholdSource = 'global';
-  } else {
-    threshold = DEFAULT_HANDOFF_CONFIG.threshold;
-    thresholdSource = 'default';
-  }
+  const selected = resolveThreshold({
+    family: 'handoff',
+    runtime,
+    bindings: resolveThresholdBindingLayers(projectRoot, storeLayer?.storeRoot),
+    schemes: loadThresholdSchemeSnapshot(),
+    nonBinding: {
+      project: { value: layers.projectThreshold, source: 'project' },
+      store: { value: layers.storeThreshold, source: 'store' },
+      global: { value: layers.globalThreshold, source: 'global' },
+      default: { value: DEFAULT_HANDOFF_CONFIG.threshold, source: 'default' },
+    },
+  });
+  const threshold = selected.threshold;
+  const thresholdSource = selected.source as HandoffThresholdSource;
 
   const shouldHandoff =
     typeof threshold === 'number'
       ? pct >= threshold
       : remainingTokens <= threshold.remainingTokens;
 
-  return { threshold, thresholdSource, shouldHandoff };
+  return {
+    threshold,
+    thresholdSource,
+    shouldHandoff,
+    ...(selected.binding ? { binding: selected.binding } : {}),
+    ...(selected.diagnostics.length > 0 ? { diagnostics: selected.diagnostics } : {}),
+  };
 }
 
 /**

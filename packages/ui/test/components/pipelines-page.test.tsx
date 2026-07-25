@@ -20,6 +20,8 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     ...actual,
     listConfig: vi.fn(),
     listPipelines: vi.fn(),
+    listThresholdSchemes: vi.fn(),
+    mutateThresholdScheme: vi.fn(),
     putKey: vi.fn(),
     deleteKey: vi.fn(),
     mutatePipeline: vi.fn(),
@@ -31,7 +33,15 @@ import { PipelinesPage } from '../../src/components/PipelinesPage.js';
 import { Layout } from '../../src/components/Layout.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
-import { pipelinesFixture, pipelinesConfigFixture } from '../fixtures/pipelines.js';
+import {
+  __resetLocaleForTesting,
+  setLocale,
+} from '../../src/i18n/store.js';
+import {
+  pipelinesFixture,
+  pipelinesConfigFixture,
+  thresholdSchemeCatalogFixture,
+} from '../fixtures/pipelines.js';
 
 async function flushMicrotasks(times = 12): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -84,10 +94,17 @@ describe('PipelinesPage', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    __resetLocaleForTesting();
     container = document.createElement('div');
     document.body.appendChild(container);
     (client.listConfig as any).mockResolvedValue(pipelinesConfigFixture);
     (client.listPipelines as any).mockResolvedValue(pipelinesFixture);
+    (client.listThresholdSchemes as any).mockResolvedValue(thresholdSchemeCatalogFixture);
+    (client.mutateThresholdScheme as any).mockResolvedValue({
+      op: 'create',
+      name: 'new-scheme',
+      scheme: { handoff: 0.5, reuse: 0.25 },
+    });
     (client.putKey as any).mockResolvedValue({ entry: pipelinesConfigFixture.entries[3], store: null });
     (client.deleteKey as any).mockResolvedValue({ entry: pipelinesConfigFixture.entries[0], store: null });
   });
@@ -96,6 +113,7 @@ describe('PipelinesPage', () => {
     render(null, container);
     document.body.removeChild(container);
     window.history.pushState({}, '', '/');
+    __resetLocaleForTesting();
     vi.resetAllMocks();
   });
 
@@ -327,6 +345,196 @@ describe('PipelinesPage', () => {
     const expanded = stageSection(container, 'small-feature');
     expect(expanded.querySelector('[data-testid="pipeline-config"]')).not.toBeNull();
     expect(expanded.querySelector('[data-testid="stage-gate-select"]')).not.toBeNull();
+  });
+
+  it('keeps Defaults model-only and moves legacy thresholds plus stage handoff under Advanced Overrides', async () => {
+    await mount(container);
+    const defaults = container.querySelector('[data-testid="pipelines-defaults"]')!;
+    const headings = [...defaults.querySelectorAll('[data-testid="defaults-matrix"] th')]
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual(['Role', 'Model', 'Default', 'Planner']);
+    expect(defaults.querySelector('[data-key="handoff.threshold"]')).toBeNull();
+
+    const advanced = container.querySelector(
+      '[data-testid="pipelines-advanced"]'
+    ) as HTMLDetailsElement;
+    expect(advanced.open).toBe(false);
+    expect(advanced.querySelector('[data-key="handoff.threshold"]')).not.toBeNull();
+    expect(advanced.querySelector('[data-key="handoff.roles.reviewer"]')).not.toBeNull();
+
+    await expandConfig(container, 'small-feature');
+    const section = stageSection(container, 'small-feature');
+    expect(
+      section.querySelector('[data-testid="pipeline-stages"] [data-testid="stage-handoff"]')
+    ).toBeNull();
+    expect(
+      section.querySelector(
+        '[data-testid="pipeline-stage-advanced"] [data-testid="stage-handoff"]'
+      )
+    ).not.toBeNull();
+  });
+
+  it('keeps beat timing in Defaults and runtime/context lifecycle gates separate in global Advanced Overrides', async () => {
+    await mount(container);
+    expect(container.querySelector('[data-testid="pipelines-defaults-keepalive"]')).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="pipelines-advanced"] [data-key="keepalive.runtimes.claude"]'
+      )
+    ).toBeNull();
+
+    const globalButton = [...container.querySelectorAll('[data-testid="pipelines-mode"] button')]
+      .find((button) => button.textContent === 'Global')!;
+    await clickAndFlush(globalButton);
+
+    expect(container.querySelector('[data-testid="pipelines-defaults-keepalive"]')).not.toBeNull();
+    const advanced = container.querySelector('[data-testid="pipelines-advanced"]')!;
+    expect(advanced.querySelector('[data-key="keepalive.runtimes.claude"]')).not.toBeNull();
+    expect(advanced.querySelector('[data-key="keepalive.contextFloor"]')).not.toBeNull();
+    expect(advanced.textContent).toContain('lifecycle and cache behavior');
+    expect(
+      advanced.querySelector('[data-key="thresholds.bindings.claude"]')
+    ).toBeNull();
+  });
+
+  it('localizes open global and per-pipeline Advanced threshold controls across live locale switches', async () => {
+    const localeFixture = {
+      ...pipelinesFixture,
+      pipelines: pipelinesFixture.pipelines.map((pipeline) =>
+        pipeline.name !== 'small-feature'
+          ? pipeline
+          : {
+              ...pipeline,
+              stages: pipeline.stages.map((stage) =>
+                stage.id !== 'implement'
+                  ? stage
+                  : {
+                      ...stage,
+                      effectiveHandoff: {
+                        value: 0.6,
+                        source: 'stage-override-project',
+                      },
+                    }
+              ),
+            }
+      ),
+    };
+    (client.listPipelines as any).mockResolvedValue(localeFixture);
+    await mount(container);
+    const globalButton = [...container.querySelectorAll('[data-testid="pipelines-mode"] button')]
+      .find((button) => button.textContent === 'Global')!;
+    await clickAndFlush(globalButton);
+
+    const globalAdvanced = container.querySelector(
+      '[data-testid="pipelines-advanced"]'
+    ) as HTMLDetailsElement;
+    await clickAndFlush(globalAdvanced.querySelector('summary'));
+    await expandConfig(container, 'small-feature');
+    const pipelineAdvanced = stageSection(container, 'small-feature').querySelector(
+      '[data-testid="pipeline-stage-advanced"]'
+    ) as HTMLDetailsElement;
+    await clickAndFlush(pipelineAdvanced.querySelector('summary'));
+
+    const handoff = stageControl(
+      container,
+      'stage-handoff',
+      'small-feature',
+      'implement'
+    )!;
+    expect(globalAdvanced.open).toBe(true);
+    expect(pipelineAdvanced.open).toBe(true);
+    expect(globalAdvanced.querySelector('summary')!.textContent).toContain(
+      'Advanced overrides'
+    );
+    expect(pipelineAdvanced.querySelector('summary')!.textContent).toContain(
+      'Advanced stage thresholds'
+    );
+    const englishDescriptions = [
+      'Context-handoff threshold at which agents should hand off',
+      'Context-handoff threshold for Reviewer workers',
+      'Allow keepalive beats under the Claude Code runtime',
+      'Minimum context tokens required for keepalive parking',
+    ];
+    const rawCatalogDescriptions = [
+      'Context-handoff threshold at which agents should hand off',
+      'Context-handoff threshold for reviewer workers',
+      'Allow keepalive beats under the Claude Code runtime',
+      'Minimum context tokens required for keepalive parking',
+    ];
+    for (const description of englishDescriptions) {
+      expect(globalAdvanced.textContent).toContain(description);
+    }
+    const englishAdvancedText =
+      `${globalAdvanced.textContent ?? ''} ${pipelineAdvanced.textContent ?? ''}`;
+    for (const literal of ['Handoff', 'Fraction', 'Remaining tokens', 'Inherit']) {
+      expect(englishAdvancedText).toContain(literal);
+    }
+
+    await act(async () => {
+      setLocale('zh-cn');
+      await flushMicrotasks();
+    });
+    expect(globalAdvanced.open).toBe(true);
+    expect(pipelineAdvanced.open).toBe(true);
+    expect(globalAdvanced.querySelector('summary')!.textContent).toContain('高级覆盖');
+    expect(pipelineAdvanced.querySelector('summary')!.textContent).toContain(
+      '高级阶段阈值'
+    );
+    expect(globalAdvanced.textContent).toContain('智能体应发起交接的上下文阈值');
+    expect(globalAdvanced.textContent).toContain('审查者 worker 的上下文交接阈值');
+    expect(globalAdvanced.textContent).toContain(
+      '允许 Claude Code 运行时使用 keepalive 心跳'
+    );
+    expect(globalAdvanced.textContent).toContain(
+      '允许 keepalive 停驻所需的最少上下文 token 数'
+    );
+    for (const literal of ['交接', '比例', '剩余 token', '继承']) {
+      expect(handoff.textContent).toContain(literal);
+    }
+    const chineseAdvancedText =
+      `${globalAdvanced.textContent ?? ''} ${pipelineAdvanced.textContent ?? ''}`;
+    for (const description of rawCatalogDescriptions) {
+      expect(chineseAdvancedText).not.toContain(description);
+    }
+    for (const literal of ['Handoff', 'Fraction', 'Remaining tokens', 'Inherit']) {
+      expect(chineseAdvancedText).not.toContain(literal);
+    }
+
+    await act(async () => {
+      setLocale('ja');
+      await flushMicrotasks();
+    });
+    expect(globalAdvanced.open).toBe(true);
+    expect(pipelineAdvanced.open).toBe(true);
+    expect(globalAdvanced.querySelector('summary')!.textContent).toContain(
+      '高度な上書き'
+    );
+    expect(pipelineAdvanced.querySelector('summary')!.textContent).toContain(
+      '高度なステージしきい値'
+    );
+    expect(globalAdvanced.textContent).toContain(
+      'エージェントが引き継ぐコンテキストしきい値'
+    );
+    expect(globalAdvanced.textContent).toContain(
+      'レビュー担当 worker のコンテキスト引き継ぎしきい値'
+    );
+    expect(globalAdvanced.textContent).toContain(
+      'Claude Code ランタイムで keepalive ビートを許可'
+    );
+    expect(globalAdvanced.textContent).toContain(
+      'keepalive 待機に必要な最小コンテキストトークン数'
+    );
+    for (const literal of ['引き継ぎ', '割合', '残りトークン', '継承']) {
+      expect(handoff.textContent).toContain(literal);
+    }
+    const japaneseAdvancedText =
+      `${globalAdvanced.textContent ?? ''} ${pipelineAdvanced.textContent ?? ''}`;
+    for (const description of rawCatalogDescriptions) {
+      expect(japaneseAdvancedText).not.toContain(description);
+    }
+    for (const literal of ['Handoff', 'Fraction', 'Remaining tokens', 'Inherit']) {
+      expect(japaneseAdvancedText).not.toContain(literal);
+    }
   });
 
   it('rejects a malformed name and, once valid, navigates to the graph route in edit mode (pipeline-canvas-edit)', async () => {

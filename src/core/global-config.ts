@@ -9,6 +9,7 @@ import {
   type ProjectRegistryState,
 } from './project-registry.js';
 import type { ThresholdValue } from './model-presets.js';
+import type { ProbeRuntime } from './runtime-adapters.js';
 import {
   SUPPORTED_CLI_LOCALES,
   resolveCliLocale,
@@ -21,6 +22,7 @@ import {
 } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { isRetentionMode, type RetentionMode } from './retention.js';
+import type { DispatchRuntime } from './runtime-adapters.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -146,6 +148,9 @@ export interface GlobalConfig {
       shipper?: ThresholdValue;
     };
   };
+  thresholds?: {
+    bindings?: Partial<Record<ProbeRuntime | 'default', string>>;
+  };
   /**
    * Machine-wide autopilot defaults; project config of the same name wins
    * over this (see `resolveAutopilotGatePolicy`/`resolveAutopilotSelectionPolicy`
@@ -198,7 +203,7 @@ export interface GlobalConfig {
       gates?: Record<string, 'on' | 'off'>;
       models?: Record<string, string>;
       handoff?: Record<string, ThresholdValue>;
-      runtimes?: Record<string, 'claude' | 'codex'>;
+      runtimes?: Record<string, DispatchRuntime>;
     }
   >;
 }

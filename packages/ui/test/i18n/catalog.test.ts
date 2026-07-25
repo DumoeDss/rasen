@@ -69,6 +69,19 @@ describe('catalog completeness — shipped locales have key-for-key parity (desi
     }
   });
 
+  it('threshold-management keys are translated in every shipped locale', () => {
+    const thresholdKeys = Object.keys(EN).filter((key) =>
+      key.startsWith('pipelines.threshold.')
+    );
+    expect(thresholdKeys.length).toBeGreaterThan(40);
+    for (const key of thresholdKeys) {
+      expect(ZH[key], `missing zh-cn threshold key ${key}`).toBeTruthy();
+      expect(JA[key], `missing ja threshold key ${key}`).toBeTruthy();
+      expect(ZH[key], `zh-cn fell back to English for ${key}`).not.toBe(EN[key]);
+      expect(JA[key], `ja fell back to English for ${key}`).not.toBe(EN[key]);
+    }
+  });
+
   it('defines localized enabled label, description, state, and accessible-name keys', () => {
     for (const [locale, catalog] of Object.entries(CATALOGS)) {
       for (const key of [

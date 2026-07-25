@@ -5,6 +5,8 @@ import type { ConfigScope } from './config-keys.js';
 import { thresholdSchema } from './pipeline-registry/types.js';
 import { RETENTION_MODES } from './retention.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
+import { DISPATCH_RUNTIMES, PROBE_RUNTIMES } from './runtime-adapters.js';
+import { ThresholdSchemeNameSchema } from './threshold-schemes.js';
 
 /**
  * Zod schema for global Rasen configuration.
@@ -91,6 +93,21 @@ export const GlobalConfigSchema = z
           .optional(),
       })
       .optional(),
+    thresholds: z
+      .object({
+        bindings: z
+          .record(z.string(), ThresholdSchemeNameSchema)
+          .refine(
+            (bindings) =>
+              Object.keys(bindings).every(
+                (runtime) => runtime === 'default' || PROBE_RUNTIMES.includes(runtime as never)
+              ),
+            { error: `binding runtime must be default or one of: ${PROBE_RUNTIMES.join(', ')}` }
+          )
+          .optional()
+          .default({}),
+      })
+      .optional(),
     // UI-managed preferences. Typed (rather than left to passthrough) so the
     // registry round-trip test for `ui.pinnedSpaces` stays meaningful; still
     // `.passthrough()` so a future UI key does not need a schema bump to persist.
@@ -115,6 +132,7 @@ export const GlobalConfigSchema = z
             gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
             models: z.record(z.string(), z.string().min(1)).optional(),
             handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+            runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
           })
           .passthrough()
       )

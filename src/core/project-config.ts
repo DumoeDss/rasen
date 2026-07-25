@@ -10,6 +10,16 @@ import { withProjectRegistryLock, type ProjectPathOptions } from './project-regi
 import { isKebabId } from './id.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
+  DISPATCH_RUNTIMES,
+  PROBE_RUNTIMES,
+  hasRuntimeCapability,
+  type DispatchRuntime,
+} from './runtime-adapters.js';
+import {
+  ThresholdSchemeNameSchema,
+  validateThresholdSchemeName,
+} from './threshold-schemes.js';
+import {
   reportConfigDiagnostic,
   type ConfigDiagnostic,
   type ConfigDiagnosticReporter,
@@ -156,6 +166,23 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Context-handoff threshold configuration'),
 
+  thresholds: z
+    .object({
+      bindings: z
+        .record(z.string(), ThresholdSchemeNameSchema)
+        .refine(
+          (bindings) =>
+            Object.keys(bindings).every(
+              (runtime) => runtime === 'default' || PROBE_RUNTIMES.includes(runtime as never)
+            ),
+          { error: `binding runtime must be default or one of: ${PROBE_RUNTIMES.join(', ')}` }
+        )
+        .optional()
+        .default({}),
+    })
+    .optional()
+    .describe('Runtime threshold-scheme bindings'),
+
   // Optional: keepalive gate for `rasen agent wait` (cli-agent-wait spec).
   // Only `enabled` and `beatSeconds` are project-settable (the registry marks
   // runtimes/contextFloor global-only — machine-level runtime params); project
@@ -216,7 +243,7 @@ export const ProjectConfigSchema = z.object({
           gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
           models: z.record(z.string(), z.string().min(1)).optional(),
           handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
-          runtimes: z.record(z.string(), z.enum(['claude', 'codex'])).optional(),
+          runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
         })
         .passthrough()
     )
@@ -396,7 +423,7 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
       const gates: Record<string, 'on' | 'off'> = {};
       const models: Record<string, string> = {};
       const handoff: Record<string, ThresholdValue> = {};
-      const runtimes: Record<string, 'claude' | 'codex'> = {};
+      const runtimes: Record<string, DispatchRuntime> = {};
       // `gates`/`models`/`handoff` leaves are keyed by stage; `runtimes` by role.
       for (const [leafKey, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
         const label = `pipelines.${pipelineName}.${axis}.${leafKey}`;
@@ -407,8 +434,11 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
           if (typeof leaf === 'string' && leaf.length > 0) models[leafKey] = leaf;
           else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
         } else if (axis === 'runtimes') {
-          if (leaf === 'claude' || leaf === 'codex') runtimes[leafKey] = leaf;
-          else console.warn(`Invalid '${label}' field in config (must be 'claude' or 'codex')`);
+          if (hasRuntimeCapability(leaf, 'canDispatch')) runtimes[leafKey] = leaf;
+          else {
+            const expected = DISPATCH_RUNTIMES.map((runtime) => `'${runtime}'`).join(' or ');
+            console.warn(`Invalid '${label}' field in config (must be ${expected})`);
+          }
         } else {
           const parsed = thresholdSchema('threshold').safeParse(leaf);
           if (parsed.success) handoff[leafKey] = parsed.data;
@@ -879,6 +909,46 @@ function parseProjectConfigContent(
           },
           reporter
         );
+      }
+    }
+
+    // Runtime threshold bindings preserve syntactically valid scheme names
+    // even when the referenced machine-local scheme is absent. Resolution
+    // reports dangling names; parsing only rejects invalid rows/keys.
+    if (raw.thresholds !== undefined) {
+      if (raw.thresholds && typeof raw.thresholds === 'object' && !Array.isArray(raw.thresholds)) {
+        const thresholdsRaw = raw.thresholds as Record<string, unknown>;
+        const bindingsRaw = thresholdsRaw.bindings;
+        if (bindingsRaw === undefined) {
+          config.thresholds = { bindings: {} };
+        } else if (
+          bindingsRaw &&
+          typeof bindingsRaw === 'object' &&
+          !Array.isArray(bindingsRaw)
+        ) {
+          const bindings: Record<string, string> = {};
+          for (const [runtime, schemeName] of Object.entries(
+            bindingsRaw as Record<string, unknown>
+          )) {
+            const validRuntime =
+              runtime === 'default' || hasRuntimeCapability(runtime, 'canProbeContext');
+            const validScheme =
+              typeof schemeName === 'string' &&
+              validateThresholdSchemeName(schemeName) === null;
+            if (validRuntime && validScheme) {
+              bindings[runtime] = schemeName;
+            } else {
+              console.warn(
+                `Invalid 'thresholds.bindings.${runtime}' field in config (runtime must be default or one of ${PROBE_RUNTIMES.join(', ')} and value must be a valid non-reserved scheme name)`
+              );
+            }
+          }
+          config.thresholds = { bindings };
+        } else {
+          console.warn(`Invalid 'thresholds.bindings' field in config (must be an object)`);
+        }
+      } else {
+        console.warn(`Invalid 'thresholds' field in config (must be an object)`);
       }
     }
 

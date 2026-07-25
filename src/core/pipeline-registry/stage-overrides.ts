@@ -23,7 +23,9 @@ import {
   type ResolveEffectiveConfigOptions,
 } from '../effective-config.js';
 import type { ResolvedGatePolicy } from '../project-config.js';
+import { THRESHOLD_ROLES } from '../threshold-values.js';
 import {
+  normalizeAgentRuntimeConfig,
   resolveStageHandoffConfig,
   resolveStageRuntimeConfig,
   type HandoffConfigLayers,
@@ -34,11 +36,14 @@ import {
   type RuntimeSource,
   type Stage,
   type StageConfigOverrides,
+  type AgentRuntime,
   type StageOverride,
   type StageOverrideScope,
   type StageRole,
   type ThresholdValue,
+  type ThresholdResolutionContext,
 } from './types.js';
+import { hasRuntimeCapability } from '../runtime-adapters.js';
 
 export type { StageOverride, StageOverrideScope };
 
@@ -52,7 +57,45 @@ export interface PipelineStageOverrides {
   gates: Map<string, StageOverride<'on' | 'off'>>;
   models: Map<string, StageOverride<string>>;
   handoff: Map<string, StageOverride<ThresholdValue>>;
-  runtimes: Map<string, StageOverride<'claude' | 'codex'>>;
+  runtimes: Map<string, StageOverride<AgentRuntime>>;
+}
+
+export type RoleRuntimeSource =
+  | 'config-project'
+  | 'config-store'
+  | 'config-global'
+  | 'declaration'
+  | 'default';
+
+export interface ResolvedRoleRuntime {
+  runtime: AgentRuntime;
+  source: RoleRuntimeSource;
+}
+
+/**
+ * Resolves the one pipeline-wide runtime for every dispatch role. Reuse is
+ * role-scoped (not stage-scoped), so stage declarations and stage order never
+ * participate in this chain:
+ *
+ * config role override > pipeline agents role declaration > Claude default.
+ */
+export function resolvePipelineRoleRuntimes(
+  pipeline: PipelineYaml,
+  overrides: PipelineStageOverrides
+): Record<StageRole, ResolvedRoleRuntime> {
+  return Object.fromEntries(
+    THRESHOLD_ROLES.map((role): [StageRole, ResolvedRoleRuntime] => {
+      const override = overrides.runtimes.get(role);
+      if (override) {
+        return [role, { runtime: override.value, source: `config-${override.scope}` }];
+      }
+      const declared = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
+      if (declared) {
+        return [role, { runtime: declared, source: 'declaration' }];
+      }
+      return [role, { runtime: 'claude', source: 'default' }];
+    })
+  ) as Record<StageRole, ResolvedRoleRuntime>;
 }
 
 /** `EffectiveConfigEntry.source` narrowed to the three layers a family instance can resolve from. */
@@ -106,7 +149,7 @@ export function bucketPipelineStageOverrides(
         }
         break;
       case 'runtimes':
-        if (entry.value === 'claude' || entry.value === 'codex') {
+        if (hasRuntimeCapability(entry.value, 'canDispatch')) {
           overrides.runtimes.set(leaf, { value: entry.value, scope });
         }
         break;
@@ -197,8 +240,13 @@ export interface EffectiveStageConfig {
   declaredGate: boolean;
   gate: MaskedStageGate;
   model: { value: string | null; source: ModelSource };
-  handoff: { threshold: ThresholdValue; source: ResolvedStageHandoffConfig['source'] };
-  runtime: { value: 'claude' | 'codex'; source: RuntimeSource };
+  handoff: {
+    threshold: ThresholdValue;
+    source: ResolvedStageHandoffConfig['source'];
+    binding?: ResolvedStageHandoffConfig['binding'];
+    diagnostics?: ResolvedStageHandoffConfig['diagnostics'];
+  };
+  runtime: { value: AgentRuntime; source: RuntimeSource };
 }
 
 /** The per-root resolution inputs a pipeline's effective per-stage values are computed against. */
@@ -207,6 +255,7 @@ export interface EffectiveStageInputs {
   basePolicy: ResolvedGatePolicy;
   configLayers?: HandoffConfigLayers;
   modelLayers?: ModelConfigLayers;
+  thresholdContext?: ThresholdResolutionContext;
 }
 
 /** The `StageConfigOverrides` for one stage: model/handoff by stage id, runtime by role. */
@@ -239,7 +288,8 @@ export function resolveEffectiveStage(
     pipeline,
     inputs.configLayers,
     inputs.modelLayers,
-    stageOverrides
+    stageOverrides,
+    inputs.thresholdContext
   );
   const gate = resolveMaskedStageGate(
     stage.gate,
@@ -253,7 +303,12 @@ export function resolveEffectiveStage(
     declaredGate: stage.gate,
     gate,
     model: { value: runtime.model ?? null, source: runtime.modelSource },
-    handoff: { threshold: handoff.threshold, source: handoff.source },
+    handoff: {
+      threshold: handoff.threshold,
+      source: handoff.source,
+      ...(handoff.binding ? { binding: handoff.binding } : {}),
+      ...(handoff.diagnostics ? { diagnostics: handoff.diagnostics } : {}),
+    },
     runtime: { value: runtime.runtime, source: runtime.runtimeSource },
   };
 }

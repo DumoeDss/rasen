@@ -14,6 +14,7 @@ import {
 } from '../../src/core/config-keys.js';
 import { GlobalConfigSchema } from '../../src/core/config-schema.js';
 import { saveNamedProfile } from '../../src/core/named-profiles.js';
+import { saveThresholdScheme } from '../../src/core/threshold-schemes.js';
 import { ProjectConfigSchema } from '../../src/core/project-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
 
@@ -374,11 +375,10 @@ describe('config-keys registry', () => {
         ]);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
-      // Five wildcard families: featureFlags (the sole global-only wildcard)
-      // plus the four all-three-scope pipelines.* families
-      // (gates/models/handoff per stage, runtimes per role).
+      // Six wildcard families: featureFlags, four pipelines families, and
+      // runtime threshold bindings.
       const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);
-      expect(wildcards.length).toBe(5);
+      expect(wildcards.length).toBe(6);
       // featureFlags is the sole global-only wildcard; the pipelines families
       // are settable in all three scopes.
       expect(wildcards.filter((def) => def.scopes.join(',') === 'global').length).toBe(1);
@@ -419,6 +419,7 @@ describe('config-keys registry', () => {
         { instance: { pipelines: { p: { handoff: { s: 0.6 } } } } },
         { instance: { pipelines: { p: { handoff: { s: { remainingTokens: 60_000 } } } } } },
         { instance: { pipelines: { p: { runtimes: { reviewer: 'codex' } } } } },
+        { instance: { thresholds: { bindings: { default: 'focused' } } } },
       ];
       for (const { instance } of cases) {
         // global JSON schema
@@ -453,6 +454,51 @@ describe('wildcard config key families', () => {
           expect(validateConfigValue(def, family.invalid)).not.toBeNull();
         }
       });
+    }
+  });
+
+  it('derives the runtime family choices from dispatch-capable runtimes', () => {
+    const def = findWildcardDefinition(
+      'pipelines.small-feature.runtimes.reviewer',
+      'project'
+    )!;
+    expect(def.enumValues).toEqual(['claude', 'codex']);
+    for (const runtime of ['claude', 'codex']) {
+      expect(validateConfigValue(def, runtime)).toBeNull();
+    }
+    for (const runtime of ['zed', 'unknown']) {
+      expect(validateConfigValue(def, runtime)).not.toBeNull();
+    }
+  });
+
+  it('validates binding placeholders from probe capability and values dynamically', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-binding-keys-'));
+    const oldHome = process.env.RASEN_HOME;
+    process.env.RASEN_HOME = tempDir;
+    try {
+      saveThresholdScheme('focused', { handoff: 0.5, reuse: 0.25 });
+      for (const runtime of ['claude', 'codex', 'default']) {
+        const key = `thresholds.bindings.${runtime}`;
+        expect(validateConfigKeyPath(key, 'global').valid).toBe(true);
+        const def = findWildcardDefinition(key, 'global')!;
+        expect(validateConfigValue(def, 'focused', 'global')).toBeNull();
+        expect(validateConfigValue(def, 'missing', 'global')).toContain('must be one of');
+      }
+      expect(validateConfigKeyPath('thresholds.bindings.zed', 'global')).toMatchObject({
+        valid: false,
+      });
+      expect(
+        collectFamilyInstancePaths(
+          CONFIG_KEY_REGISTRY.find(
+            (definition) => definition.pattern === 'thresholds.bindings.<runtime>'
+          )!,
+          { thresholds: { bindings: { codex: 'focused', zed: 'focused' } } }
+        )
+      ).toEqual(['thresholds.bindings.codex']);
+    } finally {
+      if (oldHome === undefined) delete process.env.RASEN_HOME;
+      else process.env.RASEN_HOME = oldHome;
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 

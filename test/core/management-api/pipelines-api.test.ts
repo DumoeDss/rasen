@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -6,6 +6,11 @@ import * as os from 'node:os';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
+import type { PipelineCatalogResponse } from '../../../src/core/management-api/wire-types.js';
+import type { DispatchRuntime } from '../../../src/core/runtime-adapters.js';
+import { getGlobalDataDir } from '../../../src/core/index.js';
+import { registerStore } from '../../../src/core/store/registry.js';
+import { runCLI } from '../../helpers/run-cli.js';
 
 const TOKEN = 'test-token-pipelines-abc123';
 
@@ -62,6 +67,68 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
   let projectRoot: string;
   let originalEnv: NodeJS.ProcessEnv;
   let handle: ManagementServerHandle;
+  let storeRoots: string[];
+
+  function writeScheme(name: string, content: string): void {
+    const directory = path.join(tempConfigHome, 'rasen', 'schemes');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, `${name}.yaml`), content);
+  }
+
+  function writeBoundPipeline(root = projectRoot): void {
+    const directory = path.join(root, 'rasen', 'pipelines', 'bound-policy');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, 'pipeline.yaml'),
+      [
+        'name: bound-policy',
+        'agents:',
+        '  planner: claude',
+        '  implementer: codex',
+        'handoff:',
+        '  threshold: 0.8',
+        'reuse:',
+        '  threshold: 0.4',
+        'stages:',
+        '  - id: plan',
+        '    skill: rasen-propose',
+        '    role: planner',
+        '  - id: apply',
+        '    skill: rasen-apply-change',
+        '    role: implementer',
+        '    requires: [plan]',
+        '',
+      ].join('\n')
+    );
+  }
+
+  function writeLifecyclePipeline(root = projectRoot): void {
+    const directory = path.join(root, 'rasen', 'pipelines', 'threshold-lifecycle');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, 'pipeline.yaml'),
+      [
+        'name: threshold-lifecycle',
+        'agents:',
+        '  implementer: codex',
+        'stages:',
+        '  - id: apply',
+        '    skill: rasen-apply-change',
+        '    role: implementer',
+        '',
+      ].join('\n')
+    );
+  }
+
+  async function makeStore(id: string, configContent: string): Promise<string> {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `rasen-pipelines-api-store-${id}-`));
+    fs.mkdirSync(path.join(root, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'rasen', 'changes', 'archive'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), configContent);
+    await registerStore({ id, localPath: root, globalDataDir: getGlobalDataDir() });
+    storeRoots.push(root);
+    return root;
+  }
 
   async function startServer(overrides: Partial<ManagementApiContext> = {}): Promise<ManagementServerHandle> {
     const context: ManagementApiContext = {
@@ -83,7 +150,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
   beforeEach(() => {
     tempConfigHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipelines-api-home-'));
     projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipelines-api-proj-'));
-    fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
+    fs.mkdirSync(path.join(projectRoot, 'rasen', 'specs'), { recursive: true });
     fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
 
     originalEnv = { ...process.env };
@@ -91,6 +158,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
     process.env.XDG_CONFIG_HOME = tempConfigHome;
     process.env.XDG_DATA_HOME = tempConfigHome;
     delete process.env.RASEN_LANG;
+    storeRoots = [];
   });
 
   afterEach(async () => {
@@ -98,6 +166,9 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
     process.env = originalEnv;
     fs.rmSync(tempConfigHome, { recursive: true, force: true });
     fs.rmSync(projectRoot, { recursive: true, force: true });
+    for (const root of storeRoots) {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   describe('pipelines inventory (pipeline-http-api)', () => {
@@ -157,6 +228,455 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
         expect(otherGated.effectiveGate.value).toBe(false);
         expect(otherGated.effectiveGate.source).toBe('autopilot-project');
       }
+    });
+
+    it('projects runtime-bound handoff and independently resolved reuse metadata without changing legacy fields', async () => {
+      writeBoundPipeline();
+      writeScheme(
+        'claude-policy',
+        'handoff: 0.51\nhandoffRoles:\n  planner: 0.52\nreuse: 0.21\nreuseRoles:\n  planner: 0.22\n'
+      );
+      writeScheme(
+        'codex-policy',
+        'handoff: 0.61\nhandoffRoles:\n  implementer: 0.62\nreuse: 0.31\nreuseRoles:\n  implementer: 0.32\n'
+      );
+      writeScheme(
+        'default-policy',
+        'handoff: 0.71\nreuse: 0.33\n'
+      );
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        [
+          'schema: spec-driven',
+          'thresholds:',
+          '  bindings:',
+          '    claude: claude-policy',
+          '    codex: codex-policy',
+          '    default: default-policy',
+          '',
+        ].join('\n')
+      );
+
+      const server = await startServer();
+      const response = await req(server.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines',
+        headers: authed(),
+      });
+      expect(response.status).toBe(200);
+      const pipeline = (response.json() as any).pipelines.find(
+        (candidate: any) => candidate.name === 'bound-policy'
+      );
+      expect(pipeline).toBeDefined();
+
+      const plan = pipeline.stages.find((stage: any) => stage.id === 'plan');
+      expect(plan).toMatchObject({
+        id: 'plan',
+        role: 'planner',
+        skill: 'rasen-propose',
+        gate: false,
+        effectiveRuntime: { value: 'claude', source: 'agent' },
+        effectiveHandoff: {
+          value: 0.52,
+          source: 'project-scheme-role',
+          binding: {
+            scope: 'project',
+            row: 'claude',
+            scheme: 'claude-policy',
+          },
+        },
+      });
+      const apply = pipeline.stages.find((stage: any) => stage.id === 'apply');
+      expect(apply.effectiveRuntime).toEqual({
+        value: 'codex',
+        source: 'agent',
+      });
+      expect(apply.effectiveHandoff).toMatchObject({
+        value: 0.62,
+        source: 'project-scheme-role',
+        binding: {
+          scope: 'project',
+          row: 'codex',
+          scheme: 'codex-policy',
+        },
+      });
+
+      expect(pipeline.effectiveReuse).toMatchObject({
+        planner: 'auto',
+        implementer: 'auto',
+        threshold: 0.33,
+        roles: { planner: 0.22, implementer: 0.32 },
+        sources: {
+          threshold: 'project-scheme',
+          roles: {
+            planner: 'project-scheme-role',
+            implementer: 'project-scheme-role',
+          },
+        },
+        bindings: {
+          threshold: {
+            scope: 'project',
+            row: 'default',
+            scheme: 'default-policy',
+          },
+          roles: {
+            planner: {
+              scope: 'project',
+              row: 'claude',
+              scheme: 'claude-policy',
+            },
+            implementer: {
+              scope: 'project',
+              row: 'codex',
+              scheme: 'codex-policy',
+            },
+          },
+        },
+      });
+    });
+
+    it('preserves dangling diagnostics while falling through to an inherited-store binding', async () => {
+      writeBoundPipeline();
+      writeScheme(
+        'store-policy',
+        'handoff: 0.64\nhandoffRoles:\n  implementer: 0.65\nreuse: 0.34\nreuseRoles:\n  implementer: 0.35\n'
+      );
+      await makeStore(
+        'threshold-store',
+        'schema: spec-driven\nthresholds:\n  bindings:\n    codex: store-policy\n'
+      );
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        [
+          'schema: spec-driven',
+          'store: threshold-store',
+          'thresholds:',
+          '  bindings:',
+          '    codex: missing-project-policy',
+          '',
+        ].join('\n')
+      );
+
+      const server = await startServer();
+      const response = await req(server.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines',
+        headers: authed(),
+      });
+      expect(response.status).toBe(200);
+      const pipeline = (response.json() as any).pipelines.find(
+        (candidate: any) => candidate.name === 'bound-policy'
+      );
+      const apply = pipeline.stages.find((stage: any) => stage.id === 'apply');
+      expect(apply.effectiveHandoff).toMatchObject({
+        value: 0.65,
+        source: 'store-scheme-role',
+        binding: {
+          scope: 'store',
+          row: 'codex',
+          scheme: 'store-policy',
+        },
+        diagnostics: [
+          {
+            code: 'missing-scheme',
+            scope: 'project',
+            row: 'codex',
+            scheme: 'missing-project-policy',
+          },
+        ],
+      });
+      expect(pipeline.effectiveReuse).toMatchObject({
+        threshold: 0.4,
+        roles: { implementer: 0.35 },
+        bindings: {
+          roles: {
+            implementer: {
+              scope: 'store',
+              row: 'codex',
+              scheme: 'store-policy',
+            },
+          },
+        },
+      });
+      expect(pipeline.effectiveReuse.bindings?.threshold).toBeUndefined();
+      expect(pipeline.effectiveReuse.diagnostics).toEqual([
+        expect.objectContaining({
+          code: 'missing-scheme',
+          scope: 'project',
+          row: 'codex',
+          scheme: 'missing-project-policy',
+        }),
+      ]);
+    });
+
+    it('uses one role runtime for CLI, inventory, and detail regardless of conflicting stage order', async () => {
+      writeScheme(
+        'claude-reuse',
+        'handoff: 0.5\nreuse: 0.25\nreuseRoles:\n  planner: 0.11\n'
+      );
+      writeScheme(
+        'codex-reuse',
+        'handoff: 0.5\nreuse: 0.25\nreuseRoles:\n  planner: 0.22\n'
+      );
+      fs.writeFileSync(
+        path.join(tempConfigHome, 'rasen', 'config.json'),
+        JSON.stringify({
+          thresholds: {
+            bindings: { claude: 'claude-reuse', codex: 'codex-reuse' },
+          },
+        })
+      );
+
+      const writePipeline = (name: string, runtimes: ['claude' | 'codex', 'claude' | 'codex']) => {
+        const directory = path.join(projectRoot, 'rasen', 'pipelines', name);
+        fs.mkdirSync(directory, { recursive: true });
+        fs.writeFileSync(
+          path.join(directory, 'pipeline.yaml'),
+          [
+            `name: ${name}`,
+            'agents:',
+            '  planner: claude',
+            'stages:',
+            '  - id: first',
+            '    skill: rasen-propose',
+            '    role: planner',
+            `    runtime: ${runtimes[0]}`,
+            '  - id: second',
+            '    skill: rasen-propose',
+            '    role: planner',
+            `    runtime: ${runtimes[1]}`,
+            '    requires: [first]',
+            '',
+          ].join('\n')
+        );
+      };
+      writePipeline('role-runtime-forward', ['codex', 'claude']);
+      writePipeline('role-runtime-reverse', ['claude', 'codex']);
+
+      const server = await startServer();
+      const inventoryResponse = await req(server.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines',
+        headers: authed(),
+      });
+      expect(inventoryResponse.status).toBe(200);
+      const inventory = inventoryResponse.json() as {
+        pipelines: Array<{
+          name: string;
+          roleRuntimes: Record<string, { value: DispatchRuntime; source: string }>;
+          effectiveReuse: { roles: { planner: number } };
+        }>;
+      };
+
+      for (const name of ['role-runtime-forward', 'role-runtime-reverse']) {
+        const listed = inventory.pipelines.find((pipeline) => pipeline.name === name)!;
+        expect(listed.roleRuntimes.planner).toEqual({
+          value: 'claude',
+          source: 'declaration',
+        });
+        expect(listed.effectiveReuse.roles.planner).toBe(0.11);
+
+        const detailResponse = await req(server.port, {
+          method: 'GET',
+          path: `/api/v1/pipelines/${name}`,
+          headers: authed(),
+        });
+        expect(detailResponse.status).toBe(200);
+        const detail = detailResponse.json() as {
+          pipeline: {
+            roleRuntimes: Record<string, { value: DispatchRuntime; source: string }>;
+            effectiveReuse: { roles: { planner: number } };
+          };
+        };
+        expect(detail.pipeline.roleRuntimes.planner).toEqual(
+          listed.roleRuntimes.planner
+        );
+        expect(detail.pipeline.effectiveReuse.roles.planner).toBe(
+          listed.effectiveReuse.roles.planner
+        );
+
+        const cli = await runCLI(['pipeline', 'show', name, '--json'], {
+          cwd: projectRoot,
+          env: {
+            RASEN_HOME: '',
+            XDG_CONFIG_HOME: tempConfigHome,
+            XDG_DATA_HOME: tempConfigHome,
+          },
+        });
+        expect(cli.exitCode).toBe(0);
+        const shown = JSON.parse(cli.stdout) as {
+          reuse: { roles: { planner: number } };
+        };
+        expect(shown.reuse.roles.planner).toBe(
+          listed.effectiveReuse.roles.planner
+        );
+      }
+    });
+
+    it('runs the threshold UI/core lifecycle through create, bind, resolve, dangling delete, remove, and legacy fallback', async () => {
+      writeLifecyclePipeline();
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        [
+          'schema: spec-driven',
+          'handoff:',
+          '  threshold: 0.73',
+          '  roles:',
+          '    implementer: 0.74',
+          '',
+        ].join('\n')
+      );
+
+      const server = await startServer();
+      const scheme = {
+        handoff: 0.61,
+        handoffRoles: { implementer: 0.62 },
+        reuse: 0.31,
+        reuseRoles: { implementer: 0.32 },
+      };
+      const created = await req(server.port, {
+        method: 'POST',
+        path: '/api/v1/threshold-schemes',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          op: 'create',
+          name: 'lifecycle-policy',
+          scheme,
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      const bound = await req(server.port, {
+        method: 'PUT',
+        path: '/api/v1/config/thresholds.bindings.codex',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ scope: 'project', value: 'lifecycle-policy' }),
+      });
+      expect(bound.status).toBe(200);
+      expect((bound.json() as any).entry).toMatchObject({
+        instanceKey: 'thresholds.bindings.codex',
+        value: 'lifecycle-policy',
+        source: 'project',
+      });
+
+      const readLifecycle = async (): Promise<any> => {
+        const response = await req(server.port, {
+          method: 'GET',
+          path: '/api/v1/pipelines',
+          headers: authed(),
+        });
+        expect(response.status).toBe(200);
+        return (response.json() as any).pipelines.find(
+          (candidate: any) => candidate.name === 'threshold-lifecycle'
+        );
+      };
+
+      const resolved = await readLifecycle();
+      expect(resolved.stages[0].effectiveHandoff).toMatchObject({
+        value: 0.62,
+        source: 'project-scheme-role',
+        binding: {
+          scope: 'project',
+          row: 'codex',
+          scheme: 'lifecycle-policy',
+        },
+      });
+      expect(resolved.effectiveReuse).toMatchObject({
+        threshold: 0.25,
+        roles: { implementer: 0.32 },
+        sources: {
+          threshold: 'default',
+          roles: { implementer: 'project-scheme-role' },
+        },
+        bindings: {
+          roles: {
+            implementer: {
+              scope: 'project',
+              row: 'codex',
+              scheme: 'lifecycle-policy',
+            },
+          },
+        },
+      });
+
+      const deletedWhileBound = await req(server.port, {
+        method: 'POST',
+        path: '/api/v1/threshold-schemes',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'delete', name: 'lifecycle-policy' }),
+      });
+      expect(deletedWhileBound.status).toBe(200);
+      expect(
+        fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf8')
+      ).toContain('codex: lifecycle-policy');
+
+      const dangling = await readLifecycle();
+      expect(dangling.stages[0].effectiveHandoff).toMatchObject({
+        value: 0.74,
+        source: 'project-role',
+        diagnostics: [
+          {
+            code: 'missing-scheme',
+            scope: 'project',
+            row: 'codex',
+            scheme: 'lifecycle-policy',
+          },
+        ],
+      });
+      expect(dangling.effectiveReuse).toMatchObject({
+        threshold: 0.25,
+        roles: { implementer: 0.25 },
+        sources: {
+          threshold: 'default',
+          roles: { implementer: 'default' },
+        },
+        diagnostics: [
+          {
+            code: 'missing-scheme',
+            scope: 'project',
+            row: 'codex',
+            scheme: 'lifecycle-policy',
+          },
+        ],
+      });
+
+      const recreated = await req(server.port, {
+        method: 'POST',
+        path: '/api/v1/threshold-schemes',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          op: 'create',
+          name: 'lifecycle-policy',
+          scheme,
+        }),
+      });
+      expect(recreated.status).toBe(201);
+      expect((await readLifecycle()).stages[0].effectiveHandoff.binding).toEqual({
+        scope: 'project',
+        row: 'codex',
+        scheme: 'lifecycle-policy',
+      });
+
+      const removed = await req(server.port, {
+        method: 'DELETE',
+        path: '/api/v1/config/thresholds.bindings.codex?scope=project',
+        headers: authed({ 'Content-Type': 'application/json' }),
+      });
+      expect(removed.status).toBe(200);
+
+      const legacyFallback = await readLifecycle();
+      expect(legacyFallback.stages[0].effectiveHandoff).toMatchObject({
+        value: 0.74,
+        source: 'project-role',
+      });
+      expect(legacyFallback.stages[0].effectiveHandoff.binding).toBeUndefined();
+      expect(legacyFallback.stages[0].effectiveHandoff.diagnostics).toBeUndefined();
+      expect(legacyFallback.effectiveReuse).toMatchObject({
+        threshold: 0.25,
+        roles: { implementer: 0.25 },
+      });
+      expect(legacyFallback.effectiveReuse.bindings).toBeUndefined();
+      expect(legacyFallback.effectiveReuse.diagnostics).toBeUndefined();
     });
 
     it('rejects PUT and DELETE with 405 (POST is the mutation bridge)', async () => {
@@ -354,9 +874,10 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       const h = await startServer();
       const res = await req(h.port, { method: 'GET', path: '/api/v1/pipeline-catalog', headers: authed() });
       expect(res.status).toBe(200);
-      const body = res.json() as any;
+      const body = res.json() as PipelineCatalogResponse;
+      expectTypeOf(body.runtimes).toEqualTypeOf<DispatchRuntime[]>();
       expect(body.roles).toEqual(expect.arrayContaining(['planner', 'implementer', 'reviewer', 'fixer', 'shipper']));
-      expect(body.runtimes).toEqual(expect.arrayContaining(['claude', 'codex']));
+      expect(body.runtimes).toEqual(['claude', 'codex']);
       expect(body.loopKinds).toEqual(expect.arrayContaining(['review-cycle', 'goal']));
       expect(Array.isArray(body.skills)).toBe(true);
       expect(body.skills.length).toBeGreaterThan(0);
@@ -404,6 +925,37 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(body.valid).toBe(true);
       expect(body.issues.filter((i: any) => i.severity === 'error')).toHaveLength(0);
     });
+
+    it.each(['zed', 'unknown'])(
+      'rejects non-dispatch runtime %s in pipeline drafts',
+      async (runtime) => {
+        const h = await startServer();
+        const definition = {
+          ...validDefinition(),
+          agents: { implementer: runtime },
+          stages: [
+            { id: 'implement', skill: 'rasen-apply-change', role: 'implementer' },
+            {
+              id: 'review',
+              skill: 'rasen-review',
+              role: 'reviewer',
+              runtime,
+              requires: ['implement'],
+            },
+          ],
+        };
+        const res = await req(h.port, {
+          method: 'POST',
+          path: '/api/v1/pipeline-validation',
+          headers: authed({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ definition }),
+        });
+        expect(res.status).toBe(200);
+        const body = res.json() as any;
+        expect(body.valid).toBe(false);
+        expect(body.issues.some((issue: any) => /runtime/.test(issue.path))).toBe(true);
+      }
+    );
 
     it('accepts a floor-free ui draft but rejects the equivalent composed draft', async () => {
       const h = await startServer();

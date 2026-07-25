@@ -12,6 +12,20 @@ import {
 } from '../../src/core/config-schema.js';
 
 describe('config-schema', () => {
+  it('parses empty and explicit threshold binding maps without a fabricated default', () => {
+    expect(GlobalConfigSchema.parse({}).thresholds).toBeUndefined();
+    expect(
+      GlobalConfigSchema.parse({
+        thresholds: { bindings: { claude: 'focused', default: 'balanced' } },
+      }).thresholds?.bindings
+    ).toEqual({ claude: 'focused', default: 'balanced' });
+    expect(
+      GlobalConfigSchema.safeParse({
+        thresholds: { bindings: { zed: 'focused' } },
+      }).success
+    ).toBe(false);
+  });
+
   describe('getNestedValue', () => {
     it('should get a top-level value', () => {
       const obj = { foo: 'bar' };
