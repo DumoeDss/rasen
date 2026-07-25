@@ -9,6 +9,8 @@ Cover the workflow and orchestration skill and command templates that lie outsid
 
 The workflow and orchestration skill templates that lie outside the expert set SHALL be pinned by `test/core/templates/skill-templates-parity.test.ts`, so shared-block and body edits are verified instead of shipping unpinned. Each covered skill template SHALL appear in both the function-payload hash map and the generated-skill-content hash map. Command templates are retired and SHALL NOT appear in any parity hash map. This mirrors how the 19 experts (capability `expert-template-inlining`) and chrome-use (capability `verify-ship-evidence`) are pinned.
 
+When the shared orchestration source or its feature-reduced replacement prose changes, the maintained delivery flow SHALL compile the template source, refresh installed/dogfooding generated skills with the built CLI update command, and recompute both pinned hash entries for every actually affected generated skill. Hashes for unaffected templates SHALL remain unchanged. Generated skill output SHALL reflect the canonical source and SHALL NOT be edited as an independent source of truth.
+
 #### Scenario: Workflow skill templates pinned in both maps
 
 - **WHEN** `test/core/templates/skill-templates-parity.test.ts` is inspected
@@ -18,3 +20,20 @@ The workflow and orchestration skill templates that lie outside the expert set S
 
 - **WHEN** `test/core/templates/skill-templates-parity.test.ts` is inspected
 - **THEN** it SHALL contain no function-payload hash entries for command templates (command templates no longer exist)
+
+#### Scenario: Shared Step H edit follows build and update
+
+- **WHEN** the canonical orchestration template's threshold precedence prose changes
+- **THEN** the implementation SHALL run the repository build before `node dist/cli/index.js update`
+- **AND** the refreshed generated skill content SHALL carry the binding-aware Step H text
+
+#### Scenario: Both hash maps move only for affected consumers
+
+- **WHEN** the parity suite is run after the shared Step H change
+- **THEN** the function-payload and generated-content expected hashes SHALL be refreshed for every template whose rendered output changed
+- **AND** hashes for templates whose output did not change SHALL remain byte-identical
+
+#### Scenario: Feature-reduced orchestration text cannot retain old precedence
+
+- **WHEN** a workflow renders a reduced orchestration feature set that replaces the full reuse paragraph
+- **THEN** its generated handoff guidance SHALL still include the runtime-bound handoff scheme layer and inherited-store layer in the correct order
