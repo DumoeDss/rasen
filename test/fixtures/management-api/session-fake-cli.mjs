@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Keep this executable fixture LF-only; POSIX launches it through this shebang.
 // Stand-in for the real `claude` CLI, used only by supervisor.test.ts and the
 // sessions API integration tests. The supervisor always spawns it with a
 // fixed argv shape (`-p <prompt> --dangerously-skip-permissions

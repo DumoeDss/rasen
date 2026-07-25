@@ -244,6 +244,26 @@ describe('api client', () => {
       expect(JSON.parse(init.body)).toEqual({ kind: 'auto', task: 'do a thing', space: 'store:my-store' });
     });
 
+    it('carries the runtime execution selector in the launchSession JSON body', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, { session: sessionsListFixture.sessions[2]!.session })
+      );
+      await client.launchSession({
+        kind: 'auto',
+        task: 'do a thing',
+        space: 'store:my-store',
+        execution: 'project:member-a',
+      });
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions');
+      expect(JSON.parse(init.body)).toEqual({
+        kind: 'auto',
+        task: 'do a thing',
+        space: 'store:my-store',
+        execution: 'project:member-a',
+      });
+    });
+
     it('keeps the opaque id byte-for-byte (mixed case / separators) inside the query', async () => {
       (fetch as any).mockResolvedValueOnce(jsonResponse(200, { changes: [], errors: [] }));
       await client.listChanges('project:Proj_Mixed-Case.v2');

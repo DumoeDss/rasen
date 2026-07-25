@@ -121,6 +121,69 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
   }, 10_000);
 
+  it('omits --add-dir when the resolved launch facts contain no distinct planning root', async () => {
+    mockSpawnCalls.length = 0;
+    const supervisor = createSessionSupervisor({
+      registry: createSessionRegistry(),
+      resolveAgentCli: async () => process.execPath,
+      killGraceMs: 200,
+    });
+
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen-auto',
+      task: 'MODE=fast-exit same-root',
+      cwd,
+      attachedRoots: [],
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(true);
+    const argv = mockSpawnCalls.at(-1)?.[1] as string[] | undefined;
+    expect(argv).not.toContain('--add-dir');
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+  }, 10_000);
+
+  it('appends a distinct planning root as one literal --add-dir pair on a native executable', async () => {
+    mockSpawnCalls.length = 0;
+    const planningRoot = path.join(cwd, 'planning & root');
+    fs.mkdirSync(planningRoot);
+    const supervisor = createSessionSupervisor({
+      registry: createSessionRegistry(),
+      resolveAgentCli: async () => process.execPath,
+      killGraceMs: 200,
+    });
+
+    const result = await supervisor.launch({
+      kind: 'auto',
+      skill: '/rasen-auto',
+      task: 'MODE=fast-exit attached',
+      cwd,
+      attachedRoots: [planningRoot],
+      timeoutMs: 5000,
+      noOutputTimeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.record).not.toHaveProperty('attachedRoots');
+      expect(result.record).not.toHaveProperty('execution');
+      expect(result.record).not.toHaveProperty('executionProject');
+    }
+    expect(mockSpawnCalls.at(-1)?.[1]).toEqual([
+      '-p',
+      '/rasen-auto MODE=fast-exit attached',
+      '--dangerously-skip-permissions',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--add-dir',
+      planningRoot,
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+  }, 10_000);
+
   it('captures agentSessionId from the stream-json init event', async () => {
     const supervisor = makeSupervisor();
     const result = await supervisor.launch({
