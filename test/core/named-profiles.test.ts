@@ -101,16 +101,17 @@ describe('named profiles', () => {
     ).toThrow('Unknown workflow ID');
   });
 
-  it('normalizes without auto-expanding closure-pulled experts (a saved snapshot lists exactly the chosen ids)', () => {
-    // `auto-command` requires the `review` expert via `requires.skills`, but
-    // normalization (used when saving/exporting a profile) must not widen
-    // the selection with that closure — only install-time resolution does.
+  it('normalizes without persisting closure or compatibility-only dependencies', () => {
+    // `auto-command` requires the `review` expert via `requires.skills`, while
+    // both auto and ship require the internal retention runner. Normalization
+    // must keep the saved snapshot to exactly the selectable roots.
     const definition = parseProfileDefinition({
       version: 1,
-      workflows: ['auto-command'],
+      workflows: ['ship-command', 'auto-command'],
     });
-    expect(definition.workflows).toEqual(['auto-command']);
+    expect(definition.workflows).toEqual(['ship-command', 'auto-command']);
     expect(definition.workflows).not.toContain('review');
+    expect(definition.workflows).not.toContain('retain-command');
   });
 
   it('saveNamedProfile refuses to replace an existing definition unless overwrite is explicit (profile update path)', () => {

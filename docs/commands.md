@@ -410,29 +410,29 @@ rasen-goal --pipeline goal-loop-<variant> <task>
 **What it does:**
 - **define-goal** stage — translates the task into `goal-plan.md`: the goal, the concrete gate (`{kind: measure, command, threshold/target}` or `{kind: evaluate, goal, rubric}`), the work product (`code` | `prose`), and `maxRounds`. This stage has a gate — you confirm a measure command before any round runs
 - **iterate** loop — each round dispatches a warm-reused implementer, then runs the gate: **measure** runs a deterministic command (`{score, passed}`); **evaluate** dispatches a fresh reviewer worker (`{satisfied, gaps}`). Each round is recorded in `goal-run.json` (the authoritative loop position)
-- **tail** — measure/evaluate → `ship` → `archive` (the iterated code is delivered normally); research → `report` (summarized into a final document; no code to ship)
+- **tail** — measure/evaluate → `ship` → `retain` → `archive` (the iterated code is delivered, the frozen retention policy runs, then the change archives); research → `report` only (summarized into a final document; no ship, retain, or archive)
 - Bounded by `maxRounds` (default 5) + `loopStallLimit` (default 2); rounds exhausted are marked `maxRounds-exhausted` — never reported as success
 
 **Backend pipeline family:**
 
 | Keywords in the task | Selected pipeline | Gate (examiner) | Work product | Tail |
 |---|---|---|---|---|
-| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure — a deterministic command | code | ship → archive |
-| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate — a fresh reviewer | code | ship → archive |
-| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate — a fresh reviewer | prose | report |
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure — a deterministic command | code | ship → retain → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate — a fresh reviewer | code | ship → retain → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate — a fresh reviewer | prose | report only |
 
 **Example:**
 ```text
 You: rasen-goal drive the Lighthouse performance score to 90
 
 AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
-     Fetch DAG: define-goal -> iterate (measure gate) -> ship -> archive
+     Fetch DAG: define-goal -> iterate (measure gate) -> ship -> retain -> archive
      ▸ planner -> goal-plan.md (gate: measure, command: lighthouse --output=json, threshold: 90)
      ⏸ gate: confirm the measure command? -> You: continue
      ▸ implementer (round 1) -> edits the perf-critical path
      ▸ measure gate: score 82 (not passed) -> recorded to goal-run.json
      ▸ implementer (round 2, warm-reused) -> further edits
-     ▸ measure gate: score 91 (satisfied) -> ship -> archive
+     ▸ measure gate: score 91 (satisfied) -> ship -> retain -> archive
 ```
 
 **Tips:**

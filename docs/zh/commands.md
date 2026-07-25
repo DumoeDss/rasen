@@ -410,29 +410,29 @@ rasen-goal --pipeline goal-loop-<变体> <任务>
 **功能说明：**
 - **define-goal** 阶段 —— 把任务翻译成 `goal-plan.md`：目标、具体的闸门（`{kind: measure, command, threshold/target}` 或 `{kind: evaluate, goal, rubric}`）、工作产物（`code` | `prose`）、`maxRounds`。该阶段带 gate——你在首轮跑之前确认 measure 命令
 - **iterate** 循环 —— 每轮 dispatch 暖复用的 implementer，然后跑闸门：**measure** 跑一条确定性命令（`{score, passed}`）；**evaluate** dispatch 一个 fresh reviewer worker（`{satisfied, gaps}`）。每轮记录追加进 `goal-run.json`（权威的循环位置）
-- **尾部** —— measure/evaluate → `ship` → `archive`（迭代出的代码正常交付）；research → `report`（汇总成最终文档；无代���可 ship）
+- **尾部** —— measure/evaluate → `ship` → `retain` → `archive`（迭代出的代码先正常交付，再执行冻结的 retention 策略，最后归档）；research 只运行 `report`（汇总成最终文档；无 ship、retain 或 archive）
 - 由 `maxRounds`（默认 5）+ `loopStallLimit`（默认 2）兜底；轮次用尽标注为 `maxRounds-exhausted`——绝不谎报成功
 
 **后端 pipeline 族：**
 
 | 任务中的关键词 | 选中的 pipeline | 闸门（考官） | 工作产物 | 尾部 |
 |---|---|---|---|---|
-| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure —— 一条确定性命令 | 代码 | ship → archive |
-| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate —— 一个 fresh reviewer | 代码 | ship → archive |
-| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate —— 一个 fresh reviewer | 散文 | report |
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure —— 一条确定性命令 | 代码 | ship → retain → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate —— 一个 fresh reviewer | 代码 | ship → retain → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate —— 一个 fresh reviewer | 散文 | 仅 report |
 
 **示例：**
 ```text
 You: rasen-goal drive the Lighthouse performance score to 90
 
 AI:  关键词 "lighthouse" + "score" -> goal-loop-measure
-     取 DAG：define-goal -> iterate（measure 闸门）-> ship -> archive
+     取 DAG：define-goal -> iterate（measure 闸门）-> ship -> retain -> archive
      ▸ planner -> goal-plan.md（gate: measure, command: lighthouse --output=json, threshold: 90）
      ⏸ gate：确认 measure 命令？ -> 你：继续
      ▸ implementer（第 1 轮）-> 改性能热点路径
      ▸ measure 闸门：score 82（未达标）-> 记入 goal-run.json
      ▸ implementer（第 2 轮，暖复用）-> 继续改
-     ▸ measure 闸门：score 91（达标）-> ship -> archive
+     ▸ measure 闸门：score 91（达标）-> ship -> retain -> archive
 ```
 
 **提示：**

@@ -29,6 +29,16 @@ describe('rasen-retain router and sidecars', () => {
     expect(body).not.toMatch(/\/rasen:/);
   });
 
+  it('uses the LEAD-frozen mode for every canonical retain stage', () => {
+    const body = getRetainCommandSkillTemplate().instructions;
+    expect(body).toContain("canonical ID is `retain`");
+    expect(body).toContain('the LEAD froze in run-state before dispatch');
+    expect(body).toContain('The LEAD is the sole writer of the `retention` field');
+    expect(body).toContain('always reuse that recorded mode');
+    expect(body).toContain('Only for a standalone invocation');
+    expect(body).not.toContain('If the full-feature pipeline recorded');
+  });
+
   it('ships the report and codify sidecars in the published skills tree', () => {
     const sidecarDir = path.join(repoRoot, 'skills', 'workflows', 'rasen-retain');
     expect(fs.existsSync(path.join(sidecarDir, 'report.md'))).toBe(true);

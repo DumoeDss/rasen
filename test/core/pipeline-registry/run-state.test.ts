@@ -693,7 +693,13 @@ describe('pipeline run-state', () => {
           kind: 'goal',
           // lte = smaller is better (latency/memory tuning). goal-loop-core
           // exercised gte only; this covers the lte branch.
-          gate: { kind: 'measure', command: './latency', threshold: 50, direction: 'lte' },
+          gate: {
+            kind: 'measure',
+            command: './latency',
+            threshold: 50,
+            direction: 'lte',
+            timeoutSec: 120,
+          },
           maxRounds: 5,
           loopStallLimit: 2,
           workProduct: 'code',
@@ -709,7 +715,7 @@ describe('pipeline run-state', () => {
       }
     });
 
-        it('round-trips a loopConfig carrying blockedThreshold, and one without it still parses (additive)', () => {
+    it('round-trips a loopConfig carrying blockedThreshold, and one without it still parses (additive)', () => {
       const withThreshold: RunState = {
         pipeline: 'goal-loop-evaluate',
         loopConfig: {
@@ -763,7 +769,13 @@ describe('pipeline run-state', () => {
           kind: 'goal',
           // target = passed-count stop condition (vs threshold). goal-loop-core
           // covered threshold only; this covers the target branch.
-          gate: { kind: 'measure', command: './tests --json', target: 10, direction: 'gte' },
+          gate: {
+            kind: 'measure',
+            command: './tests --json',
+            target: 10,
+            direction: 'gte',
+            timeoutSec: 120,
+          },
           maxRounds: 5,
           loopStallLimit: 2,
           workProduct: 'code',
@@ -1066,6 +1078,143 @@ describe('pipeline run-state', () => {
       );
       expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
       expect(frozenRetentionMode(s)).toBeUndefined();
+    });
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'leaves retain unrecorded for a legacy %s run that has not archived',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            retention: 'off',
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'pending' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
+        expect(s.stages?.archive.status).toBe('pending');
+        expect(frozenRetentionMode(s)).toBe('off');
+      }
+    );
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'records retain as legacy-completed for an archived legacy %s run',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'done' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toMatchObject({
+          status: 'skipped',
+          reason: 'legacy-completed',
+        });
+        expect(completedStages(s)).toContain(RETAIN_STAGE_ID);
+        expect(frozenRetentionMode(s)).toBeUndefined();
+      }
+    );
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'treats a skipped archive as completed for legacy %s migration',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'skipped' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toMatchObject({
+          status: 'skipped',
+          reason: 'legacy-completed',
+        });
+        expect(completedStages(s)).toEqual(expect.arrayContaining([
+          'ship',
+          'archive',
+          RETAIN_STAGE_ID,
+        ]));
+      }
+    );
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'materializes legacy %s completed[] state without reopening retention',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            completed: ['define-goal', 'iterate', 'ship', 'archive'],
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toMatchObject({
+          status: 'skipped',
+          reason: 'legacy-completed',
+        });
+        expect(completedStages(s)).toEqual(expect.arrayContaining([
+          'define-goal',
+          'iterate',
+          'ship',
+          'archive',
+          RETAIN_STAGE_ID,
+        ]));
+      }
+    );
+
+    it.each([null, [], 'invalid'])(
+      'does not let completed[] migration hide malformed stages value %j',
+      (stages) => {
+        expect(() => parseRunState(JSON.stringify({
+          pipeline: 'goal-loop-measure',
+          completed: ['define-goal', 'iterate', 'ship', 'archive'],
+          stages,
+        }))).toThrow(RunStateValidationError);
+      }
+    );
+
+    it.each(['goal-loop-research', 'goal-loop-measure-v2', 'full-feature'])(
+      'does not apply the completed-goal migration to pipeline %s',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'done' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
+      }
+    );
+
+    it('does not overwrite an existing goal retain record', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'goal-loop-measure',
+          stages: {
+            ship: { status: 'done' },
+            retain: { status: 'done', note: 'already retained' },
+            archive: { status: 'done' },
+          },
+        })
+      );
+
+      expect(s.stages?.[RETAIN_STAGE_ID]).toEqual({
+        status: 'done',
+        note: 'already retained',
+      });
     });
 
     it('prefers an explicitly recorded retention over the legacy retro default', () => {
