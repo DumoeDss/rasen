@@ -287,6 +287,21 @@ describe('selective orchestration bundles', () => {
     }
   });
 
+  it('pins the run-start keepalive policy and eligible dispatch boundary', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expect(playbook).toContain('reads the effective `keepalive.enabled` entry ONCE');
+      expect(playbook).toContain('ONLY `keepalive.enabled=true` AND runtime `claude`');
+      expect(playbook).toContain('dispatch the stage as `ONE_SHOT`');
+      expect(playbook).toContain('MUST omit the `rasen agent wait` loop');
+      expect(playbook).toContain('the raw switch value');
+      expect(playbook).toContain('runtime gating (Claude on, Codex off by default');
+    }
+  });
+
   it('keeps fully generated SKILL.md files within their UTF-8 byte budgets', () => {
     const cases = [
       ['auto', getAutoCommandSkillTemplate, 106],

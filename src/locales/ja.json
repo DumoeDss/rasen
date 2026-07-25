@@ -540,6 +540,7 @@
   },
   "config": {
     "descriptions": {
+      "keepalive.enabled": "対象となる Claude パイプラインステージで待機ワーカーの keepalive ビートを有効にします",
       "profile": "利用可能にする操作を決めるワークフロープロファイル",
       "workflows": "明示的なワークフロー選択（`rasen profile` で編集）",
       "language": "対話プロンプトとCLIヘルプの言語（`auto` はシステムlocaleから自動判定）",

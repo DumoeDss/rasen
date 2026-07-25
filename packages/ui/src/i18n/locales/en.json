@@ -1,4 +1,9 @@
 {
+  "keepalive.enabled_label": "Keepalive enabled",
+  "keepalive.enabled_description": "Allow eligible Claude pipeline workers to stay parked and keep their prompt cache warm.",
+  "keepalive.enabled_on": "On",
+  "keepalive.enabled_off": "Off",
+  "keepalive.enabled_aria": "Enable parked-worker keepalive",
   "nav.board": "Board",
   "nav.archive": "Archive",
   "nav.config": "Config",

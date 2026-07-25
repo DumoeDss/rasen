@@ -538,6 +538,18 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   padding: var(--space-3) var(--space-4);
   background: var(--surface-muted); border-radius: var(--radius);
 }
+.keepalive-beat--disabled { box-shadow: inset 3px 0 0 var(--muted); }
+.keepalive-beat__enabled,
+.keepalive-beat__cadence {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  flex-basis: 100%;
+}
+.keepalive-beat__enabled-copy { display: flex; flex: 1 1 20rem; flex-direction: column; gap: var(--space-1); }
+.keepalive-beat__toggle {
+  min-width: 4.5rem; padding: 5px var(--space-3); border-radius: var(--radius-pill);
+  background: var(--surface); color: var(--muted); box-shadow: var(--ring);
+}
+.keepalive-beat__toggle--on { background: var(--accent); color: var(--accent-on); box-shadow: 0 0 0 1px var(--accent); }
 .keepalive-beat__label { font-weight: 600; margin-right: var(--space-1); }
 .keepalive-beat__presets { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
 .keepalive-beat__custom { display: inline-flex; align-items: center; gap: var(--space-2); }

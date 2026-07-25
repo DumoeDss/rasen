@@ -382,6 +382,12 @@ describe('config-schema', () => {
         expect(GlobalConfigSchema.safeParse({ language }).success).toBe(false);
       }
     });
+
+    it('round-trips keepalive.enabled booleans and rejects non-booleans', () => {
+      expect(GlobalConfigSchema.parse({ keepalive: { enabled: false } }).keepalive?.enabled).toBe(false);
+      expect(GlobalConfigSchema.parse({ keepalive: { enabled: true } }).keepalive?.enabled).toBe(true);
+      expect(GlobalConfigSchema.safeParse({ keepalive: { enabled: 'false' } }).success).toBe(false);
+    });
   });
 
   describe('DEFAULT_CONFIG', () => {

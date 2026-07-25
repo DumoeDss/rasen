@@ -3,14 +3,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { AgentCommand } from '../../src/commands/agent.js';
+import {
+  AgentCommand,
+  resolveAgentWaitKeepaliveConfig,
+} from '../../src/commands/agent.js';
 import {
   DEFAULT_KEEPALIVE_CONFIG,
+  beatStatePath,
   resolveBeatDurationSeconds,
   resolveKeepaliveConfig,
   writeSignalAtomic,
   signalFilePath,
 } from '../../src/core/keepalive/index.js';
+import { registerStore } from '../../src/core/store/registry.js';
 
 const CHANGE = 'wait-test-change';
 
@@ -68,8 +73,126 @@ describe('rasen agent wait', () => {
   it('a timed-out beat reports progress and persists the count', async () => {
     await wait();
     expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
+    expect(fs.existsSync(beatStatePath(changeRoot, 'reviewer'))).toBe(true);
     await wait();
     expect(lastOutcome()).toEqual({ beat: 2, remaining: 10 });
+  });
+
+  it('keeps the default enabled when no switch is configured', async () => {
+    await wait();
+    expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
+  });
+
+  it('a global disabled switch returns promptly without creating or mutating beat state', async () => {
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { enabled: false } }),
+      'utf-8'
+    );
+    const stateFile = path.join(changeRoot, 'signals', '.state', 'reviewer.json');
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    const sentinel = JSON.stringify({ beats: 7, startedAt: '2026-01-01T00:00:00.000Z', maxBeats: 12 });
+    fs.writeFileSync(stateFile, sentinel, 'utf-8');
+
+    const before = Date.now();
+    await wait();
+
+    expect(Date.now() - before).toBeLessThan(900);
+    expect(lastOutcome()).toEqual({ standDown: true, reason: 'keepalive-disabled' });
+    expect(fs.readFileSync(stateFile, 'utf-8')).toBe(sentinel);
+  });
+
+  it('a project enabled value overrides a disabled global value', async () => {
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { enabled: false } }),
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(repoRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nkeepalive:\n  enabled: true\n',
+      'utf-8'
+    );
+
+    await wait();
+
+    expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
+  });
+
+  it('a project disabled value overrides an enabled global value without creating beat state', async () => {
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { enabled: true } }),
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(repoRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nkeepalive:\n  enabled: false\n',
+      'utf-8'
+    );
+    const stateFile = path.join(changeRoot, 'signals', '.state', 'reviewer.json');
+
+    const before = Date.now();
+    await wait();
+
+    expect(Date.now() - before).toBeLessThan(900);
+    expect(lastOutcome()).toEqual({ standDown: true, reason: 'keepalive-disabled' });
+    expect(fs.existsSync(stateFile)).toBe(false);
+  });
+
+  it('a registered store root ignores a conflicting store-local enabled value', async () => {
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { enabled: true } }),
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(repoRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nkeepalive:\n  enabled: false\n',
+      'utf-8'
+    );
+    await registerStore({ id: 'wait-test-store', localPath: repoRoot });
+
+    await wait();
+
+    expect(lastOutcome()).toEqual({ beat: 1, remaining: 11 });
+  });
+
+  it('unflagged beat resolution uses project cadence over global cadence', async () => {
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { beatSeconds: 90 } }),
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(repoRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nkeepalive:\n  beatSeconds: 180\n',
+      'utf-8'
+    );
+
+    const keepalive = await resolveAgentWaitKeepaliveConfig(repoRoot);
+
+    expect(resolveBeatDurationSeconds(undefined, keepalive)).toBe(180);
+    expect(resolveBeatDurationSeconds(120, keepalive)).toBe(120);
+  });
+
+  it('command config resolution preserves the corrupt-global 100-second fuse', async () => {
+    expect((await resolveAgentWaitKeepaliveConfig(repoRoot)).beatSeconds).toBe(270);
+
+    fs.writeFileSync(
+      path.join(rasenHome, 'config.json'),
+      JSON.stringify({ keepalive: { beatSeconds: 300 } }),
+      'utf-8'
+    );
+    expect((await resolveAgentWaitKeepaliveConfig(repoRoot)).beatSeconds).toBe(100);
+
+    fs.writeFileSync(path.join(rasenHome, 'config.json'), '{ invalid json', 'utf-8');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await resolveAgentWaitKeepaliveConfig(repoRoot)).beatSeconds).toBe(100);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('returns and consumes a pre-existing resume signal', async () => {

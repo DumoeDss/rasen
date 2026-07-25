@@ -166,7 +166,7 @@ The four `pipelines.*` families and the `thresholds.bindings.*` family SHALL dec
 
 ### Requirement: Keepalive keys are registered
 
-The configuration key registry SHALL include the keepalive keys: `keepalive.runtimes.claude` (boolean, default `true`), `keepalive.runtimes.codex` (boolean, default `false`), `keepalive.contextFloor` (number, non-negative integer, default `0` — 0 disables the floor), and `keepalive.beatSeconds` (number, integer between 90 and 280 inclusive, default `270`). `keepalive.runtimes.{claude,codex}` and `keepalive.contextFloor` SHALL be global-only machine-level gates. `keepalive.beatSeconds` SHALL be settable in both `global` and `project` scope — project wins over global via effective-config merge — and SHALL NOT be settable at `store` scope. All keys are validated through the standard registry paths (`config set`/`unset`, the interactive editor, the config HTTP API, effective-config resolution).
+The configuration key registry SHALL include the keepalive keys: `keepalive.enabled` (boolean, default `true`), `keepalive.runtimes.claude` (boolean, default `true`), `keepalive.runtimes.codex` (boolean, default `false`), `keepalive.contextFloor` (number, non-negative integer, default `0` — 0 disables the floor), and `keepalive.beatSeconds` (number, integer between 90 and 280 inclusive, default `270`). `keepalive.runtimes.{claude,codex}` and `keepalive.contextFloor` SHALL be global-only machine-level gates. `keepalive.enabled` and `keepalive.beatSeconds` SHALL be settable in both `global` and `project` scope — project wins over global via effective-config merge — and SHALL NOT be settable at `store` scope. All keys are validated through the standard registry paths (`config set`/`unset`, the interactive editor, the config HTTP API, effective-config resolution).
 
 #### Scenario: Keepalive runtime gate keys validate
 - **WHEN** `rasen config set keepalive.runtimes.codex true --scope global` is run
@@ -204,6 +204,22 @@ The configuration key registry SHALL include the keepalive keys: `keepalive.runt
 - **WHEN** `ProjectConfigSchema.safeParse` is given `{ schema: 'spec-driven', keepalive: { beatSeconds: 120 } }`
 - **THEN** it parses successfully; an out-of-range beatSeconds (e.g. 300) is rejected
 
+#### Scenario: Enabled defaults on and validates in its declared scopes
+- **WHEN** no layer sets `keepalive.enabled`, or a boolean value is validated at global or project scope
+- **THEN** the effective default is `true`, and the boolean write is accepted at either declared scope
+
+#### Scenario: Project enabled value overrides global
+- **WHEN** global configuration sets `keepalive.enabled` to `false` and project configuration sets it to `true`
+- **THEN** the effective value is `true` with source `project`
+
+#### Scenario: Enabled is rejected at store scope
+- **WHEN** `keepalive.enabled` is validated for store scope
+- **THEN** validation rejects the key as not settable at that scope and no store config is modified
+
+#### Scenario: Project config schema accepts keepalive.enabled
+- **WHEN** `ProjectConfigSchema.safeParse` is given `{ schema: 'spec-driven', keepalive: { enabled: false } }`
+- **THEN** it parses successfully and preserves the boolean value
+
 ### Requirement: The profile key's allowed values are scope-aware and include saved profiles
 
 The `profile` key SHALL validate against a scope-dependent value set. At `global` scope the allowed values SHALL be `full`, `core`, `custom`, and every saved profile name on the machine — the user-wide profile can name a saved profile. At `project` scope the allowed values SHALL be `full`, `core`, and every saved profile name — `custom` remains excluded because a lock needs a stable referent. Scope-aware validation SHALL govern every write path that knows its scope (CLI `config set`, the interactive editor, and the config HTTP API), and the saved-name portion of both sets SHALL reflect the profiles saved at validation time.
@@ -222,4 +238,3 @@ The `profile` key SHALL validate against a scope-dependent value set. At `global
 
 - **WHEN** `profile` is set to a name that is neither reserved nor a saved profile, in either scope
 - **THEN** validation rejects the value with a message listing the allowed values
-

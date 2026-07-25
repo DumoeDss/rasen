@@ -332,17 +332,29 @@ export interface GetGlobalConfigOptions {
   persistMigrations?: boolean;
 }
 
-export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalConfig {
-  const configPath = getGlobalConfigPath();
+export type GlobalConfigFileStatus = 'missing' | 'readable' | 'unreadable';
 
-  try {
-    if (!fs.existsSync(configPath)) {
-      return { ...DEFAULT_CONFIG };
-    }
+/**
+ * One coherent view of the global config file. `raw` and `config` always
+ * derive from the same file contents: `raw` preserves explicit values for
+ * source attribution, while `config` applies normal defaults and migrations.
+ */
+export interface GlobalConfigSnapshot {
+  status: GlobalConfigFileStatus;
+  raw: Record<string, unknown>;
+  config: GlobalConfig;
+}
 
-    const content = fs.readFileSync(configPath, 'utf-8');
-    const parsed = JSON.parse(content);
+export type GlobalConfigFileReader = (configPath: string) => string;
 
+function defaultGlobalConfigFileReader(configPath: string): string {
+  return fs.readFileSync(configPath, 'utf-8');
+}
+
+function normalizeGlobalConfig(
+  parsed: Record<string, unknown>,
+  options: GetGlobalConfigOptions
+): GlobalConfig {
     // Merge with defaults (loaded values take precedence)
     const merged: GlobalConfig = {
       ...DEFAULT_CONFIG,
@@ -350,7 +362,7 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
       // Deep merge featureFlags
       featureFlags: {
         ...DEFAULT_CONFIG.featureFlags,
-        ...(parsed.featureFlags || {})
+        ...((parsed.featureFlags as Record<string, boolean> | undefined) || {})
       }
     };
     // The `delivery` setting is retired; never surface it, current or legacy.
@@ -391,7 +403,7 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
       );
       if (options.persistMigrations !== false) {
         try {
-          const { delivery: _delivery, ...rest } = parsed as Record<string, unknown>;
+          const { delivery: _delivery, ...rest } = parsed;
           saveGlobalConfig(rest as GlobalConfig);
         } catch {
           // Best-effort: persistence failure must not fail the read.
@@ -399,9 +411,37 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
       }
     }
 
-    return merged;
+  return merged;
+}
+
+function isMissingGlobalConfigError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
+}
+
+/**
+ * Reads and parses the global file once, then derives both its raw and
+ * normalized representations from that in-memory value.
+ */
+export function readGlobalConfigSnapshot(
+  options: GetGlobalConfigOptions = {},
+  readFile: GlobalConfigFileReader = defaultGlobalConfigFileReader
+): GlobalConfigSnapshot {
+  const configPath = getGlobalConfigPath();
+
+  try {
+    const parsed = JSON.parse(readFile(configPath)) as Record<string, unknown>;
+    return {
+      status: 'readable',
+      raw: parsed,
+      config: normalizeGlobalConfig(parsed, options),
+    };
   } catch (error) {
-    // Log warning for parse errors, but not for missing files
+    // Log warning for parse errors, but not for missing files.
     if (error instanceof SyntaxError) {
       reportConfigDiagnostic(
         {
@@ -413,8 +453,16 @@ export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalCon
         options.reporter ?? safeDefaultReporter(resolveCliLocale({}))
       );
     }
-    return { ...DEFAULT_CONFIG };
+    return {
+      status: isMissingGlobalConfigError(error) ? 'missing' : 'unreadable',
+      raw: {},
+      config: { ...DEFAULT_CONFIG },
+    };
   }
+}
+
+export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalConfig {
+  return readGlobalConfigSnapshot(options).config;
 }
 
 /**

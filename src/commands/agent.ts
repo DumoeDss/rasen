@@ -29,6 +29,11 @@ import {
   type HandoffThresholdReport,
 } from '../core/agent-context.js';
 import {
+  contextResolveOptions,
+  resolveRootConfigContext,
+} from '../core/config-api/config-context.js';
+import {
+  DEFAULT_BEAT_SECONDS,
   POLL_INTERVAL_MS,
   resolveBeatDurationSeconds,
   clearBeatState,
@@ -43,9 +48,10 @@ import {
   resolveRoleCap,
   saveBeatState,
   signalsDir,
+  type KeepaliveConfig,
   type KeepaliveConfigInput,
 } from '../core/keepalive/index.js';
-import { getGlobalConfig } from '../core/global-config.js';
+import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js';
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
 import { runAudit } from '../core/token-audit/audit.js';
@@ -187,7 +193,51 @@ function summarizeAuditResult(result: AuditResult): string {
 type AgentWaitOutcome =
   | { beat: number; remaining: number }
   | { resumed: true; instruction?: string }
-  | { standDown: true; reason: 'runtime-not-gated' | 'context-below-floor' | 'beat-cap' | 'lead-stand-down' };
+  | {
+      standDown: true;
+      reason:
+        | 'keepalive-disabled'
+        | 'runtime-not-gated'
+        | 'context-below-floor'
+        | 'beat-cap'
+        | 'lead-stand-down';
+    };
+
+/**
+ * Resolves the keepalive policy for `agent wait` from one classified config
+ * context. Project cadence wins when present; otherwise the raw global input
+ * remains available to `resolveKeepaliveConfig()` so an invalid value reaches
+ * its 100-second fuse instead of being replaced by the registry default.
+ */
+export async function resolveAgentWaitKeepaliveConfig(
+  planningRoot: string
+): Promise<KeepaliveConfig> {
+  const configContext = await resolveRootConfigContext(planningRoot);
+  const resolution = resolveEffectiveConfigWithMetadata(contextResolveOptions(configContext));
+  const enabledEntry = resolution.entries.find(
+    (entry) => entry.definition.key === 'keepalive.enabled'
+  );
+  const beatEntry = resolution.entries.find(
+    (entry) => entry.definition.key === 'keepalive.beatSeconds'
+  );
+  const projectBeatSeconds =
+    beatEntry?.source === 'project' && typeof beatEntry.value === 'number'
+      ? beatEntry.value
+      : undefined;
+  const globalKeepalive = (
+    resolution.globalConfig as { keepalive?: KeepaliveConfigInput }
+  ).keepalive;
+
+  return resolveKeepaliveConfig({
+    ...globalKeepalive,
+    enabled: enabledEntry?.value !== false,
+    beatSeconds:
+      projectBeatSeconds ??
+      (resolution.globalConfigStatus === 'unreadable'
+        ? DEFAULT_BEAT_SECONDS
+        : globalKeepalive?.beatSeconds),
+  });
+}
 
 export class AgentCommand {
   /**
@@ -317,9 +367,14 @@ export class AgentCommand {
       throw new Error(`Change '${options.change}' not found at ${changeRoot}`);
     }
 
-    const keepalive = resolveKeepaliveConfig(
-      (getGlobalConfig() as { keepalive?: KeepaliveConfigInput }).keepalive
-    );
+    const keepalive = await resolveAgentWaitKeepaliveConfig(planningHome.root);
+
+    // Gate 0: the explicit effective switch. This is deliberately before beat
+    // resolution, runtime/context probes, beat state, signal reads, or polling.
+    if (!keepalive.enabled) {
+      this.emitWait({ standDown: true, reason: 'keepalive-disabled' });
+      return;
+    }
 
     // Beat resolution (cli-agent-wait spec / design D1): explicit --beat-seconds
     // flag wins; otherwise the config-resolved keepalive.beatSeconds (registry

@@ -13,6 +13,7 @@ import {
   resolveArchiveDestinationValue,
   resolveAutopilotGatePolicy,
   resolveAutopilotSelectionPolicy,
+  ProjectConfigSchema,
   updateProjectConfigKey,
   updateProjectConfigKeys,
 } from '../../src/core/project-config.js';
@@ -29,6 +30,17 @@ describe('project-config', () => {
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
     consoleWarnSpy.mockRestore();
+  });
+
+  it('round-trips keepalive.enabled in the project schema', () => {
+    const parsed = ProjectConfigSchema.parse({
+      schema: 'spec-driven',
+      keepalive: { enabled: false },
+    });
+    expect(parsed.keepalive?.enabled).toBe(false);
+    expect(
+      ProjectConfigSchema.safeParse({ schema: 'spec-driven', keepalive: { enabled: 'false' } }).success
+    ).toBe(false);
   });
 
   describe('readProjectConfig', () => {

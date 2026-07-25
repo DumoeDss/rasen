@@ -30,15 +30,20 @@ import * as client from '../../src/api/client.js';
 function Probe() {
   const t = useT();
   return (
-    <span data-testid="probe" data-locale={getCurrentLocale()}>
-      {t('nav.board')}
-    </span>
+    <div data-locale={getCurrentLocale()}>
+      <span data-testid="probe">{t('nav.board')}</span>
+      <span data-testid="keepalive-enabled-probe">
+        {t('keepalive.enabled_label')}:{t('keepalive.enabled_on')}
+      </span>
+    </div>
   );
 }
 
 describe('live re-localization (spec req 2)', () => {
   let container: HTMLElement;
   let originalZhBoard: string;
+  let originalZhEnabledLabel: string;
+  let originalZhEnabledOn: string;
 
   beforeEach(() => {
     __resetLocaleForTesting();
@@ -48,11 +53,17 @@ describe('live re-localization (spec req 2)', () => {
     // (the shipped catalog may mirror en until localized). Restored in afterEach.
     const zh = getLocaleCatalog('zh-cn');
     originalZhBoard = zh['nav.board'];
+    originalZhEnabledLabel = zh['keepalive.enabled_label'];
+    originalZhEnabledOn = zh['keepalive.enabled_on'];
     zh['nav.board'] = '看板';
+    zh['keepalive.enabled_label'] = '启用保活';
+    zh['keepalive.enabled_on'] = '开';
   });
 
   afterEach(() => {
     getLocaleCatalog('zh-cn')['nav.board'] = originalZhBoard;
+    getLocaleCatalog('zh-cn')['keepalive.enabled_label'] = originalZhEnabledLabel;
+    getLocaleCatalog('zh-cn')['keepalive.enabled_on'] = originalZhEnabledOn;
     render(null, container);
     document.body.removeChild(container);
     __resetLocaleForTesting();
@@ -83,6 +94,9 @@ describe('live re-localization (spec req 2)', () => {
     expect(getCurrentLocale()).toBe('zh-cn');
     const probe = container.querySelector('[data-testid="probe"]')!;
     expect(probe.textContent).toBe('看板');
+    expect(container.querySelector('[data-testid="keepalive-enabled-probe"]')!.textContent).toBe(
+      '启用保活:开'
+    );
   });
 
   it('a failed read leaves the locale unchanged (graceful degradation)', async () => {

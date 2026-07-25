@@ -68,6 +68,7 @@ export const GlobalConfigSchema = z
     // not worth a beat.
     keepalive: z
       .object({
+        enabled: z.boolean().optional(),
         runtimes: z
           .object({
             claude: z.boolean().optional(),

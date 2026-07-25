@@ -900,6 +900,40 @@ describe('config command --scope project and promoted keys', () => {
     expect(modelLine).toContain('(store)');
   });
 
+  it('effective view treats a registered store root as store context and omits wildcards', async () => {
+    process.env.XDG_DATA_HOME = tempDir;
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = false;
+    const { registerStore, getGlobalDataDir } = await import('../../src/core/index.js');
+
+    const storeRoot = path.join(tempDir, 'direct-store');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    await registerStore({
+      id: 'direct-store',
+      localPath: storeRoot,
+      globalDataDir: getGlobalDataDir(),
+    });
+
+    await runConfigCommand(['set', 'keepalive.enabled', 'true']);
+    process.chdir(storeRoot);
+    await runConfigCommand(['set', 'keepalive.enabled', 'false', '--scope', 'project']);
+    await runConfigCommand([
+      'set',
+      'pipelines.small-feature.gates.propose',
+      'off',
+      '--scope',
+      'project',
+    ]);
+    consoleLogSpy.mockClear();
+
+    await runConfigCommand([]);
+
+    expect(process.exitCode).not.toBe(1);
+    const printed = consoleLogSpy.mock.calls.map(([line]) => String(line));
+    expect(printed).toContain('keepalive.enabled = true (global)');
+    expect(printed.some((line) => line.startsWith('pipelines.'))).toBe(false);
+  });
+
   describe('reset/edit reject --scope project (M1)', () => {
     it('reset --scope project fails and does not touch the global config file', async () => {
       const { getGlobalConfigPath, saveGlobalConfig } = await import('../../src/core/global-config.js');

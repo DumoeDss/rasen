@@ -540,6 +540,7 @@
   },
   "config": {
     "descriptions": {
+      "keepalive.enabled": "Enable parked-worker keepalive beats for eligible Claude pipeline stages",
       "profile": "Workflow profile controlling which actions are available",
       "workflows": "Explicit workflow selection (edit via `rasen profile`)",
       "language": "Language for interactive prompts and CLI help (`auto` detects the system locale)",

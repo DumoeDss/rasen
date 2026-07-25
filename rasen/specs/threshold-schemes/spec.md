@@ -1,7 +1,7 @@
 # threshold-schemes Specification
 
 ## Purpose
-TBD
+Define the machine-level threshold scheme library, including portable storage, strict validation, atomic lifecycle operations, and complete handoff and reuse policies.
 
 ## Requirements
 ### Requirement: Machine-level threshold scheme files

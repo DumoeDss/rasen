@@ -9,8 +9,6 @@
  * module (plus `updateProjectConfigKey`/`saveGlobalConfig`) in HTTP
  * handlers, so no command-layer logic should need duplicating there.
  */
-import * as fs from 'node:fs';
-
 import { getNestedValue } from './config-schema.js';
 import {
   CONFIG_KEY_REGISTRY,
@@ -18,7 +16,12 @@ import {
   validateConfigValue,
   type ConfigKeyDefinition,
 } from './config-keys.js';
-import { getGlobalConfig, getGlobalConfigPath } from './global-config.js';
+import {
+  getGlobalConfig,
+  readGlobalConfigSnapshot,
+  type GlobalConfigFileReader,
+  type GlobalConfigFileStatus,
+} from './global-config.js';
 import { classifyOpenSpecDir, readProjectConfig, type ProjectConfig } from './project-config.js';
 import { listRegisteredStores, type RegisteredStoreEntry } from './store/registry.js';
 import type { StorePathOptions } from './store/foundation.js';
@@ -180,23 +183,17 @@ function resolveEnvOverride(definition: ConfigKeyDefinition): { value: unknown }
   return undefined;
 }
 
-/**
- * Reads the global config file exactly as written (no default-injection),
- * so `resolveEffectiveConfig` can tell "the user set this" apart from
- * "`getGlobalConfig()` filled in its own built-in default" — `getGlobalConfig()`
- * bakes defaults for a few fields (`profile`, `language`,
- * `proactive`, `repoMode`) directly into its return value, which would otherwise make
- * those keys report source `global` even when never explicitly set. Missing
- * or unparseable files resolve to `{}` (same as "nothing set").
- */
-function readRawGlobalConfig(): Record<string, unknown> {
-  try {
-    const configPath = getGlobalConfigPath();
-    if (!fs.existsSync(configPath)) return {};
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+export type { GlobalConfigFileStatus } from './global-config.js';
+
+export interface EffectiveConfigResolution {
+  entries: EffectiveConfigEntry[];
+  globalConfigStatus: GlobalConfigFileStatus;
+  globalConfig: Record<string, unknown>;
+}
+
+/** Narrow I/O seam used to prove one coherent global-file read deterministically. */
+export interface EffectiveConfigIo {
+  readGlobalConfigFile?: GlobalConfigFileReader;
 }
 
 /**
@@ -212,11 +209,16 @@ function readRawGlobalConfig(): Record<string, unknown> {
  * (`options.store` set with no `projectRoot`), the store's own config occupies
  * the store layer and the project layer is empty (design D3).
  */
-export function resolveEffectiveConfig(
-  options: ResolveEffectiveConfigOptions = {}
-): EffectiveConfigEntry[] {
-  const globalConfig = getGlobalConfig({ reporter: options.reporter }) as unknown as Record<string, unknown>;
-  const rawGlobalConfig = readRawGlobalConfig();
+export function resolveEffectiveConfigWithMetadata(
+  options: ResolveEffectiveConfigOptions = {},
+  io: EffectiveConfigIo = {}
+): EffectiveConfigResolution {
+  const globalSnapshot = readGlobalConfigSnapshot(
+    { reporter: options.reporter },
+    io.readGlobalConfigFile
+  );
+  const globalConfig = globalSnapshot.config as unknown as Record<string, unknown>;
+  const rawGlobalConfig = globalSnapshot.raw;
   const projectConfig: ProjectConfig | null = options.projectRoot
     ? readProjectConfig(options.projectRoot, { reporter: options.reporter })
     : null;
@@ -296,7 +298,17 @@ export function resolveEffectiveConfig(
     });
   }
 
-  return entries;
+  return {
+    entries,
+    globalConfigStatus: globalSnapshot.status,
+    globalConfig,
+  };
+}
+
+export function resolveEffectiveConfig(
+  options: ResolveEffectiveConfigOptions = {}
+): EffectiveConfigEntry[] {
+  return resolveEffectiveConfigWithMetadata(options).entries;
 }
 
 /**

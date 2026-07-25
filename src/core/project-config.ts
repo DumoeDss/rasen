@@ -184,7 +184,7 @@ export const ProjectConfigSchema = z.object({
     .describe('Runtime threshold-scheme bindings'),
 
   // Optional: keepalive gate for `rasen agent wait` (cli-agent-wait spec).
-  // Only `beatSeconds` is project-settable (the registry marks
+  // Only `enabled` and `beatSeconds` are project-settable (the registry marks
   // runtimes/contextFloor global-only — machine-level runtime params); project
   // scope wins over the global config value of the same name (see
   // effective-config.ts). Mirrors the GlobalConfigSchema keepalive block so the
@@ -192,6 +192,7 @@ export const ProjectConfigSchema = z.object({
   // compatibility and are not project-settable.
   keepalive: z
     .object({
+      enabled: z.boolean().optional(),
       runtimes: z
         .object({
           claude: z.boolean().optional(),
@@ -202,7 +203,7 @@ export const ProjectConfigSchema = z.object({
       beatSeconds: z.number().int().min(90).max(280).optional(),
     })
     .optional()
-    .describe('Keepalive gate configuration (project scope; only beatSeconds is project-settable)'),
+    .describe('Keepalive gate configuration (project scope; enabled and beatSeconds are project-settable)'),
 
   // Optional: per-agent model configuration. `default` is the base model for
   // all roles; `roles` overrides it per role. Project scope wins over the
@@ -948,6 +949,70 @@ function parseProjectConfigContent(
         }
       } else {
         console.warn(`Invalid 'thresholds' field in config (must be an object)`);
+      }
+    }
+
+    // Parse keepalive field resiliently so project-scoped enabled/beat values
+    // participate in effective-config resolution without invalid siblings
+    // discarding the whole block.
+    if (raw.keepalive !== undefined) {
+      if (raw.keepalive && typeof raw.keepalive === 'object' && !Array.isArray(raw.keepalive)) {
+        const keepaliveRaw = raw.keepalive as Record<string, unknown>;
+        const keepalive: NonNullable<ProjectConfig['keepalive']> = {};
+        if (keepaliveRaw.enabled !== undefined) {
+          if (typeof keepaliveRaw.enabled === 'boolean') {
+            keepalive.enabled = keepaliveRaw.enabled;
+          } else {
+            console.warn(`Invalid 'keepalive.enabled' field in config (must be a boolean)`);
+          }
+        }
+        if (keepaliveRaw.runtimes !== undefined) {
+          if (
+            keepaliveRaw.runtimes &&
+            typeof keepaliveRaw.runtimes === 'object' &&
+            !Array.isArray(keepaliveRaw.runtimes)
+          ) {
+            const runtimesRaw = keepaliveRaw.runtimes as Record<string, unknown>;
+            const runtimes: NonNullable<NonNullable<ProjectConfig['keepalive']>['runtimes']> = {};
+            for (const runtime of ['claude', 'codex'] as const) {
+              if (runtimesRaw[runtime] === undefined) continue;
+              if (typeof runtimesRaw[runtime] === 'boolean') {
+                runtimes[runtime] = runtimesRaw[runtime];
+              } else {
+                console.warn(`Invalid 'keepalive.runtimes.${runtime}' field in config (must be a boolean)`);
+              }
+            }
+            if (Object.keys(runtimes).length > 0) keepalive.runtimes = runtimes;
+          } else {
+            console.warn(`Invalid 'keepalive.runtimes' field in config (must be an object)`);
+          }
+        }
+        if (keepaliveRaw.contextFloor !== undefined) {
+          if (
+            typeof keepaliveRaw.contextFloor === 'number' &&
+            Number.isInteger(keepaliveRaw.contextFloor) &&
+            keepaliveRaw.contextFloor >= 0
+          ) {
+            keepalive.contextFloor = keepaliveRaw.contextFloor;
+          } else {
+            console.warn(`Invalid 'keepalive.contextFloor' field in config (must be a non-negative integer)`);
+          }
+        }
+        if (keepaliveRaw.beatSeconds !== undefined) {
+          if (
+            typeof keepaliveRaw.beatSeconds === 'number' &&
+            Number.isInteger(keepaliveRaw.beatSeconds) &&
+            keepaliveRaw.beatSeconds >= 90 &&
+            keepaliveRaw.beatSeconds <= 280
+          ) {
+            keepalive.beatSeconds = keepaliveRaw.beatSeconds;
+          } else {
+            console.warn(`Invalid 'keepalive.beatSeconds' field in config (must be an integer between 90 and 280)`);
+          }
+        }
+        config.keepalive = keepalive;
+      } else {
+        console.warn(`Invalid 'keepalive' field in config (must be an object)`);
       }
     }
 

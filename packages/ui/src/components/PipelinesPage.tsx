@@ -275,14 +275,17 @@ export function PipelinesPage() {
           })}
         </div>
         {(() => {
-          // Keepalive beat control (pipelines-ui spec): the global-only
-          // `keepalive.beatSeconds` key renders here, after the autopilot keys,
-          // only when visible in the active scope mode (Global).
-          const entry = byKey('keepalive.beatSeconds');
-          return entry && isVisibleInMode(entry, mode, spaceType) ? (
+          const enabledEntry = byKey('keepalive.enabled');
+          const beatEntry = byKey('keepalive.beatSeconds');
+          const visibleEnabled =
+            enabledEntry && isVisibleInMode(enabledEntry, mode, spaceType) ? enabledEntry : undefined;
+          const visibleBeat =
+            beatEntry && isVisibleInMode(beatEntry, mode, spaceType) ? beatEntry : undefined;
+          return visibleEnabled || visibleBeat ? (
             <div class="pipelines-defaults__keepalive" data-testid="pipelines-defaults-keepalive">
               <KeepaliveBeatControl
-                entry={entry}
+                enabledEntry={visibleEnabled}
+                beatEntry={visibleBeat}
                 mode={mode}
                 spaceType={spaceType}
                 selector={selector}

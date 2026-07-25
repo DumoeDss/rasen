@@ -184,6 +184,13 @@ export interface AdoptInput extends StorePathOptions, ProjectPathOptions {
   verifyHash?: boolean;
 }
 
+/**
+ * Reported as the project id by a `--dry-run` adopt of a project that has not
+ * been assigned one yet: the real id is minted by the actual adopt, and a dry
+ * run may not write it (see `adoptProject`).
+ */
+export const UNASSIGNED_PROJECT_ID = '(unassigned)';
+
 export interface AdoptResult {
   projectId: string;
   storeId: string;
@@ -227,7 +234,14 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   const store = await resolveRegisteredStore({ id: input.storeId, ...storeOpts });
   const storeRoot = store.storeRoot;
 
-  const projectId = await ensureProjectIdInConfig(sourcePath, storeOpts);
+  // A dry run must not mint identity either: `ensureProjectIdInConfig` appends
+  // `projectId:` to the TRACKED rasen/config.yaml, so a preview-only run left
+  // the repo dirty while printing "no config changed". Read what is already
+  // there; a project with no id yet cannot have a manifest entry, so the
+  // resume probe below stays correct with the placeholder.
+  const projectId = input.dryRun
+    ? (readProjectConfig(sourcePath)?.projectId ?? UNASSIGNED_PROJECT_ID)
+    : await ensureProjectIdInConfig(sourcePath, storeOpts);
   const existingEntry = await readAdoptionEntry(storeRoot, projectId);
   const pointer = readStorePointer(sourcePath);
   const { hasPlanningShape } = classifyOpenSpecDir(sourcePath);
@@ -290,6 +304,22 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   const uncommitted = await detectUncommittedPaths(sourcePath, movedScopes);
 
   let archiveMoves: ArchiveMove[] = [];
+  const archiveOptions: MoveOptions = {
+    ...storeOpts,
+    ...(input.verifyHash ? { verifyHash: true } : {}),
+  };
+
+  if (input.dryRun) {
+    // Preview the archive relocation too: enumeration is read-only when
+    // `dryRun` is passed through, and archives run to hundreds of entries, so
+    // leaving this inside the mutation guard made `--dry-run` report `0
+    // entries` and hid the true scale of the operation (spec store-adopt,
+    // "Adopt is git-safe and previewable"). Same shape as `archive relocate`.
+    archiveMoves = await handleAdoptArchive(sourcePath, storeRoot, archiveMode, {
+      ...archiveOptions,
+      dryRun: true,
+    });
+  }
 
   if (!input.dryRun) {
     // 1. add-project semantics (project namespace + store reference) while the
@@ -339,11 +369,10 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
       );
     }
 
-    // 4. Archive handling per --archive.
-    archiveMoves = await handleAdoptArchive(sourcePath, storeRoot, archiveMode, {
-      ...storeOpts,
-      ...(input.verifyHash ? { verifyHash: true } : {}),
-    });
+    // 4. Archive handling per --archive. Stays here (not hoisted next to the
+    //    dry-run preview above) because it deletes source content and so must
+    //    run AFTER the manifest write of step 2.
+    archiveMoves = await handleAdoptArchive(sourcePath, storeRoot, archiveMode, archiveOptions);
 
     // 5. Remove now-empty planning dirs and write the store pointer.
     await removeIfEmpty(specsDir(sourcePath));
@@ -403,19 +432,26 @@ async function handleAdoptArchive(
     return moveArchiveEntries([sourceArchive], inRepoArchiveDir(storeRoot), options);
   }
   // external: relocate to the machine home archive + set destination external.
+  // A dry run must be fully inert (same rule as `archive relocate --to
+  // external`): probe the home instead of minting one, report a symbolic
+  // target when the project has no home yet, and never flip the config.
   const home = await resolveProjectHome(sourcePath, {
-    ensure: true,
+    ensure: !options.dryRun,
     ...(options.globalDataDir ? { globalDataDir: options.globalDataDir } : {}),
   });
-  if (!home) {
+  if (!home && !options.dryRun) {
     throw new StoreError(
       'Could not resolve the machine home for --archive external.',
       'adopt_external_archive_unresolved',
       { target: 'project.registry', fix: 'Retry, or use --archive move.' }
     );
   }
-  const moves = await moveArchiveEntries([sourceArchive], home.archiveDir, options);
-  updateProjectConfigKey(sourcePath, 'archive.destination', 'external');
+  const targetDir =
+    home?.archiveDir ?? path.join(getProjectsDir(options), '<project-home>', 'archive');
+  const moves = await moveArchiveEntries([sourceArchive], targetDir, options);
+  if (!options.dryRun) {
+    updateProjectConfigKey(sourcePath, 'archive.destination', 'external');
+  }
   return moves;
 }
 

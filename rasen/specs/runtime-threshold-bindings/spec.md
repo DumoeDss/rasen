@@ -1,7 +1,7 @@
 # runtime-threshold-bindings Specification
 
 ## Purpose
-TBD
+Define how global, inherited-store, and project runtime bindings select named threshold schemes while preserving deterministic precedence, diagnostics, and legacy fallback behavior.
 
 ## Requirements
 ### Requirement: Scoped runtime bindings select named schemes
