@@ -26,25 +26,32 @@ import { createRequire } from 'node:module';
 
 import { StoreError } from './store/errors.js';
 import {
-  getStoreMetadataPath,
   listStoreRegistryEntries,
   readStoreRegistryState,
-  readOptionalStoreMetadataState,
   validateStoreId,
 } from './store/foundation.js';
 import { getStoreRootForBackend } from './store/registry.js';
-import { inspectOpenSpecRoot } from './workspace-root.js';
+import {
+  primaryRepair,
+  resolveStoreBinding,
+  type StoreUnavailableReason,
+  type UnavailableStoreBinding,
+} from './store/identity.js';
+import { isValidStoreUid, storeUidsMatch } from './store/identity-types.js';
+import {
+  inspectRegisteredStore,
+  type RegisteredStoreInspection,
+} from './store/inspection.js';
 import {
   findRepoPlanningRootSync,
   findLegacyWorkspaceRootSync,
   legacyWorkspaceGuidance,
   type PlanningHome,
 } from './planning-home.js';
-import { classifyOpenSpecDir, readProjectConfig, storePointerProblem } from './project-config.js';
+import { classifyOpenSpecDir, readProjectConfig } from './project-config.js';
 import { touchProjectRegistry, resolveProjectHome } from './project-home.js';
 import { findProjectRegistryEntry } from './project-registry.js';
-import { listRegisteredStores } from './store/registry.js';
-import { isRegisteredStoreRoot } from './effective-config.js';
+import { storeBindingDeclarationFrom } from './effective-config.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { getAllToolVersionStatus } from './shared/index.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
@@ -70,6 +77,13 @@ export interface ResolveOpenSpecRootOptions extends StoreSelectorOptions {
   allowImplicitRoot?: boolean;
   globalDataDir?: string;
   reporter?: RootSelectionReporter | false;
+  /**
+   * Read-only diagnostic opt-out (design D4). A declared Store that cannot be
+   * used normally stops the command; `rasen doctor` sets this so it keeps
+   * working in exactly the state it exists to report, emitting the notice
+   * instead of failing.
+   */
+  allowUnavailableStore?: boolean;
 }
 
 export interface ResolvedOpenSpecRoot {
@@ -89,11 +103,15 @@ export type RootSelectionNotice =
     kind: 'inheriting-store-config';
     filePath: string;
     storeId: string;
+    /** Which of the permanent identity or the display alias resolved it. */
+    resolvedBy: 'uid' | 'alias';
   }
   | {
-    kind: 'inactive-store-pointer';
+    kind: 'unavailable-store-declaration';
     filePath: string;
     storeId: string;
+    reason: StoreUnavailableReason;
+    repair: string;
   }
   | {
     kind: 'selected-root';
@@ -104,17 +122,31 @@ export type RootSelectionNotice =
 
 export type RootSelectionReporter = (notice: RootSelectionNotice) => void;
 
+/** English fallback phrasing for each unavailable reason, shared by surfaces. */
+export const STORE_UNAVAILABLE_REASON_TEXT: Record<StoreUnavailableReason, string> = {
+  'not-registered': 'it is not registered on this machine',
+  'metadata-missing': 'its identity metadata is missing or unreadable',
+  'uid-mismatch': 'the registered checkout is a different store',
+  'root-unhealthy': 'its Rasen root is missing or incomplete',
+  'alias-ambiguous': 'that name matches more than one registered store',
+  'pointer-malformed': 'the declaration cannot be read',
+};
+
 function defaultRootSelectionReporter(notice: RootSelectionNotice): void {
   if (notice.kind === 'inheriting-store-config') {
+    const by =
+      notice.resolvedBy === 'uid'
+        ? 'Resolved by its permanent identity.'
+        : 'Resolved by its display name.';
     console.error(
-      `${notice.filePath} declares store '${notice.storeId}'; planning stays local and configuration inherits from that store.`
+      `${notice.filePath} declares store '${notice.storeId}'; planning stays local and configuration inherits from that store. ${by}`
     );
     return;
   }
 
-  if (notice.kind === 'inactive-store-pointer') {
+  if (notice.kind === 'unavailable-store-declaration') {
     console.error(
-      `Warning: ${notice.filePath} declares store '${notice.storeId}', but no such store is registered; the declaration currently has no effect. Register it with rasen store register <path> --id ${notice.storeId}.`
+      `Warning: ${notice.filePath} declares store '${notice.storeId}', but it cannot be used on this machine (${STORE_UNAVAILABLE_REASON_TEXT[notice.reason]}). Next: ${notice.repair}`
     );
     return;
   }
@@ -206,16 +238,45 @@ function canonicalDirectory(startPath: string): string {
   }
 }
 
+/**
+ * Renders a list of registered stores for an error message. A display name is
+ * only a name: when two entries share one, repeating it twice tells the reader
+ * nothing, so those entries carry their identity and root. Unique names stay
+ * bare, which keeps the common message unchanged.
+ */
+function renderRegisteredList(
+  entries: readonly { id: string; uid?: string; root: string }[]
+): string {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    counts.set(entry.id, (counts.get(entry.id) ?? 0) + 1);
+  }
+  return entries
+    .map((entry) =>
+      (counts.get(entry.id) ?? 0) > 1
+        ? `${entry.id} (${entry.uid ?? 'no identity'} at ${entry.root})`
+        : entry.id
+    )
+    .join(', ');
+}
+
 async function resolveStoreRoot(
   id: string,
   globalDataDir?: string,
   source: OpenSpecRootSource = 'store',
   type: StoreEntryType = 'store'
 ): Promise<ResolvedOpenSpecRoot> {
-  try {
-    validateStoreId(id);
-  } catch (error) {
-    fromStoreError(error);
+  // A permanent identity is a legitimate way to name a store here: it is the
+  // ONLY way to name one of two stores that share a display alias, so the
+  // identity check runs before the alias-shaped id validation (an uppercase
+  // UUID is not kebab-case, and would otherwise be rejected as a bad name).
+  const selectsByUid = type === 'store' && isValidStoreUid(id);
+  if (!selectsByUid) {
+    try {
+      validateStoreId(id);
+    } catch (error) {
+      fromStoreError(error);
+    }
   }
 
   const noun = type === 'project' ? 'project' : 'store';
@@ -228,7 +289,38 @@ async function resolveStoreRoot(
   const entries = (registry ? listStoreRegistryEntries(registry) : []).filter(
     (candidate) => candidate.type === type
   );
-  const entry = entries.find((candidate) => candidate.id === id);
+  const registered = entries.map((candidate) => ({
+    id: candidate.id,
+    ...(candidate.uid !== undefined ? { uid: candidate.uid } : {}),
+    root: getStoreRootForBackend(candidate.backend),
+  }));
+  const matches = selectsByUid
+    ? entries.filter((candidate) => storeUidsMatch(candidate.uid, id))
+    : entries.filter((candidate) => candidate.id === id);
+
+  // A display name is an alias, not an identity: two stores may carry the
+  // same one. Naming one is ambiguous, never a silent pick (design D5).
+  if (type === 'store' && matches.length > 1) {
+    const rendered = matches
+      .map(
+        (candidate) =>
+          `${candidate.uid ?? '(no identity)'} — ${candidate.id} at ${getStoreRootForBackend(candidate.backend)}`
+      )
+      .join('; ');
+    throw new RootSelectionError(
+      `The name '${id}' matches ${matches.length} registered stores: ${rendered}. A name is a display alias, not an identity.`,
+      'store_alias_ambiguous',
+      {
+        target: 'store.id',
+        // `upgrade-identity` rewrites a PROJECT declaration and does nothing
+        // for this flag; the actionable repair here is to pass the identity
+        // to --store instead of the name.
+        fix: `Pass the store's permanent identity to --store instead of its name, choosing one of the identities listed above.`,
+      }
+    );
+  }
+
+  const entry = matches[0];
 
   if (!entry) {
     if (entries.length === 0) {
@@ -246,19 +338,21 @@ async function resolveStoreRoot(
     }
 
     throw new RootSelectionError(
-      `Unknown ${noun} '${id}'. Registered ${noun}s: ${entries
-        .map((candidate) => candidate.id)
-        .join(', ')}.`,
+      `Unknown ${noun} '${id}'. Registered ${noun}s: ${renderRegisteredList(registered)}.`,
       'unknown_store',
       {
         target: 'store.id',
-        fix: `Pass a registered ${noun} id, or run rasen store list.`,
+        fix: `Pass a registered ${noun} id or permanent identity, or run rasen store list.`,
       }
     );
   }
 
   const storeRoot = getStoreRootForBackend(entry.backend);
-  const inspection = await inspectRegisteredStore(id, storeRoot);
+  // The selected entry's own display name identifies it from here on: a
+  // selection made by permanent identity must still report (and record on the
+  // resolved root) the store's name, not the UUID the user typed.
+  const selectedId = entry.id;
+  const inspection = await inspectRegisteredStore(selectedId, storeRoot);
 
   switch (inspection.kind) {
     case 'metadata_error':
@@ -267,24 +361,24 @@ async function resolveStoreRoot(
       // The doctor pointer lives in the message because human-mode command
       // wrappers print only the message, not the fix field.
       throw new RootSelectionError(
-        `${type === 'project' ? 'Project' : 'Store'} '${id}' is missing identity metadata at ${inspection.metadataPath}. ${doctorFix(id)}`,
+        `${type === 'project' ? 'Project' : 'Store'} '${selectedId}' is missing identity metadata at ${inspection.metadataPath}. ${doctorFix(selectedId)}`,
         'store_identity_mismatch',
-        { target: 'store.metadata', fix: doctorFix(id) }
+        { target: 'store.metadata', fix: doctorFix(selectedId) }
       );
     case 'metadata_id_mismatch':
       throw new RootSelectionError(
-        `${type === 'project' ? 'Project' : 'Store'} '${id}' metadata id '${inspection.actualId}' does not match its registered id. ${doctorFix(id)}`,
+        `${type === 'project' ? 'Project' : 'Store'} '${selectedId}' metadata id '${inspection.actualId}' does not match its registered id. ${doctorFix(selectedId)}`,
         'store_identity_mismatch',
-        { target: 'store.metadata', fix: doctorFix(id) }
+        { target: 'store.metadata', fix: doctorFix(selectedId) }
       );
     case 'unhealthy_root':
       throw new RootSelectionError(
-        `${type === 'project' ? 'Project' : 'Store'} '${id}' does not have a healthy Rasen root at ${storeRoot}: ${inspection.problems} ${doctorFix(id)}`,
+        `${type === 'project' ? 'Project' : 'Store'} '${selectedId}' does not have a healthy Rasen root at ${storeRoot}: ${inspection.problems} ${doctorFix(selectedId)}`,
         'unhealthy_store_root',
-        { target: 'openspec.root', fix: doctorFix(id) }
+        { target: 'openspec.root', fix: doctorFix(selectedId) }
       );
     case 'ok':
-      return makeRoot(inspection.canonicalRoot, source, id, type);
+      return makeRoot(inspection.canonicalRoot, source, selectedId, type);
     default: {
       // Exhaustiveness guard: a new inspection kind must be handled
       // here explicitly, not fall through to an undefined root.
@@ -295,48 +389,13 @@ async function resolveStoreRoot(
 }
 
 /**
- * The metadata-identity and root-health stages of registered-store
- * resolution, as a non-throwing result. `resolveStoreRoot` maps each
- * failure kind to its established error; the reference index assembler
- * maps them to warnings. One shared inspection path — never fork it.
+ * The shared read-only store inspection now lives in `store/inspection.ts`, so
+ * the identity resolver can reuse it without inverting the dependency
+ * direction. Re-exported here because this module has been its import site
+ * since it was written — there is still exactly one implementation.
  */
-export type RegisteredStoreInspection =
-  | { kind: 'ok'; canonicalRoot: string }
-  | { kind: 'metadata_error'; error: unknown }
-  | { kind: 'metadata_missing'; metadataPath: string }
-  | { kind: 'metadata_id_mismatch'; actualId: string }
-  | { kind: 'unhealthy_root'; problems: string };
-
-export async function inspectRegisteredStore(
-  id: string,
-  storeRoot: string
-): Promise<RegisteredStoreInspection> {
-  // Identity (metadata) failures win before root-health diagnostics.
-  let metadata;
-  try {
-    metadata = await readOptionalStoreMetadataState(storeRoot);
-  } catch (error) {
-    return { kind: 'metadata_error', error };
-  }
-
-  if (!metadata) {
-    return { kind: 'metadata_missing', metadataPath: getStoreMetadataPath(storeRoot) };
-  }
-
-  if (metadata.id !== id) {
-    return { kind: 'metadata_id_mismatch', actualId: metadata.id };
-  }
-
-  const inspection = await inspectOpenSpecRoot(storeRoot);
-  if (!inspection.healthy) {
-    const problems =
-      inspection.diagnostics.map((diagnostic) => diagnostic.message).join(' ') ||
-      'Rasen root is missing or incomplete.';
-    return { kind: 'unhealthy_root', problems };
-  }
-
-  return { kind: 'ok', canonicalRoot: FileSystemUtils.canonicalizeExistingPath(storeRoot) };
-}
+export { inspectRegisteredStore };
+export type { RegisteredStoreInspection };
 
 /**
  * Classifies the nearest `rasen/` directory (slice 3.2): a planning
@@ -430,97 +489,189 @@ export async function deriveSpaceFromCwd(
     return null;
   }
 
-  // Config-only root: a well-formed `store:` pointer to a registered store
-  // attributes to that store's space; anything else degrades to no space.
-  if (pointer.value !== undefined && pointer.malformed === undefined) {
-    const stores = await listRegisteredStores(pathOptions);
-    const store = stores.find((candidate) => candidate.type === 'store' && candidate.id === pointer.value);
-    if (store) {
-      return { type: 'store', id: store.id, root: canonicalizeOrResolve(store.storeRoot) };
-    }
+  // Config-only root: a well-formed `store:` declaration that resolves
+  // attributes to that store's space; anything else degrades to no space
+  // (this derivation is advisory — callers degrade rather than fail).
+  const binding = await resolveStoreBinding({
+    declaration: storeBindingDeclarationFrom(pointer),
+    ...pathOptions,
+  });
+  if (binding.kind === 'resolved') {
+    return { type: 'store', id: binding.store.id, root: binding.store.root };
   }
   return null;
+}
+
+/**
+ * Maps an `unavailable` binding onto THIS module's established error
+ * vocabulary (design D1's adapter role) — the codes and shapes callers and
+ * agents already key on, not a parallel taxonomy. Only the not-registered arm
+ * needs the registry's own facts, which the binding carries.
+ */
+export function rootSelectionErrorFor(
+  binding: UnavailableStoreBinding,
+  origin: string | null
+): RootSelectionError {
+  const diagnostic = binding.diagnostics[0];
+  const named = binding.expected.id ?? binding.expected.uid ?? 'the declared store';
+  const prefix = origin ? `Declared in ${origin}: ` : '';
+  const suffix = ' This command performed no network access and no writes.';
+
+  const build = (message: string, code: string, fix: string): RootSelectionError =>
+    new RootSelectionError(`${prefix}${message}${suffix} Next: ${fix}`, code, {
+      target: diagnostic?.target ?? 'store.pointer',
+      fix,
+    });
+
+  switch (binding.reason) {
+    case 'not-registered': {
+      const registered = binding.registered ?? [];
+      if (registered.length === 0) {
+        return build(
+          `Unknown store '${named}'. No stores are registered.`,
+          'no_registered_stores',
+          origin
+            ? `Register the store (rasen store register <path> --id ${named}) or edit ${origin} to name a registered store.`
+            : `Run rasen store setup ${named} or rasen store register <path> first.`
+        );
+      }
+      return build(
+        `Unknown store '${named}'. Registered stores: ${renderRegisteredList(registered)}.`,
+        'unknown_store',
+        origin
+          ? `Register the store (rasen store register <path> --id ${named}) or edit ${origin} to name a registered store.`
+          : 'Pass a registered store id, or run rasen store list.'
+      );
+    }
+    case 'alias-ambiguous':
+      return build(
+        diagnostic?.message ?? `The name '${named}' matches more than one registered store.`,
+        'store_alias_ambiguous',
+        primaryRepair(binding)
+      );
+    case 'metadata-missing':
+    case 'uid-mismatch':
+      return build(
+        diagnostic?.message ?? `Store '${named}' does not carry the expected identity.`,
+        'store_identity_mismatch',
+        primaryRepair(binding)
+      );
+    case 'root-unhealthy':
+      return build(
+        diagnostic?.message ?? `Store '${named}' does not have a healthy Rasen root.`,
+        'unhealthy_store_root',
+        primaryRepair(binding)
+      );
+    case 'pointer-malformed':
+      return build(
+        diagnostic?.message ?? 'The store declaration cannot be read.',
+        'invalid_store_pointer',
+        primaryRepair(binding)
+      );
+  }
 }
 
 async function resolveNearestOrDeclaredRoot(
   nearestRoot: string,
   globalDataDir?: string,
-  reporter?: RootSelectionReporter | false
+  reporter?: RootSelectionReporter | false,
+  allowUnavailableStore = false
 ): Promise<ResolvedOpenSpecRoot> {
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(nearestRoot);
+  const pathOptions = globalDataDir ? { globalDataDir } : {};
+  const declaration = storeBindingDeclarationFrom(pointer);
 
   if (hasPlanningShape) {
-    // A well-formed `store:` pointer beside local planning declares
-    // configuration inheritance (store-config-inheritance): planning stays
-    // local (this root still wins), but the notice reports whether the named
-    // store is registered — inheriting when it is, inactive when it is not.
-    // The notice must not claim inheritance that will not happen, so it is
-    // gated on the SAME facts resolveConfigStoreLayer uses:
-    //  - the root is itself a registered store -> no-transitivity (rule 3), a
-    //    store root never inherits, so the pointer is inert; stay silent
-    //    (matching the resolver's null result — the spec is silent on the
-    //    store-pointing-at-a-store case) rather than claiming inheritance.
-    //  - otherwise: named store registered -> inheriting; unregistered ->
-    //    inactive-pointer warning.
-    // A malformed pointer stays silent (value undefined in that branch).
-    if (pointer.value !== undefined && pointer.filePath !== null) {
-      const pathOptions = globalDataDir ? { globalDataDir } : {};
-      const stores = await listRegisteredStores(pathOptions);
-      if (!isRegisteredStoreRoot(nearestRoot, stores)) {
-        const registered = stores.some(
-          (candidate) => candidate.type === 'store' && candidate.id === pointer.value
-        );
+    // A `store:` declaration beside local planning declares configuration
+    // inheritance (store-config-inheritance): planning stays local (this root
+    // still wins), but the declaration must resolve. The notice is gated on
+    // the SAME resolver `resolveConfigStoreLayer` uses, so the two can never
+    // disagree — including the no-transitivity case (a root that IS a
+    // registered store resolves `absent` for its own declaration and stays
+    // silent). A declaration that cannot be used stops the command, except on
+    // the read-only diagnostic surfaces that exist to report it.
+    if (declaration.form === 'absent') {
+      return makeRoot(nearestRoot, 'nearest');
+    }
+
+    const binding = await resolveStoreBinding({
+      declaration,
+      projectRoot: nearestRoot,
+      ...pathOptions,
+    });
+
+    if (binding.kind === 'resolved' && pointer.filePath !== null) {
+      reportRootSelectionNotice(reporter, {
+        kind: 'inheriting-store-config',
+        filePath: pointer.filePath,
+        storeId: binding.store.id,
+        resolvedBy: binding.resolvedBy,
+      });
+    } else if (binding.kind === 'unavailable') {
+      if (!allowUnavailableStore) {
+        throw rootSelectionErrorFor(binding, pointer.filePath);
+      }
+      if (pointer.filePath !== null) {
         reportRootSelectionNotice(reporter, {
-          kind: registered ? 'inheriting-store-config' : 'inactive-store-pointer',
+          kind: 'unavailable-store-declaration',
           filePath: pointer.filePath,
-          storeId: pointer.value,
+          storeId: binding.expected.id ?? binding.expected.uid ?? '(unnamed)',
+          reason: binding.reason,
+          repair: primaryRepair(binding),
         });
       }
     }
+
     return makeRoot(nearestRoot, 'nearest');
   }
 
-  if (pointer.malformed) {
-    const problem = storePointerProblem(pointer.malformed);
+  if (declaration.form === 'absent') {
+    return makeRoot(nearestRoot, 'nearest');
+  }
+
+  if (declaration.form === 'malformed') {
+    // The established message/fix pair for an unreadable declaration: it
+    // already names the file and the problem, so it is not re-prefixed.
     throw new RootSelectionError(
-      `Invalid store declaration in ${pointer.filePath}: ${problem}.`,
+      `Invalid store declaration in ${pointer.filePath}: ${declaration.problem}.`,
       'invalid_store_pointer',
       {
         target: 'store.pointer',
         fix:
           pointer.malformed === 'unparseable'
             ? `Fix the YAML syntax in ${pointer.filePath}.`
-            : `Edit ${pointer.filePath} so the store key is a registered store id, or remove it.`,
+            : `Edit ${pointer.filePath} so the store key is a registered store id or a declaration carrying a uid, or remove it.`,
       }
     );
   }
 
-  if (pointer.value === undefined) {
+  // Config-only pointer directory: the declaration resolves the root itself.
+  if (declaration.form === 'alias') {
+    try {
+      validateStoreId(declaration.id);
+    } catch (error) {
+      if (error instanceof StoreError) {
+        throw new RootSelectionError(
+          `Declared in ${pointer.filePath}: ${error.message}`,
+          error.diagnostic.code,
+          {
+            ...(error.diagnostic.target ? { target: error.diagnostic.target } : {}),
+            ...(error.diagnostic.fix ? { fix: error.diagnostic.fix } : {}),
+          }
+        );
+      }
+      throw error;
+    }
+  }
+  const binding = await resolveStoreBinding({ declaration, ...pathOptions });
+  if (binding.kind === 'unavailable') {
+    throw rootSelectionErrorFor(binding, pointer.filePath);
+  }
+  if (binding.kind === 'absent') {
     return makeRoot(nearestRoot, 'nearest');
   }
 
-  try {
-    return await resolveStoreRoot(pointer.value, globalDataDir, 'declared');
-  } catch (error) {
-    if (error instanceof RootSelectionError) {
-      // Rewrap with the declaration origin. The unknown-store fix is
-      // reshaped for the actual mistake: the user declared a pointer,
-      // they did not pass --store.
-      const declarationFix =
-        error.diagnostic.code === 'unknown_store'
-          ? `Register the store (rasen store register <path> --id ${pointer.value}) or edit ${pointer.filePath} to name a registered store.`
-          : error.diagnostic.fix;
-      throw new RootSelectionError(
-        `Declared in ${pointer.filePath}: ${error.message}`,
-        error.diagnostic.code,
-        {
-          ...(error.diagnostic.target ? { target: error.diagnostic.target } : {}),
-          ...(declarationFix ? { fix: declarationFix } : {}),
-        }
-      );
-    }
-    throw error;
-  }
+  return makeRoot(binding.store.root, 'declared', binding.store.id, 'store');
 }
 
 export async function resolveOpenSpecRoot(
@@ -562,7 +713,8 @@ export async function resolveOpenSpecRoot(
     return resolveNearestOrDeclaredRoot(
       nearestRoot,
       options.globalDataDir,
-      options.reporter
+      options.reporter,
+      options.allowUnavailableStore === true
     );
   }
 
@@ -768,6 +920,8 @@ export async function resolveRootForCommand(
      * machine-oriented callers silent; omitted preserves the legacy English
      * console output. */
     reporter?: RootSelectionReporter | false;
+    /** Read-only diagnostic opt-out; see `ResolveOpenSpecRootOptions`. */
+    allowUnavailableStore?: boolean;
   } = {}
 ): Promise<ResolvedOpenSpecRoot | null> {
   try {
@@ -779,6 +933,9 @@ export async function resolveRootForCommand(
         ? { allowImplicitRoot: output.allowImplicitRoot }
         : {}),
       ...(output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}),
+      ...(output.allowUnavailableStore !== undefined
+        ? { allowUnavailableStore: output.allowUnavailableStore }
+        : {}),
       reporter: output.reporter,
     });
 

@@ -137,6 +137,28 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
       }
     });
 
+    it('resolves a registered store by permanent identity, reporting its display name', async () => {
+      const storeRoot = makePlanningRoot(tempDir, 'identified-store');
+      await registerStore({ id: 'identified', localPath: storeRoot, globalDataDir: dataDir });
+      // Registration records an identity; give this one a v2 metadata file so
+      // it has one to be addressed by.
+      const uid = '2b7f4c1a-5d3e-4a91-8c0b-6e2f9d7a1c34';
+      fs.writeFileSync(
+        getStoreMetadataPath(storeRoot),
+        `version: 2\nuid: ${uid}\nid: identified\n`
+      );
+
+      const result = await resolveSpaceSelector(`store:${uid}`);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // The identity addresses it; the space still reports the store's own
+        // display name, never the selector that was used.
+        expect(result.space.id).toBe('identified');
+        expect(result.space.root).toBe(FileSystemUtils.canonicalizeExistingPath(storeRoot));
+      }
+    });
+
     it('404s space_not_found for an unknown store, naming the namespace', async () => {
       const result = await resolveSpaceSelector('store:ghost');
       expect(result.ok).toBe(false);

@@ -29,10 +29,21 @@ import {
   type SetupStoreInput,
   type RegistryEntryType,
 } from '../core/store/index.js';
+import {
+  upgradeStoreIdentity,
+  type UpgradeStoreIdentityResult,
+} from '../core/store/upgrade-identity.js';
+import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { runAdopt, runEject } from './store-migration.js';
 import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
+import { readStorePointer } from '../core/project-config.js';
+import { storeBindingDeclarationFrom } from '../core/effective-config.js';
+import {
+  resolveStoreBinding,
+  type UnavailableStoreBinding,
+} from '../core/store/identity.js';
 
 interface StoreSetupOptions {
   path?: string;
@@ -71,6 +82,12 @@ interface StoreDoctorOptions extends StoreJsonOptions {
   projectNamespace?: boolean;
 }
 
+interface StoreUpgradeIdentityOptions extends StoreJsonOptions {
+  uid?: string;
+  apply?: boolean;
+  dryRun?: boolean;
+}
+
 /**
  * `--project-namespace` narrows a store-namespace lifecycle command to the
  * project namespace; a bare id keeps meaning store (backward compat). Named
@@ -90,6 +107,22 @@ interface StoreOutput {
   id: string;
   root: string;
   metadata_path?: string;
+  uid?: string;
+}
+
+interface StoreUpgradeIdentityOutput {
+  store: { id: string; root: string; uid: string } | null;
+  applied: boolean;
+  steps: Array<{
+    target: string;
+    path: string;
+    needed: boolean;
+    description: string;
+    blocked?: string;
+  }>;
+  files_to_commit: string[];
+  repair_needed: string[];
+  status: StoreDiagnostic[];
 }
 
 interface StoreMutationOutput {
@@ -179,8 +212,65 @@ function toStoreOutput(store: StoreInfo): StoreOutput {
   return {
     id: store.id,
     root: store.root,
+    ...(store.uid ? { uid: store.uid } : {}),
     ...(store.metadataPath ? { metadata_path: store.metadataPath } : {}),
   };
+}
+
+function toUpgradeIdentityOutput(
+  result: UpgradeStoreIdentityResult
+): StoreUpgradeIdentityOutput {
+  return {
+    store: result.store,
+    applied: result.applied,
+    steps: result.steps.map((step) => ({
+      target: step.target,
+      path: step.path,
+      needed: step.needed,
+      description: step.description,
+      ...(step.blocked ? { blocked: step.blocked } : {}),
+    })),
+    files_to_commit: result.filesToCommit,
+    repair_needed: result.repairNeeded,
+    status: result.diagnostics,
+  };
+}
+
+function printUpgradeIdentityHuman(payload: StoreUpgradeIdentityOutput): void {
+  if (!payload.store) return;
+
+  console.log(
+    payload.applied
+      ? `Store identity applied: ${payload.store.id}`
+      : `Store identity plan (preview, nothing written): ${payload.store.id}`
+  );
+  console.log(`Permanent identity: ${payload.store.uid}`);
+  console.log(`Location: ${formatPathForHuman(payload.store.root)}`);
+  console.log('');
+  for (const step of payload.steps) {
+    const mark = step.needed ? '-' : 'ok';
+    console.log(`  ${mark} ${step.path}: ${step.description}`);
+    if (step.blocked) {
+      console.log(`      Blocked: ${step.blocked}`);
+    }
+  }
+  for (const status of payload.status) {
+    console.log(`${status.severity === 'error' ? 'Issue' : 'Note'}: ${status.message}`);
+  }
+  if (payload.repair_needed.length > 0) {
+    console.log('');
+    console.log('Still needs doing:');
+    for (const repair of payload.repair_needed) {
+      console.log(`  - ${repair}`);
+    }
+  }
+  if (payload.files_to_commit.length > 0) {
+    console.log('');
+    console.log('Commit these files yourself — this command never commits or pushes:');
+    for (const file of payload.files_to_commit) {
+      console.log(`  - ${file}`);
+    }
+  }
 }
 
 function toMutationOutput(result: StoreMutationResult): StoreMutationOutput {
@@ -270,6 +360,26 @@ function toDoctorStoreOutput(store: StoreInspection): StoreDoctorStoreOutput {
     },
     status: store.diagnostics,
   };
+}
+
+/**
+ * The current project's declared store, when it cannot be used. Read-only and
+ * best-effort: `store doctor` runs from anywhere, and a directory that declares
+ * nothing (or cannot be classified) simply has nothing to report. Resolved
+ * through the SAME resolver every other command uses, so this surface can never
+ * disagree with the commands it diagnoses.
+ */
+async function unavailableProjectDeclaration(): Promise<UnavailableStoreBinding | null> {
+  try {
+    const projectRoot = findRepoPlanningRootSync(process.cwd());
+    if (!projectRoot) return null;
+    const declaration = storeBindingDeclarationFrom(readStorePointer(projectRoot));
+    if (declaration.form === 'absent') return null;
+    const binding = await resolveStoreBinding({ declaration, projectRoot });
+    return binding.kind === 'unavailable' ? binding : null;
+  } catch {
+    return null;
+  }
 }
 
 function toDoctorOutput(result: StoreDoctorResult): StoreDoctorOutput {
@@ -523,9 +633,12 @@ function printListHuman(payload: StoreListOutput): void {
 
   console.log(`Rasen stores (${payload.stores.length})`);
   console.log('');
-  console.log(`${'ID'.padEnd(16)}${'Type'.padEnd(10)}Location`);
+  console.log(`${'ID'.padEnd(16)}${'Type'.padEnd(10)}${'Identity'.padEnd(38)}Location`);
   for (const store of payload.stores) {
-    console.log(`${store.id.padEnd(16)}${store.type.padEnd(10)}${store.root}`);
+    const identity = store.uid ?? '(none yet)';
+    console.log(
+      `${store.id.padEnd(16)}${store.type.padEnd(10)}${identity.padEnd(38)}${store.root}`
+    );
   }
 }
 
@@ -590,11 +703,21 @@ function printDoctorHuman(payload: StoreDoctorOutput): void {
   }
 
   console.log('Store doctor');
+  for (const status of payload.status) {
+    console.log('');
+    console.log(`Note: ${status.message}`);
+    if (status.fix) {
+      console.log(`Fix: ${status.fix}`);
+    }
+  }
   for (const store of payload.stores) {
     console.log('');
     console.log(`${store.id} (${store.type})`);
     console.log(`  Location: ${store.root}`);
     console.log(`  Rasen root: ${formatOpenSpecRootHuman(store)}`);
+    console.log(
+      `  Identity: ${store.metadata.uid ?? 'none yet (run rasen store upgrade-identity ' + store.id + ' --apply)'}`
+    );
     console.log(`  Metadata: ${formatMetadataHuman(store)}`);
     const remoteLine = store.metadata.remote ?? store.git.origin_url;
     if (remoteLine) {
@@ -792,17 +915,44 @@ class StoreCommand {
       // mismatch. Only meaningful when running from a project root, so a
       // failure to resolve degrades to no drift rather than an error.
       let drift: StoreDiagnostic[] = [];
+      let declaration: UnavailableStoreBinding | null = null;
       if (id === undefined) {
         drift = await diagnoseMigrationDrift(process.cwd()).catch(() => []);
+        declaration = await unavailableProjectDeclaration();
       }
-      const withDrift = { ...payload, projectDrift: drift };
+      const declarationReport = declaration
+        ? {
+            reason: declaration.reason,
+            repair: declaration.repair,
+            status: declaration.diagnostics,
+          }
+        : null;
+
+      // This command is a carve-out from failing closed (design D4) so a user
+      // can diagnose a broken declaration — but it reports a broken machine,
+      // so it must not exit 0 while doing it.
+      if (declaration) {
+        process.exitCode = 1;
+      }
 
       if (options.json) {
-        printJson(withDrift);
+        printJson({ ...payload, projectDrift: drift, projectStore: declarationReport });
         return;
       }
 
       printDoctorHuman(payload);
+      if (declarationReport) {
+        console.log('');
+        console.log('Declared store:');
+        console.log(`  - Not available on this machine (${declarationReport.reason}).`);
+        for (const status of declarationReport.status) {
+          console.log(`  - [${status.severity}] ${status.message}`);
+          if (status.fix) console.log(`    Fix: ${status.fix}`);
+        }
+        for (const repair of declarationReport.repair) {
+          console.log(`    Next: ${repair}`);
+        }
+      }
       if (drift.length > 0) {
         console.log('');
         console.log('Current project drift:');
@@ -813,6 +963,42 @@ class StoreCommand {
       }
     } catch (error) {
       this.handleFailure(options.json, { stores: [], status: [] }, error);
+    }
+  }
+
+  async upgradeIdentity(
+    id: string,
+    options: StoreUpgradeIdentityOptions = {}
+  ): Promise<void> {
+    try {
+      const projectRoot = findRepoPlanningRootSync(process.cwd());
+      const result = await upgradeStoreIdentity({
+        id,
+        ...(options.uid !== undefined ? { uid: options.uid } : {}),
+        apply: options.apply === true && options.dryRun !== true,
+        ...(projectRoot ? { projectRoot } : {}),
+      });
+      const payload = toUpgradeIdentityOutput(result);
+
+      if (options.json) {
+        printJson(payload);
+        return;
+      }
+
+      printUpgradeIdentityHuman(payload);
+    } catch (error) {
+      this.handleFailure(
+        options.json,
+        {
+          store: null,
+          applied: false,
+          steps: [],
+          files_to_commit: [],
+          repair_needed: [],
+          status: [],
+        },
+        error
+      );
     }
   }
 
@@ -910,6 +1096,17 @@ export function registerStoreCommand(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(async (projectId: string, options) => {
       await runEject(projectId, options);
+    });
+
+  store
+    .command('upgrade-identity <id>')
+    .description("Give a store a permanent identity and record it in the registry and the project's declaration")
+    .option('--uid <uid>', 'Disambiguate a name that matches more than one registered store')
+    .option('--dry-run', 'Report every file that would be written and change nothing (default)')
+    .option('--apply', 'Write the plan')
+    .option('--json', 'Output as JSON')
+    .action(async (id: string, options: StoreUpgradeIdentityOptions) => {
+      await storeCommand.upgradeIdentity(id, options);
     });
 
   store

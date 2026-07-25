@@ -386,6 +386,7 @@ describe('command completion registry', () => {
       'setup',
       'register',
       'add-project',
+      'upgrade-identity',
       'unregister',
       'remove',
       'adopt',

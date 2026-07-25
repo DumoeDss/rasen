@@ -96,6 +96,10 @@ describe('store migration ops', () => {
     expect(ls(path.join(source, 'rasen', 'specs'))).toEqual([]);
     // Pointer written, planning shape gone.
     expect(readStorePointer(source).value).toBe('team-store');
+    // This store predates permanent identities, so there is none to record:
+    // the declaration stays the legacy string form. Adopt records an identity
+    // when the store HAS one; it never invents one.
+    expect(readStorePointer(source).shape).toBe('alias');
     // Suggested commits for both repos, never executed.
     expect(result.suggestedCommits.length).toBe(2);
   });

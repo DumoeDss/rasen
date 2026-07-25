@@ -9,8 +9,45 @@
  */
 import { makeStoreDiagnostic, type StoreDiagnostic } from './store/errors.js';
 import { sanitizeInline, type ReferenceIndexEntry } from './references.js';
-import { storePointerProblem } from './project-config.js';
+import { storePointerProblem, type StorePointerProblem, type StorePointerShape } from './project-config.js';
+import { redactOptionalRemote } from './store/remote.js';
+import { storeRemoteDivergence } from './store/identity-diagnostics.js';
+import type { StoreUnavailableReason } from './store/identity.js';
 import { toRootOutput, type ResolvedOpenSpecRoot } from './root-selection.js';
+
+/**
+ * The Store section of the relationship report: the resolved identity, how the
+ * project declared it, and every identity diagnostic. Present both for a
+ * Store-backed root and for a project whose declared Store could not be used —
+ * a declared-but-unavailable Store is reported, never rendered as absent.
+ */
+export interface RelationshipStoreHealth {
+  id: string;
+  /** The Store's permanent identity; absent for legacy metadata. */
+  uid?: string;
+  metadata: {
+    present: boolean;
+    valid: boolean;
+    remote?: string;
+    uid?: string;
+    /** True when the metadata predates permanent identities. */
+    legacy?: boolean;
+  };
+  origin_url?: string;
+  /** How this project declared the Store, when it was reached by declaration. */
+  pointer?: {
+    shape: StorePointerShape;
+    declared_id?: string;
+    declared_uid?: string;
+    resolved_by?: 'uid' | 'alias';
+  };
+  /** Set when the declared Store cannot be used on this machine. */
+  unavailable?: {
+    reason: StoreUnavailableReason;
+    repair: string[];
+  };
+  status: StoreDiagnostic[];
+}
 
 export interface RelationshipHealth {
   root: {
@@ -20,12 +57,7 @@ export interface RelationshipHealth {
     healthy: boolean;
     status: StoreDiagnostic[];
   };
-  store: {
-    id: string;
-    metadata: { present: boolean; valid: boolean; remote?: string };
-    origin_url?: string;
-    status: StoreDiagnostic[];
-  } | null;
+  store: RelationshipStoreHealth | null;
   references: ReferenceIndexEntry[];
   machineHome: MachineHomeHealth;
   status: StoreDiagnostic[];
@@ -85,17 +117,34 @@ export interface InspectRelationshipsInput {
   /** Store facts for store-backed roots (explicit or declared). */
   storeFacts?: {
     id: string;
+    uid?: string;
     metadataPresent: boolean;
     metadataValid: boolean;
+    metadataLegacy?: boolean;
     canonicalRemote?: string;
     originUrl?: string;
   };
+  /**
+   * The project's Store declaration as resolved by the shared identity
+   * resolver — pure data gathered by the caller, composed here. Present for a
+   * planning-shaped root that declares a Store, whether or not it resolved.
+   */
+  storeBinding?: {
+    shape: StorePointerShape;
+    filePath?: string | null;
+    declaredId?: string;
+    declaredUid?: string;
+    resolvedBy?: 'uid' | 'alias';
+    resolvedId?: string;
+    resolvedUid?: string;
+    reason?: StoreUnavailableReason;
+    repair?: string[];
+    diagnostics?: StoreDiagnostic[];
+  };
   referenceEntries: ReferenceIndexEntry[];
   registryUnreadable: boolean;
-  /** A real root whose config also declares a store: pointer (3.2). */
-  bothShapesPointer?: { value: string; filePath: string };
   /** A real root whose store: pointer value is malformed (3.2). */
-  malformedPointer?: { filePath: string; reason: 'unparseable' | 'non_string' };
+  malformedPointer?: { filePath: string; reason: StorePointerProblem };
   /** Reference declarations in a pointer directory's own config are inert. */
   inertPointerDeclarations?: { filePath: string; fields: string[] };
   /** This project's machine-registry entry (probe-only; never mutated here). */
@@ -125,6 +174,17 @@ function warning(code: string, message: string, fix: string): StoreDiagnostic {
   return makeStoreDiagnostic('warning', code, message, { target: 'relationships', fix });
 }
 
+function pointerReport(
+  binding: NonNullable<InspectRelationshipsInput['storeBinding']>
+): NonNullable<RelationshipStoreHealth['pointer']> {
+  return {
+    shape: binding.shape,
+    ...(binding.declaredId ? { declared_id: binding.declaredId } : {}),
+    ...(binding.declaredUid ? { declared_uid: binding.declaredUid } : {}),
+    ...(binding.resolvedBy ? { resolved_by: binding.resolvedBy } : {}),
+  };
+}
+
 export function inspectRelationships(input: InspectRelationshipsInput): RelationshipHealth {
   const status: StoreDiagnostic[] = [];
 
@@ -134,16 +194,6 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
         'relationship_registry_unreadable',
         'The store registry is unreadable; reference health cannot be checked.',
         'Run: rasen store doctor'
-      )
-    );
-  }
-
-  if (input.bothShapesPointer) {
-    status.push(
-      warning(
-        'root_pointer_ignored',
-        `${input.bothShapesPointer.filePath} declares store '${input.bothShapesPointer.value}', but this directory is a real Rasen root; the declaration is ignored.`,
-        `Remove the store: line from ${input.bothShapesPointer.filePath}, or move the planning files into the store.`
       )
     );
   }
@@ -178,35 +228,55 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     );
   }
 
-  // Store section: metadata facts + the divergence info note.
+  // Store section: identity, declaration shape, metadata facts, and every
+  // identity diagnostic. Remotes are rendered through the shared redaction
+  // renderer so a credential-bearing value never reaches any surface.
+  const binding = input.storeBinding;
   let store: RelationshipHealth['store'] = null;
+
   if (input.storeFacts) {
-    const storeStatus: StoreDiagnostic[] = [];
-    if (
-      input.storeFacts.canonicalRemote &&
-      input.storeFacts.originUrl &&
-      input.storeFacts.canonicalRemote !== input.storeFacts.originUrl
-    ) {
+    const storeStatus: StoreDiagnostic[] = [...(binding?.diagnostics ?? [])];
+    const canonicalRemote = redactOptionalRemote(input.storeFacts.canonicalRemote);
+    const originUrl = redactOptionalRemote(input.storeFacts.originUrl);
+
+    // Compared RAW, rendered redacted (the factory redacts): two remotes that
+    // differ only in an embedded credential redact to the same string, so
+    // comparing the redacted forms would suppress a genuine divergence.
+    const rawCanonical = input.storeFacts.canonicalRemote;
+    const rawOrigin = input.storeFacts.originUrl;
+    if (rawCanonical && rawOrigin && rawCanonical !== rawOrigin) {
       storeStatus.push(
-        makeStoreDiagnostic(
-          'info',
-          'store_remote_divergence',
-          `The store.yaml remote (${sanitizeInline(input.storeFacts.canonicalRemote, 200)}) differs from the checkout's origin (${sanitizeInline(input.storeFacts.originUrl, 200)}).`,
-          { target: 'store.metadata' }
-        )
+        storeRemoteDivergence({
+          recorded: sanitizeInline(rawCanonical, 200),
+          observed: sanitizeInline(rawOrigin, 200),
+        })
       );
     }
+
     store = {
       id: input.storeFacts.id,
+      ...(input.storeFacts.uid ? { uid: input.storeFacts.uid } : {}),
       metadata: {
         present: input.storeFacts.metadataPresent,
         valid: input.storeFacts.metadataValid,
-        ...(input.storeFacts.canonicalRemote
-          ? { remote: input.storeFacts.canonicalRemote }
-          : {}),
+        ...(canonicalRemote ? { remote: canonicalRemote } : {}),
+        ...(input.storeFacts.uid ? { uid: input.storeFacts.uid } : {}),
+        ...(input.storeFacts.metadataLegacy ? { legacy: true } : {}),
       },
-      ...(input.storeFacts.originUrl ? { origin_url: input.storeFacts.originUrl } : {}),
+      ...(originUrl ? { origin_url: originUrl } : {}),
+      ...(binding ? { pointer: pointerReport(binding) } : {}),
       status: storeStatus,
+    };
+  } else if (binding && binding.reason !== undefined) {
+    // A declared Store that could not be used is REPORTED, never rendered as
+    // though the project had declared none.
+    store = {
+      id: binding.declaredId ?? binding.declaredUid ?? '(unnamed store)',
+      ...(binding.declaredUid ? { uid: binding.declaredUid } : {}),
+      metadata: { present: false, valid: false },
+      pointer: pointerReport(binding),
+      unavailable: { reason: binding.reason, repair: binding.repair ?? [] },
+      status: binding.diagnostics ?? [],
     };
   }
 

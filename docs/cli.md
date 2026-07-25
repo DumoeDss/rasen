@@ -7,7 +7,7 @@ The rasen CLI (`rasen`) provides terminal commands for project setup, validation
 | Category | Commands | Purpose |
 |----------|----------|---------|
 | **Setup** | `init`, `update` | Initialize and update rasen in your project |
-| **Stores (standalone rasen repos)** | `store setup`, `store register`, `store unregister`, `store remove`, `store list`, `store doctor` | Manage stores — standalone rasen repos you've registered |
+| **Stores (standalone rasen repos)** | `store setup`, `store register`, `store upgrade-identity`, `store unregister`, `store remove`, `store list`, `store doctor` | Manage stores — standalone rasen repos you've registered |
 | **Health** | `doctor` | Report relationship health for the resolved root |
 | **Working context** | `context` | Assemble the working set (root + referenced stores) |
 | **Personal worksets** | `workset create`, `workset list`, `workset open`, `workset remove` | Keep and open personal, local working views in your tool |
@@ -54,6 +54,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen schemas` | List available schemas | `--json` for schema discovery |
 | `rasen store setup <id>` | Create and register a local store | `--json` with explicit inputs for structured setup output |
 | `rasen store register <path>` | Register an existing store | `--json` for structured registration output |
+| `rasen store upgrade-identity <id>` | Give a store a permanent identity | `--apply --json`; previews by default |
 | `rasen store unregister <id>` | Forget a local store registration | `--json` for structured cleanup output |
 | `rasen store remove <id>` | Delete a registered local store folder | `--yes --json` for non-interactive deletion |
 | `rasen store list` | Browse registered stores | `--json` for structured registrations |
@@ -186,6 +187,8 @@ rasen update
 
 A store is a standalone rasen repo you've registered on this machine — for example a planning repo or a contracts repo. Registering a store lets normal commands (`list`, `show`, `status`, `validate`, `new change`, `archive`, ...) act in it from anywhere by passing `--store <id>`.
 
+`--store` accepts a store's display name or its permanent identity. The two are not equivalent: a display name may be shared by two registered stores, and naming a shared one fails as ambiguous (listing every candidate with its identity and root) rather than picking one — the permanent identity is how you say which you meant.
+
 ### `rasen store setup`
 
 Create and register a local store. With no arguments in a terminal,
@@ -244,6 +247,11 @@ rasen store unregister <id> [--json]
 Use this when a store was moved, cloned somewhere else, or should no longer be
 shown by rasen on this machine.
 
+`unregister`, `remove`, and `doctor` accept a store's display name or its
+permanent identity. A display name that matches two registered stores is
+refused as ambiguous — nothing is unregistered or deleted on a guess — and the
+identity is how you say which one you mean (`rasen store list` shows it).
+
 ### `rasen store remove`
 
 Forget a local store registration and delete its local folder.
@@ -257,9 +265,41 @@ Agents, scripts, and JSON callers must pass `--yes` to confirm deletion.
 Rasen refuses to delete a folder that does not contain matching
 store metadata.
 
+### `rasen store upgrade-identity`
+
+Give a store created before permanent identities one, and record it everywhere
+it belongs.
+
+```bash
+rasen store upgrade-identity <id> [--uid <identity>] [--dry-run] [--apply] [--json]
+```
+
+| Option | Description |
+| --- | --- |
+| `--uid <identity>` | Disambiguate a display name that matches more than one registered store |
+| `--dry-run` | Report every file that would be written and change nothing (the default) |
+| `--apply` | Write the plan |
+
+Without `--apply` the command previews: it prints every file it would write and
+changes nothing. With `--apply` it writes, in this order, so a partial failure
+still leaves a coherent state:
+
+1. the store's own `.rasen-store/store.yaml` (written, then read back and verified),
+2. the machine store registry, re-keyed by permanent identity,
+3. the project's `store:` declaration, when you run it from a project that
+   declares this store by name.
+
+Running it twice is a no-op: the identity is minted once and reused. It never
+commits or pushes — the output names the files you need to commit yourself.
+
+The registry moves to its identity-keyed form only once **every** registered
+store has an identity. Until then it stays in its existing form and the command
+names the stores that still need upgrading, rather than inventing identities for
+them.
+
 ### `rasen store list`
 
-List locally registered stores.
+List locally registered stores, with each store's permanent identity.
 
 ```bash
 rasen store list [--json]
@@ -274,7 +314,78 @@ Check local store registration, metadata, and Git presence.
 rasen store doctor [id] [--json]
 ```
 
-Doctor is diagnostic-only; it reports missing roots, metadata mismatches, and invalid local registry state without modifying the store.
+Doctor is diagnostic-only; it reports missing roots, metadata mismatches,
+permanent identities (or their absence), display names shared by more than one
+store, and invalid local registry state — without modifying the store.
+
+### A store's identity and its name
+
+A store has two different things:
+
+- a **permanent identity**, minted once when the store is created, recorded in
+  the store's own `.rasen-store/store.yaml`, and travelling with the store's
+  repository. It never changes — not on rename, not on re-registration, not on
+  re-clone. No command accepts it as input and no command replaces it.
+- a **display name** (the `id`), which is what you type and read. It may be
+  renamed, and two different stores may legitimately carry the same one.
+
+Naming a store by display name therefore has explicit arity:
+
+| Matches | Outcome |
+| --- | --- |
+| 0 | The store is declared but not available on this machine, with the command that would make it available |
+| 1 | It resolves, with a note offering the upgrade to a durable declaration |
+| 2 or more | Ambiguous: every candidate is listed with its identity and local root, and nothing is picked |
+
+Resolving by permanent identity is exact and never consults the name index.
+
+### Declaring a store durably
+
+A project's `store:` declaration can record the permanent identity, the display
+name for readability, and a credential-free remote so the store can be located
+on a machine that has never seen it:
+
+```yaml
+# rasen/config.yaml
+store:
+  uid: 9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7
+  id: team-context
+  remote: git@github.com:acme/team-context.git
+```
+
+The identity is the authority. A declared name that no longer matches the
+store's own name is reported as drift and does not block resolution; a declared
+remote that differs from the store's canonical remote is an informational note.
+Nothing machine-specific — no filesystem path from your machine — is ever
+written into this declaration.
+
+The single-name form keeps working and resolves whenever that name matches
+exactly one registered store:
+
+```yaml
+store: team-context
+```
+
+`rasen store upgrade-identity <id> --apply`, run from the project, rewrites it
+into the durable form.
+
+### When a declared store cannot be used
+
+A project that declares a store which cannot be resolved no longer resolves
+configuration as though it had no store. The command stops and prints what was
+expected, why it could not be used, and a copy-pasteable repair command. The
+reasons are distinguished: not registered on this machine, missing store
+metadata, a checkout carrying a different identity, an unhealthy store root, an
+ambiguous name, and an unreadable declaration.
+
+`rasen doctor`, `rasen store doctor`, `rasen store list`, and `rasen config
+--global` keep working in exactly those states — they are how you find out what
+is wrong. They write nothing, clone nothing, and register nothing.
+
+A remote that embeds a username-and-password or token credential is rejected on
+write and shown redacted wherever it is displayed, in both human and JSON
+output. The ordinary SSH form (`git@github.com:acme/team-context.git`) carries a
+user name but no secret and is unaffected.
 
 ### Referencing stores from a project
 
@@ -319,7 +430,7 @@ A repo whose planning is fully externalized — no local `rasen/specs/` or `rase
 store: team-context
 ```
 
-Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins, and a directory with real planning folders ignores the pointer (with a warning). To convert a pointer repo into a local Rasen root, remove the `store:` line and run `rasen init` — init refuses to scaffold while the declaration is present.
+Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins. Beside real planning folders the declaration does not move where work lands — planning stays local — but it does drive configuration inheritance, and the notice says whether the permanent identity or the display name resolved it. To convert a pointer repo into a local Rasen root, remove the `store:` line and run `rasen init` — init refuses to scaffold while the declaration is present.
 
 ## Doctor (relationship health)
 
@@ -330,6 +441,82 @@ rasen doctor [--store <id>] [--json]
 ```
 
 The report separates root health, store metadata health (including a note when the recorded remote and the checkout's origin diverge), and reference health (the same diagnostics instructions show, with clone fixes for unresolved references). Health findings of any severity exit 0 — agents read the `status` arrays; only command failures (no root, unknown store) exit 1. Doctor never clones, syncs, or repairs. To get the assembled set itself rather than its health, use `rasen context`.
+
+The `store` block reports the resolved identity, how the project declared the
+store, and every identity diagnostic. Human and `--json` output carry the same
+codes, the same messages, and the same repair commands.
+
+A store that resolved by its permanent identity, with a legacy display name
+still recorded in the declaration:
+
+```json
+{
+  "store": {
+    "id": "platform-context",
+    "uid": "9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+    "metadata": { "present": true, "valid": true, "uid": "9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7" },
+    "pointer": {
+      "shape": "durable",
+      "declared_id": "team-context",
+      "declared_uid": "9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+      "resolved_by": "uid"
+    },
+    "status": [
+      {
+        "severity": "warning",
+        "code": "store_pointer_alias_drift",
+        "message": "This project declares store name 'team-context', but that store's name is now 'platform-context'. The permanent identity still matches, so it resolved.",
+        "target": "store.pointer",
+        "fix": "rasen store upgrade-identity platform-context --uid 9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7 --apply"
+      }
+    ]
+  }
+}
+```
+
+A store that is declared but unavailable — reported, never rendered as though
+the project had no store:
+
+```json
+{
+  "store": {
+    "id": "team-context",
+    "metadata": { "present": false, "valid": false },
+    "pointer": { "shape": "alias", "declared_id": "team-context" },
+    "unavailable": {
+      "reason": "not-registered",
+      "repair": ["git clone git@github.com:acme/team-context.git <path> && rasen store register <path>", "rasen doctor"]
+    },
+    "status": [
+      {
+        "severity": "error",
+        "code": "store_bootstrap_required",
+        "message": "Store team-context is declared by this project but is not registered on this machine.",
+        "target": "store.registry",
+        "fix": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>"
+      }
+    ]
+  }
+}
+```
+
+The identity diagnostic codes:
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `store_bootstrap_required` | error | the declaration names a store not registered on this machine |
+| `store_uid_mismatch` | error | the registered checkout is not the expected store |
+| `store_alias_ambiguous` | error | the display name matches more than one registered store |
+| `store_pointer_legacy` | info | the declaration is a bare display name |
+| `store_pointer_remote_divergence` | info | the declared remote differs from the store's canonical remote |
+| `store_pointer_alias_drift` | warning | the declared name no longer matches the store's own name |
+| `store_metadata_legacy` | info | the store has no permanent identity yet |
+| `store_remote_credentials` | error | a remote carrying credentials was supplied |
+| `store_alias_numeric` | warning | a newly assigned display name is all digits |
+| `store_remote_divergence` | info | the store's recorded remote differs from its checkout's origin |
+| `store_registry_rekey_blocked` | info | the machine registry stays keyed by display name; the named stores have no permanent identity yet |
+| `store_alias_repeated` | warning | a registration succeeded under a display name another store already uses |
+| `store_alias_renamed` | info | re-registering moved a registry entry's display name; the permanent identity is unchanged |
 
 ## Working context (the assembled set)
 

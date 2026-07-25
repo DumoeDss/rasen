@@ -11,7 +11,13 @@ import ora from 'ora';
 import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
-import { classifyOpenSpecDir, storePointerProblem, updateProjectConfigKey } from './project-config.js';
+import {
+  classifyOpenSpecDir,
+  describeStoreDeclaration,
+  hasStoreDeclaration,
+  storePointerProblem,
+  updateProjectConfigKey,
+} from './project-config.js';
 import { resolveProjectHome } from './project-home.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
@@ -169,9 +175,9 @@ export class InitCommand {
               `). Fix or remove the store: line before running rasen init.`
           );
         }
-        if (pointer.value !== undefined) {
+        if (hasStoreDeclaration(pointer)) {
           throw new Error(
-            `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
+            `This repo's planning is externalized to store '${describeStoreDeclaration(pointer)}' (${pointer.filePath}). ` +
               `Remove the store: line first to convert this repo to a local Rasen root.`
           );
         }

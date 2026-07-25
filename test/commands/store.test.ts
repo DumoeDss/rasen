@@ -168,14 +168,19 @@ describe('store command', () => {
       `schema: ${DEFAULT_OPENSPEC_SCHEMA}`
     );
     expectNoGeneratedAgentOrBetaArtifacts(storeRoot);
-    await expect(readStoreMetadataState(storeRoot)).resolves.toEqual({
-      version: 1,
-      id: 'team-context',
-    });
+    // Creating a store mints its permanent identity, so the metadata is
+    // version 2 and the machine registry is keyed by that identity.
+    const created = await readStoreMetadataState(storeRoot);
+    expect(created).toMatchObject({ version: 2, id: 'team-context' });
+    const createdUid = (created as { uid: string }).uid;
+    expect(createdUid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
     await expect(readStoreRegistryState({ globalDataDir })).resolves.toEqual({
-      version: 1,
+      version: 2,
       stores: {
-        'team-context': {
+        [createdUid]: {
+          id: 'team-context',
           backend: {
             type: 'git',
             local_path: storeRoot,
@@ -722,10 +727,12 @@ describe('store command', () => {
     expect(fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8')).toBe(
       'schema: spec-driven\n# user edit\n'
     );
+    const rerunMetadata = await readStoreMetadataState(storeRoot);
     await expect(readStoreRegistryState({ globalDataDir })).resolves.toEqual({
-      version: 1,
+      version: 2,
       stores: {
-        'team-context': {
+        [(rerunMetadata as { uid: string }).uid]: {
+          id: 'team-context',
           backend: {
             type: 'git',
             local_path: expectedExistingPath(storeRoot),
@@ -1190,6 +1197,10 @@ describe('store command', () => {
     // A healthy root in a commitless repo is the clone trap; doctor warns.
     expect(byId['healthy-context'].status).toEqual([
       expect.objectContaining({
+        severity: 'info',
+        code: 'store_metadata_legacy',
+      }),
+      expect.objectContaining({
         severity: 'warning',
         code: 'store_git_no_commits',
       }),
@@ -1388,7 +1399,7 @@ describe('store command', () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("unknown command 'new' for 'rasen store'");
       expect(result.stderr).toContain(
-        'setup, register, unregister, remove, add-project, adopt, eject, list (ls), doctor'
+        'setup, register, unregister, remove, add-project, adopt, eject, upgrade-identity, list (ls), doctor'
       );
       expect(result.stderr).toContain('rasen new change billing-rework --store <id>');
     });

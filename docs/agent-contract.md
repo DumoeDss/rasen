@@ -112,7 +112,7 @@ setup/register: `{ "store": {id, root, metadata_path?}, "registry": {path, regis
 `reference_invalid_id`, `reference_registry_unreadable`, `reference_unresolved`, `reference_root_unhealthy`, `reference_index_truncated`.
 
 ### Relationships (warning; doctor; context keeps only the registry one)
-`relationship_registry_unreadable`, `root_pointer_ignored`, `root_pointer_invalid`, `pointer_declarations_inert`.
+`relationship_registry_unreadable`, `root_pointer_invalid`, `pointer_declarations_inert`.
 
 ### Archive (JSON mode)
 `archive_change_name_required`, `archive_change_not_found`, `archive_validation_failed`, `archive_confirmation_required`, `archive_tasks_incomplete`, `archive_spec_update_failed`, `archive_spec_validation_failed`, `archive_target_exists`, `archive_error`.

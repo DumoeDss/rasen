@@ -131,8 +131,15 @@
       "complete": "(complete)",
       "recorded": "recorded",
       "bareWorkerLabel": "role-only / bare label",
-      "inheritingStoreConfigNotice": "{path} declares store '{store}'; planning stays local and configuration inherits from that store.",
-      "inactiveStorePointerWarning": "Warning: {path} declares store '{store}', but no such store is registered; the declaration currently has no effect. Register it with rasen store register <path> --id {store}.",
+      "inheritingStoreConfigByIdentityNotice": "{path} declares store '{store}'; planning stays local and configuration inherits from that store. Resolved by its permanent identity.",
+      "inheritingStoreConfigByAliasNotice": "{path} declares store '{store}'; planning stays local and configuration inherits from that store. Resolved by its display name.",
+      "unavailableStoreDeclaration": "Warning: {path} declares store '{store}', but it cannot be used on this machine ({reason}). No network access and no changes were made. Next: {repair}",
+      "storeReasonNotRegistered": "it is not registered on this machine",
+      "storeReasonMetadataMissing": "its identity metadata is missing or unreadable",
+      "storeReasonUidMismatch": "the registered checkout is a different store",
+      "storeReasonRootUnhealthy": "its Rasen root is missing or incomplete",
+      "storeReasonAliasAmbiguous": "that name matches more than one registered store",
+      "storeReasonPointerMalformed": "the declaration cannot be read",
       "selectedStoreRoot": "Using Rasen root: {store} ({path})",
       "selectedProjectRoot": "Using Rasen root: project {project} ({path})",
       "staleProfileWorkflowsWarning": "Warning: dropping unknown workflow id(s) from stored profile: {workflows}",
@@ -1015,7 +1022,11 @@
     "Write the report to this file instead of the default analytics directory": "Write the report to this file instead of the default analytics directory",
     "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view",
     "display help for command": "display help for command",
-    "output the version number": "output the version number"
+    "output the version number": "output the version number",
+    "Give a store a permanent identity and record it in the registry and the project's declaration": "Give a store a permanent identity and record it in the registry and the project's declaration",
+    "Disambiguate a name that matches more than one registered store": "Disambiguate a name that matches more than one registered store",
+    "Report every file that would be written and change nothing": "Report every file that would be written and change nothing",
+    "Write the plan": "Write the plan"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "Configure AI tools non-interactively. Use \"all\", \"none\", or a comma-separated list of: {ids}"

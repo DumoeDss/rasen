@@ -14,12 +14,17 @@ import { WORKSPACE_DIR_NAME } from '../config.js';
 import { pathIsDirectory } from '../file-state.js';
 import {
   classifyOpenSpecDir,
+  describeStoreDeclaration,
   ensureProjectIdInConfig,
+  hasStoreDeclaration,
   readProjectConfig,
   readStorePointer,
+  resolveConfigFilePath,
   updateProjectConfigKey,
   type ArchiveDestination,
+  type StorePointerRead,
 } from '../project-config.js';
+import { storeBindingDeclarationFrom } from '../effective-config.js';
 import {
   registerProject,
   readProjectRegistryState,
@@ -34,12 +39,18 @@ import { resolveProjectHome } from '../project-home.js';
 import { inspectOpenSpecRoot } from '../workspace-root.js';
 import { StoreError, type StoreDiagnostic, makeStoreDiagnostic } from './errors.js';
 import {
-  listStoreRegistryEntries,
-  readStoreRegistryState,
+  readOptionalStoreMetadataState,
   type StorePathOptions,
 } from './foundation.js';
 import { resolveRegisteredStore } from './registry.js';
+import {
+  primaryRepair,
+  resolveStoreBinding,
+  type StoreBindingResolution,
+} from './identity.js';
 import { storeAddProject } from './operations.js';
+import { remoteCarriesCredentials } from './remote.js';
+import { writeDurablePointer } from './upgrade-identity.js';
 import {
   caseInsensitiveCollisions,
   changesDir,
@@ -63,6 +74,67 @@ const fs = nodeFs.promises;
 // -----------------------------------------------------------------------------
 // Shared helpers
 // -----------------------------------------------------------------------------
+
+/**
+ * Resolves a project's Store declaration through the ONE shared resolver.
+ * Every migration surface goes through this rather than looking the pointer's
+ * display alias up in the registry: an alias lookup ignores the permanent
+ * identity the declaration travels with, and misses a declaration that records
+ * only that identity.
+ */
+async function resolveDeclaredStore(
+  pointer: StorePointerRead,
+  projectRoot: string,
+  options: StorePathOptions
+): Promise<StoreBindingResolution> {
+  return resolveStoreBinding({
+    declaration: storeBindingDeclarationFrom(pointer),
+    projectRoot,
+    ...options,
+  });
+}
+
+/**
+ * Records the adopted project's Store declaration DURABLY.
+ *
+ * A bare string is a display ALIAS by definition (`readStorePointer` only
+ * parses the object form as durable), so recording the resolved name is the
+ * best that form can do — and when two Stores share that name, the best it can
+ * do still cannot be resolved. This file is Git-tracked and adopt prints a
+ * commit hint for it, so the wrong form here is committed and shared.
+ *
+ * Therefore: the object form whenever the Store carries a permanent identity,
+ * through the SAME writer `store upgrade-identity --apply` uses. A Store that
+ * predates identities has none to record and keeps the legacy string form,
+ * which is exactly what `store_pointer_legacy` then offers to upgrade.
+ */
+async function writeAdoptedStoreDeclaration(
+  sourcePath: string,
+  store: { uid?: string; storeRoot: string },
+  storeId: string
+): Promise<void> {
+  const configPath = resolveConfigFilePath(sourcePath);
+  if (store.uid === undefined || configPath === null) {
+    updateProjectConfigKey(sourcePath, 'store', storeId);
+    return;
+  }
+
+  // The remote is a locator for a machine that has never seen this Store, so
+  // it is recorded when the Store has one — but never when it embeds a
+  // credential: `writeDurablePointer` would throw, and this runs AFTER the
+  // planning content has already moved.
+  const metadata = await readOptionalStoreMetadataState(store.storeRoot).catch(() => null);
+  const remote =
+    metadata?.remote !== undefined && !remoteCarriesCredentials(metadata.remote)
+      ? metadata.remote
+      : undefined;
+
+  await writeDurablePointer(configPath, {
+    uid: store.uid,
+    id: storeId,
+    ...(remote !== undefined ? { remote } : {}),
+  });
+}
 
 export type ArchiveMode = 'move' | 'leave' | 'external';
 
@@ -233,6 +305,12 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
 
   const store = await resolveRegisteredStore({ id: input.storeId, ...storeOpts });
   const storeRoot = store.storeRoot;
+  // Everything below speaks the RESOLVED display name. `--to` accepts a
+  // permanent identity, and echoing that back would name a store nothing else
+  // recognises — worst of all in the `store:` declaration written at step 5,
+  // where a bare identity string reads as a display alias that matches no
+  // registered store, leaving a Git-tracked pointer that resolves to nothing.
+  const storeId = store.id;
 
   // A dry run must not mint identity either: `ensureProjectIdInConfig` appends
   // `projectId:` to the TRACKED rasen/config.yaml, so a preview-only run left
@@ -254,13 +332,13 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   // --- Prechecks (aggregate every failure) ---
   const problems: string[] = [];
   if (!resumed) {
-    await assertStoreHealthy(storeRoot, input.storeId);
+    await assertStoreHealthy(storeRoot, storeId);
     if (!hasPlanningShape) {
       problems.push(`Source ${sourcePath} has no planning shape (no rasen/specs or rasen/changes).`);
     }
-    if (pointer.value !== undefined) {
+    if (hasStoreDeclaration(pointer)) {
       problems.push(
-        `Source already declares store pointer '${pointer.value}'. Use 'rasen store eject' or 'rasen store doctor' instead.`
+        `Source already declares store pointer '${describeStoreDeclaration(pointer)}'. Use 'rasen store eject' or 'rasen store doctor' instead.`
       );
     }
     // Collision precheck (case-insensitive, both axes).
@@ -326,7 +404,13 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
     //    source still has planning shape (register requires a healthy, non-
     //    pointer root). Idempotent; tolerate an already-present registration.
     try {
-      await storeAddProject({ projectPath: sourcePath, targetStoreId: input.storeId });
+      // Re-resolution, not display: this hands the store to another lookup,
+      // and the display name is ambiguous exactly when two stores share it —
+      // which is when the user named this one by identity to begin with.
+      await storeAddProject({
+        projectPath: sourcePath,
+        targetStoreId: store.uid ?? storeId,
+      });
     } catch (error) {
       // A self-reference or already-present reference is not fatal to adopt.
       if (
@@ -380,7 +464,7 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
       await removeIfEmpty(inRepoArchiveDir(sourcePath));
     }
     await removeIfEmpty(changesDir(sourcePath));
-    updateProjectConfigKey(sourcePath, 'store', input.storeId);
+    await writeAdoptedStoreDeclaration(sourcePath, store, storeId);
 
     // 6. Refresh the machine registry so mode flips to `store` now.
     await registerProject({ projectRoot: sourcePath, projectId, mode: 'store' }, storeOpts);
@@ -390,7 +474,7 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   const sourceCommit = renderSuggestedCommit(
     sourcePath,
     [WORKSPACE_DIR_NAME],
-    `chore: adopt planning into store ${input.storeId}`,
+    `chore: adopt planning into store ${storeId}`,
     'Source repo: record the removed planning dirs and the new store: pointer.'
   );
   if (sourceCommit) suggestedCommits.push(sourceCommit);
@@ -404,7 +488,7 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
 
   return {
     projectId,
-    storeId: input.storeId,
+    storeId,
     storeRoot,
     sourcePath,
     specs: specNames,
@@ -497,6 +581,10 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
   const storeOpts: StorePathOptions = input.globalDataDir ? { globalDataDir: input.globalDataDir } : {};
   const store = await resolveRegisteredStore({ id: input.storeId, ...storeOpts });
   const storeRoot = store.storeRoot;
+  // The RESOLVED display name from here on: `--from` accepts a permanent
+  // identity, and every message, commit hint, and result field below would
+  // otherwise echo back a name nothing else recognises.
+  const storeId = store.id;
   const entry = await readAdoptionEntry(storeRoot, input.projectId);
 
   let specNames: string[];
@@ -511,7 +599,7 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
   } else {
     if (!input.all) {
       throw new StoreError(
-        `No adoption manifest entry for project '${input.projectId}' in store '${input.storeId}'.`,
+        `No adoption manifest entry for project '${input.projectId}' in store '${storeId}'.`,
         'eject_manifest_missing',
         {
           target: 'store.metadata',
@@ -583,7 +671,7 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
     }
 
     // Remove the pointer, drop the manifest entry, refresh registry to in-repo.
-    if (readStorePointer(destinationPath).value !== undefined) {
+    if (hasStoreDeclaration(readStorePointer(destinationPath))) {
       updateProjectConfigKey(destinationPath, 'store', undefined);
     }
     if (entry) {
@@ -597,7 +685,7 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
   const destCommit = renderSuggestedCommit(
     destinationPath,
     ['rasen'],
-    `chore: eject planning from store ${input.storeId}`,
+    `chore: eject planning from store ${storeId}`,
     'Repo: record the restored specs/changes and the removed store: pointer.'
   );
   if (destCommit) suggestedCommits.push(destCommit);
@@ -611,7 +699,7 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
 
   return {
     projectId: input.projectId,
-    storeId: input.storeId,
+    storeId,
     storeRoot,
     destinationPath,
     specs: presentSpecs,
@@ -665,7 +753,8 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
   const projectRoot = path.resolve(FileSystemUtils.canonicalizeExistingPath(input.projectRoot));
   const storeOpts: StorePathOptions = input.globalDataDir ? { globalDataDir: input.globalDataDir } : {};
   const pointer = readStorePointer(projectRoot);
-  const isStoreMode = pointer.value !== undefined && !classifyOpenSpecDir(projectRoot).hasPlanningShape;
+  const isStoreMode =
+    hasStoreDeclaration(pointer) && !classifyOpenSpecDir(projectRoot).hasPlanningShape;
 
   // Enumerate current locations (union): repo archive + machine home archive +
   // store archive when store-mode.
@@ -678,13 +767,15 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
   if (home) sources.add(home.archiveDir);
 
   let storeRoot: string | undefined;
-  if (pointer.value !== undefined) {
-    try {
-      const store = await resolveRegisteredStore({ id: pointer.value, ...storeOpts });
-      storeRoot = store.storeRoot;
+  if (hasStoreDeclaration(pointer)) {
+    // Through the shared resolver, so a declaration that records only the
+    // permanent identity resolves too, and an alias never overrides the uid
+    // it travels with. An unusable declaration is doctor's problem, not
+    // relocate's — it degrades to "no store archive to consolidate".
+    const binding = await resolveDeclaredStore(pointer, projectRoot, storeOpts);
+    if (binding.kind === 'resolved') {
+      storeRoot = binding.store.root;
       sources.add(inRepoArchiveDir(storeRoot));
-    } catch {
-      /* pointer to unregistered store: doctor's problem, not relocate's */
     }
   }
 
@@ -864,22 +955,27 @@ export async function diagnoseMigrationDrift(
   const diagnostics: StoreDiagnostic[] = [];
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(projectRoot);
 
-  if (pointer.value !== undefined) {
-    const registry = await readStoreRegistryState(options);
-    const registered = registry
-      ? listStoreRegistryEntries(registry).some(
-          (entry) => entry.type === 'store' && entry.id === pointer.value
-        )
-      : false;
-    if (!registered) {
+  if (hasStoreDeclaration(pointer)) {
+    const declared = describeStoreDeclaration(pointer) ?? '(unnamed store)';
+    // The shared resolver decides, so a declaration recording only the
+    // permanent identity is checked like any other. `absent` here means the
+    // no-transitivity rule applied (this root IS the store) — nothing drifted.
+    const binding = await resolveDeclaredStore(pointer, projectRoot, options);
+    const registered = binding.kind === 'resolved';
+    if (binding.kind === 'unavailable') {
       diagnostics.push(
         makeStoreDiagnostic(
           'error',
           'drift_pointer_unregistered',
-          `Config declares store pointer '${pointer.value}', but no store with that id is registered.`,
+          binding.reason === 'not-registered'
+            ? `Config declares store pointer '${declared}', but no store with that id is registered.`
+            : `Config declares store pointer '${declared}', which cannot be used on this machine (${binding.reason}).`,
           {
             target: 'store.pointer',
-            fix: `Run 'rasen store register' for '${pointer.value}', or correct the store: pointer.`,
+            fix:
+              binding.reason === 'not-registered'
+                ? `Run 'rasen store register' for '${declared}', or correct the store: pointer.`
+                : primaryRepair(binding),
           }
         )
       );
@@ -899,18 +995,18 @@ export async function diagnoseMigrationDrift(
       );
     }
 
-    // Manifest drift, when the pointer targets a registered store.
-    if (registered) {
+    // Manifest drift, when the pointer targets a resolvable store.
+    if (registered && binding.kind === 'resolved') {
       try {
-        const store = await resolveRegisteredStore({ id: pointer.value, ...options });
+        const storeRoot = binding.store.root;
         const config = readProjectConfig(projectRoot);
         const projectId = config?.projectId;
         if (projectId) {
-          const entry = await readAdoptionEntry(store.storeRoot, projectId);
+          const entry = await readAdoptionEntry(storeRoot, projectId);
           if (entry) {
             const [storeSpecs, storeChanges] = await Promise.all([
-              listSpecNames(store.storeRoot),
-              listActiveChangeNames(store.storeRoot),
+              listSpecNames(storeRoot),
+              listActiveChangeNames(storeRoot),
             ]);
             const missing = [
               ...entry.specs.filter((name) => !storeSpecs.includes(name)),

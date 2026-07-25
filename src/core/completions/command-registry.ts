@@ -387,6 +387,29 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         ],
       },
       {
+        name: 'upgrade-identity',
+        description:
+          "Give a store a permanent identity and record it in the registry and the project's declaration",
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'uid',
+            description: 'Disambiguate a name that matches more than one registered store',
+            takesValue: true,
+          },
+          {
+            name: 'dry-run',
+            description: 'Report every file that would be written and change nothing',
+          },
+          {
+            name: 'apply',
+            description: 'Write the plan',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
         name: 'unregister',
         description: 'Forget a local store registration without deleting files',
         acceptsPositional: true,

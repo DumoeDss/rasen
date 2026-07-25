@@ -10,7 +10,12 @@ import {
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
-import { readOptionalStoreMetadataState } from '../core/store/foundation.js';
+import {
+  readOptionalStoreMetadataState,
+  storeMetadataUid,
+} from '../core/store/foundation.js';
+import { resolveStoreBinding } from '../core/store/identity.js';
+import { storeBindingDeclarationFrom } from '../core/effective-config.js';
 import { gitOriginUrl, isGitRepositoryAtRoot } from '../core/store/git.js';
 import {
   classifyOpenSpecDir,
@@ -74,28 +79,67 @@ async function gatherHealth(
   // failure, not a health finding).
   if (root.storeId) {
     const metadata = await readOptionalStoreMetadataState(root.path).catch(() => null);
+    const uid = storeMetadataUid(metadata);
     // git -C walks UP the tree: probing a non-repo store nested inside
     // another repo would record the ENCLOSING repo's origin.
     const originUrl = (await isGitRepositoryAtRoot(root.path)) ? await gitOriginUrl(root.path) : null;
     input.storeFacts = {
       id: root.storeId,
+      ...(uid ? { uid } : {}),
       metadataPresent: metadata !== null,
       metadataValid: metadata !== null,
+      ...(metadata !== null && uid === undefined ? { metadataLegacy: true } : {}),
       ...(metadata?.remote ? { canonicalRemote: metadata.remote } : {}),
       ...(originUrl ? { originUrl } : {}),
     };
   }
 
-  // The 3.2 both-shapes wrong turn, structured — including a malformed
-  // pointer value, which the resolver is silent about on planning-shaped
-  // roots.
+  // Store identity diagnosis (design D4's read-only carve-out): doctor keeps
+  // working precisely in the states that stop every other command — it is how
+  // a user finds out what is wrong. The SHARED resolver answers, so doctor
+  // can never disagree with the commands it diagnoses, and it writes nothing,
+  // clones nothing, and registers nothing.
   if (root.source === 'nearest') {
     const { hasPlanningShape, pointer } = classifyOpenSpecDir(root.path);
     if (hasPlanningShape && pointer.filePath) {
-      if (pointer.value !== undefined) {
-        input.bothShapesPointer = { value: pointer.value, filePath: pointer.filePath };
-      } else if (pointer.malformed) {
+      if (pointer.malformed) {
         input.malformedPointer = { filePath: pointer.filePath, reason: pointer.malformed };
+      }
+
+      const declaration = storeBindingDeclarationFrom(pointer);
+      if (declaration.form !== 'absent') {
+        const binding = await resolveStoreBinding({ declaration, projectRoot: root.path });
+        input.storeBinding = {
+          shape: pointer.shape,
+          filePath: pointer.filePath,
+          ...(pointer.value !== undefined ? { declaredId: pointer.value } : {}),
+          ...(pointer.durable?.uid ? { declaredUid: pointer.durable.uid } : {}),
+          ...(binding.kind === 'resolved'
+            ? {
+                resolvedBy: binding.resolvedBy,
+                resolvedId: binding.store.id,
+                ...(binding.store.uid ? { resolvedUid: binding.store.uid } : {}),
+                diagnostics: binding.diagnostics,
+              }
+            : {}),
+          ...(binding.kind === 'unavailable'
+            ? { reason: binding.reason, repair: binding.repair, diagnostics: binding.diagnostics }
+            : {}),
+        };
+
+        if (binding.kind === 'resolved') {
+          const storeMetadata = await readOptionalStoreMetadataState(binding.store.root).catch(
+            () => null
+          );
+          input.storeFacts = {
+            id: binding.store.id,
+            ...(binding.store.uid ? { uid: binding.store.uid } : {}),
+            metadataPresent: storeMetadata !== null,
+            metadataValid: storeMetadata !== null,
+            ...(binding.store.uid ? {} : { metadataLegacy: true }),
+            ...(storeMetadata?.remote ? { canonicalRemote: storeMetadata.remote } : {}),
+          };
+        }
       }
     }
   }
@@ -264,8 +308,38 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
   console.log(`  Location: ${health.root.path}`);
   console.log(`  Rasen root: ${health.root.healthy ? 'ok' : 'unhealthy'}`);
   if (health.store) {
-    const metadataNote = health.store.metadata.valid ? 'metadata ok' : 'metadata invalid';
-    console.log(`  Store: ${health.store.id} (${metadataNote})`);
+    // A declared store that could not be resolved has no metadata to judge and
+    // no identity to read: saying "metadata invalid" and "none yet (legacy
+    // metadata)" about it would report two things that were never looked at.
+    if (health.store.unavailable) {
+      console.log(`  Store: ${health.store.id} (declared, not available on this machine)`);
+      console.log(
+        `  Store identity: ${health.store.uid ?? 'not recorded in the declaration'}`
+      );
+    } else {
+      const metadataNote = health.store.metadata.valid ? 'metadata ok' : 'metadata invalid';
+      console.log(`  Store: ${health.store.id} (${metadataNote})`);
+      console.log(
+        `  Store identity: ${health.store.uid ?? 'none yet (legacy metadata)'}`
+      );
+    }
+    if (health.store.pointer) {
+      const resolvedBy =
+        health.store.pointer.resolved_by === 'uid'
+          ? 'resolved by permanent identity'
+          : health.store.pointer.resolved_by === 'alias'
+            ? 'resolved by display name'
+            : 'not resolved';
+      console.log(
+        `  Declaration: ${health.store.pointer.shape} (${resolvedBy})`
+      );
+    }
+    if (health.store.unavailable) {
+      console.log(`  Declared store unavailable: ${health.store.unavailable.reason}`);
+      for (const repair of health.store.unavailable.repair) {
+        console.log(`    Next: ${repair}`);
+      }
+    }
   }
   printDiagnosticLines('  ', [...health.root.status, ...(health.store?.status ?? [])]);
 
@@ -359,7 +433,14 @@ export function registerDoctorCommand(program: Command): void {
       try {
         const root = await resolveRootForCommand(
           { store: options.store, project: options.project, storePath: options.storePath },
-          { json: options.json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
+          {
+            json: options.json,
+            failurePayload: FAILURE_PAYLOAD,
+            allowImplicitRoot: false,
+            // Doctor is the surface that REPORTS a broken store declaration,
+            // so it must not be stopped by one (design D4).
+            allowUnavailableStore: true,
+          }
         );
         if (!root) {
           return;
@@ -377,6 +458,15 @@ export function registerDoctorCommand(program: Command): void {
         // mismatch. Surfaced here so top-level doctor aggregates the same
         // checks `store doctor` reports. Best-effort — never breaks doctor.
         const migrationDrift = await diagnoseMigrationDrift(root.path).catch(() => []);
+
+        // Doctor keeps RUNNING on a broken store declaration (design D4's
+        // carve-out) but must not report success: a wrapper or CI step gating
+        // on this exit status would otherwise read "healthy" in exactly the
+        // state this command exists to make loud. Set before either output
+        // mode, so human and --json agree.
+        if (health.store?.unavailable) {
+          process.exitCode = 1;
+        }
 
         if (options.json) {
           const base = gcResult ? { ...health, gc: formatGcResult(gcResult) } : { ...health };

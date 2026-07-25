@@ -95,27 +95,70 @@ describe('pipeline messages', () => {
     }, expected.locale)).toBe(expected.stale);
   });
 
-  it('formats the inheriting-store-config and inactive-store-pointer notices', () => {
-    const inheriting = formatPipelineRootSelectionNotice(
-      { kind: 'inheriting-store-config', filePath: '/repo/rasen/config.yaml', storeId: 'team-store' },
+  it('formats the inheriting-store-config and unavailable-store notices', () => {
+    const byAlias = formatPipelineRootSelectionNotice(
+      {
+        kind: 'inheriting-store-config',
+        filePath: '/repo/rasen/config.yaml',
+        storeId: 'team-store',
+        resolvedBy: 'alias',
+      },
       'en'
     );
-    expect(inheriting).toContain("declares store 'team-store'");
-    expect(inheriting).toContain('configuration inherits from that store');
+    expect(byAlias).toContain("declares store 'team-store'");
+    expect(byAlias).toContain('configuration inherits from that store');
+    expect(byAlias).toContain('display name');
 
-    const inactive = formatPipelineRootSelectionNotice(
-      { kind: 'inactive-store-pointer', filePath: '/repo/rasen/config.yaml', storeId: 'team-store' },
+    // The notice states WHICH of the identity or the name resolved it.
+    const byIdentity = formatPipelineRootSelectionNotice(
+      {
+        kind: 'inheriting-store-config',
+        filePath: '/repo/rasen/config.yaml',
+        storeId: 'team-store',
+        resolvedBy: 'uid',
+      },
       'en'
     );
-    expect(inactive).toContain('no such store is registered');
-    expect(inactive).toContain('rasen store register');
+    expect(byIdentity).toContain('permanent identity');
 
-    // zh-cn renders both without falling back to English.
+    const unavailable = formatPipelineRootSelectionNotice(
+      {
+        kind: 'unavailable-store-declaration',
+        filePath: '/repo/rasen/config.yaml',
+        storeId: 'team-store',
+        reason: 'not-registered',
+        repair: 'rasen store register <path>',
+      },
+      'en'
+    );
+    expect(unavailable).toContain('cannot be used on this machine');
+    expect(unavailable).toContain('it is not registered on this machine');
+    expect(unavailable).toContain('rasen store register');
+
+    // zh-cn renders every one without falling back to English.
     const inheritingZh = formatPipelineRootSelectionNotice(
-      { kind: 'inheriting-store-config', filePath: '/repo/rasen/config.yaml', storeId: 'team-store' },
+      {
+        kind: 'inheriting-store-config',
+        filePath: '/repo/rasen/config.yaml',
+        storeId: 'team-store',
+        resolvedBy: 'alias',
+      },
       'zh-cn'
     );
     expect(inheritingZh).toContain('配置从该 Store 继承');
+
+    const unavailableZh = formatPipelineRootSelectionNotice(
+      {
+        kind: 'unavailable-store-declaration',
+        filePath: '/repo/rasen/config.yaml',
+        storeId: 'team-store',
+        reason: 'alias-ambiguous',
+        repair: 'rasen store upgrade-identity team-store --apply',
+      },
+      'zh-cn'
+    );
+    expect(unavailableZh).toContain('该名称匹配到多个已注册的 Store');
+    expect(unavailableZh).not.toContain('matches more than one');
   });
 
   it.each(CASES)('formats typed command errors in $locale', (expected) => {

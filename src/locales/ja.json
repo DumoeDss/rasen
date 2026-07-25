@@ -131,8 +131,15 @@
       "complete": "(完了)",
       "recorded": "記録あり",
       "bareWorkerLabel": "roleのみ / 単純なラベル",
-      "inheritingStoreConfigNotice": "{path}でstore '{store}'が指定されています。プランニングはローカルのまま、設定はそのstoreから継承されます。",
-      "inactiveStorePointerWarning": "警告: {path}でstore '{store}'が指定されていますが、そのstoreは登録されていないため、この指定は現在無効です。rasen store register <path> --id {store} で登録してください。",
+      "inheritingStoreConfigByIdentityNotice": "{path}でstore '{store}'が指定されています。プランニングはローカルのまま、設定はそのstoreから継承されます。（恒久識別子で解決）",
+      "inheritingStoreConfigByAliasNotice": "{path}でstore '{store}'が指定されています。プランニングはローカルのまま、設定はそのstoreから継承されます。（表示名で解決）",
+      "unavailableStoreDeclaration": "警告: {path}はstore '{store}'を宣言していますが、このマシンでは使用できません（{reason}）。ネットワークアクセスも変更も行っていません。次の手順: {repair}",
+      "storeReasonNotRegistered": "このマシンに登録されていません",
+      "storeReasonMetadataMissing": "識別メタデータが存在しないか読み取れません",
+      "storeReasonUidMismatch": "登録済みのチェックアウトは別のstoreです",
+      "storeReasonRootUnhealthy": "Rasenルートが存在しないか不完全です",
+      "storeReasonAliasAmbiguous": "その名前は複数の登録済みstoreに一致します",
+      "storeReasonPointerMalformed": "宣言を読み取れません",
       "selectedStoreRoot": "使用するRasenルート: {store} ({path})",
       "selectedProjectRoot": "使用するRasenルート: プロジェクト {project} ({path})",
       "staleProfileWorkflowsWarning": "警告: 保存済みプロファイルから不明なワークフローIDを除外します: {workflows}",
@@ -1015,7 +1022,11 @@
     "Write the report to this file instead of the default analytics directory": "デフォルトのanalyticsディレクトリの代わりに、このファイルにレポートを書き込みます",
     "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[非推奨: `rasen ui` を使用してください] localhostの管理サーバーを起動し、設定画面を開きます",
     "display help for command": "コマンドのヘルプを表示します",
-    "output the version number": "バージョン番号を表示します"
+    "output the version number": "バージョン番号を表示します",
+    "Give a store a permanent identity and record it in the registry and the project's declaration": "storeに恒久識別子を付与し、レジストリとプロジェクトの宣言に記録します",
+    "Disambiguate a name that matches more than one registered store": "複数の登録済みstoreに一致する名前を特定します",
+    "Report every file that would be written and change nothing": "書き込む予定のファイルをすべて表示し、何も変更しません",
+    "Write the plan": "計画を実行します"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "AIツールを非対話で設定します。\"all\"、\"none\"、または次のツールIDをカンマ区切りで指定: {ids}"

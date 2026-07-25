@@ -94,21 +94,91 @@ describe('relationship health composition (3.6)', () => {
     );
   });
 
-  it('surfaces both-shapes and inert-pointer wrong turns at top level', () => {
+  it('surfaces the inert-pointer wrong turn at top level', () => {
     const health = inspectRelationships({
       ...baseInput(),
-      bothShapesPointer: { value: 'team-context', filePath: '/repo/rasen/config.yaml' },
       inertPointerDeclarations: {
         filePath: '/app/rasen/config.yaml',
         fields: ['references'],
       },
     });
 
-    expect(health.status.map((entry) => entry.code)).toEqual([
-      'root_pointer_ignored',
-      'pointer_declarations_inert',
+    expect(health.status.map((entry) => entry.code)).toEqual(['pointer_declarations_inert']);
+    expect(health.status[0].message).toContain('references');
+  });
+
+  it('reports a declared store that cannot be used, never as absent', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      storeBinding: {
+        shape: 'alias',
+        filePath: '/repo/rasen/config.yaml',
+        declaredId: 'team-context',
+        reason: 'not-registered',
+        repair: ['rasen store register <path>', 'rasen doctor'],
+        diagnostics: [
+          {
+            severity: 'error',
+            code: 'store_bootstrap_required',
+            message: "Store team-context is declared by this project but is not registered on this machine.",
+            target: 'store.registry',
+            fix: 'rasen store register <path>',
+          },
+        ],
+      },
+    });
+
+    expect(health.store).not.toBeNull();
+    expect(health.store?.id).toBe('team-context');
+    expect(health.store?.unavailable).toEqual({
+      reason: 'not-registered',
+      repair: ['rasen store register <path>', 'rasen doctor'],
+    });
+    expect(health.store?.pointer).toEqual({ shape: 'alias', declared_id: 'team-context' });
+    expect(health.store?.status.map((entry) => entry.code)).toEqual([
+      'store_bootstrap_required',
     ]);
-    expect(health.status[1].message).toContain('references');
+  });
+
+  it('carries the resolved identity and how it resolved', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      storeFacts: {
+        id: 'team-context',
+        uid: '9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7',
+        metadataPresent: true,
+        metadataValid: true,
+      },
+      storeBinding: {
+        shape: 'durable',
+        filePath: '/repo/rasen/config.yaml',
+        declaredId: 'team-context',
+        declaredUid: '9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7',
+        resolvedBy: 'uid',
+        resolvedId: 'team-context',
+        resolvedUid: '9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7',
+        diagnostics: [],
+      },
+    });
+
+    expect(health.store?.uid).toBe('9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7');
+    expect(health.store?.pointer?.resolved_by).toBe('uid');
+    expect(health.store?.metadata.uid).toBe('9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7');
+  });
+
+  it('redacts a credential-bearing remote in the store section', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      storeFacts: {
+        id: 'team-context',
+        metadataPresent: true,
+        metadataValid: true,
+        canonicalRemote: 'https://user:secret@192.0.2.1/canon.git',
+      },
+    });
+
+    expect(health.store?.metadata.remote).toBe('https://<redacted>@192.0.2.1/canon.git');
+    expect(JSON.stringify(health)).not.toContain('secret');
   });
 
   it('notes remote divergence as info in the store section', () => {

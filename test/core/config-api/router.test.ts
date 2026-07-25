@@ -162,6 +162,43 @@ describe('config-api router (integration, via real http server)', () => {
       });
     });
 
+    it('maps a project whose declared store is unavailable to a status, never a 500', async () => {
+      // Planning-shaped, so a store layer genuinely applies, and the declared
+      // store is not registered here.
+      fs.mkdirSync(path.join(projectRoot, 'rasen', 'specs'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'rasen', 'changes', 'archive'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: nowhere\n'
+      );
+
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/config', headers: authed() });
+
+      // 404 with the reason and the repair — not a 500 that reads as a server
+      // bug with the structured diagnostic flattened into a stack trace.
+      expect(res.status).toBe(404);
+      const error = (res.json() as any).error;
+      expect(error.code).toBe('space_not_found');
+      expect(error.message).toContain('not registered on this machine');
+      expect(error.message).toContain('rasen store register');
+    });
+
+    it('maps an unreadable store declaration to 400, not a 500', async () => {
+      fs.mkdirSync(path.join(projectRoot, 'rasen', 'specs'), { recursive: true });
+      fs.mkdirSync(path.join(projectRoot, 'rasen', 'changes', 'archive'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: [broken]\n'
+      );
+
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/config', headers: authed() });
+
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('invalid_space');
+    });
+
     it('gets a single key', async () => {
       const h = await startServer();
       const res = await req(h.port, {

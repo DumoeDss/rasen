@@ -24,6 +24,7 @@ import {
   type ConfigDiagnostic,
   type ConfigDiagnosticReporter,
 } from './config-diagnostics.js';
+import { isValidStoreUid, type StorePointerV2 } from './store/identity-types.js';
 
 /**
  * Zod schema for project configuration.
@@ -79,6 +80,18 @@ export const ProjectConfigSchema = z.object({
     .string()
     .optional()
     .describe('Store id used as the Rasen root when no local planning shape exists'),
+
+  // In-memory normalization of the durable `store: { uid, id?, remote? }`
+  // declaration. Never written from here — the config file keeps whichever
+  // form the user (or `store upgrade-identity`) put there.
+  storeDeclaration: z
+    .object({
+      uid: z.string(),
+      id: z.string().optional(),
+      remote: z.string().optional(),
+    })
+    .optional()
+    .describe('Durable store declaration: permanent identity, display alias, credential-free remote'),
 
   // Optional: stable machine-local project identity (opaque string; any
   // non-empty JS string is accepted, minted as a UUID by init/first use).
@@ -681,12 +694,19 @@ function parseProjectConfigContent(
       config.references = references;
     }
 
-    // Parse store pointer field: a string, or dropped with a warning.
+    // Parse store declaration: the legacy id string, the durable
+    // `{ uid, id?, remote? }` form, or dropped with a warning.
     // (Root resolution does NOT use this parse — it uses readStorePointer
-    // below, which errors on malformed pointers instead of dropping.)
+    // below, which errors on malformed declarations instead of dropping.)
     if (raw.store !== undefined) {
+      const durable = parseDurableStoreDeclaration(raw.store);
       if (typeof raw.store === 'string') {
         config.store = raw.store;
+      } else if (durable) {
+        config.storeDeclaration = durable;
+        if (durable.id !== undefined) {
+          config.store = durable.id;
+        }
       } else {
         const configPath = configPathForWarnings(projectRoot);
         warnConfig(
@@ -1186,28 +1206,80 @@ export function suggestSchemas(
 // Store pointer (declared default store)
 // -----------------------------------------------------------------------------
 
+/**
+ * Normalizes a `store:` value in the durable object form, or null when it is
+ * not one. Shared by the resilient parser and the targeted pointer read so the
+ * two can never disagree on what counts as a usable declaration.
+ */
+function parseDurableStoreDeclaration(value: unknown): StorePointerV2 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!isValidStoreUid(raw.uid)) return null;
+
+  const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
+  const remote = typeof raw.remote === 'string' && raw.remote.length > 0 ? raw.remote : undefined;
+
+  return {
+    uid: raw.uid,
+    ...(id !== undefined ? { id } : {}),
+    ...(remote !== undefined ? { remote } : {}),
+  };
+}
+
+/** How a project declared its Store, before any resolution is attempted. */
+export type StorePointerShape = 'absent' | 'alias' | 'durable' | 'malformed';
+
+export type StorePointerProblem = 'unparseable' | 'non_string' | 'invalid_object';
+
 export interface StorePointerRead {
-  /** The declared store id, when present and a string. */
+  /** Discriminates the declaration form actually found on disk. */
+  shape: StorePointerShape;
+  /**
+   * The declared display alias: the whole value for the legacy string form,
+   * and the `id` field for the durable object form. Absent for a durable
+   * declaration that records only a permanent identity.
+   */
   value?: string;
+  /** The durable declaration, when the `store:` value is the object form. */
+  durable?: StorePointerV2;
   /** Set when the pointer cannot be trusted: the config file could not be
-   * read as YAML, or the store key is present but not a string. An empty
+   * read as YAML, the store key is neither a string nor a store declaration,
+   * or the declaration carries no usable permanent identity. An empty
    * or comments-only config is NOT malformed - it simply has no pointer. */
-  malformed?: 'unparseable' | 'non_string';
+  malformed?: StorePointerProblem;
   /** Absolute path of the config file actually read, or null when none exists. */
   filePath: string | null;
 }
 
+function readDurableStorePointer(
+  raw: Record<string, unknown>,
+  configPath: string
+): StorePointerRead {
+  const durable = parseDurableStoreDeclaration(raw);
+  if (!durable) {
+    return { shape: 'malformed', malformed: 'invalid_object', filePath: configPath };
+  }
+
+  return {
+    shape: 'durable',
+    ...(durable.id !== undefined ? { value: durable.id } : {}),
+    durable,
+    filePath: configPath,
+  };
+}
+
 /**
- * Warning-silent targeted read of the `store:` pointer. Used by root
+ * Warning-silent targeted read of the `store:` declaration. Used by root
  * resolution (which must not re-emit the resilient parser's field
  * warnings) and by `rasen init`'s pointer guard. Unlike
  * `readProjectConfig`, a malformed value is REPORTED, not dropped —
- * a dropped pointer would silently flip where work lands.
+ * a dropped pointer would silently flip where work lands. Both the legacy
+ * single-name form and the durable `{ uid, id?, remote? }` form are read.
  */
 export function readStorePointer(projectRoot: string): StorePointerRead {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
-    return { filePath: null };
+    return { shape: 'absent', filePath: null };
   }
 
   try {
@@ -1216,18 +1288,21 @@ export function readStorePointer(projectRoot: string): StorePointerRead {
     // they are imperfect, not malformed (readProjectConfig owns the
     // field warnings for those).
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { filePath: configPath };
+      return { shape: 'absent', filePath: configPath };
     }
     const value = (raw as Record<string, unknown>).store;
     if (value === undefined) {
-      return { filePath: configPath };
+      return { shape: 'absent', filePath: configPath };
     }
     if (typeof value === 'string') {
-      return { value, filePath: configPath };
+      return { shape: 'alias', value, filePath: configPath };
     }
-    return { malformed: 'non_string', filePath: configPath };
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      return readDurableStorePointer(value as Record<string, unknown>, configPath);
+    }
+    return { shape: 'malformed', malformed: 'non_string', filePath: configPath };
   } catch {
-    return { malformed: 'unparseable', filePath: configPath };
+    return { shape: 'malformed', malformed: 'unparseable', filePath: configPath };
   }
 }
 
@@ -1241,11 +1316,32 @@ export function resolveConfigFilePath(projectRoot: string): string | null {
   return existsSync(ymlPath) ? ymlPath : null;
 }
 
+/**
+ * True when the config declares a store in ANY usable form. Every guard that
+ * asks "is this repo's planning externalized?" MUST go through this — checking
+ * `value` alone silently misses a durable declaration that records only the
+ * permanent identity.
+ */
+export function hasStoreDeclaration(pointer: StorePointerRead): boolean {
+  return pointer.shape === 'alias' || pointer.shape === 'durable';
+}
+
+/** The store a declaration names, for display: its alias, else its identity. */
+export function describeStoreDeclaration(pointer: StorePointerRead): string | undefined {
+  if (!hasStoreDeclaration(pointer)) return undefined;
+  return pointer.value ?? pointer.durable?.uid;
+}
+
 /** Human rendering of a malformed pointer reason, shared by every surface. */
-export function storePointerProblem(reason: 'unparseable' | 'non_string'): string {
-  return reason === 'unparseable'
-    ? 'the config file could not be read as YAML'
-    : 'the store key must be a single store id string';
+export function storePointerProblem(reason: StorePointerProblem): string {
+  switch (reason) {
+    case 'unparseable':
+      return 'the config file could not be read as YAML';
+    case 'invalid_object':
+      return 'the store declaration must carry a well-formed permanent store identity as uid';
+    case 'non_string':
+      return 'the store key must be a single store id string';
+  }
 }
 
 export interface OpenSpecDirClassification {

@@ -74,9 +74,11 @@ describe('rasen doctor (3.6)', () => {
       healthy: true,
       status: [],
     });
+    // The fixture store predates permanent identities; doctor says so rather
+    // than pretending it has one, and reading it never adds one.
     expect(health.store).toEqual({
       id: 'team-context',
-      metadata: { present: true, valid: true },
+      metadata: { present: true, valid: true, legacy: true },
       status: [],
     });
     expect(health.references).toEqual([
@@ -165,16 +167,32 @@ describe('rasen doctor (3.6)', () => {
     expect(emptyHealth.references[0].status[0].code).toBe('reference_unresolved');
   });
 
-  it('surfaces both-shapes and inert-pointer wrong turns', async () => {
-    // Both shapes: a real root whose config declares a pointer.
+  it('surfaces the declared-store and inert-pointer wrong turns', async () => {
+    // A registered store root declaring ITSELF: no transitivity, so there is
+    // nothing to report — and nothing to warn is "ignored" either.
     fs.writeFileSync(
       path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nstore: team-context\n'
     );
-    const bothShapes = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
-    expect(parseJson(bothShapes).status[0]).toEqual(
-      expect.objectContaining({ code: 'root_pointer_ignored' })
+    const selfDeclared = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
+    expect(parseJson(selfDeclared).status).toEqual([]);
+
+    // A planning root declaring a store that is not registered here: doctor
+    // keeps working (design D4's carve-out) and reports the reason + repair.
+    const memberRepo = mkdir('member-repo');
+    createOpenSpecRoot(memberRepo);
+    fs.writeFileSync(
+      path.join(memberRepo, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: nowhere\n'
     );
+    const unavailable = await runCLI(['doctor', '--json'], { cwd: memberRepo, env });
+    // Keeps running, and still exits non-zero: a wrapper gating on doctor's
+    // status must not read "healthy" while the declared store is unusable.
+    expect(unavailable.exitCode).toBe(1);
+    const unavailableHealth = parseJson(unavailable);
+    expect(unavailableHealth.store.unavailable.reason).toBe('not-registered');
+    expect(unavailableHealth.store.status[0].code).toBe('store_bootstrap_required');
+
     fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
 
     // Inert pointer declarations, including from a subdirectory.
@@ -259,7 +277,9 @@ describe('rasen doctor (3.6)', () => {
       'schema: spec-driven\nstore: [broken]\n'
     );
     const result = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
-    expect(result.exitCode).toBe(0);
+    // An unreadable declaration is one of the six unavailable reasons, so
+    // doctor reports the full diagnosis AND exits non-zero.
+    expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout).status[0]).toEqual(
       expect.objectContaining({ code: 'root_pointer_invalid' })
     );

@@ -139,6 +139,85 @@ rasen schema init <name>         # create a custom one
 
 See [Customization](customization.md#custom-schemas).
 
+## Stores
+
+Run `rasen doctor` first. It keeps working in every state below — that is what
+it is for — and it prints the reason and the repair command for each one. It
+writes nothing, clones nothing, and registers nothing.
+
+### "declared but not available on this machine"
+
+The project declares a store that is not registered here. Register the checkout:
+
+```bash
+rasen store register /path/to/store
+```
+
+If the declaration records a remote, doctor prints the clone command too.
+
+### "identity metadata is missing or unreadable"
+
+The registered checkout has no readable `.rasen-store/store.yaml`. Re-register
+the checkout, or repair the file:
+
+```bash
+rasen store register /path/to/store
+```
+
+### "the registered checkout is a different store"
+
+The folder registered for this store carries a different permanent identity —
+usually a folder re-cloned from somewhere else. Nothing was written. Register
+the checkout that actually is the store you meant, or correct the project's
+declaration:
+
+```bash
+rasen store doctor
+```
+
+### "its Rasen root is missing or incomplete"
+
+The store's checkout exists but its `rasen/` planning folders are missing.
+Inspect it, then restore the folders (or pull the store's initial commit):
+
+```bash
+rasen store doctor <id>
+```
+
+### "that name matches more than one registered store"
+
+Two registered stores share the display name you used. A name is a display
+alias, not an identity — nothing is picked for you. Declare the identity
+instead:
+
+```bash
+rasen store upgrade-identity <id> --uid <identity> --apply
+```
+
+`rasen store doctor` lists every candidate with its identity and local root.
+
+### "the declaration cannot be read"
+
+The `store:` value in `rasen/config.yaml` is neither a store name nor a
+declaration carrying a `uid`. Fix or remove that line. `rasen doctor` names the
+file.
+
+### "this store has no permanent identity yet"
+
+An informational note, not a failure: the store predates permanent identities
+and keeps working exactly as before. Reading it never adds one. When you want
+one:
+
+```bash
+rasen store upgrade-identity <id> --apply
+```
+
+### "the remote embeds a credential"
+
+A store remote may not carry a username-and-password or token. Record the
+credential-free URL and keep the credential in your Git credential helper. The
+ordinary SSH form (`git@github.com:acme/team.git`) is fine.
+
 ## Migration from the legacy workflow
 
 ### "Legacy files detected in non-interactive mode"

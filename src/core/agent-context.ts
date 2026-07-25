@@ -25,7 +25,7 @@ import {
 } from './codex/index.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
-  resolveConfigStoreLayer,
+  requireConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveThresholdBindingLayers,
 } from './effective-config.js';
@@ -510,7 +510,7 @@ export async function resolveHandoffThresholdReport(
       ? runtimeOrCwd ?? process.cwd()
       : cwdArg ?? process.cwd();
   const projectRoot = findRepoPlanningRootSync(cwd);
-  const storeLayer = await resolveConfigStoreLayer(projectRoot);
+  const storeLayer = await requireConfigStoreLayer(projectRoot);
   const layers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
 
   const selected = resolveThreshold({

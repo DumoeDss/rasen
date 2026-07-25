@@ -163,7 +163,7 @@ stores:
 
     it('rejects invalid registry structure and ids', () => {
       expect(() =>
-        parseStoreRegistryState(`version: 2
+        parseStoreRegistryState(`version: 3
 stores: {}
 `)
       ).toThrow(/Invalid store registry state/u);

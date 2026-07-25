@@ -587,6 +587,74 @@ project/
 
 ---
 
+## Store identity (behavior change)
+
+A store now has a **permanent identity** in addition to its display name, and a
+project can declare which store it plans in durably.
+
+### What changes on disk
+
+Nothing changes until you run a command that changes it. Every existing file
+stays readable exactly as written.
+
+| File | Before | After an explicit upgrade | What writes it |
+| --- | --- | --- | --- |
+| `<store>/.rasen-store/store.yaml` | `version: 1`, `id`, optional `remote` | `version: 2`, `uid`, `id`, optional `remote` | `rasen store setup` (new stores); `rasen store upgrade-identity --apply` |
+| `~/.rasen/stores/registry.yaml` | keyed by display name | keyed by permanent identity, with the name inside each entry | any explicit registry mutation, once **every** store entry has an identity |
+| `<project>/rasen/config.yaml` | `store: <name>` | `store: { uid, id, remote }` | `rasen store upgrade-identity --apply`, run from the project |
+
+Reading never upgrades anything: `rasen doctor`, `store doctor`, `store list`,
+`list`, `show`, and `status` leave a legacy store's metadata and the registry
+byte-identical.
+
+### The one intentional break: a declared store that cannot be used now stops the command
+
+Previously, a project declaring a store that was not registered on this machine
+resolved configuration as though it had declared no store at all — you silently
+got global and default values that looked legitimate. That is now a reported,
+repairable failure.
+
+A project that declares **no** store is unaffected and resolves exactly as
+before.
+
+Each reason and its fix:
+
+| Reason | Fix |
+| --- | --- |
+| Not registered on this machine | `rasen store register /path/to/store` (doctor prints the clone command when the declaration records a remote) |
+| Store metadata missing or unreadable | Repair `.rasen-store/store.yaml`, or re-run `rasen store register` |
+| The checkout carries a different identity | Register the checkout that is the store you meant, or correct the declaration |
+| The store's Rasen root is unhealthy | `rasen store doctor <id>` |
+| The name matches more than one store | `rasen store upgrade-identity <id> --uid <identity> --apply` |
+| The declaration cannot be read | Fix or remove the `store:` line named by `rasen doctor` |
+
+Or remove the `store:` line to make the project genuinely store-less.
+
+`rasen doctor`, `rasen store doctor`, `rasen store list`, and `rasen config
+--global` keep working in every one of those states — they are how you find out
+what is wrong.
+
+### Upgrading a store
+
+```bash
+rasen store upgrade-identity team-context            # preview: writes nothing
+rasen store upgrade-identity team-context --apply    # write
+```
+
+Run it from the project that declares the store and it upgrades that project's
+declaration too. It never commits or pushes; the output names the files to
+commit.
+
+### Rolling back
+
+Reverting to an earlier version leaves any `version: 2` files on disk that the
+earlier version cannot parse. That is bounded: version 2 is written only where
+you explicitly ran `rasen store setup` or `rasen store upgrade-identity`, and
+the upgrade says so before it writes. No read path can produce a file an earlier
+version chokes on.
+
+---
+
 ## Getting Help
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)

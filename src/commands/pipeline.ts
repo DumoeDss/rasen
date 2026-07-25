@@ -66,7 +66,7 @@ import {
   type StageRole,
 } from '../core/pipeline-registry/index.js';
 import {
-  resolveConfigStoreLayer,
+  requireConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
   resolveThresholdBindingLayers,
@@ -278,7 +278,7 @@ export class PipelineCommand {
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(pipeline.name, {
@@ -847,7 +847,7 @@ export class PipelineCommand {
     effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
     stages: StageView[];
   }> {
-    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });

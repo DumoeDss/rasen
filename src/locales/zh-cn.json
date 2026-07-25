@@ -131,8 +131,15 @@
       "complete": "（已完成）",
       "recorded": "已记录",
       "bareWorkerLabel": "仅角色 / 简单标签",
-      "inheritingStoreConfigNotice": "{path} 声明了 Store '{store}'：规划保持本地，配置从该 Store 继承。",
-      "inactiveStorePointerWarning": "警告：{path} 声明了 Store '{store}'，但该 Store 尚未注册；此声明当前不起作用。可用 rasen store register <path> --id {store} 注册它。",
+      "inheritingStoreConfigByIdentityNotice": "{path} 声明了 Store '{store}'：规划保持本地，配置从该 Store 继承。（通过永久标识解析）",
+      "inheritingStoreConfigByAliasNotice": "{path} 声明了 Store '{store}'：规划保持本地，配置从该 Store 继承。（通过显示名称解析）",
+      "unavailableStoreDeclaration": "警告：{path} 声明了 Store '{store}'，但本机无法使用它（{reason}）。未访问网络，也未做任何改动。下一步：{repair}",
+      "storeReasonNotRegistered": "它尚未在本机注册",
+      "storeReasonMetadataMissing": "它的标识元数据缺失或无法读取",
+      "storeReasonUidMismatch": "已注册的检出目录是另一个 Store",
+      "storeReasonRootUnhealthy": "它的 Rasen 根目录缺失或不完整",
+      "storeReasonAliasAmbiguous": "该名称匹配到多个已注册的 Store",
+      "storeReasonPointerMalformed": "该声明无法读取",
       "selectedStoreRoot": "使用 Rasen 根目录：{store}（{path}）",
       "selectedProjectRoot": "使用 Rasen 根目录：项目 {project}（{path}）",
       "staleProfileWorkflowsWarning": "警告：已从存储的配置方案中忽略未知工作流 ID：{workflows}",
@@ -1015,7 +1022,11 @@
     "Write the report to this file instead of the default analytics directory": "将报告写入此文件，而非默认的 analytics 目录",
     "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[已弃用：请使用 `rasen ui`] 启动 localhost 管理服务器并打开配置视图",
     "display help for command": "显示命令帮助",
-    "output the version number": "输出版本号"
+    "output the version number": "输出版本号",
+    "Give a store a permanent identity and record it in the registry and the project's declaration": "为 Store 赋予永久标识，并记录到注册表与项目声明中",
+    "Disambiguate a name that matches more than one registered store": "当一个名称匹配到多个已注册 Store 时用于消歧",
+    "Report every file that would be written and change nothing": "列出将要写入的每个文件，但不做任何改动",
+    "Write the plan": "执行该计划"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "以非交互方式配置 AI 工具。使用 \"all\"、\"none\"，或从以下工具 ID 中选择并以逗号分隔：{ids}"
