@@ -29,7 +29,7 @@ const entry: WireConfigEntry = {
     key: 'ui.theme',
     scopes: ['global'],
     type: 'string',
-    defaultValue: 'editorial',
+    defaultValue: 'crt',
     description: 'Theme',
     group: 'Appearance',
     constraints: { type: 'string' },
@@ -90,6 +90,7 @@ describe('Global theme control', () => {
     });
     const select = container.querySelector('[data-testid="theme-selector"]') as HTMLSelectElement;
     expect([...select.options].map((option) => option.value)).toEqual(['editorial', 'crt']);
+    expect([...select.options].map((option) => option.textContent)).toEqual(['Editorial', 'Official']);
     select.value = 'crt';
     await act(async () => {
       select.dispatchEvent(new Event('change', { bubbles: true }));
