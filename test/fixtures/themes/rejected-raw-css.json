@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "unsafe",
+  "name": "Unsafe",
+  "mode": "dark",
+  "tokens": {
+    "dark": {
+      "canvas": "url(https://example.invalid/image.png)"
+    }
+  },
+  "effects": [],
+  "css": "body { display: none }"
+}

@@ -43,6 +43,7 @@ const LABEL_KEYS: Record<string, string> = {
   'models.roles.fixer': 'config.label.models_roles_fixer',
   'models.roles.shipper': 'config.label.models_roles_shipper',
   'ui.pinnedSpaces': 'config.label.ui_pinned_spaces',
+  'ui.theme': 'theme.label',
 };
 
 /**

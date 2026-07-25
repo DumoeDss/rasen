@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "prototype-keys",
+  "name": "Prototype Keys",
+  "mode": "light",
+  "tokens": {
+    "light": {
+      "constructor": "system-sans",
+      "__proto__": "#112233",
+      "toString": "#445566"
+    }
+  },
+  "effects": []
+}

@@ -178,6 +178,10 @@ export interface GlobalConfig {
    */
   ui?: {
     pinnedSpaces?: string[];
+    /** Stable installed-theme id; availability is resolved by the UI theme service. */
+    theme?: string;
+    /** Preserve future UI-managed fields during load/save round trips. */
+    [key: string]: unknown;
   };
   /**
    * Per-pipeline configuration overrides, keyed by pipeline name. The inner
@@ -205,6 +209,7 @@ const DEFAULT_CONFIG: GlobalConfig = {
   language: 'auto',
   proactive: true,
   repoMode: 'collaborative',
+  ui: { theme: 'editorial' },
 };
 
 export interface GlobalDataDirOptions {
@@ -358,7 +363,12 @@ function normalizeGlobalConfig(
       featureFlags: {
         ...DEFAULT_CONFIG.featureFlags,
         ...((parsed.featureFlags as Record<string, boolean> | undefined) || {})
-      }
+      },
+      // Additive defaults without discarding pinnedSpaces or future UI keys.
+      ui: {
+        ...DEFAULT_CONFIG.ui,
+        ...(parsed.ui || {}),
+      },
     };
     // The `delivery` setting is retired; never surface it, current or legacy.
     delete (merged as Record<string, unknown>).delivery;
