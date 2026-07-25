@@ -169,7 +169,27 @@ Once root cause is confirmed:
 
 4. **Watch the regression test pass**, then re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
 
-5. **Run the full test suite.** Paste the output. No regressions allowed.
+5. **Risk-proportional verification.** Select the smallest verification scope
+   that can credibly detect regressions from this fix, and record the scope,
+   rationale, exact command(s), result, and current content tree fingerprint.
+   - **Always required:** the Phase 1 feedback loop, the regression test (when a
+     correct seam exists), and directly affected module or package tests.
+   - **Localized fix:** when the change is confined to one behavior and has no
+     cross-cutting risk trigger, stop after the regression and affected-area
+     checks pass. A localized fix does not require the full repository suite
+     merely because this workflow is finishing.
+   - **Broaden when evidence demands it:** shared or global contracts,
+     dependency/build/config/CI changes, concurrency, persistence, migrations,
+     security boundaries, cross-platform behavior, broad multi-module edits,
+     or a focused failure outside the expected area.
+   - **Full-suite trigger:** run the full repository suite only when the user or
+     project instructions explicitly require it, or when the risk assessment
+     shows that affected behavior cannot be bounded more narrowly. File count
+     alone is a signal to inspect, not proof that the full suite is necessary.
+   - **Cost guard:** before starting a full suite expected to exceed 60 seconds,
+     state the trigger and expected cost. Never repeat an unchanged full-suite
+     command that already timed out; shard it, narrow it, use CI, or ask for
+     direction.
 
 6. **If the fix touches >5 files:** Use AskUserQuestion to flag the blast radius:
    \`\`\`
@@ -183,7 +203,9 @@ Once root cause is confirmed:
 
 ## Phase 7: Verification & Report
 
-**Fresh verification:** Reproduce the original bug scenario by re-running the Phase 1 loop and confirm it's fixed. This is not optional. Run the test suite and paste the output.
+**Fresh verification:** Reproduce the original bug scenario by re-running the
+Phase 1 loop and confirm it's fixed. This is not optional. Re-run the selected
+risk-proportional verification scope and paste the output.
 
 Before declaring done:
 - [ ] Original repro no longer reproduces (Phase 1 loop is green)
@@ -217,7 +239,7 @@ Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 - **Never say "this should fix it."** Verify and prove it. Run the tests.
 - **If fix touches >5 files → AskUserQuestion** about blast radius before proceeding.
 - **Completion status:**
-  - DONE — root cause found, fix applied, regression test written (or seam absence documented), all tests pass
+  - DONE — root cause found, fix applied, regression test written (or seam absence documented), and all checks required by the recorded verification scope pass
   - DONE_WITH_CONCERNS — fixed but cannot fully verify (e.g., intermittent bug, requires staging)
   - BLOCKED — root cause unclear after investigation, escalated
 `;

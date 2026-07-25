@@ -56,9 +56,10 @@ describe('ship workflow (delivery modes + evidence-based test gate)', () => {
 
     it('gates tests on evidence instead of running unconditionally', () => {
       expect(skillText).toContain('Evidence-based test gate');
-      expect(skillText.toLowerCase()).toContain('green test evidence');
+      expect(skillText.toLowerCase()).toContain('scoped green evidence');
       expect(skillText).toContain('review-cycle-report.md');
-      expect(skillText).toContain('skips on proof, never on hope');
+      expect(skillText).toContain('required verification scope');
+      expect(skillText).toContain('Never silently escalate');
       // fresh-verification gate survives the rewrite
       expect(skillText).toContain('Fresh-verification gate');
     });

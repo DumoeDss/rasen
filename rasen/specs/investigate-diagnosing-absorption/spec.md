@@ -25,6 +25,37 @@ The `investigate` skill SHALL, before any hypothesis work, require building a ti
 - **THEN** hypotheses SHALL be required to be ranked and falsifiable (with a stated prediction)
 - **AND** the regression guidance SHALL state that the absence of a correct test seam is itself a finding
 
+### Requirement: Investigate uses risk-proportional verification
+
+After the regression loop is green, the `investigate` skill SHALL select and
+record the smallest verification scope that credibly covers the fix. A
+localized fix SHALL require its regression loop and directly affected module or
+package checks, but SHALL NOT require the full repository suite merely because
+the workflow is finishing. The scope SHALL broaden for cross-cutting contracts,
+dependency/build/config/CI changes, concurrency, persistence, migrations,
+security boundaries, cross-platform behavior, broad multi-module edits, or
+focused failures outside the expected area.
+
+#### Scenario: Localized fix stops after affected checks
+
+- **WHEN** a fix is confined to one behavior and has a direct regression test
+- **AND** no cross-cutting trigger or project instruction requires broader coverage
+- **THEN** investigate SHALL complete after the regression and affected-area checks pass
+- **AND** SHALL NOT run the full repository suite
+
+#### Scenario: Full-suite escalation names cause and cost
+
+- **WHEN** risk cannot be bounded more narrowly or the user or project instructions require the full suite
+- **THEN** investigate SHALL record that trigger
+- **AND** before a run expected to exceed 60 seconds SHALL state the expected cost
+- **AND** SHALL NOT repeat an unchanged full-suite command that already timed out
+
+#### Scenario: Verification evidence is reusable
+
+- **WHEN** investigate completes verification
+- **THEN** it SHALL record the selected scope, rationale, exact commands, result, and content tree fingerprint
+- **AND** downstream ship SHALL be able to compare both scope coverage and tree identity
+
 ### Requirement: HITL loop template carried as investigate sidecar
 
 The system SHALL carry `skills/experts/investigate/scripts/hitl-loop.template.sh` (adapted from grill `diagnosing-bugs`, MIT) and reference it by relative path from the investigate skill for the human-in-the-loop last-resort case.
