@@ -130,4 +130,35 @@ describe('audit viewer embedded-mode contract', () => {
     expect(viewer).toContain("else if (runtime === 'zed')");
     expect(viewer).toContain('renderClaude(j)');
   });
+
+  it('preserves composition SVG proportions instead of stretching labels in wide embeds', () => {
+    const composition = { innerHTML: '' };
+    const report = {
+      totals: {
+        billedInputEq: 41_990_000,
+        cacheRead: 311_000_000,
+        inputRaw: 66_600,
+      },
+    };
+    const renderContext = {
+      report,
+      composition,
+      document: {
+        getElementById: (id: string) => {
+          if (id !== 'composition') throw new Error(`Unexpected element: ${id}`);
+          return composition;
+        },
+      },
+      css: () => '#000',
+      esc: String,
+      fmt: String,
+    };
+
+    runInNewContext(
+      `${functionSource('renderComposition')}; renderComposition(report);`,
+      renderContext
+    );
+
+    expect(composition.innerHTML).not.toContain('preserveAspectRatio="none"');
+  });
 });

@@ -465,7 +465,7 @@ function renderComposition(j) {
   const legend = segs.map(([name, v, cvar]) =>
     `<span><span class="sw" style="background:${css(cvar)}"></span>${esc(name)} ${fmt(v)} (${(100 * v / total).toFixed(1)}%)</span>`).join(' ');
   document.getElementById('composition').innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none">${bars}${labels}</svg>
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMinYMid meet">${bars}${labels}</svg>
      <div class="legend" style="margin-top:8px">${legend}</div>`;
 }
 
