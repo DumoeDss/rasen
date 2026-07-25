@@ -255,7 +255,9 @@ describe('store migration ops', () => {
     // Eject a project id the store has no manifest entry for.
     await expect(
       ejectProject({ projectId: 'ghost-id', storeId: 'team-store', globalDataDir })
-    ).rejects.toThrow(/manifest/i);
+      // The refusal now names BOTH ownership sources, because the record is
+      // the authority and the manifest is only the legacy fallback.
+    ).rejects.toThrow(/no ownership record/i);
   });
 
   it('relocates archives in-repo -> external and consolidates a split archive', async () => {

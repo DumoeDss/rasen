@@ -7,6 +7,7 @@ import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'y
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
+import { writeFileAtomically } from './file-state.js';
 import { isKebabId } from './id.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
@@ -288,8 +289,50 @@ export interface DeclarationEntry {
   type?: 'store' | 'project';
 }
 
+/** The config key holding the project's Store membership locator hints. */
+export const STORE_MEMBERSHIPS_FIELD = 'storeMemberships';
+
+/**
+ * A project-side locator for a Store the project belongs to.
+ *
+ * A HINT and never authority: the Store's own
+ * `.rasen-store/projects/<projectId>.yaml` record decides membership, and a
+ * hint that disagrees with it is reported as drift rather than believed. Its
+ * job is discovery — a fresh clone of the project, on a machine that has never
+ * seen these Stores, can still say which Stores it belongs to and how to
+ * obtain each one.
+ *
+ * Nothing machine-specific ever enters it: permanent identity, display alias,
+ * and a credential-free remote, and no filesystem path on any platform.
+ */
+export interface StoreMembershipHint {
+  /** The Store's permanent identity. Absent only for a legacy-identity Store. */
+  uid?: string;
+  /** Display alias, for reading and for naming a Store that has no identity yet. */
+  id?: string;
+  /** Credential-free clone source. */
+  remote?: string;
+}
+
+/**
+ * De-duplication key: the permanent identity when there is one, else the
+ * display alias. Two hints for one Store must collapse even when one of them
+ * predates the Store's identity.
+ */
+export function storeMembershipHintKey(hint: StoreMembershipHint): string {
+  return hint.uid !== undefined
+    ? `uid:${hint.uid.trim().toLowerCase()}`
+    : `id:${(hint.id ?? '').trim().toLowerCase()}`;
+}
+
+/** The alias, else the identity — never an empty string. */
+export function describeStoreMembershipHint(hint: StoreMembershipHint): string {
+  return hint.id ?? hint.uid ?? '(unnamed store)';
+}
+
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
   references?: DeclarationEntry[];
+  storeMemberships?: StoreMembershipHint[];
 };
 
 /**
@@ -394,6 +437,131 @@ function parseDeclarationList(
     );
   }
   return byId.size > 0 ? [...byId.values()] : undefined;
+}
+
+/**
+ * Resilient parser for `storeMemberships:` — the SAME drop-with-a-warning
+ * discipline `references:` uses, and deliberately not a strict schema.
+ *
+ * That is correct precisely BECAUSE these are locators: losing one hint costs
+ * a diagnostic and a rediscovery, while a strict schema would reject the whole
+ * file over one bad entry and take every other hint with it. Authority lives
+ * in the Store's own record, where strictness belongs.
+ *
+ * Accepts a bare string (a permanent identity, else a display alias) and the
+ * `{uid?, id?, remote?}` map. Entries de-duplicate on permanent identity —
+ * falling back to the display alias for a Store that has none — keeping the
+ * first position, with a later duplicate filling a field the first left empty.
+ * An entry carrying no identity survives with a warning naming the upgrade
+ * path: it still locates the Store by name today, and dropping it would lose
+ * the only record that the membership exists at all.
+ */
+function parseStoreMembershipList(
+  raw: unknown,
+  reporter?: ConfigDiagnosticReporter
+): StoreMembershipHint[] | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw)) {
+    warnConfig(
+      {
+        key: 'invalidStoreMemberships',
+        fallback: `Invalid '${STORE_MEMBERSHIPS_FIELD}' field in config (must be an array of store references)`,
+      },
+      reporter
+    );
+    return undefined;
+  }
+
+  const byKey = new Map<string, StoreMembershipHint>();
+  let dropped = false;
+  let identityless = false;
+
+  for (const entry of raw) {
+    let hint: StoreMembershipHint | null = null;
+
+    if (typeof entry === 'string') {
+      const value = entry.trim();
+      if (isValidStoreUid(value)) {
+        hint = { uid: value };
+      } else if (isKebabId(value)) {
+        hint = { id: value };
+      }
+    } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const candidate = entry as Record<string, unknown>;
+      const uid =
+        typeof candidate.uid === 'string' && isValidStoreUid(candidate.uid)
+          ? candidate.uid.trim()
+          : undefined;
+      const id =
+        typeof candidate.id === 'string' && candidate.id.length > 0 && isKebabId(candidate.id)
+          ? candidate.id
+          : undefined;
+      const remote =
+        typeof candidate.remote === 'string' && candidate.remote.length > 0
+          ? candidate.remote
+          : undefined;
+
+      if (uid !== undefined || id !== undefined) {
+        hint = {
+          ...(uid !== undefined ? { uid } : {}),
+          ...(id !== undefined ? { id } : {}),
+          ...(remote !== undefined ? { remote } : {}),
+        };
+      }
+      // A field this parser could not read (a malformed uid, a non-kebab id,
+      // an empty remote) is reported alongside a wholly unreadable entry: in
+      // both cases something the user wrote is not being used.
+      if (
+        hint !== null &&
+        ((candidate.uid !== undefined && uid === undefined) ||
+          (candidate.id !== undefined && id === undefined) ||
+          (candidate.remote !== undefined && remote === undefined))
+      ) {
+        dropped = true;
+      }
+    }
+
+    if (!hint) {
+      dropped = true;
+      continue;
+    }
+    if (hint.uid === undefined) {
+      identityless = true;
+    }
+
+    const key = storeMembershipHintKey(hint);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, hint);
+      continue;
+    }
+    if (existing.id === undefined && hint.id !== undefined) existing.id = hint.id;
+    if (existing.remote === undefined && hint.remote !== undefined) existing.remote = hint.remote;
+    if (existing.uid === undefined && hint.uid !== undefined) existing.uid = hint.uid;
+  }
+
+  if (dropped) {
+    warnConfig(
+      {
+        key: 'invalidStoreMembershipEntries',
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries are invalid; ignoring the unusable entries and fields`,
+      },
+      reporter
+    );
+  }
+  if (identityless) {
+    warnConfig(
+      {
+        key: 'storeMembershipsWithoutIdentity',
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename`,
+      },
+      reporter
+    );
+  }
+
+  return byKey.size > 0 ? [...byKey.values()] : undefined;
 }
 
 /**
@@ -692,6 +860,14 @@ function parseProjectConfigContent(
     const references = parseDeclarationList(raw.references, reporter);
     if (references) {
       config.references = references;
+    }
+
+    // Store membership locator hints. Parsed like `references:` and for the
+    // same reason — they are hints, so one bad entry costs a diagnostic, not
+    // the whole list.
+    const storeMemberships = parseStoreMembershipList(raw[STORE_MEMBERSHIPS_FIELD], reporter);
+    if (storeMemberships) {
+      config.storeMemberships = storeMemberships;
     }
 
     // Parse store declaration: the legacy id string, the durable
@@ -1797,6 +1973,127 @@ export function appendStoreReference(
   writeFileSync(configPath, stringifyYaml(rawConfig), 'utf-8');
 
   return { configPath, changed: true };
+}
+
+// -----------------------------------------------------------------------------
+// Store membership hints (store add-project / store adopt)
+// -----------------------------------------------------------------------------
+
+export interface AppendStoreMembershipHintResult {
+  configPath: string;
+  /** False when an equivalent hint was already present; nothing was written. */
+  changed: boolean;
+  /** The hint list as it stands after the append. */
+  hints: StoreMembershipHint[];
+}
+
+/** Renders a hint back to raw YAML, carrying only portable fields. */
+function membershipHintToRaw(hint: StoreMembershipHint): Record<string, unknown> {
+  return {
+    ...(hint.uid !== undefined ? { uid: hint.uid } : {}),
+    ...(hint.id !== undefined ? { id: hint.id } : {}),
+    ...(hint.remote !== undefined ? { remote: hint.remote } : {}),
+  };
+}
+
+/**
+ * Refuses anything that looks like a location on this machine. The hint list
+ * is committed and shared, so a path here would be wrong on every other
+ * machine — and `path.isAbsolute` alone answers only for the CURRENT platform,
+ * which is not the platform the file will be read on.
+ */
+function assertPortableHintValue(field: string, value: string): void {
+  const windowsDrive = /^[A-Za-z]:[\\/]/u.test(value);
+  const uncPath = value.startsWith('\\\\');
+  if (path.isAbsolute(value) || windowsDrive || uncPath || value.startsWith('/')) {
+    throw new Error(
+      `Refusing to write a filesystem path into a store membership hint (${field}: ${value}). Membership hints are shared through git and carry only a permanent identity, a display name, and a credential-free remote.`
+    );
+  }
+}
+
+/**
+ * Appends one Store membership hint to the project's config, preserving every
+ * other field AND the file's comments (`parseDocument`, not a schema-typed
+ * rewrite). De-duplicates on the Store's permanent identity, falling back to
+ * its display alias for a Store that has none, and fills a field an existing
+ * hint left empty rather than adding a second entry for the same Store.
+ *
+ * Written atomically: temp file in the same directory, then rename, so an
+ * interrupted write never leaves a half-written config behind.
+ *
+ * Throws when the project has no config file — that is a repair the caller
+ * reports, never a file this function invents (a config carrying nothing but
+ * `storeMemberships` would not be a Rasen project).
+ */
+export async function appendStoreMembershipHint(
+  projectRoot: string,
+  hint: StoreMembershipHint
+): Promise<AppendStoreMembershipHintResult> {
+  if (hint.uid === undefined && hint.id === undefined) {
+    throw new Error(
+      'A store membership hint must name the store by permanent identity or display name.'
+    );
+  }
+  if (hint.remote !== undefined) assertPortableHintValue('remote', hint.remote);
+  if (hint.id !== undefined) assertPortableHintValue('id', hint.id);
+
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No rasen/config.yaml found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}; run 'rasen init' in the project before recording store membership.`
+    );
+  }
+
+  const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+  const key = storeMembershipHintKey(hint);
+  const match = existing.find((entry) => storeMembershipHintKey(entry) === key);
+
+  if (match) {
+    const merged: StoreMembershipHint = {
+      ...match,
+      ...(match.uid === undefined && hint.uid !== undefined ? { uid: hint.uid } : {}),
+      ...(match.id === undefined && hint.id !== undefined ? { id: hint.id } : {}),
+      ...(match.remote === undefined && hint.remote !== undefined ? { remote: hint.remote } : {}),
+    };
+    if (
+      merged.uid === match.uid &&
+      merged.id === match.id &&
+      merged.remote === match.remote
+    ) {
+      return { configPath, changed: false, hints: existing };
+    }
+    const hints = existing.map((entry) =>
+      storeMembershipHintKey(entry) === key ? merged : entry
+    );
+    await writeStoreMembershipHints(configPath, hints);
+    return { configPath, changed: true, hints };
+  }
+
+  const hints = [...existing, hint];
+  await writeStoreMembershipHints(configPath, hints);
+  return { configPath, changed: true, hints };
+}
+
+async function writeStoreMembershipHints(
+  configPath: string,
+  hints: StoreMembershipHint[]
+): Promise<void> {
+  const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+  doc.setIn([STORE_MEMBERSHIPS_FIELD], hints.map(membershipHintToRaw));
+  const nextContent = String(doc);
+
+  try {
+    parseYaml(nextContent);
+  } catch (error) {
+    throw new Error(
+      `Writing "${STORE_MEMBERSHIPS_FIELD}" would produce invalid YAML in ${configPath}; the file was not modified (${
+        error instanceof Error ? error.message.split('\n')[0] : String(error)
+      }).`
+    );
+  }
+
+  await writeFileAtomically(configPath, nextContent);
 }
 
 /** Extracts a valid string `projectId` field from raw config content, or undefined. */

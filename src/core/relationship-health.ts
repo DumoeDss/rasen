@@ -13,6 +13,7 @@ import { storePointerProblem, type StorePointerProblem, type StorePointerShape }
 import { redactOptionalRemote } from './store/remote.js';
 import { storeRemoteDivergence } from './store/identity-diagnostics.js';
 import type { StoreUnavailableReason } from './store/identity.js';
+import type { ProjectMembershipHealth } from './store/membership.js';
 import { toRootOutput, type ResolvedOpenSpecRoot } from './root-selection.js';
 
 /**
@@ -49,6 +50,117 @@ export interface RelationshipStoreHealth {
   status: StoreDiagnostic[];
 }
 
+/**
+ * One eligible Store for this project, and how it was discovered.
+ *
+ * `sources` is the union rule made visible: `hint` means the project declares
+ * a locator for it, `record` means a Store available here records this project
+ * as a member, and both means the two agree. A Store that is declared but not
+ * available here appears with `unavailable` set — never omitted, because
+ * "absent from the list" must not be readable as "not a member".
+ */
+export interface MembershipStoreHealth {
+  uid?: string;
+  id?: string;
+  sources: Array<'hint' | 'record'>;
+  roles?: { planning: boolean; knowledge: boolean };
+  /** Which source answered: a current record or a legacy shape. */
+  provenance?: string;
+  unavailable?: {
+    reason: StoreUnavailableReason;
+    repair: string[];
+  };
+}
+
+/**
+ * Membership as roster and eligibility only. Nothing here decides where a
+ * change is implemented — that is a different question with a different
+ * answer, and conflating the two is what this section exists to stop.
+ *
+ * `diagnostics` carries every membership finding the provider produced, each
+ * with its stable code and its copy-pasteable repair. It is the section's own
+ * field rather than a projection into the roster rows, because findings exist
+ * that name no Store at all (an unrecordable project identity) and findings
+ * that name a Store which is not in the roster (the planning Store with no
+ * record). Dropping it is what made the whole requirement unimplemented once.
+ */
+export interface MembershipHealth {
+  project_id?: string;
+  stores: MembershipStoreHealth[];
+  diagnostics: StoreDiagnostic[];
+}
+
+/**
+ * The provider's findings, mapped to the report shape ONCE. Both doctors call
+ * this and both render from `membershipHumanLines` below, so "human and JSON
+ * report the same codes and the same repair commands" holds by construction
+ * rather than by two renderers being kept in step by hand.
+ */
+export function toMembershipHealth(membership: ProjectMembershipHealth): MembershipHealth {
+  return {
+    ...(membership.projectId !== undefined ? { project_id: membership.projectId } : {}),
+    stores: membership.candidates.map((candidate) => ({
+      ...(candidate.uid !== undefined ? { uid: candidate.uid } : {}),
+      ...(candidate.id !== undefined ? { id: candidate.id } : {}),
+      sources: candidate.sources,
+      ...(candidate.membership ? { roles: candidate.membership.roles } : {}),
+      ...(candidate.membership ? { provenance: candidate.membership.provenance } : {}),
+      ...(candidate.unavailable ? { unavailable: candidate.unavailable } : {}),
+    })),
+    diagnostics: membership.diagnostics,
+  };
+}
+
+/**
+ * The membership section as human lines, indented under `indent`. Returned as
+ * data rather than printed so the two command surfaces share one rendering and
+ * cannot drift apart in wording, codes, or repairs.
+ */
+export function membershipHumanLines(
+  membership: MembershipHealth,
+  indent = '  '
+): string[] {
+  const lines: string[] = [];
+  if (membership.stores.length === 0) {
+    lines.push(`${indent}(this project belongs to no store)`);
+  } else {
+    lines.push(`${indent}Project identity: ${membership.project_id ?? '(not assigned yet)'}`);
+    for (const store of membership.stores) {
+      const name = store.id ?? store.uid ?? '(unnamed store)';
+      const via = store.sources.join(' + ');
+      if (store.unavailable) {
+        lines.push(
+          `${indent}- ${name}: declared (${via}), not available on this machine — ${store.unavailable.reason}`
+        );
+        for (const repair of store.unavailable.repair) {
+          lines.push(`${indent}      Next: ${repair}`);
+        }
+        continue;
+      }
+      const roles = store.roles
+        ? `planning=${store.roles.planning ? 'yes' : 'no'}, knowledge=${store.roles.knowledge ? 'yes' : 'no'}`
+        : 'no membership record';
+      lines.push(
+        `${indent}- ${name}: ${roles} (via ${via}${store.provenance ? `, from ${store.provenance}` : ''})`
+      );
+    }
+  }
+
+  // The findings, with the same code, message, and repair the JSON carries.
+  // A membership that reports a roster and swallows its findings is the state
+  // that makes a half-written two-repository mutation undiagnosable.
+  if (membership.diagnostics.length === 0) {
+    lines.push(`${indent}Findings: none`);
+    return lines;
+  }
+  lines.push(`${indent}Findings:`);
+  for (const finding of membership.diagnostics) {
+    lines.push(`${indent}  - [${finding.severity}] ${finding.code}: ${finding.message}`);
+    if (finding.fix) lines.push(`${indent}    Fix: ${finding.fix}`);
+  }
+  return lines;
+}
+
 export interface RelationshipHealth {
   root: {
     path: string;
@@ -59,6 +171,8 @@ export interface RelationshipHealth {
   };
   store: RelationshipStoreHealth | null;
   references: ReferenceIndexEntry[];
+  /** Store membership for this project; empty when it belongs to none. */
+  membership: MembershipHealth;
   machineHome: MachineHomeHealth;
   status: StoreDiagnostic[];
 }
@@ -142,6 +256,12 @@ export interface InspectRelationshipsInput {
     diagnostics?: StoreDiagnostic[];
   };
   referenceEntries: ReferenceIndexEntry[];
+  /**
+   * Membership facts the caller gathered from the membership provider. Pure
+   * data, composed here — this module performs no I/O, so the read-only
+   * guarantee lives with the caller that did the reading.
+   */
+  membership?: MembershipHealth;
   registryUnreadable: boolean;
   /** A real root whose store: pointer value is malformed (3.2). */
   malformedPointer?: { filePath: string; reason: StorePointerProblem };
@@ -325,6 +445,7 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     },
     store,
     references: input.referenceEntries,
+    membership: input.membership ?? { stores: [], diagnostics: [] },
     machineHome,
     status,
   };

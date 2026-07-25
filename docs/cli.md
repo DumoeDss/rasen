@@ -8,6 +8,7 @@ The rasen CLI (`rasen`) provides terminal commands for project setup, validation
 |----------|----------|---------|
 | **Setup** | `init`, `update` | Initialize and update rasen in your project |
 | **Stores (standalone rasen repos)** | `store setup`, `store register`, `store upgrade-identity`, `store unregister`, `store remove`, `store list`, `store doctor` | Manage stores — standalone rasen repos you've registered |
+| **Store membership** | `store add-project`, `store adopt`, `store eject`, `store migrate-membership` | Manage which projects belong to a store, and their planning content |
 | **Health** | `doctor` | Report relationship health for the resolved root |
 | **Working context** | `context` | Assemble the working set (root + referenced stores) |
 | **Personal worksets** | `workset create`, `workset list`, `workset open`, `workset remove` | Keep and open personal, local working views in your tool |
@@ -59,6 +60,10 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen store remove <id>` | Delete a registered local store folder | `--yes --json` for non-interactive deletion |
 | `rasen store list` | Browse registered stores | `--json` for structured registrations |
 | `rasen store doctor` | Check local store setup | `--json` for structured diagnostics |
+| `rasen store add-project <path> --to <store>` | Add a project to a store's roster | `--json`; `--dry-run` previews both repositories, `--set-primary` opts into the planning binding |
+| `rasen store adopt [path] --to <store>` | Move a project's planning into a store | `--dry-run --json` for an inert preview |
+| `rasen store eject <project-id> --from <store>` | Restore a store-hosted project | `--into <path> --json`; the destination is resolved explicitly, never guessed |
+| `rasen store migrate-membership <store>` | Convert legacy membership data into records | `--apply --json`; previews by default |
 | `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the Rasen root |
 | `rasen workset create [name]` | Compose a personal working view | `--member <path> --json` for non-interactive composition |
 | `rasen workset list` | Browse saved worksets | `--json` for structured views |
@@ -317,6 +322,230 @@ rasen store doctor [id] [--json]
 Doctor is diagnostic-only; it reports missing roots, metadata mismatches,
 permanent identities (or their absence), display names shared by more than one
 store, and invalid local registry state — without modifying the store.
+
+### `rasen store add-project`
+
+Add an in-repo project to a store's roster.
+
+```bash
+rasen store add-project <path> --to <store> [--as <id>] [--set-primary] [--dry-run] [--json]
+```
+
+In one invocation it registers the project in the machine's project namespace,
+writes the store's **membership record** for it, appends a `project:<id>` entry
+to the store's `references:` list (the documentation index), and appends a
+**membership locator hint** to the project's own `rasen/config.yaml`.
+
+The two repositories are written in a defined order — the store's authority
+record first, verified, then the project's hint — and the result reports what
+landed in each. They do not change atomically and the command does not pretend
+otherwise: anything still needing repair is reported with the command that
+finishes it. If the project-side write fails, the store record stands and is
+never rolled back.
+
+`--dry-run` lists every file it would write in each repository and changes
+nothing. Nothing is staged, committed, pushed, fetched, or pulled; the output
+prints a path-scoped commit suggestion per repository for you to run.
+
+**`--set-primary` is an opt-in that never overwrites.** By default the command
+does not change which store the project *plans* in — membership and planning
+binding are different relations. With the flag:
+
+| Project's planning store | Result |
+| --- | --- |
+| none | the target store is recorded, reported separately from the membership |
+| already the target store | a no-op that succeeds and rewrites nothing |
+| a **different** store | **refused** — it names the store bound, the store requested, and the command that rebinds deliberately |
+
+A refusal is scoped to the pointer only: the membership record and locator hint
+the same invocation established still stand. The flag is never inferred from
+another option, from the project's state, or from this being the project's only
+membership. Both stores in a refusal are named by permanent identity as well as
+display name, because two stores are allowed to share a name — and a refusal
+that named only the name would read "plans in 'team-context', not
+'team-context'".
+
+```json
+{
+  "project": { "id": "elftia", "root": "/repos/elftia", "metadata_created": true, "already_registered": false },
+  "target": { "id": "team-context", "root": "/stores/team-context", "reference_added": true },
+  "membership": {
+    "project_id": "ed2cf5bf-2525-45ed-b665-c47a5b8d5450",
+    "roles": { "planning": false, "knowledge": true },
+    "store_writes": ["/stores/team-context/.rasen-store/projects/ed2cf5bf-2525-45ed-b665-c47a5b8d5450.yaml"],
+    "project_writes": ["/repos/elftia/rasen/config.yaml"],
+    "repair_needed": [],
+    "suggested_commits": [
+      { "repo_root": "/stores/team-context", "command": "git -C /stores/team-context add ... && git -C /stores/team-context commit -m ...", "purpose": "Store repo: record the membership authority record." }
+    ]
+  },
+  "planning_binding": { "requested": false, "changed": false, "refused": false, "bound_to": null, "bound_to_uid": null, "requested_store": "team-context", "requested_store_uid": "8f0c2e7a-13d5-4a1e-9c6b-2b7d4e5f6a80" },
+  "dry_run": false,
+  "status": []
+}
+```
+
+A refusal reports the same shape with the binding block filled in:
+
+```json
+{
+  "planning_binding": {
+    "requested": true,
+    "changed": false,
+    "refused": true,
+    "bound_to": "other-store",
+    "requested_store": "team-context",
+    "rebind_command": "rasen store upgrade-identity team-context --apply"
+  }
+}
+```
+
+### `rasen store adopt`
+
+Move an in-repo project's planning content into a store and convert the repo to
+a config-only pointer.
+
+```bash
+rasen store adopt [path] --to <store> [--archive <mode>] [--dry-run] [--verify-hash] [--json]
+```
+
+Adopt binds by definition: it writes the project's `store:` declaration as part
+of the migration, and is not routed through `--set-primary`. It records the
+project as a **planning member** in the store's membership record — and asserts
+no knowledge role, because an adoption proves where a project plans and proves
+nothing about what knowledge it shares. The record lists the adopted spec names,
+change names, and the adoption timestamp — and **no path**.
+Restoring the project later resolves its destination explicitly (see below)
+rather than following a path captured on the machine that ran the adoption.
+
+An interrupted adopt is resumable: the ownership record is written before any
+source content is deleted, so a rerun detects the partial state and completes.
+
+### `rasen store eject`
+
+Restore a store-hosted project back to in-repo planning.
+
+```bash
+rasen store eject <project-id> --from <store> [--into <path>] [--all] [--force] [--dry-run] [--json]
+```
+
+Ownership comes from the store's membership record for that project, with the
+legacy adoption manifest read as a fallback while one still exists.
+
+**The destination is resolved by an explicit ordered rule**, and by nothing
+else:
+
+1. `--into <path>`, when given;
+2. otherwise the current checkout, when its project identity is the project
+   being ejected;
+3. otherwise the machine registry's single live checkout for that project.
+
+Several candidates, or none, is an error that lists what it found and names
+`--into`. Eject never reads a source path recorded in legacy shared data, never
+infers a local path from a remote, never guesses from a display name, and never
+takes the first of several checkouts. Checkout comparison is canonical, so a
+Windows path differing only by drive-letter case or separator form still
+matches.
+
+Eject removes where the project *plans*; it does not remove it from the store's
+roster. The membership record keeps any knowledge role, and the ownership block
+goes. A record whose only role was the planning one the eject just ended, and
+which owns nothing, is removed rather than left behind expressing nothing — so
+a project that was only ever adopted leaves no empty record when it is ejected.
+
+### `rasen store migrate-membership`
+
+Convert a store's legacy membership data into per-project membership records.
+
+```bash
+rasen store migrate-membership <store> [--dry-run] [--apply] [--json]
+```
+
+It reads `.rasen-store/adoptions.yaml`, the store's `references:` list, and the
+machine's project namespace, and emits one
+`.rasen-store/projects/<projectId>.yaml` per resolvable project. `sourcePath` is
+dropped and the adoption `timestamp` becomes `adoption.adoptedAt`.
+
+Previewing is the default; `--apply` writes. It is idempotent and safe to re-run.
+A project whose identity cannot be determined on this machine is reported and
+left untouched rather than guessed at.
+
+**It deletes `adoptions.yaml`** — only under `--apply`, and only after every
+record it produced has been written and read back successfully. That is this
+change's one non-reversible step; see the migration guide for why it is removed
+rather than renamed, and for the `git log` / `git show` commands that recover
+the pre-migration file from the store's history. The removal is reported for you
+to commit; the command never touches the git index.
+
+```json
+{
+  "store": { "id": "team-context", "root": "/stores/team-context" },
+  "applied": true,
+  "converted": [
+    {
+      "project_id": "ed2cf5bf-2525-45ed-b665-c47a5b8d5450",
+      "alias": "elftia",
+      "source": "legacy-adoption",
+      "roles": { "planning": true, "knowledge": false },
+      "record_path": "/stores/team-context/.rasen-store/projects/ed2cf5bf-2525-45ed-b665-c47a5b8d5450.yaml"
+    }
+  ],
+  "unresolved": [],
+  "legacy_manifest_removed": true,
+  "legacy_manifest_path": "/stores/team-context/.rasen-store/adoptions.yaml",
+  "status": []
+}
+```
+
+### Store membership
+
+Membership answers "which projects belong to this store", and is a different
+question from "where does this project plan".
+
+- **Authority** is the store's own record, one file per member project:
+  `<store>/.rasen-store/projects/<projectId>.yaml`. It is named and keyed by the
+  project's permanent identity, so two projects sharing a display name never
+  share a record and two people adding two different projects never edit the
+  same file.
+- **`roles.planning`** and **`roles.knowledge`** are separate facts. A project
+  can share knowledge with a store without planning in it, and the two never
+  collapse into one ambiguous flag.
+- **Membership expresses roster and eligibility only.** It does not determine,
+  imply, or stand in for the decision of where a change is implemented.
+- **The project side is a locator, never authority.** `storeMemberships:` in the
+  project's `rasen/config.yaml` carries a permanent identity, a display alias,
+  and a credential-free remote — so a fresh clone can discover its stores. A
+  hint that disagrees with the store's record is reported as drift.
+
+```yaml
+# <store>/.rasen-store/projects/<projectId>.yaml
+version: 1
+projectId: ed2cf5bf-2525-45ed-b665-c47a5b8d5450
+id: elftia
+remote: git@github.com:org/elftia.git
+roles:
+  planning: true
+  knowledge: true
+adoption:
+  specs: [fundraising]
+  changes: [fundraising-p0-p1]
+  adoptedAt: 2026-07-25T10:00:00Z
+```
+
+```yaml
+# <project>/rasen/config.yaml
+storeMemberships:
+  - uid: 8f0c2e7a-13d5-4a1e-9c6b-2b7d4e5f6a80
+    id: team-context
+    remote: git@github.com:org/team-context.git
+```
+
+`rasen doctor` and `rasen store doctor` report membership health read-only —
+a planning store with no record, a record with no project-side hint, a hint
+whose store is not available here, a machine path left in git-shared data, a
+record whose filename and identity disagree, an unmappable legacy reference, and
+a store still carrying legacy adoption data. Each names its repair command.
+See [Troubleshooting](troubleshooting.md#store-membership).
 
 ### A store's identity and its name
 

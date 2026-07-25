@@ -650,6 +650,9 @@
       "invalidReferences": "設定の'references'フィールドが無効です（store idの配列を指定してください）",
       "invalidReferenceEntries": "'references'に無効な項目があるため、その項目を無視します",
       "invalidReferenceRemotes": "'references'に空または文字列でないremoteがあります。idはclone元なしで保持します",
+      "invalidStoreMemberships": "config の 'storeMemberships' フィールドが不正です（store 参照の配列である必要があります）",
+      "invalidStoreMembershipEntries": "一部の 'storeMemberships' エントリが不正です。利用できないエントリとフィールドを無視します",
+      "storeMembershipsWithoutIdentity": "一部の 'storeMemberships' エントリは store を表示名だけで指しています。改名後もヒントが有効であり続けるよう 'rasen store upgrade-identity <store> --apply' を実行してください",
       "invalidSchema": "設定の'schema'フィールドが無効です（空でない文字列を指定してください）",
       "contextTooLarge": "contextが大きすぎます（{size}KB、上限{maximum}KB）",
       "ignoringContext": "contextフィールドを無視します",
@@ -1026,7 +1029,12 @@
     "Give a store a permanent identity and record it in the registry and the project's declaration": "storeに恒久識別子を付与し、レジストリとプロジェクトの宣言に記録します",
     "Disambiguate a name that matches more than one registered store": "複数の登録済みstoreに一致する名前を特定します",
     "Report every file that would be written and change nothing": "書き込む予定のファイルをすべて表示し、何も変更しません",
-    "Write the plan": "計画を実行します"
+    "Write the plan": "計画を実行します",
+    "Also record the target store as the project's planning store": "対象 store をプロジェクトの計画 store としても記録します",
+    "Report every file that would be written in each repository and change nothing": "各リポジトリに書き込まれるファイルをすべて報告し、何も変更しません",
+    "Convert a store's legacy membership data into per-project membership records": "store の旧形式メンバーシップデータをプロジェクトごとのメンバーシップレコードへ変換します",
+    "Report the conversion plan and change nothing": "変換計画を報告し、何も変更しません",
+    "Write the records and remove the legacy adoption manifest": "レコードを書き込み、旧 adoption マニフェストを削除します"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "AIツールを非対話で設定します。\"all\"、\"none\"、または次のツールIDをカンマ区切りで指定: {ids}"

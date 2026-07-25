@@ -218,6 +218,134 @@ A store remote may not carry a username-and-password or token. Record the
 credential-free URL and keep the credential in your Git credential helper. The
 ordinary SSH form (`git@github.com:acme/team.git`) is fine.
 
+## Store membership
+
+Membership is a **roster**: which projects belong to a store, and whether each
+one plans in it, shares knowledge with it, or both. It is not the same thing as
+where a project plans, and it never decides where a change is implemented.
+
+The authority is the store's own record, one file per project:
+`<store>/.rasen-store/projects/<projectId>.yaml`. The project's own
+`storeMemberships:` list is a **locator** — it helps a fresh clone find the
+stores it belongs to, and it never confers membership on its own.
+
+`rasen doctor` and `rasen store doctor` report every finding below, under
+**Store membership → Findings** in human output and at `membership.diagnostics`
+in `--json`. Both surfaces render from the same structure, so they always carry
+the same codes and the same repair commands. Both are read-only: they contact no
+network, repair nothing, and write nothing — and they report these findings
+whether or not the project declares a planning store, which is what makes the
+half-written state after an interrupted `add-project` visible.
+
+### "records no membership for project …" (`store_project_record_missing`)
+
+The store this project **plans in** has no membership record for it. An error,
+because the planning binding is already in force and the roster disagrees with
+it. Add the record:
+
+```bash
+rasen store add-project <project-path> --to <store>
+```
+
+### "the project declares no membership hint for it" (`project_membership_locator_missing`)
+
+The store records this project as a member, but the project itself names no
+locator for the store. Everything works on this machine and discovery breaks on
+the next one. The same command writes both halves:
+
+```bash
+rasen store add-project <project-path> --to <store>
+```
+
+### "its membership record cannot be verified here" (`project_membership_unverified`)
+
+The project declares a locator for a store that is not available on this
+machine, so the authority cannot be read. The answer is *unknown*, not "not a
+member" — nothing is dropped from the eligible set on this basis. Obtain the
+store, then re-run doctor:
+
+```bash
+git clone <remote> <path> && rasen store register <path>
+```
+
+### "records a filesystem path from the machine that wrote it" (`shared_metadata_contains_local_path`)
+
+Git-shared data still carries an absolute path from whoever created it. It is
+wrong on every other machine and **no command reads it**. Convert the store's
+legacy membership data:
+
+```bash
+rasen store migrate-membership <store> --apply
+```
+
+### "is named for project … but declares project …" (`store_project_record_key_mismatch`)
+
+A membership record's filename and the identity inside it disagree — usually a
+renamed or copied file. Neither side is treated as authoritative: trusting the
+name would let a rename reassign membership, and trusting the contents would let
+a copy claim another project's. Rename the file to match its `projectId`, or
+correct the `projectId` inside it — whichever matches the project you meant.
+
+### "references project … by display name" (`store_legacy_reference_unresolved`)
+
+A legacy `references: project:<name>` entry cannot be mapped to a project
+identity here, because that name only means something on a machine where the
+project is registered. This is the ordinary fresh-machine answer, not a defect.
+Nothing is guessed. Either run the migration where the project is registered, or
+add it here:
+
+```bash
+rasen store migrate-membership <store> --apply     # on a machine that has it
+rasen store add-project <project-path> --to <store>  # here
+```
+
+### "cannot name a membership record file" (`project_identity_unrecordable`)
+
+The project's `projectId` is neither a UUID nor a kebab-case id, or it is a name
+a filesystem reserves (`con`, `nul`, `com1`, …). It is never altered to fit a
+filename: two identities collapsing onto one file would silently overwrite one
+project's membership with another's. Set a well-formed `projectId` in the
+project's `rasen/config.yaml` and rerun.
+
+### "still holds legacy adoption data" (`store_membership_legacy_manifest`)
+
+The store carries `.rasen-store/adoptions.yaml` and has not been converted yet.
+Preview first, then apply:
+
+```bash
+rasen store migrate-membership <store>
+rasen store migrate-membership <store> --apply
+```
+
+### "were inferred … not declared" (`store_membership_roles_inferred`)
+
+Informational. Membership derived from legacy data has no declared roles, so
+they are inferred narrowly: an adoption proves *planning* membership and proves
+nothing about knowledge. The migration records them explicitly.
+
+### `store add-project --set-primary` refused
+
+`--set-primary` never overwrites a planning store that is already set to a
+different store. The refusal is scoped to the pointer only — the membership
+record and locator hint that same command wrote are still in place, because they
+are a different relation. Rebind deliberately if that is what you meant:
+
+```bash
+rasen store upgrade-identity <store> --apply
+```
+
+### `store eject` asks for `--into`
+
+Eject no longer follows a path recorded at adoption time; that path belonged to
+whichever machine ran the adoption. It resolves the destination explicitly:
+`--into`, else the current checkout when its project identity matches, else the
+machine registry's single live checkout. Several candidates, or none, is an
+error that lists what it found:
+
+```bash
+rasen store eject <project-id> --from <store> --into <path>
+```
+
 ## Migration from the legacy workflow
 
 ### "Legacy files detected in non-interactive mode"

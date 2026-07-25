@@ -650,6 +650,9 @@
       "invalidReferences": "Invalid 'references' field in config (must be an array of store ids)",
       "invalidReferenceEntries": "Some 'references' entries are invalid, ignoring them",
       "invalidReferenceRemotes": "Some 'references' remotes are not non-empty strings; the ids are kept without a clone source",
+      "invalidStoreMemberships": "Invalid 'storeMemberships' field in config (must be an array of store references)",
+      "invalidStoreMembershipEntries": "Some 'storeMemberships' entries are invalid; ignoring the unusable entries and fields",
+      "storeMembershipsWithoutIdentity": "Some 'storeMemberships' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename",
       "invalidSchema": "Invalid 'schema' field in config (must be non-empty string)",
       "contextTooLarge": "Context too large ({size}KB, limit: {maximum}KB)",
       "ignoringContext": "Ignoring context field",
@@ -1026,7 +1029,12 @@
     "Give a store a permanent identity and record it in the registry and the project's declaration": "Give a store a permanent identity and record it in the registry and the project's declaration",
     "Disambiguate a name that matches more than one registered store": "Disambiguate a name that matches more than one registered store",
     "Report every file that would be written and change nothing": "Report every file that would be written and change nothing",
-    "Write the plan": "Write the plan"
+    "Write the plan": "Write the plan",
+    "Also record the target store as the project's planning store": "Also record the target store as the project's planning store",
+    "Report every file that would be written in each repository and change nothing": "Report every file that would be written in each repository and change nothing",
+    "Convert a store's legacy membership data into per-project membership records": "Convert a store's legacy membership data into per-project membership records",
+    "Report the conversion plan and change nothing": "Report the conversion plan and change nothing",
+    "Write the records and remove the legacy adoption manifest": "Write the records and remove the legacy adoption manifest"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "Configure AI tools non-interactively. Use \"all\", \"none\", or a comma-separated list of: {ids}"

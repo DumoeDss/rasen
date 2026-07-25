@@ -36,9 +36,60 @@ describe('relationship health composition (3.6)', () => {
       },
       store: null,
       references: [],
+      membership: { stores: [], diagnostics: [] },
       machineHome: { registered: false, dangling: [], worktreeDuplicates: [], relocation: { lingering: [], pendingOrFailed: [] } },
       status: [],
     });
+  });
+
+  it('reports membership as roster facts, composed from the caller with no I/O', () => {
+    const health = inspectRelationships({
+      ...baseInput(),
+      membership: {
+        project_id: 'p1',
+        stores: [
+          {
+            uid: '11111111-1111-4111-8111-111111111111',
+            id: 'team-store',
+            sources: ['hint', 'record'],
+            roles: { planning: true, knowledge: true },
+            provenance: 'v2-record',
+          },
+          {
+            id: 'knowledge-store',
+            sources: ['hint'],
+            unavailable: { reason: 'not-registered', repair: ['rasen store register <path>'] },
+          },
+        ],
+        diagnostics: [
+          {
+            severity: 'warning',
+            code: 'project_membership_unverified',
+            message: 'Store knowledge-store is declared by this project but is not registered here.',
+            target: 'store.membership',
+            fix: 'rasen store register <path>',
+          },
+        ],
+      },
+    });
+
+    expect(health.membership.project_id).toBe('p1');
+    expect(health.membership.stores).toHaveLength(2);
+    // An unavailable store stays IN the answer: absent-from-the-list must never
+    // be readable as "not a member".
+    expect(health.membership.stores[1]?.unavailable?.reason).toBe('not-registered');
+    // …and its finding reaches the report, with the repair that resolves it.
+    expect(health.membership.diagnostics.map((entry) => entry.code)).toEqual([
+      'project_membership_unverified',
+    ]);
+    expect(health.membership.diagnostics[0]?.fix).toBe('rasen store register <path>');
+  });
+
+  it('reports an empty membership section rather than omitting it', () => {
+    // Including its findings list: a section that reports a roster and drops
+    // its diagnostics is the shape that made the whole diagnostic requirement
+    // unimplemented at the surface while the provider computed it correctly.
+    expect(inspectRelationships(baseInput()).membership).toEqual({ stores: [], diagnostics: [] });
   });
 
   it('omits migratableEphemera when the total is zero', () => {

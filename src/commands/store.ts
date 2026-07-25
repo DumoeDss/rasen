@@ -37,13 +37,21 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { runAdopt, runEject } from './store-migration.js';
-import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
+import {
+  diagnoseMigrationDrift,
+  migrateStoreMembership,
+  type MigrateMembershipResult,
+} from '../core/store/migration-ops.js';
+import type { SuggestedGitCommand } from '../core/store/migration.js';
 import { readStorePointer } from '../core/project-config.js';
 import { storeBindingDeclarationFrom } from '../core/effective-config.js';
 import {
   resolveStoreBinding,
   type UnavailableStoreBinding,
 } from '../core/store/identity.js';
+import { describeStore } from '../core/store/identity-diagnostics.js';
+import { gatherProjectMembership } from './shared-gather.js';
+import { membershipHumanLines, type MembershipHealth } from '../core/relationship-health.js';
 
 interface StoreSetupOptions {
   path?: string;
@@ -68,6 +76,15 @@ interface StoreAddProjectOptions {
   to?: string;
   as?: string;
   json?: boolean;
+  /** `--set-primary`: opt-in, default off, never inferred. */
+  setPrimary?: boolean;
+  dryRun?: boolean;
+}
+
+interface StoreMigrateMembershipOptions {
+  json?: boolean;
+  apply?: boolean;
+  dryRun?: boolean;
 }
 
 interface StoreJsonOptions {
@@ -164,6 +181,32 @@ interface StoreListOutput {
   status: StoreDiagnostic[];
 }
 
+interface StoreMembershipOutput {
+  project_id: string | null;
+  roles: { planning: boolean; knowledge: boolean };
+  project_base_commit: string | null;
+  store_base_commit: string | null;
+  project_writes: string[];
+  store_writes: string[];
+  record_written: boolean;
+  hint_written: boolean;
+  repair_needed: Array<{ code: string; message: string; repair: string }>;
+  suggested_commits: Array<{ repo_root: string; command: string; purpose: string }>;
+}
+
+interface StorePlanningBindingOutput {
+  requested: boolean;
+  changed: boolean;
+  refused: boolean;
+  already_bound: boolean;
+  bound_to: string | null;
+  /** Permanent identity of `bound_to`, so two Stores sharing a name are distinguishable. */
+  bound_to_uid: string | null;
+  requested_store: string;
+  requested_store_uid: string | null;
+  rebind_command: string | null;
+}
+
 interface StoreAddProjectOutput {
   project: {
     id: string;
@@ -178,6 +221,32 @@ interface StoreAddProjectOutput {
     reference_added: boolean;
     reference_already_present: boolean;
   } | null;
+  membership: StoreMembershipOutput | null;
+  planning_binding: StorePlanningBindingOutput | null;
+  dry_run: boolean;
+  status: StoreDiagnostic[];
+}
+
+interface StoreMigrateMembershipOutput {
+  store: { id: string; root: string } | null;
+  applied: boolean;
+  converted: Array<{
+    project_id: string | null;
+    alias: string | null;
+    source: string;
+    roles: { planning: boolean; knowledge: boolean };
+    record_path: string | null;
+  }>;
+  unresolved: Array<{
+    project_id: string | null;
+    alias: string | null;
+    source: string;
+    reason: string;
+  }>;
+  store_writes: string[];
+  legacy_manifest_removed: boolean;
+  legacy_manifest_path: string | null;
+  suggested_commits: Array<{ repo_root: string; command: string; purpose: string }>;
   status: StoreDiagnostic[];
 }
 
@@ -314,6 +383,16 @@ function toListOutput(result: StoreListResult): StoreListOutput {
   };
 }
 
+function toSuggestedCommitOutput(
+  commits: readonly SuggestedGitCommand[]
+): Array<{ repo_root: string; command: string; purpose: string }> {
+  return commits.map((commit) => ({
+    repo_root: commit.repoRoot,
+    command: commit.command,
+    purpose: commit.purpose,
+  }));
+}
+
 function toAddProjectOutput(result: StoreAddProjectResult): StoreAddProjectOutput {
   return {
     project: {
@@ -329,6 +408,61 @@ function toAddProjectOutput(result: StoreAddProjectResult): StoreAddProjectOutpu
       reference_added: result.target.referenceAdded,
       reference_already_present: result.target.referenceAlreadyPresent,
     },
+    membership: {
+      project_id: result.membership.projectId,
+      roles: result.membership.roles,
+      project_base_commit: result.membership.projectBaseCommit,
+      store_base_commit: result.membership.storeBaseCommit,
+      project_writes: result.membership.projectWrites,
+      store_writes: result.membership.storeWrites,
+      record_written: result.membership.recordWritten,
+      hint_written: result.membership.hintWritten,
+      repair_needed: result.membership.repairNeeded.map((repair) => ({
+        code: repair.code,
+        message: repair.message,
+        repair: repair.repair,
+      })),
+      suggested_commits: toSuggestedCommitOutput(result.membership.suggestedCommits),
+    },
+    planning_binding: {
+      requested: result.planningBinding.requested,
+      changed: result.planningBinding.changed,
+      refused: result.planningBinding.refused,
+      already_bound: result.planningBinding.alreadyBound,
+      bound_to: result.planningBinding.boundTo ?? null,
+      bound_to_uid: result.planningBinding.boundToUid ?? null,
+      requested_store: result.planningBinding.requestedStore,
+      requested_store_uid: result.planningBinding.requestedStoreUid ?? null,
+      rebind_command: result.planningBinding.rebindCommand ?? null,
+    },
+    dry_run: result.dryRun,
+    status: result.diagnostics,
+  };
+}
+
+function toMigrateMembershipOutput(
+  result: MigrateMembershipResult
+): StoreMigrateMembershipOutput {
+  return {
+    store: { id: result.storeId, root: result.storeRoot },
+    applied: result.applied,
+    converted: result.converted.map((entry) => ({
+      project_id: entry.projectId ?? null,
+      alias: entry.alias ?? null,
+      source: entry.source,
+      roles: entry.roles,
+      record_path: entry.recordPath ?? null,
+    })),
+    unresolved: result.unresolved.map((entry) => ({
+      project_id: entry.projectId ?? null,
+      alias: entry.alias ?? null,
+      source: entry.source,
+      reason: entry.unresolved ?? 'unresolved',
+    })),
+    store_writes: result.storeWrites,
+    legacy_manifest_removed: result.legacyManifestRemoved,
+    legacy_manifest_path: result.legacyManifestPath,
+    suggested_commits: toSuggestedCommitOutput(result.suggestedCommits),
     status: result.diagnostics,
   };
 }
@@ -642,6 +776,80 @@ function printListHuman(payload: StoreListOutput): void {
   }
 }
 
+function printMigrateMembershipHuman(payload: StoreMigrateMembershipOutput): void {
+  if (!payload.store) {
+    return;
+  }
+
+  console.log(`Store: ${payload.store.id}`);
+  console.log(`Location: ${formatPathForHuman(payload.store.root)}`);
+  console.log(
+    payload.applied
+      ? 'Mode: applied'
+      : 'Mode: preview (nothing was written; rerun with --apply to convert)'
+  );
+  console.log('');
+
+  if (payload.converted.length === 0) {
+    console.log('Nothing left to convert: every member already has a per-project record.');
+  } else {
+    console.log(`Projects ${payload.applied ? 'converted' : 'to convert'}: ${payload.converted.length}`);
+    for (const entry of payload.converted) {
+      const name = entry.alias ? `${entry.alias} (${entry.project_id})` : (entry.project_id ?? '');
+      console.log(
+        `  ${name} — from ${entry.source}, planning=${entry.roles.planning ? 'yes' : 'no'}, knowledge=${entry.roles.knowledge ? 'yes' : 'no'}`
+      );
+      if (entry.record_path) {
+        console.log(`    ${formatPathForHuman(entry.record_path)}`);
+      }
+    }
+  }
+
+  if (payload.unresolved.length > 0) {
+    console.log('');
+    console.log(`Left untouched (cannot be resolved on this machine): ${payload.unresolved.length}`);
+    for (const entry of payload.unresolved) {
+      console.log(`  ${entry.alias ?? entry.project_id ?? '(unknown)'} — ${entry.reason}`);
+    }
+    console.log('  Their legacy data was kept: it is the only remaining record that they are members.');
+  }
+
+  if (payload.legacy_manifest_path) {
+    console.log('');
+    if (payload.legacy_manifest_removed) {
+      console.log(
+        payload.applied
+          ? `Removed ${formatPathForHuman(payload.legacy_manifest_path)} after every record was written and read back.`
+          : `Would remove ${formatPathForHuman(payload.legacy_manifest_path)} once every record above is written and read back.`
+      );
+      console.log(
+        '  It is removed rather than renamed: any archived copy would keep a machine-absolute path in git, which is the thing being removed.'
+      );
+      console.log(
+        '  Every fact it held is carried into the per-project records, and the file itself stays recoverable from this store\'s git history:'
+      );
+      console.log('    git log --oneline -- .rasen-store/adoptions.yaml');
+      console.log('    git show <commit>:.rasen-store/adoptions.yaml');
+    } else {
+      console.log(
+        `Kept ${formatPathForHuman(payload.legacy_manifest_path)}: it still describes members this machine cannot resolve.`
+      );
+    }
+  }
+
+  for (const commit of payload.suggested_commits) {
+    console.log('');
+    console.log(`Suggested commit (${commit.purpose})`);
+    console.log(`  ${commit.command}`);
+    console.log('  Not run: rasen never stages, commits, pushes, fetches, or pulls.');
+  }
+
+  for (const status of payload.status) {
+    console.log(`${status.severity === 'error' ? 'Issue' : 'Note'}: ${status.message}`);
+    if (status.fix) console.log(`  Fix: ${status.fix}`);
+  }
+}
+
 function printAddProjectHuman(payload: StoreAddProjectOutput): void {
   if (!payload.project || !payload.target) {
     return;
@@ -656,6 +864,85 @@ function printAddProjectHuman(payload: StoreAddProjectOutput): void {
       ? `References: added to ${formatPathForHuman(payload.target.config_path)}`
       : `References: already present in ${formatPathForHuman(payload.target.config_path)}`
   );
+
+  // Membership and the planning binding are reported SEPARATELY and always:
+  // they are different relations, and collapsing them in the output is exactly
+  // the confusion the record exists to remove.
+  const membership = payload.membership;
+  if (membership) {
+    console.log('');
+    console.log(
+      payload.dry_run
+        ? 'Membership (preview — nothing was written):'
+        : 'Membership (roster and eligibility only; it does not decide where a change is implemented):'
+    );
+    console.log(`  Project identity: ${membership.project_id ?? '(not assigned yet)'}`);
+    console.log(
+      `  Roles: planning=${membership.roles.planning ? 'yes' : 'no'}, knowledge=${membership.roles.knowledge ? 'yes' : 'no'}`
+    );
+    for (const write of membership.store_writes) {
+      console.log(
+        `  Store repo ${payload.dry_run ? 'would write' : 'wrote'}: ${formatPathForHuman(write)}`
+      );
+    }
+    for (const write of membership.project_writes) {
+      console.log(
+        `  Project repo ${payload.dry_run ? 'would write' : 'wrote'}: ${formatPathForHuman(write)}`
+      );
+    }
+    if (membership.store_writes.length === 0 && membership.project_writes.length === 0) {
+      console.log('  Already recorded in both repositories; nothing to write.');
+    }
+    for (const repair of membership.repair_needed) {
+      console.log(`  Needs repair: ${repair.message}`);
+      console.log(`    Run: ${repair.repair}`);
+    }
+    for (const commit of membership.suggested_commits) {
+      console.log(`  Suggested commit (${commit.purpose})`);
+      console.log(`    ${commit.command}`);
+    }
+    if (membership.suggested_commits.length > 0) {
+      console.log('  Neither command was run: rasen never stages, commits, pushes, fetches, or pulls.');
+    }
+  }
+
+  const binding = payload.planning_binding;
+  if (binding) {
+    console.log('');
+    if (binding.refused) {
+      // Named by identity on BOTH sides: two Stores may legitimately share a
+      // display name, and naming only the name renders "plans in 'team-store',
+      // not 'team-store'" — a refusal the user cannot act on.
+      const boundLabel = describeStore({
+        ...(binding.bound_to ? { id: binding.bound_to } : {}),
+        ...(binding.bound_to_uid ? { uid: binding.bound_to_uid } : {}),
+      });
+      const requestedLabel = describeStore({
+        id: binding.requested_store,
+        ...(binding.requested_store_uid ? { uid: binding.requested_store_uid } : {}),
+      });
+      console.log(
+        `Planning store: REFUSED — nothing was overwritten. This project plans in ${boundLabel}; --set-primary asked for ${requestedLabel}.`
+      );
+      console.log('  The planning store was left exactly as it was.');
+      console.log(
+        '  The membership record and locator hint this command wrote are unaffected — they are a different relation.'
+      );
+      if (binding.rebind_command) {
+        console.log(`  To rebind deliberately: ${binding.rebind_command}`);
+      }
+    } else if (binding.changed) {
+      console.log(`Planning store: changed to '${binding.requested_store}' (--set-primary).`);
+      console.log('  This is separate from the membership above: it decides where this project plans.');
+    } else if (binding.requested && binding.already_bound) {
+      console.log(`Planning store: already '${binding.requested_store}'; nothing was rewritten.`);
+    } else {
+      console.log(
+        `Planning store: unchanged${binding.bound_to ? ` ('${binding.bound_to}')` : ' (none declared)'}. Pass --set-primary to bind it.`
+      );
+    }
+  }
+
   console.log('');
   console.log('The project remains usable in-repo; it continues to resolve as its own local Rasen root.');
 
@@ -875,6 +1162,11 @@ class StoreCommand {
         projectPath,
         targetStoreId: options.to,
         ...(options.as !== undefined ? { id: options.as } : {}),
+        // Opt-in only, read straight off the flag: never derived from another
+        // option, from the project's state, or from this being its only
+        // membership.
+        ...(options.setPrimary === true ? { setPrimary: true } : {}),
+        ...(options.dryRun === true ? { dryRun: true } : {}),
       });
       const payload = toAddProjectOutput(result);
 
@@ -885,7 +1177,56 @@ class StoreCommand {
 
       printAddProjectHuman(payload);
     } catch (error) {
-      this.handleFailure(options.json, { project: null, target: null, status: [] }, error);
+      this.handleFailure(
+        options.json,
+        {
+          project: null,
+          target: null,
+          membership: null,
+          planning_binding: null,
+          dry_run: options.dryRun === true,
+          status: [],
+        },
+        error
+      );
+    }
+  }
+
+  async migrateMembership(
+    storeId: string,
+    options: StoreMigrateMembershipOptions = {}
+  ): Promise<void> {
+    try {
+      const result = await migrateStoreMembership({
+        storeId,
+        // Dry run is the default: the one non-reversible step in this command
+        // (removing the legacy manifest) never happens without --apply.
+        ...(options.apply === true ? { apply: true } : {}),
+      });
+      const payload = toMigrateMembershipOutput(result);
+
+      if (options.json) {
+        printJson(payload);
+        return;
+      }
+
+      printMigrateMembershipHuman(payload);
+    } catch (error) {
+      this.handleFailure(
+        options.json,
+        {
+          store: null,
+          applied: false,
+          converted: [],
+          unresolved: [],
+          store_writes: [],
+          legacy_manifest_removed: false,
+          legacy_manifest_path: null,
+          suggested_commits: [],
+          status: [],
+        },
+        error
+      );
     }
   }
 
@@ -914,11 +1255,21 @@ class StoreCommand {
       // unregistered store, ambiguous shape+pointer, and manifest/store
       // mismatch. Only meaningful when running from a project root, so a
       // failure to resolve degrades to no drift rather than an error.
+      //
+      // Membership joins them on the same terms and for the same reason: it is
+      // a fact about the CURRENT project, so it is reported when the command
+      // inspects the machine rather than one named store, alongside its two
+      // siblings. Read-only, from the same provider `rasen doctor` uses and
+      // rendered from the same structure, so the two commands cannot report
+      // different codes or different repairs for one state.
       let drift: StoreDiagnostic[] = [];
       let declaration: UnavailableStoreBinding | null = null;
+      let membership: MembershipHealth | null = null;
       if (id === undefined) {
         drift = await diagnoseMigrationDrift(process.cwd()).catch(() => []);
         declaration = await unavailableProjectDeclaration();
+        const projectRoot = findRepoPlanningRootSync(process.cwd());
+        membership = projectRoot ? await gatherProjectMembership(projectRoot) : null;
       }
       const declarationReport = declaration
         ? {
@@ -936,11 +1287,25 @@ class StoreCommand {
       }
 
       if (options.json) {
-        printJson({ ...payload, projectDrift: drift, projectStore: declarationReport });
+        printJson({
+          ...payload,
+          projectDrift: drift,
+          projectStore: declarationReport,
+          membership,
+        });
         return;
       }
 
       printDoctorHuman(payload);
+      if (membership) {
+        console.log('');
+        console.log(
+          'Store membership (roster and eligibility only; it does not decide where work is done)'
+        );
+        for (const line of membershipHumanLines(membership)) {
+          console.log(line);
+        }
+      }
       if (declarationReport) {
         console.log('');
         console.log('Declared store:');
@@ -1066,9 +1431,24 @@ export function registerStoreCommand(program: Command): void {
     .description('Register an in-repo project into the project namespace and add it to a target store\'s references')
     .option('--to <store-id>', 'Target store to add the project to (must already be registered)')
     .option('--as <id>', 'Project store id override (ignored if the project is already a store)')
+    .option(
+      '--set-primary',
+      "Also record the target store as the project's planning store; refuses when a different store is already bound"
+    )
+    .option('--dry-run', 'Report every file that would be written in each repository and change nothing')
     .option('--json', 'Output as JSON')
     .action(async (projectPath: string, options: StoreAddProjectOptions) => {
       await storeCommand.addProject(projectPath, options);
+    });
+
+  store
+    .command('migrate-membership <store-id>')
+    .description("Convert a store's legacy membership data into per-project membership records")
+    .option('--dry-run', 'Report the conversion plan and change nothing (default)')
+    .option('--apply', 'Write the records and remove the legacy adoption manifest once they read back')
+    .option('--json', 'Output as JSON')
+    .action(async (storeId: string, options: StoreMigrateMembershipOptions) => {
+      await storeCommand.migrateMembership(storeId, options);
     });
 
   store
@@ -1090,7 +1470,10 @@ export function registerStoreCommand(program: Command): void {
     .option('--all', 'Manifest-less fallback: copy the entire store planning content back (with confirmation)')
     .option('--yes', 'Explicit consent for a manifest-less --all copy back in non-interactive/JSON mode')
     .option('--force', 'Proceed past manifest drift, reporting the missing content')
-    .option('--into <path>', 'Repo path to restore into (defaults to the manifest source path)')
+    .option(
+      '--into <path>',
+      'Repo path to restore into (else the current checkout when its project identity matches, else the single registered live checkout)'
+    )
     .option('--dry-run', 'Print the restore plan and change nothing')
     .option('--verify-hash', 'Verify moved files by content hash, not just size')
     .option('--json', 'Output as JSON')

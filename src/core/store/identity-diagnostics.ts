@@ -22,6 +22,16 @@ export const STORE_IDENTITY_DIAGNOSTIC_CODES = [
   'store_registry_rekey_blocked',
   'store_alias_repeated',
   'store_alias_renamed',
+  // Membership vocabulary (project-keyed-store-membership, design D11).
+  'store_project_record_missing',
+  'project_membership_locator_missing',
+  'project_membership_unverified',
+  'shared_metadata_contains_local_path',
+  'store_project_record_key_mismatch',
+  'store_legacy_reference_unresolved',
+  'project_identity_unrecordable',
+  'store_membership_legacy_manifest',
+  'store_membership_roles_inferred',
 ] as const;
 
 export type StoreIdentityDiagnosticCode = (typeof STORE_IDENTITY_DIAGNOSTIC_CODES)[number];
@@ -265,5 +275,204 @@ export function storeAliasNumeric(input: { id: string }): StoreDiagnostic {
     'store_alias_numeric',
     `Store name '${input.id}' is all digits, which reads like an identity. It is a display name only — the store's permanent identity is the real one.`,
     { target: 'store.id' }
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Membership vocabulary (project-keyed-store-membership, design D11)
+// -----------------------------------------------------------------------------
+
+/**
+ * Every membership repair names its Store through a `selector` the CALLER
+ * computed: the permanent identity when the display name is ambiguous on this
+ * machine, the display name otherwise. A hint that fails when pasted is worse
+ * than no hint, and only the caller knows the arity — the factory must never
+ * guess it from the label.
+ */
+export interface MembershipStoreLabel extends StoreIdentityLabel {
+  /** Unambiguous value to paste into a command that names this Store. */
+  selector: string;
+}
+
+/**
+ * The project's PRIMARY PLANNING Store has no membership record for it. An
+ * error, not a warning: planning is already bound to that Store, so the roster
+ * and the binding disagree about a relation that is already in force.
+ * Distinct from `project_membership_unverified`, which is about a SECONDARY
+ * knowledge locator whose Store simply is not present here.
+ */
+export function storeProjectRecordMissing(input: {
+  projectId: string;
+  store: MembershipStoreLabel;
+  projectPath: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'error',
+    'store_project_record_missing',
+    `Store ${describeStore(input.store)} is this project's planning store but records no membership for project ${input.projectId}.`,
+    {
+      target: 'store.membership',
+      fix: `rasen store add-project ${input.projectPath} --to ${input.store.selector}`,
+    }
+  );
+}
+
+/**
+ * The Store records the project, but the project declares no locator for the
+ * Store. A warning: everything works HERE, and breaks on the next machine —
+ * which is exactly when nobody is watching.
+ */
+export function projectMembershipLocatorMissing(input: {
+  projectId: string;
+  store: MembershipStoreLabel;
+  projectPath: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'warning',
+    'project_membership_locator_missing',
+    `Store ${describeStore(input.store)} records project ${input.projectId} as a member, but the project declares no membership hint for it; a fresh clone would not discover this store.`,
+    {
+      target: 'project.storeMemberships',
+      fix: `rasen store add-project ${input.projectPath} --to ${input.store.selector}`,
+    }
+  );
+}
+
+/**
+ * A declared locator whose Store is not available here, so the Store's own
+ * record — the authority — cannot be read. Reported as unverifiable rather
+ * than as a missing membership: the answer is unknown, not "no".
+ */
+export function projectMembershipUnverified(input: {
+  store: StoreIdentityLabel;
+  repair: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'warning',
+    'project_membership_unverified',
+    `This project declares a membership hint for store ${describeStore(input.store)}, which is not available on this machine, so its membership record cannot be verified here.`,
+    { target: 'project.storeMemberships', fix: input.repair }
+  );
+}
+
+/**
+ * Git-shared data still carries a filesystem path from the machine that wrote
+ * it. The path is never acted on — this says so, and names the migration that
+ * removes it.
+ */
+export function sharedMetadataContainsLocalPath(input: {
+  filePath: string;
+  detail: string;
+  storeSelector: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'warning',
+    'shared_metadata_contains_local_path',
+    `${input.filePath} records a filesystem path from the machine that wrote it (${input.detail}). It is shared through git, is wrong on every other machine, and no command reads it.`,
+    {
+      target: 'store.metadata',
+      fix: `rasen store migrate-membership ${input.storeSelector} --apply`,
+    }
+  );
+}
+
+/**
+ * A record file's name and the identity inside it disagree. Never resolved by
+ * preferring either: trusting the filename would let a renamed file reassign
+ * membership, and trusting the contents would let a copied file claim a second
+ * project's membership.
+ */
+export function storeProjectRecordKeyMismatch(input: {
+  filePath: string;
+  fileIdentity: string;
+  recordedIdentity: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'error',
+    'store_project_record_key_mismatch',
+    `${input.filePath} is named for project ${input.fileIdentity} but declares project ${input.recordedIdentity}. Neither is treated as authoritative.`,
+    {
+      target: 'store.membership',
+      fix: `Rename the file to ${input.recordedIdentity}.yaml, or correct the projectId inside it — whichever matches the project you meant.`,
+    }
+  );
+}
+
+/**
+ * A legacy `references: project:<alias>` entry that cannot be mapped to a
+ * project identity here. Machine-local BY DESIGN (the alias lives in this
+ * machine's project namespace), so this is the ordinary fresh-machine answer —
+ * reported, never guessed into an identity.
+ */
+export function storeLegacyReferenceUnresolved(input: {
+  alias: string;
+  store: MembershipStoreLabel;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'warning',
+    'store_legacy_reference_unresolved',
+    `Store ${describeStore(input.store)} references project '${input.alias}' by display name, which is not registered on this machine, so it cannot be mapped to a project identity here.`,
+    {
+      target: 'store.references',
+      fix: `Run rasen store migrate-membership ${input.store.selector} --apply on a machine where '${input.alias}' is registered, or add it here: rasen store add-project <path> --to ${input.store.selector}`,
+    }
+  );
+}
+
+/**
+ * The project identity cannot safely name a record file. Never sanitized into
+ * one: two distinct identities collapsing onto a single filename would
+ * overwrite one project's membership with another's.
+ */
+export function projectIdentityUnrecordable(input: {
+  projectId: string;
+  reason: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'error',
+    'project_identity_unrecordable',
+    `Project identity '${input.projectId}' cannot name a membership record file: ${input.reason}. It is never altered to fit a filename.`,
+    {
+      target: 'project.projectId',
+      fix: "Set a well-formed projectId in the project's rasen/config.yaml (a UUID, as `rasen init` mints, or a kebab-case id), then rerun.",
+    }
+  );
+}
+
+/** The Store still carries the pre-record adoption map; migration is pending. */
+export function storeMembershipLegacyManifest(input: {
+  manifestPath: string;
+  storeSelector: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'warning',
+    'store_membership_legacy_manifest',
+    `${input.manifestPath} still holds legacy adoption data; membership has not been converted into per-project records yet.`,
+    {
+      target: 'store.metadata',
+      fix: `rasen store migrate-membership ${input.storeSelector} --apply`,
+    }
+  );
+}
+
+/**
+ * Roles derived from legacy data rather than declared. An adoption proves
+ * PLANNING membership and proves nothing about knowledge, so the inference is
+ * always narrow and always labelled — inventing knowledge membership would
+ * silently widen what a later change materializes.
+ */
+export function storeMembershipRolesInferred(input: {
+  projectId: string;
+  provenance: string;
+  storeSelector: string;
+}): StoreDiagnostic {
+  return makeStoreDiagnostic(
+    'info',
+    'store_membership_roles_inferred',
+    `Membership roles for project ${input.projectId} were inferred from ${input.provenance}, not declared: planning membership only, because legacy data records no knowledge role.`,
+    {
+      target: 'store.membership',
+      fix: `rasen store migrate-membership ${input.storeSelector} --apply`,
+    }
   );
 }

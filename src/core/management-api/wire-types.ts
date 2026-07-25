@@ -591,7 +591,13 @@ export interface SessionActionResponse {
 export interface SpaceMember {
   projectId: string;
   name: string;
-  root: string;
+  /**
+   * The member's live checkout on this machine. ABSENT when the store records
+   * the project as a member but no checkout of it exists here — the member is
+   * listed with its identity and display name rather than omitted or given a
+   * fabricated path (see `store-project-membership`).
+   */
+  root?: string;
 }
 
 /** An in-repo project space (design D6): a live machine-project-registry entry with `mode: 'in-repo'`. */

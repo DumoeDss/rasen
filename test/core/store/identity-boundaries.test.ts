@@ -18,7 +18,21 @@ import {
   storeRemoteCredentials,
   storeRemoteDivergence,
   storeUidMismatch,
+  projectIdentityUnrecordable,
+  projectMembershipLocatorMissing,
+  projectMembershipUnverified,
+  sharedMetadataContainsLocalPath,
+  storeLegacyReferenceUnresolved,
+  storeMembershipLegacyManifest,
+  storeMembershipRolesInferred,
+  storeProjectRecordKeyMismatch,
+  storeProjectRecordMissing,
 } from '../../../src/core/store/identity-diagnostics.js';
+import {
+  propertyReceivers,
+  sourceFiles,
+  withoutComments,
+} from '../../helpers/source-guards.js';
 import { getLocaleCatalog } from '../../../src/locales/index.js';
 import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
 import { PIPELINE_MESSAGE_KEYS } from '../../../src/commands/pipeline-messages.js';
@@ -40,6 +54,11 @@ const PHASE_A_FILES = [
   'src/core/project-home.ts',
   'src/core/store/identity.ts',
   'src/core/store/migration-ops.ts',
+  // project-keyed-store-membership: the membership provider reaches every
+  // Store through `resolveStoreBinding` and enumerates the registry through
+  // its own reader, so the ban must cover it.
+  'src/core/store/membership.ts',
+  'src/core/store/project-records.ts',
   'src/core/agent-context.ts',
   'src/commands/doctor.ts',
   'src/commands/store.ts',
@@ -55,6 +74,12 @@ const PHASE_A_FILES = [
  */
 const DEFERRED_COMPAT_CONSUMERS = [
   'src/core/learned-skills/context.ts',
+  // Deliberately kept (project-keyed-store-membership task 9.5): this handler
+  // ENUMERATES every registered store, which the boundary permits — the ban
+  // targets resolving one store by its display name. It no longer performs a
+  // by-id lookup: each pointer repo's declaration now goes through
+  // `resolveStoreBinding`. Child C rewrites this file's resolution and decides
+  // whether to retire the enumeration import.
   'src/core/management-api/spaces.ts',
 ];
 
@@ -65,13 +90,11 @@ const DEFERRED_COMPAT_CONSUMERS = [
 const COMPAT_READER_HOME = ['src/core/store/registry.ts', 'src/core/store/operations.ts'];
 
 /**
- * Every read of a declaration's DISPLAY ALIAS (`pointer.value`), with why it
- * is legitimate. `pointer.value` is not "does this repo declare a Store?" — a
- * durable declaration may record only the permanent identity, leaving `value`
- * undefined — so a new site is a defect until someone justifies it here. A
- * hand-maintained file list only covers files someone remembered to add; this
- * one is derived from the source, which is how the `project-home.ts` and
- * `migration-ops.ts` misses would have been caught.
+ * Every file that reads a declaration's DISPLAY ALIAS (`pointer.value`), with
+ * why it is legitimate. `pointer.value` is not "does this repo declare a
+ * Store?" — a durable declaration may record only the permanent identity,
+ * leaving `value` undefined — so a new site is a defect until someone
+ * justifies it here.
  */
 const POINTER_VALUE_ALLOWLIST: Record<string, string> = {
   'src/core/project-config.ts': 'defines the shape; describeStoreDeclaration is the accessor',
@@ -85,54 +108,56 @@ const POINTER_VALUE_ALLOWLIST: Record<string, string> = {
 };
 
 /**
- * Reads of a declaration's DISPLAY ALIAS, in every spelling that reaches one:
- * `pointer.value`, `classification.pointer.value`, `storePointer.value`, the
- * optional-chained `pointer?.value` a future author reaches for on a
- * possibly-undefined pointer, and `const { value } = pointer`. A guard that
- * matched only the plain property access would be evaded by the three others
- * without anyone noticing.
+ * The guard is PROPERTY-first: it finds every read of `.value` in scope,
+ * whatever the receiver, and this allowlist names the `<file>::<receiver>`
+ * pairs that are provably not a Store declaration.
+ *
+ * It used to work the other way round — a regex enumerating receiver SHAPES
+ * (`<ident>Pointer.value`) — and was defeated by `readStorePointer(root).value`,
+ * whose receiver is a call result. That miss let a real defect live in
+ * `spaces.ts`: a durable declaration carrying only a permanent identity has
+ * `value === undefined`, so the member repo silently vanished from its Store's
+ * member list. An allowlist is checked for staleness below; a regex is checked
+ * by nobody, because a passing regex is never re-read.
  */
-const POINTER_VALUE_READ = /(?:^|[^\w$])[\w$]*[Pp]ointer\s*\??\.\s*value\b/u;
-const POINTER_VALUE_DESTRUCTURE = /\{[^{}]*\bvalue\b[^{}]*\}\s*=\s*[\w$.]*[Pp]ointer\b/u;
-
-function readsPointerValue(source: string): boolean {
-  const code = withoutComments(source);
-  return POINTER_VALUE_READ.test(code) || POINTER_VALUE_DESTRUCTURE.test(code);
-}
-
-/** Every `.ts` file under `src/`, relative to the repo root with `/` separators. */
-function sourceFiles(): string[] {
-  const found: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (entry.isFile() && entry.name.endsWith('.ts')) {
-        found.push(path.relative(repoRoot, full).split(path.sep).join('/'));
-      }
-    }
-  };
-  walk(path.join(repoRoot, 'src'));
-  return found.sort();
-}
+const INNOCENT_VALUE_RECEIVERS: Record<string, string> = {
+  'src/core/init.ts::tool': 'detected external tool, not a store declaration',
+  'src/core/init.ts::t': 'detected external tool (loop binding)',
+  'src/core/init.ts::td': 'detected external tool (loop binding)',
+  'src/core/init.ts::candidate': 'candidate external tool path',
+  'src/core/project-config.ts::edit': 'a config edit descriptor',
+  'src/core/effective-config.ts::envOverride': 'an environment-variable override entry',
+};
 
 /**
- * Blanks whole-line and block comments, so a guard reads the CODE. Without
- * this, a comment naming the very pattern the guard bans (as the fix for one
- * of these defects does) reports itself as an offender.
+ * The scope, DERIVED from the source rather than hand-maintained: a file can
+ * only read a declaration's alias if it first obtains a declaration, which
+ * means naming one of these. Unioned with the OLD receiver-shape pattern, so
+ * the new guard is a provable superset of the one it replaces — everything the
+ * regex caught is still in scope — while `.value` reads in files that never
+ * touch a declaration stay out of it and need no justification.
  */
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//gu, '')
-    .split(/\r?\n/u)
-    .filter((line) => {
-      const trimmed = line.trimStart();
-      return !trimmed.startsWith('//') && !trimmed.startsWith('*');
-    })
-    .join('\n');
+const STORE_POINTER_VOCABULARY =
+  /\breadStorePointer\b|\bStorePointer\b|\bclassifyOpenSpecDir\b|\bstoreBindingDeclarationFrom\b|\bhasStoreDeclaration\b/u;
+const LEGACY_POINTER_VALUE_SHAPE =
+  /(?:^|[^\w$])[\w$]*[Pp]ointer\s*\??\.\s*value\b|\{[^{}]*\bvalue\b[^{}]*\}\s*=\s*[\w$.]*[Pp]ointer\b/u;
+
+function readsStoreDeclarations(source: string): boolean {
+  const code = withoutComments(source);
+  return STORE_POINTER_VOCABULARY.test(code) || LEGACY_POINTER_VALUE_SHAPE.test(code);
+}
+
+/** `<file>::<receiver>` for every `.value` read in scope. */
+function pointerValueReads(): string[] {
+  const reads: string[] = [];
+  for (const file of sourceFiles(repoRoot)) {
+    const source = fs.readFileSync(path.join(repoRoot, file), 'utf-8');
+    if (!readsStoreDeclarations(source)) continue;
+    for (const receiver of propertyReceivers(source, 'value')) {
+      reads.push(`${file}::${receiver}`);
+    }
+  }
+  return reads;
 }
 
 describe('store identity boundaries', () => {
@@ -163,7 +188,7 @@ describe('store identity boundaries', () => {
   });
 
   it('keeps the deferred list exhaustive: no third list to fall between', () => {
-    const users = sourceFiles().filter(
+    const users = sourceFiles(repoRoot).filter(
       (file) =>
         !COMPAT_READER_HOME.includes(file) &&
         /\blistRegisteredStores\b/u.test(withoutComments(fs.readFileSync(path.join(repoRoot, file), 'utf-8')))
@@ -172,47 +197,62 @@ describe('store identity boundaries', () => {
   });
 
   it('enumerates every display-alias read, so none escapes into a guard', () => {
-    const offenders = sourceFiles().filter(
-      (file) =>
-        POINTER_VALUE_ALLOWLIST[file] === undefined &&
-        readsPointerValue(fs.readFileSync(path.join(repoRoot, file), 'utf-8'))
-    );
+    const reads = pointerValueReads();
+    const offenders = reads.filter((read) => {
+      const file = read.slice(0, read.indexOf('::'));
+      return (
+        INNOCENT_VALUE_RECEIVERS[read] === undefined && POINTER_VALUE_ALLOWLIST[file] === undefined
+      );
+    });
     expect(
       offenders,
-      'Asking "does this repo declare a Store?" reads hasStoreDeclaration(pointer); pointer.value is the DISPLAY ALIAS and is undefined for a uid-only declaration. Justify a new read in POINTER_VALUE_ALLOWLIST.'
+      'Asking "does this repo declare a Store?" reads hasStoreDeclaration(pointer); pointer.value is the DISPLAY ALIAS and is undefined for a uid-only declaration. Justify a new read in POINTER_VALUE_ALLOWLIST, or name the receiver in INNOCENT_VALUE_RECEIVERS when it is not a declaration at all.'
     ).toEqual([]);
 
-    // The allowlist itself cannot rot into a list of files that no longer
-    // read it — a stale entry hides the next one that does.
-    const stale = Object.keys(POINTER_VALUE_ALLOWLIST).filter(
-      (file) => !readsPointerValue(fs.readFileSync(path.join(repoRoot, file), 'utf-8'))
-    );
-    expect(stale).toEqual([]);
+    // Neither allowlist may rot: a stale entry hides the next real read behind
+    // a justification nobody re-checks. This is what a receiver-shape regex
+    // could never have — and why the guard is now allowlist-shaped.
+    const files = new Set(reads.map((read) => read.slice(0, read.indexOf('::'))));
+    expect(Object.keys(POINTER_VALUE_ALLOWLIST).filter((file) => !files.has(file))).toEqual([]);
+    expect(
+      Object.keys(INNOCENT_VALUE_RECEIVERS).filter((pair) => !reads.includes(pair))
+    ).toEqual([]);
   });
 
-  it('catches the display-alias spellings a plain property match would miss', () => {
+  it('catches the display-alias spellings a receiver-shape match missed', () => {
     // The guard's own coverage, pinned: each of these is a real read of the
-    // declared display alias, and each defeated the previous pattern.
-    for (const spelling of [
-      'if (pointer.value !== undefined) {}',
-      'const id = classification.pointer.value;',
-      'const id = storePointer.value;',
-      'const id = pointer?.value;',
-      'const id = declaration.pointer ?. value;',
-      'const { value } = pointer;',
-      'const { value, durable } = storePointer;',
-    ]) {
-      expect(readsPointerValue(spelling), spelling).toBe(true);
+    // declared display alias, and each defeated some previous pattern. The
+    // call-result receiver is the one that shipped a defect — it is the exact
+    // line `spaces.ts` carried.
+    for (const [spelling, receiver] of [
+      ['if (pointer.value !== undefined) {}', 'pointer'],
+      ['const id = classification.pointer.value;', 'pointer'],
+      ['const id = storePointer.value;', 'storePointer'],
+      ['const id = pointer?.value;', 'pointer'],
+      ['const id = declaration.pointer ?. value;', 'pointer'],
+      ['const { value } = pointer;', 'pointer'],
+      ['const { value, durable } = storePointer;', 'storePointer'],
+      ['if (readStorePointer(root).value === store.id) {}', 'readStorePointer()'],
+      ['const id = classifyOpenSpecDir(path.join(a, b)).pointer.value;', 'pointer'],
+    ] as const) {
+      expect(propertyReceivers(spelling, 'value'), spelling).toContain(receiver);
+      // …and none of them is silently innocent under any file's entry.
+      expect(
+        Object.keys(INNOCENT_VALUE_RECEIVERS).some((pair) => pair.endsWith(`::${receiver}`)),
+        spelling
+      ).toBe(false);
     }
 
-    // …and it does not fire on unrelated `.value` reads, which would push
-    // maintainers into allowlisting files that never touch a declaration.
-    for (const innocent of [
-      'const x = entry.value;',
-      'const y = candidate?.value;',
-      'const { value } = threshold;',
-    ]) {
-      expect(readsPointerValue(innocent), innocent).toBe(false);
+    // Unrelated `.value` reads still produce a receiver — the guard reports
+    // one for every shape rather than deciding for itself which are safe —
+    // and it is the ALLOWLIST that says they are not declarations.
+    for (const [innocent, receiver] of [
+      ['const x = entry.value;', 'entry'],
+      ['const y = candidate?.value;', 'candidate'],
+      ['const { value } = threshold;', 'threshold'],
+      ['const z = list[0].value;', '(index)'],
+    ] as const) {
+      expect(propertyReceivers(innocent, 'value'), innocent).toEqual([receiver]);
     }
   });
 
@@ -240,6 +280,44 @@ describe('store identity boundaries', () => {
       storeRegistryRekeyBlocked({ blockedBy: ['team-store'] }),
       storeAliasRepeated({ id: 'team-store', uid: 'a', matches: 2 }),
       storeAliasRenamed({ from: 'old-store', to: 'team-store', uid: 'a' }),
+      storeProjectRecordMissing({
+        projectId: 'p1',
+        store: { id: 'team-store', selector: 'team-store' },
+        projectPath: '/repo',
+      }),
+      projectMembershipLocatorMissing({
+        projectId: 'p1',
+        store: { id: 'team-store', selector: 'team-store' },
+        projectPath: '/repo',
+      }),
+      projectMembershipUnverified({
+        store: { id: 'team-store' },
+        repair: 'rasen store register <path>',
+      }),
+      sharedMetadataContainsLocalPath({
+        filePath: '/store/.rasen-store/adoptions.yaml',
+        detail: 'the adoption of project p1 recorded sourcePath',
+        storeSelector: 'team-store',
+      }),
+      storeProjectRecordKeyMismatch({
+        filePath: '/store/.rasen-store/projects/p1.yaml',
+        fileIdentity: 'p1',
+        recordedIdentity: 'p2',
+      }),
+      storeLegacyReferenceUnresolved({
+        alias: 'elftia',
+        store: { id: 'team-store', selector: 'team-store' },
+      }),
+      projectIdentityUnrecordable({ projectId: 'con', reason: 'it is a reserved device name' }),
+      storeMembershipLegacyManifest({
+        manifestPath: '/store/.rasen-store/adoptions.yaml',
+        storeSelector: 'team-store',
+      }),
+      storeMembershipRolesInferred({
+        projectId: 'p1',
+        provenance: 'legacy adoption data',
+        storeSelector: 'team-store',
+      }),
     ];
 
     expect(built.map((diagnostic) => diagnostic.code).sort()).toEqual(

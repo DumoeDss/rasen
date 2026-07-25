@@ -655,6 +655,183 @@ version chokes on.
 
 ---
 
+## Store membership (behavior change)
+
+A store now records each member project in its own file, keyed by the project's
+permanent identity:
+
+```yaml
+# <store>/.rasen-store/projects/<projectId>.yaml
+version: 1
+projectId: ed2cf5bf-2525-45ed-b665-c47a5b8d5450
+id: elftia
+remote: git@github.com:org/elftia.git
+
+roles:
+  planning: true
+  knowledge: true
+
+adoption:
+  specs: [fundraising]
+  changes: [fundraising-p0-p1]
+  adoptedAt: 2026-07-25T10:00:00Z
+```
+
+That record is the **authority** for membership. The project's own config gains
+an optional `storeMemberships:` list, which is a **locator only** — it lets a
+fresh clone discover the stores it belongs to, and never confers membership:
+
+```yaml
+# <project>/rasen/config.yaml
+storeMemberships:
+  - uid: 8f0c2e7a-13d5-4a1e-9c6b-2b7d4e5f6a80
+    id: team-context
+    remote: git@github.com:org/team-context.git
+```
+
+One file per project means two people adding two different projects to the same
+store write two different files, so the addition that used to conflict in a
+shared map now merges without resolution.
+
+Membership expresses **roster and eligibility only**. It never decides where a
+change is implemented.
+
+### Intentional break 1: `sourcePath` is no longer written or read
+
+`.rasen-store/adoptions.yaml` recorded `sourcePath` — the absolute path of
+whichever machine ran the adoption, committed into a repository everyone shares.
+On any other machine that path is wrong.
+
+- It is **no longer written**. `store adopt` records ownership in the project's
+  membership record instead, which carries no path.
+- It is **no longer read for behavior** by any command.
+- Existing files stay readable, and their recorded path is reported as
+  `shared_metadata_contains_local_path` until you migrate.
+
+**Repair:** convert the store's legacy data into records.
+
+```bash
+rasen store migrate-membership <store>            # preview: writes nothing
+rasen store migrate-membership <store> --apply    # write
+```
+
+### Intentional break 2: `store eject` asks for `--into` where it used to guess
+
+Eject previously defaulted its destination to the recorded `sourcePath`, which
+is the break above wearing a different hat: off the originating machine it
+restored the project into a directory that had nothing to do with it.
+
+Eject now resolves its destination by an explicit ordered rule:
+
+1. `--into <path>`, when you pass it;
+2. otherwise the current checkout, when its project identity is the project
+   being ejected;
+3. otherwise the machine registry's single live checkout for that project.
+
+Several candidates, or none, is an error that lists what it found and names
+`--into`. Eject never infers a path from a remote, guesses from a display name,
+or takes the first of several checkouts.
+
+**Repair:** in the ordinary single-checkout case, nothing changes — run eject
+from inside the repo, or with the project registered, and rules 2 and 3 cover
+it with no flag. Otherwise name the destination:
+
+```bash
+rasen store eject <project-id> --from <store> --into /path/to/repo
+```
+
+### `store migrate-membership` DELETES `adoptions.yaml`
+
+This is the only non-reversible step in this change, so read this before running
+it with `--apply`.
+
+When the migration succeeds it **removes** `<store>/.rasen-store/adoptions.yaml`
+from the working tree. It does not rename it, move it aside, or keep a `.bak`
+copy. That is deliberate: any archived copy would keep the machine-absolute
+`sourcePath` inside the store's git repository, and removing that path from
+shared data is the entire point of the change.
+
+Nothing is lost.
+
+- **Every fact the file held is carried into the per-project records.** The
+  adopted spec names, the adopted change names, and the adoption timestamp all
+  move into each project's `adoption:` block (`timestamp` becomes
+  `adoption.adoptedAt`). Only `sourcePath` is dropped, and only because no
+  command reads it any more.
+- **The deletion happens only after every record is written AND read back.** If
+  any record fails to write or fails to re-read, the legacy file is left exactly
+  as it was.
+- **A project the migration cannot resolve keeps its legacy data.** If any entry
+  cannot be mapped to a project identity on this machine, the file is kept —
+  it is the only remaining record that those members exist.
+- **It only happens under `--apply`.** The default run is a preview that lists
+  every record it would create and the file it would remove, and writes nothing.
+- **The removal is reported for you to commit.** Rasen never stages, commits,
+  pushes, fetches, or pulls; it prints a path-scoped `git add … && git commit`
+  you run yourself.
+
+**The pre-migration file remains recoverable from the store's git history.**
+Because it was a tracked file in the store's repository, deleting it from the
+working tree does not remove it from history. From the store's root:
+
+```bash
+# Find the commits that touched the file, newest first
+git log --oneline -- .rasen-store/adoptions.yaml
+
+# Print its content as of any of those commits
+git show <commit>:.rasen-store/adoptions.yaml
+
+# Or restore it to the working tree from the commit before the removal
+git checkout <commit>^ -- .rasen-store/adoptions.yaml
+```
+
+If you have not yet committed the removal, the simplest recovery is
+`git restore .rasen-store/adoptions.yaml`.
+
+### `store add-project` writes two repositories, in a defined order
+
+`rasen store add-project <path> --to <store>` now writes:
+
+- the store's membership record and its `references:` entry, in the **store's**
+  repository;
+- the membership locator hint, in the **project's** `rasen/config.yaml`.
+
+The store's authority record is written and verified first, then the project's
+hint. The two repositories cannot change atomically and the command does not
+pretend otherwise: it reports what was written to each, and anything still
+needing repair with the command that finishes it. If the project-side write
+fails, the store record **stands** — it is legitimate on its own and is never
+rolled back to tidy up a locator.
+
+Preview it first with `--dry-run`, which lists every file in each repository and
+changes nothing.
+
+### `--set-primary` is opt-in, and refuses rather than overwrites
+
+Adding a project to a store does **not** change where that project plans. To
+also bind it, pass `--set-primary`. It defaults to off and is never inferred
+from another flag or from the project's state.
+
+- No planning store yet → the target store is recorded, and the output names the
+  planning binding separately from the membership, so you see two distinct
+  things happened.
+- Already planning in the target store → a no-op that succeeds and rewrites
+  nothing.
+- Already planning in a **different** store → the command **refuses** to change
+  it, naming the store currently bound, the store requested, and the command
+  that rebinds deliberately. The membership record and locator hint written by
+  the same invocation still stand.
+
+### Rolling back
+
+Reverting to an earlier version leaves `projects/*.yaml` records that the
+earlier version ignores, and a `storeMemberships:` key its resilient config
+parser drops with a warning. Neither breaks the older version. The one
+non-reversible step is the migration's removal of `adoptions.yaml`, recovered
+from git history as described above.
+
+---
+
 ## Getting Help
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)

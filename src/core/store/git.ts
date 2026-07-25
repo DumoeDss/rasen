@@ -176,6 +176,19 @@ export async function gitHasRemote(storeRoot: string): Promise<boolean | null> {
 }
 
 /**
+ * The commit a repository currently sits on, or null when `repoRoot` is not a
+ * repository, git is unavailable, or HEAD has no commits yet. Read-only and
+ * network-free. Used as the base a two-repository membership mutation records
+ * and re-checks, so a non-git root DEGRADES to "no base" instead of blocking
+ * the mutation.
+ */
+export async function gitHeadCommit(repoRoot: string): Promise<string | null> {
+  const stdout = await gitProbe(repoRoot, ['rev-parse', 'HEAD']);
+  const commit = stdout?.trim();
+  return commit ? commit : null;
+}
+
+/**
  * The configured origin URL, read from local Git config only — never a
  * network touch. Null when there is no repository or no origin.
  */

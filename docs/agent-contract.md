@@ -79,6 +79,37 @@ Success: `{ "archive": { "change", "archivedAs": "YYYY-MM-DD-name", "path", "spe
 ### 4.11 `store ... --json`
 setup/register: `{ "store": {id, root, metadata_path?}, "registry": {path, registered, already_registered}, "git": {is_repository, initialized, committed}, "created_files": [], "status": [] }`. unregister/remove: `{ "store", "registry": {path, removed}, "files": {deleted, deleted_path, left_on_disk}, "status": [] }`. list: `{ "stores": [{id, root}], "status": [] }`. doctor: `{ "stores": [ { id, root, metadata_path?, openspec_root: {...healthy, status}, metadata: {present, valid, id?, remote}, git: {is_repository, has_commits, has_uncommitted_changes, has_remote, origin_url}, status } ], "status": [] }` (`null` = unknown/not probed). Health findings exit 0; failures exit 1 with the matching null-shape. Prompt cancellation exits 130.
 
+### 4.11a Store membership
+
+**Membership is roster and eligibility only.** It says which projects belong to
+a store and whether each one plans in it, shares knowledge with it, or both. It
+does **not** determine, imply, or stand in for the decision of where a change is
+implemented — no agent may read `roles.planning` (or any future role) as an
+instruction about where to do work. Where a project plans is its own `store:`
+declaration; where a change is implemented is a separate question this contract
+does not answer.
+
+Authority is the store's own record, one file per member project:
+`<store>/.rasen-store/projects/<projectId>.yaml`, keyed by the project's
+permanent identity. The project's `storeMemberships:` list is a **locator only**
+and never confers membership; a hint that disagrees with the record is drift.
+
+`doctor --json` carries `membership: { project_id?, stores: [ { uid?, id?,
+sources: ["hint"|"record"], roles?: {planning, knowledge}, provenance?,
+unavailable?: {reason, repair} } ] }`. A declared store that is not available on
+this machine appears with `unavailable` set — **never omitted**. Absent from the
+list must not be read as "not a member".
+
+`store add-project --json` carries `membership` (per-repository `store_writes` /
+`project_writes`, `repair_needed`, `suggested_commits`) and `planning_binding`
+(`requested`, `changed`, `refused`, `already_bound`, `bound_to`,
+`requested_store`, `rebind_command`) as two SEPARATE blocks, because they are
+two separate relations. `store migrate-membership --json` carries
+`{ store, applied, converted[], unresolved[], store_writes, legacy_manifest_removed, legacy_manifest_path, suggested_commits, status }`.
+
+No membership command stages, commits, pushes, fetches, or pulls. Each renders a
+path-scoped commit suggestion per repository for the user to run.
+
 ### 4.12 `schemas --json` / `templates --json`
 `schemas`: bare array `[ {name, description, artifacts, source} ]`. `templates`: keyed object `{ "<artifactId>": {path, source} }`. Both cwd-based, no root/status keys.
 
@@ -113,6 +144,9 @@ setup/register: `{ "store": {id, root, metadata_path?}, "registry": {path, regis
 
 ### Relationships (warning; doctor; context keeps only the registry one)
 `relationship_registry_unreadable`, `root_pointer_invalid`, `pointer_declarations_inert`.
+
+### Store membership (doctor and `store doctor`; read-only)
+`store_project_record_missing` (error), `project_membership_locator_missing` (warning), `project_membership_unverified` (warning), `shared_metadata_contains_local_path` (warning), `store_project_record_key_mismatch` (error), `store_legacy_reference_unresolved` (warning), `project_identity_unrecordable` (error), `store_membership_legacy_manifest` (warning), `store_membership_roles_inferred` (info), `project_planning_binding_refused` (warning, `store add-project --set-primary`). Human and JSON render the same code, message, and repair. Pass-through from a refused write: `invalid_store_project_record`, `store_project_record_unverified`, `membership_base_commit_moved`, `eject_destination_required`, `migrate_membership_verify_failed`.
 
 ### Archive (JSON mode)
 `archive_change_name_required`, `archive_change_not_found`, `archive_validation_failed`, `archive_confirmation_required`, `archive_tasks_incomplete`, `archive_spec_update_failed`, `archive_spec_validation_failed`, `archive_target_exists`, `archive_error`.

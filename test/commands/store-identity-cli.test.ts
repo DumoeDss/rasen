@@ -496,11 +496,14 @@ describe('store identity CLI surface', () => {
       const ejectPayload = JSON.parse(ejected.stdout) as { eject: { store: string } };
       expect(ejectPayload.eject.store).toBe('team-store');
       expect(fs.existsSync(path.join(appRepo, 'rasen', 'specs', 'billing'))).toBe(true);
-      // Eject removes the declaration outright, so the repo is Store-less
-      // again — and still works, whatever form the declaration had.
-      expect(
-        fs.readFileSync(path.join(appRepo, 'rasen', 'config.yaml'), 'utf-8')
-      ).not.toContain(twinUid);
+      // Eject removes the PLANNING declaration outright, so the repo is
+      // Store-less again — and still works, whatever form the declaration had.
+      const afterEject = fs.readFileSync(path.join(appRepo, 'rasen', 'config.yaml'), 'utf-8');
+      expect(afterEject).not.toMatch(/^store:/mu);
+      // Membership is a DIFFERENT relation and survives: the repo no longer
+      // plans in the store, and is still on its roster. The locator hint is
+      // what lets another clone find the store it draws knowledge from.
+      expect(afterEject).toContain('storeMemberships:');
       const worksAfterEject = await runCLI(['list', '--json'], { cwd: appRepo, env: env() });
       expect(worksAfterEject.exitCode, worksAfterEject.stdout || worksAfterEject.stderr).toBe(0);
     }, 180_000);

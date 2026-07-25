@@ -383,6 +383,31 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             description: 'Project store id override',
             takesValue: true,
           },
+          {
+            name: 'set-primary',
+            description: "Also record the target store as the project's planning store",
+          },
+          {
+            name: 'dry-run',
+            description: 'Report every file that would be written in each repository and change nothing',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'migrate-membership',
+        description: "Convert a store's legacy membership data into per-project membership records",
+        acceptsPositional: true,
+        positionals: [{ name: 'store-id' }],
+        flags: [
+          {
+            name: 'dry-run',
+            description: 'Report the conversion plan and change nothing',
+          },
+          {
+            name: 'apply',
+            description: 'Write the records and remove the legacy adoption manifest',
+          },
           COMMON_FLAGS.json,
         ],
       },

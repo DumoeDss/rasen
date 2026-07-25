@@ -34,9 +34,10 @@ import { countMigratableEphemera } from '../core/work-migration.js';
 import { checkMachineRootRelocation } from '../core/global-config.js';
 import { StoreError } from '../core/store/errors.js';
 import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
-import { gatherRelationshipData } from './shared-gather.js';
+import { gatherProjectMembership, gatherRelationshipData } from './shared-gather.js';
 import {
   inspectRelationships,
+  membershipHumanLines,
   type InspectRelationshipsInput,
   type RelationshipHealth,
 } from '../core/relationship-health.js';
@@ -141,6 +142,23 @@ async function gatherHealth(
           };
         }
       }
+    }
+  }
+
+  // Membership: the roster relation AND its findings, gathered read-only from
+  // the single provider and composed into the report. Reported for the
+  // resolved planning root — never for a store root, which is the other side
+  // of the relation.
+  if (root.source !== 'store') {
+    const membershipRoot = root.source === 'declared'
+      ? (findRepoPlanningRootSync(process.cwd()) ?? root.path)
+      : root.path;
+    // The planning Store is resolved and handed in by the shared gather, or
+    // the "your planning Store has no record for this project" finding — the
+    // only error-severity one — could never be produced.
+    const membership = await gatherProjectMembership(membershipRoot);
+    if (membership) {
+      input.membership = membership;
     }
   }
 
@@ -356,6 +374,18 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
     (entry) => `${entry.store_id}: ok${entry.root ? ` (${entry.root})` : ''}`,
     (entry) => entry.store_id
   );
+
+  // Membership: roster and eligibility only. The wording says so on every run,
+  // because the whole point of separating it from the planning binding above
+  // is that a reader must not take one for the other.
+  console.log('');
+  console.log('Store membership (roster and eligibility only; it does not decide where work is done)');
+  // Rendered from the SAME structure the `--json` payload carries, through the
+  // shared line builder, so the two modes cannot report different codes or
+  // different repairs.
+  for (const line of membershipHumanLines(health.membership)) {
+    console.log(line);
+  }
 
   console.log('');
   console.log('Machine home');

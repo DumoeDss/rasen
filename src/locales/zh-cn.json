@@ -650,6 +650,9 @@
       "invalidReferences": "配置中的 'references' 字段无效（必须是 Store ID 数组）",
       "invalidReferenceEntries": "部分 'references' 条目无效，将予以忽略",
       "invalidReferenceRemotes": "部分 'references' 远程地址不是非空字符串；将保留其 ID，但不记录克隆源",
+      "invalidStoreMemberships": "config 中的 'storeMemberships' 字段无效（必须是 store 引用数组）",
+      "invalidStoreMembershipEntries": "部分 'storeMemberships' 条目无效，已忽略无法使用的条目与字段",
+      "storeMembershipsWithoutIdentity": "部分 'storeMemberships' 条目仅用显示名指向 store；请运行 'rasen store upgrade-identity <store> --apply'，让该提示在改名后依然有效",
       "invalidSchema": "配置中的 'schema' 字段无效（必须是非空字符串）",
       "contextTooLarge": "上下文过大（{size}KB，上限：{maximum}KB）",
       "ignoringContext": "将忽略 context 字段",
@@ -1026,7 +1029,12 @@
     "Give a store a permanent identity and record it in the registry and the project's declaration": "为 Store 赋予永久标识，并记录到注册表与项目声明中",
     "Disambiguate a name that matches more than one registered store": "当一个名称匹配到多个已注册 Store 时用于消歧",
     "Report every file that would be written and change nothing": "列出将要写入的每个文件，但不做任何改动",
-    "Write the plan": "执行该计划"
+    "Write the plan": "执行该计划",
+    "Also record the target store as the project's planning store": "同时把目标 Store 记录为该项目的规划 Store",
+    "Report every file that would be written in each repository and change nothing": "报告将在各仓库写入的每个文件，且不做任何修改",
+    "Convert a store's legacy membership data into per-project membership records": "把 Store 的旧成员关系数据转换为按项目的成员记录",
+    "Report the conversion plan and change nothing": "报告转换计划，不做任何修改",
+    "Write the records and remove the legacy adoption manifest": "写入记录，并删除旧的 adoption 清单"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "以非交互方式配置 AI 工具。使用 \"all\"、\"none\"，或从以下工具 ID 中选择并以逗号分隔：{ids}"
