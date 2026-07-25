@@ -7,6 +7,7 @@ import type {
   ThresholdBindingRow,
   ThresholdDiagnostic,
   ThresholdPresetSeed,
+  ThresholdRole,
   ThresholdScheme,
   ThresholdSchemeCatalogResponse,
   ThresholdSchemeListEntry,
@@ -48,6 +49,16 @@ function sourceLabel(
   source: 'preset' | 'default'
 ): string {
   return t(`pipelines.threshold.source.${source}`);
+}
+
+function roleLabel(t: ReturnType<typeof useT>, role: ThresholdRole): string {
+  return t(`pipelines.threshold.role.${role}`);
+}
+
+function thresholdRoleEntries<R extends ThresholdRole>(
+  values: Partial<Record<R, ThresholdValue>> | undefined
+): Array<[R, ThresholdValue]> {
+  return Object.entries(values ?? {}) as Array<[R, ThresholdValue]>;
 }
 
 function uniqueDiagnostics(pipelines: WirePipeline[]): ThresholdDiagnostic[] {
@@ -259,8 +270,8 @@ function SchemeCard({
   onDelete: () => void;
 }) {
   const t = useT();
-  const handoffRoles = Object.entries(entry.scheme.handoffRoles ?? {});
-  const reuseRoles = Object.entries(entry.scheme.reuseRoles ?? {});
+  const handoffRoles = thresholdRoleEntries(entry.scheme.handoffRoles);
+  const reuseRoles = thresholdRoleEntries(entry.scheme.reuseRoles);
   return (
     <article
       class="threshold-scheme-card"
@@ -288,13 +299,17 @@ function SchemeCard({
           <summary>{t('pipelines.threshold.schemes.role_overrides')}</summary>
           {handoffRoles.map(([role, value]) => (
             <div key={`handoff-${role}`}>
-              <span>{t('pipelines.threshold.family.handoff')} · {role}</span>
+              <span>
+                {t('pipelines.threshold.family.handoff')} · {roleLabel(t, role)}
+              </span>
               <code>{formatThreshold(value)}</code>
             </div>
           ))}
           {reuseRoles.map(([role, value]) => (
             <div key={`reuse-${role}`}>
-              <span>{t('pipelines.threshold.family.reuse')} · {role}</span>
+              <span>
+                {t('pipelines.threshold.family.reuse')} · {roleLabel(t, role)}
+              </span>
               <code>{formatThreshold(value)}</code>
             </div>
           ))}
@@ -765,7 +780,7 @@ function ThresholdValueField({
   );
 }
 
-function RoleOverrides<R extends string>({
+function RoleOverrides<R extends ThresholdRole>({
   idPrefix,
   title,
   roles,
@@ -788,6 +803,7 @@ function RoleOverrides<R extends string>({
       <summary>{title}</summary>
       {roles.map((role) => {
         const enabled = values[role] !== undefined;
+        const label = roleLabel(t, role);
         return (
           <div class="threshold-editor__role" key={role}>
             <label>
@@ -803,12 +819,12 @@ function RoleOverrides<R extends string>({
                   onChange(next);
                 }}
               />
-              {role}
+              {label}
             </label>
             {enabled && (
               <ThresholdValueField
                 id={`${idPrefix}-${role}`}
-                label={t('pipelines.threshold.editor.role_value', { role })}
+                label={t('pipelines.threshold.editor.role_value', { role: label })}
                 value={values[role]!}
                 disabled={disabled}
                 onChange={(value) => onChange({ ...values, [role]: value })}

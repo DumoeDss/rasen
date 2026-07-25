@@ -452,6 +452,72 @@ describe('ThresholdPolicyWorkbench', () => {
     }
   );
 
+  it('localizes populated handoff and reuse role labels across a live locale switch', async () => {
+    const rawRoleIdentifiers = /\b(?:planner|implementer|reviewer|fixer|shipper)\b/;
+    const localizedRoles = {
+      en: {
+        all: ['Planner', 'Implementer', 'Reviewer', 'Fixer', 'Shipper'],
+        handoff: 'Reviewer',
+        reuse: 'Implementer',
+      },
+      'zh-cn': {
+        all: ['规划者', '实现者', '审查者', '修复者', '交付者'],
+        handoff: '审查者',
+        reuse: '实现者',
+      },
+      ja: {
+        all: ['プランナー', '実装担当', 'レビュー担当', '修正担当', '出荷担当'],
+        handoff: 'レビュー担当',
+        reuse: '実装担当',
+      },
+    } as const;
+
+    const expectLocalizedRoleSurfaces = (
+      locale: keyof typeof localizedRoles
+    ): void => {
+      const expected = localizedRoles[locale];
+      const card = container.querySelector(
+        '[data-testid="threshold-scheme-card"][data-scheme="balanced"]'
+      )!;
+      const editor = container.querySelector('[data-testid="threshold-editor"]')!;
+      const handoffOverride = container
+        .querySelector('[data-testid="scheme-handoff-role-reviewer"]')!
+        .closest('.threshold-editor__role')!;
+      const reuseOverride = container
+        .querySelector('[data-testid="scheme-reuse-role-implementer"]')!
+        .closest('.threshold-editor__role')!;
+
+      expect(card.textContent).toContain(expected.handoff);
+      expect(card.textContent).toContain(expected.reuse);
+      expect(handoffOverride.textContent).toContain(expected.handoff);
+      expect(reuseOverride.textContent).toContain(expected.reuse);
+      for (const role of expected.all) {
+        expect(editor.textContent).toContain(role);
+      }
+      expect(card.textContent).not.toMatch(rawRoleIdentifiers);
+      expect(editor.textContent).not.toMatch(rawRoleIdentifiers);
+    };
+
+    mount();
+    const card = container.querySelector(
+      '[data-testid="threshold-scheme-card"][data-scheme="balanced"]'
+    )!;
+    await click(card.querySelector('[data-testid="threshold-scheme-edit"]'));
+    expectLocalizedRoleSurfaces('en');
+
+    await act(async () => {
+      setLocale('zh-cn');
+      await flushMicrotasks();
+    });
+    expectLocalizedRoleSurfaces('zh-cn');
+
+    await act(async () => {
+      setLocale('ja');
+      await flushMicrotasks();
+    });
+    expectLocalizedRoleSurfaces('ja');
+  });
+
   it('re-localizes every feature surface through en, zh-cn, and ja without losing a draft', async () => {
     mount();
     await click(container.querySelector('[data-testid="threshold-scheme-new"]'));
