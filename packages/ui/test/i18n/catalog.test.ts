@@ -59,14 +59,32 @@ describe('translate — fallback discipline (design D6; spec req 4)', () => {
   });
 });
 
-describe('catalog completeness — en and zh-cn key-for-key parity (design D7; spec req 5)', () => {
-  it('every key in en is present in zh-cn and vice versa', () => {
+describe('catalog completeness — en, zh-cn, and ja key-for-key parity (design D7; spec req 5)', () => {
+  it('every key in en is present in zh-cn and ja, with no locale-only extras', () => {
     const enKeys = new Set(Object.keys(EN));
     const zhKeys = new Set(Object.keys(ZH));
+    const jaKeys = new Set(Object.keys(JA));
     const missingFromZh = [...enKeys].filter((k) => !zhKeys.has(k));
     const extraInZh = [...zhKeys].filter((k) => !enKeys.has(k));
+    const missingFromJa = [...enKeys].filter((k) => !jaKeys.has(k));
+    const extraInJa = [...jaKeys].filter((k) => !enKeys.has(k));
     expect(missingFromZh).toEqual([]);
     expect(extraInZh).toEqual([]);
+    expect(missingFromJa).toEqual([]);
+    expect(extraInJa).toEqual([]);
+  });
+
+  it('threshold-management keys are translated in every shipped locale', () => {
+    const thresholdKeys = Object.keys(EN).filter((key) =>
+      key.startsWith('pipelines.threshold.')
+    );
+    expect(thresholdKeys.length).toBeGreaterThan(40);
+    for (const key of thresholdKeys) {
+      expect(ZH[key], `missing zh-cn threshold key ${key}`).toBeTruthy();
+      expect(JA[key], `missing ja threshold key ${key}`).toBeTruthy();
+      expect(ZH[key], `zh-cn fell back to English for ${key}`).not.toBe(EN[key]);
+      expect(JA[key], `ja fell back to English for ${key}`).not.toBe(EN[key]);
+    }
   });
 });
 

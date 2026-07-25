@@ -41,9 +41,9 @@ import {
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
+  resolvePipelineRoleRuntimes,
   resolvePipelineStageOverrides,
   resolveMaskedStageGate,
-  normalizeAgentRuntimeConfig,
   validatePipelineForExecution,
   type AgentRuntime,
   type PipelineExecutionOptions,
@@ -58,6 +58,7 @@ import {
   type PipelineStageOverrides,
   type MaskedGateSource,
   type ResolvedReuseConfig,
+  type ResolvedRoleRuntime,
   type ThresholdValue,
   type ThresholdResolutionContext,
   type RunStateWorker,
@@ -146,15 +147,6 @@ interface StageView {
   modelSource: ModelSource;
   effort: string | null;
   handoff: ResolvedStageHandoffConfig;
-}
-
-/** The layer that supplied a role's effective runtime for `pipeline agents` reads. */
-type RoleRuntimeSource = 'config-project' | 'config-store' | 'config-global' | 'declaration' | 'default';
-
-/** A role's effective runtime plus the layer that supplied it (`pipeline agents` reporting). */
-interface ResolvedRoleRuntime {
-  runtime: AgentRuntime;
-  source: RoleRuntimeSource;
 }
 
 // Keyword heuristics for `classify`. Matched against the lowercased task string.
@@ -866,19 +858,7 @@ export class PipelineCommand {
 
     // Effective runtime per role: family instance (project > store > global) >
     // pipeline `agents.<role>.runtime` declaration > default (claude).
-    const effectiveRoles = Object.fromEntries(
-      STAGE_ROLES.map((role): [StageRole, ResolvedRoleRuntime] => {
-        const override = overrides.runtimes.get(role);
-        if (override) {
-          return [role, { runtime: override.value, source: `config-${override.scope}` }];
-        }
-        const declared = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
-        if (declared) {
-          return [role, { runtime: declared, source: 'declaration' }];
-        }
-        return [role, { runtime: 'claude', source: 'default' }];
-      })
-    ) as Record<StageRole, ResolvedRoleRuntime>;
+    const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides);
 
     return {
       name,
@@ -973,13 +953,10 @@ export class PipelineCommand {
     projectRoot: string,
     storeRoot?: string | null
   ): ThresholdResolutionContext {
-    const runtimes: Partial<Record<StageRole, AgentRuntime>> = {};
-    for (const role of STAGE_ROLES) {
-      runtimes[role] =
-        overrides.runtimes.get(role)?.value ??
-        normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ??
-        'claude';
-    }
+    const roleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+    const runtimes = Object.fromEntries(
+      STAGE_ROLES.map((role) => [role, roleRuntimes[role].runtime])
+    ) as Record<StageRole, AgentRuntime>;
     return {
       bindings: resolveThresholdBindingLayers(projectRoot, storeRoot),
       schemes: loadThresholdSchemeSnapshot(),

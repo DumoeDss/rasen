@@ -6,8 +6,21 @@
  */
 import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
-import type { PipelineYaml, ThresholdValue } from '../pipeline-registry/index.js';
+import type {
+  PipelineYaml,
+  StageRole,
+  ThresholdValue,
+} from '../pipeline-registry/index.js';
 import type { AuditRuntime, DispatchRuntime } from '../runtime-adapters.js';
+import type {
+  ThresholdBindingMetadata,
+  ThresholdBindingRow,
+  ThresholdDiagnostic,
+} from '../threshold-resolver.js';
+import type {
+  ThresholdScheme,
+  ThresholdSchemeListEntry,
+} from '../threshold-schemes.js';
 import type {
   WorkflowDependencySet,
   WorkflowDiagnostic,
@@ -47,6 +60,29 @@ export interface WireEffectiveValue<T> {
   source: string;
 }
 
+/** Resolver-owned threshold provenance; clients display it but never recompute it. */
+export interface WireEffectiveThreshold extends WireEffectiveValue<ThresholdValue> {
+  binding?: ThresholdBindingMetadata;
+  diagnostics?: ThresholdDiagnostic[];
+}
+
+/** Pipeline-wide reuse projection, including independently resolved role runtimes. */
+export interface WireEffectiveReuse {
+  planner: 'auto' | 'never';
+  implementer: 'auto' | 'never';
+  threshold: ThresholdValue;
+  roles: { planner: ThresholdValue; implementer: ThresholdValue };
+  sources?: {
+    threshold: string;
+    roles: { planner: string; implementer: string };
+  };
+  bindings?: {
+    threshold?: ThresholdBindingMetadata;
+    roles?: Partial<Record<'planner' | 'implementer', ThresholdBindingMetadata>>;
+  };
+  diagnostics?: ThresholdDiagnostic[];
+}
+
 /**
  * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
  * declared identity and its declared `gate` value (a boolean), it reports each
@@ -63,7 +99,7 @@ export interface WirePipelineStage {
   /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
   effectiveGate: WireEffectiveValue<boolean>;
   effectiveModel: WireEffectiveValue<string | null>;
-  effectiveHandoff: WireEffectiveValue<ThresholdValue>;
+  effectiveHandoff: WireEffectiveThreshold;
   effectiveRuntime: WireEffectiveValue<DispatchRuntime>;
 }
 
@@ -77,8 +113,40 @@ export interface WirePipeline {
   description: string;
   provenance: 'built-in' | 'user';
   sourceLayer: 'project' | 'user' | 'package';
+  /** Pipeline-wide role runtimes; stage declarations intentionally do not affect these. */
+  roleRuntimes: Record<StageRole, WireEffectiveValue<DispatchRuntime>>;
+  effectiveReuse: WireEffectiveReuse;
   stages: WirePipelineStage[];
 }
+
+// -----------------------------------------------------------------------
+// Threshold scheme catalog and mutations (`/api/v1/threshold-schemes`).
+// The catalog is installation-wide; binding writes remain on the scoped
+// config API (`thresholds.bindings.<runtime>`).
+// -----------------------------------------------------------------------
+
+export interface ThresholdPresetSeed {
+  /** Stable display/seed id: the preset's primary match string. */
+  id: string;
+  match: string[];
+  contextWindow: number;
+  seed: ThresholdScheme;
+  sources: { handoff: 'preset' | 'default'; reuse: 'preset' | 'default' };
+}
+
+export interface ThresholdSchemeCatalogResponse {
+  schemes: ThresholdSchemeListEntry[];
+  presets: ThresholdPresetSeed[];
+  bindingRows: ThresholdBindingRow[];
+}
+
+export type ThresholdSchemeMutationRequest =
+  | { op: 'create' | 'update'; name: string; scheme: ThresholdScheme }
+  | { op: 'delete'; name: string };
+
+export type ThresholdSchemeMutationResponse =
+  | { op: 'create' | 'update'; name: string; scheme: ThresholdScheme }
+  | { op: 'delete'; deleted: string };
 
 /** The `op` discriminated request body for `POST /api/v1/pipelines`. */
 export type PipelineMutationRequest =

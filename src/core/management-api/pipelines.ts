@@ -15,6 +15,8 @@ import {
   loadPipelineByName,
   resolvePipelineStageOverrides,
   resolveEffectiveStage,
+  resolvePipelineReuseConfig,
+  resolvePipelineRoleRuntimes,
   resolvePipelineExecutionSkillSets,
   validatePipelineDraft,
   StageRoleSchema,
@@ -22,7 +24,9 @@ import {
   VerifyPolicySchema,
   StageKindSchema,
   LOOP_KIND_VALUES,
+  type AgentRuntime,
   type EffectiveStageInputs,
+  type StageRole,
 } from '../pipeline-registry/index.js';
 import { isPortableWorkflowId, loadWorkflowCatalog } from '../workflow-registry/index.js';
 import {
@@ -82,13 +86,32 @@ export async function handleListPipelines(
     }
     const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
     const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+    const effectiveStages = pipeline.stages.map((stage) =>
+      resolveEffectiveStage(stage, pipeline, inputs)
+    );
+    const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+    const runtimes = Object.fromEntries(
+      Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
+        role,
+        resolved.runtime,
+      ])
+    ) as Record<StageRole, AgentRuntime>;
     pipelines.push({
       name: pipeline.name,
       description: pipeline.description ?? '',
       provenance: info.source === 'package' ? 'built-in' : 'user',
       sourceLayer: info.source,
-      stages: pipeline.stages.map((stage) => {
-        const eff = resolveEffectiveStage(stage, pipeline, inputs);
+      roleRuntimes: Object.fromEntries(
+        Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
+          role,
+          { value: resolved.runtime, source: resolved.source },
+        ])
+      ) as WirePipeline['roleRuntimes'],
+      effectiveReuse: resolvePipelineReuseConfig(pipeline, {
+        ...bundle.inputsBase.thresholdContext,
+        runtimes,
+      }),
+      stages: effectiveStages.map((eff) => {
         return {
           id: eff.id,
           role: eff.role,
@@ -96,7 +119,14 @@ export async function handleListPipelines(
           gate: eff.declaredGate,
           effectiveGate: { value: eff.gate.effective, source: eff.gate.source },
           effectiveModel: { value: eff.model.value, source: eff.model.source },
-          effectiveHandoff: { value: eff.handoff.threshold, source: eff.handoff.source },
+          effectiveHandoff: {
+            value: eff.handoff.threshold,
+            source: eff.handoff.source,
+            ...(eff.handoff.binding ? { binding: eff.handoff.binding } : {}),
+            ...(eff.handoff.diagnostics
+              ? { diagnostics: eff.handoff.diagnostics }
+              : {}),
+          },
           effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
         };
       }),
@@ -156,13 +186,32 @@ export async function handlePipelineDetail(
 
   const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
   const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+  const effectiveStages = pipeline.stages.map((stage) =>
+    resolveEffectiveStage(stage, pipeline, inputs)
+  );
+  const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+  const runtimes = Object.fromEntries(
+    Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
+      role,
+      resolved.runtime,
+    ])
+  ) as Record<StageRole, AgentRuntime>;
   const resolvedView: WirePipeline = {
     name: pipeline.name,
     description: pipeline.description ?? '',
     provenance: info.source === 'package' ? 'built-in' : 'user',
     sourceLayer: info.source,
-    stages: pipeline.stages.map((stage) => {
-      const eff = resolveEffectiveStage(stage, pipeline, inputs);
+    roleRuntimes: Object.fromEntries(
+      Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
+        role,
+        { value: resolved.runtime, source: resolved.source },
+      ])
+    ) as WirePipeline['roleRuntimes'],
+    effectiveReuse: resolvePipelineReuseConfig(pipeline, {
+      ...bundle.inputsBase.thresholdContext,
+      runtimes,
+    }),
+    stages: effectiveStages.map((eff) => {
       return {
         id: eff.id,
         role: eff.role,
@@ -170,7 +219,14 @@ export async function handlePipelineDetail(
         gate: eff.declaredGate,
         effectiveGate: { value: eff.gate.effective, source: eff.gate.source },
         effectiveModel: { value: eff.model.value, source: eff.model.source },
-        effectiveHandoff: { value: eff.handoff.threshold, source: eff.handoff.source },
+        effectiveHandoff: {
+          value: eff.handoff.threshold,
+          source: eff.handoff.source,
+          ...(eff.handoff.binding ? { binding: eff.handoff.binding } : {}),
+          ...(eff.handoff.diagnostics
+            ? { diagnostics: eff.handoff.diagnostics }
+            : {}),
+        },
         effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
       };
     }),

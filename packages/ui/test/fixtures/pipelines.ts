@@ -11,7 +11,23 @@ import type {
   ListConfigResponse,
   ListPipelinesResponse,
   PipelineDetailResponse,
+  ThresholdSchemeCatalogResponse,
 } from '../../src/api/types.js';
+
+const defaultEffectiveReuse = {
+  planner: 'auto',
+  implementer: 'auto',
+  threshold: 0.25,
+  roles: { planner: 0.25, implementer: 0.25 },
+} as const;
+
+const defaultRoleRuntimes = {
+  planner: { value: 'claude', source: 'default' },
+  implementer: { value: 'claude', source: 'default' },
+  reviewer: { value: 'claude', source: 'default' },
+  fixer: { value: 'claude', source: 'default' },
+  shipper: { value: 'claude', source: 'default' },
+} as const;
 
 /**
  * Three pipelines: a built-in `small-feature` (locked; a propose stage with no
@@ -30,6 +46,41 @@ export const pipelinesFixture = {
       description: 'A small feature pipeline',
       provenance: 'built-in',
       sourceLayer: 'package',
+      roleRuntimes: {
+        ...defaultRoleRuntimes,
+        implementer: { value: 'codex', source: 'config-project' },
+      },
+      effectiveReuse: {
+        planner: 'auto',
+        implementer: 'auto',
+        threshold: 0.25,
+        roles: { planner: 0.25, implementer: 0.2 },
+        sources: {
+          threshold: 'default',
+          roles: {
+            planner: 'default',
+            implementer: 'store-scheme-role',
+          },
+        },
+        bindings: {
+          roles: {
+            implementer: {
+              scope: 'store',
+              row: 'codex',
+              scheme: 'balanced',
+            },
+          },
+        },
+        diagnostics: [
+          {
+            code: 'missing-scheme',
+            scope: 'project',
+            row: 'codex',
+            scheme: 'missing-project-policy',
+            message: 'Project binding references missing scheme "missing-project-policy".',
+          },
+        ],
+      },
       stages: [
         {
           id: 'propose',
@@ -48,7 +99,24 @@ export const pipelinesFixture = {
           gate: false,
           effectiveGate: { value: false, source: 'stage' },
           effectiveModel: { value: 'opus-4', source: 'stage-override-project' },
-          effectiveHandoff: { value: { remainingTokens: 50000 }, source: 'stage-override-project' },
+          effectiveHandoff: {
+            value: { remainingTokens: 50000 },
+            source: 'store-scheme-role',
+            binding: {
+              scope: 'store',
+              row: 'codex',
+              scheme: 'balanced',
+            },
+            diagnostics: [
+              {
+                code: 'missing-scheme',
+                scope: 'project',
+                row: 'codex',
+                scheme: 'missing-project-policy',
+                message: 'Project binding references missing scheme "missing-project-policy".',
+              },
+            ],
+          },
           effectiveRuntime: { value: 'codex', source: 'stage-override-project' },
         },
         {
@@ -68,6 +136,8 @@ export const pipelinesFixture = {
       description: 'A user pipeline',
       provenance: 'user',
       sourceLayer: 'user',
+      roleRuntimes: defaultRoleRuntimes,
+      effectiveReuse: defaultEffectiveReuse,
       stages: [
         {
           id: 'build',
@@ -86,6 +156,8 @@ export const pipelinesFixture = {
       description: 'A project-layer pipeline (forked into the project)',
       provenance: 'user',
       sourceLayer: 'project',
+      roleRuntimes: defaultRoleRuntimes,
+      effectiveReuse: defaultEffectiveReuse,
       stages: [
         {
           id: 'build',
@@ -116,6 +188,11 @@ export const pipelineDetailFixture = {
     description: 'A small feature pipeline',
     provenance: 'built-in',
     sourceLayer: 'package',
+    roleRuntimes: {
+      ...defaultRoleRuntimes,
+      implementer: { value: 'codex', source: 'config-project' },
+    },
+    effectiveReuse: defaultEffectiveReuse,
     stages: [
       {
         id: 'propose',
@@ -263,6 +340,24 @@ export const pipelinesConfigFixture = {
     },
     {
       definition: {
+        key: 'handoff.roles.reviewer',
+        scopes: ['global', 'store', 'project'],
+        type: 'threshold',
+        defaultValue: 0.5,
+        description: 'Context-handoff threshold for reviewer workers',
+        group: 'Workflow',
+        constraints: {
+          type: 'threshold',
+          range: { gt: 0, lte: 1 },
+          remainingTokensGt: 0,
+        },
+      },
+      value: 0.5,
+      source: 'default',
+      scopeValues: {},
+    },
+    {
+      definition: {
         key: 'autopilot.gates',
         scopes: ['global', 'store', 'project'],
         type: 'enum',
@@ -305,5 +400,71 @@ export const pipelinesConfigFixture = {
       source: 'default',
       scopeValues: {},
     },
+    {
+      definition: {
+        key: 'keepalive.runtimes.claude',
+        scopes: ['global'],
+        type: 'boolean',
+        defaultValue: true,
+        description: 'Allow keepalive beats under the Claude Code runtime',
+        group: 'Pipelines',
+        constraints: { type: 'boolean' },
+      },
+      value: true,
+      source: 'default',
+      scopeValues: {},
+    },
+    {
+      definition: {
+        key: 'keepalive.contextFloor',
+        scopes: ['global'],
+        type: 'number',
+        defaultValue: 0,
+        description: 'Minimum context tokens required for keepalive parking',
+        group: 'Pipelines',
+        constraints: { type: 'number', range: { gt: -1, lte: 1000000 } },
+      },
+      value: 0,
+      source: 'default',
+      scopeValues: {},
+    },
   ],
 } satisfies ListConfigResponse;
+
+/**
+ * Installation-wide threshold policy catalog. It deliberately exercises both
+ * catalog entry variants, a preset whose families use different provenance,
+ * complete dual-form scheme values, and every server-eligible binding row.
+ */
+export const thresholdSchemeCatalogFixture = {
+  schemes: [
+    {
+      name: 'balanced',
+      valid: true,
+      scheme: {
+        handoff: 0.5,
+        handoffRoles: { reviewer: { remainingTokens: 48000 } },
+        reuse: 0.25,
+        reuseRoles: { implementer: 0.2 },
+      },
+    },
+    {
+      name: 'broken',
+      valid: false,
+      error: 'Invalid threshold scheme "broken": handoff is required',
+    },
+  ],
+  presets: [
+    {
+      id: 'gpt-5',
+      match: ['gpt-5', 'gpt-5.*'],
+      contextWindow: 400000,
+      seed: {
+        handoff: { remainingTokens: 100000 },
+        reuse: 0.25,
+      },
+      sources: { handoff: 'preset', reuse: 'default' },
+    },
+  ],
+  bindingRows: ['claude', 'codex', 'default'],
+} satisfies ThresholdSchemeCatalogResponse;

@@ -40,6 +40,9 @@ import type {
   SubmitChangeRequest,
   SubmitChangeResponse,
   TaskDetailResponse,
+  ThresholdSchemeCatalogResponse,
+  ThresholdSchemeMutationRequest,
+  ThresholdSchemeMutationResponse,
   WorkflowDependenciesResponse,
   WorkflowDetailResponse,
   WorkflowEnablementMutationRequest,
@@ -155,6 +158,22 @@ export function listConfig(space?: string): Promise<ListConfigResponse> {
  */
 export function listPipelines(space?: string): Promise<ListPipelinesResponse> {
   return request<ListPipelinesResponse>(`/api/v1/pipelines${spaceQuery(space)}`);
+}
+
+/** Installation-wide threshold schemes, preset seeds, and binding-row vocabulary. */
+export function listThresholdSchemes(): Promise<ThresholdSchemeCatalogResponse> {
+  return request<ThresholdSchemeCatalogResponse>('/api/v1/threshold-schemes');
+}
+
+/** Create, update, or delete one machine-level threshold scheme. */
+export function mutateThresholdScheme(
+  body: ThresholdSchemeMutationRequest
+): Promise<ThresholdSchemeMutationResponse> {
+  return request<ThresholdSchemeMutationResponse>('/api/v1/threshold-schemes', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 /**

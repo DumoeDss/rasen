@@ -25,6 +25,8 @@ function inputValue(value: unknown): string {
 
 interface Props {
   entry: WireConfigEntry;
+  /** Surface-owned localized prose; server catalog descriptions remain data elsewhere. */
+  description?: string;
   /** The active page-level scope mode (design D1) — the write target and visibility filter. */
   mode: ConfigMode;
   /** The current space's type — decides what "Local" writes (project vs store scope). */
@@ -52,6 +54,7 @@ function shadowedWiderScopes(entry: WireConfigEntry): Array<'store' | 'global'> 
 /** One config key's row: label, value, source badge, inherited/shadowed lines, warnings, and its edit control. */
 export function ConfigEntryRow({
   entry,
+  description,
   mode,
   spaceType,
   spaceSelector,
@@ -427,7 +430,9 @@ export function ConfigEntryRow({
         <span class="config-entry__key">{key}</span>
         <span class={`config-entry__source config-entry__source--${entry.source}`}>{entry.source}</span>
       </div>
-      <p class="config-entry__description">{entry.definition.description}</p>
+      <p class="config-entry__description">
+        {description ?? entry.definition.description}
+      </p>
 
       {entry.warnings && entry.warnings.length > 0 && (
         <ul class="config-entry__warnings">

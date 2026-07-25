@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
   MAX_THRESHOLD_SCHEME_FILE_BYTES,
+  ThresholdSchemeError,
   deleteThresholdScheme,
   getThresholdSchemePath,
   getThresholdSchemesDir,
@@ -12,8 +13,10 @@ import {
   parseThresholdScheme,
   readThresholdScheme,
   saveThresholdScheme,
+  updateThresholdScheme,
   validateThresholdSchemeName,
 } from '../../src/core/threshold-schemes.js';
+import * as publicApi from '../../src/index.js';
 
 describe('threshold schemes', () => {
   let home: string;
@@ -112,6 +115,54 @@ describe('threshold schemes', () => {
       saveThresholdScheme('focused', { ...focused, reuse: 2 } as never)
     ).toThrow();
     expect(readThresholdScheme('focused')).toEqual(focused);
+  });
+
+  it('never steals a stale lock across two mutation contenders', () => {
+    saveThresholdScheme('focused', focused);
+    const targetPath = getThresholdSchemePath('focused');
+    const originalBytes = fs.readFileSync(targetPath, 'utf8');
+    const lockPath = path.join(
+      getThresholdSchemesDir(),
+      `.${path.basename(targetPath)}.lock`
+    );
+    const successorBytes = 'successor writer owns this lock\n';
+    fs.writeFileSync(lockPath, successorBytes, { flag: 'wx' });
+    const stale = new Date(Date.now() - 60_000);
+    fs.utimesSync(lockPath, stale, stale);
+
+    let logicalNow = Date.now();
+    const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
+      logicalNow += 6_000;
+      return logicalNow;
+    });
+
+    try {
+      for (const mutation of [
+        () =>
+          updateThresholdScheme('focused', {
+            ...focused,
+            handoff: 0.7,
+          }),
+        () => deleteThresholdScheme('focused'),
+      ]) {
+        expect(mutation).toThrowError(
+          expect.objectContaining({
+            code: 'lock_timeout',
+            message: expect.stringMatching(/inspect.*lock.*remove.*manually/i),
+          }) as ThresholdSchemeError
+        );
+      }
+    } finally {
+      dateSpy.mockRestore();
+    }
+
+    expect(fs.readFileSync(lockPath, 'utf8')).toBe(successorBytes);
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe(originalBytes);
+  });
+
+  it('does not expose cleanup fault injection from the package root', () => {
+    expect('__setThresholdSchemeCleanupOpsForTesting' in publicApi).toBe(false);
+    expect('setThresholdSchemeCleanupOpsForTesting' in publicApi).toBe(false);
   });
 
   it('refuses to replace a non-file destination', () => {

@@ -14,6 +14,10 @@ import {
   type ThresholdRole,
   type ThresholdValue,
 } from './threshold-values.js';
+import {
+  bestEffortCloseThresholdSchemeFile,
+  bestEffortRemoveThresholdSchemeFile,
+} from './threshold-scheme-lock-internal.js';
 import { formatZodIssues } from './zod-issues.js';
 
 export const THRESHOLD_SCHEMES_DIR_NAME = 'schemes';
@@ -69,7 +73,13 @@ export type ThresholdSchemeListEntry =
 export class ThresholdSchemeError extends Error {
   constructor(
     message: string,
-    readonly code: 'invalid_name' | 'reserved_name' | 'not_found' | 'invalid_file'
+    readonly code:
+      | 'invalid_name'
+      | 'reserved_name'
+      | 'not_found'
+      | 'already_exists'
+      | 'invalid_file'
+      | 'lock_timeout'
   ) {
     super(message);
     this.name = 'ThresholdSchemeError';
@@ -214,9 +224,128 @@ export function listValidThresholdSchemeNames(): string[] {
   }
 }
 
-function writeSchemeSafely(targetPath: string, content: string): void {
+const SCHEME_LOCK_TIMEOUT_MS = 5_000;
+const SCHEME_LOCK_RETRY_MS = 10;
+const lockWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
+function waitForSchemeLock(): void {
+  Atomics.wait(lockWaitBuffer, 0, 0, SCHEME_LOCK_RETRY_MS);
+}
+
+interface SchemeLockOwnership {
+  fd: number;
+  lockPath: string;
+  token: string;
+  dev: bigint;
+  ino: bigint;
+}
+
+function releaseSchemeLock(lock: SchemeLockOwnership): void {
+  bestEffortCloseThresholdSchemeFile(lock.fd);
+
+  try {
+    const current = fs.lstatSync(lock.lockPath, { bigint: true });
+    if (current.dev !== lock.dev || current.ino !== lock.ino) return;
+    if (fs.readFileSync(lock.lockPath, 'utf8') !== lock.token) return;
+  } catch {
+    // The holder may already have been cleaned up, or the path may be
+    // temporarily unreadable. In either case, never risk removing a lock whose
+    // ownership cannot be proved.
+    return;
+  }
+
+  bestEffortRemoveThresholdSchemeFile(lock.lockPath);
+}
+
+function withSchemeLock<T>(targetPath: string, action: () => T): T {
   const dir = path.dirname(targetPath);
   fs.mkdirSync(dir, { recursive: true });
+  const lockPath = path.join(dir, `.${path.basename(targetPath)}.lock`);
+  const startedAt = Date.now();
+  let lock: SchemeLockOwnership | undefined;
+
+  while (lock === undefined) {
+    let lockFd: number | undefined;
+    try {
+      lockFd = fs.openSync(lockPath, 'wx', 0o600);
+      const token = `${process.pid}\n${Date.now()}\n${crypto.randomBytes(16).toString('hex')}\n`;
+      try {
+        fs.writeFileSync(lockFd, token, 'utf8');
+        const stat = fs.fstatSync(lockFd, { bigint: true });
+        lock = {
+          fd: lockFd,
+          lockPath,
+          token,
+          dev: stat.dev,
+          ino: stat.ino,
+        };
+      } catch (error) {
+        bestEffortCloseThresholdSchemeFile(lockFd);
+        bestEffortRemoveThresholdSchemeFile(lockPath);
+        throw error;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+
+      if (Date.now() - startedAt >= SCHEME_LOCK_TIMEOUT_MS) {
+        throw new ThresholdSchemeError(
+          `Threshold scheme "${path.basename(targetPath, '.yaml')}" is busy. Retry shortly. If contention persists, inspect ${lockPath}, confirm that no Rasen process is actively mutating this scheme, then remove that lock file manually.`,
+          'lock_timeout'
+        );
+      }
+      waitForSchemeLock();
+    }
+  }
+
+  try {
+    return action();
+  } finally {
+    releaseSchemeLock(lock);
+  }
+}
+
+function targetExists(targetPath: string): boolean {
+  try {
+    fs.lstatSync(targetPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function writeNewSchemeNoClobber(targetPath: string, content: string): void {
+  const dir = path.dirname(targetPath);
+  const suffix = `${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+  const temporaryPath = path.join(dir, `.${path.basename(targetPath)}.${suffix}.tmp`);
+
+  fs.writeFileSync(temporaryPath, content, { flag: 'wx', mode: 0o600 });
+  try {
+    try {
+      // A hard link publishes the already-complete temporary inode without a
+      // replace mode. The destination transition is atomic and fails when any
+      // file-system entry already owns the scheme name on Windows and POSIX.
+      fs.linkSync(temporaryPath, targetPath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        code === 'EEXIST' ||
+        ((code === 'EACCES' || code === 'EPERM') && targetExists(targetPath))
+      ) {
+        throw new ThresholdSchemeError(
+          `Threshold scheme "${path.basename(targetPath, '.yaml')}" already exists.`,
+          'already_exists'
+        );
+      }
+      throw error;
+    }
+  } finally {
+    bestEffortRemoveThresholdSchemeFile(temporaryPath);
+  }
+}
+
+function replaceSchemeSafely(targetPath: string, content: string): void {
+  const dir = path.dirname(targetPath);
   let targetStat: fs.Stats | undefined;
   try {
     targetStat = fs.lstatSync(targetPath);
@@ -263,21 +392,73 @@ function writeSchemeSafely(targetPath: string, content: string): void {
       // Replacement succeeded; retaining the uniquely named backup is safer.
     }
   } finally {
-    fs.rmSync(temporaryPath, { force: true });
+    bestEffortRemoveThresholdSchemeFile(temporaryPath);
   }
+}
+
+function normalizedSchemeContent(name: string, scheme: ThresholdScheme): {
+  normalized: ThresholdScheme;
+  content: string;
+} {
+  const normalized = parseThresholdScheme(scheme, `threshold scheme "${name}"`);
+  return {
+    normalized,
+    content: stringifyYaml(normalized, { lineWidth: 0 }),
+  };
+}
+
+export function createThresholdScheme(
+  name: string,
+  scheme: ThresholdScheme
+): ThresholdScheme {
+  const targetPath = getThresholdSchemePath(name);
+  const { normalized, content } = normalizedSchemeContent(name, scheme);
+  return withSchemeLock(targetPath, () => {
+    writeNewSchemeNoClobber(targetPath, content);
+    return normalized;
+  });
+}
+
+export function updateThresholdScheme(
+  name: string,
+  scheme: ThresholdScheme
+): ThresholdScheme {
+  const targetPath = getThresholdSchemePath(name);
+  const { normalized, content } = normalizedSchemeContent(name, scheme);
+  return withSchemeLock(targetPath, () => {
+    if (!targetExists(targetPath)) {
+      throw new ThresholdSchemeError(
+        `Threshold scheme "${name}" was not found.`,
+        'not_found'
+      );
+    }
+    replaceSchemeSafely(targetPath, content);
+    return normalized;
+  });
 }
 
 export function saveThresholdScheme(name: string, scheme: ThresholdScheme): string {
   const targetPath = getThresholdSchemePath(name);
-  const normalized = parseThresholdScheme(scheme, `threshold scheme "${name}"`);
-  writeSchemeSafely(targetPath, stringifyYaml(normalized, { lineWidth: 0 }));
+  const { content } = normalizedSchemeContent(name, scheme);
+  withSchemeLock(targetPath, () => {
+    if (targetExists(targetPath)) {
+      replaceSchemeSafely(targetPath, content);
+    } else {
+      writeNewSchemeNoClobber(targetPath, content);
+    }
+  });
   return targetPath;
 }
 
 export function deleteThresholdScheme(name: string): void {
   const targetPath = getThresholdSchemePath(name);
-  if (!fs.existsSync(targetPath)) {
-    throw new ThresholdSchemeError(`Threshold scheme "${name}" was not found.`, 'not_found');
-  }
-  fs.rmSync(targetPath);
+  withSchemeLock(targetPath, () => {
+    if (!targetExists(targetPath)) {
+      throw new ThresholdSchemeError(
+        `Threshold scheme "${name}" was not found.`,
+        'not_found'
+      );
+    }
+    fs.rmSync(targetPath);
+  });
 }

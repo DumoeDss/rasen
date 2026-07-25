@@ -16,7 +16,10 @@ import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
 import { archiveFixture } from '../fixtures/archive.js';
-import { pipelinesFixture } from '../fixtures/pipelines.js';
+import {
+  pipelinesFixture,
+  thresholdSchemeCatalogFixture,
+} from '../fixtures/pipelines.js';
 
 export { configListFixture, projectsListFixture, healthFixture, errorsFixture };
 export { sessionDetailFixture, sessionsListFixture };
@@ -108,10 +111,48 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     const impl = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'implement')!;
     expect(impl.effectiveModel.source).toBe('stage-override-project');
     expect(impl.effectiveRuntime.value).toBe('codex');
+    expect('binding' in impl.effectiveHandoff && impl.effectiveHandoff.binding).toEqual({
+      scope: 'store',
+      row: 'codex',
+      scheme: 'balanced',
+    });
+    expect(
+      'diagnostics' in impl.effectiveHandoff &&
+        impl.effectiveHandoff.diagnostics?.[0]
+    ).toMatchObject({
+      code: 'missing-scheme',
+      scope: 'project',
+      row: 'codex',
+    });
+    const effectiveReuse = pipelinesFixture.pipelines[0]!.effectiveReuse;
+    expect(
+      'bindings' in effectiveReuse &&
+        effectiveReuse.bindings?.roles?.implementer
+    ).toEqual({
+      scope: 'store',
+      row: 'codex',
+      scheme: 'balanced',
+    });
     // The reviewer stage carries an ordinary boolean pause gate (the vet type is retired).
     const review = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'gate-review')!;
     expect(review.gate).toBe(true);
     expect(review.effectiveGate.value).toBe(true);
+  });
+
+  it('threshold catalog fixture pins both catalog variants, preset seeds, and binding metadata', () => {
+    expect(thresholdSchemeCatalogFixture.schemes).toEqual([
+      expect.objectContaining({ name: 'balanced', valid: true }),
+      expect.objectContaining({ name: 'broken', valid: false }),
+    ]);
+    expect(thresholdSchemeCatalogFixture.presets[0]).toMatchObject({
+      id: 'gpt-5',
+      sources: { handoff: 'preset', reuse: 'default' },
+    });
+    expect(thresholdSchemeCatalogFixture.bindingRows).toEqual([
+      'claude',
+      'codex',
+      'default',
+    ]);
   });
 
   it('archive fixture covers portfolio-grouped and container-less archived changes with dates', () => {

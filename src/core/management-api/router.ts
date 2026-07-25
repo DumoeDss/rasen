@@ -40,6 +40,10 @@ import { createWorkflowSubmitter } from './workflow-submit.js';
 import { createWorkflowEnablementSubmitter, handleWorkflowEnablementRead } from './workflow-enablement.js';
 import { handleProfileMutation, handleProfilesRead } from './profiles.js';
 import { handleListPipelines, handlePipelineCatalog, handlePipelineDetail, handlePipelineValidation } from './pipelines.js';
+import {
+  handleThresholdSchemeCatalog,
+  handleThresholdSchemeMutation,
+} from './threshold-schemes.js';
 import { createPipelineSubmitter } from './pipeline-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 import {
@@ -99,6 +103,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/workflow-enablement',
   '/api/v1/profiles',
   '/api/v1/pipelines',
+  '/api/v1/threshold-schemes',
   '/api/v1/pipeline-validation',
   '/api/v1/pipeline-catalog',
   '/api/v1/audits',
@@ -247,6 +252,9 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/pipelines') {
+    return method === 'GET' || method === 'POST';
+  }
+  if (pathname === '/api/v1/threshold-schemes') {
     return method === 'GET' || method === 'POST';
   }
   if (method === 'GET') return true;
@@ -886,6 +894,22 @@ export function createManagementRouter(
         return;
       }
       sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/threshold-schemes' && req.method === 'GET') {
+      handleThresholdSchemeCatalog(res, sendError, sendJson);
+      return;
+    }
+
+    if (pathname === '/api/v1/threshold-schemes' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      handleThresholdSchemeMutation(res, body.value, sendError, sendJson);
       return;
     }
 

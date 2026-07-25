@@ -75,12 +75,15 @@ export {
   resolvePipelineStageOverrides,
   resolveMaskedStageGate,
   resolveEffectiveStage,
+  resolvePipelineRoleRuntimes,
   stageConfigOverridesFor,
   type PipelineStageOverrides,
   type MaskedStageGate,
   type MaskedGateSource,
   type EffectiveStageConfig,
   type EffectiveStageInputs,
+  type ResolvedRoleRuntime,
+  type RoleRuntimeSource,
 } from './stage-overrides.js';
 
 // Graph operations
