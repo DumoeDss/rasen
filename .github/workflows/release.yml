@@ -10,9 +10,9 @@ permissions:
 
 jobs:
   release:
-    name: Build and upload tarball
+    name: Build CLI and UI release
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,25 +25,51 @@ jobs:
         with:
           node-version: '20.19.0'
           cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/ui/pnpm-lock.yaml
 
-      # Install with devDependencies (no --prod): pnpm build needs them.
-      - name: Install dependencies
+      - name: Install CLI dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build project
+      - name: Install UI dependencies
+        run: pnpm --dir packages/ui install --frozen-lockfile
+
+      - name: Validate lockstep versions and prepare release notes
+        run: node scripts/release-contract.mjs --tag "${GITHUB_REF_NAME}" --notes-output "${RUNNER_TEMP}/release-notes.md"
+
+      - name: Test CLI
+        run: pnpm test
+
+      - name: Build CLI
         run: pnpm build
 
-      - name: Pack tarball
-        id: pack
-        run: |
-          tgz="$(npm pack | tail -n 1)"
-          echo "Packed: $tgz"
-          echo "tgz=$tgz" >> "$GITHUB_OUTPUT"
+      - name: Typecheck UI
+        run: pnpm --dir packages/ui typecheck
 
-      - name: Upload tarball to GitHub Release
+      - name: Test UI
+        run: pnpm --dir packages/ui test
+
+      - name: Build UI
+        run: pnpm --dir packages/ui build
+
+      - name: Verify paired package contents
+        run: pnpm check:paired-pack
+
+      - name: Pack CLI
+        run: |
+          mkdir -p "${RUNNER_TEMP}/release-assets"
+          npm pack --pack-destination "${RUNNER_TEMP}/release-assets"
+
+      - name: Pack UI
+        working-directory: packages/ui
+        run: npm pack --pack-destination "${RUNNER_TEMP}/release-assets"
+
+      - name: Upload paired tarballs to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.pack.outputs.tgz }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          files: ${{ runner.temp }}/release-assets/*.tgz
 
   notify-site:
     name: Notify rasen-site
@@ -72,10 +98,10 @@ jobs:
             https://api.github.com/repos/DumoeDss/rasen-site/dispatches
 
   publish-npm:
-    name: Publish to npm
+    name: Publish CLI and UI to npm
     runs-on: ubuntu-latest
     needs: release
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -92,7 +118,7 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::npm publish skipped — NPM_TOKEN not set"
+            echo "::notice::npm publish skipped for both @atelierai/rasen and @atelierai/rasen-ui — NPM_TOKEN not set"
           fi
 
       - name: Setup pnpm
@@ -105,19 +131,40 @@ jobs:
         with:
           node-version: '20.19.0'
           cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/ui/pnpm-lock.yaml
           registry-url: 'https://registry.npmjs.org'
 
-      # Install with devDependencies (no --prod): pnpm build needs them.
-      - name: Install dependencies
+      - name: Install CLI dependencies
         if: steps.token_check.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Build project
+      - name: Install UI dependencies
+        if: steps.token_check.outputs.present == 'true'
+        run: pnpm --dir packages/ui install --frozen-lockfile
+
+      - name: Validate lockstep release contract
+        if: steps.token_check.outputs.present == 'true'
+        run: node scripts/release-contract.mjs --tag "${GITHUB_REF_NAME}"
+
+      - name: Build CLI
         if: steps.token_check.outputs.present == 'true'
         run: pnpm build
 
-      - name: Publish to npm
+      - name: Build UI
         if: steps.token_check.outputs.present == 'true'
+        run: pnpm --dir packages/ui build
+
+      - name: Publish CLI package
+        if: steps.token_check.outputs.present == 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish UI package
+        if: steps.token_check.outputs.present == 'true'
+        working-directory: packages/ui
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

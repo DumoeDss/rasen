@@ -15,18 +15,18 @@
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-9A9A98?style=flat-square" /></a>
 </p>
 
-**Rasen** 是一套规范驱动（spec-driven）的开发工作流，并在其之上叠加了一层自动驾驶编排 harness——你写下规范，harness 便驱动 change 走完 propose → apply → archive，自主迭代直到工作完成。
+**Rasen** 是一套自主引擎——在你的编码智能体的内循环之外，加装一条工程化的**外循环**。你只需提供意图——一个目标、一个 bug、一项功能——引擎便自行走完提出 → 实施 → 评审 → 修复 → 交付 → 归档，独立迭代直至完成。软件开发的自动挡：**掌控想法，而非代码。**
 
 ## 不是圆，是螺旋
 
 回到起点的循环只是一个圆。Rasen（螺旋）是一个不断上升的循环的形状。这就是全部理念，而它恰好映射到工具的实际运作方式：
 
-- **规范是原点。** 每个 change 都始于一份写下来的意图——提案、需求、设计、任务清单——在写任何代码之前先落在你的 `rasen/` 工作区里。`/rasen-propose → apply → archive`。
+- **意图是起点。** 每一次改动都始于你想要什么，而不是一份你必须写的文档——一个目标、一个 bug、一项功能需求。引擎把它记录进你的 `rasen/` 工作区，随即开始工作：`/rasen-propose → apply → archive`。过程中产出的规格是流水线自身积累的知识、它的工作记忆，而不是丢回给你的作业。
 - **循环是形态。** 工作以周期推进，而非一次瀑布式通过。`rasen` 流水线家族——`small-feature`、`bug-fix`、`full-feature`、`auto-decompose`——把一个任务塑造成 propose、implement、review、ship 的循环。
 - **每一圈都在上升。** harness 不只是重复，而是持续进步。`/rasen-auto` 拉起一个 LEAD，编排角色隔离的子 agent、一个能纠正自身错误的评审环，以及跨会话携带上下文的 handoff/接力——让每一圈都比上一圈更高。
 - **直到突破。** `/rasen-goal` 以条件而非文档来收束螺旋：把某个指标推到目标、把某个模块做到 rubric 洁净、把某个课题研究到 brief 被回答——重复 modify → judge 直到 gate 达成。
 
-规范是你的起点，螺旋是你抵达的方式。
+意图是你的起点，螺旋是你抵达的方式。
 
 ## 血统（Lineage）
 
@@ -103,7 +103,7 @@ rasen migrate
 
 ## 你会得到什么
 
-- **规范驱动的工作流** — 每个 change 是一个文件夹，含提案、specs、设计和任务清单。在写代码之前先就要构建的内容达成共识：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
+- **意图驱动的工作流** — 告诉它要构建什么。引擎会把它变成一个文件夹——提案、规格、设计、任务清单——在工作过程中自行生成并维护，你从不需要亲自动手写：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
 - **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看，用 `rasen pipeline import|export` 作为可安装包分享，或在 web UI 的流水线画布中拖拽组装你自己的流水线。新增一种任务类型 = 加一个文件，零代码。
 - **`rasen ui` 管理平台** — 本地 web UI：任务看板、可脱离终端存活的受监督 headless agent 会话、流水线画布，以及 config/workflow/profile 管理。见 [Web UI](#web-ui)。
 - **`/rasen-auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。

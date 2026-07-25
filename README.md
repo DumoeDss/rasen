@@ -15,18 +15,18 @@
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-9A9A98?style=flat-square" /></a>
 </p>
 
-**Rasen** is a spec-driven development workflow with an autonomous orchestration harness on top — you write a spec, and the harness drives the change through propose → apply → archive, iterating on its own until the work is done.
+**Rasen** is an autonomous harness — an engineered **outer loop** wrapped around your coding agent's inner loop. You supply the **intent** — a goal, a bug, a feature — and the harness runs propose → implement → review → fix → ship → archive on its own, iterating until the work is done. Automatic transmission for software development: **control the ideas, not the code.**
 
 ## Not a circle — a spiral
 
 A loop that returns to where it started is just a circle. Rasen (螺旋, "spiral") is the shape of a loop that climbs. That is the whole idea, and it maps onto how the tool actually works:
 
-- **The spec is the origin.** Every change begins as a written intent — a proposal, requirements, a design, a task list — captured in your `rasen/` workspace before any code is written. `/rasen-propose → apply → archive`.
+- **Intent is the origin.** Every change begins with what you want, not a document you have to write — a goal, a bug, a feature request. The harness captures it in your `rasen/` workspace and gets to work: `/rasen-propose → apply → archive`. The spec it produces along the way is the pipeline's own working memory — knowledge that accretes with every change — not homework handed back to you.
 - **Loops are the form.** Work moves in cycles, not one waterfall pass. The `rasen` pipeline family — `small-feature`, `bug-fix`, `full-feature`, `auto-decompose` — turns a task into a shaped loop of propose, implement, review, ship.
 - **Each turn ascends.** The harness doesn't just repeat; it makes progress. `/rasen-auto` runs a LEAD that orchestrates role-isolated subagents, a review-cycle that catches its own mistakes, and handoff/relay that carries context across sessions — so every turn ends higher than it began.
 - **Until it breaks through.** `/rasen-goal` closes the spiral on a condition, not a document: drive a metric to a target, make a module rubric-clean, research until a brief is answered — repeat modify → judge until the gate is met.
 
-Spec is where you start. The spiral is how you get there.
+Intent is where you start. The spiral is how you get there.
 
 ## Lineage
 
@@ -103,7 +103,7 @@ The `chrome-use` expert drives your everyday Chrome over the Chrome DevTools Pro
 
 ## What you get
 
-- **Spec-driven workflow** — every change is a folder with a proposal, specs, a design, and a task list. Agree on what to build before code is written: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
+- **Intent-driven workflow** — tell it what to build. The harness turns that into a folder — proposal, spec, design, task list — generating and maintaining it as it works, so you never have to write it yourself: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
 - **`rasen` pipeline family** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as data (YAML); inspect them with `rasen pipeline show|list|classify|resume`, share them as installable packages (`rasen pipeline import|export`), or assemble your own by drag-and-drop in the web UI's pipeline canvas. Adding a task type is adding one file, zero code.
 - **`rasen ui` management platform** — a local web UI: task board, supervised headless agent sessions that outlive your terminal, the pipeline canvas, and config/workflow/profile management. See [Web UI](#web-ui).
 - **`/rasen-auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.

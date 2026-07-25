@@ -64,5 +64,7 @@ describe('canvas chunk build split', () => {
     expect(manifest[entryKey!].dynamicImports ?? []).toContain(canvasKey);
 
     rmSync(path.join(ROOT, 'test-dist'), { recursive: true, force: true });
-  }, 30_000);
+  // This real bundle competes with the rest of Vitest's worker pool on
+  // Windows and smaller CI runners; keep a bounded but release-safe margin.
+  }, 60_000);
 });

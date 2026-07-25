@@ -55,7 +55,9 @@
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run build",
     "postinstall": "node scripts/postinstall.js",
-    "check:pack-version": "node scripts/pack-version-check.mjs"
+    "check:pack-version": "node scripts/pack-version-check.mjs",
+    "check:paired-pack": "node scripts/paired-pack-check.mjs",
+    "check:release": "node scripts/release-contract.mjs"
   },
   "engines": {
     "node": ">=20.19.0"

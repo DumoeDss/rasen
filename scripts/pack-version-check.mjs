@@ -15,6 +15,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs
 import { tmpdir } from 'os';
 import path from 'path';
 
+import { npmInvocationForPlatform } from './npm-command.mjs';
+
 function log(msg) {
   if (process.env.CI) return; // keep CI logs quiet by default
   console.log(msg);
@@ -25,8 +27,9 @@ function run(cmd, args, opts = {}) {
 }
 
 function npmPack() {
+  const npm = npmInvocationForPlatform();
   try {
-    const jsonOut = run('npm', ['pack', '--json', '--silent']);
+    const jsonOut = run(npm.command, [...npm.argsPrefix, 'pack', '--json', '--silent']);
     const arr = JSON.parse(jsonOut);
     if (Array.isArray(arr) && arr.length > 0) {
       const last = arr[arr.length - 1];
@@ -44,12 +47,12 @@ function npmPack() {
       }
     }
     // Unexpected JSON shape or empty array; fallback to plain output
-    const out = run('npm', ['pack', '--silent']).trim();
+    const out = run(npm.command, [...npm.argsPrefix, 'pack', '--silent']).trim();
     const lines = out.split(/\r?\n/);
     return lines[lines.length - 1].trim();
   } catch (e) {
     // Fallback for environments not supporting --json
-    const out = run('npm', ['pack', '--silent']).trim();
+    const out = run(npm.command, [...npm.argsPrefix, 'pack', '--silent']).trim();
     const lines = out.split(/\r?\n/);
     return lines[lines.length - 1].trim();
   }
@@ -87,7 +90,12 @@ function main() {
     };
 
     // Install the tarball
-    run('npm', ['install', tgzPath, '--silent', '--no-audit', '--no-fund'], { cwd: work, env });
+    const npm = npmInvocationForPlatform();
+    run(
+      npm.command,
+      [...npm.argsPrefix, 'install', tgzPath, '--silent', '--no-audit', '--no-fund'],
+      { cwd: work, env },
+    );
 
     // Run the installed CLI via Node to avoid bin resolution/platform issues
     const binRel = path.join('node_modules', ...pkg.name.split('/'), 'bin', 'rasen.js');

@@ -15,18 +15,18 @@
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-4AF626?style=flat-square&labelColor=050505" /></a>
 </p>
 
-**Rasen**은 스펙 주도(spec-driven) 개발 워크플로 위에 자율 오케스트레이션 하니스를 얹은 도구입니다 — 당신이 스펙을 쓰면, 하니스가 change를 propose → apply → archive로 이끌며 작업이 끝날 때까지 스스로 반복합니다.
+**Rasen**은 자율 하니스입니다 — 코딩 에이전트의 내부 루프를 감싸는, 설계된 **외부 루프**입니다. 당신은 의도만 전달하면 됩니다 — 목표, 버그, 기능 요청 — 하니스가 스스로 제안 → 구현 → 리뷰 → 수정 → 배포 → 보관을 진행하며, 작업이 끝날 때까지 반복합니다. 소프트웨어 개발의 자동변속기: **코드가 아니라 아이디어를 다루세요.**
 
 ## 원이 아니라, 나선
 
 출발점으로 되돌아오는 루프는 그저 원일 뿐입니다. Rasen(螺旋, "나선")은 위로 올라가는 루프의 형태입니다. 그것이 이 도구의 전부이며, 실제 동작 방식과 그대로 맞물립니다:
 
-- **스펙이 원점입니다.** 모든 change는 코드를 쓰기 전에 `rasen/` 워크스페이스에 기록된 의도 — 제안, 요구사항, 설계, 작업 목록 — 에서 시작합니다. `/rasen-propose → apply → archive`.
+- **의도가 기원이다.** 모든 변경은 당신이 써야 하는 문서가 아니라, 당신이 원하는 것에서 시작한다 — 목표, 버그 리포트, 기능 요청. 하니스가 그것을 `rasen/` 워크스페이스에 기록하고 바로 작업에 들어간다: `/rasen-propose → apply → archive`. 그 과정에서 나오는 스펙은 파이프라인이 스스로 쌓아가는 작업 기억일 뿐, 당신에게 돌아오는 숙제가 아니다.
 - **루프가 형태입니다.** 작업은 한 번의 워터폴 통과가 아니라 주기로 진행됩니다. `rasen` 파이프라인 패밀리 — `small-feature`, `bug-fix`, `full-feature`, `auto-decompose` — 가 작업을 propose, implement, review, ship의 루프로 빚어냅니다.
 - **한 바퀴마다 상승합니다.** 하니스는 단순 반복이 아니라 전진합니다. `/rasen-auto`는 LEAD를 세워 역할이 분리된 서브에이전트, 스스로의 실수를 잡아내는 리뷰 사이클, 세션을 넘어 컨텍스트를 이어주는 handoff/릴레이를 오케스트레이션합니다 — 매 바퀴가 시작보다 높은 곳에서 끝나도록.
 - **돌파할 때까지.** `/rasen-goal`은 문서가 아니라 조건으로 나선을 닫습니다: 지표를 목표치까지 끌어올리고, 모듈을 루브릭 통과 수준으로 다듬고, 브리프에 답이 나올 때까지 리서치합니다 — gate가 충족될 때까지 modify → judge를 반복합니다.
 
-스펙은 출발점이고, 나선은 도달하는 방식입니다.
+의도가 출발점이고, 나선은 도달하는 방식입니다.
 
 ## 계보(Lineage)
 
@@ -103,7 +103,7 @@ rasen migrate
 
 ## 무엇을 얻게 되나
 
-- **스펙 주도 워크플로** — 모든 change는 제안, specs, 설계, 작업 목록이 담긴 하나의 폴더입니다. 코드를 쓰기 전에 무엇을 만들지 합의합니다: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
+- **의도 기반 워크플로우** — 무엇을 만들지 말하기만 하면 된다. 하니스가 작업하는 동안 제안서, 스펙, 설계, 작업 목록을 담은 폴더를 스스로 생성하고 유지한다 — 당신이 직접 쓸 필요가 없다: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
 - **`rasen` 파이프라인 패밀리** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose`가 데이터(YAML)로 제공됩니다; `rasen pipeline show|list|classify|resume`으로 확인하고, `rasen pipeline import|export`로 설치형 패키지로 공유하거나, web UI의 파이프라인 캔버스에서 드래그 앤 드롭으로 직접 조립하세요. 작업 유형 추가는 파일 하나 추가, 코드는 제로.
 - **`rasen ui` 관리 플랫폼** — 로컬 web UI: 작업 보드, 터미널보다 오래 살아남는 감독형 headless 에이전트 세션, 파이프라인 캔버스, config/workflow/profile 관리. [Web UI](#web-ui) 참조.
 - **`/rasen-auto` 오토파일럿** — 명령 하나로 에이전트가 **LEAD**가 되어 역할이 분리된 서브에이전트(planner / implementer / reviewer / fixer / shipper)를 파이프라인 전체에 걸쳐 오케스트레이션하고, gate에서만 멈춥니다.

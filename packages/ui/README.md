@@ -1,7 +1,8 @@
 # @atelierai/rasen-ui
 
-The optional web UI for `rasen config ui` — a visual editor for Rasen's
-configuration, served by the CLI once this package is installed beside it.
+The optional local management platform for `rasen ui`: boards and Spaces,
+pipeline assembly, configuration, archives, and supervised agent sessions,
+served by the Rasen CLI once this package is installed beside it.
 
 This package is **standalone**: it is not part of a pnpm workspace with the
 root `rasen` package (see `design.md` D1 of the `unified-config-ui-pkg`
@@ -25,7 +26,7 @@ pnpm dev          # vite dev server
 CLI's same-origin API the way the built package does. To develop against a
 live config API:
 
-1. In a separate terminal, inside a Rasen project: `rasen config ui --no-open`.
+1. In a separate terminal, inside a Rasen project: `rasen ui --no-open`.
    Copy the port and the token from the printed URL
    (`http://127.0.0.1:<port>/#token=<hex>`).
 2. Start the dev server with the proxy target and a dev-only token:
@@ -52,26 +53,21 @@ entirely in this package's dev config.
      checks), or
    - `npm link` this package into the CLI's own `node_modules` resolution
      path.
-3. Run `rasen config ui` from a Rasen project. The browser should open
-   straight into the editor (not the install-hint page), list config groups
-   read from the live API, and round-trip a scope-explicit write and unset.
+3. Run `rasen ui` from a Rasen project. The browser should open the local
+   management platform (not the install-hint page), list the current Space,
+   and reach the daemon-backed management API.
 
-## Publishing (not part of this change)
+## Publishing
 
-This package is `"private": true` and unpublished. When the user decides to
-publish it, the follow-up (documented, not implemented, in `design.md` D8) is:
-a second token-gated publish step in `.github/workflows/release.yml` mirroring
-the existing CLI publish step, a tag-scheme decision (shared tag vs. a
-separate `ui-v*` scheme), a `pack-version-check` sibling for this package's
-tarball, and flipping `"private"` to `false`. None of that is implemented
-here — version bumps and the publish decision are the user's call.
+During the 0.1.x line this package releases in strict lockstep with
+`@atelierai/rasen`. Both manifests use the same canonical `X.Y.Z`, one
+`rasen-vX.Y.Z` tag builds and tests both dependency graphs, and one release
+workflow publishes both npm packages. A UI-only correction still advances
+both packages by one normal patch (for example `0.1.5` to `0.1.6`).
 
-## Open questions (carried from `design.md`)
+Four-component versions such as `0.1.5.1` are not SemVer and are rejected by
+the release guard. Independent UI versions can be reconsidered only after the
+management API exposes an explicit compatibility handshake.
 
-- **Final npm package name**: the working name `@atelierai/rasen-ui` matches
-  the CLI's `UI_PACKAGE_NAME` constant (`src/core/config-api/ui-package.ts`).
-  A rename touches exactly that constant plus this package's `name` field.
-- **Publish timing and tag scheme**: lock-step with the CLI vs. independently
-  versioned; whether release tags split.
-- **Whether this ever joins a real pnpm workspace**: revisit only if a second
-  in-repo consumer needs to share code with it.
+Before tagging, run `pnpm check:release -- --tag rasen-vX.Y.Z` and
+`pnpm check:paired-pack` from the repository root.
