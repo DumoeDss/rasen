@@ -1551,6 +1551,35 @@ stages:
       expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
     });
 
+    it('surfaces frozen knowledgeContext for retain/codify resume routing', async () => {
+      const changeDir = path.join(changesDir, 'knowledge-context-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          completed: ['propose', 'apply'],
+          knowledgeContext: {
+            version: 1,
+            planningRoot: { type: 'store', id: 'team' },
+            owner: { type: 'project', id: 'web' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'knowledge-context-change', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout.trim()).knowledgeContext).toEqual({
+        version: 1,
+        planningRoot: { type: 'store', id: 'team' },
+        owner: { type: 'project', id: 'web' },
+      });
+    });
+
     // autopilot-gate-policy: resume reads the recorded gate policy so a
     // --no-gate run does not need to re-pass the flag on resume.
     it('surfaces the recorded gatePolicy in json and text output', async () => {

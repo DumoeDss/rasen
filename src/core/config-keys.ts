@@ -468,6 +468,18 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
   },
   // ---- global scope (UI-managed) ----
   {
+    key: 'ui.theme',
+    scopes: ['global'],
+    type: 'string',
+    validate: (value) =>
+      typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value)
+        ? null
+        : 'must match [a-z][a-z0-9-]{0,63} (lowercase portable theme id)',
+    defaultValue: 'editorial',
+    description: 'Installed UI theme id (availability is resolved by the theme catalog)',
+    group: 'Appearance',
+  },
+  {
     key: 'ui.pinnedSpaces',
     scopes: ['global'],
     type: 'array',

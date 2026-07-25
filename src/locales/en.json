@@ -6,6 +6,10 @@
     "listDescription": "List canonical learned skills",
     "showDescription": "Show a canonical learned skill",
     "retireDescription": "Retire a managed learned skill",
+    "projectSelectorDescription": "Select a project knowledge owner independently from the planning root",
+    "storeSelectorDescription": "Select a store knowledge owner independently from the planning root",
+    "runStateDirDescription": "Load frozen knowledge identity from the resolved directory containing auto-run.json",
+    "contextSummary": "Knowledge owner: {owner}; planning root: {planningRoot}.",
     "candidatePathRequired": "A candidate file is required. Pass --from <absolute-json-file>.",
     "candidatePathMustBeAbsolute": "Candidate path must be absolute: {path}",
     "candidateNotFound": "Candidate file not found: {path}",
@@ -767,6 +771,9 @@
     "helpCommand": "display help for command"
   },
   "commandDescriptions": {
+    "Select a project knowledge owner independently from the planning root": "Select a project knowledge owner independently from the planning root",
+    "Load frozen knowledge identity from the resolved directory containing auto-run.json": "Load frozen knowledge identity from the resolved directory containing auto-run.json",
+    "Select a store knowledge owner independently from the planning root": "Select a store knowledge owner independently from the planning root",
     "Manage evidence-gated learned skills": "Manage evidence-gated learned skills",
     "Apply a learned-skill candidate from an absolute JSON file": "Apply a learned-skill candidate from an absolute JSON file",
     "List canonical learned skills": "List canonical learned skills",

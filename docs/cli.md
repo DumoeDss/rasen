@@ -624,10 +624,10 @@ In the full delivery flow, archive runs **after** the profile's retention step (
 Inspect and mutate canonical **learned skills** — the durable, evidence-gated guidance `rasen-retain`'s `codify` mode produces. This group is the only seam that writes learned-skill state; agents submit a strict candidate rather than editing skill directories directly.
 
 ```bash
-rasen knowledge apply --from <absolute-json-file> [--approve-global] [--json]
-rasen knowledge list [--scope project|global] [--json]
-rasen knowledge show <id> [--scope project|global] [--json]
-rasen knowledge retire <id> [--scope project|global] [--yes] [--json]
+rasen knowledge apply --from <absolute-json-file> [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--approve-global] [--json]
+rasen knowledge list [--scope project|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
+rasen knowledge show <id> [--scope project|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
+rasen knowledge retire <id> [--scope project|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--yes] [--json]
 ```
 
 **Subcommands:**
@@ -645,11 +645,14 @@ rasen knowledge retire <id> [--scope project|global] [--yes] [--json]
 |--------|-------------|
 | `--from <path>` | Absolute path to the candidate JSON file (`apply`). |
 | `--scope project\|global` | Which canonical registry to read or mutate (default: `project`). |
+| `--project <id>` | Select the typed project knowledge owner without changing the active planning root. Mutually exclusive with `--store`. |
+| `--store <id>` | Select the typed store knowledge owner. Store persistence currently returns `knowledge_store_scope_unavailable`. Mutually exclusive with `--project`. |
+| `--run-state-dir <absolute-dir>` | Load `auto-run.json` from the exact directory returned as `runStateDir` by `rasen pipeline resume`, then revalidate and use its frozen planning root and owner. A project/store selector becomes a consistency check and cannot override the frozen owner. |
 | `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). Rejected for a project mutation so consent cannot be reused. |
 | `--yes` | Skip the retirement confirmation (`retire`). |
 | `--json` | Emit a single JSON document on stdout (agent contract). |
 
-Project mutations are authorized by an active `codify` profile. A **global** create or promotion additionally requires equivalent evidence from at least two distinct project ids **and** explicit approval (interactive prompt or `--approve-global`). See [Retention and learned skills](retention-and-learned-skills.md) for the scope, promotion, applicability, ownership, and budget rules.
+Knowledge-owner selection and planning-root selection are independent. A pointer project may report `owner=project:web` while its change planning root is `store:team`; a direct store launch never guesses one member project. Human and JSON output report both typed identities. Project mutations are authorized by an active `codify` profile. A **global** create or promotion additionally requires equivalent evidence from at least two distinct project ids **and** explicit approval (interactive prompt or `--approve-global`). See [Retention and learned skills](retention-and-learned-skills.md) for the scope, promotion, applicability, ownership, and budget rules.
 
 ---
 

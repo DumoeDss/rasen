@@ -12,6 +12,7 @@
  * contract is v1-frozen by the `unified-config-api` spec, so a mismatch here
  * is a bug in this mirror, not a sanctioned protocol change.
  */
+import type { ThemeManifest, ThemeValidationDetail } from '../theme/manifest.js';
 
 export type ConfigScope = 'global' | 'store' | 'project';
 export type ConfigValueType = 'boolean' | 'number' | 'string' | 'enum' | 'array' | 'threshold';
@@ -91,7 +92,14 @@ export interface WireConfigEntry {
  * stderr, passed through verbatim.
  */
 export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string; cliExitCode?: number; stderr?: string };
+  error: {
+    code: string;
+    message: string;
+    fix?: string;
+    cliExitCode?: number;
+    stderr?: string;
+    details?: ThemeValidationDetail[];
+  };
 }
 
 // ---- Response envelopes (router.ts handlers) ----
@@ -104,6 +112,15 @@ export interface HealthResponse {
 
 export interface ListProjectsResponse {
   projects: ProjectRef[];
+}
+
+export interface ThemeCatalogResponse {
+  themes: ThemeManifest[];
+  skipped: Array<{ file: string; code: string; details?: ThemeValidationDetail[] }>;
+}
+
+export interface ThemeImportResponse {
+  theme: ThemeManifest;
 }
 
 export interface ListConfigResponse {

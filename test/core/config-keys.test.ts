@@ -346,7 +346,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-    it('assigns exactly 9 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
+      it('assigns exactly 10 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -355,8 +355,9 @@ describe('config-keys registry', () => {
       const allThree = nonWildcard.filter((def) => sorted(def) === 'global,project,store');
 
       // Guards a future key from silently missing the store scope.
-      // 9 = the machine-level keys from the store-scope re-scope plus
+      // 10 = the machine-level keys from the store-scope re-scope plus
       // ui.pinnedSpaces (spaces-page pins, deliberately global-only) plus the
+      // global-only ui.theme selection plus
       // 3 keepalive keys still global-only (runtimes.claude/codex + contextFloor
       // — machine-level gates for `rasen agent wait`) plus `retention` (the
       // version-2 profile dimension, deliberately global-only — set via `rasen
@@ -364,14 +365,14 @@ describe('config-keys registry', () => {
       // global+project (per-project beat tuning) alongside `workflows`
       // (space-workflow-enablement) and `profile` (init-profile-lock: a
       // project-scope value is the locked profile). `delivery` was retired.
-      expect(globalOnly.length).toBe(9);
-      expect(globalProject.length).toBe(4);
-      expect(globalProject.map((def) => def.key).sort()).toEqual([
-        'keepalive.beatSeconds',
-        'keepalive.enabled',
-        'profile',
-        'workflows',
-      ]);
+        expect(globalOnly.length).toBe(10);
+        expect(globalProject.length).toBe(4);
+        expect(globalProject.map((def) => def.key).sort()).toEqual([
+          'keepalive.beatSeconds',
+          'keepalive.enabled',
+          'profile',
+          'workflows',
+        ]);
       expect(storeProject.length).toBe(3);
       expect(allThree.length).toBe(14);
       // Six wildcard families: featureFlags, four pipelines families, and

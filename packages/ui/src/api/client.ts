@@ -43,6 +43,8 @@ import type {
   ThresholdSchemeCatalogResponse,
   ThresholdSchemeMutationRequest,
   ThresholdSchemeMutationResponse,
+  ThemeCatalogResponse,
+  ThemeImportResponse,
   WorkflowDependenciesResponse,
   WorkflowDetailResponse,
   WorkflowEnablementMutationRequest,
@@ -65,6 +67,7 @@ export class ApiError extends Error {
    * alongside the CLI's own error message.
    */
   state?: unknown;
+  details?: ApiErrorBody['error']['details'];
 
   constructor(status: number, body: ApiErrorBody & { state?: unknown }) {
     super(body.error.message);
@@ -73,6 +76,7 @@ export class ApiError extends Error {
     this.code = body.error.code;
     this.fix = body.error.fix;
     this.state = body.state;
+    this.details = body.error.details;
   }
 }
 
@@ -144,6 +148,20 @@ export function health(): Promise<HealthResponse> {
 
 export function listProjects(): Promise<ListProjectsResponse> {
   return request<ListProjectsResponse>('/api/v1/projects');
+}
+
+/** Fresh validated imported-theme catalog. Built-ins are merged by the UI runtime. */
+export function listThemes(signal?: AbortSignal): Promise<ThemeCatalogResponse> {
+  return request<ThemeCatalogResponse>('/api/v1/themes', { signal });
+}
+
+/** Upload one JSON manifest. The server validates and atomically installs it. */
+export function importTheme(document: string | Blob): Promise<ThemeImportResponse> {
+  return request<ThemeImportResponse>('/api/v1/themes/import', {
+    method: 'POST',
+    body: document,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /** The effective config for a planning space (W2 design D7); no selector = launch-project fallback. */
@@ -226,9 +244,10 @@ export function getPipelineCatalog(): Promise<PipelineCatalogResponse> {
   return request<PipelineCatalogResponse>('/api/v1/pipeline-catalog');
 }
 
-export function getKey(key: string, space?: string): Promise<GetConfigKeyResponse> {
+export function getKey(key: string, space?: string, signal?: AbortSignal): Promise<GetConfigKeyResponse> {
   return request<GetConfigKeyResponse>(
-    `/api/v1/config/${encodeURIComponent(key)}${spaceQuery(space)}`
+    `/api/v1/config/${encodeURIComponent(key)}${spaceQuery(space)}`,
+    { signal }
   );
 }
 

@@ -114,6 +114,7 @@ export const GlobalConfigSchema = z
     ui: z
       .object({
         pinnedSpaces: z.array(z.string()).optional(),
+        theme: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional().default('editorial'),
       })
       .passthrough()
       .optional(),
@@ -148,6 +149,7 @@ export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
   profile: 'full',
   language: 'auto',
+  ui: { theme: 'editorial' },
 };
 
 /**

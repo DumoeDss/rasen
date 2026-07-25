@@ -14,6 +14,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   return {
     ...actual,
     listConfig: vi.fn(),
+    listThemes: vi.fn(),
     putKey: vi.fn(),
     deleteKey: vi.fn(),
     listSpaces: vi.fn(),
@@ -52,6 +53,26 @@ const configWithProjectKey = {
       value: 'spec-driven',
       source: 'default',
       scopeValues: {},
+    },
+  ],
+} satisfies ListConfigResponse;
+const configWithTheme = {
+  ...configListFixture,
+  entries: [
+    ...configListFixture.entries,
+    {
+      definition: {
+        key: 'ui.theme',
+        scopes: ['global'],
+        type: 'string',
+        defaultValue: 'editorial',
+        description: 'Installed UI theme',
+        group: 'Appearance',
+        constraints: { type: 'string' },
+      },
+      value: 'editorial',
+      source: 'global',
+      scopeValues: { global: 'editorial' },
     },
   ],
 } satisfies ListConfigResponse;
@@ -100,6 +121,7 @@ describe('ConfigPage', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    (client.listThemes as any).mockResolvedValue({ themes: [], skipped: [] });
   });
 
   afterEach(() => {
@@ -167,6 +189,21 @@ describe('ConfigPage', () => {
       await flushMicrotasks();
     });
     expect(container.querySelector('[data-key="telemetry.enabled"]')).not.toBeNull();
+  });
+
+  it('embeds the global theme control in General and hides it in Local mode', async () => {
+    (client.listConfig as any).mockResolvedValue(configWithTheme);
+    await mountAt(container, '/p/proj_x/config');
+
+    expect(container.querySelector('[data-testid="theme-control"]')).not.toBeNull();
+    expect(container.querySelector('[data-key="ui.theme"]')).not.toBeNull();
+
+    await act(async () => {
+      clickChip(container, 'Local').click();
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="theme-control"]')).toBeNull();
+    expect(container.querySelector('[data-key="ui.theme"]')).toBeNull();
   });
 
   it('renders a store space’s own entries (deferral stub gone)', async () => {

@@ -714,6 +714,9 @@ export class PipelineCommand {
       // before this capability existed carries no key, and the LEAD's
       // built-in default (gates on) still applies.
       ...(runState.gatePolicy ? { gatePolicy: runState.gatePolicy } : {}),
+      ...(runState.knowledgeContext
+        ? { knowledgeContext: runState.knowledgeContext }
+        : {}),
       // Handoff pointers are included only when present so existing callers see
       // no new keys unless a run actually recorded handoffs.
       ...(sessionHandoff ? { sessionHandoff } : {}),

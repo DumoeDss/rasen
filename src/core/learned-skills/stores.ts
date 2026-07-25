@@ -25,11 +25,18 @@ export interface ResolvedStore {
 
 export type ProjectStoreResolution =
   | { ok: true; store: ResolvedStore }
-  | { ok: false; code: 'unregistered_project'; message: string };
+  | {
+      ok: false;
+      code:
+        | 'unregistered_project'
+        | 'knowledge_owner_scope_mismatch'
+        | 'knowledge_store_scope_unavailable';
+      message: string;
+    };
 
 /** The global learned-skill store under the resolved global data directory. */
 export function resolveGlobalStore(context: LearnedSkillContext = {}): ResolvedStore {
-  const root = context.globalDataDir ?? getGlobalDataDir();
+  const root = context.execution?.globalDataDir ?? context.globalDataDir ?? getGlobalDataDir();
   return { dir: FileSystemUtils.joinPath(root, LEARNED_SKILLS_DIR_NAME) };
 }
 
@@ -41,7 +48,25 @@ export function resolveGlobalStore(context: LearnedSkillContext = {}): ResolvedS
 export async function resolveProjectStore(
   context: LearnedSkillContext
 ): Promise<ProjectStoreResolution> {
-  if (!context.projectRoot) {
+  if (context.execution?.owner.type === 'store') {
+    return {
+      ok: false,
+      code: 'knowledge_store_scope_unavailable',
+      message: `Store owner '${context.execution.owner.id}' is resolved, but store-scoped learned-skill persistence is not available yet.`,
+    };
+  }
+  if (context.execution?.owner.type === 'global') {
+    return {
+      ok: false,
+      code: 'knowledge_owner_scope_mismatch',
+      message: 'A project-scoped learned skill cannot use the global owner.',
+    };
+  }
+  const projectRoot =
+    context.execution?.owner.type === 'project'
+      ? context.execution.owner.root
+      : context.projectRoot;
+  if (!projectRoot) {
     return {
       ok: false,
       code: 'unregistered_project',
@@ -49,15 +74,16 @@ export async function resolveProjectStore(
         'A project-scoped learned skill requires a project root. Run this inside a Rasen project.',
     };
   }
-  const home = await resolveProjectHome(context.projectRoot, {
+  const globalDataDir = context.execution?.globalDataDir ?? context.globalDataDir;
+  const home = await resolveProjectHome(projectRoot, {
     ensure: false,
-    ...(context.globalDataDir !== undefined ? { globalDataDir: context.globalDataDir } : {}),
+    ...(globalDataDir !== undefined ? { globalDataDir } : {}),
   });
   if (!home) {
     return {
       ok: false,
       code: 'unregistered_project',
-      message: `Project at ${context.projectRoot} has no registered machine home yet. Run \`rasen init\` to register it before codifying a learned skill.`,
+      message: `Project at ${projectRoot} has no registered machine home yet. Run \`rasen init\` to register it before codifying a learned skill.`,
     };
   }
   return {
