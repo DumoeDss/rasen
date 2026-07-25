@@ -15,6 +15,7 @@ import {
   renameStage,
   stageIdFor,
   updateStageFields,
+  updateStageHandoffThreshold,
   wouldCreateCycle,
 } from '../../src/canvas/draft.js';
 import type { WirePipelineDefinition } from '../../src/api/types.js';
@@ -174,6 +175,45 @@ describe('updateStageFields — EVERY-loader-field preservation', () => {
     expect(patchedRest).toEqual(origRest);
     expect(patchedStages[0]).toEqual(origStages[0]);
     expect(patchedStages[1]).toEqual({ ...origStages[1], gate: false });
+  });
+});
+
+describe('updateStageHandoffThreshold', () => {
+  it('sets either supported threshold form without changing unrelated stage fields', () => {
+    const def = baseDef();
+    const fraction = updateStageHandoffThreshold(def, 'a', 0.65);
+    expect(fraction.stages[0]).toEqual({
+      ...def.stages[0],
+      handoff: { threshold: 0.65 },
+    });
+
+    const remaining = updateStageHandoffThreshold(
+      fraction,
+      'a',
+      { remainingTokens: 48_000 }
+    );
+    expect(remaining.stages[0].handoff).toEqual({
+      threshold: { remainingTokens: 48_000 },
+    });
+  });
+
+  it('preserves unexposed relay and stall limits when clearing the threshold', () => {
+    const def = baseDef();
+    def.stages[0] = {
+      ...def.stages[0],
+      handoff: { threshold: 0.7, maxRelays: 4, stallLimit: 2 },
+    };
+
+    const cleared = updateStageHandoffThreshold(def, 'a', undefined);
+    expect(cleared.stages[0].handoff).toEqual({ maxRelays: 4, stallLimit: 2 });
+  });
+
+  it('removes only a truly empty handoff block after clearing the threshold', () => {
+    const def = baseDef();
+    def.stages[0] = { ...def.stages[0], handoff: { threshold: 0.7 } };
+
+    const cleared = updateStageHandoffThreshold(def, 'a', undefined);
+    expect(cleared.stages[0]).not.toHaveProperty('handoff');
   });
 });
 

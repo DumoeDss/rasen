@@ -65,9 +65,11 @@ export const TAB_MAP: ReadonlyArray<{ tab: string; groups: readonly string[] }> 
 
 /**
  * Registry groups the config page deliberately does NOT render (design D5): the
- * Pipelines page claims them (the role-matrix Defaults table + per-pipeline
- * gate/model/handoff/runtime overrides). Excluded before the trailing bucket so
- * they don't reappear there.
+ * Pipelines page claims them (the role-matrix Defaults and keepalive lifecycle
+ * area plus per-pipeline gate/model/runtime overrides). Durable stage handoff
+ * definition values belong to Canvas, while compatibility-only handoff keys
+ * remain available through CLI/config APIs. Excluded before the trailing bucket
+ * so Pipelines registry keys don't reappear here.
  */
 export const EXCLUDED_GROUPS: ReadonlySet<string> = new Set(['Workflow', 'Autopilot', 'Pipelines']);
 
