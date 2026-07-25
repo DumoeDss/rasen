@@ -6,6 +6,10 @@
     "listDescription": "正規の学習スキルを一覧表示します",
     "showDescription": "正規の学習スキルを表示します",
     "retireDescription": "管理対象の学習スキルを廃止します",
+    "projectSelectorDescription": "計画ルートとは独立してプロジェクトの知識所有者を選択します",
+    "storeSelectorDescription": "計画ルートとは独立してストアの知識所有者を選択します",
+    "runStateDirDescription": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます",
+    "contextSummary": "知識所有者: {owner}; 計画ルート: {planningRoot}。",
     "candidatePathRequired": "候補ファイルが必要です。--from <絶対パスのJSONファイル> を指定してください。",
     "candidatePathMustBeAbsolute": "候補パスは絶対パスである必要があります: {path}",
     "candidateNotFound": "候補ファイルが見つかりません: {path}",
@@ -767,6 +771,9 @@
     "helpCommand": "指定したコマンドのヘルプを表示します"
   },
   "commandDescriptions": {
+    "Select a project knowledge owner independently from the planning root": "計画ルートとは独立してプロジェクトの知識所有者を選択します",
+    "Load frozen knowledge identity from the resolved directory containing auto-run.json": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます",
+    "Select a store knowledge owner independently from the planning root": "計画ルートとは独立してストアの知識所有者を選択します",
     "Manage evidence-gated learned skills": "証跡ゲート付きの学習スキルを管理します",
     "Apply a learned-skill candidate from an absolute JSON file": "絶対パスの JSON ファイルから学習スキル候補を適用します",
     "List canonical learned skills": "正規の学習スキルを一覧表示します",

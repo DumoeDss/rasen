@@ -5,6 +5,7 @@ import { COMMAND_REGISTRY } from '../../../src/core/completions/command-registry
 import { COMMON_FLAGS } from '../../../src/core/completions/shared-flags.js';
 import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
 import { getCommandPath, program } from '../../../src/cli/index.js';
+import { getKnowledgeMessages } from '../../../src/commands/knowledge-messages.js';
 import {
   hasLocalizedDescription,
   localizeCommandRegistry,
@@ -213,8 +214,9 @@ describe('command completion registry', () => {
     }
   });
 
-  it('uses one --store description on every lifecycle command', () => {
+  it('uses the root-selector description except on knowledge-owner selectors', () => {
     const expected = COMMON_FLAGS.store.description;
+    const knowledgeExpected = getKnowledgeMessages().storeSelectorDescription;
     const seen: string[] = [];
 
     function walk(command: Command, parentPath: string): void {
@@ -223,7 +225,9 @@ describe('command completion registry', () => {
         const storeOption = child.options.find((option) => option.long === '--store');
         if (storeOption) {
           seen.push(commandPath);
-          expect(storeOption.description, `${commandPath} --store description`).toBe(expected);
+          expect(storeOption.description, `${commandPath} --store description`).toBe(
+            commandPath.startsWith('knowledge ') ? knowledgeExpected : expected
+          );
         }
         walk(child, commandPath);
       }
@@ -235,7 +239,10 @@ describe('command completion registry', () => {
     // both use the shared description (asserted above): the normal lifecycle
     // commands, and the pipeline inspection group. Only the lifecycle set is
     // enumerated in the agent-facing store-selection guidance.
-    const lifecycle = seen.filter((commandPath) => !commandPath.startsWith('pipeline '));
+    const lifecycle = seen.filter(
+      (commandPath) =>
+        !commandPath.startsWith('pipeline ') && !commandPath.startsWith('knowledge ')
+    );
     const pipelineStore = seen.filter((commandPath) => commandPath.startsWith('pipeline '));
 
     expect(lifecycle.sort()).toEqual([
@@ -289,6 +296,7 @@ describe('command completion registry', () => {
       'pipeline save',
     ]);
     for (const commandPath of seen) {
+      if (commandPath.startsWith('knowledge ')) continue;
       if (pipelineLibraryVerbs.has(commandPath)) continue;
       expect(STORE_SELECTION_GUIDANCE, `guidance names ${commandPath}`).toContain(
         `\`${commandPath}\``
@@ -298,6 +306,7 @@ describe('command completion registry', () => {
 
   it('advertises --project in parity with --store on every --store-bearing command (store-project-namespace)', () => {
     const expectedProject = COMMON_FLAGS.project.description;
+    const knowledgeExpected = getKnowledgeMessages().projectSelectorDescription;
     const storeCommands: string[] = [];
     const projectCommands: string[] = [];
 
@@ -311,7 +320,7 @@ describe('command completion registry', () => {
         if (projectOption) {
           projectCommands.push(commandPath);
           expect(projectOption.description, `${commandPath} --project description`).toBe(
-            expectedProject
+            commandPath.startsWith('knowledge ') ? knowledgeExpected : expectedProject
           );
         }
         walk(child, commandPath);

@@ -13,6 +13,10 @@ export interface KnowledgeMessages {
   listDescription: string;
   showDescription: string;
   retireDescription: string;
+  projectSelectorDescription: string;
+  storeSelectorDescription: string;
+  runStateDirDescription: string;
+  contextSummary: (owner: string, planningRoot: string) => string;
   candidatePathRequired: string;
   candidatePathMustBeAbsolute: (path: string) => string;
   candidateNotFound: (path: string) => string;
@@ -54,6 +58,11 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     listDescription: raw.listDescription,
     showDescription: raw.showDescription,
     retireDescription: raw.retireDescription,
+    projectSelectorDescription: raw.projectSelectorDescription,
+    storeSelectorDescription: raw.storeSelectorDescription,
+    runStateDirDescription: raw.runStateDirDescription,
+    contextSummary: (owner, planningRoot) =>
+      format(raw.contextSummary, { owner, planningRoot }),
     candidatePathRequired: raw.candidatePathRequired,
     candidatePathMustBeAbsolute: (path) => format(raw.candidatePathMustBeAbsolute, { path }),
     candidateNotFound: (path) => format(raw.candidateNotFound, { path }),

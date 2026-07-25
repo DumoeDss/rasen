@@ -55,6 +55,21 @@ Learned skills are **registry records, not workflows.** They never appear in a p
 
 Each canonical directory holds a strict `learned-skill.yaml` manifest (identity, stable knowledge key, scope, status, generated-ownership marker, content digest, applicability, evidence references, timestamps) and a generated `SKILL.md`. A project-scoped write requires a registered project with a resolved machine home — there is no in-repository fallback; an unregistered project gets `rasen init` guidance instead.
 
+Planning location is not knowledge ownership. A store-backed pointer project can
+plan in `store:team` while its private learned skills remain owned by
+`project:web`. `rasen knowledge --project <id>` and `--store <id>` select that
+typed owner only; they never relocate the change. The flags are mutually
+exclusive, same bare ids remain distinct across namespaces, and direct store
+launches refuse to guess a member project. Store-owned persistence is reserved
+for the store-scope follow-up and currently returns the stable
+`knowledge_store_scope_unavailable` diagnostic without creating a catalog.
+
+Retain/codify freezes a versioned `{planningRoot, owner}` identity in
+`auto-run.json`. Only typed ids are persisted; canonical paths are re-resolved
+and revalidated on resume by passing pipeline resume's absolute `runStateDir`
+to project-scope knowledge commands as `--run-state-dir`. Existing run-state without the field remains
+readable and gains the context conservatively at its first knowledge operation.
+
 ## Scope and global promotion
 
 An accepted candidate defaults to **project scope** in the owning project's machine home. A **global** create or promotion is gated:

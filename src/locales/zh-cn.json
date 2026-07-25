@@ -6,6 +6,10 @@
     "listDescription": "列出规范的学习技能",
     "showDescription": "显示规范的学习技能",
     "retireDescription": "退役受管的学习技能",
+    "projectSelectorDescription": "独立于规划根目录选择项目知识所有者",
+    "storeSelectorDescription": "独立于规划根目录选择 Store 知识所有者",
+    "runStateDirDescription": "从包含 auto-run.json 的已解析目录加载冻结的知识身份",
+    "contextSummary": "知识所有者：{owner}；规划根目录：{planningRoot}。",
     "candidatePathRequired": "需要候选文件。请传入 --from <绝对路径的JSON文件>。",
     "candidatePathMustBeAbsolute": "候选路径必须是绝对路径：{path}",
     "candidateNotFound": "未找到候选文件：{path}",
@@ -767,6 +771,9 @@
     "helpCommand": "显示指定命令的帮助"
   },
   "commandDescriptions": {
+    "Select a project knowledge owner independently from the planning root": "独立于规划根目录选择项目知识所有者",
+    "Load frozen knowledge identity from the resolved directory containing auto-run.json": "从包含 auto-run.json 的已解析目录加载冻结的知识身份",
+    "Select a store knowledge owner independently from the planning root": "独立于规划根目录选择 Store 知识所有者",
     "Manage evidence-gated learned skills": "管理有证据门槛的学习技能",
     "Apply a learned-skill candidate from an absolute JSON file": "从绝对路径的 JSON 文件应用学习技能候选",
     "List canonical learned skills": "列出规范的学习技能",

@@ -9,6 +9,50 @@
 /** Learned-skill scope. Project is the default; global requires promotion. */
 export type LearnedSkillScope = 'project' | 'global';
 
+/** Closed, serializable owner identity. Namespace is part of identity. */
+export type KnowledgeOwnerRef =
+  | { type: 'global' }
+  | { type: 'project'; id: string }
+  | { type: 'store'; id: string };
+
+/** Closed, serializable planning-root identity. */
+export type KnowledgePlanningRootRef =
+  | { type: 'project'; id: string }
+  | { type: 'store'; id: string };
+
+/** Versioned run-state payload. Absolute machine paths are deliberately absent. */
+export interface FrozenKnowledgeContext {
+  version: 1;
+  planningRoot: KnowledgePlanningRootRef;
+  owner: KnowledgeOwnerRef;
+}
+
+export type ResolvedKnowledgeOwnerRef =
+  | { type: 'global' }
+  | { type: 'project'; id: string; root: string }
+  | { type: 'store'; id: string; root: string };
+
+export type ResolvedKnowledgePlanningRootRef =
+  | { type: 'project'; id: string; root: string }
+  | { type: 'store'; id: string; root: string };
+
+export interface KnowledgeSelector {
+  project?: string;
+  store?: string;
+}
+
+export interface LearnedSkillExecutionContext {
+  planningRoot?: ResolvedKnowledgePlanningRootRef;
+  owner: ResolvedKnowledgeOwnerRef;
+  source:
+    | 'run-state'
+    | 'explicit-project'
+    | 'explicit-store'
+    | 'launch-project'
+    | 'direct-store';
+  globalDataDir?: string;
+}
+
 /** Canonical lifecycle status. Retired records keep provenance but never materialize. */
 export type LearnedSkillStatus = 'active' | 'retired';
 
@@ -103,6 +147,8 @@ export type LearnedSkillMutationRequest =
 
 /** Context threading project identity and DI overrides through plan/commit/resolve. */
 export interface LearnedSkillContext {
+  /** Deterministic typed context. Production callers should provide this. */
+  execution?: LearnedSkillExecutionContext;
   /** Project root for project-scoped ops and applicability evaluation. */
   projectRoot?: string;
   /** DI override for the global data dir (default: getGlobalDataDir()). */
@@ -133,6 +179,9 @@ export interface LearnedSkillBlock {
     | 'store_unwritable'
     | 'global_evidence_insufficient'
     | 'global_approval_required'
+    | 'knowledge_owner_scope_mismatch'
+    | 'knowledge_store_scope_unavailable'
+    | 'knowledge_candidate_owner_mismatch'
     | 'invalid_request';
   message: string;
 }
