@@ -69,7 +69,7 @@ async function resolveStore(
   if (scope === 'global') return { ok: true, store: resolveGlobalStore(context) };
   const resolution = await resolveProjectStore(context);
   if (!resolution.ok) {
-    return { ok: false, block: { code: 'unregistered_project', message: resolution.message } };
+    return { ok: false, block: { code: resolution.code, message: resolution.message } };
   }
   return { ok: true, store: resolution.store };
 }
@@ -383,6 +383,40 @@ export async function planLearnedSkillMutation(
   request: LearnedSkillMutationRequest,
   context: LearnedSkillContext = {}
 ): Promise<LearnedSkillPlan> {
+  const targetScope = request.operation === 'promote' ? 'global' : request.scope;
+  const owner = context.execution?.owner;
+  if (owner) {
+    if (targetScope === 'global' && owner.type !== 'global') {
+      return blockedPlan(targetScope, 'id' in request ? request.id : request.toId, {
+        code: 'knowledge_owner_scope_mismatch',
+        message: `global learned-skill scope cannot use ${owner.type}:${owner.id} as its owner`,
+      });
+    }
+    if (targetScope === 'project' && owner.type === 'global') {
+      return blockedPlan(targetScope, 'id' in request ? request.id : request.toId, {
+        code: 'knowledge_owner_scope_mismatch',
+        message: 'project learned-skill scope requires a project owner',
+      });
+    }
+    if (owner.type === 'store') {
+      return blockedPlan(targetScope, 'id' in request ? request.id : request.toId, {
+        code: 'knowledge_store_scope_unavailable',
+        message: `store owner '${owner.id}' is resolved, but store-scoped learned-skill persistence is not available yet`,
+      });
+    }
+    if (
+      targetScope === 'project' &&
+      owner.type === 'project' &&
+      request.operation === 'upsert' &&
+      request.evidence.some((entry) => entry.projectId !== owner.id)
+    ) {
+      return blockedPlan(targetScope, request.id, {
+        code: 'knowledge_candidate_owner_mismatch',
+        message: `candidate evidence projectId must match the authoritative project owner '${owner.id}'`,
+      });
+    }
+  }
+
   switch (request.operation) {
     case 'upsert':
       return planWrite(request.scope, request, context);
@@ -458,6 +492,28 @@ export async function commitLearnedSkillPlan(
   }
   if (plan.action === 'no-op' || !plan.commit) {
     return { outcome: 'no-op', scope: plan.scope, id: plan.id };
+  }
+  const owner = context.execution?.owner;
+  if (
+    owner &&
+    ((plan.scope === 'global' && owner.type !== 'global') ||
+      (plan.scope === 'project' && owner.type !== 'project'))
+  ) {
+    return {
+      outcome: 'blocked',
+      scope: plan.scope,
+      id: plan.id,
+      block: {
+        code:
+          owner.type === 'store'
+            ? 'knowledge_store_scope_unavailable'
+            : 'knowledge_owner_scope_mismatch',
+        message:
+          owner.type === 'store'
+            ? `store owner '${owner.id}' is resolved, but store-scoped learned-skill persistence is not available yet`
+            : `${plan.scope} learned-skill scope does not agree with the resolved ${owner.type} owner`,
+      },
+    };
   }
   // Global create/promotion consent is a commit-time gate: the plan is valid,
   // but writing global state requires explicit approval (design D4/D5).

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "crt",
+  "name": "CRT",
+  "description": "A fixed dark phosphor terminal with hazard-red accents.",
+  "mode": "dark",
+  "tokens": {
+    "dark": {
+      "canvas": "#0a0a0a",
+      "surface": "#121212",
+      "surfaceMuted": "#050505",
+      "surfaceRaised": "#1a1a18",
+      "text": "#eaeaea",
+      "textSecondary": "#cfcfcc",
+      "textMuted": "#9a9a98",
+      "metadata": "#8a8a87",
+      "border": "#2a2a28",
+      "borderSoft": "#1e1e1c",
+      "borderStrong": "#3a3a36",
+      "accent": "#e61919",
+      "accentOn": "#0a0a0a",
+      "focus": "#e61919",
+      "success": "#4af626",
+      "successBackground": "#102b0a",
+      "warning": "#e6b319",
+      "warningBackground": "#2b2408",
+      "danger": "#ff5a4a",
+      "dangerBackground": "#2b0d0d",
+      "headingFont": "display-heavy",
+      "bodyFont": "system-mono",
+      "monoFont": "system-mono",
+      "baseSize": 14,
+      "headingSize": 22,
+      "radius": 0,
+      "largeRadius": 0,
+      "elevation": "flat"
+    }
+  },
+  "effects": [
+    "scanlines",
+    "uppercase-headings",
+    "terminal-navigation",
+    "uppercase-metadata"
+  ]
+}

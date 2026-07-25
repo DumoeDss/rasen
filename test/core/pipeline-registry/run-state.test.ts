@@ -956,6 +956,46 @@ describe('pipeline run-state', () => {
   });
 
   describe('retention (design D2)', () => {
+    it('accepts a versioned frozen knowledge context independently from retention', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          retention: 'report',
+          knowledgeContext: {
+            version: 1,
+            planningRoot: { type: 'store', id: 'team' },
+            owner: { type: 'project', id: 'web' },
+          },
+        })
+      );
+      expect(s.retention).toBe('report');
+      expect(s.knowledgeContext).toEqual({
+        version: 1,
+        planningRoot: { type: 'store', id: 'team' },
+        owner: { type: 'project', id: 'web' },
+      });
+    });
+
+    it('keeps every existing run-state without knowledgeContext readable', () => {
+      const s = parseRunState('{"pipeline":"full-feature","retention":"codify"}');
+      expect(s.knowledgeContext).toBeUndefined();
+    });
+
+    it('rejects absolute roots and unknown fields in frozen knowledge identity', () => {
+      expect(() =>
+        parseRunState(
+          JSON.stringify({
+            pipeline: 'full-feature',
+            knowledgeContext: {
+              version: 1,
+              planningRoot: { type: 'project', id: 'web', root: 'C:\\web' },
+              owner: { type: 'project', id: 'web' },
+            },
+          })
+        )
+      ).toThrow();
+    });
+
     it('accepts and reads back a frozen retention mode', () => {
       const s = parseRunState('{"pipeline":"full-feature","retention":"codify"}');
       expect(s.retention).toBe('codify');

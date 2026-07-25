@@ -66,6 +66,24 @@ describe('writeGlobalConfigKeyMinimalDiff', () => {
     expect(raw).toEqual({ handoff: { threshold: 0.3 } });
   });
 
+  it('round-trips ui.theme without disturbing pinnedSpaces or future UI fields', () => {
+    fs.mkdirSync(path.dirname(getGlobalConfigPath()), { recursive: true });
+    fs.writeFileSync(getGlobalConfigPath(), JSON.stringify({
+      ui: {
+        pinnedSpaces: ['project:demo'],
+        futurePreference: { enabled: true },
+      },
+    }));
+    writeGlobalConfigKeyMinimalDiff('ui.theme', 'forest-paper');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf8'))).toEqual({
+      ui: {
+        pinnedSpaces: ['project:demo'],
+        futurePreference: { enabled: true },
+        theme: 'forest-paper',
+      },
+    });
+  });
+
   // B1 regression: a corrupt (unparseable) global config file must never be
   // silently replaced with just the target key — that would destroy every
   // other hand-edited value with a 200 OK and no warning.

@@ -2,7 +2,6 @@ import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
 import { RunningSessionsMenu } from './RunningSessionsMenu.js';
-import { ThemeToggle } from './ThemeToggle.js';
 import { isPipelineCanvasPath, parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces } from '../store/recent-spaces.js';
 import { useT } from '../i18n/store.js';
@@ -100,7 +99,6 @@ export function Layout({ children }: { children: ComponentChildren }) {
       >
         {children}
       </main>
-      <ThemeToggle />
     </div>
   );
 }

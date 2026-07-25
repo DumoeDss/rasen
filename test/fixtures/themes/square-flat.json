@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "square-flat",
+  "name": "Square Flat",
+  "description": "A fixed light theme with square corners and no elevation.",
+  "mode": "light",
+  "tokens": {
+    "light": {
+      "canvas": "#eeeeee",
+      "surface": "#ffffff",
+      "surfaceRaised": "#dddddd",
+      "accent": "#2455aa",
+      "focus": "#2455aa",
+      "radius": 0,
+      "largeRadius": 0,
+      "elevation": "flat"
+    }
+  },
+  "effects": []
+}

@@ -41,6 +41,12 @@ import { handleListPipelines, handlePipelineCatalog, handlePipelineDetail, handl
 import { createPipelineSubmitter } from './pipeline-submit.js';
 import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
 import {
+  installTheme,
+  listImportedThemes,
+  MAX_THEME_BYTES,
+  ThemeLibraryError,
+} from '../theme-library/index.js';
+import {
   AuditManagementService,
   AuditServiceError,
   MAX_RECENT_AUDIT_LIMIT,
@@ -102,6 +108,8 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/audits',
   '/api/v1/audits/sessions',
   '/api/v1/audits/import',
+  '/api/v1/themes',
+  '/api/v1/themes/import',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -206,6 +214,8 @@ function matchSessionIdPath(pathname: string): string | null {
 
 /** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (pathname === '/api/v1/themes') return method === 'GET';
+  if (pathname === '/api/v1/themes/import') return method === 'POST';
   if (matchAuditIdPath(pathname) !== null) return method === 'GET';
   if (pathname === '/api/v1/audits') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/audits/sessions') return method === 'GET';
@@ -251,6 +261,34 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   return (
     (pathname === '/api/v1/changes' || pathname === '/api/v1/spaces') && method === 'POST'
   );
+}
+
+function readThemeBody(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    req.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      total += chunk.length;
+      if (total > MAX_THEME_BYTES) {
+        fail(new ThemeLibraryError('payload_too_large', `Theme document exceeds ${MAX_THEME_BYTES} bytes.`));
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', () => fail(new ThemeLibraryError('persistence_failed', 'Failed to read the theme document.')));
+  });
 }
 
 type BodyReadResult =
@@ -409,6 +447,46 @@ export function createManagementRouter(
 
     if (!isMethodAdmitted(pathname, req.method)) {
       sendError(res, 405, 'method_not_allowed', `${req.method} not allowed on ${pathname}.`);
+      return;
+    }
+
+    if (pathname === '/api/v1/themes' && req.method === 'GET') {
+      sendJson(res, 200, listImportedThemes());
+      return;
+    }
+
+    if (pathname === '/api/v1/themes/import' && req.method === 'POST') {
+      const contentType = req.headers['content-type'];
+      if (typeof contentType !== 'string' || !/^application\/json(?:\s*;|$)/i.test(contentType)) {
+        sendError(res, 415, 'unsupported_media_type', 'Theme imports require application/json.');
+        return;
+      }
+      const declared = Number(req.headers['content-length']);
+      if (Number.isFinite(declared) && declared > MAX_THEME_BYTES) {
+        sendError(res, 413, 'payload_too_large', `Theme document exceeds ${MAX_THEME_BYTES} bytes.`);
+        return;
+      }
+      try {
+        const manifest = installTheme(await readThemeBody(req));
+        sendJson(res, 201, { theme: manifest });
+      } catch (error) {
+        if (error instanceof ThemeLibraryError) {
+          const status =
+            error.code === 'payload_too_large' ? 413
+              : error.code === 'identifier_conflict' ? 409
+                : error.code === 'persistence_failed' ? 500
+                  : 400;
+          sendJson(res, status, {
+            error: {
+              code: error.code,
+              message: error.message,
+              ...(error.details ? { details: error.details } : {}),
+            },
+          });
+          return;
+        }
+        sendError(res, 500, 'persistence_failed', 'Theme could not be installed.');
+      }
       return;
     }
 

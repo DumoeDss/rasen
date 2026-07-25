@@ -207,7 +207,14 @@ describe('global-config', () => {
 
       const config = getGlobalConfig();
 
-      expect(config).toEqual({ featureFlags: {}, profile: 'full', language: 'auto', proactive: true, repoMode: 'collaborative' });
+      expect(config).toEqual({
+        featureFlags: {},
+        profile: 'full',
+        language: 'auto',
+        proactive: true,
+        repoMode: 'collaborative',
+        ui: { theme: 'editorial' },
+      });
     });
 
     it('should not create directory when reading non-existent config', () => {
@@ -268,7 +275,14 @@ describe('global-config', () => {
 
       const config = getGlobalConfig();
 
-      expect(config).toEqual({ featureFlags: {}, profile: 'full', language: 'auto', proactive: true, repoMode: 'collaborative' });
+      expect(config).toEqual({
+        featureFlags: {},
+        profile: 'full',
+        language: 'auto',
+        proactive: true,
+        repoMode: 'collaborative',
+        ui: { theme: 'editorial' },
+      });
     });
 
     it('should log warning for invalid JSON', () => {

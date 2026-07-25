@@ -13,6 +13,10 @@ import * as path from 'node:path';
 import { z } from 'zod';
 import { AgentRuntimeSandboxSchema, AgentRuntimeSchema } from './types.js';
 import { RETENTION_MODES, type RetentionMode } from '../retention.js';
+import {
+  FrozenKnowledgeContextSchema,
+  type FrozenKnowledgeContext,
+} from '../learned-skills/index.js';
 
 /** The full-feature retention stage id and the retired legacy retro stage id. */
 export const RETAIN_STAGE_ID = 'retain';
@@ -157,6 +161,9 @@ export const RunStateSchema = z
     // Once recorded, resume prefers it over a later profile edit so a mid-run
     // profile change never switches the retain branch.
     retention: z.enum(RETENTION_MODES).optional(),
+    // Frozen independently from retention. It records typed portable identity
+    // only; canonical roots are re-resolved and revalidated on resume.
+    knowledgeContext: FrozenKnowledgeContextSchema.optional(),
     sessionHandoff: SessionHandoffSchema.optional(),
     completed: z.array(z.string()).optional(),
     rounds: z.number().int().nonnegative().optional(),
@@ -445,6 +452,13 @@ export function completedStages(state: RunState): string[] {
  */
 export function frozenRetentionMode(state: RunState): RetentionMode | undefined {
   return state.retention;
+}
+
+/** The typed learned-skill owner/planning identity frozen for retain/codify. */
+export function frozenKnowledgeContext(
+  state: RunState
+): FrozenKnowledgeContext | undefined {
+  return state.knowledgeContext;
 }
 
 /**
