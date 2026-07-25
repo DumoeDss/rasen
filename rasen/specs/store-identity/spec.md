@@ -1,7 +1,9 @@
 # store-identity Specification
 
 ## Purpose
-TBD - created by archiving change store-immutable-identity. Update Purpose after archive.
+
+Give a Store a permanent identity that survives renames and cannot collide across machines, demote its readable id to a display alias, let a project declare which Store it plans in durably, and make a Store that cannot be resolved an explicit, diagnosable, repairable state rather than one that silently reads as "this project has no Store".
+
 ## Requirements
 ### Requirement: A Store has a permanent identity distinct from its display name
 
