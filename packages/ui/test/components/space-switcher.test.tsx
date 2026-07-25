@@ -17,6 +17,7 @@ vi.mock('../../src/api/client.js', () => ({
 
 import { SpaceSwitcher } from '../../src/components/SpaceSwitcher.js';
 import * as client from '../../src/api/client.js';
+import { resetSpaceCatalogForTests } from '../../src/store/space-catalog.js';
 
 const SPACES = {
   spaces: [
@@ -51,6 +52,7 @@ describe('SpaceSwitcher', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    resetSpaceCatalogForTests();
     container = document.createElement('div');
     document.body.appendChild(container);
     // Recency lives in localStorage; clear it so ordering is deterministic.

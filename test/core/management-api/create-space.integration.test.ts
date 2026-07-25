@@ -53,7 +53,7 @@ describe('createSpaceCreator against the real CLI (integration, slow)', () => {
     }
 
     const create = createSpaceCreator({ cliEntryOverride: realCliEntry, timeoutMs: 60_000 });
-    const result = await create({ kind: 'project', path: target });
+    const result = await create({ op: 'create-project', path: target });
 
     // The subprocess was answered promptly, not blocked on a prompt then killed.
     expect(result.status, JSON.stringify(result)).not.toBe(504);

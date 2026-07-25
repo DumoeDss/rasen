@@ -304,6 +304,51 @@ describe('management-api router (integration, via real http server)', () => {
       expect(res.status).toBe(400);
       expect((res.json() as any).error.code).toBe('invalid_path');
     });
+
+    it('protects and method-gates resolve and chooser sibling routes', async () => {
+      const h = await startServer();
+      const unauthenticated = await req(h.port, {
+        method: 'GET',
+        path: `/api/v1/local-paths/resolve?path=${encodeURIComponent(projectRoot)}&kind=directory`,
+      });
+      expect(unauthenticated.status).toBe(401);
+
+      const wrongResolveMethod = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/local-paths/resolve',
+        headers: authed(),
+      });
+      expect(wrongResolveMethod.status).toBe(405);
+      const wrongChooserMethod = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/local-paths/choose',
+        headers: authed(),
+      });
+      expect(wrongChooserMethod.status).toBe(405);
+    });
+
+    it('returns a canonical resolved path and structured chooser validation without writes', async () => {
+      const h = await startServer();
+      const before = fs.readdirSync(projectRoot);
+      const resolved = await req(h.port, {
+        method: 'GET',
+        path: `/api/v1/local-paths/resolve?path=${encodeURIComponent(projectRoot)}&kind=directory`,
+        headers: authed(),
+      });
+      expect(resolved.status).toBe(200);
+      expect((resolved.json() as any).path).toBe(fs.realpathSync.native(projectRoot));
+      expect((resolved.json() as any).separator).toBe(path.sep);
+
+      const invalidChoice = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/local-paths/choose',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'directory', command: 'arbitrary' }),
+      });
+      expect(invalidChoice.status).toBe(400);
+      expect((invalidChoice.json() as any).error.code).toBe('invalid_input');
+      expect(fs.readdirSync(projectRoot)).toEqual(before);
+    });
   });
 
   describe('/api/v1/spaces admission (space-creation)', () => {
@@ -332,7 +377,7 @@ describe('management-api router (integration, via real http server)', () => {
       const res = await req(h.port, {
         method: 'POST',
         path: '/api/v1/spaces',
-        body: JSON.stringify({ kind: 'project', path: '/tmp/whatever' }),
+        body: JSON.stringify({ op: 'create-project', path: '/tmp/whatever' }),
       });
       expect(res.status).toBe(401);
     });

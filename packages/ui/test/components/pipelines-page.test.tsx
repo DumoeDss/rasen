@@ -25,6 +25,9 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     putKey: vi.fn(),
     deleteKey: vi.fn(),
     mutatePipeline: vi.fn(),
+    listLocalPaths: vi.fn(),
+    resolveLocalPath: vi.fn(),
+    chooseLocalPath: vi.fn(),
   };
 });
 
@@ -107,6 +110,19 @@ describe('PipelinesPage', () => {
     });
     (client.putKey as any).mockResolvedValue({ entry: pipelinesConfigFixture.entries[3], store: null });
     (client.deleteKey as any).mockResolvedValue({ entry: pipelinesConfigFixture.entries[0], store: null });
+    (client.listLocalPaths as any).mockResolvedValue({
+      path: '/home/user',
+      parent: null,
+      separator: '/',
+      home: true,
+      entries: [{ name: 'new-pipe.rasenpkg', isDir: false, isGitRepo: false }],
+    });
+    (client.resolveLocalPath as any).mockImplementation(async (candidate: string) => ({
+      path: candidate,
+      kind: candidate.endsWith('.rasenpkg') ? 'file' : 'directory',
+      separator: '/',
+    }));
+    (client.chooseLocalPath as any).mockResolvedValue({ status: 'unavailable', reason: 'headless' });
   });
 
   afterEach(() => {
@@ -286,14 +302,46 @@ describe('PipelinesPage', () => {
     await mount(container);
     await clickAndFlush(container.querySelector('[data-testid="pipeline-import"]'));
     await act(async () => {
-      const input = container.querySelector('[data-testid="pipeline-import-path"]') as HTMLInputElement;
-      input.value = '/pkgs/new-pipe';
+      const input = container.querySelector('.local-path-picker__path-input') as HTMLInputElement;
+      input.value = '/pkgs/new-pipe.rasenpkg';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();
     });
     await clickAndFlush(container.querySelector('[data-testid="pipeline-import-submit"]'));
-    expect(client.mutatePipeline).toHaveBeenCalledWith({ op: 'import', path: '/pkgs/new-pipe', force: false });
+    expect(client.mutatePipeline).toHaveBeenCalledWith({ op: 'import', path: '/pkgs/new-pipe.rasenpkg', force: false });
     expect(container.querySelector('[data-testid="pipeline-import-result"]')!.textContent).toContain('new-pipe');
+  });
+
+  it('uses a selected Windows directory for export preview and submission', async () => {
+    (client.listLocalPaths as any).mockResolvedValue({
+      path: 'D:\\packages',
+      parent: null,
+      separator: '\\',
+      home: true,
+      entries: [],
+    });
+    (client.resolveLocalPath as any).mockResolvedValue({
+      path: 'D:\\packages',
+      kind: 'directory',
+      separator: '\\',
+    });
+    (client.mutatePipeline as any).mockResolvedValue({
+      pipeline: { path: 'D:\\packages\\my-flow.rasenpkg' },
+    });
+    await mount(container);
+    await clickAndFlush(
+      stageSection(container, 'my-flow').querySelector('[data-testid="pipeline-export"]')
+    );
+    expect(
+      container.querySelector('[data-testid="pipeline-export-destination"]')?.textContent
+    ).toContain('D:\\packages\\my-flow.rasenpkg');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-export-submit"]'));
+    expect(client.mutatePipeline).toHaveBeenCalledWith({
+      op: 'export',
+      name: 'my-flow',
+      path: 'D:\\packages\\my-flow.rasenpkg',
+      force: false,
+    });
   });
 
   it('surfaces a guarded-delete refusal verbatim then deletes only after an explicit force confirmation', async () => {

@@ -93,7 +93,11 @@ export function startManagementServer(
   // handles its own paths, now including the sessions route group. The
   // server owns the dispatch.
   const configHandler = createConfigRouter(context);
-  const { handle: managementHandler, supervisor } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
+  const {
+    handle: managementHandler,
+    supervisor,
+    shutdownPathChooser,
+  } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
@@ -174,7 +178,10 @@ export function startManagementServer(
       // (`ui-launch.ts` calls this same `stopServer`), bounded so a
       // SIGTERM-resistant session can never hang shutdown indefinitely.
       await Promise.race([
-        supervisor.shutdownAll('server-shutdown'),
+        Promise.all([
+          supervisor.shutdownAll('server-shutdown'),
+          shutdownPathChooser(),
+        ]).then(() => undefined),
         new Promise<void>((resolve) => {
           const t = setTimeout(resolve, SESSION_SHUTDOWN_GUARD_MS);
           t.unref?.();

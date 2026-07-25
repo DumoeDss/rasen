@@ -19,6 +19,8 @@ vi.mock('../../src/api/client.js', async () => {
     getKey: vi.fn(),
     putKey: vi.fn(),
     listLocalPaths: vi.fn(),
+    resolveLocalPath: vi.fn(),
+    chooseLocalPath: vi.fn(),
     createSpace: vi.fn(),
   };
 });
@@ -26,6 +28,11 @@ vi.mock('../../src/api/client.js', async () => {
 import { SpacesPage } from '../../src/components/SpacesPage.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
+import {
+  publishSpace,
+  refreshSpaceCatalog,
+  resetSpaceCatalogForTests,
+} from '../../src/store/space-catalog.js';
 
 const SPACES = {
   spaces: [
@@ -97,12 +104,19 @@ describe('SpacesPage', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    resetSpaceCatalogForTests();
     container = document.createElement('div');
     document.body.appendChild(container);
     (client.listSpaces as any).mockResolvedValue(SPACES);
     (client.getKey as any).mockResolvedValue({ entry: { value: [] } });
     (client.putKey as any).mockResolvedValue({ entry: {} });
     (client.listLocalPaths as any).mockResolvedValue(HOME_LISTING);
+    (client.resolveLocalPath as any).mockImplementation(async (candidate: string, kind: string) => ({
+      path: candidate,
+      kind: kind === 'file' ? 'file' : 'directory',
+      separator: '/',
+    }));
+    (client.chooseLocalPath as any).mockResolvedValue({ status: 'unavailable', reason: 'headless' });
   });
 
   afterEach(() => {
@@ -236,7 +250,7 @@ describe('SpacesPage', () => {
       (b) => b.textContent === 'Go'
     )!;
     await click(goButton);
-    expect(client.listLocalPaths).toHaveBeenCalledWith('/some/abs/path');
+    expect(client.resolveLocalPath).toHaveBeenCalledWith('/some/abs/path', 'directory');
   });
 
   it('creates a space and routes into the new space board', async () => {
@@ -250,7 +264,7 @@ describe('SpacesPage', () => {
     const submit = container.querySelector('.create-space-dialog__actions button[type="submit"]');
     await click(submit);
 
-    expect(client.createSpace).toHaveBeenCalledWith({ kind: 'project', path: '/home/user' });
+    expect(client.createSpace).toHaveBeenCalledWith({ op: 'create-project', path: '/home/user' });
     expect(window.location.pathname).toBe('/p/newproj/board');
   });
 
@@ -269,6 +283,106 @@ describe('SpacesPage', () => {
     );
     // Stayed on the page — no navigation on failure.
     expect(window.location.pathname).toBe('/spaces');
+  });
+
+  it('keeps a published row visible with a non-blocking retry when revalidation fails', async () => {
+    publishSpace({
+      type: 'store',
+      id: 'just-created',
+      name: 'Just Created',
+      root: '/stores/just-created',
+      members: [],
+    });
+    (client.listSpaces as any).mockRejectedValueOnce(
+      new ApiError(503, {
+        error: { code: 'temporarily_unavailable', message: 'refresh failed' },
+      })
+    );
+    await refreshSpaceCatalog();
+
+    await mount(container);
+
+    const retained = container.querySelector('[data-selector="store:just-created"]');
+    expect(retained).not.toBeNull();
+    expect(retained?.textContent).toContain('Just Created');
+    const banner = container.querySelector('[data-testid="spaces-refresh-error"]');
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain('refresh failed');
+    expect(banner?.querySelector('button')?.textContent).toContain('Retry');
+  });
+
+  it('creates a Store explicitly from parent plus required id', async () => {
+    (client.createSpace as any).mockResolvedValue({
+      operation: 'store-setup',
+      space: { type: 'store', id: 'team-store', name: 'Team', root: '/home/user/team-store', members: [] },
+    });
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const createMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Create new Store');
+    await click(createMode ?? null);
+    await act(async () => {
+      const input = container.querySelector('input[name="storeId"]') as HTMLInputElement;
+      input.value = 'team-store';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="derived-store-root"]')?.textContent).toContain(
+      '/home/user/team-store'
+    );
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+    expect(client.createSpace).toHaveBeenCalledWith({
+      op: 'create-store',
+      parent: '/home/user',
+      id: 'team-store',
+    });
+    expect(window.location.pathname).toBe('/s/team-store/board');
+  });
+
+  it('registers an existing Store explicitly and preserves a CLI refusal verbatim', async () => {
+    (client.createSpace as any).mockRejectedValue(
+      new ApiError(422, {
+        error: { code: 'cli_error', message: 'existing Store is unhealthy' },
+      })
+    );
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const registerMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Register existing Store');
+    await click(registerMode ?? null);
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+    expect(client.createSpace).toHaveBeenCalledWith({
+      op: 'register-store',
+      path: '/home/user',
+    });
+    expect(container.querySelector('[data-testid="create-error"]')?.textContent).toContain(
+      'existing Store is unhealthy'
+    );
+  });
+
+  it('presents a derived new-Store root with Windows-native separators', async () => {
+    (client.listLocalPaths as any).mockResolvedValue({
+      ...HOME_LISTING,
+      path: 'D:\\stores',
+      separator: '\\',
+    });
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const createMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Create new Store');
+    await click(createMode ?? null);
+    await act(async () => {
+      const input = container.querySelector('input[name="storeId"]') as HTMLInputElement;
+      input.value = 'team-store';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="derived-store-root"]')?.textContent).toContain(
+      'D:\\stores\\team-store'
+    );
   });
 
   it('keeps every worktree row when spaces share a selector — no collapse on re-render or search (MAJOR-1)', async () => {

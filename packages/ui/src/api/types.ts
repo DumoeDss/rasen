@@ -723,19 +723,43 @@ export interface LocalPathsResponse {
   entries: LocalPathEntry[];
 }
 
+export type LocalPathSelectionKind = 'directory' | 'file' | 'file-or-directory';
+
+export interface ResolveLocalPathResponse {
+  path: string;
+  kind: 'directory' | 'file';
+  separator: string;
+}
+
+export interface ChooseLocalPathRequest {
+  kind: 'directory' | 'file';
+  initialDirectory?: string;
+  filter?: 'rasen-package';
+}
+
+export type ChooseLocalPathResponse =
+  | {
+      status: 'selected';
+      path: string;
+      kind: 'directory' | 'file';
+      separator: string;
+    }
+  | { status: 'cancelled' }
+  | {
+      status: 'unavailable';
+      reason: 'unsupported' | 'headless' | 'missing-utility' | 'launch-failed' | 'timeout';
+    };
+
 // ---- Space creation (space-creation design D4) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root package
 // (`POST /api/v1/spaces`). On failure the thrown `ApiError.message` is the
 // CLI's own error text, verbatim.
 
 /** `POST /api/v1/spaces` request body (design D4). */
-export interface CreateSpaceRequest {
-  kind: 'project' | 'store';
-  /** An absolute filesystem path — the space's target directory. */
-  path: string;
-  /** Store id; required only for a fresh store (a directory with no `rasen/` root). */
-  id?: string;
-}
+export type CreateSpaceRequest =
+  | { op: 'create-project'; path: string }
+  | { op: 'create-store'; parent: string; id: string }
+  | { op: 'register-store'; path: string; id?: string };
 
 /** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
 export interface CreateSpaceResponse {

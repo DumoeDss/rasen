@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import { LocalPathPicker } from './LocalPathPicker.js';
@@ -11,6 +11,7 @@ import type {
   WorkflowValidationSummary,
   WorkflowListResponse,
 } from '../api/types.js';
+import type { LocalPathSelectionController } from '../store/use-local-path-selection.js';
 
 /**
  * The Workflows page (workflows-ui spec). A space-agnostic `/workflows` route
@@ -338,6 +339,7 @@ function cliMessage(err: unknown, fallback: string): string {
 
 function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [id, setId] = useState('');
+  const picker = useRef<LocalPathSelectionController | null>(null);
   // The picked PARENT folder + separator; the draft lands at parent/<id> so the
   // CLI's basename===id rule holds by construction.
   const [parentDir, setParentDir] = useState<string | null>(null);
@@ -350,11 +352,17 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (submitting || !id || !parentDir) return;
+    if (submitting || !id) return;
     setSubmitting(true);
     setError(null);
+    const selectedParent = await picker.current?.resolveForSubmit();
+    if (!selectedParent) {
+      setSubmitting(false);
+      return;
+    }
+    const resolvedOutput = joinChild(selectedParent, picker.current?.separator ?? sep, id);
     try {
-      const result = (await client.mutateWorkflow({ op: 'init', id, output })) as { workflow: { output: string } };
+      const result = (await client.mutateWorkflow({ op: 'init', id, output: resolvedOutput })) as { workflow: { output: string } };
       setCreatedPath(result.workflow.output);
       onDone();
     } catch (err) {
@@ -390,6 +398,7 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             classPrefix="local-path-picker"
             currentLabel="Parent folder"
             disabled={submitting}
+            controllerRef={picker}
             onDirChange={(p, s) => {
               setParentDir(p);
               setSep(s);
@@ -402,7 +411,7 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           )}
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" class="btn--primary" data-testid="workflow-init-submit" disabled={submitting || !id || !parentDir}>
+            <button type="submit" class="btn--primary" data-testid="workflow-init-submit" disabled={submitting || !id}>
               {submitting ? 'Creating…' : 'Create draft'}
             </button>
           </div>
@@ -415,22 +424,27 @@ function InitDialog({ onClose, onDone }: { onClose: () => void; onDone: () => vo
 // ── import ───────────────────────────────────────────────────────────────────
 
 function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const picker = useRef<LocalPathSelectionController | null>(null);
   // The chosen import source: a `.rasenpkg` FILE picked from the listing, or a
   // draft DIRECTORY (the currently-browsed folder). The local-paths listing
   // already includes files, so a package is directly selectable.
   const [source, setSource] = useState<string | null>(null);
-  const [currentDir, setCurrentDir] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ imported: string[]; reused: string[] } | null>(null);
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (submitting || !source) return;
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
+    const selectedSource = await picker.current?.resolveForSubmit();
+    if (!selectedSource) {
+      setSubmitting(false);
+      return;
+    }
     try {
-      const res = (await client.mutateWorkflow({ op: 'import', path: source })) as { imported: string[]; reused: string[] };
+      const res = (await client.mutateWorkflow({ op: 'import', path: selectedSource })) as { imported: string[]; reused: string[] };
       setResult({ imported: res.imported, reused: res.reused });
       onDone();
     } catch (err) {
@@ -453,27 +467,19 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <LocalPathPicker
             classPrefix="local-path-picker"
             mode="file-or-dir"
-            currentLabel="In folder"
+            currentLabel="Import source"
             disabled={submitting}
-            onDirChange={(p) => setCurrentDir(p)}
-            onFileSelect={(p) => setSource(p)}
+            controllerRef={picker}
+            onValueChange={(path) => setSource(path || null)}
+            onDirChange={(path) => setSource(path)}
+            onFileSelect={(path) => setSource(path)}
           />
-          <div class="workflow-dialog__actions">
-            <button
-              type="button"
-              data-testid="workflow-import-use-dir"
-              disabled={submitting || !currentDir}
-              onClick={() => setSource(currentDir)}
-            >
-              Use this folder (draft directory)
-            </button>
-          </div>
           <p class="workflow-dialog__hint" data-testid="workflow-import-source">
             Selected: <code class="workflow-detail__mono">{source ?? 'nothing yet'}</code>
           </p>
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" class="btn--primary" data-testid="workflow-import-submit" disabled={submitting || !source}>
+            <button type="submit" class="btn--primary" data-testid="workflow-import-submit" disabled={submitting}>
               {submitting ? 'Importing…' : 'Import'}
             </button>
           </div>
@@ -486,7 +492,9 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
 // ── validate (standalone or per-card) ────────────────────────────────────────
 
 function ValidateDialog({ prefill, onClose }: { prefill?: string; onClose: () => void }) {
-  const [target, setTarget] = useState(prefill ?? '');
+  const picker = useRef<LocalPathSelectionController | null>(null);
+  const [mode, setMode] = useState<'installed-id' | 'path'>('installed-id');
+  const [installedId, setInstalledId] = useState(prefill ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<WorkflowValidationSummary | null>(null);
@@ -497,8 +505,17 @@ function ValidateDialog({ prefill, onClose }: { prefill?: string; onClose: () =>
     setSubmitting(true);
     setError(null);
     setValidation(null);
+    let selectedTarget = installedId;
+    if (mode === 'path') {
+      const resolved = await picker.current?.resolveForSubmit();
+      if (!resolved) {
+        setSubmitting(false);
+        return;
+      }
+      selectedTarget = resolved;
+    }
     try {
-      const res = await client.validateWorkflow(target);
+      const res = await client.validateWorkflow(selectedTarget);
       setValidation(res.validation);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
@@ -511,17 +528,61 @@ function ValidateDialog({ prefill, onClose }: { prefill?: string; onClose: () =>
   return (
     <DialogShell title="Validate workflow" onClose={onClose}>
       <form class="workflow-dialog__form" onSubmit={submit}>
-        <label class="workflow-dialog__field">
-          <span>Installed id, or an absolute draft / package path</span>
-          <input
-            type="text"
-            data-testid="workflow-validate-target"
-            value={target}
+        {!prefill && (
+          <div
+            class="workflow-dialog__mode"
+            role="group"
+            aria-label="Validation target type"
+          >
+            <button
+              type="button"
+              data-testid="workflow-validate-mode-id"
+              aria-pressed={mode === 'installed-id'}
+              disabled={submitting}
+              onClick={() => {
+                setMode('installed-id');
+                setError(null);
+              }}
+            >
+              Installed id
+            </button>
+            <button
+              type="button"
+              data-testid="workflow-validate-mode-path"
+              aria-pressed={mode === 'path'}
+              disabled={submitting}
+              onClick={() => {
+                setMode('path');
+                setError(null);
+              }}
+            >
+              Draft / package path
+            </button>
+          </div>
+        )}
+        {mode === 'installed-id' ? (
+          <label class="workflow-dialog__field">
+            <span>Installed workflow id</span>
+            <input
+              type="text"
+              data-testid="workflow-validate-target"
+              value={installedId}
+              disabled={submitting}
+              required
+              onInput={(e) =>
+                setInstalledId((e.target as HTMLInputElement).value)
+              }
+            />
+          </label>
+        ) : (
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            mode="file-or-dir"
+            currentLabel="Validation path"
             disabled={submitting}
-            required
-            onInput={(e) => setTarget((e.target as HTMLInputElement).value)}
+            controllerRef={picker}
           />
-        </label>
+        )}
         {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
         <div class="workflow-dialog__actions">
           <button type="submit" class="btn--primary" data-testid="workflow-validate-submit" disabled={submitting}>
@@ -552,6 +613,7 @@ function ValidateDialog({ prefill, onClose }: { prefill?: string; onClose: () =>
 // ── export ───────────────────────────────────────────────────────────────────
 
 function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const picker = useRef<LocalPathSelectionController | null>(null);
   // The picked destination FOLDER + separator; the package is written at
   // destinationFolder/<filename>.
   const [dir, setDir] = useState<string | null>(null);
@@ -569,11 +631,21 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
 
   async function run(force: boolean, event?: Event) {
     event?.preventDefault();
-    if (submitting || !dir || !filename) return;
+    if (submitting || !filename) return;
     setSubmitting(true);
     setError(null);
+    const selectedDir = await picker.current?.resolveForSubmit();
+    if (!selectedDir) {
+      setSubmitting(false);
+      return;
+    }
+    const resolvedDestination = joinChild(
+      selectedDir,
+      picker.current?.separator ?? sep,
+      filename
+    );
     try {
-      const res = (await client.mutateWorkflow({ op: 'export', id, path: destination(), force })) as {
+      const res = (await client.mutateWorkflow({ op: 'export', id, path: resolvedDestination, force })) as {
         workflow: { path: string };
       };
       setDone(res.workflow.path);
@@ -604,6 +676,11 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
             classPrefix="local-path-picker"
             currentLabel="Destination folder"
             disabled={submitting}
+            controllerRef={picker}
+            onValueChange={(p, s) => {
+              setDir(p || null);
+              setSep(s);
+            }}
             onDirChange={(p, s) => {
               setDir(p);
               setSep(s);
@@ -626,7 +703,7 @@ function ExportDialog({ id, onClose }: { id: string; onClose: () => void }) {
           )}
           {error && <p class="workflow-dialog__error" role="alert" data-testid="workflow-dialog-error">{error}</p>}
           <div class="workflow-dialog__actions">
-            <button type="submit" class="btn--primary" data-testid="workflow-export-submit" disabled={submitting || !dir || !filename}>
+            <button type="submit" class="btn--primary" data-testid="workflow-export-submit" disabled={submitting || !filename}>
               {submitting ? 'Exporting…' : 'Export'}
             </button>
             {refused && (

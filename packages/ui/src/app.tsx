@@ -15,6 +15,7 @@ import { AuditPage } from './components/AuditPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { LocaleBootstrap } from './i18n/LocaleBootstrap.js';
 import { parseSpacePath, spaceHref } from './store/use-space.js';
+import { SpaceCatalogProvider } from './store/space-catalog.js';
 
 /**
  * Lazy route (pipeline-canvas-view design D1): the canvas page and its
@@ -66,7 +67,8 @@ export function App() {
   return (
     <LocationProvider>
       <LocaleBootstrap>
-        <Layout>
+        <SpaceCatalogProvider>
+          <Layout>
           <Router>
           <Route path="/" component={SpaceBootstrap} />
           <Route path="/spaces" component={SpacesPage} />
@@ -89,7 +91,8 @@ export function App() {
           <Route path="/s/:storeId" component={SpaceRootRedirect} />
           <Route default component={SpaceBootstrap} />
         </Router>
-        </Layout>
+          </Layout>
+        </SpaceCatalogProvider>
       </LocaleBootstrap>
     </LocationProvider>
   );
