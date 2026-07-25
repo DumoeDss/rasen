@@ -122,6 +122,12 @@ describe('built-in workflow catalog', () => {
       pipelines: [],
       schemas: [],
     });
+    expect(byId.get('ship-command')?.requires).toEqual({
+      workflows: ['retain-command'],
+      skills: [],
+      pipelines: [],
+      schemas: [],
+    });
     expect(byId.get('auto-command')?.requires).toEqual({
       workflows: ['retain-command'],
       skills: ['rasen-review'],

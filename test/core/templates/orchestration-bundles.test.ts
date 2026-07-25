@@ -212,6 +212,26 @@ describe('selective orchestration bundles', () => {
     }
   });
 
+  it('freezes retention before every canonical retain-stage dispatch', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expectOrderedFragments(playbook, [
+        'canonical ID is `retain`',
+        'record it in run-state BEFORE dispatch',
+        'Pass the frozen mode in the dispatch instructions',
+        'The LEAD is the sole run-state writer',
+      ]);
+      expect(playbook).toContain(
+        'This stage-identity rule applies in every pipeline'
+      );
+      expect(playbook).toContain(
+        'ship → retain → archive for code-producing pipelines, or report only for research'
+      );
+    }
+  });
+
   it('states the exact binding-aware handoff order in the canonical playbook', () => {
     expectOrderedFragments(AUTO_ORCHESTRATION_PLAYBOOK, [
       'configured `pipelines.<name>.handoff.<stage>` instance',
@@ -304,7 +324,7 @@ describe('selective orchestration bundles', () => {
 
   it('keeps fully generated SKILL.md files within their UTF-8 byte budgets', () => {
     const cases = [
-      ['auto', getAutoCommandSkillTemplate, 106],
+      ['auto', getAutoCommandSkillTemplate, 107],
       ['goal', getGoalCommandSkillTemplate, 70],
       ['review-cycle', getReviewCycleSkillTemplate, 60],
     ] as const;

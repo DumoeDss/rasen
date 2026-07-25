@@ -19,9 +19,15 @@ import {
   type FrozenKnowledgeContext,
 } from '../learned-skills/index.js';
 
-/** The full-feature retention stage id and the retired legacy retro stage id. */
+/** Canonical retention stage id and the retired full-feature retro stage id. */
 export const RETAIN_STAGE_ID = 'retain';
 const LEGACY_RETRO_STAGE_ID = 'retro';
+const ARCHIVE_STAGE_ID = 'archive';
+const LEGACY_GOAL_PIPELINE_NAMES = new Set([
+  'goal-loop-measure',
+  'goal-loop-evaluate',
+]);
+const LEGACY_GOAL_COMPLETED_REASON = 'legacy-completed';
 
 export const RUN_STATE_FILENAME = 'auto-run.json';
 
@@ -322,6 +328,69 @@ function migrateLegacyRetroStage(
   if (obj.retention === undefined) obj.retention = 'report';
 }
 
+function stageIsComplete(stages: Record<string, unknown>, stageId: string): boolean {
+  const stage = stages[stageId];
+  if (typeof stage !== 'object' || stage === null || Array.isArray(stage)) return false;
+  const status = (stage as Record<string, unknown>).status;
+  return status === 'done' || status === 'skipped';
+}
+
+/**
+ * Preserves completion for pre-retain goal runs that already archived. Runs
+ * still awaiting archive need no mutation: with `ship` done, the upgraded DAG
+ * naturally exposes `retain` as their next frontier. This migration is bounded
+ * to the two changed built-in pipelines and exact stage identities; it never
+ * infers completion from retention configuration or learned-skill state.
+ */
+function migrateLegacyCompletedGoalTail(
+  obj: Record<string, unknown>,
+  stages: Record<string, unknown>
+): void {
+  if (
+    typeof obj.pipeline !== 'string' ||
+    !LEGACY_GOAL_PIPELINE_NAMES.has(obj.pipeline) ||
+    RETAIN_STAGE_ID in stages ||
+    !stageIsComplete(stages, ARCHIVE_STAGE_ID)
+  ) {
+    return;
+  }
+
+  stages[RETAIN_STAGE_ID] = {
+    status: 'skipped',
+    reason: LEGACY_GOAL_COMPLETED_REASON,
+  };
+}
+
+/**
+ * Migrates the older top-level `completed[]` form without losing its existing
+ * frontier. Once archive is complete, materialize equivalent stage records and
+ * the synthetic skipped retain record so `completedStages()` continues to see
+ * the whole run as complete and the legacy-completed reason remains auditable.
+ */
+function migrateLegacyCompletedGoalTailFromCompleted(
+  obj: Record<string, unknown>
+): void {
+  if (
+    typeof obj.pipeline !== 'string' ||
+    !LEGACY_GOAL_PIPELINE_NAMES.has(obj.pipeline) ||
+    !Array.isArray(obj.completed)
+  ) {
+    return;
+  }
+
+  const completed = obj.completed.filter((stageId): stageId is string => typeof stageId === 'string');
+  if (!completed.includes(ARCHIVE_STAGE_ID) || completed.includes(RETAIN_STAGE_ID)) return;
+
+  const stages: Record<string, unknown> = Object.fromEntries(
+    completed.map((stageId) => [stageId, { status: 'done' }])
+  );
+  stages[RETAIN_STAGE_ID] = {
+    status: 'skipped',
+    reason: LEGACY_GOAL_COMPLETED_REASON,
+  };
+  obj.stages = stages;
+}
+
 /** Normalize the raw run-state JSON's per-stage `worker` records before validation. */
 function normalizeRunStateJson(json: unknown): unknown {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return json;
@@ -337,7 +406,10 @@ function normalizeRunStateJson(json: unknown): unknown {
       stages[id] = s;
     }
     migrateLegacyRetroStage(obj, stages);
+    migrateLegacyCompletedGoalTail(obj, stages);
     obj.stages = stages;
+  } else if (obj.stages === undefined) {
+    migrateLegacyCompletedGoalTailFromCompleted(obj);
   }
   return obj;
 }
