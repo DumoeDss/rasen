@@ -4,7 +4,8 @@
  * unified envelope (unify-pipeline-http-api design D6): `config-api/wire-types.ts`
  * re-exports it rather than declaring its own — one shape, one definition.
  */
-import type { RunState, StageStatus } from '../pipeline-registry/run-state.js';
+import type { RunState } from '../pipeline-registry/run-state.js';
+import type { PortfolioChildStatus } from '../pipeline-registry/portfolio-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
 import type {
   PipelineYaml,
@@ -414,7 +415,7 @@ export interface TaskChildDetail {
   /** Sibling dependencies declared in `portfolio-run.json`; empty when none is recorded. */
   dependsOn: string[];
   /** This child's `portfolio-run.json` status, when a run state is recorded. */
-  portfolioStatus?: StageStatus;
+  portfolioStatus?: PortfolioChildStatus;
   /** An active child whose context failed to load (mirrors `/changes`' per-change error degradation). */
   loadError?: string;
 }

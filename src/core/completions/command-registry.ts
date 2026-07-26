@@ -309,6 +309,11 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             description: 'Workflow schema to use',
             takesValue: true,
           },
+          {
+            name: 'pipeline',
+            description: 'Pipeline to initialize run-state for',
+            takesValue: true,
+          },
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,

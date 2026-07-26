@@ -331,6 +331,18 @@ describe('pipeline run-state', () => {
     it('returns [] when neither stages nor completed is present', () => {
       expect(completedStages({ pipeline: 'bug-fix' })).toEqual([]);
     });
+
+    it('treats a parent stage delegated to portfolio children as complete', () => {
+      const state = parseRunState(JSON.stringify({
+        pipeline: 'auto-decompose',
+        stages: {
+          decompose: { status: 'done' },
+          apply: { status: 'delegated', note: 'owned by portfolio children' },
+          ship: { status: 'pending' },
+        },
+      }));
+      expect(completedStages(state).sort()).toEqual(['apply', 'decompose']);
+    });
   });
 
   describe('worker (warm-seed pointer)', () => {
