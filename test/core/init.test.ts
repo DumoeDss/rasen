@@ -126,6 +126,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const skillName of expectedSkillNames) {
@@ -156,6 +157,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const dirName of expectedSkillDirs) {
@@ -190,6 +192,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const skillName of nonCoreSkillNames) {

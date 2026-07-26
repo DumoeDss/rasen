@@ -291,6 +291,10 @@
           "name": "获取帮助",
           "description": "为当前情况找到合适的 Rasen 命令、技能或工作流"
         },
+        "direction": {
+          "name": "治理长期方向",
+          "description": "维护长期方向、选择一个 Roadmap 切片并协调可观测证据"
+        },
         "office-hours-command": {
           "name": "产品咨询",
           "description": "构建前检验产品需求和方向"

@@ -10,6 +10,7 @@
   { "id": "verify", "skillName": "rasen-verify-change", "dirName": "rasen-verify-change", "kind": "task" },
   { "id": "onboard", "skillName": "rasen-onboard", "dirName": "rasen-onboard", "kind": "task" },
   { "id": "help", "skillName": "rasen-help", "dirName": "rasen-help", "kind": "task" },
+  { "id": "direction", "skillName": "rasen-direction", "dirName": "rasen-direction", "kind": "task" },
   { "id": "office-hours-command", "skillName": "rasen-office-hours-command", "dirName": "rasen-office-hours-command", "kind": "task" },
   { "id": "verify-enhanced-command", "skillName": "rasen-verify-enhanced", "dirName": "rasen-verify-enhanced", "kind": "task" },
   { "id": "ship-command", "skillName": "rasen-ship", "dirName": "rasen-ship", "kind": "task" },

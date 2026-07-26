@@ -16,6 +16,7 @@ export { getBulkArchiveChangeSkillTemplate } from './workflows/bulk-archive-chan
 export { getVerifyChangeSkillTemplate } from './workflows/verify-change.js';
 export { getOnboardSkillTemplate } from './workflows/onboard.js';
 export { getHelpSkillTemplate } from './workflows/help.js';
+export { getDirectionSkillTemplate } from './workflows/direction.js';
 export { getOpsxProposeSkillTemplate } from './workflows/propose.js';
 export { getFeedbackSkillTemplate } from './workflows/feedback.js';
 
