@@ -685,11 +685,16 @@ describe('pipeline command', () => {
     });
 
     it('returns the DAG, buildOrder, and full stage fields via --json', async () => {
-      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { CODEX_THREAD_ID: 'command-test-thread' },
+      });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.name).toBe('bug-fix');
+      expect(json.hostRuntime).toBe('codex');
+      expect(json.hostRuntimeSource).toBe('codex-thread-id');
       expect(typeof json.description).toBe('string');
       expect(Array.isArray(json.buildOrder)).toBe(true);
       expect(json.buildOrder[0]).toBe('propose');
@@ -709,6 +714,7 @@ describe('pipeline command', () => {
         'verifyPolicy',
         'runtime',
         'runtimeSource',
+        'dispatchMode',
         'sessionReuse',
         'sandbox',
         'model',
@@ -725,13 +731,150 @@ describe('pipeline command', () => {
         source: 'default',
       });
       expect(stage.id).toBe('propose');
+      expect(stage.runtime).toBe('codex');
+      expect(stage.runtimeSource).toBe('host');
+      expect(stage.dispatchMode).toBe('native');
       expect(stage.skill).toBe('rasen-propose');
       expect(stage.gate).toBe(true);
       // build order length equals stage count
       expect(json.buildOrder.length).toBe(json.stages.length);
     });
 
+    it('labels an unknown host as legacy fallback instead of native', async () => {
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: {
+          RASEN_AGENT_RUNTIME: '',
+          CODEX_THREAD_ID: '',
+          CODEX_SANDBOX: '',
+          CLAUDECODE: '',
+        },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hostRuntime).toBe('unknown');
+      expect(json.hostRuntimeSource).toBe('unknown');
+      expect(json.stages[0]).toMatchObject({
+        runtime: 'claude',
+        runtimeSource: 'legacy-default',
+        dispatchMode: 'legacy-fallback',
+      });
+    });
+
+    it('threads run-local role flags through the final execution preflight and JSON plan', async () => {
+      const home = path.join(testDir, '.run-local-rescue-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'codex-final.yaml'),
+        [
+          'handoff: 0.61',
+          'handoffRoles:',
+          '  planner: 0.62',
+          'reuse: 0.31',
+          'reuseRoles:',
+          '  planner: 0.32',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'codex-final' } } }),
+        'utf-8'
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'run-local-rescue');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: run-local-rescue
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+`,
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        [
+          'schema: spec-driven',
+          'pipelines:',
+          '  run-local-rescue:',
+          '    runtimes:',
+          '      planner: claude',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+      const env = {
+        CODEX_THREAD_ID: 'command-test-thread',
+        RASEN_HOME: home,
+      };
+
+      const unsupported = await runCLI(
+        ['pipeline', 'show', 'run-local-rescue', '--for-execution', '--json'],
+        { cwd: testDir, env }
+      );
+      expect(unsupported.exitCode).toBe(1);
+      expect(unsupported.stderr).toContain('Unsupported runtime route codex -> claude');
+
+      const rescued = await runCLI(
+        [
+          'pipeline',
+          'show',
+          'run-local-rescue',
+          '--for-execution',
+          '--planner',
+          'codex',
+          '--json',
+        ],
+        { cwd: testDir, env }
+      );
+      expect(rescued.exitCode).toBe(0);
+      const json = JSON.parse(rescued.stdout.trim());
+      expect(json.stages[0]).toMatchObject({
+        runtime: 'codex',
+        runtimeSource: 'invocation',
+        dispatchMode: 'native',
+        handoff: {
+          threshold: 0.62,
+          source: 'global-scheme-role',
+          binding: {
+            scope: 'global',
+            row: 'codex',
+            scheme: 'codex-final',
+          },
+        },
+      });
+      expect(json.reuse).toMatchObject({
+        roles: { planner: 0.32 },
+        sources: { roles: { planner: 'global-scheme-role' } },
+        bindings: {
+          roles: {
+            planner: {
+              scope: 'global',
+              row: 'codex',
+              scheme: 'codex-final',
+            },
+          },
+        },
+      });
+    });
+
     it('resolves role-level and stage-level Codex runtime choices via --json', async () => {
+      const home = path.join(testDir, '.stage-runtime-binding-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'stage-codex.yaml'),
+        'handoff: 0.71\nhandoffRoles:\n  reviewer: 0.72\nreuse: 0.25\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'stage-codex' } } }),
+        'utf-8'
+      );
       const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'codex-mix');
       await fs.mkdir(pipelineDir, { recursive: true });
       await fs.writeFile(
@@ -759,7 +902,13 @@ stages:
         'utf-8'
       );
 
-      const result = await runCLI(['pipeline', 'show', 'codex-mix', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'show', 'codex-mix', '--json'], {
+        cwd: testDir,
+        env: {
+          CODEX_THREAD_ID: 'command-test-thread',
+          RASEN_HOME: home,
+        },
+      });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       const propose = json.stages.find((s: any) => s.id === 'propose');
@@ -767,10 +916,21 @@ stages:
 
       expect(propose.runtime).toBe('codex');
       expect(propose.runtimeSource).toBe('agent');
+      expect(propose.dispatchMode).toBe('native');
       expect(propose.sessionReuse).toBe('run-planner');
       expect(propose.sandbox).toBe('workspace-write');
       expect(verify.runtime).toBe('codex');
       expect(verify.runtimeSource).toBe('stage');
+      expect(verify.dispatchMode).toBe('native');
+      expect(verify.handoff).toMatchObject({
+        threshold: 0.72,
+        source: 'global-scheme-role',
+        binding: {
+          scope: 'global',
+          row: 'codex',
+          scheme: 'stage-codex',
+        },
+      });
       expect(verify.sessionReuse).toBe('review-thread');
       expect(verify.sandbox).toBe('read-only');
     });
@@ -1278,16 +1438,29 @@ stages:
       await writeProjectConfig();
       const result = await runCLI(
         ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--reviewer', 'codex', '--json'],
-        { cwd: testDir }
+        { cwd: testDir, env: { RASEN_AGENT_RUNTIME: 'claude' } }
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.name).toBe('small-feature');
       expect(json.configPath).toContain(path.join('rasen', 'config.yaml'));
-      expect(json.effectiveRoles.planner).toEqual({ runtime: 'codex', source: 'config-project' });
-      expect(json.effectiveRoles.reviewer).toEqual({ runtime: 'codex', source: 'config-project' });
-      expect(json.effectiveRoles.implementer).toEqual({ runtime: 'claude', source: 'default' });
+      expect(json.hostRuntime).toBe('claude');
+      expect(json.effectiveRoles.planner).toEqual({
+        runtime: 'codex',
+        source: 'config-project',
+        dispatchMode: 'exec-bridge',
+      });
+      expect(json.effectiveRoles.reviewer).toEqual({
+        runtime: 'codex',
+        source: 'config-project',
+        dispatchMode: 'exec-bridge',
+      });
+      expect(json.effectiveRoles.implementer).toEqual({
+        runtime: 'claude',
+        source: 'host',
+        dispatchMode: 'native',
+      });
 
       // Config instances were written, and NO pipeline definition file was created.
       const configText = await fs.readFile(path.join(testDir, 'rasen', 'config.yaml'), 'utf-8');
@@ -1295,7 +1468,10 @@ stages:
       const overridePath = path.join(testDir, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml');
       await expect(fs.stat(overridePath)).rejects.toBeDefined();
 
-      const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], { cwd: testDir });
+      const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], {
+        cwd: testDir,
+        env: { RASEN_AGENT_RUNTIME: 'claude' },
+      });
       expect(show.exitCode).toBe(0);
       const shown = JSON.parse(show.stdout.trim());
       const propose = shown.stages.find((s: any) => s.id === 'propose');
@@ -1304,10 +1480,12 @@ stages:
 
       expect(propose.runtime).toBe('codex');
       expect(propose.runtimeSource).toBe('stage-override-project');
+      expect(propose.dispatchMode).toBe('exec-bridge');
       expect(verify.runtime).toBe('codex');
       expect(verify.runtimeSource).toBe('stage-override-project');
       expect(apply.runtime).toBe('claude');
-      expect(apply.runtimeSource).toBe('default');
+      expect(apply.runtimeSource).toBe('host');
+      expect(apply.dispatchMode).toBe('native');
     });
 
     it('unsetting the runtime instance reverts the role to its declaration/default', async () => {
@@ -1319,23 +1497,39 @@ stages:
         { cwd: testDir }
       );
       expect(unset.exitCode).toBe(0);
-      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--json'], {
+        cwd: testDir,
+        env: {
+          RASEN_AGENT_RUNTIME: '',
+          CODEX_THREAD_ID: '',
+          CODEX_SANDBOX: '',
+          CLAUDECODE: '',
+        },
+      });
       const json = JSON.parse(result.stdout.trim());
-      expect(json.effectiveRoles.planner).toEqual({ runtime: 'claude', source: 'default' });
+      expect(json.effectiveRoles.planner).toEqual({
+        runtime: 'claude',
+        source: 'legacy-default',
+        dispatchMode: 'legacy-fallback',
+      });
     });
 
     it('prints current effective role runtimes when no updates are passed', async () => {
-      const result = await runCLI(['pipeline', 'agents', 'bug-fix', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'agents', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { CODEX_THREAD_ID: 'command-test-thread' },
+      });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.configPath).toBeNull();
+      expect(json.hostRuntime).toBe('codex');
       expect(json.effectiveRoles).toEqual({
-        planner: { runtime: 'claude', source: 'default' },
-        implementer: { runtime: 'claude', source: 'default' },
-        reviewer: { runtime: 'claude', source: 'default' },
-        fixer: { runtime: 'claude', source: 'default' },
-        shipper: { runtime: 'claude', source: 'default' },
+        planner: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        implementer: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        reviewer: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        fixer: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        shipper: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
       });
     });
 

@@ -42,6 +42,7 @@ import {
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
+  resolvePipelineExecutionPlan,
   resolvePipelineRoleRuntimes,
   resolvePipelineStageOverrides,
   resolveMaskedStageGate,
@@ -60,6 +61,7 @@ import {
   type MaskedGateSource,
   type ResolvedReuseConfig,
   type ResolvedRoleRuntime,
+  type ExecutionStageRuntime,
   type ThresholdValue,
   type ThresholdResolutionContext,
   type RunStateWorker,
@@ -99,6 +101,12 @@ import {
   pipelineMessageError,
   type PipelineMessages,
 } from './pipeline-messages.js';
+import {
+  detectHostRuntime,
+  resolveDispatchRoute,
+  type DetectedHostRuntime,
+  type DispatchMode,
+} from '../core/runtime-adapters.js';
 
 interface PipelineCommandOptions {
   json?: boolean;
@@ -106,15 +114,14 @@ interface PipelineCommandOptions {
   store?: string;
   project?: string;
   storePath?: string;
-}
-
-interface PipelineAgentsOptions extends PipelineCommandOptions {
   planner?: string;
   implementer?: string;
   reviewer?: string;
   fixer?: string;
   shipper?: string;
 }
+
+type PipelineAgentsOptions = PipelineCommandOptions;
 
 const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
 
@@ -142,6 +149,7 @@ interface StageView {
   verifyPolicy: Stage['verifyPolicy'] | null;
   runtime: AgentRuntime;
   runtimeSource: RuntimeSource;
+  dispatchMode: DispatchMode;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
@@ -217,10 +225,16 @@ export class PipelineCommand {
     });
   }
 
-  private executionOptions(options: PipelineCommandOptions): PipelineExecutionOptions {
-    if (options.json) return { reporter: false };
+  private executionOptions(
+    options: PipelineCommandOptions,
+    host: DetectedHostRuntime
+  ): PipelineExecutionOptions {
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
+    if (options.json) return { reporter: false, host, roleRuntimeOverrides };
     return {
       reporter: (notice) => console.warn(formatPipelineExecutionNotice(notice)),
+      host,
+      roleRuntimeOverrides,
     };
   }
 
@@ -253,6 +267,8 @@ export class PipelineCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const host = detectHostRuntime();
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
 
     let pipeline;
     try {
@@ -273,7 +289,7 @@ export class PipelineCommand {
       await validatePipelineForExecution(
         pipeline,
         projectRoot,
-        this.executionOptions(options)
+        this.executionOptions(options, host)
       );
     }
 
@@ -290,7 +306,17 @@ export class PipelineCommand {
       pipeline,
       overrides,
       projectRoot,
-      storeLayer?.storeRoot
+      storeLayer?.storeRoot,
+      host,
+      roleRuntimeOverrides
+    );
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+        roleRuntimeOverrides,
+      }).stages.map((stage) => [stage.id, stage])
     );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
     const stages: StageView[] = pipeline.stages.map((s) =>
@@ -301,7 +327,9 @@ export class PipelineCommand {
         modelLayers,
         overrides,
         basePolicy,
-        thresholdContext
+        thresholdContext,
+        host,
+        executionStages.get(s.id)
       )
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
@@ -311,6 +339,8 @@ export class PipelineCommand {
       name: pipeline.name,
       description: pipeline.description ?? '',
       agents: pipeline.agents ?? {},
+      hostRuntime: host.runtime,
+      hostRuntimeSource: host.source,
       reuse,
       buildOrder,
       stages,
@@ -456,6 +486,7 @@ export class PipelineCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const host = detectHostRuntime();
     const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
 
     const changeDir = path.join(root.changesDir, changeName);
@@ -510,7 +541,7 @@ export class PipelineCommand {
         await validatePipelineForExecution(
           loadPipelineByName(pipelineName, projectRoot),
           projectRoot,
-          this.executionOptions(options)
+          this.executionOptions(options, host)
         );
       }
       const runnable = runnableChildren(portfolio);
@@ -690,7 +721,7 @@ export class PipelineCommand {
     await validatePipelineForExecution(
       preflightPipeline,
       projectRoot,
-      this.executionOptions(options)
+      this.executionOptions(options, host)
     );
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
@@ -893,9 +924,12 @@ export class PipelineCommand {
     name: string;
     configPath: string | null;
     agents: PipelineYaml['agents'];
+    hostRuntime: DetectedHostRuntime['runtime'];
+    hostRuntimeSource: DetectedHostRuntime['source'];
     effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
     stages: StageView[];
   }> {
+    const host = detectHostRuntime();
     const storeLayer = await resolveConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
@@ -904,18 +938,28 @@ export class PipelineCommand {
       pipeline,
       overrides,
       projectRoot,
-      storeLayer?.storeRoot
+      storeLayer?.storeRoot,
+      host
+    );
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+      }).stages.map((stage) => [stage.id, stage])
     );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
 
     // Effective runtime per role: family instance (project > store > global) >
-    // pipeline `agents.<role>.runtime` declaration > default (claude).
-    const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides);
+    // pipeline declaration > detected host > legacy Claude compatibility.
+    const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides, host);
 
     return {
       name,
       configPath,
       agents: pipeline.agents ?? {},
+      hostRuntime: host.runtime,
+      hostRuntimeSource: host.source,
       effectiveRoles,
       stages: pipeline.stages.map((s) =>
         this.toStageView(
@@ -925,7 +969,9 @@ export class PipelineCommand {
           modelLayers,
           overrides,
           basePolicy,
-          thresholdContext
+          thresholdContext,
+          host,
+          executionStages.get(s.id)
         )
       ),
     };
@@ -956,10 +1002,19 @@ export class PipelineCommand {
     modelLayers?: ModelConfigLayers,
     overrides?: PipelineStageOverrides,
     basePolicy?: ResolvedGatePolicy,
-    thresholdContext?: ThresholdResolutionContext
+    thresholdContext?: ThresholdResolutionContext,
+    host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+    executionRuntime?: ExecutionStageRuntime
   ): StageView {
     const stageOverrides = this.stageConfigOverrides(stage, overrides);
-    const runtime = resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides);
+    const runtime = executionRuntime ?? resolveStageRuntimeConfig(
+      stage,
+      pipeline,
+      modelLayers,
+      stageOverrides,
+      { host }
+    );
+    const effectiveStageRuntime = executionRuntime?.runtime ?? runtime.runtime;
     // The mask needs a base policy; without one (no config context) fall back to
     // the built-in "gates on" default so effective equals the declared gate.
     const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
@@ -981,8 +1036,10 @@ export class PipelineCommand {
       condition: stage.condition ?? null,
       leadReview: stage.leadReview,
       verifyPolicy: stage.verifyPolicy ?? null,
-      runtime: runtime.runtime,
-      runtimeSource: runtime.runtimeSource,
+      runtime: effectiveStageRuntime,
+      runtimeSource: executionRuntime?.runtimeSource ?? runtime.runtimeSource,
+      dispatchMode: executionRuntime?.dispatchMode
+        ?? resolveDispatchRoute(host.runtime, effectiveStageRuntime).mode,
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
@@ -994,7 +1051,7 @@ export class PipelineCommand {
         configLayers,
         modelLayers,
         stageOverrides,
-        thresholdContext
+        { ...thresholdContext, host, stageRuntime: effectiveStageRuntime }
       ),
     };
   }
@@ -1003,9 +1060,16 @@ export class PipelineCommand {
     pipeline: PipelineYaml,
     overrides: PipelineStageOverrides,
     projectRoot: string,
-    storeRoot?: string | null
+    storeRoot?: string | null,
+    host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+    roleRuntimeOverrides: Partial<Record<StageRole, AgentRuntime>> = {}
   ): ThresholdResolutionContext {
-    const roleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+    const roleRuntimes = resolvePipelineRoleRuntimes(
+      pipeline,
+      overrides,
+      host,
+      roleRuntimeOverrides
+    );
     const runtimes = Object.fromEntries(
       STAGE_ROLES.map((role) => [role, roleRuntimes[role].runtime])
     ) as Record<StageRole, AgentRuntime>;
@@ -1013,6 +1077,7 @@ export class PipelineCommand {
       bindings: resolveThresholdBindingLayers(projectRoot, storeRoot),
       schemes: loadThresholdSchemeSnapshot(),
       runtimes,
+      host,
     };
   }
 
@@ -1068,6 +1133,8 @@ export class PipelineCommand {
       reuse: ResolvedReuseConfig;
       buildOrder: string[];
       stages: StageView[];
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
       origin?: PipelineYaml['origin'];
     },
     graph: PipelineGraph,
@@ -1077,6 +1144,10 @@ export class PipelineCommand {
     this.printThresholdDiagnostics(result);
     console.log(messages.format('pipelineLabel', { name: result.name }));
     console.log(messages.format('definitionVersionLabel', { version: result.version }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
     const description = source
       ? messages.description(result.name, source, result.description)
       : result.description;
@@ -1130,13 +1201,12 @@ export class PipelineCommand {
       const stageView = result.stages.find((candidate) => candidate.id === id);
       if (stageView) {
         meta.push(
-          stageView.runtimeSource === 'default'
-            ? messages.format('stageMetaRuntime', { runtime: stageView.runtime })
-            : messages.format('stageMetaRuntimeSource', {
-                runtime: stageView.runtime,
-                source: stageView.runtimeSource,
-              })
+          messages.format('stageMetaRuntimeSource', {
+            runtime: stageView.runtime,
+            source: stageView.runtimeSource,
+          })
         );
+        meta.push(messages.format('stageMetaDispatch', { mode: stageView.dispatchMode }));
         if (stageView.sessionReuse) {
           meta.push(messages.format('stageMetaSessionReuse', {
             session: stageView.sessionReuse,
@@ -1189,12 +1259,18 @@ export class PipelineCommand {
     result: {
       name: string;
       configPath: string | null;
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
       effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
       stages: StageView[];
     },
     messages: PipelineMessages
   ): void {
     console.log(messages.format('pipelineLabel', { name: result.name }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
     if (result.configPath) {
       console.log(messages.format('projectOverrideLabel', { path: result.configPath }));
     }
@@ -1204,18 +1280,20 @@ export class PipelineCommand {
       console.log(messages.format('agentRoleLine', {
         role,
         runtime: result.effectiveRoles[role].runtime,
+        source: result.effectiveRoles[role].source,
+        dispatch: result.effectiveRoles[role].dispatchMode,
       }));
     }
     console.log();
     console.log(messages.format('stagesHeading'));
     for (const stage of result.stages) {
       const role = stage.role ?? messages.format('none');
-      const source = stage.runtimeSource === 'default' ? '' : ` (${stage.runtimeSource})`;
       console.log(messages.format('agentStageLine', {
         id: stage.id,
         role,
         runtime: stage.runtime,
-        source,
+        source: stage.runtimeSource,
+        dispatch: stage.dispatchMode,
       }));
     }
   }

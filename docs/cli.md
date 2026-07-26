@@ -1146,7 +1146,7 @@ Inspect, package, install, and remove orchestration pipelines — the outer-loop
 
 ```text
 rasen pipeline list [--json]
-rasen pipeline show <name> [--for-execution] [--json]
+rasen pipeline show <name> [--for-execution] [--planner|--implementer|--reviewer|--fixer|--shipper <runtime>] [--json]
 rasen pipeline agents <name> [--planner|--implementer|--reviewer|--fixer|--shipper <runtime>] [--json]
 rasen pipeline classify <task> [--json]
 rasen pipeline resume <change> [--json]

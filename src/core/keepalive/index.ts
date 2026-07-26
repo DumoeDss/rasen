@@ -20,6 +20,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  detectHostRuntime,
+  type HostRuntime as AgentRuntime,
+} from '../runtime-adapters.js';
 
 /**
  * No-config fuse for the beat duration. This applies ONLY when configuration
@@ -240,7 +244,7 @@ export function resolveRoleCap(_roleKey: string): number {
 // Runtime detection and gate
 // ---------------------------------------------------------------------------
 
-export type AgentRuntime = 'claude' | 'codex' | 'unknown';
+export type { AgentRuntime };
 
 /**
  * Detect the hosting agent runtime from environment fingerprints.
@@ -253,11 +257,7 @@ export type AgentRuntime = 'claude' | 'codex' | 'unknown';
  * which the gate treats as off (fail-safe: no keepalive, current-day cost).
  */
 export function detectAgentRuntime(env: NodeJS.ProcessEnv = process.env): AgentRuntime {
-  const explicit = env.RASEN_AGENT_RUNTIME?.trim().toLowerCase();
-  if (explicit === 'claude' || explicit === 'codex') return explicit;
-  if (env.CODEX_SANDBOX && env.CODEX_SANDBOX.trim() !== '') return 'codex';
-  if (env.CLAUDECODE && env.CLAUDECODE.trim() !== '') return 'claude';
-  return 'unknown';
+  return detectHostRuntime(env).runtime;
 }
 
 export interface KeepaliveConfig {

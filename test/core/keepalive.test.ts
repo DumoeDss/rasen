@@ -151,6 +151,14 @@ describe('runtime detection and gate', () => {
     expect(detectAgentRuntime({ CLAUDECODE: '1', CODEX_SANDBOX: 'seatbelt' })).toBe('codex');
   });
 
+  it('detects unrestricted codex from CODEX_THREAD_ID', () => {
+    expect(detectAgentRuntime({ CODEX_THREAD_ID: 'thread-1' })).toBe('codex');
+  });
+
+  it('CODEX_THREAD_ID wins over an inherited CLAUDECODE', () => {
+    expect(detectAgentRuntime({ CLAUDECODE: '1', CODEX_THREAD_ID: 'thread-1' })).toBe('codex');
+  });
+
   it('explicit RASEN_AGENT_RUNTIME override wins over fingerprints', () => {
     expect(detectAgentRuntime({ CLAUDECODE: '1', RASEN_AGENT_RUNTIME: 'codex' })).toBe('codex');
     expect(detectAgentRuntime({ CODEX_SANDBOX: 'x', RASEN_AGENT_RUNTIME: 'claude' })).toBe('claude');

@@ -191,9 +191,13 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
 
       const propose = bugFix.stages.find((s: any) => s.id === 'propose');
       expect(propose).toMatchObject({ id: 'propose', role: 'planner', skill: 'rasen-propose', gate: true });
-      // Each stage carries effective values with sources (no config → definition/default).
+      // The server has no LEAD host context, so it reports the explicit
+      // unknown-host compatibility provenance instead of claiming native.
       expect(propose.effectiveGate).toEqual({ value: true, source: 'stage' });
-      expect(propose.effectiveRuntime).toEqual({ value: 'claude', source: 'default' });
+      expect(propose.effectiveRuntime).toEqual({
+        value: 'claude',
+        source: 'legacy-default',
+      });
       expect(propose.effectiveModel).toHaveProperty('source');
       expect(propose.effectiveHandoff).toHaveProperty('source');
 
