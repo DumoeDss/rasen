@@ -5,12 +5,13 @@ Define the data-driven pipeline registry — pipeline definitions, dual-root ext
 ## Requirements
 ### Requirement: Data-Driven Pipeline Definitions
 
-The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.yaml`, each an ordered DAG of stages, parsed and validated into typed objects through a loader that mirrors the artifact-graph schema loader.
+The system SHALL define pipelines as content-versioned data files at `pipelines/<name>/pipeline.yaml`, each an ordered DAG of stages, parsed and validated into typed objects through a loader that mirrors the artifact-graph schema loader.
 
 #### Scenario: Pipeline file shape
 
 - **WHEN** a `pipeline.yaml` is loaded
-- **THEN** it SHALL declare a `name`, optional `description`, and a non-empty `stages` array
+- **THEN** its normalized definition SHALL declare `version: 1`, a `name`, optional `description`, and a non-empty `stages` array
+- **AND** a historical file with no `version` SHALL be accepted and normalized to `version: 1`
 - **AND** it MAY declare an `origin` field whose values are `composed` (a pipeline assembled by the autopilot LEAD) or `ui` (a pipeline assembled in the management UI's canvas); absent means human-authored; `rasen pipeline show` SHALL surface the field when present
 - **AND** each stage SHALL declare an `id` and a `skill`, and MAY declare `role`, `requires`, `gate`, `loop`, `parallelGroup`, `condition`, `leadReview`, and `verifyPolicy`
 - **AND** parse or validation failures SHALL raise a typed error identifying the offending file and field
@@ -20,6 +21,43 @@ The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.ya
 - **WHEN** a pipeline declares stages with `requires` edges
 - **THEN** the registry SHALL expose a stage build order via topological sort
 - **AND** SHALL expose, for a set of completed stages, which stages are ready and which are blocked
+
+### Requirement: Pipeline content format v1 is backward-readable and future-safe
+
+Rasen SHALL identify the normalized Pipeline definition content format with the
+top-level integer `version: 1`. Historical unversioned definitions SHALL remain
+readable as v1, while a definition carrying any unsupported explicit version
+SHALL fail closed with an actionable diagnostic naming both the received and
+supported versions. The Pipeline content version SHALL remain distinct from a
+`.rasenpkg` package format version.
+
+#### Scenario: Historical unversioned definition normalizes to v1
+
+- **WHEN** Rasen loads a valid project, user, package, JSON, or YAML Pipeline definition that has no top-level `version`
+- **THEN** the normalized definition is accepted as `version: 1` with the same stage DAG and runtime meaning it had before versioning
+
+#### Scenario: Unknown future version fails closed
+
+- **WHEN** a Pipeline definition explicitly declares a content version other than `1`
+- **THEN** load, validation, save, and export refuse it without modifying installed content
+- **AND** the diagnostic identifies `/version`, the unsupported value, the supported value `1`, and that a newer compatible Rasen version is required
+
+#### Scenario: Canonical outputs expose v1
+
+- **WHEN** Rasen scaffolds, shows, saves, or exports a valid Pipeline definition, including an unversioned legacy definition
+- **THEN** the resulting public definition or packaged `pipeline.yaml` explicitly carries `version: 1`
+- **AND** save/export preserve all other normalized fields and do not rewrite the source file merely because it was read or exported
+
+#### Scenario: Existing flat DAG and loops remain compatibility inputs
+
+- **WHEN** a v1 definition uses the existing flat `requires` DAG and `stage.loop.kind: review-cycle` or `stage.loop.kind: goal`
+- **THEN** it remains readable without user migration and retains its current LEAD-playbook execution meaning
+- **AND** the v1 definition remains a supported source input for a future compiled Composite run plan
+
+#### Scenario: Canvas documentation does not imply a runner
+
+- **WHEN** a user reads the Pipeline and Canvas authoring documentation
+- **THEN** it states that Canvas views and edits definitions, current loop declarations are interpreted by the LEAD orchestration playbook, and Canvas is not a programmatic Pipeline runner
 
 ### Requirement: Pipeline save subcommand installs a definition into the user layer
 
@@ -112,7 +150,7 @@ The `init`, `validate`, `import`, `export`, and `delete` subcommands SHALL mirro
 
 ### Requirement: Pipeline Validation
 
-`rasen validate` SHALL validate pipeline definitions for structural integrity. The optional `origin` field SHALL record provenance: `composed` identifies an autopilot-assembled definition and `ui` identifies a management-UI Canvas definition. Only `origin: composed` SHALL activate the mandatory quality floor.
+`rasen validate` SHALL validate pipeline definitions for structural integrity.
 
 #### Scenario: Structural rules enforced
 
@@ -120,22 +158,11 @@ The `init`, `validate`, `import`, `export`, and `delete` subcommands SHALL mirro
 - **THEN** validation SHALL fail if stage ids are not unique, if any `requires` references a missing stage, if the dependency graph contains a cycle, if a `skill` is not a registered skill, or if a `role` is unknown
 - **AND** `parallelGroup` members SHALL be mutually independent in the DAG
 
-#### Scenario: Composed quality floor enforced
+#### Scenario: Origin-stamped quality floor enforced
 
-- **WHEN** a pipeline declaring `origin: composed` is parsed or validated
-- **THEN** it SHALL fail unless it contains at least one stage with role `reviewer` and at least one stage with `loop.kind: review-cycle`
-- **AND** the failure message SHALL name the pipeline's `composed` origin
-
-#### Scenario: UI origin records provenance without imposing the composed floor
-
-- **WHEN** an otherwise valid pipeline declaring `origin: ui` is parsed or validated without a reviewer-role stage, a review-cycle loop, or both
-- **THEN** it SHALL pass the quality-floor check
-- **AND** its `ui` origin SHALL remain present in the parsed definition
-
-#### Scenario: Origin-free pipelines remain unaffected
-
-- **WHEN** an otherwise valid pipeline has no `origin` field and omits one or both quality-floor stages
-- **THEN** it SHALL pass the quality-floor check and continue through every other validation rule unchanged
+- **WHEN** a pipeline declaring an `origin` (`composed` or `ui`) is parsed or validated
+- **THEN** it SHALL fail unless it contains at least one stage with role `reviewer` and at least one stage with `loop.kind: review-cycle`, with the failure message naming the pipeline's actual origin value
+- **AND** pipelines without an `origin` field SHALL be entirely unaffected by this rule — existing built-in, user, and project pipelines parse and validate unchanged
 
 ### Requirement: Built-In Pipelines
 
