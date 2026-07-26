@@ -152,6 +152,7 @@ describe('rasen bootstrap command surface', () => {
         messages.modeRequired,
         messages.modeRequiredCheck,
         messages.modeRequiredPreview,
+        messages.modeRequiredApply,
       ]);
       // No report, no state, no repair — and no failure either.
       expect(process.exitCode).toBeUndefined();

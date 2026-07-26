@@ -65,6 +65,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen store eject <project-id> --from <store>` | Restore a store-hosted project | `--into <path> --json`; the destination is resolved explicitly, never guessed |
 | `rasen store migrate-membership <store>` | Convert legacy membership data into records | `--apply --json`; previews by default |
 | `rasen bootstrap --check` | See what this machine still needs | `--json` for the whole gap in one report; reports only, writes nothing |
+| `rasen bootstrap --apply` | Register what is already local | `--yes` to skip prompts for project-declared stores; does not obtain from a remote |
 | `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the Rasen root |
 | `rasen workset create [name]` | Compose a personal working view | `--member <path> --json` for non-interactive composition |
 | `rasen workset list` | Browse saved worksets | `--json` for structured views |
@@ -673,25 +674,27 @@ missing store per failed command.
 ```bash
 rasen bootstrap --check   [--json] [--path <selector>=<dir>] [--into <dir>]
 rasen bootstrap --dry-run [--json] [--path <selector>=<dir>] [--into <dir>]
+rasen bootstrap --apply   [--yes] [--json] [--path <selector>=<dir>] [--into <dir>]
 ```
 
-**This command reports; it does not repair.** It obtains nothing, registers
-nothing, and writes nothing — no directory, no registration, no minted
-identity, no declaration — on any path, in either mode. Every repair it prints
-is a command that exists today (`rasen store register`, `rasen store
-add-project`, `rasen store doctor`, `git clone`), and nothing it prints says
-"run bootstrap to fix this". The acting half — obtaining and registering a
-store, registering the current checkout, and writing durable declarations — is
-specified separately and is not part of this command yet. That is also why
-`rasen bootstrap` with no mode flag reports which modes exist and exits rather
-than doing something: the bare invocation is reserved for that later work.
+**`--check` and `--dry-run` report; they do not repair.** They obtain nothing,
+register nothing, and write nothing. **`--apply`** acts on what is already
+local: it registers the current checkout, registers present-unregistered stores
+the user names a location for (consent-gated), prepares the knowledge location,
+and writes the durable store declaration when the project's declaration is in
+the earlier form. It does **not** retrieve from a remote, clone, or run any
+version-control operation — obtaining from a remote is a separate change.
 
-### The two modes are two different promises
+That is also why `rasen bootstrap` with no mode flag reports which modes exist
+and exits rather than doing something.
 
-| | reads local declarations | resolves remotes and target paths | creates directories | runs git | writes registry or declaration |
-|---|---|---|---|---|---|
-| `--check` | yes | **no** | no | no | no |
-| `--dry-run` (preview) | yes | **yes** | no | no | no |
+### The three modes are three different promises
+
+| | reads local declarations | resolves remotes and target paths | registers / writes | runs git |
+|---|---|---|---|---|
+| `--check` | yes | **no** | no | no |
+| `--dry-run` (preview) | yes | **yes** | no | no |
+| `--apply` | yes | no | **yes** (local only) | no |
 
 - **`--check`** contacts **no network at all**. It is the mode to run when you
   do not yet trust the tool with your network: everything it reports comes from
@@ -699,9 +702,15 @@ than doing something: the bare invocation is reserved for that later work.
 - **`--dry-run`** additionally resolves which clone source would be used and
   names **the exact path** each repository would be placed at. It still creates
   no directory and runs no version-control operation.
+- **`--apply`** acts on what is already local. It registers the current
+  checkout, registers each present-unregistered store the user names a location
+  for, prepares the knowledge location, and writes the durable store
+  declaration. It does **not** obtain from a remote. `--yes` skips confirmation
+  for the stores the project itself declares.
 
 They are requested separately, never through one combined "safe mode" option,
-and passing both is rejected before any work happens.
+and passing more than one is rejected before any work happens. `--yes` without
+`--apply` is also rejected — it confirms nothing when no action is requested.
 
 ### Flags
 
@@ -709,6 +718,8 @@ and passing both is rejected before any work happens.
 |---|---|
 | `--check` | Check mode: report from local information only, contacting no network. |
 | `--dry-run` | Preview mode: additionally resolve remotes and the exact location each repository would be placed at. |
+| `--apply` | Apply mode: register the current checkout, register present-unregistered stores, prepare the knowledge location, and write the durable declaration. Nothing is retrieved from a remote. |
+| `--yes` | Skip confirmation prompts for the stores the project declares. Apply mode only; does not cover obtaining from a remote. |
 | `--json` | Emit the report as JSON. Human and JSON carry the same states, the same missing items, and the same repair commands. |
 | `--path <selector>=<dir>` | The location for one store or project. Repeatable. The selector is required because a location belongs to one repository — the store's display name, or its permanent identity when the name is ambiguous here. |
 | `--into <dir>` | A parent directory. Each repository that has no explicit `--path` is previewed at this parent plus a safe name derived from its clone source. |
@@ -862,17 +873,19 @@ A **degraded** result — a store is missing, and the repair is named:
           "repair": [
             {
               "kind": "command",
-              "command": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>"
+              "command": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>",
+              "mutates": true
             },
-            { "kind": "command", "command": "rasen doctor" }
+            { "kind": "command", "command": "rasen doctor", "mutates": false }
           ]
         },
         "repair": [
           {
             "kind": "command",
-            "command": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>"
+            "command": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>",
+            "mutates": true
           },
-          { "kind": "command", "command": "rasen doctor" }
+          { "kind": "command", "command": "rasen doctor", "mutates": false }
         ],
         "location": {
           "kind": "usable",
@@ -913,7 +926,7 @@ A **blocked** result — the declaration itself cannot be understood:
         "reason": "pointer-malformed",
         "repair": [
           { "kind": "manual", "instruction": "Edit /home/dev/acme-api/rasen/config.yaml" },
-          { "kind": "command", "command": "rasen doctor" }
+          { "kind": "command", "command": "rasen doctor", "mutates": false }
         ],
         "diagnostics": [
           {
@@ -927,6 +940,114 @@ A **blocked** result — the declaration itself cannot be understood:
       }
     ],
     "diagnostics": []
+  }
+}
+```
+
+An **apply** result — a store was registered and the declaration upgraded:
+
+```json
+{
+  "ok": true,
+  "report": {
+    "mode": "apply",
+    "origin": "project",
+    "state": "complete",
+    "project": {
+      "root": "/home/dev/acme-api",
+      "projectId": "3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11",
+      "declaresStore": true,
+      "declarationPath": "/home/dev/acme-api/rasen/config.yaml"
+    },
+    "stores": [
+      {
+        "key": "uid:9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+        "sources": ["planning", "hint"],
+        "uid": "9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+        "id": "team-context",
+        "selector": "team-context",
+        "class": "verified",
+        "membership": { "state": "confirmed", "repair": [] },
+        "repair": [],
+        "diagnostics": [],
+        "action": "registered",
+        "alreadyRegistered": false
+      }
+    ],
+    "projects": [],
+    "problems": [],
+    "diagnostics": [],
+    "knowledge": {
+      "root": "/home/dev/.local/share/rasen/project-knowledge/3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11",
+      "catalogDir": "/home/dev/.local/share/rasen/project-knowledge/3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11/learned-skills",
+      "alreadyHydrated": false
+    },
+    "declaration": {
+      "outcome": "written",
+      "path": "/home/dev/acme-api/rasen/config.yaml"
+    }
+  }
+}
+```
+
+A **degraded** apply — one store was registered, another is absent (obtaining is a separate change):
+
+```json
+{
+  "ok": true,
+  "report": {
+    "mode": "apply",
+    "origin": "project",
+    "state": "degraded",
+    "stores": [
+      {
+        "selector": "team-context",
+        "class": "verified",
+        "membership": { "state": "confirmed", "repair": [] },
+        "repair": [],
+        "action": "registered"
+      },
+      {
+        "selector": "design-context",
+        "class": "absent-with-remote",
+        "membership": { "state": "unverifiable-here", "repair": [] },
+        "repair": [
+          {
+            "kind": "command",
+            "command": "git clone git@github.com:acme/design-context.git <path> && rasen store register <path>",
+            "mutates": true
+          }
+        ],
+        "action": "not-acted"
+      }
+    ],
+    "knowledge": { "root": "...", "catalogDir": "...", "alreadyHydrated": false },
+    "declaration": { "outcome": "written", "path": "..." }
+  }
+}
+```
+
+An **idempotent rerun** — nothing was acted on; everything was already in place:
+
+```json
+{
+  "ok": true,
+  "report": {
+    "mode": "apply",
+    "origin": "project",
+    "state": "complete",
+    "stores": [
+      {
+        "selector": "team-context",
+        "class": "verified",
+        "membership": { "state": "confirmed", "repair": [] },
+        "repair": [],
+        "action": "already-registered",
+        "alreadyRegistered": true
+      }
+    ],
+    "knowledge": { "root": "...", "catalogDir": "...", "alreadyHydrated": true },
+    "declaration": { "outcome": "already-durable" }
   }
 }
 ```

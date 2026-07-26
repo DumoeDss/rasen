@@ -34,10 +34,13 @@ vi.mock('node:child_process', async (importOriginal) => {
 import { getGlobalDataDir, registerStore } from '../../../src/core/index.js';
 import {
   appendStoreMembershipHint,
+  readStorePointer,
+  resolveConfigFilePath,
   updateProjectConfigKey,
 } from '../../../src/core/project-config.js';
 import {
   allBootstrapDiagnostics,
+  bootstrapRepairsFrom,
   buildBootstrapReport,
   classifyBootstrapStore,
   computeBootstrapEndState,
@@ -46,10 +49,12 @@ import {
   isMutatingRepair,
   selectBootstrapLocation,
   type BootstrapRemoteResolver,
+  type BootstrapRepair,
   type BootstrapReport,
   type BootstrapStoreEntry,
 } from '../../../src/core/store/bootstrap.js';
 import {
+  getStoreMetadataDir,
   getStoreMetadataPath,
   getStoreRegistryPath,
   readOptionalStoreMetadataState,
@@ -239,6 +244,48 @@ describe('bootstrap classification and end state (pure)', () => {
         ],
       })
     ).toBe('degraded');
+  });
+});
+
+describe('construction-time mutates field', () => {
+  it('defaults consumed command strings to mutates: true (conservative)', () => {
+    // The landed resolver's commands are almost all state-changing. A command
+    // of unknown effect is safer blocked than allowed.
+    const repairs = bootstrapRepairsFrom([
+      'rasen store register /some/path',
+      'rasen doctor',
+      'git clone https://example.test/s.git',
+    ]);
+    for (const repair of repairs) {
+      expect(repair.kind).toBe('command');
+      expect(isMutatingRepair(repair), JSON.stringify(repair)).toBe(true);
+    }
+  });
+
+  it('classifies prose instructions as manual, not command', () => {
+    const repairs = bootstrapRepairsFrom(['Register the checkout that carries…']);
+    expect(repairs).toEqual([{ kind: 'manual', instruction: 'Register the checkout that carries…' }]);
+  });
+
+  it('blocks a mutates:true repair at an unknown arm and passes it at an established arm', () => {
+    // The SAME repair — a register command — is correct against a present-
+    // unregistered Store (presence confirmed) and forbidden against an unknown.
+    const register: BootstrapRepair = {
+      kind: 'command',
+      command: 'rasen store register /path',
+      mutates: true,
+    };
+    const doctor: BootstrapRepair = {
+      kind: 'command',
+      command: 'rasen doctor',
+      mutates: false,
+    };
+
+    // The filter is the same expression the unknown-arm sites use.
+    expect([register, doctor].filter((r) => !isMutatingRepair(r))).toEqual([doctor]);
+    // An established arm does not filter: register is correct there.
+    expect(isMutatingRepair(register)).toBe(true);
+    expect(isMutatingRepair(doctor)).toBe(false);
   });
 });
 
@@ -620,7 +667,7 @@ describe('bootstrap report', () => {
       expect(report.problems.map((problem) => problem.kind)).toEqual(['unreadable-state']);
       expect(report.problems[0]?.path).toBe(registryPath);
       expect(report.problems[0]?.repair).toEqual([
-        { kind: 'command', command: 'rasen doctor' },
+        { kind: 'command', command: 'rasen doctor', mutates: false },
       ]);
       expect(report.problems[0]?.diagnostics.length).toBeGreaterThan(0);
       // A corrupt registry is NOT an empty machine: no Store is claimed to be
@@ -857,7 +904,11 @@ describe('bootstrap report', () => {
       expect(report.state).toBe('degraded');
       expect(entry.membership.state).toBe('not-recorded');
       expect(entry.membership.repair).toEqual([
-        { kind: 'command', command: `rasen store add-project ${project} --to team-store` },
+        {
+          kind: 'command',
+          command: `rasen store add-project ${project} --to team-store`,
+          mutates: true,
+        },
       ]);
     });
 
@@ -1464,5 +1515,378 @@ describe('bootstrap runs no version-control operation', () => {
     // And the guard itself is live: the files exist and are in the source set.
     const known = new Set(sourceFiles(repoRoot));
     for (const file of files) expect(known.has(file), file).toBe(true);
+  });
+});
+
+describe('bootstrap apply mode', () => {
+  let tempDir: string;
+  let globalDataDir: string;
+  let savedXdg: string | undefined;
+  let savedRasenHome: string | undefined;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-apply-'));
+    savedXdg = process.env.XDG_DATA_HOME;
+    savedRasenHome = process.env.RASEN_HOME;
+    delete process.env.RASEN_HOME;
+    process.env.XDG_DATA_HOME = path.join(tempDir, 'data');
+    globalDataDir = getGlobalDataDir({ env: process.env });
+  });
+
+  afterEach(() => {
+    if (savedXdg === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = savedXdg;
+    if (savedRasenHome === undefined) delete process.env.RASEN_HOME;
+    else process.env.RASEN_HOME = savedRasenHome;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function makeProject(name: string, projectId = PROJECT_ID): string {
+    const root = path.join(tempDir, name);
+    createOpenSpecRoot(root);
+    updateProjectConfigKey(root, 'projectId', projectId);
+    return root;
+  }
+
+  async function makeStoreCheckout(
+    name: string,
+    options: { register?: boolean; id?: string; remote?: string } = {}
+  ): Promise<{ root: string; uid: string; id: string }> {
+    const id = options.id ?? name;
+    const root = path.join(tempDir, name);
+    createOpenSpecRoot(root);
+    const uid = mintStoreUid();
+    await writeStoreMetadataState(root, {
+      version: 2,
+      uid,
+      id,
+      ...(options.remote !== undefined ? { remote: options.remote } : {}),
+    });
+    if (options.register ?? true) {
+      await registerStore({
+        id,
+        localPath: root,
+        globalDataDir,
+        ...(options.remote !== undefined ? { remote: options.remote } : {}),
+      });
+    }
+    return { root, uid, id };
+  }
+
+  async function record(storeRoot: string, projectId: string): Promise<void> {
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId,
+      roles: { planning: true, knowledge: true },
+    });
+  }
+
+  const blanketConsent = { blanket: true };
+
+  it('registers the current checkout during apply', async () => {
+    const project = makeProject('project');
+
+    await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+
+    // The project registry now holds this checkout. A second run sees it as
+    // already registered (idempotent — path-exact match updates in place).
+    const report2 = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+    expect(report2.state).not.toBe('blocked');
+  });
+
+  it('registers a present-unregistered Store and marks it registered', async () => {
+    const store = await makeStoreCheckout('team-store', { register: false });
+    const project = makeProject('project');
+    // A planning declaration makes this a project-declared Store, so blanket
+    // consent covers its registration without asking.
+    updateProjectConfigKey(project, 'store', store.id);
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+    await record(store.root, PROJECT_ID);
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['team-store', store.root]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'team-store');
+    expect(entry.action).toBe('registered');
+    expect(entry.class).toBe('verified');
+    expect(entry.alreadyRegistered).toBe(false);
+  });
+
+  it('marks an already-registered Store as already-registered', async () => {
+    const store = await makeStoreCheckout('team-store', { register: true });
+    const project = makeProject('project');
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+    await record(store.root, PROJECT_ID);
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'team-store');
+    expect(entry.action).toBe('already-registered');
+    expect(entry.alreadyRegistered).toBe(true);
+  });
+
+  it('re-verifies membership after a Store becomes available through registration', async () => {
+    const store = await makeStoreCheckout('team-store', { register: false });
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', store.id);
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+    await record(store.root, PROJECT_ID);
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['team-store', store.root]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'team-store');
+    // Before registration, the Store was unavailable → unverifiable-here.
+    // After registration, its records are readable → confirmed.
+    expect(entry.membership.state).toBe('confirmed');
+  });
+
+  it('prepares the knowledge location as empty base directories', async () => {
+    const project = makeProject('project');
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+
+    expect(report.knowledge).toBeDefined();
+    const knowledge = report.knowledge!;
+    expect(fs.existsSync(knowledge.root)).toBe(true);
+    expect(fs.existsSync(knowledge.catalogDir)).toBe(true);
+    // The root contains only the catalog directory; no content is invented.
+    expect(fs.readdirSync(knowledge.root)).toEqual([path.basename(knowledge.catalogDir)]);
+    expect(fs.readdirSync(knowledge.catalogDir)).toEqual([]);
+    expect(knowledge.alreadyHydrated).toBe(false);
+  });
+
+  it('marks already_hydrated when the knowledge directories already exist', async () => {
+    const project = makeProject('project');
+
+    // First run creates the directories.
+    const report1 = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+    expect(report1.knowledge!.alreadyHydrated).toBe(false);
+
+    // Second run finds them already present.
+    const report2 = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+    expect(report2.knowledge!.alreadyHydrated).toBe(true);
+  });
+
+  it('writes the durable declaration as the object form (uid + id), not a bare string', async () => {
+    // THE critical test: assert what LANDS IN THE FILE, not the message.
+    const store = await makeStoreCheckout('team-store', { register: false });
+    const project = makeProject('project');
+    // Alias-form declaration: a bare display name.
+    updateProjectConfigKey(project, 'store', 'team-store');
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['team-store', store.root]]),
+      consent: blanketConsent,
+    });
+
+    expect(report.declaration).toBeDefined();
+    expect(report.declaration!.outcome).toBe('written');
+
+    // Read the file back. The store: key must be the durable object form
+    // carrying BOTH uid and id — never a bare string.
+    const pointer = readStorePointer(project);
+    expect(pointer.shape).toBe('durable');
+    expect(pointer.durable?.uid).toBe(store.uid);
+    expect(pointer.durable?.id).toBe('team-store');
+  });
+
+  it('does not crash when the planning Store is absent (declaration stays not-triggered)', async () => {
+    // The nameless-Store guard is defensive: the metadata schema currently
+    // requires `id`, and an alias-form declaration always carries a display
+    // name. The guard fires only if a future change or hand-edited file
+    // produces a nameless Store. Here we verify the declaration outcome is
+    // `not-triggered` when no planning Store is available — the safe default.
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', 'absent-store');
+    // No hint, no path — the Store is absent and no planning Store resolves.
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+
+    expect(report.declaration).toBeDefined();
+    expect(report.declaration!.outcome).toBe('not-triggered');
+  });
+
+  it('is idempotent — a second run writes nothing meaningful (run-twice-then-diff)', async () => {
+    const store = await makeStoreCheckout('team-store', { register: false });
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', 'team-store');
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+    await record(store.root, PROJECT_ID);
+
+    const input = {
+      cwd: project,
+      mode: 'apply' as const,
+      globalDataDir,
+      paths: new Map([['team-store', store.root]]),
+      consent: blanketConsent,
+    };
+
+    // First run.
+    const report1 = await buildBootstrapReport(input);
+
+    // Snapshot what matters: the declaration, the knowledge dirs, and the
+    // store registry (count + paths). `registerProject` is documented to
+    // update `lastSeen` in place on every call (design D8: "updates in
+    // place"), so the project registry's timestamp is expected to change —
+    // that is not a meaningful write.
+    const declBefore = fs.readFileSync(path.join(project, 'rasen', 'config.yaml'), 'utf-8');
+    const knowledgeRoot = report1.knowledge!.root;
+    const knowledgeBefore = snapshot(knowledgeRoot);
+    const storeRegBefore = fs.readFileSync(getStoreRegistryPath({ globalDataDir }), 'utf-8');
+
+    // Second run.
+    const report2 = await buildBootstrapReport(input);
+
+    // The declaration was not rewritten.
+    const declAfter = fs.readFileSync(path.join(project, 'rasen', 'config.yaml'), 'utf-8');
+    expect(declAfter, 'declaration changed on rerun').toBe(declBefore);
+
+    // The knowledge dirs gained no content.
+    const knowledgeAfter = snapshot(knowledgeRoot);
+    expect(knowledgeAfter).toEqual(knowledgeBefore);
+
+    // The store registry did not gain a duplicate entry.
+    const storeRegAfter = fs.readFileSync(getStoreRegistryPath({ globalDataDir }), 'utf-8');
+    expect(storeRegAfter, 'store registry changed on rerun').toBe(storeRegBefore);
+
+    // The JSON carries the already-in-place markers.
+    for (const entry of report2.stores) {
+      if (entry.action !== undefined) {
+        expect(entry.action === 'already-registered' || entry.action === 'not-acted').toBe(true);
+      }
+    }
+    expect(report2.knowledge!.alreadyHydrated).toBe(true);
+    expect(report2.declaration!.outcome).toBe('already-durable');
+  });
+
+  it('reports drift and does not correct the declaration automatically', async () => {
+    const store = await makeStoreCheckout('team-store', { register: false, id: 'renamed-store' });
+    const project = makeProject('project');
+    // Durable form with a STALE name — the Store's metadata now carries a
+    // different name than what the declaration records.
+    const configPath = resolveConfigFilePath(project);
+    expect(configPath).not.toBeNull();
+    const { writeDurablePointer } = await import('../../../src/core/store/upgrade-identity.js');
+    await writeDurablePointer(configPath!, { uid: store.uid, id: 'old-name' });
+    await appendStoreMembershipHint(project, { uid: store.uid, id: 'renamed-store' });
+
+    const beforeContent = fs.readFileSync(configPath!, 'utf-8');
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['renamed-store', store.root]]),
+      consent: blanketConsent,
+    });
+
+    // The declaration was NOT changed — drift reported, not corrected.
+    const afterContent = fs.readFileSync(configPath!, 'utf-8');
+    expect(afterContent).toBe(beforeContent);
+    expect(report.declaration!.outcome).toBe('already-durable');
+    // A drift diagnostic was emitted.
+    const driftDiag = report.diagnostics.find((d) => d.code === 'bootstrap_declaration_drift');
+    expect(driftDiag).toBeDefined();
+  });
+
+  it('does not register a non-declared Store under blanket consent without asking', async () => {
+    const store = await makeStoreCheckout('extra-store', { register: false });
+    const project = makeProject('project');
+    // A membership HINT makes the Store expected, but it is NOT declared by
+    // the project (no `store:` planning declaration). Under blanket consent,
+    // only planning-declared Stores are covered — this one must still ask.
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+    let asked = false;
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['extra-store', store.root]]),
+      consent: {
+        blanket: true,
+        confirm: async () => {
+          asked = true;
+          return false;
+        },
+      },
+    });
+
+    // The Store is present-unregistered but NOT declared by the project, so
+    // blanket consent does not cover it — confirm was called.
+    expect(asked).toBe(true);
+    const entry = entryFor(report, 'extra-store');
+    expect(entry.action).toBe('declined');
+  });
+
+  it('reports an apply with absent Stores as degraded, not complete', async () => {
+    const project = makeProject('project');
+    await appendStoreMembershipHint(project, {
+      uid: ABSENT_UID,
+      id: 'absent-store',
+      remote: 'https://example.test/team/team-store.git',
+    });
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: blanketConsent,
+    });
+
+    // Absent Stores are not obtained (that is E3). The end state is degraded.
+    expect(report.state).toBe('degraded');
+    const entry = entryFor(report, 'absent-store');
+    expect(entry.action).toBe('not-acted');
+    expect(entry.class).toBe('absent-with-remote');
   });
 });

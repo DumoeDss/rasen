@@ -561,6 +561,16 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description:
           'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
       },
+      {
+        name: 'apply',
+        description:
+          'Apply mode: register the current checkout, register present-unregistered Stores, prepare the knowledge location, and write the durable declaration',
+      },
+      {
+        name: 'yes',
+        description:
+          'Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain from a remote)',
+      },
       COMMON_FLAGS.json,
       {
         name: 'path',

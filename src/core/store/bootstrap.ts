@@ -41,6 +41,8 @@ import {
   storePointerProblem,
   type StorePointerRead,
 } from '../project-config.js';
+import { resolveProjectKnowledgeHome } from '../project-knowledge-home.js';
+import { registerProject } from '../project-registry.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import { StoreError, type StoreDiagnostic } from './errors.js';
 import {
@@ -64,6 +66,7 @@ import {
 import { storeProjectRecordMissing, storeUidMismatch } from './identity-diagnostics.js';
 import { storeUidsMatch, type ResolvedStoreRef } from './identity-types.js';
 import { inspectRegisteredStore } from './inspection.js';
+import { registerExistingStore } from './operations.js';
 import {
   listProjectStoreCandidates,
   listStoreMembers,
@@ -79,16 +82,21 @@ import {
   WINDOWS_RESERVED_DEVICE_NAMES,
 } from './project-records.js';
 import { redactOptionalRemote } from './remote.js';
+import { writeDurablePointer } from './upgrade-identity.js';
 
 // -----------------------------------------------------------------------------
 // Report shape
 // -----------------------------------------------------------------------------
 
 /**
- * The two read-only modes, kept as two values rather than one "safe" flag:
- * they are different promises and each carries its own assertion.
+ * The three modes. `check` and `preview` are read-only — two different promises,
+ * each with its own assertion. `apply` acts on what is already local: it
+ * registers the current checkout, registers present-unregistered Stores the
+ * user names a location for, prepares the knowledge location, and writes the
+ * durable declaration when the trigger fires. Nothing is retrieved, cloned, or
+ * version-controlled, in any mode.
  */
-export type BootstrapMode = 'check' | 'preview';
+export type BootstrapMode = 'check' | 'preview' | 'apply';
 
 /** The one state a report ends in. */
 export type BootstrapEndState = 'complete' | 'degraded' | 'blocked';
@@ -118,9 +126,16 @@ export type BootstrapStoreSource = 'planning' | 'hint' | 'record';
  * repair the resolver has no reason to produce, because only bootstrap knows a
  * location was never supplied. Prose for the non-command arms is rendered by
  * the command layer — this module emits facts, never English sentences.
+ *
+ * `mutates` is declared at the CONSTRUCTION SITE, not inferred from a prefix
+ * list: a state-changing command cannot be added without stating that it
+ * writes, because TypeScript makes the omission a compile error. The field
+ * governs BOTH command channels — `repair[]` and any command surfaced from a
+ * `diagnostic.fix` — so the "no mutating repair on an unknown" rule is total
+ * rather than list-maintained (design D3).
  */
 export type BootstrapRepair =
-  | { kind: 'command'; command: string }
+  | { kind: 'command'; command: string; mutates: boolean }
   | { kind: 'manual'; instruction: string }
   | { kind: 'supply-path' };
 
@@ -171,6 +186,22 @@ export type BootstrapLocation =
     }
   | { kind: 'required'; because: BootstrapLocationDemand };
 
+/**
+ * What bootstrap did for a Store during apply. Additive — check and preview
+ * leave `action` unset. JSON distinguishes "did nothing because it was already
+ * right" (`already-registered`) from "did nothing because it failed" (no entry
+ * at all, or a diagnostic).
+ */
+export type BootstrapStoreAction =
+  /** Bootstrap registered it this run. */
+  | 'registered'
+  /** It was already in the registry before this run; bootstrap wrote nothing. */
+  | 'already-registered'
+  /** The user declined consent for a registration bootstrap would have done. */
+  | 'declined'
+  /** Not a registration target — verified, absent, or unresolvable. */
+  | 'not-acted';
+
 export interface BootstrapStoreEntry {
   /** The identity key the candidate listing de-duplicates on. */
   key: string;
@@ -191,6 +222,10 @@ export interface BootstrapStoreEntry {
   /** Preview mode only: where this Store would be placed. */
   location?: BootstrapLocation;
   diagnostics: StoreDiagnostic[];
+  /** Apply mode only: what bootstrap did for this Store. */
+  action?: BootstrapStoreAction;
+  /** Apply mode only: the Store was already registered before this run. */
+  alreadyRegistered?: boolean;
 }
 
 /**
@@ -258,6 +293,25 @@ export interface BootstrapStoreContext {
   registered: boolean;
 }
 
+/** Knowledge location preparation result (apply mode only). */
+export interface BootstrapKnowledgePreparation {
+  root: string;
+  catalogDir: string;
+  /** True when the directories already existed and were empty before this run. */
+  alreadyHydrated: boolean;
+}
+
+/** Durable declaration outcome (apply mode only). */
+export interface BootstrapDeclarationResult {
+  outcome:
+    | 'written'
+    | 'already-durable'
+    | 'nameless-store'
+    | 'not-triggered';
+  /** The config file path written, when a write occurred. */
+  path?: string;
+}
+
 export interface BootstrapReport {
   mode: BootstrapMode;
   origin: BootstrapOrigin;
@@ -272,6 +326,10 @@ export interface BootstrapReport {
   projects: BootstrapProjectEntry[];
   problems: BootstrapProblem[];
   diagnostics: StoreDiagnostic[];
+  /** Apply mode only: knowledge location preparation. */
+  knowledge?: BootstrapKnowledgePreparation;
+  /** Apply mode only: durable declaration outcome. */
+  declaration?: BootstrapDeclarationResult;
 }
 
 // -----------------------------------------------------------------------------
@@ -283,6 +341,13 @@ export interface BootstrapReport {
  * begins with a program name is pasteable; the resolver also produces prose
  * instructions ("Register the checkout that carries…"), and calling one of
  * those a command would be the exact defect this change exists to avoid.
+ *
+ * Every command consumed here defaults to `mutates: true` — the conservative
+ * read, because the landed resolver's commands are almost all state-changing
+ * (register, upgrade-identity, clone). The safe direction is "block unless
+ * proven read-only," not "allow unless proven mutating." Bootstrap's OWN
+ * repairs, constructed at sites that know what they do, set `mutates` to the
+ * value the site knows.
  */
 export function bootstrapRepairsFrom(repair: readonly string[]): BootstrapRepair[] {
   return repair
@@ -290,7 +355,7 @@ export function bootstrapRepairsFrom(repair: readonly string[]): BootstrapRepair
     .filter((entry) => entry.length > 0)
     .map((entry) =>
       /^(?:rasen|git)\s/u.test(entry)
-        ? ({ kind: 'command', command: entry } as const)
+        ? ({ kind: 'command', command: entry, mutates: true } as const)
         : ({ kind: 'manual', instruction: entry } as const)
     );
 }
@@ -318,7 +383,11 @@ function disambiguateRepairs(
   if (id === undefined || id === selector) return [...repairs];
   return repairs.map((repair) =>
     repair.kind === 'command'
-      ? { kind: 'command', command: withUnambiguousSelector(repair.command, id, selector) }
+      ? {
+          kind: 'command',
+          command: withUnambiguousSelector(repair.command, id, selector),
+          mutates: repair.mutates,
+        }
       : repair
   );
 }
@@ -626,29 +695,20 @@ export interface BootstrapMembershipInput {
 }
 
 /**
- * The commands checked at this module's unknown-arm filter sites.
+ * True when this repair carries a state-changing command. Reads the
+ * construction-time `mutates` field rather than a prefix list, so the rule is
+ * total: a command repair cannot exist without stating whether it writes, and
+ * the filter at the unknown arms sees exactly what the construction site knew.
  *
- * NOT an inventory of every state-changing command this change prints: it also
- * prints `rasen store register <path>` and `git clone … && rasen store register
- * …`, neither of which is listed. Those are only ever emitted against an
- * ESTABLISHED answer (a Store found on disk, a Store resolved absent), so they
- * never reach a filter site — but a reader must not take this list for a
- * complete one.
- *
- * The rule this enforces is "no state-changing repair on an unknown". A
- * follow-up recorded in design.md D6 replaces prefix-matching with mutation
- * declared where a repair is CONSTRUCTED, which is what would make the rule
- * total rather than list-maintained.
- */
-export const BOOTSTRAP_MUTATING_COMMANDS: readonly string[] = ['rasen store add-project'];
-
-/**
- * True when this repair is one of the commands guarded at the unknown arms.
- * Prefix-matched, so it is exactly as complete as the list above.
+ * The rule this enforces is "no state-changing repair on an unknown" — a
+ * mutating repair may only be offered against an answer that was established.
+ * The filter blocks at the unknown arms only (unverifiable membership,
+ * unreadable locations); it passes the same repair through at established arms
+ * (present-unregistered, absent-with-remote), because the answer it acts on
+ * was verified.
  */
 export function isMutatingRepair(repair: BootstrapRepair): boolean {
-  if (repair.kind !== 'command') return false;
-  return BOOTSTRAP_MUTATING_COMMANDS.some((prefix) => repair.command.startsWith(prefix));
+  return repair.kind === 'command' && repair.mutates;
 }
 
 /**
@@ -742,12 +802,17 @@ function diagnosticsFor(failure: unknown): StoreDiagnostic[] {
  * The blocking problem an unreadable piece of machine state becomes. `rasen
  * doctor` is the repair because it is the surface that reports and repairs
  * machine-local state, and it is a command that exists today.
+ *
+ * Constructed directly (not through `bootstrapRepairsFrom`) because this is
+ * bootstrap's OWN repair at a site that knows what `rasen doctor` does: it is
+ * a diagnostic command, not a registration or declaration write, so `mutates`
+ * is `false`.
  */
 function unreadableState(path: string, failure: unknown): BootstrapProblem {
   return {
     kind: 'unreadable-state',
     path,
-    repair: bootstrapRepairsFrom(['rasen doctor']),
+    repair: [{ kind: 'command', command: 'rasen doctor', mutates: false }],
     diagnostics: diagnosticsFor(failure),
   };
 }
@@ -850,6 +915,32 @@ async function probeStoreAtLocation(
 /** A location supplied for one named target, keyed by its selector. */
 export type SuppliedLocations = ReadonlyMap<string, string>;
 
+/**
+ * A structured consent request. The core module emits facts (what action, which
+ * target, where); the command layer formats them into a localized prompt.
+ */
+export interface BootstrapConsentRequest {
+  readonly action: 'register-store' | 'upgrade-declaration';
+  readonly selector: string;
+  readonly path: string;
+}
+
+/**
+ * Consent state for apply mode. Interactive (ask per action) by default;
+ * blanket (`--yes`) confirms the Stores the project itself declares without
+ * asking. A Store NOT declared by the project is never covered by blanket
+ * consent and always asks.
+ */
+export interface BootstrapConsent {
+  /** True when `--yes` was passed (blanket confirmation for project-declared Stores). */
+  blanket: boolean;
+  /**
+   * Ask the user for confirmation. Called for non-declared Stores under `--yes`,
+   * and for every Store in interactive mode. Returns true to proceed.
+   */
+  confirm?: (request: BootstrapConsentRequest) => Promise<boolean>;
+}
+
 export interface BootstrapInput extends StorePathOptions {
   /** The directory bootstrap was invoked from. */
   cwd: string;
@@ -863,6 +954,8 @@ export interface BootstrapInput extends StorePathOptions {
    * throws — so a future edit cannot quietly make check mode reach out.
    */
   remotes?: BootstrapRemoteResolver;
+  /** Apply mode only: consent configuration. */
+  consent?: BootstrapConsent;
 }
 
 /** Every value a supplied location may be keyed by, in match order. */
@@ -925,6 +1018,275 @@ function expectedFromCandidate(candidate: ProjectStoreCandidate): ExpectedStore 
     ...(candidate.membership !== undefined ? { record: candidate.membership } : {}),
     diagnostics: candidate.diagnostics,
   };
+}
+
+// -----------------------------------------------------------------------------
+// Apply path: acting on what is already local (design D5)
+// -----------------------------------------------------------------------------
+
+/**
+ * Whether a consent-gated action may proceed. Blanket confirmation covers the
+ * Stores the project itself declares; a non-declared Store always asks.
+ * Returns false when there is no way to ask (the `confirm` callback is absent).
+ */
+async function confirmAction(
+  request: BootstrapConsentRequest,
+  declaredByProject: boolean,
+  consent: BootstrapConsent | undefined
+): Promise<boolean> {
+  if (declaredByProject && consent?.blanket) return true;
+  if (consent?.confirm) return consent.confirm(request);
+  return false;
+}
+
+/**
+ * The durable-declaration trigger (design D7). Bootstrap writes when the
+ * project has a declaration that COULD be more durable — not when it has none at
+ * all (that is `rasen init`'s contract).
+ *
+ * Returns the outcome, the path written (if any), and any drift noticed. Drift
+ * is reported and NEVER corrected automatically.
+ */
+async function maybeUpgradeDeclaration(
+  pointer: StorePointerRead,
+  stores: readonly BootstrapStoreEntry[],
+  consent: BootstrapConsent | undefined,
+  diagnostics: StoreDiagnostic[]
+): Promise<BootstrapDeclarationResult> {
+  if (pointer.filePath === null) return { outcome: 'not-triggered' };
+
+  // The planning Store, once it has resolved. Only Stores the project declared
+  // (sources include 'planning') are candidates for a declaration upgrade.
+  const planningStore = stores.find(
+    (entry) => entry.sources.includes('planning') && entry.uid !== undefined
+  );
+
+  if (pointer.shape === 'alias') {
+    // The declaration is a bare display name. If the planning Store has
+    // resolved with a permanent identity AND a display name, bootstrap can
+    // upgrade it to the durable object form.
+    if (planningStore === undefined || planningStore.uid === undefined) {
+      return { outcome: 'not-triggered' };
+    }
+
+    // The display name for the durable declaration comes from the Store's own
+    // metadata (read during resolution), not from the alias string. A Store
+    // whose metadata carries no display name would produce a uid-only
+    // declaration that silently fails in session launch — report the
+    // limitation instead. This guard is defensive: the metadata schema
+    // currently requires `id`, but a future change or a hand-edited file
+    // could produce a nameless Store, and bootstrap must not manufacture an
+    // instance of the bug it exists to prevent.
+    if (
+      planningStore.id === undefined ||
+      planningStore.id.trim().length === 0
+    ) {
+      return { outcome: 'nameless-store' };
+    }
+
+    const request: BootstrapConsentRequest = {
+      action: 'upgrade-declaration',
+      selector: planningStore.selector,
+      path: pointer.filePath,
+    };
+    // The upgrade is implied by the project's own existing (alias-form)
+    // declaration, so blanket consent covers it.
+    const confirmed = await confirmAction(request, true, consent);
+    if (!confirmed) return { outcome: 'not-triggered' };
+
+    try {
+      await writeDurablePointer(pointer.filePath, {
+        uid: planningStore.uid,
+        id: planningStore.id,
+        ...(planningStore.remote !== undefined ? { remote: planningStore.remote } : {}),
+      });
+      return { outcome: 'written', path: pointer.filePath };
+    } catch (failure) {
+      diagnostics.push(...diagnosticsFor(failure));
+      return { outcome: 'not-triggered' };
+    }
+  }
+
+  if (pointer.shape === 'durable') {
+    // The declaration is already in the durable form. Check for drift: a
+    // display name or remote that no longer matches the Store's own metadata.
+    if (
+      pointer.durable !== undefined &&
+      planningStore !== undefined &&
+      planningStore.id !== undefined
+    ) {
+      const declaredName = pointer.durable.id;
+      if (declaredName !== undefined && declaredName !== planningStore.id) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'bootstrap_declaration_drift',
+          message: `The durable declaration records the name '${declaredName}' but the Store's metadata carries '${planningStore.id}'. Run 'rasen store upgrade-identity' to refresh it.`,
+          target: 'store.pointer.id',
+        });
+      }
+    }
+    return { outcome: 'already-durable' };
+  }
+
+  return { outcome: 'not-triggered' };
+}
+
+interface ApplyProjectFirstResult {
+  knowledge?: BootstrapKnowledgePreparation;
+  declaration?: BootstrapDeclarationResult;
+}
+
+/**
+ * The project-first apply path (design D5). Acts on what is already local:
+ * registers the current checkout, registers each present-unregistered Store
+ * the user named a location for, re-verifies membership for newly-available
+ * Stores, prepares the knowledge location, and writes the durable declaration
+ * when the trigger fires.
+ *
+ * Each step is individually idempotent, so an interruption at any point leaves a
+ * state a rerun resumes from. A failed step is reported and does not abort the
+ * whole run — the remaining steps still execute.
+ */
+async function applyProjectFirstActions(
+  input: BootstrapInput,
+  stores: BootstrapStoreEntry[],
+  context: {
+    projectRoot: string;
+    projectId?: string;
+    pointer: StorePointerRead;
+    options: StorePathOptions;
+    diagnostics: StoreDiagnostic[];
+  }
+): Promise<ApplyProjectFirstResult> {
+  const { projectRoot, projectId, pointer, options, diagnostics } = context;
+  const consent = input.consent;
+
+  // Step 2: Register the current project checkout. Always performed in apply
+  // mode — no separate consent (invoking apply IS the consent for the
+  // project's own checkout). Idempotent: a path-exact match updates in place.
+  if (projectId !== undefined) {
+    try {
+      await registerProject({ projectRoot, projectId, mode: 'in-repo' }, options);
+    } catch (failure) {
+      // Reported, not thrown — the remaining steps still execute.
+      diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
+  // Step 3: Register each present-unregistered Store the user named a location
+  // for. Consent-gated: without `--yes`, each asks; with `--yes`, the Stores
+  // the project declares are confirmed without asking.
+  const newlyRegistered: BootstrapStoreEntry[] = [];
+  for (const entry of stores) {
+    if (entry.class === 'verified') {
+      entry.action = 'already-registered';
+      entry.alreadyRegistered = true;
+      continue;
+    }
+    if (entry.class !== 'present-unregistered' || entry.root === undefined) {
+      entry.action = 'not-acted';
+      continue;
+    }
+
+    const declaredByProject = entry.sources.includes('planning');
+    const request: BootstrapConsentRequest = {
+      action: 'register-store',
+      selector: entry.selector,
+      path: entry.root,
+    };
+    const confirmed = await confirmAction(request, declaredByProject, consent);
+    if (!confirmed) {
+      entry.action = 'declined';
+      continue;
+    }
+
+    try {
+      await registerExistingStore({ path: entry.root });
+      entry.action = 'registered';
+      entry.alreadyRegistered = false;
+      // The Store is now registered — its class moves to verified, and no
+      // repair is needed.
+      entry.class = 'verified';
+      entry.repair = [];
+      newlyRegistered.push(entry);
+    } catch (failure) {
+      // The path no longer holds the expected Store, or the registry is
+      // locked. Report the failure and continue.
+      entry.action = 'not-acted';
+      entry.diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
+  // Step 4: Re-verify membership for newly-available Stores. The Store's records
+  // are now readable, so the answer moves from unverifiable-here to confirmed or
+  // not-recorded. It is NEVER left as unverifiable when the Store is now
+  // available — that would freeze a stale unknown over an answer bootstrap just
+  // established.
+  for (const entry of newlyRegistered) {
+    if (projectId === undefined || entry.root === undefined) continue;
+    const store: ResolvedStoreRef = {
+      type: 'store',
+      id: entry.id ?? entry.selector,
+      root: entry.root,
+      ...(entry.uid !== undefined ? { uid: entry.uid } : {}),
+    };
+    try {
+      const unreadable = await readUnreadableRecord(store, projectId);
+      if (unreadable) {
+        // The Store's records STILL fail to parse after registration — the
+        // unknown is real, not stale. Membership stays unverifiable-here.
+        entry.diagnostics.push(...unreadable.diagnostics);
+      } else {
+        const record = await resolveProjectMembership(store, projectId, options);
+        entry.membership =
+          record !== null
+          ? { state: 'confirmed', repair: [] }
+          : resolveBootstrapMembership({
+              store,
+              projectId,
+              projectRoot,
+              selector: entry.selector,
+              ...(entry.id !== undefined ? { id: entry.id } : {}),
+            });
+      }
+    } catch (failure) {
+      // Membership re-verification failed after registration. The end-state
+      // computation will degrade rather than claim complete, but the user
+      // deserves to know WHY membership stayed unverifiable — push the
+      // diagnostic so the failure mode is reported, matching every other
+      // composed reader in the apply path.
+      diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
+  // Step 5: Prepare the knowledge location as empty base directories. Invent
+  // no content (no placeholder files, no README, no default catalog entries).
+  // The portable bundle import is a SEPARATE step (F4) — bootstrap does not
+  // perform it.
+  let knowledge: BootstrapKnowledgePreparation | undefined;
+  if (projectId !== undefined) {
+    try {
+      const home = resolveProjectKnowledgeHome(projectId, options);
+      const rootExisted = fs.existsSync(home.root);
+      const catalogExisted = fs.existsSync(home.catalogDir);
+      fs.mkdirSync(home.root, { recursive: true });
+      fs.mkdirSync(home.catalogDir, { recursive: true });
+      knowledge = {
+        root: home.root,
+        catalogDir: home.catalogDir,
+        alreadyHydrated: rootExisted && catalogExisted,
+      };
+    } catch (failure) {
+      // Knowledge preparation failed; not blocking — the rest of the report
+      // is still useful.
+      diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
+  // Step 6: Write the durable declaration when the trigger fires.
+  const declaration = await maybeUpgradeDeclaration(pointer, stores, consent, diagnostics);
+
+  return { knowledge, declaration };
 }
 
 async function buildProjectReport(input: BootstrapInput): Promise<BootstrapReport> {
@@ -1038,6 +1400,25 @@ async function buildProjectReport(input: BootstrapInput): Promise<BootstrapRepor
   }
   stores.sort((left, right) => left.selector.localeCompare(right.selector));
 
+  // Apply mode: act on what is already local. The read-and-classify path above
+  // is unchanged — the apply path consumes its results. Each step is
+  // individually idempotent, so an interruption leaves a state a rerun resumes
+  // from. The end state is computed AFTER acting, so it reflects the
+  // post-acting facts.
+  let knowledge: BootstrapKnowledgePreparation | undefined;
+  let declaration: BootstrapDeclarationResult | undefined;
+  if (input.mode === 'apply') {
+    const result = await applyProjectFirstActions(input, stores, {
+      projectRoot,
+      ...(projectId !== undefined ? { projectId } : {}),
+      pointer,
+      options,
+      diagnostics,
+    });
+    knowledge = result.knowledge;
+    declaration = result.declaration;
+  }
+
   const state = computeBootstrapEndState({
     stores,
     projects: [],
@@ -1059,6 +1440,8 @@ async function buildProjectReport(input: BootstrapInput): Promise<BootstrapRepor
     projects: [],
     problems,
     diagnostics,
+    ...(knowledge !== undefined ? { knowledge } : {}),
+    ...(declaration !== undefined ? { declaration } : {}),
   };
 }
 
@@ -1390,7 +1773,9 @@ function buildStoreRepairs(context: {
   // A Store found on this disk has ONE repair, and it names the path rather
   // than a selector — registering it is what makes the selector work.
   if (classification === 'present-unregistered' && presentAt !== null) {
-    return [{ kind: 'command', command: `rasen store register ${pasteablePath(presentAt)}` }];
+    return [
+      { kind: 'command', command: `rasen store register ${pasteablePath(presentAt)}`, mutates: true },
+    ];
   }
 
   // The named location holds something whose identity will not parse. The
@@ -1411,7 +1796,11 @@ function buildStoreRepairs(context: {
     resolution.kind === 'unavailable' ? bootstrapRepairsFrom(resolution.repair) : []
   ).map((repair) =>
     repair.kind === 'command'
-      ? ({ kind: 'command', command: withKnownLocation(repair.command, location) } as const)
+      ? ({
+          kind: 'command',
+          command: withKnownLocation(repair.command, location),
+          mutates: repair.mutates,
+        } as const)
       : repair
   );
 
@@ -1483,7 +1872,10 @@ async function buildStoreFirstReport(
       problems.push({
         kind: 'store-identity-mismatch',
         path: canonicalRoot,
-        repair: bootstrapRepairsFrom([`rasen store doctor ${registered.id}`, 'rasen doctor']),
+        repair: [
+          { kind: 'command', command: `rasen store doctor ${registered.id}`, mutates: false },
+          { kind: 'command', command: 'rasen doctor', mutates: false },
+        ],
         diagnostics: [
           storeUidMismatch({
             expected: registered.uid ?? registered.id,

@@ -19,11 +19,14 @@ import type { Command } from 'commander';
 
 import {
   buildBootstrapReport,
+  type BootstrapConsent,
+  type BootstrapConsentRequest,
   type BootstrapMode,
   type BootstrapProblem,
   type BootstrapProjectEntry,
   type BootstrapReport,
   type BootstrapRepair,
+  type BootstrapStoreAction,
   type BootstrapStoreEntry,
 } from '../core/store/bootstrap.js';
 import type { StoreDiagnostic } from '../core/store/errors.js';
@@ -37,13 +40,15 @@ import { printJson } from './shared-output.js';
 export interface BootstrapCommandOptions {
   check?: boolean;
   dryRun?: boolean;
+  apply?: boolean;
+  yes?: boolean;
   json?: boolean;
   path?: string[];
   into?: string;
 }
 
 /** The modes this command offers, named once for the bare invocation. */
-export const BOOTSTRAP_MODES: readonly BootstrapMode[] = ['check', 'preview'];
+export const BOOTSTRAP_MODES: readonly BootstrapMode[] = ['check', 'preview', 'apply'];
 
 class BootstrapUsageError extends Error {
   constructor(
@@ -80,20 +85,37 @@ export function parseSuppliedPaths(
 }
 
 /**
- * The mode, or null for the bare invocation. Both flags together is rejected
- * here — before any work — because they are two different promises and a run
- * that made both would keep neither.
+ * The mode, or null for the bare invocation. Two modes together is rejected
+ * here — before any work — because they are different promises and a run that
+ * made both would keep neither. `--yes` without `--apply` is rejected too: it
+ * confirms nothing when no action is requested.
  */
 export function resolveMode(
   options: BootstrapCommandOptions,
   messages: BootstrapMessages
 ): BootstrapMode | null {
-  if (options.check && options.dryRun) {
+  const active = [options.check, options.dryRun, options.apply].filter(Boolean);
+  if (active.length > 1) {
     throw new BootstrapUsageError(messages.modeConflict, 'bootstrap_mode_conflict');
   }
   if (options.check) return 'check';
   if (options.dryRun) return 'preview';
+  if (options.apply) return 'apply';
   return null;
+}
+
+/**
+ * Validates that `--yes` is only used with `--apply`. Called after mode
+ * resolution so the error fires before any work.
+ */
+function validateYesOption(
+  options: BootstrapCommandOptions,
+  mode: BootstrapMode | null,
+  messages: BootstrapMessages
+): void {
+  if (options.yes && mode !== 'apply') {
+    throw new BootstrapUsageError(messages.yesRequiresApply, 'bootstrap_yes_requires_apply');
+  }
 }
 
 function repairText(repair: BootstrapRepair, selector: string, messages: BootstrapMessages): string {
@@ -180,6 +202,9 @@ function renderStore(
   messages: BootstrapMessages
 ): void {
   lines.push(messages.storeRow(entry.selector, messages.storeClass(entry.class)));
+  if (entry.action !== undefined && entry.action !== 'not-acted') {
+    lines.push(messages.actionLine(messages.action(entry.action)));
+  }
   if (entry.reason !== undefined) {
     lines.push(messages.reasonLine(messages.reason(entry.reason)));
   }
@@ -217,6 +242,42 @@ function renderProblem(
   renderRepairs(lines, problem.repair, '', messages);
 }
 
+function renderKnowledge(
+  lines: string[],
+  knowledge: NonNullable<BootstrapReport['knowledge']>,
+  messages: BootstrapMessages
+): void {
+  lines.push(messages.knowledgeHeading);
+  lines.push(
+    knowledge.alreadyHydrated
+      ? messages.knowledgeAlreadyHydrated(knowledge.root)
+      : messages.knowledgePrepared(knowledge.root)
+  );
+  // The portable bundle import is a named step the user can see, but bootstrap
+  // does not perform it (F4's territory).
+  lines.push(messages.knowledgeBundleStep);
+}
+
+function renderDeclaration(
+  lines: string[],
+  declaration: NonNullable<BootstrapReport['declaration']>,
+  messages: BootstrapMessages
+): void {
+  if (declaration.outcome === 'not-triggered') return;
+  lines.push(messages.declarationHeading);
+  switch (declaration.outcome) {
+    case 'written':
+      lines.push(messages.declarationWritten(declaration.path ?? ''));
+      break;
+    case 'already-durable':
+      lines.push(messages.declarationAlreadyDurable);
+      break;
+    case 'nameless-store':
+      lines.push(messages.declarationNamelessStore);
+      break;
+  }
+}
+
 export function renderBootstrapReport(
   report: BootstrapReport,
   messages: BootstrapMessages
@@ -246,6 +307,14 @@ export function renderBootstrapReport(
     for (const entry of report.projects) renderProject(lines, entry, messages);
   }
 
+  if (report.knowledge !== undefined) {
+    renderKnowledge(lines, report.knowledge, messages);
+  }
+
+  if (report.declaration !== undefined) {
+    renderDeclaration(lines, report.declaration, messages);
+  }
+
   renderDiagnostics(lines, report.diagnostics, messages);
 
   if (report.state === 'complete') {
@@ -266,6 +335,25 @@ function reportModes(options: BootstrapCommandOptions, messages: BootstrapMessag
   console.log(messages.modeRequired);
   console.log(messages.modeRequiredCheck);
   console.log(messages.modeRequiredPreview);
+  console.log(messages.modeRequiredApply);
+}
+
+/**
+ * Interactive consent for apply mode. Uses `@inquirer/prompts` (dynamic import,
+ * same as every other interactive command in this repo) to ask the user before
+ * each registration the project's own declarations do not already cover.
+ */
+function createConsentCallback(
+  messages: BootstrapMessages
+): (request: BootstrapConsentRequest) => Promise<boolean> {
+  return async (request) => {
+    const { confirm } = await import('@inquirer/prompts');
+    const message =
+      request.action === 'register-store'
+        ? messages.confirmRegisterStore(request.selector, request.path)
+        : messages.confirmUpgradeDeclaration(request.path);
+    return confirm({ message, default: true });
+  };
 }
 
 export async function runBootstrapCommand(
@@ -278,6 +366,7 @@ export async function runBootstrapCommand(
   let paths: Map<string, string>;
   try {
     mode = resolveMode(options, messages);
+    validateYesOption(options, mode, messages);
     paths = parseSuppliedPaths(options.path, messages);
   } catch (error) {
     const usage = error as BootstrapUsageError;
@@ -295,6 +384,17 @@ export async function runBootstrapCommand(
     return;
   }
 
+  // Apply mode: build the consent configuration. Blanket (`--yes`) confirms
+  // the Stores the project itself declares without asking; interactive asks
+  // for each registration through an inquirer prompt.
+  const consent: BootstrapConsent | undefined =
+    mode === 'apply'
+      ? {
+          blanket: options.yes === true,
+          ...(options.yes ? {} : { confirm: createConsentCallback(messages) }),
+        }
+      : undefined;
+
   // The report itself already turns unreadable machine state into a `blocked`
   // result, so reaching this catch means something genuinely unforeseen. It
   // still must not surface as a raw rejection: Commander does not await an
@@ -308,6 +408,7 @@ export async function runBootstrapCommand(
       mode,
       ...(paths.size > 0 ? { paths } : {}),
       ...(options.into !== undefined ? { into: options.into } : {}),
+      ...(consent !== undefined ? { consent } : {}),
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -336,6 +437,8 @@ export function registerBootstrapCommand(program: Command): void {
     .description(BOOTSTRAP_DESCRIPTIONS.command)
     .option('--check', BOOTSTRAP_DESCRIPTIONS.check)
     .option('--dry-run', BOOTSTRAP_DESCRIPTIONS.dryRun)
+    .option('--apply', BOOTSTRAP_DESCRIPTIONS.apply)
+    .option('--yes', BOOTSTRAP_DESCRIPTIONS.yes)
     .option('--json', BOOTSTRAP_DESCRIPTIONS.json)
     .option(
       '--path <selector=dir>',

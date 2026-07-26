@@ -7,6 +7,7 @@ import type {
   BootstrapMode,
   BootstrapProblemKind,
   BootstrapProjectPresence,
+  BootstrapStoreAction,
   BootstrapStoreClass,
 } from '../core/store/bootstrap.js';
 import type { StoreUnavailableReason } from '../core/store/identity.js';
@@ -27,6 +28,7 @@ export const BOOTSTRAP_MESSAGE_KEYS = [
   'headingStore',
   'modeCheck',
   'modePreview',
+  'modeApply',
   'stateLine',
   'stateComplete',
   'stateDegraded',
@@ -34,7 +36,9 @@ export const BOOTSTRAP_MESSAGE_KEYS = [
   'modeRequired',
   'modeRequiredCheck',
   'modeRequiredPreview',
+  'modeRequiredApply',
   'modeConflict',
+  'yesRequiresApply',
   'pathFormat',
   'reportsOnly',
   'nothingMissing',
@@ -76,6 +80,21 @@ export const BOOTSTRAP_MESSAGE_KEYS = [
   'problemUnreadableState',
   'detailLine',
   'reportFailed',
+  'confirmRegisterStore',
+  'confirmUpgradeDeclaration',
+  'actionLine',
+  'actionRegistered',
+  'actionAlreadyRegistered',
+  'actionDeclined',
+  'actionNotActed',
+  'knowledgeHeading',
+  'knowledgePrepared',
+  'knowledgeAlreadyHydrated',
+  'knowledgeBundleStep',
+  'declarationHeading',
+  'declarationWritten',
+  'declarationAlreadyDurable',
+  'declarationNamelessStore',
 ] as const;
 
 export type BootstrapMessageKey = (typeof BOOTSTRAP_MESSAGE_KEYS)[number];
@@ -94,6 +113,8 @@ export const BOOTSTRAP_DESCRIPTIONS = {
   command: 'Report what this machine still needs before this project works',
   check: 'Check mode: report from local information only, contacting no network',
   dryRun: 'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
+  apply: 'Apply mode: register the current checkout, register present-unregistered Stores, prepare the knowledge location, and write the durable declaration',
+  yes: 'Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain from a remote)',
   json: 'Output as JSON',
   path: 'Location for one store or project, as <selector>=<dir>; repeatable',
   into: 'Parent directory a derived name would be placed under',
@@ -108,7 +129,9 @@ export interface BootstrapMessages {
   modeRequired: string;
   modeRequiredCheck: string;
   modeRequiredPreview: string;
+  modeRequiredApply: string;
   modeConflict: string;
+  yesRequiresApply: string;
   pathFormat: (value: string) => string;
   reportsOnly: string;
   nothingMissing: string;
@@ -135,6 +158,18 @@ export interface BootstrapMessages {
   problem: (kind: BootstrapProblemKind, path: string) => string;
   detailLine: (detail: string) => string;
   reportFailed: (detail: string) => string;
+  confirmRegisterStore: (selector: string, path: string) => string;
+  confirmUpgradeDeclaration: (path: string) => string;
+  actionLine: (action: string) => string;
+  action: (action: BootstrapStoreAction) => string;
+  knowledgeHeading: string;
+  knowledgePrepared: (root: string) => string;
+  knowledgeAlreadyHydrated: (root: string) => string;
+  knowledgeBundleStep: string;
+  declarationHeading: string;
+  declarationWritten: (path: string) => string;
+  declarationAlreadyDurable: string;
+  declarationNamelessStore: string;
 }
 
 export function getBootstrapMessages(locale: CliLocale = getCliLocale()): BootstrapMessages {
@@ -147,7 +182,11 @@ export function getBootstrapMessages(locale: CliLocale = getCliLocale()): Bootst
   return {
     headingProject: (path, mode) => format(raw.headingProject, { path, mode }),
     headingStore: (store, path, mode) => format(raw.headingStore, { store, path, mode }),
-    mode: (mode) => (mode === 'check' ? raw.modeCheck : raw.modePreview),
+    mode: (mode) => {
+      if (mode === 'check') return raw.modeCheck;
+      if (mode === 'preview') return raw.modePreview;
+      return raw.modeApply;
+    },
     stateLine: (state) => format(raw.stateLine, { state }),
     state: (state) => {
       if (state === 'complete') return raw.stateComplete;
@@ -156,7 +195,9 @@ export function getBootstrapMessages(locale: CliLocale = getCliLocale()): Bootst
     modeRequired: raw.modeRequired,
     modeRequiredCheck: raw.modeRequiredCheck,
     modeRequiredPreview: raw.modeRequiredPreview,
+    modeRequiredApply: raw.modeRequiredApply,
     modeConflict: raw.modeConflict,
+    yesRequiresApply: raw.yesRequiresApply,
     pathFormat: (value) => format(raw.pathFormat, { value }),
     reportsOnly: raw.reportsOnly,
     nothingMissing: raw.nothingMissing,
@@ -235,6 +276,31 @@ export function getBootstrapMessages(locale: CliLocale = getCliLocale()): Bootst
     },
     detailLine: (detail) => format(raw.detailLine, { detail }),
     reportFailed: (detail) => format(raw.reportFailed, { detail }),
+    confirmRegisterStore: (selector, storePath) =>
+      format(raw.confirmRegisterStore, { selector, path: storePath }),
+    confirmUpgradeDeclaration: (configPath) =>
+      format(raw.confirmUpgradeDeclaration, { path: configPath }),
+    actionLine: (action) => format(raw.actionLine, { action }),
+    action: (value) => {
+      switch (value) {
+        case 'registered':
+          return raw.actionRegistered;
+        case 'already-registered':
+          return raw.actionAlreadyRegistered;
+        case 'declined':
+          return raw.actionDeclined;
+        case 'not-acted':
+          return raw.actionNotActed;
+      }
+    },
+    knowledgeHeading: raw.knowledgeHeading,
+    knowledgePrepared: (root) => format(raw.knowledgePrepared, { root }),
+    knowledgeAlreadyHydrated: (root) => format(raw.knowledgeAlreadyHydrated, { root }),
+    knowledgeBundleStep: raw.knowledgeBundleStep,
+    declarationHeading: raw.declarationHeading,
+    declarationWritten: (configPath) => format(raw.declarationWritten, { path: configPath }),
+    declarationAlreadyDurable: raw.declarationAlreadyDurable,
+    declarationNamelessStore: raw.declarationNamelessStore,
   };
 }
 
