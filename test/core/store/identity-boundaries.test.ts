@@ -70,6 +70,13 @@ const PHASE_A_FILES = [
   'src/core/learned-skills/context.ts',
   'src/core/learned-skills/stores.ts',
   'src/core/learned-skills/authority.ts',
+  // learned-knowledge-effective-resolution: effective resolution reaches every
+  // eligible Store through child B's provider and the pointer through
+  // `resolveStoreBinding`, and the ownership-record migration ENUMERATES the
+  // registry precisely so an ambiguous display name blocks instead of being
+  // resolved to one of its namesakes.
+  'src/core/learned-skills/effective.ts',
+  'src/core/project-learned-skill-ledger.ts',
   'src/core/agent-context.ts',
   'src/commands/doctor.ts',
   'src/commands/store.ts',

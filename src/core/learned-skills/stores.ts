@@ -2,8 +2,14 @@
  * Canonical catalog resolution — where each scope's knowledge actually lives.
  *
  *   global   <global data dir>/learned-skills/<id>/
- *   project  <project machine home>/learned-skills/<id>/
+ *   project  <global data dir>/project-knowledge/<projectId>/learned-skills/<id>/
  *   store    <store repo>/rasen/learned-skills/<id>/
+ *
+ * A project's catalog is keyed on the project's IDENTITY, not on the clone the
+ * command ran in. Two clones and any number of linked worktrees therefore share
+ * one catalog, and `rasen knowledge migrate` moves an existing per-clone
+ * catalog there. The checkout still decides where applicability is evaluated
+ * and where generated files land — three roots, kept apart (plan §15.6).
  *
  * Project and global knowledge stays out of the repository (design D3): an
  * in-repo fallback would dirty the worktree after shipping. A Store's catalog
@@ -24,6 +30,11 @@ import * as path from 'node:path';
 
 import { getGlobalDataDir } from '../global-config.js';
 import { resolveProjectHome } from '../project-home.js';
+import {
+  ProjectKnowledgeHomeError,
+  resolveProjectKnowledgeHome,
+  type ProjectKnowledgeHome,
+} from '../project-knowledge-home.js';
 import {
   describeUnavailableStore,
   resolveStoreBinding,
@@ -48,7 +59,11 @@ export interface ResolvedStore {
   dir: string;
   /** The durable owner every record in this catalog is keyed on. */
   owner: DurableKnowledgeOwnerRef;
-  /** Canonical persistence root (global data dir, machine home, or Store repo). */
+  /**
+   * The canonical OWNER root — where this owner's knowledge lives. For a
+   * project that is the identity-keyed knowledge home, never the checkout the
+   * command ran in and never that clone's machine home.
+   */
   root: string;
   /** Present only for the Store scope: the repository the user must commit in. */
   storeRoot?: string;
@@ -103,9 +118,15 @@ export function resolveGlobalStore(context: LearnedSkillContext = {}): ResolvedS
 }
 
 /**
- * The project learned-skill catalog in the registered project's machine home.
+ * The project learned-skill catalog in the project's CANONICAL knowledge home,
+ * keyed on the project's identity.
+ *
  * There is no in-repository fallback: an unregistered project (no `projectId`
  * or no registry entry) yields an actionable `rasen init` diagnostic instead.
+ * The machine home is still consulted — it is what proves this checkout is a
+ * registered project and which identity it carries — but the catalog no longer
+ * lives inside it, because a machine home is per CLONE and a project's
+ * knowledge is per PROJECT.
  */
 export async function resolveProjectStore(
   context: LearnedSkillContext
@@ -164,12 +185,26 @@ export async function resolveProjectStore(
     };
   }
   const owner: DurableKnowledgeOwnerRef = { type: 'project', projectId: home.projectId };
+  let knowledgeHome: ProjectKnowledgeHome;
+  try {
+    knowledgeHome = resolveProjectKnowledgeHome(home.projectId, pathOptions(context));
+  } catch (error) {
+    if (error instanceof ProjectKnowledgeHomeError) {
+      return {
+        ok: false,
+        code: 'unregistered_project',
+        message: error.message,
+        repair: [...error.repair],
+      };
+    }
+    throw error;
+  }
   return {
     ok: true,
     store: {
-      dir: FileSystemUtils.joinPath(home.homeDir, LEARNED_SKILLS_DIR_NAME),
+      dir: knowledgeHome.catalogDir,
       owner,
-      root: home.homeDir,
+      root: knowledgeHome.root,
       projectId: home.projectId,
       lockPath: lockPathFor(context, owner),
     },

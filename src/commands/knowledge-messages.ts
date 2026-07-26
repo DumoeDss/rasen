@@ -64,6 +64,28 @@ export interface KnowledgeMessages {
   retireRequiresConfirmation: string;
   retireCancelled: string;
   cancelled: string;
+  effectiveDescription: string;
+  migrateDescription: string;
+  dryRunDescription: string;
+  effectiveHeading: (project: string, status: string) => string;
+  effectiveRoots: (canonical: string, evaluation: string) => string;
+  effectiveEmpty: string;
+  effectiveRow: (id: string, scope: string, sources: string) => string;
+  effectiveStoreRow: (store: string, status: string, relevance: string) => string;
+  effectiveConflict: (id: string, kind: string, sources: string) => string;
+  effectiveUnavailable: (store: string, detail: string) => string;
+  migrateCatalogHeading: string;
+  migrateCatalogNothing: string;
+  migrateCatalogPlan: (moves: number, target: string) => string;
+  migrateCatalogApplied: (moved: number, target: string, deduplicated: number) => string;
+  migrateCatalogConflict: (id: string, locations: string) => string;
+  migrateCatalogFailed: (id: string, reason: string) => string;
+  migrateLedgerHeading: string;
+  migrateLedgerNothing: string;
+  migrateLedgerPlan: (entries: number) => string;
+  migrateLedgerApplied: (entries: number) => string;
+  migrateLedgerBlocked: (reason: string) => string;
+  migrateDryRunNotice: string;
 }
 
 export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): KnowledgeMessages {
@@ -132,5 +154,31 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     retireRequiresConfirmation: raw.retireRequiresConfirmation,
     retireCancelled: raw.retireCancelled,
     cancelled: raw.cancelled,
+    effectiveDescription: raw.effectiveDescription,
+    migrateDescription: raw.migrateDescription,
+    dryRunDescription: raw.dryRunDescription,
+    effectiveHeading: (project, status) => format(raw.effectiveHeading, { project, status }),
+    effectiveRoots: (canonical, evaluation) =>
+      format(raw.effectiveRoots, { canonical, evaluation }),
+    effectiveEmpty: raw.effectiveEmpty,
+    effectiveRow: (id, scope, sources) => format(raw.effectiveRow, { id, scope, sources }),
+    effectiveStoreRow: (store, status, relevance) =>
+      format(raw.effectiveStoreRow, { store, status, relevance }),
+    effectiveConflict: (id, kind, sources) => format(raw.effectiveConflict, { id, kind, sources }),
+    effectiveUnavailable: (store, detail) => format(raw.effectiveUnavailable, { store, detail }),
+    migrateCatalogHeading: raw.migrateCatalogHeading,
+    migrateCatalogNothing: raw.migrateCatalogNothing,
+    migrateCatalogPlan: (moves, target) => format(raw.migrateCatalogPlan, { moves, target }),
+    migrateCatalogApplied: (moved, target, deduplicated) =>
+      format(raw.migrateCatalogApplied, { moved, target, deduplicated }),
+    migrateCatalogConflict: (id, locations) =>
+      format(raw.migrateCatalogConflict, { id, locations }),
+    migrateCatalogFailed: (id, reason) => format(raw.migrateCatalogFailed, { id, reason }),
+    migrateLedgerHeading: raw.migrateLedgerHeading,
+    migrateLedgerNothing: raw.migrateLedgerNothing,
+    migrateLedgerPlan: (entries) => format(raw.migrateLedgerPlan, { entries }),
+    migrateLedgerApplied: (entries) => format(raw.migrateLedgerApplied, { entries }),
+    migrateLedgerBlocked: (reason) => format(raw.migrateLedgerBlocked, { reason }),
+    migrateDryRunNotice: raw.migrateDryRunNotice,
   };
 }

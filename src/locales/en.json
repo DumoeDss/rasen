@@ -56,7 +56,42 @@
     "retireConfirm": "Retire {scope} learned skill \"{id}\"?",
     "retireRequiresConfirmation": "Retirement requires confirmation. Pass --yes to retire non-interactively.",
     "retireCancelled": "Retirement cancelled.",
-    "cancelled": "Cancelled."
+    "cancelled": "Cancelled.",
+    "effectiveDescription": "Show what this project actually receives: the resolved set, its sources by permanent identity, conflicts, and degraded states",
+    "migrateDescription": "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
+    "dryRunDescription": "Preview only: report what would change and write nothing",
+    "effectiveHeading": "Effective learned knowledge for project {project} ({status})",
+    "effectiveRoots": "Stored in {canonical}; applicability evaluated in {evaluation}",
+    "effectiveEmpty": "No learned knowledge applies to this checkout.",
+    "effectiveRow": "{id} — {scope} (sources: {sources})",
+    "effectiveStoreRow": "{store}: {status}{relevance}",
+    "effectiveConflict": "Conflict on \"{id}\" ({kind}): {sources}. No winner was chosen.",
+    "effectiveUnavailable": "Store {store} could not be reached: {detail} Its knowledge is temporarily unknown and no cleanup was performed.",
+    "migrateCatalogHeading": "Project knowledge home",
+    "migrateCatalogNothing": "Nothing to move: this project already keeps its knowledge in one place.",
+    "migrateCatalogPlan": "Would move {moves} record(s) into {target}.",
+    "migrateCatalogApplied": "Moved {moved} record(s) into {target}; removed {deduplicated} identical duplicate(s).",
+    "migrateCatalogConflict": "Conflict on \"{id}\": {locations} disagree. Nothing was chosen, moved, or deleted.",
+    "migrateCatalogFailed": "Could not verify \"{id}\" at its canonical location ({reason}); every original was left untouched.",
+    "migrateLedgerHeading": "Ownership records",
+    "migrateLedgerNothing": "Nothing to re-key: ownership records already name their sources by permanent identity.",
+    "migrateLedgerPlan": "Would re-key {entries} ownership record(s) onto permanent identity.",
+    "migrateLedgerApplied": "Re-keyed {entries} ownership record(s) onto permanent identity.",
+    "migrateLedgerBlocked": "Ownership records were left exactly as they are: {reason} No recorded source was dropped.",
+    "migrateDryRunNotice": "Preview only — nothing was created, moved, or deleted."
+  },
+  "learnedMaterialization": {
+    "summary": "Learned skills — {details}",
+    "noOp": "Learned skills: already reconciled; nothing to write.",
+    "identityMigrated": "Learned skills: {count} record(s) were rewritten because the content-identity scheme changed. This is a migration, not an edit — the knowledge itself is unchanged.",
+    "deduplicated": "Learned skills: {count} record(s) resolved to one winner from several byte-identical Store copies; every contributing Store is recorded.",
+    "conflict": "Learned skill \"{id}\" has a {kind} conflict between {sources}; no winner was chosen.",
+    "repairConflict": "Next: align the Store records exactly, rename one learned skill, or retire the revision that does not apply.",
+    "unavailableStore": "Store {id} could not be reached: {detail} Its knowledge is treated as temporarily unknown, never as empty.",
+    "deferred": "Deferred the {action} of learned skill \"{id}\" until every relevant Store can be read again; nothing was deleted.",
+    "budgetExceeded": "{name} exceeded: {actual} bytes against a limit of {limit} across {ids}. Nothing was materialized.",
+    "incomplete": "Learned-skill reconciliation was incomplete ({code}): {message}",
+    "repairNext": "Next: {command}"
   },
   "expertSkills": {
     "workflowAuthor": "Author installable workflows safely through staging, static validation, independent review, and user-approved import",
@@ -1061,7 +1096,10 @@
     "Report the conversion plan and change nothing": "Report the conversion plan and change nothing",
     "Write the records and remove the legacy adoption manifest": "Write the records and remove the legacy adoption manifest",
     "project, store, or global": "project, store, or global",
-    "Approve a store publication non-interactively, naming the store it applies to": "Approve a store publication non-interactively, naming the store it applies to"
+    "Approve a store publication non-interactively, naming the store it applies to": "Approve a store publication non-interactively, naming the store it applies to",
+    "Show what this project actually receives, its sources by permanent identity, and any conflicts": "Show what this project actually receives, its sources by permanent identity, and any conflicts",
+    "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity": "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
+    "Preview only: report what would change and write nothing": "Preview only: report what would change and write nothing"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "Configure AI tools non-interactively. Use \"all\", \"none\", or a comma-separated list of: {ids}"

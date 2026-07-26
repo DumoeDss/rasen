@@ -12,6 +12,7 @@ import {
   type LearnedSkillMutationRequest,
 } from '../../src/core/learned-skills/index.js';
 import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
+import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 
 const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
@@ -72,6 +73,9 @@ describe('init/update learned-skill wiring', () => {
     process.env.XDG_CONFIG_HOME = configTempDir;
     dataTempDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'rasen-iul-data-'));
     process.env.XDG_DATA_HOME = dataTempDir;
+    // Learned-skill reporting is localized, so an English literal assertion has
+    // to pin the locale rather than inherit whatever this machine is set to.
+    process.env.RASEN_LANG = 'en';
     // The applicability marker every fixture skill keys off.
     await fs.writeFile(path.join(testDir, 'package.json'), '{}\n');
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -109,10 +113,14 @@ describe('init/update learned-skill wiring', () => {
 
     const materialized = path.join(testDir, '.claude', 'skills', LEARNED_ID, 'SKILL.md');
     expect(fsSync.existsSync(materialized)).toBe(true);
-    const ledger = readWorkflowArtifactLedger(testDir)!;
-    expect(ledger.tools.claude.learned?.[LEARNED_ID]?.skillScope).toBe('project');
-    // Learned ids never enter the workflow list.
-    expect(ledger.workflows).not.toContain(LEARNED_ID);
+    // Ownership lives in the learned record, keyed on durable identity.
+    const entry = readProjectLearnedLedger(testDir)?.tools.claude?.learned?.[LEARNED_ID];
+    expect(entry?.effectiveScope).toBe('project');
+    expect(entry?.sources[0]?.owner.type).toBe('project');
+    // Learned ids never enter the workflow list, and the workflow ledger no
+    // longer carries a learned section at all.
+    expect(readWorkflowArtifactLedger(testDir)?.workflows ?? []).not.toContain(LEARNED_ID);
+    expect(readWorkflowArtifactLedger(testDir)?.tools.claude?.learned).toBeUndefined();
   });
 
   it('reports a learned-only reconciliation without saying "Already up to date"', async () => {

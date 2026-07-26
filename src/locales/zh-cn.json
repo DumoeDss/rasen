@@ -56,7 +56,42 @@
     "retireConfirm": "退役 {scope} 学习技能 \"{id}\"？",
     "retireRequiresConfirmation": "退役需要确认。要非交互式退役请传入 --yes。",
     "retireCancelled": "已取消退役。",
-    "cancelled": "已取消。"
+    "cancelled": "已取消。",
+    "effectiveDescription": "显示本项目实际获得的知识：解析结果、按永久身份记录的来源、冲突与降级状态",
+    "migrateDescription": "把按 clone 分散的知识迁入项目的规范位置，并将归属记录改按永久身份记账",
+    "dryRunDescription": "仅预览：报告将要发生的变化，不写入任何内容",
+    "effectiveHeading": "项目 {project} 的有效学习知识（{status}）",
+    "effectiveRoots": "存储于 {canonical}；适用性在 {evaluation} 中判定",
+    "effectiveEmpty": "没有学习知识适用于当前 checkout。",
+    "effectiveRow": "{id} — {scope}（来源：{sources}）",
+    "effectiveStoreRow": "{store}：{status}{relevance}",
+    "effectiveConflict": "\"{id}\" 存在冲突（{kind}）：{sources}。未选出任何赢家。",
+    "effectiveUnavailable": "无法访问 Store {store}：{detail} 其知识暂时未知，未执行任何清理。",
+    "migrateCatalogHeading": "项目知识归属位置",
+    "migrateCatalogNothing": "无需迁移：该项目的知识已集中在一处。",
+    "migrateCatalogPlan": "将把 {moves} 条记录迁入 {target}。",
+    "migrateCatalogApplied": "已把 {moved} 条记录迁入 {target}；删除了 {deduplicated} 份完全相同的副本。",
+    "migrateCatalogConflict": "\"{id}\" 存在冲突：{locations} 内容不一致。未选择、未迁移、未删除任何内容。",
+    "migrateCatalogFailed": "无法在规范位置校验 \"{id}\"（{reason}）；所有原始数据均保持不变。",
+    "migrateLedgerHeading": "归属记录",
+    "migrateLedgerNothing": "无需改记：归属记录已按永久身份记录来源。",
+    "migrateLedgerPlan": "将把 {entries} 条归属记录改按永久身份记账。",
+    "migrateLedgerApplied": "已把 {entries} 条归属记录改按永久身份记账。",
+    "migrateLedgerBlocked": "归属记录保持原样：{reason} 未丢弃任何已记录的来源。",
+    "migrateDryRunNotice": "仅预览 —— 未创建、迁移或删除任何内容。"
+  },
+  "learnedMaterialization": {
+    "summary": "学习技能 —— {details}",
+    "noOp": "学习技能：已是一致状态，无需写入。",
+    "identityMigrated": "学习技能：{count} 条记录因内容身份方案变更而被重写。这是一次迁移而非编辑 —— 知识本身没有变化。",
+    "deduplicated": "学习技能：{count} 条记录由多个字节完全相同的 Store 副本合并为一个结果；所有贡献 Store 均已记录。",
+    "conflict": "学习技能 \"{id}\" 在 {sources} 之间存在 {kind} 冲突；未选出任何赢家。",
+    "repairConflict": "下一步：让各 Store 记录完全一致、重命名其中一个学习技能，或退休不适用的版本。",
+    "unavailableStore": "无法访问 Store {id}：{detail} 其知识按“暂时未知”处理，绝不按“空”处理。",
+    "deferred": "已推迟学习技能 \"{id}\" 的{action}操作，直至所有相关 Store 可再次读取；未删除任何内容。",
+    "budgetExceeded": "超出 {name}：{ids} 合计 {actual} 字节，上限为 {limit}。未生成任何内容。",
+    "incomplete": "学习技能同步未完成（{code}）：{message}",
+    "repairNext": "下一步：{command}"
   },
   "expertSkills": {
     "workflowAuthor": "通过暂存、静态校验、独立审查和经用户批准的导入，安全地编写可安装工作流",
@@ -1061,7 +1096,10 @@
     "Report the conversion plan and change nothing": "报告转换计划，不做任何修改",
     "Write the records and remove the legacy adoption manifest": "写入记录，并删除旧的 adoption 清单",
     "project, store, or global": "project、store 或 global",
-    "Approve a store publication non-interactively, naming the store it applies to": "非交互式批准 store 发布，并指明所批准的 store"
+    "Approve a store publication non-interactively, naming the store it applies to": "非交互式批准 store 发布，并指明所批准的 store",
+    "Show what this project actually receives, its sources by permanent identity, and any conflicts": "显示本项目实际获得的知识、按永久身份记录的来源，以及任何冲突",
+    "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity": "把按 clone 分散的知识迁入项目的规范位置，并将归属记录改按永久身份记账",
+    "Preview only: report what would change and write nothing": "仅预览：报告将要发生的变化，不写入任何内容"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "以非交互方式配置 AI 工具。使用 \"all\"、\"none\"，或从以下工具 ID 中选择并以逗号分隔：{ids}"

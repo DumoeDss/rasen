@@ -28,6 +28,7 @@ import {
   findQualifyingRootSync,
   inspectRegisteredStore,
 } from '../root-selection.js';
+import { resolveProjectStore } from './stores.js';
 import type {
   FrozenExecutionRef,
   FrozenKnowledgeContext,
@@ -690,8 +691,94 @@ export async function resolveLearnedSkillExecutionContext(
   return {
     ...(planningRoot ? { planningRoot } : {}),
     owner,
+    evaluationRoot: resolveEvaluationRoot(owner, sessionContext, ownerDirectory),
     source,
     ...(input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {}),
+  };
+}
+
+/**
+ * The checkout applicability is decided in — the second of the three roots.
+ *
+ * Precedence, and each step exists for a case that actually happens:
+ *
+ * 1. the session's own execution checkout, WHEN it belongs to the resolved
+ *    owner — child C's stated precedence, and the only value that is right for
+ *    a linked worktree or a second clone, both of which resolve `owner.root`
+ *    away to the registered root;
+ * 2. the working checkout, WHEN it is this project's — the ordinary case with
+ *    no session;
+ * 3. `owner.root` otherwise — which is what `--project <id>` needs: it names
+ *    somebody else's project, and evaluating that project's applicability
+ *    against the directory the command happened to run in would answer for the
+ *    wrong tree.
+ */
+function resolveEvaluationRoot(
+  owner: ResolvedKnowledgeOwnerRef,
+  sessionContext: RuntimeContext | undefined,
+  ownerDirectory: string
+): string {
+  if (owner.type !== 'project') return canonicalizeOrResolve(ownerDirectory);
+  if (
+    sessionContext?.execution.kind === 'project' &&
+    sessionContext.execution.projectId === owner.id
+  ) {
+    return canonicalizeOrResolve(sessionContext.execution.root);
+  }
+  const launchedRoot = findQualifyingRootSync(ownerDirectory);
+  if (launchedRoot) {
+    const canonical = canonicalizeOrResolve(launchedRoot);
+    if (readProjectConfig(canonical)?.projectId === owner.id) return canonical;
+  }
+  return owner.root;
+}
+
+/**
+ * The three roots §15.6 keeps apart, resolved together so no caller has to
+ * re-derive one of them from another.
+ *
+ * The source this change adapts conflated all three into "the current project
+ * directory". Separating them is what lets two clones of one project share a
+ * catalog while still deciding applicability, and writing generated files, in
+ * the checkout actually being worked on.
+ */
+export interface LearnedSkillRoots {
+  /** Where the project's own knowledge LIVES — identity-keyed, clone-independent. */
+  canonicalOwnerRoot: string;
+  /** Where applicability is DECIDED — the session's execution checkout. */
+  evaluationRoot: string;
+  /**
+   * Where generated files are WRITTEN: a tool's project-local skill home
+   * INSIDE {@link evaluationRoot}. Each tool composes its own subdirectory from
+   * this root (`resolveToolSkillsRoot`), so the root is what travels and the
+   * per-tool suffix stays the tool adapter's business.
+   */
+  materializationRoot: string;
+}
+
+/**
+ * The three roots for one resolved execution context.
+ *
+ * A project owner that cannot resolve its canonical catalog (an unregistered
+ * project, an identity that cannot key a directory) returns the refusal rather
+ * than inventing a location — the same answer `resolveProjectStore` gives, not
+ * a second opinion about it.
+ */
+export async function resolveLearnedSkillRoots(
+  execution: LearnedSkillExecutionContext
+): Promise<{ ok: true; roots: LearnedSkillRoots } | { ok: false; code: string; message: string }> {
+  const evaluationRoot = execution.evaluationRoot ?? process.cwd();
+  const resolution = await resolveProjectStore({ execution });
+  if (!resolution.ok) {
+    return { ok: false, code: resolution.code, message: resolution.message };
+  }
+  return {
+    ok: true,
+    roots: {
+      canonicalOwnerRoot: resolution.store.root,
+      evaluationRoot,
+      materializationRoot: evaluationRoot,
+    },
   };
 }
 

@@ -26,8 +26,14 @@ import {
   type StoreApprovalGrant,
   type UnreadableCanonicalRecord,
   isKnowledgeContextError,
+  resolveEffectiveLearnedSkillPlan,
   resolveLearnedSkillExecutionContext,
 } from '../core/learned-skills/index.js';
+import { migrateProjectKnowledgeHome } from '../core/project-knowledge-home.js';
+import {
+  collectProjectLearnedStores,
+  migrateProjectLearnedLedger,
+} from '../core/project-learned-skill-ledger.js';
 import { storeUidsMatch } from '../core/store/identity-types.js';
 import {
   RUN_STATE_FILENAME,
@@ -745,6 +751,202 @@ async function retireCommand(
   reportStoreWrites(result, messages);
 }
 
+/**
+ * What this project actually receives, and why.
+ *
+ * Read-only in the strongest sense: it resolves, reports, and writes nothing —
+ * not a file, not an ownership record, not a repaired registry. Sources are
+ * named by permanent identity so two Stores that share a display name can be
+ * told apart, and a conflict or an unreachable Store is stated as such rather
+ * than quietly producing a shorter list.
+ */
+async function effectiveCommand(options: KnowledgeOwnerOptions): Promise<void> {
+  if (reportSelectorConflict(options)) return;
+  const messages = getKnowledgeMessages();
+  const context = await buildContext(options, 'mixed');
+  const execution = context.execution as LearnedSkillExecutionContext;
+  const plan = await resolveEffectiveLearnedSkillPlan({
+    execution,
+    previousStores:
+      execution.owner.type === 'project'
+        ? collectProjectLearnedStores(execution.evaluationRoot ?? execution.owner.root)
+        : [],
+  });
+
+  if (options.json) {
+    printJson({
+      ok: plan.status !== 'blocked',
+      status: plan.status,
+      project: plan.project,
+      roots: {
+        canonicalOwnerRoot: plan.canonicalOwnerRoot,
+        evaluationRoot: plan.evaluationRoot,
+      },
+      skills: plan.skills.map((skill) => ({
+        id: skill.id,
+        effectiveScope: skill.effectiveScope,
+        knowledgeKey: skill.knowledgeKey,
+        sources: skill.sources,
+        canonicalContentDigest: skill.canonicalContentDigest,
+        resolutionDigest: skill.resolutionDigest,
+      })),
+      stores: plan.stores.map((fact) => ({
+        store: fact.store,
+        status: fact.status,
+        relevance: fact.relevance,
+        ...(fact.status === 'unavailable'
+          ? { relevant: fact.relevant, diagnostic: fact.diagnostic, repair: fact.repair }
+          : {}),
+      })),
+      conflicts: plan.conflicts,
+      unavailableStores: plan.unavailableStores,
+      errors: plan.planningErrors,
+      ...(plan.budgetFailure ? { budgetFailure: plan.budgetFailure } : {}),
+    });
+    return;
+  }
+
+  console.log(messages.effectiveHeading(plan.project.id, plan.status));
+  console.log(messages.effectiveRoots(plan.canonicalOwnerRoot, plan.evaluationRoot));
+  if (plan.skills.length === 0) console.log(messages.effectiveEmpty);
+  for (const skill of plan.skills) {
+    console.log(
+      messages.effectiveRow(
+        skill.id,
+        skill.effectiveScope,
+        skill.sources.map((source) => `${describeDurableOwner(source.owner)}/${source.id}`).join(', ')
+      )
+    );
+  }
+  for (const fact of plan.stores) {
+    console.log(
+      messages.effectiveStoreRow(
+        describeDurableOwner(
+          fact.store.uid === undefined
+            ? { type: 'project', projectId: fact.store.id ?? '<unknown>' }
+            : { type: 'store', uid: fact.store.uid, ...(fact.store.id !== undefined ? { id: fact.store.id } : {}) }
+        ),
+        fact.status,
+        fact.relevance.length > 0 ? ` [${fact.relevance.join(', ')}]` : ''
+      )
+    );
+  }
+  for (const conflict of plan.conflicts) {
+    console.log(
+      messages.effectiveConflict(
+        conflict.id,
+        conflict.kind,
+        conflict.participants.map((item) => item.label).join(', ')
+      )
+    );
+  }
+  for (const store of plan.unavailableStores) {
+    console.log(
+      messages.effectiveUnavailable(store.store.id ?? store.store.uid ?? '<unknown>', store.diagnostic)
+    );
+  }
+  for (const error of plan.planningErrors) {
+    console.log(messages.blocked(error.message));
+    if (error.repair?.[0]) console.log(messages.blockedNext(error.repair[0]));
+  }
+  if (plan.status === 'blocked') process.exitCode = 1;
+}
+
+/**
+ * The two migrations this release needs, run together and reported separately.
+ *
+ * Both are explicit — nothing here happens during an ordinary command — and
+ * both preview with `--dry-run`. They are independent: a blocked ownership
+ * re-key does not stop the catalog move, and neither ever chooses between
+ * things that disagree.
+ */
+async function migrateCommand(
+  options: KnowledgeOwnerOptions & { dryRun?: boolean }
+): Promise<void> {
+  if (reportSelectorConflict(options)) return;
+  const messages = getKnowledgeMessages();
+  const context = await buildContext(options, 'project');
+  const execution = context.execution as LearnedSkillExecutionContext;
+  if (execution.owner.type !== 'project') {
+    reportError(
+      options.json,
+      messages.projectRequired,
+      'knowledge_owner_scope_mismatch'
+    );
+    return;
+  }
+  const dryRun = options.dryRun === true;
+  const pathOptions =
+    execution.globalDataDir !== undefined ? { globalDataDir: execution.globalDataDir } : {};
+
+  const catalog = await migrateProjectKnowledgeHome(execution.owner.id, {
+    ...pathOptions,
+    dryRun,
+  });
+  const ledger = await migrateProjectLearnedLedger(
+    execution.evaluationRoot ?? execution.owner.root,
+    { ...pathOptions, dryRun }
+  );
+
+  if (options.json) {
+    printJson({
+      ok: catalog.status !== 'blocked' && ledger.status !== 'blocked',
+      dryRun,
+      catalog,
+      ledger,
+    });
+    if (catalog.status === 'blocked' || ledger.status === 'blocked') process.exitCode = 1;
+    return;
+  }
+
+  if (dryRun) console.log(messages.migrateDryRunNotice);
+  console.log(messages.migrateCatalogHeading);
+  if (catalog.status === 'nothing-to-do') {
+    console.log(messages.migrateCatalogNothing);
+  } else if (dryRun) {
+    console.log(messages.migrateCatalogPlan(catalog.moves.length, catalog.target));
+  } else {
+    console.log(
+      messages.migrateCatalogApplied(
+        catalog.moved.length,
+        catalog.target,
+        catalog.deduplicated.length
+      )
+    );
+  }
+  for (const conflict of catalog.conflicts) {
+    console.log(
+      messages.migrateCatalogConflict(
+        conflict.id,
+        conflict.participants.map((item) => item.catalogDir).join(', ')
+      )
+    );
+  }
+  for (const failure of catalog.failed) {
+    console.log(messages.migrateCatalogFailed(failure.id, failure.reason));
+  }
+
+  console.log(messages.migrateLedgerHeading);
+  if (ledger.status === 'nothing-to-do') {
+    console.log(messages.migrateLedgerNothing);
+  } else if (ledger.status === 'blocked') {
+    console.log(
+      messages.migrateLedgerBlocked(
+        ledger.diagnostics.map((diagnostic) => diagnostic.message).join(' ')
+      )
+    );
+    for (const diagnostic of ledger.diagnostics) {
+      if (diagnostic.repair?.[0]) console.log(messages.blockedNext(diagnostic.repair[0]));
+    }
+  } else if (dryRun) {
+    console.log(messages.migrateLedgerPlan(ledger.entries.length));
+  } else {
+    console.log(messages.migrateLedgerApplied(ledger.entries.length));
+  }
+
+  if (catalog.status === 'blocked' || ledger.status === 'blocked') process.exitCode = 1;
+}
+
 async function runKnowledgeAction(
   action: () => Promise<void>,
   json?: boolean
@@ -830,6 +1032,34 @@ export function registerKnowledgeCommand(program: Command): void {
       options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }
     ) => {
       await runKnowledgeAction(() => showCommand(id, options), options.json);
+    });
+
+  addOwnerSelectorOptions(knowledge
+    .command('effective')
+    .description(messages.effectiveDescription)
+    .option('--json', 'Output as JSON'), messages)
+    .action(async (options: {
+      project?: string;
+      store?: string;
+      runStateDir?: string;
+      json?: boolean;
+    }) => {
+      await runKnowledgeAction(() => effectiveCommand(options), options.json);
+    });
+
+  addOwnerSelectorOptions(knowledge
+    .command('migrate')
+    .description(messages.migrateDescription)
+    .option('--dry-run', messages.dryRunDescription)
+    .option('--json', 'Output as JSON'), messages)
+    .action(async (options: {
+      dryRun?: boolean;
+      project?: string;
+      store?: string;
+      runStateDir?: string;
+      json?: boolean;
+    }) => {
+      await runKnowledgeAction(() => migrateCommand(options), options.json);
     });
 
   addOwnerSelectorOptions(knowledge

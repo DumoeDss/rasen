@@ -56,7 +56,42 @@
     "retireConfirm": "{scope} 学習スキル「{id}」を廃止しますか?",
     "retireRequiresConfirmation": "廃止には確認が必要です。非対話で廃止するには --yes を指定してください。",
     "retireCancelled": "廃止をキャンセルしました。",
-    "cancelled": "キャンセルしました。"
+    "cancelled": "キャンセルしました。",
+    "effectiveDescription": "このプロジェクトが実際に受け取る知識を表示します：解決結果、恒久 ID による出所、競合、劣化状態",
+    "migrateDescription": "クローンごとに散らばった知識をプロジェクトの正規の場所へ移し、所有記録を恒久 ID で記録し直します",
+    "dryRunDescription": "プレビューのみ：変更内容を報告し、何も書き込みません",
+    "effectiveHeading": "プロジェクト {project} の有効な学習知識（{status}）",
+    "effectiveRoots": "保存先 {canonical}；適用性は {evaluation} で判定",
+    "effectiveEmpty": "このチェックアウトに適用される学習知識はありません。",
+    "effectiveRow": "{id} — {scope}（出所：{sources}）",
+    "effectiveStoreRow": "{store}：{status}{relevance}",
+    "effectiveConflict": "\"{id}\" が競合しています（{kind}）：{sources}。勝者は選ばれていません。",
+    "effectiveUnavailable": "Store {store} に到達できませんでした：{detail} その知識は一時的に不明で、クリーンアップは行われていません。",
+    "migrateCatalogHeading": "プロジェクト知識の保存場所",
+    "migrateCatalogNothing": "移行の必要はありません：この知識はすでに一か所にまとまっています。",
+    "migrateCatalogPlan": "{moves} 件のレコードを {target} へ移します。",
+    "migrateCatalogApplied": "{moved} 件のレコードを {target} へ移しました。完全に同一の複製 {deduplicated} 件を削除しました。",
+    "migrateCatalogConflict": "\"{id}\" が競合しています：{locations} の内容が一致しません。何も選ばず、移さず、削除していません。",
+    "migrateCatalogFailed": "正規の場所で \"{id}\" を検証できませんでした（{reason}）。元のデータはすべてそのままです。",
+    "migrateLedgerHeading": "所有記録",
+    "migrateLedgerNothing": "記録し直す必要はありません：所有記録はすでに恒久 ID で出所を記録しています。",
+    "migrateLedgerPlan": "{entries} 件の所有記録を恒久 ID で記録し直します。",
+    "migrateLedgerApplied": "{entries} 件の所有記録を恒久 ID で記録し直しました。",
+    "migrateLedgerBlocked": "所有記録はそのまま残しました：{reason} 記録された出所は一つも失われていません。",
+    "migrateDryRunNotice": "プレビューのみ — 何も作成、移動、削除していません。"
+  },
+  "learnedMaterialization": {
+    "summary": "学習スキル — {details}",
+    "noOp": "学習スキル：すでに同期済みで、書き込むものはありません。",
+    "identityMigrated": "学習スキル：内容 ID の方式が変わったため {count} 件のレコードを書き直しました。これは移行であり編集ではありません — 知識自体は変わっていません。",
+    "deduplicated": "学習スキル：バイト単位で同一の複数の Store のコピーから {count} 件が一つの結果にまとまりました。寄与したすべての Store を記録しています。",
+    "conflict": "学習スキル \"{id}\" は {sources} の間で {kind} の競合があります。勝者は選ばれていません。",
+    "repairConflict": "次に：各 Store のレコードを完全に一致させるか、いずれかの学習スキルを改名するか、適用されない版を retire してください。",
+    "unavailableStore": "Store {id} に到達できませんでした：{detail} その知識は「一時的に不明」として扱われ、「空」として扱われることはありません。",
+    "deferred": "関連するすべての Store を再び読めるようになるまで、学習スキル \"{id}\" の{action}を保留しました。何も削除していません。",
+    "budgetExceeded": "{name} を超過しました：{ids} で合計 {actual} バイト（上限 {limit}）。何も生成していません。",
+    "incomplete": "学習スキルの同期が完了しませんでした（{code}）：{message}",
+    "repairNext": "次に：{command}"
   },
   "expertSkills": {
     "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、独立レビュー、ユーザー承認後のimportで安全に作成します",
@@ -1061,7 +1096,10 @@
     "Report the conversion plan and change nothing": "変換計画を報告し、何も変更しません",
     "Write the records and remove the legacy adoption manifest": "レコードを書き込み、旧 adoption マニフェストを削除します",
     "project, store, or global": "project、store または global",
-    "Approve a store publication non-interactively, naming the store it applies to": "store への公開を非対話で承認し、対象の store を指定します"
+    "Approve a store publication non-interactively, naming the store it applies to": "store への公開を非対話で承認し、対象の store を指定します",
+    "Show what this project actually receives, its sources by permanent identity, and any conflicts": "このプロジェクトが実際に受け取る知識、恒久 ID による出所、競合を表示します",
+    "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity": "クローンごとに散らばった知識をプロジェクトの正規の場所へ移し、所有記録を恒久 ID で記録し直します",
+    "Preview only: report what would change and write nothing": "プレビューのみ：変更内容を報告し、何も書き込みません"
   },
   "commandDescriptionTemplates": {
     "toolsPrefix": "AIツールを非対話で設定します。\"all\"、\"none\"、または次のツールIDをカンマ区切りで指定: {ids}"

@@ -49,10 +49,12 @@ Compatibility rules:
 Learned skills are **registry records, not workflows.** They never appear in a profile's workflow list, the profile picker, or a workflow dependency closure. They are stored canonically outside the repository, so shipping a change never dirties the worktree:
 
 ```text
-<global data dir>/learned-skills/<id>/         # global scope
-<project machine home>/learned-skills/<id>/    # project scope
-<store repo>/rasen/learned-skills/<id>/        # store scope
+<global data dir>/learned-skills/<id>/                              # machine-wide
+<global data dir>/project-knowledge/<projectId>/learned-skills/<id>/ # project
+<store repo>/rasen/learned-skills/<id>/                             # store
 ```
+
+A project's catalog is keyed on the **project's identity**, not on the clone you happen to be standing in. Two clones and any number of linked worktrees therefore share one catalog. If you have been using Rasen before this release, run `rasen knowledge migrate --dry-run` to see what would move and `rasen knowledge migrate` to move it — see [Three roots, kept apart](#three-roots-kept-apart) for why the storage location is not the checkout.
 
 Each canonical directory holds a strict `learned-skill.yaml` manifest (identity, stable knowledge key, scope, status, generated-ownership marker, content digest, applicability, evidence references, timestamps) and a generated `SKILL.md`. A project-scoped write requires a registered project with a resolved machine home — there is no in-repository fallback; an unregistered project gets `rasen init` guidance instead.
 
@@ -96,9 +98,58 @@ and revalidated on resume by passing pipeline resume's absolute `runStateDir`
 to project-scope knowledge commands as `--run-state-dir`. Existing run-state without the field remains
 readable and gains the context conservatively at its first knowledge operation.
 
+## What a project actually receives
+
+A project can draw on its own record, on every Store it is eligible for, and on machine-wide knowledge. What it *receives* is resolved in one stated order — `rasen knowledge effective` reports the answer and where every part of it came from:
+
+```text
+applicability filtering
+        ↓
+the project's own record exists → the project wins
+        ↓
+otherwise every ELIGIBLE Store is considered together
+        ↓
+byte-identical copies → one answer recording every contributing Store
+copies that differ    → a conflict, and no winner
+        ↓
+no Store winner → machine-wide knowledge fills the gap
+```
+
+**Eligibility comes from the Stores themselves**: the Stores the project declares in `storeMemberships`, plus every locally available Store whose own records name this project as a knowledge member. The Store a project happens to *plan* in gets no say and no priority — planning and knowledge are different relations.
+
+**Nothing wins by accident.** Registry order, planning-Store priority, and alphabetical order of display names are explicitly not tie-breakers. Two Store copies count as the same knowledge only when **all five** match: the identifier, the knowledge key, the exact canonical bytes, the content digest, and both being valid managed records. A shared knowledge key on its own proves nothing.
+
+**Genuinely different copies are reported, never resolved.** A conflict names every participant by permanent identity and reads the same whatever order the Stores were considered in. With the project's own record winning it is recorded and resolution continues; without one it stops learned reconciliation entirely and writes nothing partial — no half-written files, no half-written ownership records. Ordinary workflow generation is unaffected either way.
+
+**A Store that cannot be reached is not an empty Store.** A Store is *relevant* when the project declares it, when a previous ownership record names it as a source, when a frozen planning or membership fact names it, when it is the project's current planning Store, or when it is locally found to record the project. When a relevant Store is unreachable, its knowledge is reported as temporarily unavailable and every removal it would have implied is **deferred**. A stale generated file is recoverable; a deleted one you were relying on is not.
+
+### Three roots, kept apart
+
+Three different questions used to share one answer — "the current project directory" — and getting them confused is what produced two catalogs for one project:
+
+| Root | Question it answers |
+|---|---|
+| `<global data dir>/project-knowledge/<projectId>` | where the project's knowledge **lives** |
+| the session's execution checkout | where **applicability is decided** |
+| a tool's skill home inside that checkout | where **generated files are written** |
+
+So two clones of one project share a catalog while each still decides applicability, and generates files, in the checkout actually being worked on. The checkout comes from the session's own recorded context when there is one, and from the working directory otherwise.
+
+### Content identity excludes the display name
+
+The identity computed for a resolved piece of knowledge is derived from the schema version, the identifier, the knowledge key, the effective scope, the **sorted permanent identities** of its sources, their content digests, and the rendered managed body. No Store display name reaches it, so **renaming a Store changes no identity and no ownership entry**. Line endings are normalized first, so the same record checked out with CRLF on one machine and LF on another is the same record — not a conflict nobody caused.
+
+When the identity scheme itself changes between releases, the difference is reported as a **migration**, never as content you edited. Your first run after upgrading says so in as many words.
+
+### Ownership over generated files is exact
+
+A generated file is modified or removed only when the ownership record claims **that exact path**, the file on disk is still an ordinary file, its bytes still match what was recorded, and the source is still verifiable. Anything failing a check is left alone and reported. A file you authored at a generated path is never taken over.
+
+A tool whose skill home is machine-wide rather than per-project receives **only** machine-wide knowledge — the directory is shared by every project on the machine, so one project's applicability result must never be able to remove a copy another project relies on.
+
 ## Scope and global promotion
 
-An accepted candidate defaults to **project scope** in the owning project's machine home. A **global** create or promotion is gated:
+An accepted candidate defaults to **project scope** in the owning project's canonical knowledge home. A **global** create or promotion is gated:
 
 1. the **exact managed source records** it draws on, each resolved and verified to carry the same stable knowledge key,
 2. from at least **two distinct stable project ids** (multiple changes or clones sharing one id count once),

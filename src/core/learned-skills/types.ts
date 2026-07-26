@@ -13,6 +13,13 @@ import type {
 } from '../store/identity-types.js';
 
 /**
+ * Child A's Store identity, re-exported so a learned-skill consumer names it
+ * from one place. Redeclaring it here would be a second vocabulary for the one
+ * fact this release exists to make singular.
+ */
+export type { GlobalIdentityRef, ProjectIdentityRef, StoreIdentityRef };
+
+/**
  * Learned-skill scope. Project is the default; a Store holds knowledge its
  * member projects draw on; global requires promotion beyond any one Store.
  */
@@ -109,6 +116,20 @@ export interface KnowledgeSelector {
 export interface LearnedSkillExecutionContext {
   planningRoot?: ResolvedKnowledgePlanningRootRef;
   owner: ResolvedKnowledgeOwnerRef;
+  /**
+   * The checkout applicability is DECIDED in — the second of the three roots
+   * §15.6 separates.
+   *
+   * It is not `owner.root`, and the difference is the point. `owner.root` is
+   * the project's REGISTERED root: a run inside a linked worktree resolves it
+   * to the main checkout, and two clones of one project resolve it to whichever
+   * one registered first. Applicability has to be answered where the work is
+   * actually happening, so this carries the session's own execution checkout
+   * (child C's precedence) and falls back to the launch directory only when no
+   * session recorded one. The canonical OWNER root and the materialization
+   * target are the other two, and neither is this.
+   */
+  evaluationRoot?: string;
   source:
     | 'run-state'
     /** The session's own recorded runtime context (design D4's second step). */

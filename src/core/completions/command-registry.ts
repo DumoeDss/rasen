@@ -837,6 +837,56 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         ],
       },
       {
+        name: 'effective',
+        description:
+          'Show what this project actually receives, its sources by permanent identity, and any conflicts',
+        flags: [
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'migrate',
+        description:
+          "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
+        flags: [
+          {
+            name: 'dry-run',
+            description: 'Preview only: report what would change and write nothing',
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
         name: 'show',
         description: 'Show a canonical learned skill',
         acceptsPositional: true,

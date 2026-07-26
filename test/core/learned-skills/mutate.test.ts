@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { resolveProjectHome } from '../../../src/core/project-home.js';
+import { resolveProjectKnowledgeHome } from '../../../src/core/project-knowledge-home.js';
 import {
   commitLearnedSkillPlan,
   listCanonicalLearnedSkills,
@@ -169,7 +170,13 @@ describe('learned-skill core mutation and resolution', () => {
 
   it('refuses to overwrite a human-authored collision and leaves it byte-identical', async () => {
     const home = await resolveProjectHome(projectRoot, { globalDataDir, ensure: false });
-    const humanDir = path.join(home!.homeDir, 'learned-skills', ID);
+    // The catalog is keyed on the project's IDENTITY, not on this clone's
+    // machine home — a collision has to be planted where the record would
+    // actually be written.
+    const humanDir = path.join(
+      resolveProjectKnowledgeHome(home!.projectId, { globalDataDir }).catalogDir,
+      ID
+    );
     fs.mkdirSync(humanDir, { recursive: true });
     fs.writeFileSync(path.join(humanDir, 'SKILL.md'), 'human authored, do not touch\n');
     const before = fs.readFileSync(path.join(humanDir, 'SKILL.md'), 'utf-8');

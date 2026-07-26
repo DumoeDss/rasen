@@ -7,7 +7,9 @@ import { resolveProjectHome } from '../../src/core/project-home.js';
 import {
   commitLearnedSkillPlan,
   planLearnedSkillMutation,
-  resolveLearnedSkills,
+  resolveEffectiveLearnedSkillPlan,
+  resolveLearnedSkillExecutionContext,
+  type EffectiveLearnedSkillPlan,
   type EvidenceReference,
   type LearnedSkillContext,
   type LearnedSkillMutationRequest,
@@ -16,7 +18,7 @@ import {
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
 } from '../../src/core/learned-skill-materialization.js';
-import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
+import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
 import { readGlobalLearnedArtifacts } from '../../src/core/global-learned-skill-ledger.js';
 import { pruneRetiredRetentionSkillDirs } from '../../src/core/legacy-cleanup.js';
 
@@ -84,16 +86,27 @@ describe('learned-skill materialization', () => {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
+  async function planFor(root: string): Promise<EffectiveLearnedSkillPlan> {
+    const execution = await resolveLearnedSkillExecutionContext({
+      launchDirectory: root,
+      requestedScope: 'mixed',
+      globalDataDir,
+      sessionContext: null,
+    });
+    return resolveEffectiveLearnedSkillPlan({ execution });
+  }
+
   async function reconcile() {
-    const resolved = await resolveLearnedSkills(context);
     return reconcileProjectLearnedSkillsForTool({
-      projectRoot,
       toolId: 'claude',
       toolLabel: 'Claude Code',
       skillsRoot,
-      resolved,
+      plan: await planFor(projectRoot),
     });
   }
+
+  const learnedEntry = (root: string, id: string) =>
+    readProjectLearnedLedger(root)?.tools.claude?.learned?.[id];
 
   const targetFile = (id: string): string => path.join(skillsRoot, id, 'SKILL.md');
 
@@ -161,10 +174,13 @@ describe('learned-skill materialization', () => {
     expect(content).toContain('learnedSkillScope: "project"');
     expect(content).toContain(`learnedSkillId: "${PROJECT_ID}"`);
 
-    const ledger = readWorkflowArtifactLedger(projectRoot)!;
-    const entry = ledger.tools.claude.learned?.[PROJECT_ID];
-    expect(entry?.skillScope).toBe('project');
+    const entry = learnedEntry(projectRoot, PROJECT_ID);
+    expect(entry?.effectiveScope).toBe('project');
     expect(entry?.file.path).toBe(`.claude/skills/${PROJECT_ID}/SKILL.md`);
+    // Ownership names the project by its stable identity, never a display name.
+    expect(entry?.sources).toEqual([
+      { owner: { type: 'project', projectId }, id: PROJECT_ID },
+    ]);
 
     // Re-running is idempotent — no further create/update/remove.
     const rerun = await reconcile();
@@ -180,7 +196,7 @@ describe('learned-skill materialization', () => {
 
     expect(result.created).toHaveLength(0);
     expect(fs.existsSync(targetFile(PROJECT_ID))).toBe(false);
-    expect(readWorkflowArtifactLedger(projectRoot)).toBeNull();
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude).toBeUndefined();
   });
 
   it('refreshes the exact generated copy when the canonical content changes', async () => {
@@ -215,7 +231,7 @@ describe('learned-skill materialization', () => {
     expect(fs.existsSync(targetFile(PROJECT_ID))).toBe(false);
     // Empty parent directory is pruned too.
     expect(fs.existsSync(path.join(skillsRoot, PROJECT_ID))).toBe(false);
-    expect(readWorkflowArtifactLedger(projectRoot)?.tools.claude?.learned?.[PROJECT_ID]).toBeUndefined();
+    expect(learnedEntry(projectRoot, PROJECT_ID)).toBeUndefined();
   });
 
   it('refuses a human-authored collision and leaves it byte-for-byte unchanged', async () => {
@@ -232,7 +248,7 @@ describe('learned-skill materialization', () => {
     expect(result.skipped.map((entry) => entry.reason)).toEqual(['collision']);
     expect(fs.readFileSync(targetFile(PROJECT_ID), 'utf-8')).toBe(humanBody);
     // No ledger ownership was claimed over the human file.
-    expect(readWorkflowArtifactLedger(projectRoot)?.tools.claude?.learned?.[PROJECT_ID]).toBeUndefined();
+    expect(learnedEntry(projectRoot, PROJECT_ID)).toBeUndefined();
   });
 
   it('preserves a generated copy the user has since edited (no overwrite)', async () => {
@@ -250,17 +266,16 @@ describe('learned-skill materialization', () => {
   it('resolves nothing for an unregistered project without a machine home', async () => {
     const unregistered = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-unreg-'));
     fs.mkdirSync(path.join(unregistered, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(unregistered, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     try {
-      const resolved = await resolveLearnedSkills({ projectRoot: unregistered, globalDataDir });
-      const result = reconcileProjectLearnedSkillsForTool({
-        projectRoot: unregistered,
-        toolId: 'claude',
-        toolLabel: 'Claude Code',
-        skillsRoot: path.join(unregistered, '.claude', 'skills'),
-        resolved,
+      // Planning REFUSES rather than quietly resolving an empty set: an
+      // unregistered project has no canonical knowledge home to resolve
+      // against, and inventing one is what this change exists to stop. The
+      // refusal lands at context resolution, which is the earliest point that
+      // can tell — and carries a repair, unlike an empty result.
+      await expect(planFor(unregistered)).rejects.toMatchObject({
+        diagnostic: { code: 'knowledge_owner_stale' },
       });
-      expect(result.created).toHaveLength(0);
-      expect(result.skipped).toHaveLength(0);
     } finally {
       fs.rmSync(unregistered, { recursive: true, force: true });
     }
@@ -315,12 +330,14 @@ describe('learned-skill materialization', () => {
       const globalId = await createGlobalSkill();
       await commit(projectUpsert(PROJECT_ID, ['package.json']));
 
-      const resolved = await resolveLearnedSkills(context);
+      const plan = await planFor(projectRoot);
       const result = reconcileGlobalLearnedSkillsForTool({
         toolId: 'hermes',
         toolLabel: 'Hermes',
         skillsRoot: hermesSkills,
-        resolved,
+        globalRecords: plan.globalRecords,
+        localRecords: plan.skills,
+        plan,
         globalDataDir,
       });
 
@@ -334,28 +351,36 @@ describe('learned-skill materialization', () => {
       const globalLedger = readGlobalLearnedArtifacts(globalDataDir, 'hermes');
       expect(Object.keys(globalLedger)).toEqual([globalId]);
       expect(globalLedger[globalId].path).toBe(path.join(hermesSkills, globalId, 'SKILL.md'));
+      // A machine-wide home records machine-wide ownership and nothing else.
+      expect(globalLedger[globalId].sources).toEqual([
+        { owner: { type: 'global' }, id: globalId },
+      ]);
     });
 
     it('does not remove a shared global copy because another project\'s markers do not match', async () => {
       const globalId = await createGlobalSkill();
-      const resolvedOne = await resolveLearnedSkills(context);
+      const planOne = await planFor(projectRoot);
       reconcileGlobalLearnedSkillsForTool({
         toolId: 'hermes',
         toolLabel: 'Hermes',
         skillsRoot: hermesSkills,
-        resolved: resolvedOne,
+        globalRecords: planOne.globalRecords,
+        localRecords: planOne.skills,
+        plan: planOne,
         globalDataDir,
       });
       expect(fs.existsSync(path.join(hermesSkills, globalId, 'SKILL.md'))).toBe(true);
 
       // A different project whose applicability markers do NOT match reconciles
       // the same shared Hermes home — the global copy MUST survive.
-      const resolvedTwo = await resolveLearnedSkills({ projectRoot: secondRoot, globalDataDir });
+      const planTwo = await planFor(secondRoot);
       const result = reconcileGlobalLearnedSkillsForTool({
         toolId: 'hermes',
         toolLabel: 'Hermes',
         skillsRoot: hermesSkills,
-        resolved: resolvedTwo,
+        globalRecords: planTwo.globalRecords,
+        localRecords: planTwo.skills,
+        plan: planTwo,
         globalDataDir,
       });
 

@@ -40,17 +40,23 @@ import {
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
 import {
+  EffectiveLearnedSkillPlanningError,
+  resolveEffectiveLearnedSkillPlan,
   resolveLearnedSkillExecutionContext,
-  resolveLearnedSkills,
-  type ResolvedLearnedSkillSet,
 } from './learned-skills/index.js';
 import {
+  emptyLearnedReconcileResult,
   learnedReconcileHasActivity,
   mergeLearnedReconcileResult,
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
   type LearnedReconcileResult,
 } from './learned-skill-materialization.js';
+import { collectProjectLearnedStores } from './project-learned-skill-ledger.js';
+import {
+  learnedMaterializationMessage,
+  learnedMaterializationReport,
+} from './learned-materialization-locale.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type RepoMode } from './global-config.js';
 import {
@@ -353,6 +359,10 @@ export class UpdateCommand {
     if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity) {
       // All tools are up to date and no learned-skill materialization changed.
       this.displayUpToDateMessage(toolStatuses);
+      // A complete reconciliation that changed nothing still says so, in its
+      // own words. Silence here is what makes a user unsure whether their
+      // learned knowledge was considered at all.
+      this.displayLearnedSummary(learned);
 
       // Still check for new tool directories and extra workflows
       this.detectNewTools(resolvedProjectPath, configuredTools);
@@ -765,64 +775,90 @@ export class UpdateCommand {
     projectPath: string,
     toolIds: readonly string[]
   ): Promise<LearnedReconcileResult> {
-    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
-    let resolved: ResolvedLearnedSkillSet;
+    const aggregate = emptyLearnedReconcileResult();
     try {
       const execution = await resolveLearnedSkillExecutionContext({
         launchDirectory: projectPath,
         requestedScope: 'mixed',
       });
-      resolved = await resolveLearnedSkills({ execution });
-    } catch {
-      return aggregate;
-    }
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStores:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStores(execution.evaluationRoot ?? projectPath)
+            : [],
+      });
 
-    for (const toolId of toolIds) {
-      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
-      if (!tool?.skillsDir) continue;
-      const skillsRoot = resolveToolSkillsRoot(tool, projectPath);
-      try {
-        const result =
-          tool.skillsHome === 'global'
-            ? reconcileGlobalLearnedSkillsForTool({
-                toolId,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              })
-            : reconcileProjectLearnedSkillsForTool({
-                projectRoot: projectPath,
-                toolId,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              });
-        mergeLearnedReconcileResult(aggregate, result);
-      } catch {
-        // Best-effort per tool.
+      for (const toolId of toolIds) {
+        const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+        if (!tool?.skillsDir) continue;
+        const skillsRoot = resolveToolSkillsRoot(tool, plan.evaluationRoot);
+        try {
+          const result =
+            tool.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError ? error.code : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof EffectiveLearnedSkillPlanningError && error.repair.length > 0
+          ? { repair: error.repair }
+          : {}),
+      });
     }
     return aggregate;
   }
 
   /**
-   * Reports the learned-skill reconciliation result as a section separate from
-   * the workflow summary (created/updated/removed/skipped), so an empty learned
-   * category is never merged into the workflow counts. Prints nothing when
-   * there was no learned activity at all.
+   * Reports the learned-skill reconciliation as a section separate from the
+   * workflow summary, so an empty learned category is never merged into the
+   * workflow counts. A COMPLETE reconciliation that changed nothing emits its
+   * own learned no-op rather than disappearing into the generic status.
    */
   private displayLearnedSummary(learned: LearnedReconcileResult): void {
-    if (!learnedReconcileHasActivity(learned)) return;
+    if (!learnedReconcileHasActivity(learned) && !learned.noOp) return;
     const parts: string[] = [];
     if (learned.created.length > 0) parts.push(`created: ${learned.created.length}`);
     if (learned.updated.length > 0) parts.push(`updated: ${learned.updated.length}`);
+    if (learned.migrated.length > 0) parts.push(`migrated: ${learned.migrated.length}`);
     if (learned.removed.length > 0) parts.push(`removed: ${learned.removed.length}`);
     if (learned.skipped.length > 0) parts.push(`skipped: ${learned.skipped.length}`);
-    if (parts.length > 0) {
-      console.log(chalk.dim(`Learned skills — ${parts.join(', ')}`));
+    if (learned.deduplicated.length > 0) parts.push(`deduplicated: ${learned.deduplicated.length}`);
+    if (learned.conflicts.length > 0) parts.push(`conflicts: ${learned.conflicts.length}`);
+    if (learned.unavailableStores.length > 0) {
+      parts.push(`unavailable stores: ${learned.unavailableStores.length}`);
     }
-    for (const skip of learned.skipped) {
-      console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+    if (learned.deferred.length > 0) parts.push(`deferred: ${learned.deferred.length}`);
+    if (parts.length > 0) {
+      console.log(
+        chalk.dim(learnedMaterializationMessage('summary', { details: parts.join(', ') }))
+      );
+    }
+    for (const line of learnedMaterializationReport(learned)) {
+      console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
     }
   }
 

@@ -832,6 +832,103 @@ from git history as described above.
 
 ---
 
+## Learned knowledge: four deliberate breaks
+
+This release changes four things about learned knowledge on purpose. Each one is
+detected, previewable, and blocks rather than guesses; none of them happens
+during an ordinary command. Run `rasen knowledge effective` first to see what
+your project currently receives, and `rasen knowledge migrate --dry-run` to see
+what would change.
+
+### 1. An unreachable Store is no longer read as an empty one
+
+**What changed.** Previously a Store that could not be reached — not registered
+here, metadata missing, the checkout gone — looked exactly like a Store with
+nothing in it, so reconciliation deleted the generated files it had provided.
+Now a *relevant* Store's outage is reported and every removal it implies is
+deferred.
+
+A Store is relevant when your project declares it in `storeMemberships`, when a
+previous ownership record names it as a source, when a frozen planning or
+membership fact names it, when it is your current planning Store, or when it is
+locally found to record your project.
+
+**Your repair.** Nothing, if you want the deferral — the files stay and the run
+reports the degraded state. To clear it, make the Store reachable again
+(`rasen store list` shows what is registered) or remove the declaration from
+`rasen/config.yaml`. Files left behind by a Store you have genuinely finished
+with are removed on the next run once it is no longer relevant.
+
+### 2. A project's knowledge moves to one home per project
+
+**What changed.** Project knowledge used to live under whichever clone the
+command ran in, so one project with two clones ended up with two catalogs on one
+machine and resolution answered differently depending on where you were
+standing. The canonical location is now keyed on the project's identity:
+
+```text
+<global data dir>/project-knowledge/<projectId>/learned-skills/<id>/
+```
+
+**Your repair.**
+
+```bash
+rasen knowledge migrate --dry-run   # lists every catalog found, per clone
+rasen knowledge migrate
+```
+
+One catalog is moved. Several byte-identical ones are deduplicated and one is
+moved. Several that **differ** for the same identifier are reported as a
+conflict with every location named — nothing is chosen, moved, overwritten, or
+deleted, and the knowledge the clones agree on still migrates. No old catalog is
+removed until its replacement has been written to the canonical location and
+read back successfully, and the migration is safe to run again after an
+interruption.
+
+### 3. Ownership records are re-keyed on permanent identity
+
+**What changed.** Ownership records for generated files used to name a Store by
+its display name. Since this release makes the display name renameable, that
+record can no longer say which Store owns a file: rename a Store and the
+ownership silently moves; run two Stores that share a name and it was ambiguous
+the moment it was written.
+
+**Your repair.** The same command:
+
+```bash
+rasen knowledge migrate --dry-run
+rasen knowledge migrate
+```
+
+The upgrade applies when each recorded display name maps to exactly one Store
+carrying a permanent identity. When a name maps to **several** Stores, or to
+**none**, the migration **stops** and names the ambiguity — it never guesses,
+and it never drops a recorded source. Repair the ambiguity
+(`rasen store list`, `rasen store upgrade-identity <store>`) and run it again.
+
+### 4. Content identity no longer includes the display name
+
+**What changed.** The identity computed for a resolved piece of knowledge is now
+derived from the schema version, the identifier, the knowledge key, the
+effective scope, the sorted **permanent** identities of its sources, their
+content digests, and the rendered managed body. No display name reaches it, so
+renaming a Store changes no identity and no ownership entry.
+
+**Your repair.** None. The first run after upgrading rewrites the generated
+files whose identity scheme changed and reports that as a **migration** — it is
+not telling you the knowledge was edited, and nothing you wrote has changed.
+Subsequent runs report a no-op.
+
+### Rolling back learned knowledge
+
+Reverting to an earlier version leaves version 2 ownership records an older
+reader does not understand, and a canonical knowledge home it does not look in.
+Both are bounded: every version 2 write is reachable only through a migration
+you ran, which reports what it is about to do first, and the old per-clone
+catalogs are removed only after the new location verified.
+
+---
+
 ## Getting Help
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)

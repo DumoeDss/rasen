@@ -8,6 +8,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { registerKnowledgeCommand } from '../../src/commands/knowledge.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
+import { resolveProjectKnowledgeHome } from '../../src/core/project-knowledge-home.js';
 import {
   getStoreMetadataPath,
   writeStoreMetadataState,
@@ -92,8 +93,12 @@ describe('rasen knowledge command', () => {
     return undefined;
   }
 
+  /**
+   * The project's CANONICAL catalog — keyed on its identity, not on this
+   * clone's machine home, so two clones share it.
+   */
   function projectStoreDir(): string {
-    return path.join(projectHomeDir, 'learned-skills');
+    return resolveProjectKnowledgeHome(projectId).catalogDir;
   }
 
   /**
@@ -602,8 +607,13 @@ describe('rasen knowledge command', () => {
         source: 'run-state',
       },
     });
+    // The record lands in the FROZEN project's canonical knowledge home, which
+    // is keyed on that project's identity — not in the clone the command ran in
+    // and not in the unrelated project the cwd points at.
     expect(
-      fs.existsSync(path.join(frozen.projectHome, 'learned-skills', ID, 'SKILL.md'))
+      fs.existsSync(
+        path.join(resolveProjectKnowledgeHome(frozen.projectId).catalogDir, ID, 'SKILL.md')
+      )
     ).toBe(true);
     expect(fs.existsSync(path.join(projectStoreDir(), ID))).toBe(false);
   });
@@ -962,5 +972,81 @@ describe('rasen knowledge command', () => {
     const output = errSpy.mock.calls.flat().join('\n');
     expect(output).toContain('候補パスは絶対パスである必要があります');
     expect(output).not.toContain('must be absolute');
+  });
+
+  describe('effective and migrate', () => {
+    it('reports the resolved set, its roots, and its sources by permanent identity', async () => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      logSpy.mockClear();
+      process.exitCode = undefined;
+
+      await runKnowledge(['effective', '--json']);
+
+      expect(lastJson()).toMatchObject({
+        ok: true,
+        status: 'ready',
+        project: { id: projectId },
+        roots: {
+          canonicalOwnerRoot: resolveProjectKnowledgeHome(projectId).root,
+          evaluationRoot: projectRoot,
+        },
+        skills: [
+          {
+            id: ID,
+            effectiveScope: 'project',
+            sources: [{ owner: { type: 'project', projectId }, id: ID }],
+          },
+        ],
+      });
+    });
+
+    it('writes nothing at all — it is a read', async () => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      const before = fs.readFileSync(
+        path.join(projectStoreDir(), ID, 'learned-skill.yaml')
+      );
+      logSpy.mockClear();
+
+      await runKnowledge(['effective', '--json']);
+
+      expect(fs.readFileSync(path.join(projectStoreDir(), ID, 'learned-skill.yaml'))).toEqual(
+        before
+      );
+      expect(fs.existsSync(path.join(projectRoot, '.claude'))).toBe(false);
+    });
+
+    it('previews both migrations and changes nothing', async () => {
+      // A catalog left in this clone's OLD per-clone location.
+      const legacy = path.join(projectHomeDir, 'learned-skills', ID);
+      fs.mkdirSync(legacy, { recursive: true });
+      fs.writeFileSync(path.join(legacy, 'SKILL.md'), 'legacy body\n');
+      logSpy.mockClear();
+
+      await runKnowledge(['migrate', '--dry-run', '--json']);
+
+      expect(lastJson()).toMatchObject({
+        ok: true,
+        dryRun: true,
+        catalog: { dryRun: true, moved: [], moves: [{ id: ID }] },
+        ledger: { status: 'nothing-to-do' },
+      });
+      expect(fs.existsSync(legacy)).toBe(true);
+      expect(fs.existsSync(path.join(projectStoreDir(), ID))).toBe(false);
+    });
+
+    it('applies the catalog move and reports there is nothing left on a second run', async () => {
+      const legacy = path.join(projectHomeDir, 'learned-skills', ID);
+      fs.mkdirSync(legacy, { recursive: true });
+      fs.writeFileSync(path.join(legacy, 'SKILL.md'), 'legacy body\n');
+
+      await runKnowledge(['migrate', '--json']);
+      expect(lastJson()).toMatchObject({ ok: true, catalog: { moved: [ID] } });
+      expect(fs.existsSync(path.join(projectStoreDir(), ID, 'SKILL.md'))).toBe(true);
+      expect(fs.existsSync(legacy)).toBe(false);
+
+      logSpy.mockClear();
+      await runKnowledge(['migrate', '--json']);
+      expect(lastJson()).toMatchObject({ catalog: { status: 'nothing-to-do' } });
+    });
   });
 });

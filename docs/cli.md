@@ -1123,6 +1123,8 @@ rasen knowledge apply --from <absolute-json-file> [--project <id> | --store <id>
 rasen knowledge list [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
 rasen knowledge show <id> [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
 rasen knowledge retire <id> [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--yes] [--json]
+rasen knowledge effective [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
+rasen knowledge migrate [--dry-run] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
 ```
 
 **Subcommands:**
@@ -1133,6 +1135,8 @@ rasen knowledge retire <id> [--scope project|store|global] [--project <id> | --s
 | `list` | List canonical learned skills in a scope, including active and retired status. |
 | `show <id>` | Show one learned skill's provenance, applicability, evidence, and status. |
 | `retire <id>` | Retire a managed learned skill (requires `--yes` outside a TTY). |
+| `effective` | Show what this project actually receives — the resolved set, its sources by permanent identity, conflicts, unreachable Stores, and the three roots. Reads only; writes nothing. |
+| `migrate` | Move per-clone knowledge into the project's canonical home and re-key ownership records onto permanent identity. Both steps preview with `--dry-run`. |
 
 **Options:**
 
@@ -1146,7 +1150,90 @@ rasen knowledge retire <id> [--scope project|store|global] [--project <id> | --s
 | `--approve-store <store>` | Consent to publishing into the named store in a non-interactive run (`apply`). The value must name the store the publication actually targets; an approval for one store never authorizes another. |
 | `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). Rejected for a project or store mutation so consent cannot be reused. |
 | `--yes` | Skip the retirement confirmation (`retire`). |
+| `--dry-run` | Preview both migrations and write nothing at all (`migrate`). |
 | `--json` | Emit a single JSON document on stdout (agent contract). |
+
+`effective` reports one of three states: `ready`, `degraded` (a relevant Store could not be reached, so removals were deferred), or `blocked` (Stores disagree and no project record settles it, so nothing was written). Each conflict names every participant by permanent identity, and each unreachable Store carries its own repair.
+
+```json
+{
+  "ok": true,
+  "status": "degraded",
+  "project": { "type": "project", "id": "3f0b0a2c-…", "root": "/work/web" },
+  "roots": {
+    "canonicalOwnerRoot": "/home/me/.rasen/project-knowledge/3f0b0a2c-…",
+    "evaluationRoot": "/work/web"
+  },
+  "skills": [
+    {
+      "id": "go-sql-transaction-locking",
+      "effectiveScope": "store",
+      "knowledgeKey": "go-sql-tx-locking",
+      "sources": [
+        { "owner": { "type": "store", "uid": "9f0c1e2a-…", "id": "team" }, "id": "go-sql-transaction-locking" },
+        { "owner": { "type": "store", "uid": "c41d77b8-…", "id": "platform" }, "id": "go-sql-transaction-locking" }
+      ],
+      "canonicalContentDigest": "sha256:…",
+      "resolutionDigest": "sha256:…"
+    }
+  ],
+  "unavailableStores": [
+    {
+      "store": { "type": "store", "uid": "5b2e90aa-…", "id": "elsewhere" },
+      "relevant": true,
+      "relevance": ["declared", "previous-source"],
+      "diagnostic": "store elsewhere is not registered on this machine",
+      "repair": ["rasen bootstrap"]
+    }
+  ],
+  "conflicts": []
+}
+```
+
+A conflict, and the ownership record the same run would have written:
+
+```json
+{
+  "conflicts": [
+    {
+      "id": "go-sql-transaction-locking",
+      "kind": "effective",
+      "participants": [
+        { "source": { "owner": { "type": "store", "uid": "9f0c1e2a-…", "id": "team" }, "id": "go-sql-transaction-locking" },
+          "knowledgeKey": "go-sql-tx-locking", "canonicalContentDigest": "sha256:…", "label": "store:team (9f0c1e2a-…)" },
+        { "source": { "owner": { "type": "store", "uid": "c41d77b8-…", "id": "platform" }, "id": "go-sql-transaction-locking" },
+          "knowledgeKey": "go-sql-tx-locking", "canonicalContentDigest": "sha256:…", "label": "store:platform (c41d77b8-…)" }
+      ],
+      "guidance": "Align the canonical store records exactly, rename one learned skill, or retire the inapplicable revision."
+    }
+  ]
+}
+```
+
+```json
+{
+  "version": 2,
+  "stores": {
+    "9f0c1e2a-…": { "lastMembership": "member", "id": "team" }
+  },
+  "tools": {
+    "claude": {
+      "learned": {
+        "go-sql-transaction-locking": {
+          "effectiveScope": "store",
+          "sources": [{ "owner": { "type": "store", "uid": "9f0c1e2a-…", "id": "team" }, "id": "go-sql-transaction-locking" }],
+          "canonicalContentDigest": "sha256:…",
+          "resolutionDigest": "sha256:…",
+          "resolutionSchemaVersion": 2,
+          "file": { "scope": "project", "path": ".claude/skills/go-sql-transaction-locking/SKILL.md", "sha256": "sha256:…" }
+        }
+      }
+    }
+  }
+}
+```
+
+`migrate` runs two independent steps and reports each: the per-clone catalog move and the ownership re-key. Neither ever chooses between things that disagree — divergent catalogs are reported with every location named and nothing is deleted, and a display name that maps to more than one Store (or to none) **blocks** the re-key rather than guessing which Store owns a real file.
 
 Knowledge-owner selection and planning-root selection are independent. A pointer project may report `owner=project:web` while its change planning root is `store:team`; a direct store launch never guesses one member project. Human and JSON output report both typed identities, and a store is reported by its permanent identity with its display name alongside.
 
