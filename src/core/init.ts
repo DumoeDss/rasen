@@ -159,6 +159,7 @@ export class InitCommand {
     // finds the nearest ancestor root (so pointer-repo subdirectories
     // refuse exactly where a normal command would resolve the pointer).
     const guardRoot = findRepoPlanningRootSync(projectPath);
+    let pointerToolOnlySelection: string[] | undefined;
     if (guardRoot) {
       const { hasPlanningShape, pointer } = classifyOpenSpecDir(guardRoot);
       if (!hasPlanningShape) {
@@ -170,10 +171,21 @@ export class InitCommand {
           );
         }
         if (pointer.value !== undefined) {
-          throw new Error(
-            `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
-              `Remove the store: line first to convert this repo to a local Rasen root.`
-          );
+          const targetsPointerRoot =
+            FileSystemUtils.canonicalizeExistingPath(projectPath) ===
+            FileSystemUtils.canonicalizeExistingPath(guardRoot);
+          if (targetsPointerRoot && this.toolsArg !== undefined) {
+            const explicitSelection = this.resolveToolsArg();
+            if (explicitSelection !== null && explicitSelection.length > 0) {
+              pointerToolOnlySelection = explicitSelection;
+            }
+          }
+          if (pointerToolOnlySelection === undefined) {
+            throw new Error(
+              `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
+                `Remove the store: line first to convert this repo to a local Rasen root.`
+            );
+          }
         }
       }
     }
@@ -207,7 +219,9 @@ export class InitCommand {
     const toolStates = getToolStates(projectPath);
 
     // Get tool selection (pass detected tools for pre-selection)
-    const selectedToolIds = await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
+    const selectedToolIds =
+      pointerToolOnlySelection ??
+      await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
 
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
@@ -264,13 +278,18 @@ export class InitCommand {
     }
 
     // Create directory structure and config
-    await this.createDirectoryStructure(openspecPath, extendMode);
+    if (pointerToolOnlySelection === undefined) {
+      await this.createDirectoryStructure(openspecPath, extendMode);
+    }
 
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
     // Create config.yaml if needed (and persist an explicit profile lock)
-    const configStatus = await this.createConfig(openspecPath, extendMode, projectPath);
+    const configStatus =
+      pointerToolOnlySelection === undefined
+        ? await this.createConfig(openspecPath, extendMode, projectPath)
+        : 'exists';
 
     // Establish machine-home identity and registration (task 4.1). Best
     // effort: a registration failure never fails init - the repo-side

@@ -313,7 +313,15 @@ references:
 store: team-context
 ```
 
-此后常规命令会自动解析到所声明的 store；根横幅和 JSON `root` 块会报告 `source: "declared"` 及 store id，打印的提示仍会带上 `--store <id>`。该声明是回退机制，绝非覆盖：显式的 `--store` 总是优先，而含有真实规划文件夹的目录会忽略该指针（并给出警告）。要把一个指针仓库转换为本地 Rasen 根，请删除 `store:` 行并运行 `rasen init`——声明存在时 init 会拒绝搭建脚手架。
+此后常规命令会自动解析到所声明的 store；根横幅和 JSON `root` 块会报告 `source: "declared"` 及 store id，打印的提示仍会带上 `--store <id>`。该声明是回退机制，绝非覆盖：显式的 `--store` 总是优先，而含有真实规划文件夹的目录会忽略该指针（并给出警告）。
+
+如果只想添加或刷新一个已适配工具，而不改变规划位置，请在指针仓库的确切根目录显式指定非空工具：
+
+```bash
+rasen init --tools codex
+```
+
+这只会安装所选工具的 Rasen 资产；它会保留 `store:` 声明，也不会创建本地 `rasen/specs/` 或 `rasen/changes/`。普通的 `rasen init` 仍会被拒绝；只有确实要把指针仓库转换为本地 Rasen 根时，才应先删除 `store:` 行，再运行 `rasen init`。
 
 ## Doctor（关系健康）
 

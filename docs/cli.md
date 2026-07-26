@@ -319,7 +319,15 @@ A repo whose planning is fully externalized — no local `rasen/specs/` or `rase
 store: team-context
 ```
 
-Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins, and a directory with real planning folders ignores the pointer (with a warning). To convert a pointer repo into a local Rasen root, remove the `store:` line and run `rasen init` — init refuses to scaffold while the declaration is present.
+Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins, and a directory with real planning folders ignores the pointer (with a warning).
+
+To add or refresh an adapted tool without changing where planning lives, run an explicit, non-empty tool selection from the exact pointer-repo root:
+
+```bash
+rasen init --tools codex
+```
+
+This installs only the selected tool's Rasen assets. It preserves the `store:` declaration and does not create local `rasen/specs/` or `rasen/changes/`. Plain `rasen init` remains refused; to convert a pointer repo into a local Rasen root, remove the `store:` line first and then run `rasen init`.
 
 ## Doctor (relationship health)
 
