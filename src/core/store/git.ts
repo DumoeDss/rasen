@@ -26,9 +26,11 @@ function execFileAsync(
 
 /**
  * Git mechanics for stores: repository detection, setup-time init and
- * commit, and the read-only facts doctor reports. Nothing here clones, pulls,
- * pushes, or syncs — setup-time `git init` plus one initial commit is the
- * entire write surface.
+ * commit, the read-only facts doctor reports, and `git clone` for bootstrap's
+ * obtain step. Nothing here pulls, pushes, or syncs — setup-time `git init`
+ * plus one initial commit is the entire setup write surface, and `clone` is
+ * the obtain step's surface, routed through the same `execFileAsync` wrapper
+ * as every other git spawn.
  */
 
 function isSpawnNotFoundError(error: unknown): boolean {
@@ -141,6 +143,44 @@ export async function commitStoreFiles(
   }
 
   return true;
+}
+
+/**
+ * `git clone` for bootstrap's obtain step (design D7). The remote is an
+ * ARGUMENT VECTOR element, never a concatenated shell string — `execFile` does
+ * not invoke a shell, so a remote starting with `-` cannot be misread as a
+ * flag, and the `--` separator is defense-in-depth on top of that. The target
+ * is a resolved absolute path composed by the caller.
+ *
+ * Throws a `StoreError` with a `fix` on failure, matching the pattern
+ * `initGitRepository` and `commitStoreFiles` establish. ENOENT (git binary
+ * not installed) is reported distinctly from a clone failure, matching
+ * `assertGitCommitIdentity`'s `isSpawnNotFoundError` pattern.
+ */
+export async function cloneRepository(remote: string, target: string): Promise<void> {
+  try {
+    await execFileAsync('git', ['clone', '--', remote, target]);
+  } catch (error) {
+    if (isSpawnNotFoundError(error)) {
+      throw new StoreError(
+        'Git is not available, so the repository cannot be cloned.',
+        'store_git_unavailable',
+        {
+          target: 'store.git',
+          fix: 'Install Git, or obtain the repository manually and register it with rasen store register.',
+        }
+      );
+    }
+
+    throw new StoreError(
+      `Failed to clone the repository: ${error instanceof Error ? error.message : String(error)}`,
+      'store_clone_failed',
+      {
+        target: 'store.git',
+        fix: 'Verify the remote is reachable and you have access, or obtain the repository manually and register it with rasen store register.',
+      }
+    );
+  }
 }
 
 async function gitProbe(storeRoot: string, args: string[]): Promise<string | null> {

@@ -546,9 +546,8 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
-    // store-bootstrap-diagnose: reporting only. No flag that would obtain,
-    // register, or write is defined here, because defining one would promise
-    // it — the acting half adds them, and every flag below keeps its meaning.
+    // store-bootstrap-obtain: apply mode now obtains declared Stores from
+    // their remotes. The check/dry-run flags remain read-only.
     name: 'bootstrap',
     description: 'Report what this machine still needs before this project works',
     flags: [
@@ -564,12 +563,12 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'apply',
         description:
-          'Apply mode: register the current checkout, register present-unregistered Stores, prepare the knowledge location, and write the durable declaration',
+          'Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration',
       },
       {
         name: 'yes',
         description:
-          'Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain from a remote)',
+          "Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store's projects from a Store checkout)",
       },
       COMMON_FLAGS.json,
       {

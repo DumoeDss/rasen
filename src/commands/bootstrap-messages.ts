@@ -6,6 +6,7 @@ import type {
   BootstrapMembershipState,
   BootstrapMode,
   BootstrapProblemKind,
+  BootstrapProjectAction,
   BootstrapProjectPresence,
   BootstrapStoreAction,
   BootstrapStoreClass,
@@ -84,9 +85,18 @@ export const BOOTSTRAP_MESSAGE_KEYS = [
   'confirmUpgradeDeclaration',
   'actionLine',
   'actionRegistered',
+  'actionObtained',
   'actionAlreadyRegistered',
   'actionDeclined',
+  'actionObtainFailed',
   'actionNotActed',
+  'projectActionLine',
+  'projectActionObtained',
+  'projectActionNotSelected',
+  'projectActionObtainFailed',
+  'projectActionAlreadyPresent',
+  'confirmObtainStore',
+  'selectProjectsPrompt',
   'knowledgeHeading',
   'knowledgePrepared',
   'knowledgeAlreadyHydrated',
@@ -113,8 +123,8 @@ export const BOOTSTRAP_DESCRIPTIONS = {
   command: 'Report what this machine still needs before this project works',
   check: 'Check mode: report from local information only, contacting no network',
   dryRun: 'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
-  apply: 'Apply mode: register the current checkout, register present-unregistered Stores, prepare the knowledge location, and write the durable declaration',
-  yes: 'Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain from a remote)',
+  apply: 'Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration',
+  yes: 'Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store\'s projects from a Store checkout)',
   json: 'Output as JSON',
   path: 'Location for one store or project, as <selector>=<dir>; repeatable',
   into: 'Parent directory a derived name would be placed under',
@@ -160,8 +170,12 @@ export interface BootstrapMessages {
   reportFailed: (detail: string) => string;
   confirmRegisterStore: (selector: string, path: string) => string;
   confirmUpgradeDeclaration: (path: string) => string;
+  confirmObtainStore: (selector: string, path: string) => string;
   actionLine: (action: string) => string;
   action: (action: BootstrapStoreAction) => string;
+  projectActionLine: (action: string) => string;
+  projectAction: (action: BootstrapProjectAction) => string;
+  selectProjectsPrompt: string;
   knowledgeHeading: string;
   knowledgePrepared: (root: string) => string;
   knowledgeAlreadyHydrated: (root: string) => string;
@@ -280,19 +294,39 @@ export function getBootstrapMessages(locale: CliLocale = getCliLocale()): Bootst
       format(raw.confirmRegisterStore, { selector, path: storePath }),
     confirmUpgradeDeclaration: (configPath) =>
       format(raw.confirmUpgradeDeclaration, { path: configPath }),
+    confirmObtainStore: (selector, targetPath) =>
+      format(raw.confirmObtainStore, { selector, path: targetPath }),
     actionLine: (action) => format(raw.actionLine, { action }),
     action: (value) => {
       switch (value) {
         case 'registered':
           return raw.actionRegistered;
+        case 'obtained':
+          return raw.actionObtained;
         case 'already-registered':
           return raw.actionAlreadyRegistered;
         case 'declined':
           return raw.actionDeclined;
+        case 'obtain-failed':
+          return raw.actionObtainFailed;
         case 'not-acted':
           return raw.actionNotActed;
       }
     },
+    projectActionLine: (action) => format(raw.projectActionLine, { action }),
+    projectAction: (value) => {
+      switch (value) {
+        case 'obtained':
+          return raw.projectActionObtained;
+        case 'not-selected':
+          return raw.projectActionNotSelected;
+        case 'obtain-failed':
+          return raw.projectActionObtainFailed;
+        case 'already-present':
+          return raw.projectActionAlreadyPresent;
+      }
+    },
+    selectProjectsPrompt: raw.selectProjectsPrompt,
     knowledgeHeading: raw.knowledgeHeading,
     knowledgePrepared: (root) => format(raw.knowledgePrepared, { root }),
     knowledgeAlreadyHydrated: (root) => format(raw.knowledgeAlreadyHydrated, { root }),

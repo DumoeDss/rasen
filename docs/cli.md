@@ -65,7 +65,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen store eject <project-id> --from <store>` | Restore a store-hosted project | `--into <path> --json`; the destination is resolved explicitly, never guessed |
 | `rasen store migrate-membership <store>` | Convert legacy membership data into records | `--apply --json`; previews by default |
 | `rasen bootstrap --check` | See what this machine still needs | `--json` for the whole gap in one report; reports only, writes nothing |
-| `rasen bootstrap --apply` | Register what is already local | `--yes` to skip prompts for project-declared stores; does not obtain from a remote |
+| `rasen bootstrap --apply` | Register what is local and obtain declared stores from remotes | `--yes` to skip prompts for project-declared stores; from a store checkout, `--yes` registers the store only and never obtains its projects |
 | `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the Rasen root |
 | `rasen workset create [name]` | Compose a personal working view | `--member <path> --json` for non-interactive composition |
 | `rasen workset list` | Browse saved worksets | `--json` for structured views |
@@ -678,12 +678,13 @@ rasen bootstrap --apply   [--yes] [--json] [--path <selector>=<dir>] [--into <di
 ```
 
 **`--check` and `--dry-run` report; they do not repair.** They obtain nothing,
-register nothing, and write nothing. **`--apply`** acts on what is already
-local: it registers the current checkout, registers present-unregistered stores
-the user names a location for (consent-gated), prepares the knowledge location,
-and writes the durable store declaration when the project's declaration is in
-the earlier form. It does **not** retrieve from a remote, clone, or run any
-version-control operation — obtaining from a remote is a separate change.
+register nothing, and write nothing. **`--apply`** acts: it registers the current
+checkout, registers present-unregistered stores the user names a location for,
+**obtains declared stores that are absent with a recorded remote** (cloning from
+the remote to the location `--dry-run` previewed), prepares the knowledge
+location, and writes the durable store declaration when the project's
+declaration is in the earlier form. A failed retrieval cleans up only the
+directory this run created — a pre-existing target is never deleted.
 
 That is also why `rasen bootstrap` with no mode flag reports which modes exist
 and exits rather than doing something.
@@ -694,7 +695,7 @@ and exits rather than doing something.
 |---|---|---|---|---|
 | `--check` | yes | **no** | no | no |
 | `--dry-run` (preview) | yes | **yes** | no | no |
-| `--apply` | yes | no | **yes** (local only) | no |
+| `--apply` | yes | no | **yes** | **yes** (clones declared stores from their remotes) |
 
 - **`--check`** contacts **no network at all**. It is the mode to run when you
   do not yet trust the tool with your network: everything it reports comes from
@@ -702,11 +703,13 @@ and exits rather than doing something.
 - **`--dry-run`** additionally resolves which clone source would be used and
   names **the exact path** each repository would be placed at. It still creates
   no directory and runs no version-control operation.
-- **`--apply`** acts on what is already local. It registers the current
-  checkout, registers each present-unregistered store the user names a location
-  for, prepares the knowledge location, and writes the durable store
-  declaration. It does **not** obtain from a remote. `--yes` skips confirmation
-  for the stores the project itself declares.
+- **`--apply`** acts on what is local AND obtains what is not. It registers the
+  current checkout, registers each present-unregistered store the user names a
+  location for, **obtains each declared store that is absent with a recorded
+  remote** (cloning from the remote to the previewed location, consent-gated),
+  prepares the knowledge location, and writes the durable store declaration.
+  `--yes` skips confirmation for the stores the project itself declares — it
+  covers obtaining declared stores, never obtaining a store's projects.
 
 They are requested separately, never through one combined "safe mode" option,
 and passing more than one is rejected before any work happens. `--yes` without
@@ -718,8 +721,8 @@ and passing more than one is rejected before any work happens. `--yes` without
 |---|---|
 | `--check` | Check mode: report from local information only, contacting no network. |
 | `--dry-run` | Preview mode: additionally resolve remotes and the exact location each repository would be placed at. |
-| `--apply` | Apply mode: register the current checkout, register present-unregistered stores, prepare the knowledge location, and write the durable declaration. Nothing is retrieved from a remote. |
-| `--yes` | Skip confirmation prompts for the stores the project declares. Apply mode only; does not cover obtaining from a remote. |
+| `--apply` | Apply mode: register the current checkout, register present-unregistered stores, obtain declared stores from their remotes, prepare the knowledge location, and write the durable declaration. |
+| `--yes` | Skip confirmation prompts for the stores the project declares. Apply mode only. From a project checkout, covers obtaining declared stores. From a store checkout, registers the store's own checkout only — **never obtains its projects** (the never-harvest rule). |
 | `--json` | Emit the report as JSON. Human and JSON carry the same states, the same missing items, and the same repair commands. |
 | `--path <selector>=<dir>` | The location for one store or project. Repeatable. The selector is required because a location belongs to one repository — the store's display name, or its permanent identity when the name is ambiguous here. |
 | `--into <dir>` | A parent directory. Each repository that has no explicit `--path` is previewed at this parent plus a safe name derived from its clone source. |
@@ -790,6 +793,38 @@ are compared canonically, so a drive-letter or separator difference is not a
 different location. A path recorded by another machine never influences the
 choice.
 
+### Clone target safety and failed-retrieval cleanup
+
+In `--apply` mode, when bootstrap obtains a store or project from its remote,
+the clone target is **enforced**, not just previewed: bootstrap never clones
+into a directory that already has contents, never overwrites an existing
+checkout, and never takes a location from a path another machine recorded. The
+remote is passed as an argument vector to `git clone` — never assembled into a
+shell command line.
+
+When a retrieval **fails**, bootstrap removes the target directory **only** when
+it can prove this run created it (the directory did not exist before the clone
+attempt). If the directory pre-existed — or its provenance is unknown — it is
+left exactly as it is and the failure names it and what to inspect. Bootstrap
+never attempts partial cleanup of a pre-existing directory: a half-corrupted
+clone in a directory the user already had is the user's to diagnose, not
+bootstrap's to "fix" by deleting.
+
+### The `--yes` asymmetry
+
+`--yes` means different things from different starting points:
+
+- **From a project checkout**, `--yes` covers obtaining the stores the project
+  **itself** declares. The expected set comes from the user's own committed
+  declarations, so confirming ahead of time is safe.
+- **From a store checkout**, `--yes` covers registering the store's own checkout
+  **only**. It never obtains any of the store's projects — a store's roster is
+  authored by other people and can grow without the local user knowing. To
+  obtain a project from a store, the user must explicitly select it
+  (interactively or via `--path <projectId>=<dir>`).
+
+The two flows are not unified behind one predicate.
+
 ### Starting from a store checkout
 
 Run inside a store checkout instead of a project, and bootstrap reports the
@@ -799,11 +834,21 @@ undetermined when a registered project's own identity cannot be read and so this
 machine cannot say whether it already holds it. A project the store records that
 nothing here can locate is said to be exactly that; it is never quietly called
 obtainable. A run that could not read one of the store's records is never
-reported as `complete`. It obtains no project and registers
-nothing, however many the store records. A checkout that does not verify as the
-store it claims to be is reported as blocked, naming the mismatch; so is one
-whose `store.yaml` exists but cannot be parsed, which is reported as unreadable
-state rather than as "not a store checkout".
+reported as `complete`.
+
+In **`--apply`** mode from a store checkout, bootstrap registers the store's own
+checkout (consent is implied by running apply from the store) and then obtains a
+project **only when the user explicitly selects it** — either interactively (the
+prompt lists each obtainable project) or via `--path <projectId>=<dir>`.
+**`--yes` does not count as selection here**: a store's roster is authored by
+other people and can grow without the local user knowing, so `--yes` covers
+registering the store's own checkout only. Bootstrap never obtains every project
+a store records, under any option.
+
+A checkout that does not verify as the store it claims to be is reported as
+blocked, naming the mismatch; so is one whose `store.yaml` exists but cannot be
+parsed, which is reported as unreadable state rather than as "not a store
+checkout".
 
 ### JSON examples
 
@@ -990,7 +1035,7 @@ An **apply** result — a store was registered and the declaration upgraded:
 }
 ```
 
-A **degraded** apply — one store was registered, another is absent (obtaining is a separate change):
+A **degraded** apply — one store was registered, another was obtained, a third could not be obtained:
 
 ```json
 {
@@ -1009,16 +1054,31 @@ A **degraded** apply — one store was registered, another is absent (obtaining 
       },
       {
         "selector": "design-context",
+        "class": "verified",
+        "membership": { "state": "confirmed", "repair": [] },
+        "repair": [],
+        "action": "obtained"
+      },
+      {
+        "selector": "infra-context",
         "class": "absent-with-remote",
         "membership": { "state": "unverifiable-here", "repair": [] },
         "repair": [
           {
             "kind": "command",
-            "command": "git clone git@github.com:acme/design-context.git <path> && rasen store register <path>",
+            "command": "git clone git@github.com:acme/infra-context.git <path> && rasen store register <path>",
             "mutates": true
           }
         ],
-        "action": "not-acted"
+        "action": "obtain-failed",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "store_clone_failed",
+            "message": "Failed to clone the repository: ...",
+            "target": "store.git"
+          }
+        ]
       }
     ],
     "knowledge": { "root": "...", "catalogDir": "...", "alreadyHydrated": false },

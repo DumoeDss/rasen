@@ -1,12 +1,19 @@
 /**
- * The bootstrap report: what this machine still needs before a project works.
+ * The bootstrap report: what this machine still needs before a project works,
+ * and (in apply mode) the actions that close the gap.
  *
- * READS ONLY, on every path, in either mode. Nothing here creates a directory,
- * writes a file, registers anything, mints an identity, or spawns a process —
- * so there is no failure mode in which running it leaves a trace. Check mode
- * additionally contacts NO network: the remote seam is not reachable from it at
- * all (`unreachableRemoteResolver` throws if the check path ever reaches for
- * it), so the promise is mechanical rather than a convention.
+ * `check` and `preview` are read-only: nothing here creates a directory, writes
+ * a file, registers anything, mints an identity, or spawns a process in either
+ * of those modes. `apply` acts: it registers checkouts, registers and obtains
+ * Stores, prepares knowledge directories, and writes durable declarations. The
+ * obtain step (E3) is the first that retrieves from the network — it clones
+ * from a remote to the previewed location and is governed by the
+ * provable-creation cleanup guard (design D5) so a failed retrieval never
+ * deletes a directory this run did not create.
+ *
+ * Check mode additionally contacts NO network: the remote seam is not reachable
+ * from it at all (`unreachableRemoteResolver` throws if the check path ever
+ * reaches for it), so the promise is mechanical rather than a convention.
  *
  * The state machine COMPOSES the landed surfaces rather than shadowing them:
  * `listProjectStoreCandidates` already unions membership hints with locally
@@ -67,6 +74,7 @@ import { storeProjectRecordMissing, storeUidMismatch } from './identity-diagnost
 import { storeUidsMatch, type ResolvedStoreRef } from './identity-types.js';
 import { inspectRegisteredStore } from './inspection.js';
 import { registerExistingStore } from './operations.js';
+import { cloneRepository } from './git.js';
 import {
   listProjectStoreCandidates,
   listStoreMembers,
@@ -90,11 +98,14 @@ import { writeDurablePointer } from './upgrade-identity.js';
 
 /**
  * The three modes. `check` and `preview` are read-only — two different promises,
- * each with its own assertion. `apply` acts on what is already local: it
- * registers the current checkout, registers present-unregistered Stores the
- * user names a location for, prepares the knowledge location, and writes the
- * durable declaration when the trigger fires. Nothing is retrieved, cloned, or
- * version-controlled, in any mode.
+ * each with its own assertion. `apply` acts: it registers the current checkout,
+ * registers present-unregistered Stores the user names a location for, obtains
+ * declared Stores that are absent with a recorded remote (cloning from the
+ * remote to the previewed location), prepares the knowledge location, and
+ * writes the durable declaration when the trigger fires. `check` contacts no
+ * network and creates nothing; `preview` resolves remotes and target paths but
+ * creates no directory; `apply` clones and registers, governed by the
+ * provable-creation cleanup guard (design D5).
  */
 export type BootstrapMode = 'check' | 'preview' | 'apply';
 
@@ -195,11 +206,15 @@ export type BootstrapLocation =
 export type BootstrapStoreAction =
   /** Bootstrap registered it this run. */
   | 'registered'
+  /** Bootstrap cloned and registered it this run. */
+  | 'obtained'
   /** It was already in the registry before this run; bootstrap wrote nothing. */
   | 'already-registered'
-  /** The user declined consent for a registration bootstrap would have done. */
+  /** The user declined consent for an action bootstrap would have done. */
   | 'declined'
-  /** Not a registration target — verified, absent, or unresolvable. */
+  /** The clone failed; the cleanup guard ran and the failure is reported. */
+  | 'obtain-failed'
+  /** Not an action target — verified, absent, or unresolvable. */
   | 'not-acted';
 
 export interface BootstrapStoreEntry {
@@ -250,7 +265,23 @@ export interface BootstrapProjectEntry {
   /** Preview mode only: where this project would be placed. */
   location?: BootstrapLocation;
   diagnostics: StoreDiagnostic[];
+  /** Apply mode only: what bootstrap did for this project. */
+  action?: BootstrapProjectAction;
 }
+
+/**
+ * What bootstrap did for a project the Store records, during Store-first apply.
+ * Additive — check and preview leave `action` unset.
+ */
+export type BootstrapProjectAction =
+  /** Bootstrap cloned and registered it this run. */
+  | 'obtained'
+  /** The user did not select this project; bootstrap obtained nothing for it. */
+  | 'not-selected'
+  /** The clone failed; the cleanup guard ran and the failure is reported. */
+  | 'obtain-failed'
+  /** The project is already on this machine; no action taken. */
+  | 'already-present';
 
 /** A finding that blocks the report rather than degrading it. */
 export type BootstrapProblemKind =
@@ -920,7 +951,7 @@ export type SuppliedLocations = ReadonlyMap<string, string>;
  * target, where); the command layer formats them into a localized prompt.
  */
 export interface BootstrapConsentRequest {
-  readonly action: 'register-store' | 'upgrade-declaration';
+  readonly action: 'register-store' | 'upgrade-declaration' | 'obtain-store';
   readonly selector: string;
   readonly path: string;
 }
@@ -939,6 +970,26 @@ export interface BootstrapConsent {
    * and for every Store in interactive mode. Returns true to proceed.
    */
   confirm?: (request: BootstrapConsentRequest) => Promise<boolean>;
+  /**
+   * Store-first interactive selection: ask which projects to obtain. Returns
+   * the projectIds the user selected. NEVER called under `--yes` (the
+   * never-harvest rule holds even under blanket confirmation). Called only in
+   * interactive Store-first apply mode, and only for projects that are
+   * obtainable (present projects are never offered).
+   */
+  selectProjects?: (projects: readonly BootstrapProjectSelection[]) => Promise<string[]>;
+}
+
+/**
+ * What the Store-first selection callback receives for each obtainable project.
+ * Enough to render a meaningful prompt without exposing internal types.
+ */
+export interface BootstrapProjectSelection {
+  projectId: string;
+  /** The display name from the Store's record, when present. */
+  id?: string;
+  /** The redacted clone source, when recorded. */
+  remote?: string;
 }
 
 export interface BootstrapInput extends StorePathOptions {
@@ -1040,6 +1091,168 @@ async function confirmAction(
 }
 
 /**
+ * Clone with the provable-creation cleanup guard (design D5). This is the ONE
+ * place the data-destruction guard lives — both the Store obtain and the
+ * project obtain flows route through it, so a future change to the guard
+ * cannot fix one and miss the other.
+ *
+ * Returns `{ ok: true }` on success, or `{ ok: false, targetExistedBefore }`
+ * on failure (the cleanup decision has already been executed and reported).
+ * Failures are pushed to `diagnostics` by this function; the caller sets the
+ * entry's action.
+ */
+async function cloneWithCleanupGuard(
+  remote: string,
+  target: string,
+  diagnostics: StoreDiagnostic[]
+): Promise<{ ok: true } | { ok: false; targetExistedBefore: boolean }> {
+  // PROVENANCE PROOF — THE data-destruction guard's evidence. Record whether
+  // the target existed BEFORE the clone attempt. This is the single piece of
+  // evidence the cleanup guard consumes at clone-failure time. If the
+  // directory did not exist before this run → safe to remove on failure. If
+  // it pre-existed → leave untouched, always.
+  const targetExistedBefore = fs.existsSync(target);
+
+  try {
+    await cloneRepository(remote, target);
+    return { ok: true };
+  } catch (failure) {
+    // FAILED-RETRIEVAL CLEANUP — THE data-destruction guard's action.
+    if (!targetExistedBefore) {
+      // This run created (or attempted to create) the directory. Removing it
+      // restores the pre-run state — the directory contained only the failed
+      // clone attempt.
+      try {
+        fs.rmSync(target, { recursive: true, force: true });
+      } catch (cleanupFailure) {
+        diagnostics.push(...diagnosticsFor(cleanupFailure));
+      }
+    }
+    // If `targetExistedBefore` is true, leave the directory exactly as it is.
+    // A half-corrupted clone in a pre-existing directory is the user's to
+    // diagnose, not bootstrap's to "fix" by deleting.
+    diagnostics.push(...diagnosticsFor(failure));
+    if (targetExistedBefore) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'bootstrap_obtain_target_preserved',
+        message: `The directory at ${target} pre-existed and was left untouched. Inspect it manually before retrying.`,
+        target: 'store.root',
+      });
+    }
+    return { ok: false, targetExistedBefore };
+  }
+}
+
+/**
+ * THE obtain step (design D3, D5). Clones a declared Store from its remote,
+ * registers the checkout, and governs failed-retrieval cleanup by a
+ * provable-creation guard. The cleanup proof (`fs.existsSync` recorded BEFORE
+ * the clone) and the cleanup decision are in THIS function — the proof does
+ * not cross a module boundary where a future change could consume it without
+ * establishing it.
+ *
+ * Returns the outcome, mutates `entry` in place (action, class, root, repair,
+ * diagnostics). Never throws — failures are pushed as diagnostics so the
+ * remaining steps still execute.
+ */
+async function obtainAbsentStore(
+  entry: BootstrapStoreEntry,
+  rawRemote: string,
+  input: BootstrapInput,
+  diagnostics: StoreDiagnostic[]
+): Promise<'obtained' | 'obtain-failed' | 'declined' | 'not-acted'> {
+  // Clone target enforcement (D5): call selectBootstrapLocation to choose the
+  // target. This is the SAME function preview uses — E3 adds the enforcement
+  // that a non-`usable` result prevents the clone.
+  const suppliedPath = suppliedPathFor(input.paths, [entry.id, entry.uid, entry.selector]);
+  const location = selectBootstrapLocation({
+    ...(suppliedPath !== undefined ? { suppliedPath } : {}),
+    ...(input.into !== undefined ? { parentDirectory: input.into } : {}),
+    nameSource: {
+      ...(rawRemote !== undefined ? { remote: rawRemote } : {}),
+      ...(entry.id !== undefined ? { id: entry.id } : {}),
+    },
+  });
+
+  if (location.kind === 'refused') {
+    entry.action = 'not-acted';
+    entry.diagnostics.push({
+      severity: 'warning',
+      code: 'bootstrap_obtain_target_refused',
+      message:
+        location.because === 'not-empty'
+          ? `The target directory ${location.path} already has contents, so the Store was not cloned there.`
+          : location.because === 'existing-checkout'
+            ? `The target directory ${location.path} already holds a checkout, so the Store was not cloned there.`
+            : `The target directory ${location.path} could not be read, so the Store was not cloned there.`,
+      target: 'store.root',
+      fix: `Choose a different location with --path <selector>=<dir> or --into <dir>.`,
+    });
+    return 'not-acted';
+  }
+
+  if (location.kind === 'required') {
+    entry.action = 'not-acted';
+    // The location demand means the user must supply a path — prepend the
+    // supply-path repair so the report names what to do.
+    if (!entry.repair.some((repair) => repair.kind === 'supply-path')) {
+      entry.repair = [{ kind: 'supply-path' }, ...entry.repair];
+    }
+    return 'not-acted';
+  }
+
+  // Location is usable. Consent gate (D3): without `--yes`, each obtain asks;
+  // with `--yes` (project-first), declared Stores are obtained without asking.
+  const declaredByProject = entry.sources.includes('planning');
+  const consentRequest: BootstrapConsentRequest = {
+    action: 'obtain-store',
+    selector: entry.selector,
+    path: location.path,
+  };
+  const confirmed = await confirmAction(consentRequest, declaredByProject, input.consent);
+  if (!confirmed) {
+    entry.action = 'declined';
+    return 'declined';
+  }
+
+  // Clone through the shared cleanup guard — the proof and the cleanup
+  // decision are in `cloneWithCleanupGuard`, the single place the
+  // data-destruction guard lives.
+  const result = await cloneWithCleanupGuard(rawRemote, location.path, entry.diagnostics);
+  if (!result.ok) {
+    entry.action = 'obtain-failed';
+    return 'obtain-failed';
+  }
+
+  // Clone succeeded. Register through the same path E2 uses for a
+  // present-unregistered Store.
+  try {
+    await registerExistingStore({ path: location.path });
+  } catch (failure) {
+    // The clone succeeded but registration failed. The checkout IS there —
+    // report the failure but do NOT remove the checkout. A valid clone is
+    // data the user may want to keep, and removing it would be the exact
+    // data-destruction pattern the cleanup guard exists to prevent.
+    entry.action = 'obtain-failed';
+    entry.diagnostics.push(...diagnosticsFor(failure));
+    entry.diagnostics.push({
+      severity: 'warning',
+      code: 'bootstrap_obtain_clone_succeeded_register_failed',
+      message: `The repository was cloned to ${location.path} but could not be registered. The checkout is intact; run 'rasen store register ${pasteablePath(location.path)}' manually.`,
+      target: 'store.root',
+    });
+    return 'obtain-failed';
+  }
+
+  entry.action = 'obtained';
+  entry.class = 'verified';
+  entry.root = canonicalLocation(location.path);
+  entry.repair = [];
+  return 'obtained';
+}
+
+/**
  * The durable-declaration trigger (design D7). Bootstrap writes when the
  * project has a declaration that COULD be more durable — not when it has none at
  * all (that is `rasen init`'s contract).
@@ -1137,11 +1350,12 @@ interface ApplyProjectFirstResult {
 }
 
 /**
- * The project-first apply path (design D5). Acts on what is already local:
- * registers the current checkout, registers each present-unregistered Store
- * the user named a location for, re-verifies membership for newly-available
- * Stores, prepares the knowledge location, and writes the durable declaration
- * when the trigger fires.
+ * The project-first apply path (design D5). Acts on what is already local AND
+ * obtains what is not: registers the current checkout, registers each
+ * present-unregistered Store the user named a location for, obtains each
+ * declared Store that is absent with a recorded remote, re-verifies membership
+ * for newly-available Stores, prepares the knowledge location, and writes the
+ * durable declaration when the trigger fires.
  *
  * Each step is individually idempotent, so an interruption at any point leaves a
  * state a rerun resumes from. A failed step is reported and does not abort the
@@ -1156,9 +1370,11 @@ async function applyProjectFirstActions(
     pointer: StorePointerRead;
     options: StorePathOptions;
     diagnostics: StoreDiagnostic[];
+    /** Raw (unredacted) remotes keyed by entry key, for cloning. */
+    rawRemotes: Map<string, string>;
   }
 ): Promise<ApplyProjectFirstResult> {
-  const { projectRoot, projectId, pointer, options, diagnostics } = context;
+  const { projectRoot, projectId, pointer, options, diagnostics, rawRemotes } = context;
   const consent = input.consent;
 
   // Step 2: Register the current project checkout. Always performed in apply
@@ -1214,6 +1430,25 @@ async function applyProjectFirstActions(
       // locked. Report the failure and continue.
       entry.action = 'not-acted';
       entry.diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
+  // Step 3.5 (E3): Obtain each absent-with-remote declared Store. After step 3,
+  // Stores that were `present-unregistered` are now `verified`. The only Stores
+  // still at `absent-with-remote` are the ones that need cloning from their
+  // remotes. Consent-gated: without `--yes`, each obtain asks; with `--yes`
+  // (project-first), declared Stores are obtained without asking. The cleanup
+  // guard (design D5) lives inside `obtainAbsentStore`.
+  for (const entry of stores) {
+    if (entry.class !== 'absent-with-remote') continue;
+    const rawRemote = rawRemotes.get(entry.key);
+    if (rawRemote === undefined) continue;
+
+    const outcome = await obtainAbsentStore(entry, rawRemote, input, diagnostics);
+    if (outcome === 'obtained') {
+      // The Store was cloned and registered — its records are now readable for
+      // the first time. Add it to the membership re-verification list.
+      newlyRegistered.push(entry);
     }
   }
 
@@ -1400,20 +1635,27 @@ async function buildProjectReport(input: BootstrapInput): Promise<BootstrapRepor
   }
   stores.sort((left, right) => left.selector.localeCompare(right.selector));
 
-  // Apply mode: act on what is already local. The read-and-classify path above
-  // is unchanged — the apply path consumes its results. Each step is
-  // individually idempotent, so an interruption leaves a state a rerun resumes
-  // from. The end state is computed AFTER acting, so it reflects the
-  // post-acting facts.
+  // Apply mode: act on what is already local AND obtain what is not. The
+  // read-and-classify path above is unchanged — the apply path consumes its
+  // results. Each step is individually idempotent, so an interruption leaves a
+  // state a rerun resumes from. The end state is computed AFTER acting, so it
+  // reflects the post-acting facts.
   let knowledge: BootstrapKnowledgePreparation | undefined;
   let declaration: BootstrapDeclarationResult | undefined;
   if (input.mode === 'apply') {
+    // Build the raw-remotes map from the expected Stores: the entries carry
+    // the REDACTED remote for display, but cloning needs the raw URL.
+    const rawRemotes = new Map<string, string>();
+    for (const [key, item] of expected) {
+      if (item.remote !== undefined) rawRemotes.set(key, item.remote);
+    }
     const result = await applyProjectFirstActions(input, stores, {
       projectRoot,
       ...(projectId !== undefined ? { projectId } : {}),
       pointer,
       options,
       diagnostics,
+      rawRemotes,
     });
     knowledge = result.knowledge;
     declaration = result.declaration;
@@ -1899,15 +2141,188 @@ async function buildStoreFirstReport(
   };
 
   const projects: BootstrapProjectEntry[] = [];
+  /** Raw (unredacted) remotes for cloning, keyed by projectId. */
+  const rawProjectRemotes = new Map<string, string>();
   if (problems.length === 0) {
     try {
       const listing = await listStoreMembers(store, options);
       diagnostics.push(...listing.diagnostics);
       for (const member of listing.members) {
         projects.push(await buildProjectEntry({ member, entries, input }));
+        if (member.remote !== undefined) {
+          rawProjectRemotes.set(member.projectId, member.remote);
+        }
       }
     } catch (failure) {
       return blocked(unreadableState(canonicalRoot, failure));
+    }
+  }
+
+  // Apply mode (E3, design D4): register the Store's own checkout and obtain
+  // explicitly selected projects. `--yes` covers registering the Store's own
+  // checkout ONLY — it never obtains projects (the never-harvest rule, D6).
+  let storeRegisteredAfterApply = registered !== undefined;
+  if (input.mode === 'apply' && problems.length === 0) {
+    // Step 1: Register the Store's own checkout. Consent is covered by
+    // invoking apply (the Store is what the user is running bootstrap from).
+    if (registered === undefined) {
+      try {
+        await registerExistingStore({ path: canonicalRoot });
+        storeRegisteredAfterApply = true;
+      } catch (failure) {
+        // Idempotent on rerun: if already registered, this is a no-op.
+        // Any other failure is reported and the remaining steps still run.
+        diagnostics.push(...diagnosticsFor(failure));
+      }
+    }
+
+    // Step 2: Determine which projects the user EXPLICITLY selected. The
+    // never-harvest rule (D6) holds: `--yes` alone selects nothing. Only an
+    // explicit `--path <projectId>=<dir>` or an interactive pick counts.
+    const selectedProjectIds = new Set<string>();
+
+    // (a) Projects named via --path are explicitly selected.
+    for (const project of projects) {
+      if (project.presence === 'present') continue;
+      const supplied = suppliedPathFor(input.paths, [project.id, project.projectId]);
+      if (supplied !== undefined) selectedProjectIds.add(project.projectId);
+    }
+
+    // (b) Interactive selection — ONLY when blanket is NOT set (never-harvest
+    // under `--yes`) AND the callback is available.
+    if (!input.consent?.blanket && input.consent?.selectProjects) {
+      const obtainable = projects.filter((p) => p.presence === 'obtainable');
+      if (obtainable.length > 0) {
+        const selections: BootstrapProjectSelection[] = obtainable.map((p) => ({
+          projectId: p.projectId,
+          ...(p.id !== undefined ? { id: p.id } : {}),
+          ...(p.remote !== undefined ? { remote: p.remote } : {}),
+        }));
+        const picked = await input.consent.selectProjects(selections);
+        for (const id of picked) selectedProjectIds.add(id);
+      }
+    }
+
+    // Step 3: Clone and register each selected project. The cleanup guard
+    // (design D5) runs inside `cloneWithCleanupGuard`.
+    for (const project of projects) {
+      if (project.presence === 'present') {
+        project.action = 'already-present';
+        continue;
+      }
+      if (!selectedProjectIds.has(project.projectId)) {
+        project.action = 'not-selected';
+        continue;
+      }
+
+      const rawRemote = rawProjectRemotes.get(project.projectId);
+      if (rawRemote === undefined) {
+        project.action = 'obtain-failed';
+        project.diagnostics.push({
+          severity: 'error',
+          code: 'bootstrap_obtain_no_remote',
+          message: `No remote is recorded for project ${project.id ?? project.projectId}, so it cannot be obtained.`,
+          target: 'project.root',
+        });
+        continue;
+      }
+
+      // Target selection (D5 enforcement).
+      const suppliedPath = suppliedPathFor(input.paths, [
+        project.id,
+        project.projectId,
+      ]);
+      const location = selectBootstrapLocation({
+        ...(suppliedPath !== undefined ? { suppliedPath } : {}),
+        ...(input.into !== undefined ? { parentDirectory: input.into } : {}),
+        nameSource: {
+          ...(rawRemote !== undefined ? { remote: rawRemote } : {}),
+          ...(project.id !== undefined ? { id: project.id } : {}),
+        },
+      });
+
+      if (location.kind === 'refused') {
+        project.action = 'obtain-failed';
+        project.diagnostics.push({
+          severity: 'warning',
+          code: 'bootstrap_obtain_target_refused',
+          message:
+            location.because === 'not-empty'
+              ? `The target directory ${location.path} already has contents, so the project was not cloned there.`
+              : location.because === 'existing-checkout'
+                ? `The target directory ${location.path} already holds a checkout, so the project was not cloned there.`
+                : `The target directory ${location.path} could not be read, so the project was not cloned there.`,
+          target: 'project.root',
+          fix: `Choose a different location with --path <selector>=<dir> or --into <dir>.`,
+        });
+        continue;
+      }
+
+      if (location.kind === 'required') {
+        project.action = 'obtain-failed';
+        project.diagnostics.push({
+          severity: 'warning',
+          code: 'bootstrap_obtain_target_required',
+          message: `A target location must be supplied for project ${project.id ?? project.projectId}. Use --path <selector>=<dir> or --into <dir>.`,
+          target: 'project.root',
+        });
+        continue;
+      }
+
+      // Clone with the shared cleanup guard.
+      const result = await cloneWithCleanupGuard(
+        rawRemote,
+        location.path,
+        project.diagnostics
+      );
+      if (!result.ok) {
+        project.action = 'obtain-failed';
+        continue;
+      }
+
+      // Identity verification (design D4, task 6.6): re-read the cloned
+      // project's own config and verify its projectId matches what the Store
+      // recorded. A mismatch means the remote held a different project than
+      // expected — the checkout is left in place (it is valid data the user
+      // may want to inspect), and the mismatch is reported.
+      const clonedConfig = readProjectConfig(location.path);
+      const clonedProjectId = clonedConfig?.projectId;
+      if (
+        clonedProjectId !== undefined &&
+        normalizeProjectIdentity(clonedProjectId) !==
+          normalizeProjectIdentity(project.projectId)
+      ) {
+        project.action = 'obtain-failed';
+        project.diagnostics.push({
+          severity: 'error',
+          code: 'bootstrap_obtain_identity_mismatch',
+          message: `The cloned project at ${location.path} identifies as '${clonedProjectId}' but the Store recorded it as '${project.projectId}'. The checkout was left in place for inspection.`,
+          target: 'project.projectId',
+        });
+        continue;
+      }
+
+      // Register the obtained project checkout.
+      try {
+        await registerProject(
+          { projectRoot: location.path, projectId: project.projectId, mode: 'in-repo' },
+          options
+        );
+        project.action = 'obtained';
+        project.root = canonicalLocation(location.path);
+        project.presence = 'present';
+      } catch (failure) {
+        // Clone succeeded but registration failed — the checkout is valid
+        // data. Report the failure but do NOT remove the checkout.
+        project.action = 'obtain-failed';
+        project.diagnostics.push(...diagnosticsFor(failure));
+        project.diagnostics.push({
+          severity: 'warning',
+          code: 'bootstrap_obtain_clone_succeeded_register_failed',
+          message: `The project was cloned to ${location.path} but could not be registered. The checkout is intact.`,
+          target: 'project.root',
+        });
+      }
     }
   }
 
@@ -1928,7 +2343,7 @@ async function buildStoreFirstReport(
       ...(storeMetadataUid(metadata) !== undefined
         ? { uid: storeMetadataUid(metadata) as string }
         : {}),
-      registered: registered !== undefined,
+      registered: storeRegisteredAfterApply,
     },
     stores: [],
     projects,

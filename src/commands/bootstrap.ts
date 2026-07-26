@@ -23,7 +23,9 @@ import {
   type BootstrapConsentRequest,
   type BootstrapMode,
   type BootstrapProblem,
+  type BootstrapProjectAction,
   type BootstrapProjectEntry,
+  type BootstrapProjectSelection,
   type BootstrapReport,
   type BootstrapRepair,
   type BootstrapStoreAction,
@@ -224,6 +226,9 @@ function renderProject(
   messages: BootstrapMessages
 ): void {
   lines.push(messages.projectRow(entry.id ?? entry.projectId, messages.presence(entry.presence)));
+  if (entry.action !== undefined && entry.action !== 'not-selected') {
+    lines.push(messages.projectActionLine(messages.projectAction(entry.action)));
+  }
   if (entry.remote !== undefined) lines.push(messages.remoteLine(entry.remote));
   renderLocation(lines, entry, messages);
   // `presence: 'unknown'` carries no repair, so without these the human reader
@@ -351,8 +356,32 @@ function createConsentCallback(
     const message =
       request.action === 'register-store'
         ? messages.confirmRegisterStore(request.selector, request.path)
-        : messages.confirmUpgradeDeclaration(request.path);
+        : request.action === 'obtain-store'
+          ? messages.confirmObtainStore(request.selector, request.path)
+          : messages.confirmUpgradeDeclaration(request.path);
     return confirm({ message, default: true });
+  };
+}
+
+/**
+ * Store-first interactive project selection. Uses `@inquirer/prompts` checkbox
+ * so the user can pick zero or more projects to obtain. NEVER called under
+ * `--yes` (the never-harvest rule holds even under blanket confirmation).
+ */
+function createProjectSelectionCallback(
+  messages: BootstrapMessages
+): (projects: readonly BootstrapProjectSelection[]) => Promise<string[]> {
+  return async (projects) => {
+    if (projects.length === 0) return [];
+    const { checkbox } = await import('@inquirer/prompts');
+    const choices = projects.map((project) => ({
+      name: `${project.id ?? project.projectId}${project.remote !== undefined ? ` (${project.remote})` : ''}`,
+      value: project.projectId,
+    }));
+    return checkbox({
+      message: messages.selectProjectsPrompt,
+      choices,
+    });
   };
 }
 
@@ -386,12 +415,19 @@ export async function runBootstrapCommand(
 
   // Apply mode: build the consent configuration. Blanket (`--yes`) confirms
   // the Stores the project itself declares without asking; interactive asks
-  // for each registration through an inquirer prompt.
+  // for each registration through an inquirer prompt. The Store-first project
+  // selection callback is ONLY wired in interactive mode (not under `--yes`),
+  // because `--yes` never obtains a Store's projects (the never-harvest rule).
   const consent: BootstrapConsent | undefined =
     mode === 'apply'
       ? {
           blanket: options.yes === true,
-          ...(options.yes ? {} : { confirm: createConsentCallback(messages) }),
+          ...(options.yes
+            ? {}
+            : {
+                confirm: createConsentCallback(messages),
+                selectProjects: createProjectSelectionCallback(messages),
+              }),
         }
       : undefined;
 
