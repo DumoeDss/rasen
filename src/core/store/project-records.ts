@@ -194,6 +194,8 @@ export interface StoreProjectRecord {
   id?: string;
   /** Credential-free clone source, so another machine can find the project. */
   remote?: string;
+  /** Store-root-relative portable bundle locator. Grants no ownership. */
+  knowledgeBundle?: string;
   roles: StoreProjectRoles;
   adoption?: StoreProjectRecordAdoption;
 }
@@ -219,6 +221,7 @@ const StoreProjectRecordSchema = z
     projectId: z.string().min(1),
     id: z.string().min(1).optional(),
     remote: z.string().min(1).optional(),
+    knowledgeBundle: z.string().min(1).optional(),
     roles: RolesSchema,
     adoption: AdoptionSchema.optional(),
   })
@@ -261,6 +264,9 @@ export function parseStoreProjectRecord(content: string, filePath: string): Stor
     projectId: normalizeProjectIdentity(result.data.projectId),
     ...(result.data.id !== undefined ? { id: result.data.id } : {}),
     ...(result.data.remote !== undefined ? { remote: result.data.remote } : {}),
+    ...(result.data.knowledgeBundle !== undefined
+      ? { knowledgeBundle: result.data.knowledgeBundle }
+      : {}),
     roles: { planning: result.data.roles.planning, knowledge: result.data.roles.knowledge },
     ...(result.data.adoption !== undefined
       ? {
@@ -290,6 +296,9 @@ export function serializeStoreProjectRecord(record: StoreProjectRecord): string 
     projectId: normalizeProjectIdentity(record.projectId),
     ...(record.id !== undefined ? { id: record.id } : {}),
     ...(record.remote !== undefined ? { remote: record.remote } : {}),
+    ...(record.knowledgeBundle !== undefined
+      ? { knowledgeBundle: record.knowledgeBundle }
+      : {}),
     roles: { planning: record.roles.planning, knowledge: record.roles.knowledge },
     ...(record.adoption !== undefined
       ? {

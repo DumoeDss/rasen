@@ -65,7 +65,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen store eject <project-id> --from <store>` | Restore a store-hosted project | `--into <path> --json`; the destination is resolved explicitly, never guessed |
 | `rasen store migrate-membership <store>` | Convert legacy membership data into records | `--apply --json`; previews by default |
 | `rasen bootstrap --check` | See what this machine still needs | `--json` for the whole gap in one report; reports only, writes nothing |
-| `rasen bootstrap --apply` | Register what is local and obtain declared stores from remotes | `--yes` to skip prompts for project-declared stores; from a store checkout, `--yes` registers the store only and never obtains its projects |
+| `rasen bootstrap --apply` | Prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import | `--yes` covers project-config declarations; Store-only bundles and Store projects still require an explicit choice |
 | `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the Rasen root |
 | `rasen workset create [name]` | Compose a personal working view | `--member <path> --json` for non-interactive composition |
 | `rasen workset list` | Browse saved worksets | `--json` for structured views |
@@ -708,8 +708,10 @@ and exits rather than doing something.
   location for, **obtains each declared store that is absent with a recorded
   remote** (cloning from the remote to the previewed location, consent-gated),
   prepares the knowledge location, and writes the durable store declaration.
-  `--yes` skips confirmation for the stores the project itself declares — it
-  covers obtaining declared stores, never obtaining a store's projects.
+  It then previews each safely resolved declared knowledge bundle through the
+  same importer as `rasen knowledge bundle import` and imports only confirmed
+  actions. `--yes` covers project-owned declarations and obtaining declared
+  stores, never Store-only bundle declarations or obtaining a Store's projects.
 
 They are requested separately, never through one combined "safe mode" option,
 and passing more than one is rejected before any work happens. `--yes` without
@@ -721,8 +723,8 @@ and passing more than one is rejected before any work happens. `--yes` without
 |---|---|
 | `--check` | Check mode: report from local information only, contacting no network. |
 | `--dry-run` | Preview mode: additionally resolve remotes and the exact location each repository would be placed at. |
-| `--apply` | Apply mode: register the current checkout, register present-unregistered stores, obtain declared stores from their remotes, prepare the knowledge location, and write the durable declaration. |
-| `--yes` | Skip confirmation prompts for the stores the project declares. Apply mode only. From a project checkout, covers obtaining declared stores. From a store checkout, registers the store's own checkout only — **never obtains its projects** (the never-harvest rule). |
+| `--apply` | Apply mode: prepare repositories and the knowledge location, then offer every declared portable bundle as a separate confirmed import. |
+| `--yes` | Confirm project-declared actions, including a bundle named by committed project config. It never imports a bundle named only by Store records and never obtains a Store's projects; those require an explicit choice. |
 | `--json` | Emit the report as JSON. Human and JSON carry the same states, the same missing items, and the same repair commands. |
 | `--path <selector>=<dir>` | The location for one store or project. Repeatable. The selector is required because a location belongs to one repository — the store's display name, or its permanent identity when the name is ambiguous here. |
 | `--into <dir>` | A parent directory. Each repository that has no explicit `--path` is previewed at this parent plus a safe name derived from its clone source. |
@@ -824,6 +826,114 @@ bootstrap's to "fix" by deleting.
   (interactively or via `--path <projectId>=<dir>`).
 
 The two flows are not unified behind one predicate.
+
+### Declared portable bundles are a separate action
+
+Bootstrap offers a portable bundle only when one of two durable files names it:
+
+```yaml
+# <project>/rasen/config.yaml — relative to the project root
+knowledgeBundle: carry/project-knowledge.bundle.json
+```
+
+```yaml
+# <store>/.rasen-store/projects/<projectId>.yaml — relative to the Store root
+knowledgeBundle: rasen/knowledge-bundles/<projectId>/<bundleId>.bundle.json
+```
+
+The value must be a non-empty repository-relative file locator. Windows drive
+paths, Windows network shares, POSIX absolute paths, lexical `..` escapes, and
+existing symlinks that escape the declaring repository are unsafe and are
+never passed to the importer. Missing and unreadable files remain visible with
+the exact path to restore or declaration to edit.
+
+`bundleImports` is distinct from `knowledge`: `knowledge` reports only that the
+empty canonical knowledge directories were prepared; each `bundleImports`
+entry reports one declared file, its permanent target project, every durable
+source that named the canonical path, trust, availability, outcome, F3 plan
+counts and conflicts, warnings, refusal, repair, retained paths, and
+`changed` (`true`, `false`, or `"unknown"`). With no declaration,
+`bundleImports` is absent and no import preview or apply call occurs.
+
+Same-project declarations that resolve to one canonical path become one action
+and retain every source. If project config is among those sources, the action
+has project trust. Different paths remain separate actions; none silently
+overrides another. A Store record can list a bundle while its project checkout
+is absent, but import waits until that permanent project has been explicitly
+obtained.
+
+Consent is deliberately asymmetric:
+
+- a project-config-trusted action is imported by `--apply --yes`;
+- a Store-record-only action is still listed under `--yes`, with the explicit
+  choice that would import it, but remains `unconfirmed`;
+- interactive apply asks for each usable action after a complete F3 preview.
+
+Missing, unreadable, unsafe, unconfirmed, malformed, wrong-project,
+conflicting, or rollback-unknown actions make the report `degraded`, never
+`blocked` by themselves, and unrelated registration, obtain, hydration, and
+declaration work continues. A successful import with
+`staging_cleanup_deferred` remains successful and carries the warning.
+
+Project-trusted JSON entry:
+
+```json
+{
+  "bundleImports": [{
+    "actionKey": "import-bundle:<projectId>:<canonical-path>",
+    "projectId": "<projectId>",
+    "locator": "carry/project-knowledge.bundle.json",
+    "sources": [{ "kind": "project-config", "declarationPath": "<project>/rasen/config.yaml" }],
+    "trust": "project-config",
+    "availability": "usable",
+    "outcome": "imported",
+    "added": [{ "id": "portable-routing" }],
+    "alreadyPresent": [],
+    "conflicts": [],
+    "changed": true
+  }]
+}
+```
+
+Store-only and missing entries:
+
+```json
+{
+  "bundleImports": [
+    {
+      "projectId": "<projectId>",
+      "sources": [{ "kind": "store-record", "storeId": "team-store" }],
+      "trust": "store-record-only",
+      "availability": "usable",
+      "outcome": "unconfirmed",
+      "changed": false
+    },
+    {
+      "projectId": "<projectId>",
+      "locator": "carry/missing.bundle.json",
+      "trust": "project-config",
+      "availability": "missing",
+      "outcome": "unavailable",
+      "repair": [{ "kind": "restore-file", "path": "<project>/carry/missing.bundle.json" }],
+      "changed": false
+    }
+  ]
+}
+```
+
+A conflicting entry carries the complete F3 plan rather than only the first
+conflict:
+
+```json
+{
+  "outcome": "refused",
+  "added": [{ "id": "clean-routing" }],
+  "alreadyPresent": [],
+  "conflicts": [{ "id": "portable-routing", "reason": "content-differs" }],
+  "refusal": { "code": "knowledge_bundle_import_conflict" },
+  "changed": false
+}
+```
 
 ### Starting from a store checkout
 
@@ -1868,9 +1978,10 @@ project knowledge; the Store's catalog, metadata, membership, Git index, HEAD,
 and remote are outside the importer and unchanged.
 
 `baseProjectCommit` is provenance, not a gate. This release adds explicit
-portable project-knowledge import, but not machine-preparation integration,
-interactive conflict reconciliation, automatic synchronization, or portable
-run checkpoints.
+portable project-knowledge import and the separately declared, confirmed
+machine-preparation action. It still does not provide doctor/readiness
+integration, interactive conflict reconciliation, automatic synchronization,
+or portable run checkpoints.
 
 `effective` reports one of three states: `ready`, `degraded` (a relevant Store could not be reached, so removals were deferred), or `blocked` (Stores disagree and no project record settles it, so nothing was written). Each conflict names every participant by permanent identity, and each unreachable Store carries its own repair.
 

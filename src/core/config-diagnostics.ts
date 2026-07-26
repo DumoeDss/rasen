@@ -20,6 +20,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidQualityRules',
   'invalidStore',
   'invalidProjectId',
+  'invalidKnowledgeBundle',
   'invalidWorkflows',
   'invalidProfile',
   'invalidArchiveTiming',

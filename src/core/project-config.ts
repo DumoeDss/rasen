@@ -101,6 +101,15 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Stable project identity used by the machine-wide project registry'),
 
+  // Optional: a portable project-knowledge bundle deliberately declared by
+  // this project. It is a locator only and is resolved by machine preparation
+  // relative to the project root.
+  knowledgeBundle: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Project-root-relative portable project-knowledge bundle locator'),
+
   // Optional: a per-space workflow selection override (space-workflow-enablement
   // spec). When present, this list (plus its dependency closure) is the
   // space's desired workflow set verbatim — it replaces the user-wide
@@ -906,6 +915,28 @@ function parseProjectConfigContent(
           {
             key: 'invalidProjectId',
             fallback: `Invalid 'projectId' field in config (must be string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse the portable knowledge-bundle declaration independently. A bad
+    // locator drops only this field; every valid sibling remains usable.
+    if (raw.knowledgeBundle !== undefined) {
+      if (
+        typeof raw.knowledgeBundle === 'string' &&
+        raw.knowledgeBundle.trim().length > 0
+      ) {
+        config.knowledgeBundle = raw.knowledgeBundle;
+      } else if (reporter !== undefined) {
+        // Bundle-aware callers collect this into their structured result. A
+        // generic config read must not emit an out-of-band English warning
+        // that can corrupt localized or JSON command output.
+        warnConfig(
+          {
+            key: 'invalidKnowledgeBundle',
+            fallback: `Invalid 'knowledgeBundle' field in config (must be a non-empty string)`,
           },
           reporter
         );

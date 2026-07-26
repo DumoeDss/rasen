@@ -5,7 +5,8 @@
  * `check` and `preview` are read-only: nothing here creates a directory, writes
  * a file, registers anything, mints an identity, or spawns a process in either
  * of those modes. `apply` acts: it registers checkouts, registers and obtains
- * Stores, prepares knowledge directories, and writes durable declarations. The
+ * Stores, prepares knowledge directories, writes durable declarations, and
+ * offers declared portable bundles through a separate confirmation gate. The
  * obtain step (E3) is the first that retrieves from the network — it clones
  * from a remote to the previewed location and is governed by the
  * provable-creation cleanup guard (design D5) so a failed retrieval never
@@ -39,6 +40,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
+import { reportConfigDiagnostic } from '../config-diagnostics.js';
 import { folderStyleNameProblem, toKebabCase } from '../id.js';
 import {
   hasStoreDeclaration,
@@ -49,8 +51,24 @@ import {
   type StorePointerRead,
 } from '../project-config.js';
 import { resolveProjectKnowledgeHome } from '../project-knowledge-home.js';
-import { registerProject } from '../project-registry.js';
+import { findProjectRegistryEntry, registerProject } from '../project-registry.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
+import {
+  planDeclaredKnowledgeBundles,
+  type DeclaredKnowledgeBundleAction,
+  type DeclaredKnowledgeBundleInput,
+  type DeclaredKnowledgeBundleRepair,
+} from '../knowledge-bundle/declaration.js';
+import {
+  importKnowledgeBundle,
+  KnowledgeBundleImportError,
+  type KnowledgeBundleImportChanged,
+  type KnowledgeBundleImportConflict,
+  type KnowledgeBundleImportPlan,
+  type KnowledgeBundleImportRecordSummary,
+  type KnowledgeBundleImportWarning,
+} from '../knowledge-bundle/import.js';
+import type { LearnedSkillContext } from '../learned-skills/types.js';
 import { StoreError, type StoreDiagnostic } from './errors.js';
 import {
   getLegacyStoreMetadataDir,
@@ -85,6 +103,7 @@ import {
   type StoreMembershipRecord,
 } from './membership.js';
 import {
+  getStoreProjectRecordsDir,
   normalizeProjectIdentity,
   readStoreProjectRecord,
   WINDOWS_RESERVED_DEVICE_NAMES,
@@ -332,6 +351,47 @@ export interface BootstrapKnowledgePreparation {
   alreadyHydrated: boolean;
 }
 
+export type BootstrapBundleImportOutcome =
+  | 'unconfirmed'
+  | 'unavailable'
+  | 'refused'
+  | 'imported'
+  | 'already-present';
+
+export interface BootstrapBundleImportRefusal {
+  code: string;
+  message: string;
+  details: Readonly<Record<string, string>>;
+  issues: ReadonlyArray<{ recordId?: string; field?: string; reason: string }>;
+}
+
+export type BootstrapBundleImportRepair =
+  | DeclaredKnowledgeBundleRepair
+  | {
+      kind: 'repair-import';
+      code: string;
+      bundlePath: string;
+    };
+
+/**
+ * One durable declared-bundle action. Hydration remains in `knowledge`; this
+ * collection alone describes portable import.
+ */
+export interface BootstrapBundleImportAction
+  extends Omit<DeclaredKnowledgeBundleAction, 'repair'> {
+  repair: BootstrapBundleImportRepair[];
+  outcome: BootstrapBundleImportOutcome;
+  bundleId?: string;
+  baseProjectCommit?: string | null;
+  added?: readonly KnowledgeBundleImportRecordSummary[];
+  alreadyPresent?: readonly KnowledgeBundleImportRecordSummary[];
+  conflicts?: readonly KnowledgeBundleImportConflict[];
+  warnings?: readonly KnowledgeBundleImportWarning[];
+  refusal?: BootstrapBundleImportRefusal;
+  changed?: KnowledgeBundleImportChanged;
+  retainedPaths?: readonly string[];
+}
+
 /** Durable declaration outcome (apply mode only). */
 export interface BootstrapDeclarationResult {
   outcome:
@@ -361,6 +421,8 @@ export interface BootstrapReport {
   knowledge?: BootstrapKnowledgePreparation;
   /** Apply mode only: durable declaration outcome. */
   declaration?: BootstrapDeclarationResult;
+  /** Declared portable bundle actions, distinct from knowledge hydration. */
+  bundleImports?: BootstrapBundleImportAction[];
 }
 
 // -----------------------------------------------------------------------------
@@ -663,6 +725,7 @@ export function computeBootstrapEndState(input: {
    * one this argument exists to enforce — so the compiler asks for it.
    */
   diagnostics: readonly StoreDiagnostic[];
+  bundleImports?: ReadonlyArray<Pick<BootstrapBundleImportAction, 'outcome' | 'changed'>>;
 }): BootstrapEndState {
   if (input.problems.length > 0) return 'blocked';
   if (input.stores.some((entry) => entry.class === 'unresolvable')) return 'blocked';
@@ -673,7 +736,12 @@ export function computeBootstrapEndState(input: {
     unread ||
     input.stores.some((entry) => entry.class !== 'verified') ||
     input.stores.some((entry) => entry.membership.state !== 'confirmed') ||
-    input.projects.some((entry) => entry.presence !== 'present');
+    input.projects.some((entry) => entry.presence !== 'present') ||
+    (input.bundleImports ?? []).some(
+      (entry) =>
+        (entry.outcome !== 'imported' && entry.outcome !== 'already-present') ||
+        entry.changed === 'unknown'
+    );
 
   return missing ? 'degraded' : 'complete';
 }
@@ -951,9 +1019,17 @@ export type SuppliedLocations = ReadonlyMap<string, string>;
  * target, where); the command layer formats them into a localized prompt.
  */
 export interface BootstrapConsentRequest {
-  readonly action: 'register-store' | 'upgrade-declaration' | 'obtain-store';
+  readonly action:
+    | 'register-store'
+    | 'upgrade-declaration'
+    | 'obtain-store'
+    | 'import-bundle';
   readonly selector: string;
   readonly path: string;
+  /** Import-only permanent target identity. */
+  readonly projectId?: string;
+  /** Import-only declaration trust. */
+  readonly trust?: 'project-config' | 'store-record-only';
 }
 
 /**
@@ -1007,6 +1083,11 @@ export interface BootstrapInput extends StorePathOptions {
   remotes?: BootstrapRemoteResolver;
   /** Apply mode only: consent configuration. */
   consent?: BootstrapConsent;
+  /**
+   * Injectable F3 seam for focused composition tests and embedders. Production
+   * callers omit it and call the landed importer directly.
+   */
+  bundleImporter?: typeof importKnowledgeBundle;
 }
 
 /** Every value a supplied location may be keyed by, in match order. */
@@ -1088,6 +1169,329 @@ async function confirmAction(
   if (declaredByProject && consent?.blanket) return true;
   if (consent?.confirm) return consent.confirm(request);
   return false;
+}
+
+function readProjectConfigForBundle(projectRoot: string): {
+  config: ReturnType<typeof readProjectConfig>;
+  invalidKnowledgeBundle: boolean;
+} {
+  let invalidKnowledgeBundle = false;
+  const config = readProjectConfig(projectRoot, {
+    reporter: (diagnostic) => {
+      if (diagnostic.key === 'invalidKnowledgeBundle') {
+        invalidKnowledgeBundle = true;
+        return;
+      }
+      reportConfigDiagnostic(diagnostic);
+    },
+  });
+  return { config, invalidKnowledgeBundle };
+}
+
+function projectConfigBundleDeclaration(
+  projectRoot: string,
+  projectId: string
+): DeclaredKnowledgeBundleInput | undefined {
+  const read = readProjectConfigForBundle(projectRoot);
+  const locator = read.config?.knowledgeBundle;
+  const declarationPath = resolveConfigFilePath(projectRoot);
+  if (declarationPath === null) return undefined;
+  if (locator === undefined && !read.invalidKnowledgeBundle) return undefined;
+  return {
+    projectId,
+    projectRoot,
+    ...(read.invalidKnowledgeBundle ? { invalidLocator: true } : {}),
+    source: {
+      kind: 'project-config',
+      declarationPath,
+      ownerRoot: projectRoot,
+      locator: locator ?? '',
+    },
+  };
+}
+
+async function projectFirstBundleDeclarations(
+  projectRoot: string,
+  projectId: string,
+  stores: readonly BootstrapStoreEntry[],
+  diagnostics: StoreDiagnostic[]
+): Promise<DeclaredKnowledgeBundleInput[]> {
+  const declarations: DeclaredKnowledgeBundleInput[] = [];
+  const projectDeclaration = projectConfigBundleDeclaration(projectRoot, projectId);
+  if (projectDeclaration !== undefined) declarations.push(projectDeclaration);
+
+  for (const store of stores) {
+    if (store.root === undefined) continue;
+    let read: Awaited<ReturnType<typeof readStoreProjectRecord>>;
+    try {
+      read = await readStoreProjectRecord(store.root, projectId);
+    } catch (failure) {
+      diagnostics.push(...diagnosticsFor(failure));
+      continue;
+    }
+    diagnostics.push(...read.diagnostics);
+    const locator = read.record?.knowledgeBundle;
+    if (locator === undefined) continue;
+    declarations.push({
+      projectId,
+      projectRoot,
+      source: {
+        kind: 'store-record',
+        declarationPath: read.filePath,
+        ownerRoot: store.root,
+        locator,
+        storeId: store.id ?? store.selector,
+        ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+      },
+    });
+  }
+  return declarations;
+}
+
+function storeFirstBundleDeclarations(
+  store: ResolvedStoreRef,
+  members: readonly StoreMembershipRecord[],
+  projects: readonly BootstrapProjectEntry[]
+): DeclaredKnowledgeBundleInput[] {
+  const declarations: DeclaredKnowledgeBundleInput[] = [];
+  for (const member of members) {
+    const project = projects.find((entry) => entry.projectId === member.projectId);
+    const projectRoot = project?.root;
+    if (member.knowledgeBundle !== undefined) {
+      declarations.push({
+        projectId: member.projectId,
+        ...(projectRoot !== undefined ? { projectRoot } : {}),
+        projectRepair: {
+          kind: 'obtain-project',
+          projectId: member.projectId,
+        },
+        source: {
+          kind: 'store-record',
+          declarationPath: path.join(
+            getStoreProjectRecordsDir(store.root),
+            `${normalizeProjectIdentity(member.projectId)}.yaml`
+          ),
+          ownerRoot: store.root,
+          locator: member.knowledgeBundle,
+          storeId: store.id,
+          ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+        },
+      });
+    }
+    if (projectRoot !== undefined) {
+      const own = projectConfigBundleDeclaration(projectRoot, member.projectId);
+      if (own !== undefined) declarations.push(own);
+    }
+  }
+  return declarations;
+}
+
+function importRefusal(
+  error: unknown,
+  genericChanged: KnowledgeBundleImportChanged
+): {
+  refusal: BootstrapBundleImportRefusal;
+  plan?: KnowledgeBundleImportPlan;
+  changed: KnowledgeBundleImportChanged;
+  retainedPaths: readonly string[];
+} {
+  if (error instanceof KnowledgeBundleImportError) {
+    return {
+      refusal: {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        issues: error.issues,
+      },
+      ...(error.plan !== undefined ? { plan: error.plan } : {}),
+      changed: error.changed,
+      retainedPaths: error.retainedPaths,
+    };
+  }
+  return {
+    refusal: {
+      code: 'knowledge_bundle_import_failed',
+      message: error instanceof Error ? error.message : String(error),
+      details: {},
+      issues: [],
+    },
+    changed: genericChanged,
+    retainedPaths: [],
+  };
+}
+
+function applyPlanFacts(
+  action: BootstrapBundleImportAction,
+  plan: KnowledgeBundleImportPlan
+): void {
+  action.bundleId = plan.bundleId;
+  action.baseProjectCommit = plan.baseProjectCommit;
+  action.added = plan.added;
+  action.alreadyPresent = plan.alreadyPresent;
+  action.conflicts = plan.conflicts;
+  action.warnings = plan.warnings;
+}
+
+function appendImportRepair(
+  action: BootstrapBundleImportAction,
+  code: string
+): void {
+  if (action.resolvedPath === undefined) return;
+  if (
+    action.repair.some(
+      (repair) => repair.kind === 'repair-import' && repair.code === code
+    )
+  ) {
+    return;
+  }
+  action.repair.push({
+    kind: 'repair-import',
+    code,
+    bundlePath: action.resolvedPath,
+  });
+}
+
+async function resolveRegisteredBundleProject(
+  action: BootstrapBundleImportAction,
+  options: StorePathOptions
+) {
+  if (action.projectRoot === undefined) return null;
+  const registered = await findProjectRegistryEntry(action.projectRoot, options);
+  if (
+    registered === null ||
+    normalizeProjectIdentity(registered.entry.projectId) !==
+      normalizeProjectIdentity(action.projectId)
+  ) {
+    return null;
+  }
+  return {
+    root: action.projectRoot,
+    ref: {
+      projectId: registered.entry.projectId,
+      name: registered.entry.name,
+      root: action.projectRoot,
+    },
+  };
+}
+
+/**
+ * Compose F4 trust/consent with F3's direct preview/apply seam. Unavailable
+ * declarations never reach F3. Each refusal remains on its own action and the
+ * next action still runs.
+ */
+async function prepareDeclaredBundleImports(
+  declarations: readonly DeclaredKnowledgeBundleInput[],
+  mode: BootstrapMode,
+  consent: BootstrapConsent | undefined,
+  context: Pick<LearnedSkillContext, 'globalDataDir'>,
+  bundleImporter: typeof importKnowledgeBundle = importKnowledgeBundle
+): Promise<BootstrapBundleImportAction[] | undefined> {
+  if (declarations.length === 0) return undefined;
+  const actions: BootstrapBundleImportAction[] = planDeclaredKnowledgeBundles(
+    declarations
+  ).map((action) => ({
+    ...action,
+    sources: [...action.sources],
+    repair: [...action.repair],
+    outcome:
+      action.availability === 'usable'
+        ? 'unconfirmed'
+        : 'unavailable',
+    changed: false,
+    retainedPaths: [],
+  }));
+
+  if (mode !== 'apply') return actions;
+
+  for (const action of actions) {
+    if (
+      action.availability !== 'usable' ||
+      action.projectRoot === undefined ||
+      action.resolvedPath === undefined
+    ) {
+      continue;
+    }
+
+    let preview: Awaited<ReturnType<typeof importKnowledgeBundle>>;
+    try {
+      preview = await bundleImporter({
+        bundle: action.resolvedPath,
+        project: action.projectRoot,
+        dryRun: true,
+        context,
+        dependencies: {
+          // Bootstrap already resolved this permanent project through its own
+          // registry context. Reuse that answer so an explicit globalDataDir
+          // cannot accidentally fall back to the process-wide registry.
+          resolveProject: async () => resolveRegisteredBundleProject(action, context),
+        },
+      });
+      applyPlanFacts(action, preview);
+    } catch (error) {
+      const failed = importRefusal(error, false);
+      action.outcome = 'refused';
+      action.refusal = failed.refusal;
+      action.changed = failed.changed;
+      action.retainedPaths = failed.retainedPaths;
+      appendImportRepair(action, failed.refusal.code);
+      if (failed.plan !== undefined) applyPlanFacts(action, failed.plan);
+      continue;
+    }
+
+    if (preview.refused || preview.conflicts.length > 0) {
+      action.outcome = 'refused';
+      action.refusal = {
+        code: 'knowledge_bundle_import_conflict',
+        message: 'knowledge_bundle_import_conflict',
+        details: {},
+        issues: [],
+      };
+      appendImportRepair(action, action.refusal.code);
+      continue;
+    }
+
+    const request: BootstrapConsentRequest = {
+      action: 'import-bundle',
+      selector: action.projectId,
+      projectId: action.projectId,
+      path: action.resolvedPath,
+      trust: action.trust,
+    };
+    let confirmed: boolean;
+    if (action.trust === 'project-config') {
+      // Project trust is the one branch blanket confirmation may cover.
+      confirmed = await confirmAction(request, true, consent);
+    } else {
+      // Store-only trust is deliberately explicit: blanket confirmation alone
+      // never calls F3 apply, even though it covered other bootstrap actions.
+      confirmed = consent?.confirm ? await consent.confirm(request) : false;
+    }
+    if (!confirmed) continue;
+
+    try {
+      const result = await bundleImporter({
+        bundle: action.resolvedPath,
+        project: action.projectRoot,
+        context,
+        dependencies: {
+          resolveProject: async () => resolveRegisteredBundleProject(action, context),
+        },
+      });
+      applyPlanFacts(action, result);
+      action.outcome = result.added.length > 0 ? 'imported' : 'already-present';
+      action.changed = result.changed;
+    } catch (error) {
+      const failed = importRefusal(error, 'unknown');
+      action.outcome = 'refused';
+      action.refusal = failed.refusal;
+      action.changed = failed.changed;
+      action.retainedPaths = failed.retainedPaths;
+      appendImportRepair(action, failed.refusal.code);
+      if (failed.plan !== undefined) applyPlanFacts(action, failed.plan);
+    }
+  }
+
+  return actions;
 }
 
 /**
@@ -1528,7 +1932,7 @@ async function buildProjectReport(input: BootstrapInput): Promise<BootstrapRepor
   const options: StorePathOptions =
     input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {};
   const projectRoot = findBootstrapRoot(input.cwd);
-  const config = readProjectConfig(projectRoot);
+  const config = readProjectConfigForBundle(projectRoot).config;
   const projectId = config?.projectId;
   const pointer = readStorePointer(projectRoot);
   const registry = await readRegistryEntries(options);
@@ -1661,11 +2065,35 @@ async function buildProjectReport(input: BootstrapInput): Promise<BootstrapRepor
     declaration = result.declaration;
   }
 
+  let bundleImports: BootstrapBundleImportAction[] | undefined;
+  if (projectId !== undefined) {
+    try {
+      const declarations = await projectFirstBundleDeclarations(
+        projectRoot,
+        projectId,
+        stores,
+        diagnostics
+      );
+      bundleImports = await prepareDeclaredBundleImports(
+        declarations,
+        input.mode,
+        input.consent,
+        options,
+        input.bundleImporter
+      );
+    } catch (failure) {
+      // A declaration source that cannot be re-read must not abort unrelated
+      // preparation. The diagnostic forbids a false `complete` result.
+      diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
   const state = computeBootstrapEndState({
     stores,
     projects: [],
     problems,
     diagnostics: allBootstrapDiagnostics({ stores, projects: [], diagnostics }),
+    ...(bundleImports !== undefined ? { bundleImports } : {}),
   });
 
   return {
@@ -1684,6 +2112,7 @@ async function buildProjectReport(input: BootstrapInput): Promise<BootstrapRepor
     diagnostics,
     ...(knowledge !== undefined ? { knowledge } : {}),
     ...(declaration !== undefined ? { declaration } : {}),
+    ...(bundleImports !== undefined ? { bundleImports } : {}),
   };
 }
 
@@ -2147,12 +2576,14 @@ async function buildStoreFirstReport(
   };
 
   const projects: BootstrapProjectEntry[] = [];
+  let storeMembers: StoreMembershipRecord[] = [];
   /** Raw (unredacted) remotes for cloning, keyed by projectId. */
   const rawProjectRemotes = new Map<string, string>();
   if (problems.length === 0) {
     try {
       const listing = await listStoreMembers(store, options);
       diagnostics.push(...listing.diagnostics);
+      storeMembers = listing.members;
       for (const member of listing.members) {
         projects.push(await buildProjectEntry({ member, entries, input }));
         if (member.remote !== undefined) {
@@ -2332,11 +2763,40 @@ async function buildStoreFirstReport(
     }
   }
 
+  let bundleImports: BootstrapBundleImportAction[] | undefined;
+  if (problems.length === 0) {
+    try {
+      // Apply re-reads the Store authority after obtain/register work, then
+      // reads each now-local project's committed declaration. Check/preview
+      // use only what was readable at report time.
+      if (input.mode === 'apply') {
+        const refreshed = await listStoreMembers(store, options);
+        diagnostics.push(...refreshed.diagnostics);
+        storeMembers = refreshed.members;
+      }
+      const declarations = storeFirstBundleDeclarations(
+        store,
+        storeMembers,
+        projects
+      );
+      bundleImports = await prepareDeclaredBundleImports(
+        declarations,
+        input.mode,
+        input.consent,
+        options,
+        input.bundleImporter
+      );
+    } catch (failure) {
+      diagnostics.push(...diagnosticsFor(failure));
+    }
+  }
+
   const state = computeBootstrapEndState({
     stores: [],
     projects,
     problems,
     diagnostics: allBootstrapDiagnostics({ stores: [], projects, diagnostics }),
+    ...(bundleImports !== undefined ? { bundleImports } : {}),
   });
 
   return {
@@ -2355,6 +2815,7 @@ async function buildStoreFirstReport(
     projects,
     problems,
     diagnostics,
+    ...(bundleImports !== undefined ? { bundleImports } : {}),
   };
 }
 
@@ -2439,7 +2900,7 @@ function findLocalProject(
   for (const entry of entries) {
     if (entry.type !== 'project') continue;
     const root = entry.backend.local_path;
-    const config = readProjectConfig(root);
+    const config = readProjectConfigForBundle(root).config;
     if (config === null && fs.existsSync(root)) {
       unreadable.push({
         severity: 'error',

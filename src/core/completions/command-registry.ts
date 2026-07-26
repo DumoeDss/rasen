@@ -563,12 +563,12 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'apply',
         description:
-          'Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration',
+          'Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import',
       },
       {
         name: 'yes',
         description:
-          "Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store's projects from a Store checkout)",
+          'Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice',
       },
       COMMON_FLAGS.json,
       {

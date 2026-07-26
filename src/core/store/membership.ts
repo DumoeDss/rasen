@@ -97,6 +97,8 @@ export interface StoreMembershipRecord {
   id?: string;
   /** Credential-free clone source for the project. */
   remote?: string;
+  /** Store-root-relative portable bundle locator from a version-1 record. */
+  knowledgeBundle?: string;
   roles: StoreProjectRoles;
   /** Which source answered — one entry per project, never two. */
   provenance: MembershipProvenance;
@@ -348,6 +350,9 @@ function fromStoreProjectRecord(
     projectId: record.projectId,
     ...(record.id !== undefined ? { id: record.id } : {}),
     ...(record.remote !== undefined ? { remote: record.remote } : {}),
+    ...(record.knowledgeBundle !== undefined
+      ? { knowledgeBundle: record.knowledgeBundle }
+      : {}),
     roles: { ...record.roles },
     provenance: 'v2-record',
     ...(record.adoption !== undefined ? { adoption: { ...record.adoption } } : {}),
@@ -697,6 +702,7 @@ function composeRecord(
 ): StoreProjectRecord {
   const id = input.projectDisplayId ?? existing?.id;
   const remote = input.projectRemote ?? existing?.remote;
+  const knowledgeBundle = existing?.knowledgeBundle;
   const adoption = input.adoption ?? existing?.adoption;
 
   return {
@@ -704,6 +710,7 @@ function composeRecord(
     projectId,
     ...(id !== undefined ? { id } : {}),
     ...(remote !== undefined ? { remote } : {}),
+    ...(knowledgeBundle !== undefined ? { knowledgeBundle } : {}),
     roles: mergeStoreProjectRoles(existing?.roles, input.roles),
     ...(adoption !== undefined ? { adoption } : {}),
   };

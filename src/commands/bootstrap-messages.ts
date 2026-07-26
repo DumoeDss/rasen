@@ -1,6 +1,8 @@
 import { getCliLocale } from '../core/cli-locale.js';
 import type {
   BootstrapEndState,
+  BootstrapBundleImportAction,
+  BootstrapBundleImportOutcome,
   BootstrapLocationDemand,
   BootstrapLocationRefusal,
   BootstrapMembershipState,
@@ -100,7 +102,86 @@ export const BOOTSTRAP_MESSAGE_KEYS = [
   'knowledgeHeading',
   'knowledgePrepared',
   'knowledgeAlreadyHydrated',
-  'knowledgeBundleStep',
+  'bundleImportsHeading',
+  'bundleRow',
+  'bundleSourceProjectConfig',
+  'bundleSourceStoreRecord',
+  'bundleSourceLine',
+  'bundleTrustLine',
+  'bundleTrustProjectConfig',
+  'bundleTrustStoreOnly',
+  'bundleLocatorLine',
+  'bundleLocatorInvalid',
+  'bundlePathLine',
+  'bundleAvailabilityLine',
+  'bundleAvailabilityUsable',
+  'bundleAvailabilityMissing',
+  'bundleAvailabilityUnreadable',
+  'bundleAvailabilityUnsafe',
+  'bundleAvailabilityProjectUnavailable',
+  'bundleOutcomeLine',
+  'bundleOutcomeUnconfirmed',
+  'bundleOutcomeUnavailable',
+  'bundleOutcomeRefused',
+  'bundleOutcomeImported',
+  'bundleOutcomeAlreadyPresent',
+  'bundlePlanLine',
+  'bundleIdentityLine',
+  'bundleBaseCommitLine',
+  'bundleValueUnavailable',
+  'bundleAddedLine',
+  'bundleAlreadyPresentLine',
+  'bundleConflictLine',
+  'bundleConflictKnowledgeKeyLine',
+  'bundleConflictBundleLine',
+  'bundleConflictLocalManagedLine',
+  'bundleConflictLocalOccupiedLine',
+  'bundleConflictContent',
+  'bundleConflictLifecycle',
+  'bundleConflictOccupied',
+  'bundleWarningLine',
+  'bundleWarningBaseCommit',
+  'bundleWarningBaseCommitUnavailable',
+  'bundleWarningCleanupDeferred',
+  'bundleRefusalLine',
+  'bundleRefusalInvalid',
+  'bundleRefusalProjectNotFound',
+  'bundleRefusalProjectUnavailable',
+  'bundleRefusalProjectMismatch',
+  'bundleRefusalRecordId',
+  'bundleRefusalCatalogUnavailable',
+  'bundleRefusalCatalogDrift',
+  'bundleRefusalConflict',
+  'bundleRefusalLock',
+  'bundleRefusalTransaction',
+  'bundleRefusalRollback',
+  'bundleRefusalGeneric',
+  'bundleRefusalDetailsHeading',
+  'bundleRefusalDetailLine',
+  'bundleRefusalIssuesHeading',
+  'bundleRefusalIssueLine',
+  'bundleChangedLine',
+  'bundleChangedYes',
+  'bundleChangedNo',
+  'bundleChangedUnknown',
+  'bundleRetainedLine',
+  'bundleRepairRestore',
+  'bundleRepairEditDeclaration',
+  'bundleRepairPermissions',
+  'bundleRepairObtainProject',
+  'bundleRepairImportInvalid',
+  'bundleRepairImportProjectNotFound',
+  'bundleRepairImportProjectUnavailable',
+  'bundleRepairImportProjectMismatch',
+  'bundleRepairImportRecordId',
+  'bundleRepairImportCatalogUnavailable',
+  'bundleRepairImportCatalogDrift',
+  'bundleRepairImportConflict',
+  'bundleRepairImportLock',
+  'bundleRepairImportTransaction',
+  'bundleRepairImportRollback',
+  'bundleRepairImportGeneric',
+  'confirmImportBundle',
   'declarationHeading',
   'declarationWritten',
   'declarationAlreadyDurable',
@@ -123,8 +204,8 @@ export const BOOTSTRAP_DESCRIPTIONS = {
   command: 'Report what this machine still needs before this project works',
   check: 'Check mode: report from local information only, contacting no network',
   dryRun: 'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
-  apply: 'Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration',
-  yes: 'Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store\'s projects from a Store checkout)',
+  apply: 'Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import',
+  yes: 'Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice',
   json: 'Output as JSON',
   path: 'Location for one store or project, as <selector>=<dir>; repeatable',
   into: 'Parent directory a derived name would be placed under',
@@ -179,7 +260,56 @@ export interface BootstrapMessages {
   knowledgeHeading: string;
   knowledgePrepared: (root: string) => string;
   knowledgeAlreadyHydrated: (root: string) => string;
-  knowledgeBundleStep: string;
+  bundleImportsHeading: string;
+  bundleRow: (project: string, actionKey: string) => string;
+  bundleSource: (source: BootstrapBundleImportAction['sources'][number]) => string;
+  bundleSourceLine: (source: string) => string;
+  bundleTrustLine: (trust: string) => string;
+  bundleTrust: (trust: BootstrapBundleImportAction['trust']) => string;
+  bundleLocatorLine: (locator: string) => string;
+  bundleLocatorInvalid: string;
+  bundlePathLine: (path: string) => string;
+  bundleAvailabilityLine: (availability: string) => string;
+  bundleAvailability: (availability: BootstrapBundleImportAction['availability']) => string;
+  bundleOutcomeLine: (outcome: string) => string;
+  bundleOutcome: (outcome: BootstrapBundleImportOutcome) => string;
+  bundlePlanLine: (added: number, present: number, conflicts: number) => string;
+  bundleIdentityLine: (bundleId: string) => string;
+  bundleBaseCommitLine: (commit: string | null) => string;
+  bundleAddedLine: (
+    record: NonNullable<BootstrapBundleImportAction['added']>[number]
+  ) => string;
+  bundleAlreadyPresentLine: (
+    record: NonNullable<BootstrapBundleImportAction['alreadyPresent']>[number]
+  ) => string;
+  bundleConflictLine: (id: string, reason: string) => string;
+  bundleConflictKnowledgeKeyLine: (knowledgeKey: string) => string;
+  bundleConflictBundleLine: (digest: string, status: string) => string;
+  bundleConflictLocalLine: (
+    local: NonNullable<BootstrapBundleImportAction['conflicts']>[number]['local']
+  ) => string;
+  bundleConflictReason: (
+    reason: NonNullable<BootstrapBundleImportAction['conflicts']>[number]['reason']
+  ) => string;
+  bundleWarningLine: (warning: string) => string;
+  bundleWarning: (
+    warning: NonNullable<BootstrapBundleImportAction['warnings']>[number]
+  ) => string;
+  bundleRefusalLine: (refusal: string) => string;
+  bundleRefusal: (code: string) => string;
+  bundleRefusalDetailsHeading: string;
+  bundleRefusalDetailLine: (key: string, value: string) => string;
+  bundleRefusalIssuesHeading: string;
+  bundleRefusalIssueLine: (
+    recordId: string | undefined,
+    field: string | undefined,
+    reason: string
+  ) => string;
+  bundleChangedLine: (changed: string) => string;
+  bundleChanged: (changed: boolean | 'unknown') => string;
+  bundleRetainedLine: (path: string) => string;
+  bundleRepair: (repair: BootstrapBundleImportAction['repair'][number]) => string;
+  confirmImportBundle: (project: string, path: string, trust: string) => string;
   declarationHeading: string;
   declarationWritten: (path: string) => string;
   declarationAlreadyDurable: string;
@@ -330,7 +460,186 @@ export function getBootstrapMessages(locale: CliLocale = getCliLocale()): Bootst
     knowledgeHeading: raw.knowledgeHeading,
     knowledgePrepared: (root) => format(raw.knowledgePrepared, { root }),
     knowledgeAlreadyHydrated: (root) => format(raw.knowledgeAlreadyHydrated, { root }),
-    knowledgeBundleStep: raw.knowledgeBundleStep,
+    bundleImportsHeading: raw.bundleImportsHeading,
+    bundleRow: (project, actionKey) => format(raw.bundleRow, { project, actionKey }),
+    bundleSource: (source) =>
+      source.kind === 'project-config'
+        ? format(raw.bundleSourceProjectConfig, { path: source.declarationPath })
+        : format(raw.bundleSourceStoreRecord, {
+            store: source.storeUid ?? source.storeId,
+            path: source.declarationPath,
+          }),
+    bundleSourceLine: (source) => format(raw.bundleSourceLine, { source }),
+    bundleTrustLine: (trust) => format(raw.bundleTrustLine, { trust }),
+    bundleTrust: (trust) =>
+      trust === 'project-config'
+        ? raw.bundleTrustProjectConfig
+        : raw.bundleTrustStoreOnly,
+    bundleLocatorLine: (locator) => format(raw.bundleLocatorLine, { locator }),
+    bundleLocatorInvalid: raw.bundleLocatorInvalid,
+    bundlePathLine: (bundlePath) => format(raw.bundlePathLine, { path: bundlePath }),
+    bundleAvailabilityLine: (availability) =>
+      format(raw.bundleAvailabilityLine, { availability }),
+    bundleAvailability: (availability) => {
+      switch (availability) {
+        case 'usable':
+          return raw.bundleAvailabilityUsable;
+        case 'missing':
+          return raw.bundleAvailabilityMissing;
+        case 'unreadable':
+          return raw.bundleAvailabilityUnreadable;
+        case 'unsafe':
+          return raw.bundleAvailabilityUnsafe;
+        case 'project-unavailable':
+          return raw.bundleAvailabilityProjectUnavailable;
+      }
+    },
+    bundleOutcomeLine: (outcome) => format(raw.bundleOutcomeLine, { outcome }),
+    bundleOutcome: (outcome) => {
+      switch (outcome) {
+        case 'unconfirmed':
+          return raw.bundleOutcomeUnconfirmed;
+        case 'unavailable':
+          return raw.bundleOutcomeUnavailable;
+        case 'refused':
+          return raw.bundleOutcomeRefused;
+        case 'imported':
+          return raw.bundleOutcomeImported;
+        case 'already-present':
+          return raw.bundleOutcomeAlreadyPresent;
+      }
+    },
+    bundlePlanLine: (added, present, conflicts) =>
+      format(raw.bundlePlanLine, { added, present, conflicts }),
+    bundleIdentityLine: (bundleId) => format(raw.bundleIdentityLine, { bundleId }),
+    bundleBaseCommitLine: (commit) =>
+      format(raw.bundleBaseCommitLine, {
+        commit: commit ?? raw.bundleValueUnavailable,
+      }),
+    bundleAddedLine: (record) =>
+      format(raw.bundleAddedLine, {
+        id: record.id,
+        knowledgeKey: record.knowledgeKey,
+        status: record.status,
+        digest: record.contentDigest,
+      }),
+    bundleAlreadyPresentLine: (record) =>
+      format(raw.bundleAlreadyPresentLine, {
+        id: record.id,
+        knowledgeKey: record.knowledgeKey,
+        status: record.status,
+        digest: record.contentDigest,
+      }),
+    bundleConflictLine: (id, reason) => format(raw.bundleConflictLine, { id, reason }),
+    bundleConflictKnowledgeKeyLine: (knowledgeKey) =>
+      format(raw.bundleConflictKnowledgeKeyLine, { knowledgeKey }),
+    bundleConflictBundleLine: (digest, status) =>
+      format(raw.bundleConflictBundleLine, { digest, status }),
+    bundleConflictLocalLine: (local) =>
+      local.kind === 'managed'
+        ? format(raw.bundleConflictLocalManagedLine, {
+            digest: local.contentDigest,
+            status: local.status,
+          })
+        : format(raw.bundleConflictLocalOccupiedLine, {
+            description: local.description,
+          }),
+    bundleConflictReason: (reason) => {
+      if (reason === 'content-differs') return raw.bundleConflictContent;
+      return reason === 'lifecycle-differs'
+        ? raw.bundleConflictLifecycle
+        : raw.bundleConflictOccupied;
+    },
+    bundleWarningLine: (warning) => format(raw.bundleWarningLine, { warning }),
+    bundleWarning: (warning) => {
+      const commit = warning.baseProjectCommit ?? raw.bundleValueUnavailable;
+      if (warning.code === 'base_project_commit_provenance') {
+        return format(raw.bundleWarningBaseCommit, { commit });
+      }
+      return warning.code === 'base_project_commit_unavailable'
+        ? raw.bundleWarningBaseCommitUnavailable
+        : format(raw.bundleWarningCleanupDeferred, { commit });
+    },
+    bundleRefusalLine: (refusal) => format(raw.bundleRefusalLine, { refusal }),
+    bundleRefusal: (code) => {
+      const refusalByCode: Record<string, string> = {
+        knowledge_bundle_import_bundle_invalid: raw.bundleRefusalInvalid,
+        knowledge_bundle_import_project_not_found: raw.bundleRefusalProjectNotFound,
+        knowledge_bundle_import_project_unavailable: raw.bundleRefusalProjectUnavailable,
+        knowledge_bundle_import_project_mismatch: raw.bundleRefusalProjectMismatch,
+        knowledge_bundle_import_record_id_invalid: raw.bundleRefusalRecordId,
+        knowledge_bundle_import_record_id_collision: raw.bundleRefusalRecordId,
+        knowledge_bundle_import_catalog_unavailable: raw.bundleRefusalCatalogUnavailable,
+        knowledge_bundle_import_catalog_drift: raw.bundleRefusalCatalogDrift,
+        knowledge_bundle_import_conflict: raw.bundleRefusalConflict,
+        knowledge_bundle_import_lock_failed: raw.bundleRefusalLock,
+        knowledge_bundle_import_transaction_failed: raw.bundleRefusalTransaction,
+        knowledge_bundle_import_rollback_failed: raw.bundleRefusalRollback,
+      };
+      return refusalByCode[code] ?? raw.bundleRefusalGeneric;
+    },
+    bundleRefusalDetailsHeading: raw.bundleRefusalDetailsHeading,
+    bundleRefusalDetailLine: (key, value) =>
+      format(raw.bundleRefusalDetailLine, { key, value }),
+    bundleRefusalIssuesHeading: raw.bundleRefusalIssuesHeading,
+    bundleRefusalIssueLine: (recordId, field, reason) =>
+      format(raw.bundleRefusalIssueLine, {
+        record: recordId ?? raw.bundleValueUnavailable,
+        field: field ?? raw.bundleValueUnavailable,
+        reason,
+      }),
+    bundleChangedLine: (changed) => format(raw.bundleChangedLine, { changed }),
+    bundleChanged: (changed) =>
+      changed === 'unknown'
+        ? raw.bundleChangedUnknown
+        : changed
+          ? raw.bundleChangedYes
+          : raw.bundleChangedNo,
+    bundleRetainedLine: (retainedPath) =>
+      format(raw.bundleRetainedLine, { path: retainedPath }),
+    bundleRepair: (repair) => {
+      switch (repair.kind) {
+        case 'restore-file':
+          return format(raw.bundleRepairRestore, { path: repair.path });
+        case 'edit-declaration':
+          return format(raw.bundleRepairEditDeclaration, { path: repair.path });
+        case 'repair-permissions':
+          return format(raw.bundleRepairPermissions, { path: repair.path });
+        case 'obtain-project':
+          return format(raw.bundleRepairObtainProject, { project: repair.projectId });
+        case 'repair-import': {
+          const repairByCode: Record<string, string> = {
+            knowledge_bundle_import_bundle_invalid: raw.bundleRepairImportInvalid,
+            knowledge_bundle_import_project_not_found:
+              raw.bundleRepairImportProjectNotFound,
+            knowledge_bundle_import_project_unavailable:
+              raw.bundleRepairImportProjectUnavailable,
+            knowledge_bundle_import_project_mismatch:
+              raw.bundleRepairImportProjectMismatch,
+            knowledge_bundle_import_record_id_invalid:
+              raw.bundleRepairImportRecordId,
+            knowledge_bundle_import_record_id_collision:
+              raw.bundleRepairImportRecordId,
+            knowledge_bundle_import_catalog_unavailable:
+              raw.bundleRepairImportCatalogUnavailable,
+            knowledge_bundle_import_catalog_drift:
+              raw.bundleRepairImportCatalogDrift,
+            knowledge_bundle_import_conflict: raw.bundleRepairImportConflict,
+            knowledge_bundle_import_lock_failed: raw.bundleRepairImportLock,
+            knowledge_bundle_import_transaction_failed:
+              raw.bundleRepairImportTransaction,
+            knowledge_bundle_import_rollback_failed:
+              raw.bundleRepairImportRollback,
+          };
+          return format(
+            repairByCode[repair.code] ?? raw.bundleRepairImportGeneric,
+            { path: repair.bundlePath }
+          );
+        }
+      }
+    },
+    confirmImportBundle: (project, bundlePath, trust) =>
+      format(raw.confirmImportBundle, { project, path: bundlePath, trust }),
     declarationHeading: raw.declarationHeading,
     declarationWritten: (configPath) => format(raw.declarationWritten, { path: configPath }),
     declarationAlreadyDurable: raw.declarationAlreadyDurable,

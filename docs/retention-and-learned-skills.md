@@ -76,8 +76,10 @@ The three knowledge locations travel in three different ways:
 - **A project's own knowledge is machine-local by default.** Cloning the
   project on a second machine does not copy its canonical knowledge home.
 - **Project knowledge crosses machines only through an explicit bundle export
-  and an explicit import.** No ordinary command, update, diagnosis, retention
-  run, or machine preparation creates, transmits, or consumes a bundle.
+  and a confirmed import.** No ordinary update, diagnosis, or retention run
+  creates, transmits, or consumes a bundle. Machine preparation may offer one
+  only when a committed project or Store declaration names it, and reports
+  that offer separately from preparing an empty knowledge home.
 
 To prepare a migration artifact, choose a new destination and export:
 
@@ -115,6 +117,48 @@ occupied, or unreadable identifier stops the whole import. Identical and
 unrelated local records remain byte-identical. What lands is owned by the
 project's permanent identity, even when the file travelled through a Store;
 transport creates no Store source, publication, membership, or new evidence.
+
+### Declaring a bundle for machine preparation
+
+A project can commit one repository-relative locator in `rasen/config.yaml`:
+
+```yaml
+knowledgeBundle: carry/project-knowledge.bundle.json
+```
+
+A Store can instead name a bundle for one member in its strict
+`.rasen-store/projects/<projectId>.yaml` record:
+
+```yaml
+knowledgeBundle: rasen/knowledge-bundles/<projectId>/<bundleId>.bundle.json
+```
+
+The project locator resolves from the project root; the Store locator resolves
+from the Store root. Keep it relative and contained within that repository.
+Windows drive paths, network-share paths, POSIX absolute paths, `..` escapes,
+and symlink escapes are unsafe and never reach the importer.
+
+`rasen bootstrap` lists each declared file under a distinct `bundleImports`
+action rather than treating it as Store knowledge or empty-directory
+preparation. Equivalent paths for the same permanent project collapse to one
+action while retaining every declaring source. If both the committed project
+config and a Store record name that path, the project declaration supplies the
+trust decision; different paths remain separate actions.
+
+Import still requires consent. `rasen bootstrap --apply --yes` may import a
+bundle named by the project's own committed config. A bundle named only by a
+Store record remains unconfirmed under `--yes` and needs its own explicit
+choice. This is transport routing only: a Store declaration grants no Store
+ownership, source, evidence, membership, or publication authority.
+
+Missing files report the resolved path to restore; unreadable files report a
+permissions or declaration repair; unsafe declarations name the committed
+file to edit; and a Store project not yet local reports the existing obtain
+repair. These outcomes, malformed bundles, wrong-project bundles, and import
+conflicts degrade the preparation result but do not stop unrelated setup.
+Repair the declaration/file and prepare again, or preview and explicitly
+import a Store-declared file with the direct `rasen knowledge bundle import`
+commands above. With no declaration, preparation offers and imports nothing.
 
 The bundle carries the permanent project identity, capture time,
 `baseProjectCommit`, and the project's strict canonical records and content. It

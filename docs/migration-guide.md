@@ -979,9 +979,63 @@ name the project, contain no Store publication source, and create no Store
 catalog, membership, metadata, staging, commit, or push authority.
 
 `baseProjectCommit` is shown as provenance only. It does not gate import and
-does not make the bundle a portable run checkpoint. Machine-preparation
-integration, interactive reconciliation, and portable in-flight run state are
-not part of this step.
+does not make the bundle a portable run checkpoint. Interactive
+reconciliation and portable in-flight run state are not part of this step.
+
+### 7. Machine preparation can offer a committed bundle declaration
+
+**What changed.** The three kinds of knowledge remain deliberately distinct:
+Store knowledge travels in the Store Git repository, project knowledge stays
+in that project's machine-local canonical home, and a portable bundle is a
+deliberate transport file. Machine preparation now connects the last two only
+when a durable declaration names the file.
+
+Commit a repository-relative locator in one of these owners:
+
+```yaml
+# <project>/rasen/config.yaml — resolves from the project root
+knowledgeBundle: carry/project-knowledge.bundle.json
+```
+
+```yaml
+# <store>/.rasen-store/projects/<projectId>.yaml — resolves from the Store root
+knowledgeBundle: rasen/knowledge-bundles/<projectId>/<bundleId>.bundle.json
+```
+
+Keep the target inside its declaring repository. Absolute Windows, network,
+or POSIX paths, parent traversal, and symlink escape are rejected. Preparation
+shows each safe declaration as its own `bundleImports` action, separate from
+obtaining or registering a project, hydrating an empty knowledge directory,
+and Store knowledge. With no declaration, it offers and imports nothing.
+
+**Consent rule.** `rasen bootstrap --apply --yes` covers an action whose
+sources include the project's committed configuration. It does not cover a
+bundle named only by one or more Store records; that action remains listed and
+requires an explicit import choice. If both sources resolve to the same file,
+one action retains both sources and uses project trust. Different files remain
+independent actions.
+
+**Repair.** Restore a missing file at the reported resolved path, repair access
+to an unreadable file, edit the named durable declaration when it is unsafe, or
+obtain the permanent project checkout when a Store record names an unavailable
+project. Then run preparation again. To handle a Store-declared file outside
+the preparation prompt, preview it and import it explicitly:
+
+```bash
+rasen knowledge bundle import <store-relative-resolved-file> \
+  --project <projectId-or-root> \
+  --dry-run
+rasen knowledge bundle import <store-relative-resolved-file> \
+  --project <projectId-or-root>
+```
+
+A malformed, wrong-project, conflicting, missing, unreadable, unsafe, or
+unconfirmed bundle degrades the preparation result without stopping unrelated
+setup. The direct F3 import rules still decide validation and conflicts, and a
+Store declaration still grants no Store ownership, source, evidence,
+membership, publication, Git staging, commit, or push authority. Doctor
+readiness, automatic synchronization, interactive conflict reconciliation,
+and portable run checkpoints remain absent.
 
 ### Rolling back learned knowledge
 

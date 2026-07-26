@@ -19,6 +19,7 @@ import type { Command } from 'commander';
 
 import {
   buildBootstrapReport,
+  type BootstrapBundleImportAction,
   type BootstrapConsent,
   type BootstrapConsentRequest,
   type BootstrapMode,
@@ -258,9 +259,114 @@ function renderKnowledge(
       ? messages.knowledgeAlreadyHydrated(knowledge.root)
       : messages.knowledgePrepared(knowledge.root)
   );
-  // The portable bundle import is a named step the user can see, but bootstrap
-  // does not perform it (F4's territory).
-  lines.push(messages.knowledgeBundleStep);
+}
+
+function renderBundleImport(
+  lines: string[],
+  entry: BootstrapBundleImportAction,
+  messages: BootstrapMessages
+): void {
+  lines.push(messages.bundleRow(entry.projectId, entry.actionKey));
+  for (const source of entry.sources) {
+    lines.push(messages.bundleSourceLine(messages.bundleSource(source)));
+  }
+  lines.push(messages.bundleTrustLine(messages.bundleTrust(entry.trust)));
+  lines.push(
+    entry.reason === 'invalid-declaration'
+      ? messages.bundleLocatorInvalid
+      : messages.bundleLocatorLine(entry.locator)
+  );
+  if (entry.resolvedPath !== undefined) {
+    lines.push(messages.bundlePathLine(entry.resolvedPath));
+  }
+  lines.push(
+    messages.bundleAvailabilityLine(
+      messages.bundleAvailability(entry.availability)
+    )
+  );
+  lines.push(messages.bundleOutcomeLine(messages.bundleOutcome(entry.outcome)));
+  if (
+    entry.added !== undefined ||
+    entry.alreadyPresent !== undefined ||
+    entry.conflicts !== undefined
+  ) {
+    lines.push(
+      messages.bundlePlanLine(
+        entry.added?.length ?? 0,
+        entry.alreadyPresent?.length ?? 0,
+        entry.conflicts?.length ?? 0
+      )
+    );
+  }
+  if (entry.bundleId !== undefined) {
+    lines.push(messages.bundleIdentityLine(entry.bundleId));
+  }
+  if (entry.baseProjectCommit !== undefined) {
+    lines.push(messages.bundleBaseCommitLine(entry.baseProjectCommit));
+  }
+  for (const added of entry.added ?? []) {
+    lines.push(messages.bundleAddedLine(added));
+  }
+  for (const present of entry.alreadyPresent ?? []) {
+    lines.push(messages.bundleAlreadyPresentLine(present));
+  }
+  for (const conflict of entry.conflicts ?? []) {
+    lines.push(
+      messages.bundleConflictLine(
+        conflict.id,
+        messages.bundleConflictReason(conflict.reason)
+      )
+    );
+    lines.push(messages.bundleConflictKnowledgeKeyLine(conflict.knowledgeKey));
+    lines.push(
+      messages.bundleConflictBundleLine(
+        conflict.bundle.contentDigest,
+        conflict.bundle.status
+      )
+    );
+    lines.push(messages.bundleConflictLocalLine(conflict.local));
+  }
+  for (const warning of entry.warnings ?? []) {
+    lines.push(messages.bundleWarningLine(messages.bundleWarning(warning)));
+  }
+  if (entry.refusal !== undefined) {
+    lines.push(
+        messages.bundleRefusalLine(messages.bundleRefusal(entry.refusal.code))
+    );
+    const details = Object.entries(entry.refusal.details).filter(
+      ([key]) => key !== 'repair' && key !== 'diagnostic'
+    );
+    if (details.length > 0) {
+      lines.push(messages.bundleRefusalDetailsHeading);
+      for (const [key, value] of details) {
+        lines.push(messages.bundleRefusalDetailLine(key, value));
+      }
+    }
+    if (entry.refusal.issues.length > 0) {
+      lines.push(messages.bundleRefusalIssuesHeading);
+      for (const issue of entry.refusal.issues) {
+        lines.push(
+          messages.bundleRefusalIssueLine(
+            issue.recordId,
+            issue.field,
+            issue.reason
+          )
+        );
+      }
+    }
+  }
+  if (entry.changed !== undefined) {
+    lines.push(messages.bundleChangedLine(messages.bundleChanged(entry.changed)));
+  }
+  for (const retainedPath of entry.retainedPaths ?? []) {
+    lines.push(messages.bundleRetainedLine(retainedPath));
+  }
+  if (entry.repair.length > 0) {
+    lines.push(messages.repairHeading);
+    for (const repair of entry.repair) {
+      lines.push(messages.repairLine(messages.bundleRepair(repair)));
+    }
+  }
 }
 
 function renderDeclaration(
@@ -316,6 +422,13 @@ export function renderBootstrapReport(
     renderKnowledge(lines, report.knowledge, messages);
   }
 
+  if (report.bundleImports !== undefined && report.bundleImports.length > 0) {
+    lines.push(messages.bundleImportsHeading);
+    for (const entry of report.bundleImports) {
+      renderBundleImport(lines, entry, messages);
+    }
+  }
+
   if (report.declaration !== undefined) {
     renderDeclaration(lines, report.declaration, messages);
   }
@@ -358,6 +471,12 @@ function createConsentCallback(
         ? messages.confirmRegisterStore(request.selector, request.path)
         : request.action === 'obtain-store'
           ? messages.confirmObtainStore(request.selector, request.path)
+          : request.action === 'import-bundle'
+            ? messages.confirmImportBundle(
+                request.projectId ?? request.selector,
+                request.path,
+                messages.bundleTrust(request.trust ?? 'store-record-only')
+              )
           : messages.confirmUpgradeDeclaration(request.path);
     return confirm({ message, default: true });
   };
@@ -414,10 +533,11 @@ export async function runBootstrapCommand(
   }
 
   // Apply mode: build the consent configuration. Blanket (`--yes`) confirms
-  // the Stores the project itself declares without asking; interactive asks
-  // for each registration through an inquirer prompt. The Store-first project
-  // selection callback is ONLY wired in interactive mode (not under `--yes`),
-  // because `--yes` never obtains a Store's projects (the never-harvest rule).
+  // what the project itself declares, including a project-config bundle, but
+  // never a Store-only bundle. Interactive mode asks for each registration or
+  // usable bundle. The Store-first project selection callback is ONLY wired
+  // in interactive mode (not under `--yes`), because `--yes` never obtains a
+  // Store's projects (the never-harvest rule).
   const consent: BootstrapConsent | undefined =
     mode === 'apply'
       ? {
