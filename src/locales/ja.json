@@ -291,6 +291,10 @@
           "name": "ヘルプを探す",
           "description": "状況に合うRasenのコマンド、スキル、ワークフローを案内します"
         },
+        "direction": {
+          "name": "長期方向を管理",
+          "description": "長期的な方向を維持し、Roadmapの1つのスライスを選び、観測可能な証拠を反映します"
+        },
         "office-hours-command": {
           "name": "オフィスアワー",
           "description": "構築前にプロダクト需要と方向性を厳しく検証します"
