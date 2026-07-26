@@ -59,5 +59,5 @@
 
 ## 7. Real archive completion
 
-- [ ] 7.1 After the real archive creates `rasen/specs/portable-project-knowledge/spec.md`, restore its `## Purpose` body verbatim from this change's archived delta; do not leave the archiver's `TBD - created by archiving change ...` placeholder.
-- [ ] 7.2 Run a repository-wide search equivalent to `grep -rl "TBD - created by archiving" rasen/specs/` and require zero matches before declaring archive complete.
+- [x] 7.1 After the real archive creates `rasen/specs/portable-project-knowledge/spec.md`, restore its `## Purpose` body verbatim from this change's archived delta; do not leave the archiver's `TBD - created by archiving change ...` placeholder.
+- [x] 7.2 Run a repository-wide search equivalent to `grep -rl "TBD - created by archiving" rasen/specs/` and require zero matches before declaring archive complete.
