@@ -10,6 +10,7 @@
  * agent context's stdout-only probe) — `AgentCommand.audit()` stays a thin
  * consumer that prints/catches, matching the `context`/`wait` pattern.
  */
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -75,6 +76,34 @@ const UNSUPPORTED_CODEX_DIMENSIONS: ReadonlyArray<{ dimension: string; reason: s
 /** Increment cross-check tolerance (design D4): summed per-request increments vs cumulative endpoint. */
 const CROSS_CHECK_TOLERANCE = 0.02;
 
+/** Conservative cross-platform byte budget for one generated filename component. */
+export const AUDIT_REPORT_BASENAME_MAX_BYTES = 200;
+
+const PORTABLE_SESSION_ID = /^[a-z0-9._-]+$/;
+const RESERVED_DIGEST_SESSION_ID = /^sha256-[a-f0-9]{64}$/;
+
+/**
+ * Builds a deterministic, portable report basename from the canonical audit
+ * identity. Ordinary runtime ids stay fully readable; unusual identities use
+ * a full SHA-256 digest rather than a lossy sanitization or truncation.
+ */
+export function auditReportBasename(runtime: AuditRuntime, sessionId: string): string {
+  const readable = `session-audit-${runtime}-${sessionId}.json`;
+  if (
+    PORTABLE_SESSION_ID.test(sessionId) &&
+    !RESERVED_DIGEST_SESSION_ID.test(sessionId) &&
+    Buffer.byteLength(readable, 'utf8') <= AUDIT_REPORT_BASENAME_MAX_BYTES
+  ) {
+    return readable;
+  }
+
+  const canonicalIdentity =
+    `${Buffer.byteLength(runtime, 'utf8')}:${runtime}` +
+    `${Buffer.byteLength(sessionId, 'utf8')}:${sessionId}`;
+  const digest = createHash('sha256').update(canonicalIdentity, 'utf8').digest('hex');
+  return `session-audit-${runtime}-sha256-${digest}.json`;
+}
+
 export interface RunAuditOptions extends GlobalDataDirOptions {
   /** Override the Claude projects directory a bare session id is resolved against. */
   projectsDir?: string;
@@ -125,12 +154,16 @@ function resolveRuntimeKind(target: string, override: AuditRuntime | undefined):
   return 'claude';
 }
 
-function defaultOutPath(options: RunAuditOptions, sid: string): string {
-  return path.join(getGlobalDataDir(options), 'analytics', `session-audit-${sid.slice(0, 8)}.json`);
+function defaultOutPath(result: AuditResult, options: RunAuditOptions): string {
+  return path.join(
+    getGlobalDataDir(options),
+    'analytics',
+    auditReportBasename(result.session.runtime, result.session.id)
+  );
 }
 
-function writeReport(result: AuditResult, options: RunAuditOptions, sid: string): string {
-  const outPath = options.outPath ?? defaultOutPath(options, sid);
+function writeReport(result: AuditResult, options: RunAuditOptions): string {
+  const outPath = options.outPath ?? defaultOutPath(result, options);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(result), 'utf-8');
   return outPath;
@@ -364,7 +397,7 @@ async function runClaudeAudit(target: string, options: RunAuditOptions): Promise
     churnEvents: allChurn,
   };
 
-  const outPath = writeReport(result, options, sid);
+  const outPath = writeReport(result, options);
   return { result, outPath };
 }
 
@@ -622,7 +655,7 @@ async function runCodexAudit(target: string, options: RunAuditOptions): Promise<
     ...(caveats.length ? { caveats } : {}),
   };
 
-  const outPath = writeReport(result, options, mainMember.threadId);
+  const outPath = writeReport(result, options);
   return { result, outPath };
 }
 
@@ -817,7 +850,7 @@ async function runZedAudit(target: string, options: RunAuditOptions): Promise<Ru
       caveats: [...ZED_CAVEATS],
     };
 
-    const outPath = writeReport(result, options, rootId);
+    const outPath = writeReport(result, options);
     return { result, outPath };
   } finally {
     db.close();
