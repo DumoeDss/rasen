@@ -92,6 +92,17 @@ describe('App routing', () => {
     expect(container.querySelector('[data-testid="board-page"]')).not.toBeNull();
   });
 
+  it('renders the Rasen mark immediately before the navigation title', async () => {
+    await mountAt(container, '/p/proj_x/board');
+    const brand = container.querySelector('.app-brand');
+    const mark = brand?.querySelector('.app-brand__mark');
+    const title = brand?.querySelector('h1');
+    expect(mark).not.toBeNull();
+    expect(mark?.getAttribute('aria-hidden')).toBe('true');
+    expect(title?.textContent).toBe('Rasen');
+    expect(mark?.nextElementSibling).toBe(title);
+  });
+
   it('renders the board at a store space board route', async () => {
     await mountAt(container, '/s/store_y/board');
     expect(container.querySelector('[data-testid="board-page"]')).not.toBeNull();
