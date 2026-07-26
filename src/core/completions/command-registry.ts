@@ -790,6 +790,12 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
                 description: 'New destination file to create (never overwritten)',
                 takesValue: true,
               },
+              {
+                name: 'to-store',
+                description:
+                  'Also place the bundle in a registered Store without granting ownership',
+                takesValue: true,
+              },
               COMMON_FLAGS.json,
             ],
           },

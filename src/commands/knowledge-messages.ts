@@ -70,8 +70,11 @@ export interface KnowledgeMessages {
   bundleDescription: string;
   bundleExportDescription: string;
   bundleDestinationDescription: string;
+  bundleStoreDestinationDescription: string;
   bundleJsonDescription: string;
   bundleExportSucceeded: (project: string, records: number, destination: string) => string;
+  bundleStoreExportSucceeded: (store: string, destination: string) => string;
+  bundleStoreCommitFile: (file: string) => string;
   bundleExportWarningBaseCommit: string;
   bundleExportWarningStagingCleanup: string;
   bundleError: (message: string) => string;
@@ -88,6 +91,17 @@ export interface KnowledgeMessages {
   bundleSchemaRepair: string;
   bundleWriteFailed: (destination: string, reason: string) => string;
   bundleWriteRepair: string;
+  bundleStoreUnavailable: (selector: string, reason: string) => string;
+  bundleStoreOverlap: (destination: string, store: string) => string;
+  bundleStoreOverlapRepair: string;
+  bundleStoreWriteFailed: (destination: string, reason: string) => string;
+  bundleStoreWriteFailedAfterExport: (
+    destination: string,
+    reason: string,
+    userDestination: string
+  ) => string;
+  bundleStoreWriteRepair: string;
+  bundleStoreWritePartialRepair: string;
   effectiveHeading: (project: string, status: string) => string;
   effectiveRoots: (canonical: string, evaluation: string) => string;
   effectiveEmpty: string;
@@ -181,9 +195,13 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     bundleDescription: raw.bundleDescription,
     bundleExportDescription: raw.bundleExportDescription,
     bundleDestinationDescription: raw.bundleDestinationDescription,
+    bundleStoreDestinationDescription: raw.bundleStoreDestinationDescription,
     bundleJsonDescription: raw.bundleJsonDescription,
     bundleExportSucceeded: (project, records, destination) =>
       format(raw.bundleExportSucceeded, { project, records, destination }),
+    bundleStoreExportSucceeded: (store, destination) =>
+      format(raw.bundleStoreExportSucceeded, { store, destination }),
+    bundleStoreCommitFile: (file) => format(raw.bundleStoreCommitFile, { file }),
     bundleExportWarningBaseCommit: raw.bundleExportWarningBaseCommit,
     bundleExportWarningStagingCleanup: raw.bundleExportWarningStagingCleanup,
     bundleError: (message) => format(raw.bundleError, { message }),
@@ -204,6 +222,21 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     bundleWriteFailed: (destination, reason) =>
       format(raw.bundleWriteFailed, { destination, reason }),
     bundleWriteRepair: raw.bundleWriteRepair,
+    bundleStoreUnavailable: (selector, reason) =>
+      format(raw.bundleStoreUnavailable, { selector, reason }),
+    bundleStoreOverlap: (destination, store) =>
+      format(raw.bundleStoreOverlap, { destination, store }),
+    bundleStoreOverlapRepair: raw.bundleStoreOverlapRepair,
+    bundleStoreWriteFailed: (destination, reason) =>
+      format(raw.bundleStoreWriteFailed, { destination, reason }),
+    bundleStoreWriteFailedAfterExport: (destination, reason, userDestination) =>
+      format(raw.bundleStoreWriteFailedAfterExport, {
+        destination,
+        reason,
+        userDestination,
+      }),
+    bundleStoreWriteRepair: raw.bundleStoreWriteRepair,
+    bundleStoreWritePartialRepair: raw.bundleStoreWritePartialRepair,
     effectiveHeading: (project, status) => format(raw.effectiveHeading, { project, status }),
     effectiveRoots: (canonical, evaluation) =>
       format(raw.effectiveRoots, { canonical, evaluation }),

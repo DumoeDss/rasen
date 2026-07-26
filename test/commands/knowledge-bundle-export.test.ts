@@ -8,9 +8,10 @@ import {
   bundleExportCommand,
   registerKnowledgeCommand,
 } from '../../src/commands/knowledge.js';
-import type {
-  ExportKnowledgeBundleOptions,
-  KnowledgeBundleExportResult,
+import {
+  KnowledgeBundleExportError,
+  type ExportKnowledgeBundleOptions,
+  type KnowledgeBundleExportResult,
 } from '../../src/core/knowledge-bundle/export.js';
 import {
   digestContent,
@@ -237,6 +238,151 @@ describe('rasen knowledge bundle export command', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it('accepts --to-store and reports the same transport facts in JSON and human output', async () => {
+    const calls: ExportKnowledgeBundleOptions[] = [];
+    const fakeExporter = async (
+      options: ExportKnowledgeBundleOptions
+    ): Promise<KnowledgeBundleExportResult> => {
+      calls.push(options);
+      return {
+        projectId,
+        recordCount: 1,
+        destination: options.to,
+        warnings: [],
+        bundle: {} as KnowledgeBundleExportResult['bundle'],
+        transport: {
+          store: {
+            id: 'team-store',
+            uid: '22222222-2222-4222-8222-222222222222',
+          },
+          destination: path.join(projectRoot, 'store', 'rasen', 'knowledge-bundles', 'bundle.json'),
+          filesToCommit: [path.join('rasen', 'knowledge-bundles', 'bundle.json')],
+        },
+      };
+    };
+    const jsonDestination = path.join(outputDir, 'store-json.bundle.json');
+
+    await bundleExportCommand(
+      {
+        project: projectId,
+        to: jsonDestination,
+        toStore: 'team-store',
+        json: true,
+      },
+      fakeExporter
+    );
+
+    expect(calls[0]).toEqual({
+      project: projectId,
+      to: jsonDestination,
+      toStore: 'team-store',
+    });
+    const json = lastJson()!;
+    expect(json).toMatchObject({
+      ok: true,
+      state: 'exported',
+      project: projectId,
+      destination: jsonDestination,
+      transport: {
+        store: {
+          id: 'team-store',
+          uid: '22222222-2222-4222-8222-222222222222',
+        },
+        filesToCommit: [path.join('rasen', 'knowledge-bundles', 'bundle.json')],
+      },
+    });
+
+    logSpy.mockClear();
+    const humanDestination = path.join(outputDir, 'store-human.bundle.json');
+    await bundleExportCommand(
+      {
+        project: projectId,
+        to: humanDestination,
+        toStore: 'team-store',
+      },
+      fakeExporter
+    );
+    const output = logSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    const transport = json.transport as {
+      store: { uid: string };
+      destination: string;
+      filesToCommit: string[];
+    };
+    expect(output).toContain(transport.store.uid);
+    expect(output).toContain(transport.destination);
+    expect(output).toContain(transport.filesToCommit[0]);
+  });
+
+  it('reports raw Store publication failure and honest user-file success in JSON and human output', async () => {
+    const userDestination = path.join(outputDir, 'partial.bundle.json');
+    const storeDestination = path.join(
+      projectRoot,
+      'store',
+      'rasen',
+      'knowledge-bundles',
+      'bundle.json'
+    );
+    const reason = 'transport publish denied';
+    const fakeExporter = async (): Promise<KnowledgeBundleExportResult> => {
+      throw new KnowledgeBundleExportError(
+        'knowledge_bundle_store_write_failed',
+        `Could not place knowledge bundle in Store at ${storeDestination}.`,
+        {
+          selector: 'team-store',
+          destination: storeDestination,
+          reason,
+          userDestination,
+          userDestinationPublished: 'true',
+        }
+      );
+    };
+
+    await bundleExportCommand(
+      {
+        project: projectId,
+        to: userDestination,
+        toStore: 'team-store',
+        json: true,
+      },
+      fakeExporter
+    );
+
+    expect(lastJson()).toEqual({
+      ok: false,
+      error: {
+        code: 'knowledge_bundle_store_write_failed',
+        message: `The user bundle was exported to ${userDestination}, but Store placement at ${storeDestination} failed: ${reason}`,
+        selector: 'team-store',
+        destination: storeDestination,
+        reason,
+        userDestination,
+        userDestinationPublished: true,
+        repair:
+          'Keep the user bundle at its reported path. Repair the Store destination, then retry with a new unused --to path.',
+      },
+    });
+
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    await bundleExportCommand(
+      {
+        project: projectId,
+        to: userDestination,
+        toStore: 'team-store',
+      },
+      fakeExporter
+    );
+    const human = errorSpy.mock.calls
+      .map(([value]) => String(value))
+      .join('\n');
+    expect(human).toContain(userDestination);
+    expect(human).toContain(storeDestination);
+    expect(human).toContain(reason);
+    expect(human).toContain(
+      'Keep the user bundle at its reported path.'
+    );
+  });
+
   it.each([
     ['missing project', ['bundle', 'export', '--to', 'unused.bundle.json']],
     ['missing destination', ['bundle', 'export', '--project', 'unused-project']],
@@ -253,24 +399,38 @@ describe('rasen knowledge bundle export command', () => {
         'unused.bundle.json',
       ],
     ],
-    [
-      'Store transport',
-      [
-        'bundle',
-        'export',
-        '--project',
-        'unused-project',
-        '--to-store',
-        'team',
-        '--to',
-        'unused.bundle.json',
-      ],
-    ],
     ['import command', ['bundle', 'import', 'unused.bundle.json']],
   ])('rejects %s before export work', async (_label, args) => {
     const before = outputEntries();
     await expect(runKnowledge(args)).rejects.toBeDefined();
     expect(outputEntries()).toEqual(before);
+  });
+
+  it('parses --to-store and fails a missing Store before writing either destination', async () => {
+    const destination = path.join(outputDir, 'missing-store.bundle.json');
+
+    await runKnowledge([
+      'bundle',
+      'export',
+      '--project',
+      projectId,
+      '--to',
+      destination,
+      '--to-store',
+      'missing-store',
+      '--json',
+    ]);
+
+    expect(lastJson()).toMatchObject({
+      ok: false,
+      error: {
+        code: 'knowledge_bundle_store_unavailable',
+        selector: 'missing-store',
+        reason: 'not-registered',
+      },
+    });
+    expect(fs.existsSync(destination)).toBe(false);
+    expect(outputEntries()).toEqual([]);
   });
 
   it('returns stable localized refusal details for an occupied destination', async () => {
@@ -330,15 +490,14 @@ describe('rasen knowledge bundle export command', () => {
     expect(fs.existsSync(destination)).toBe(false);
   });
 
-  it('registers only export and its three flags in the completion surface', () => {
+  it('registers only export and its four flags in the completion surface', () => {
     const knowledge = COMMAND_REGISTRY.find((entry) => entry.name === 'knowledge');
     const bundle = knowledge?.subcommands?.find((entry) => entry.name === 'bundle');
     const commands = bundle?.subcommands?.map((entry) => entry.name);
     const flags = bundle?.subcommands?.[0]?.flags.map((flag) => flag.name);
 
     expect(commands).toEqual(['export']);
-    expect(flags).toEqual(['project', 'to', 'json']);
-    expect(JSON.stringify(bundle)).not.toContain('to-store');
+    expect(flags).toEqual(['project', 'to', 'to-store', 'json']);
     expect(commands).not.toContain('import');
   });
 });

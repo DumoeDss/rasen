@@ -979,6 +979,7 @@ async function runKnowledgeAction(
 export interface BundleExportOptions {
   project: string;
   to: string;
+  toStore?: string;
   json?: boolean;
 }
 
@@ -1027,6 +1028,64 @@ function describeBundleFailure(
           details: { record, reason: error.details.reason ?? error.message },
         };
       }
+      case 'knowledge_bundle_store_unavailable':
+        return {
+          code: error.code,
+          message: messages.bundleStoreUnavailable(
+            error.details.selector ?? options.toStore ?? '',
+            error.details.diagnostic ?? error.message
+          ),
+          repair: error.details.repair ?? messages.bundleStoreWriteRepair,
+          details: {
+            selector: error.details.selector ?? options.toStore ?? '',
+            reason: error.details.reason ?? 'unavailable',
+            diagnostic: error.details.diagnostic ?? error.message,
+          },
+        };
+      case 'knowledge_bundle_store_overlap':
+        return {
+          code: error.code,
+          message: messages.bundleStoreOverlap(
+            error.details.destination ?? options.to,
+            error.details.selector ?? options.toStore ?? ''
+          ),
+          repair: messages.bundleStoreOverlapRepair,
+          details: {
+            selector: error.details.selector ?? options.toStore ?? '',
+            destination: error.details.destination ?? options.to,
+            storeRoot: error.details.storeRoot ?? '',
+          },
+        };
+      case 'knowledge_bundle_store_write_failed':
+        {
+          const userDestinationPublished =
+            error.details.userDestinationPublished === 'true';
+          const userDestination =
+            error.details.userDestination ?? options.to;
+        return {
+          code: error.code,
+          message: userDestinationPublished
+            ? messages.bundleStoreWriteFailedAfterExport(
+                error.details.destination ?? '',
+                error.details.reason ?? error.message,
+                userDestination
+              )
+            : messages.bundleStoreWriteFailed(
+                error.details.destination ?? '',
+                error.details.reason ?? error.message
+              ),
+          repair: userDestinationPublished
+            ? messages.bundleStoreWritePartialRepair
+            : messages.bundleStoreWriteRepair,
+          details: {
+            selector: error.details.selector ?? options.toStore ?? '',
+            destination: error.details.destination ?? '',
+            reason: error.details.reason ?? error.message,
+            userDestination,
+            userDestinationPublished,
+          },
+        };
+        }
       case 'knowledge_bundle_write_failed':
         return {
           code: error.code,
@@ -1102,6 +1161,7 @@ export async function bundleExportCommand(
     const result = await exporter({
       project: options.project,
       to: options.to,
+      ...(options.toStore !== undefined ? { toStore: options.toStore } : {}),
     });
     const warnings = result.warnings.map((code) => ({
       code,
@@ -1114,6 +1174,7 @@ export async function bundleExportCommand(
         project: result.projectId,
         recordCount: result.recordCount,
         destination: result.destination,
+        ...(result.transport !== undefined ? { transport: result.transport } : {}),
         warnings,
       });
       return;
@@ -1125,6 +1186,17 @@ export async function bundleExportCommand(
         result.destination
       )
     );
+    if (result.transport !== undefined) {
+      console.log(
+        messages.bundleStoreExportSucceeded(
+          result.transport.store.uid ?? result.transport.store.id,
+          result.transport.destination
+        )
+      );
+      for (const file of result.transport.filesToCommit) {
+        console.log(messages.bundleStoreCommitFile(file));
+      }
+    }
     for (const warning of warnings) console.log(warning.message);
   } catch (error) {
     reportBundleFailure(describeBundleFailure(error, options, messages), options.json, messages);
@@ -1161,6 +1233,7 @@ export function registerKnowledgeCommand(program: Command): void {
     .description(messages.bundleExportDescription)
     .requiredOption('--project <id-or-root>', messages.projectSelectorDescription)
     .requiredOption('--to <path>', messages.bundleDestinationDescription)
+    .option('--to-store <store>', messages.bundleStoreDestinationDescription)
     .option('--json', messages.bundleJsonDescription)
     .action(async (options: BundleExportOptions) => {
       await bundleExportCommand(options);

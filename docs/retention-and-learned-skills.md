@@ -85,15 +85,26 @@ To prepare a migration artifact, choose a new destination and export:
 rasen knowledge bundle export \
   --project <projectId-or-registered-root> \
   --to <new-bundle-file> \
+  --to-store <store-uid-or-unambiguous-alias> \
   --json
 ```
 
-Carry that one file to the new machine using the transport you choose. Treat it
-as a deliberate handoff artifact, not as a reason to synchronize `~/.rasen`.
-Bundle import is a **later child and is not available in this change**, so this
-release does not yet consume the carried file on the new machine. It also does
-not place the file into a Store for you: `--to-store` is not registered, and a
-Store used manually as file transport gains no ownership from that route.
+`--to-store` is optional. Without it, carry the one user-selected file using
+the transport you choose. With it, Rasen places the same file under the Store's
+reserved `rasen/knowledge-bundles/<projectId>/` path and prints the file to
+commit. It changes no Store catalog, project record, membership, or metadata
+and performs no Git stage, commit, or push. Carriage never grants the Store
+ownership of the project knowledge.
+
+The `--to` path must be outside the selected Store. Rasen stages the Store
+placement outside the Store on the same filesystem, so only the derived bundle
+appears as untracked Store state. If Store placement fails after `--to` was
+published, the error explicitly preserves and reports that user-held file.
+
+Treat the bundle as a deliberate handoff artifact, not as a reason to
+synchronize `~/.rasen`. Bundle import is a **later child and is not available
+in this change**, so this release does not yet consume the carried file on the
+new machine.
 
 The bundle carries the permanent project identity, capture time,
 `baseProjectCommit`, and the project's strict canonical records and content. It
@@ -105,8 +116,9 @@ not part of this release.
 
 Export refuses every occupied destination and every record containing a
 Windows drive-letter path, Windows network-share path, or POSIX absolute path.
-On success it creates exactly the named file and changes no source; on refusal
-or failure it creates none. See the
+On success it creates exactly the named `--to` file and, only when requested,
+one derived Store transport file; it changes no source or Store-owned state.
+An occupied `--to` path is refused on every command path. See the
 [CLI bundle export reference](cli.md#project-knowledge-bundle-export) for the
 closed field list, JSON contract, and repairs.
 
