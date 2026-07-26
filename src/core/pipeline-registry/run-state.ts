@@ -26,11 +26,23 @@ const LEGACY_RETRO_STAGE_ID = 'retro';
 
 export const RUN_STATE_FILENAME = 'auto-run.json';
 
+/**
+ * Per-stage status. `skipped` and `delegated` are deliberately distinct:
+ *
+ *  - `skipped` — deliberately not needed. It counts as SETTLED, exactly as it
+ *    always has; records written before `delegated` existed keep this meaning.
+ *  - `delegated` — handed to this change's children. It counts as OUTSTANDING,
+ *    so a parent that delegated its work is never mistaken for one that
+ *    finished it. Before this existed, `skipped` had to carry both meanings,
+ *    and a decomposed parent whose stages were all "skipped" reported nothing
+ *    left but delivery.
+ */
 export const StageStatusSchema = z.enum([
   'pending',
   'in_progress',
   'done',
   'skipped',
+  'delegated',
   'escalated',
 ]);
 export type StageStatus = z.infer<typeof StageStatusSchema>;
@@ -439,6 +451,10 @@ export function writeRunState(changeDir: string, state: RunState): void {
 /**
  * Stages that count as completed for resume purposes: when `stages` is present,
  * those with status done|skipped; otherwise the `completed` convenience array.
+ *
+ * `delegated` is NOT completed — work handed to children is outstanding until
+ * the children finish it, so a decomposed parent's stage list can never on its
+ * own leave delivery as the only thing remaining.
  */
 export function completedStages(state: RunState): string[] {
   if (state.stages) {
@@ -477,7 +493,8 @@ export function frozenExecutionBinding(
   state: RunState
 ): FrozenExecutionRef | undefined {
   const frozen = state.knowledgeContext;
-  return frozen !== undefined && frozen.version === 2 ? frozen.execution : undefined;
+  if (frozen === undefined || frozen.version === 1) return undefined;
+  return frozen.execution;
 }
 
 /**

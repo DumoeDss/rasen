@@ -102,6 +102,9 @@ export {
   type LearnedSkillRoots,
   type ResolveLearnedSkillExecutionContextInput,
 } from './context.js';
+// The single stated rule for which checkout applicability is decided in,
+// shared by context.ts and effective.ts so the two cannot drift apart.
+export { resolveEvaluationCheckout } from './evaluation-root.js';
 export {
   EffectiveLearnedSkillPlanningError,
   identityKey,

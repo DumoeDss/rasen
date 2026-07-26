@@ -128,6 +128,9 @@
   "dialog.launch.members_loading": "Loading current Store members…",
   "dialog.launch.members_error": "Store members could not be loaded. Retry to refresh the available execution projects.",
   "dialog.launch.members_empty": "This Store has no current member projects. Choose planning only or cancel.",
+  "dialog.launch.members_no_checkout": "This Store's member projects have no checkout on this machine, so none of them can be worked in here. Clone one, or choose planning only.",
+  "dialog.launch.member_no_checkout": "No checkout of this project exists on this machine.",
+  "dialog.launch.planning_no_code": "A planning-only session may write no code.",
   "dialog.launch.execution_required": "Choose a member project or planning only.",
 
   "archive.loading": "Loading archive…",

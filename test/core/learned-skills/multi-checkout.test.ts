@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import {
   digestContent,
   resolveEffectiveLearnedSkillPlan,
+  resolveEvaluationCheckout,
   resolveLearnedSkillExecutionContext,
   resolveLearnedSkillRoots,
   serializeManifest,
@@ -194,6 +195,91 @@ describe('one project, several checkouts', () => {
     const plan = await resolveEffectiveLearnedSkillPlan({ execution });
     expect(plan.evaluationRoot).toBe(second.root);
     expect(plan.skills).toEqual([]);
+  });
+
+  // One rule for the checkout applicability is decided in: the session's
+  // checkout, then the checkout already resolved for the work, and only then
+  // the current directory. Both entry points reach it the same way, so they
+  // cannot answer differently for the same session.
+  describe('the evaluation checkout, resolved the same way by every path', () => {
+    /**
+     * `evaluationRoot` is optional on the public context type, and a context
+     * that carries none is exactly the case the two entry points used to
+     * answer differently. Dropping it is how these tests reach that case.
+     */
+    function withoutRecordedCheckout(
+      execution: Awaited<ReturnType<typeof resolveLearnedSkillExecutionContext>>
+    ) {
+      const { evaluationRoot: _recorded, ...rest } = execution;
+      return rest;
+    }
+
+    it('prefers the resolved project checkout over the current directory', async () => {
+      const checkout = await makeCheckout('selector-checkout');
+      writeCanonicalRecord(checkout.projectId, ['package.json']);
+
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: checkout.root,
+        selector: { project: checkout.projectId },
+        requestedScope: 'project',
+        sessionContext: null,
+        globalDataDir,
+      });
+
+      const roots = await resolveLearnedSkillRoots(withoutRecordedCheckout(execution));
+      expect(roots.ok).toBe(true);
+      if (!roots.ok) return;
+      // Previously this branch reached straight for process.cwd(), which is
+      // the vitest working directory here — not the project at all.
+      expect(roots.roots.evaluationRoot).toBe(checkout.root);
+      expect(roots.roots.evaluationRoot).not.toBe(process.cwd());
+    });
+
+    it('lets the current directory answer when nothing earlier has', async () => {
+      // A Store owner has no project checkout, so steps 1 and 2 cannot answer.
+      // The last resort is live code, not an unreachable branch.
+      const store = healthyRoot(path.join(tempDir, 'cwd-store'));
+      const uid = mintStoreUid();
+      await writeStoreMetadataState(store, { version: 2, uid, id: 'cwd-store' });
+      await registerStore({ id: 'cwd-store', localPath: store, globalDataDir });
+
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: store,
+        selector: { store: uid },
+        requestedScope: 'store',
+        sessionContext: null,
+        globalDataDir,
+      });
+      expect(execution.owner).toMatchObject({ type: 'store' });
+
+      expect(resolveEvaluationCheckout(withoutRecordedCheckout(execution))).toBe(process.cwd());
+      // And a recorded checkout still outranks it.
+      expect(resolveEvaluationCheckout(execution)).toBe(execution.evaluationRoot);
+    });
+
+    it('has both entry points agree on the same checkout for the same session', async () => {
+      const checkout = await makeCheckout('agree-main');
+      writeCanonicalRecord(checkout.projectId, ['package.json']);
+
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: checkout.root,
+        selector: { project: checkout.projectId },
+        requestedScope: 'project',
+        sessionContext: null,
+        globalDataDir,
+      });
+      const stripped = withoutRecordedCheckout(execution);
+
+      // The case the old code disagreed on: `context.ts` answered with the
+      // process's current directory while `effective.ts` answered with the
+      // resolved project root.
+      const roots = await resolveLearnedSkillRoots(stripped);
+      const plan = await resolveEffectiveLearnedSkillPlan({ execution: stripped });
+      expect(roots.ok).toBe(true);
+      if (!roots.ok) return;
+      expect(roots.roots.evaluationRoot).toBe(plan.evaluationRoot);
+      expect(roots.roots.evaluationRoot).toBe(checkout.root);
+    });
   });
 
   it('builds every expected path with platform path resolution', async () => {

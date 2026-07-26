@@ -115,10 +115,15 @@ export const FrozenExecutionRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('project'), projectId: z.string().min(1) }).strict(),
 ]);
 
+/** A frozen planning root named by permanent identity (version 3). */
+export const DurableKnowledgePlanningRootRefSchema = DurableEvidenceOwnerRefSchema;
+
 /**
- * Both versions parse. A version 1 record is a run frozen before execution
+ * Every version parses. A version 1 record is a run frozen before execution
  * bindings existed and reads as "no execution binding recorded" — never an
- * error, which is what lets a resume of an older run keep working.
+ * error, which is what lets a resume of an older run keep working. Versions 1
+ * and 2 name their owner by display alias; version 3, which is what new runs
+ * write, names it by permanent identity.
  */
 export const FrozenKnowledgeContextSchema = z.discriminatedUnion('version', [
   z
@@ -134,6 +139,14 @@ export const FrozenKnowledgeContextSchema = z.discriminatedUnion('version', [
       planningRoot: KnowledgePlanningRootRefSchema,
       owner: KnowledgeOwnerRefSchema,
       execution: FrozenExecutionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(3),
+      planningRoot: DurableKnowledgePlanningRootRefSchema,
+      owner: DurableKnowledgeOwnerRefSchema,
+      execution: FrozenExecutionRefSchema.optional(),
     })
     .strict(),
 ]);

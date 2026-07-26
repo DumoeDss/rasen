@@ -88,6 +88,7 @@ export interface PipelineMessageValues {
   persistentPlanner: { planner: string };
   remaining: { stages: string };
   invalidRunStateNote: { path: string; reason: string };
+  invalidPortfolioStateNote: { path: string; reason: string };
   noRunStateNote: undefined;
   nextStage: { stage: string };
   openFindings: { count: number };
@@ -191,6 +192,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'persistentPlanner',
   'remaining',
   'invalidRunStateNote',
+  'invalidPortfolioStateNote',
   'noRunStateNote',
   'nextStage',
   'openFindings',

@@ -243,6 +243,7 @@
       "persistentPlanner": "Planner (persistent, resumable): {planner}",
       "remaining": "Remaining: {stages}",
       "invalidRunStateNote": "Run-state file at {path} is invalid: {reason}",
+      "invalidPortfolioStateNote": "Portfolio run-state file at {path} could not be read: {reason}. This change was split into children, so it is not resumed as an undivided change; repair the record before resuming.",
       "noRunStateNote": "No run-state (auto-run.json) found; run classification to select a pipeline.",
       "nextStage": "Next: {stage}",
       "openFindings": "Open findings: {count} (resolve before ship)",

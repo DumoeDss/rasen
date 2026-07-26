@@ -243,6 +243,7 @@
       "persistentPlanner": "プランナー（永続・再開可能）: {planner}",
       "remaining": "残り: {stages}",
       "invalidRunStateNote": "{path}の実行状態ファイルは無効です: {reason}",
+      "invalidPortfolioStateNote": "{path}のportfolio実行状態ファイルを読み取れませんでした: {reason}。この変更は子変更に分割されているため、分割されていない変更としては再開しません。再開する前に記録を修復してください。",
       "noRunStateNote": "実行状態（auto-run.json）が見つかりません。分類を実行してパイプラインを選択してください。",
       "nextStage": "次: {stage}",
       "openFindings": "未解決の指摘: {count}件（リリース前に解消してください）",

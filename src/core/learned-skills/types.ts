@@ -62,6 +62,13 @@ export type DurableKnowledgeOwnerRef =
 export type DurableEvidenceOwnerRef = ProjectIdentityRef | StoreIdentityRef;
 
 /**
+ * A frozen record's planning root, named durably — the same permanent-identity
+ * authority {@link DurableKnowledgeOwnerRef} carries, minus the global arm
+ * (planning always happens in a project or a Store).
+ */
+export type DurableKnowledgePlanningRootRef = ProjectIdentityRef | StoreIdentityRef;
+
+/**
  * The project a frozen run belongs to. Durable and path-free BY DESIGN: a
  * frozen run-state file lives in the change directory, which for a repo-local
  * change is Git-tracked — a checkout root recorded here would travel to every
@@ -77,8 +84,20 @@ export type FrozenExecutionRef =
  *
  * Version 1 records planning root and owner only. Version 2 adds the execution
  * binding; a version 1 record reads as "no execution binding recorded", never
- * as an error, and a run with nothing to record still writes version 1 so no
- * existing reader is handed a shape it does not know.
+ * as an error.
+ *
+ * Version 3 is what new runs write. Its refs carry PERMANENT identity —
+ * {@link DurableKnowledgeOwnerRef} / {@link DurableKnowledgePlanningRootRef} —
+ * so renaming a Store changes nothing already frozen and two namesake Stores
+ * stay distinct to every run frozen against either. The display name travels
+ * alongside for readability only. Its `execution` is optional for the same
+ * reason version 1 exists: a run with no execution binding still has permanent
+ * identity worth recording.
+ *
+ * Versions 1 and 2 stay readable forever. They are never rewritten on read — a
+ * frozen record is the authority for a run already in flight, and rewriting it
+ * during a resume changes the thing being resumed. Resolving the name they
+ * carry is fail-closed: exactly one match resolves, none or several refuse.
  */
 export type FrozenKnowledgeContext =
   | {
@@ -91,6 +110,12 @@ export type FrozenKnowledgeContext =
       planningRoot: KnowledgePlanningRootRef;
       owner: KnowledgeOwnerRef;
       execution: FrozenExecutionRef;
+    }
+  | {
+      version: 3;
+      planningRoot: DurableKnowledgePlanningRootRef;
+      owner: DurableKnowledgeOwnerRef;
+      execution?: FrozenExecutionRef;
     };
 
 /**

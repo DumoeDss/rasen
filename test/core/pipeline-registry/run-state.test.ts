@@ -331,6 +331,33 @@ describe('pipeline run-state', () => {
     it('returns [] when neither stages nor completed is present', () => {
       expect(completedStages({ pipeline: 'bug-fix' })).toEqual([]);
     });
+
+    // A parent that handed its stages to children has NOT completed them.
+    // Before `delegated` existed, `skipped` carried both meanings, and a
+    // decomposed parent's stage list reported nothing left but delivery.
+    it('does not count delegated stages as completed, while skipped still is', () => {
+      const s: RunState = {
+        pipeline: 'auto-decompose',
+        stages: {
+          decompose: { status: 'done' },
+          propose: { status: 'delegated' },
+          apply: { status: 'delegated' },
+          verify: { status: 'skipped' },
+        },
+      };
+      expect(completedStages(s).sort()).toEqual(['decompose', 'verify']);
+    });
+
+    it('parses a delegated stage status and surfaces it via stagesWithStatus', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'auto-decompose',
+          stages: { propose: { status: 'delegated' }, apply: { status: 'delegated' } },
+        })
+      );
+      expect(stagesWithStatus(s, 'delegated')).toEqual(['apply', 'propose']);
+      expect(completedStages(s)).toEqual([]);
+    });
   });
 
   describe('worker (warm-seed pointer)', () => {

@@ -454,7 +454,33 @@ export interface ArchiveResponse {
   changes: ArchivedChangeSummary[];
 }
 
-export type StageStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'escalated';
+/**
+ * A parent stage's status. `skipped` means deliberately not needed (settled);
+ * `delegated` means handed to this change's children (still outstanding).
+ */
+export type StageStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'done'
+  | 'skipped'
+  | 'delegated'
+  | 'escalated';
+
+/**
+ * A portfolio CHILD's progress. It extends the stage vocabulary with
+ * `proposed` (proposal complete, implementation not started) and `unknown`
+ * (a value this reader does not recognize, normalized on read and preserved
+ * verbatim server-side). Both are non-terminal. `delegated` is not a thing a
+ * child can be — only a parent delegates.
+ */
+export type PortfolioChildStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'proposed'
+  | 'done'
+  | 'skipped'
+  | 'escalated'
+  | 'unknown';
 
 export interface WireRunStage {
   status: StageStatus;
@@ -467,7 +493,7 @@ export interface WireRunState {
 
 export interface WirePortfolioChild {
   id: string;
-  status: StageStatus;
+  status: PortfolioChildStatus;
 }
 
 export interface WirePortfolioState {
@@ -524,7 +550,7 @@ export interface TaskChildDetail {
   /** Sibling dependencies declared in `portfolio-run.json`; empty when none is recorded. */
   dependsOn: string[];
   /** This child's `portfolio-run.json` status, when a run state is recorded. */
-  portfolioStatus?: StageStatus;
+  portfolioStatus?: PortfolioChildStatus;
   /** An active child whose context failed to load (mirrors `/changes`' per-change error degradation). */
   loadError?: string;
 }

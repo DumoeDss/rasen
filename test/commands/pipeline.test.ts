@@ -2038,6 +2038,169 @@ stages:
       // Run-level persistent planner pointer surfaced for warm-seed reuse.
       expect(json.planner).toEqual({ role: 'planner', agentId: 'plan-9', transcript: 'agent-plan-9.jsonl' });
     });
+
+    // The defect this group exists to remove: a paused portfolio offered
+    // `ship`. The trigger was upstream of stage counting — one out-of-enum
+    // child status made the whole portfolio record unreadable, the lenient
+    // reader returned null, and the parent lost its portfolio identity and
+    // fell through to the stage-based branch, which is the only place delivery
+    // could be reached.
+    it('still resolves as a portfolio when a child carries an out-of-enum status, and offers no delivery', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-drifted');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'portfolio-drifted',
+          children: [
+            { id: 'pd-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'pd-b', pipeline: 'small-feature', dependsOn: [], status: 'skipped' },
+            // A word the reader has not learned. It must not disarm the guard.
+            { id: 'pd-f', pipeline: 'small-feature', dependsOn: [], status: 'propose-done' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-drifted', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBe(true);
+      expect(json.complete).toBe(false);
+      expect(json.remainingChildren).toEqual(['pd-f']);
+      const drifted = json.children.find((c: { id: string }) => c.id === 'pd-f');
+      expect(drifted.status).toBe('unknown');
+      // The value AS WRITTEN is preserved and visible, not silently dropped.
+      expect(drifted.statusRaw).toBe('propose-done');
+      expect(
+        json.children.find((c: { id: string }) => c.id === 'pd-a').statusRaw
+      ).toBeUndefined();
+      // Delivery is not reachable from the portfolio answer at all.
+      expect(json.next).toBeUndefined();
+      expect(json.ready).toBeUndefined();
+      expect(json.remaining).toBeUndefined();
+    });
+
+    it('reports a genuinely unreadable portfolio record with path+reason and offers no next step', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-unreadable');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'portfolio-run.json'), '{ not valid json', 'utf-8');
+      // A stage list that, taken alone, would leave only `ship`. If resume ever
+      // degrades to the stage frontier, this is what it would offer.
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            propose: { status: 'done' },
+            apply: { status: 'done' },
+            verify: { status: 'done' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-unreadable', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.invalidPortfolioState).toBe(true);
+      expect(json.portfolioStatePath).toContain('portfolio-run.json');
+      expect(json.note).toContain('could not be read');
+      expect(json.next).toBeNull();
+      expect(json.ready).toEqual([]);
+      expect(json.remaining).toEqual([]);
+      // Specifically NOT the stage frontier the auto-run.json above would give.
+      expect(json.pipeline).toBeUndefined();
+
+      const textResult = await runCLI(['pipeline', 'resume', 'portfolio-unreadable'], {
+        cwd: testDir,
+      });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('could not be read');
+      expect(textResult.stdout).not.toContain('Next: ship');
+    });
+
+    // Defense in depth: even with NO portfolio record at all, a parent whose
+    // stages are honestly marked `delegated` cannot present `ship` as its
+    // frontier.
+    it('counts delegated stages as outstanding and does not offer delivery, with no portfolio record', async () => {
+      const changeDir = path.join(changesDir, 'delegated-parent');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            propose: { status: 'delegated' },
+            apply: { status: 'delegated' },
+            verify: { status: 'delegated' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'delegated-parent', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.completed).toEqual([]);
+      expect(json.next).toBe('propose');
+      expect(json.remaining).toContain('propose');
+      expect(json.ready).not.toContain('ship');
+      expect(json.next).not.toBe('ship');
+    });
+
+    it('resumes a change with no portfolio record from its own stages, exactly as before', async () => {
+      const changeDir = path.join(changesDir, 'undivided-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', completed: ['propose', 'apply'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'undivided-change', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBeUndefined();
+      expect(json.invalidPortfolioState).toBeUndefined();
+      expect(json.pipeline).toBe('bug-fix');
+      expect(json.next).toBe('verify');
+      expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
+    });
+
+    it('reports a portfolio whose children have all finished as complete', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-finished');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'portfolio-finished',
+          children: [
+            { id: 'pf-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'pf-b', pipeline: 'small-feature', dependsOn: ['pf-a'], status: 'skipped' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-finished', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBe(true);
+      expect(json.complete).toBe(true);
+      expect(json.remainingChildren).toEqual([]);
+      expect(json.runnableChildren).toEqual([]);
+    });
   });
 
   describe('resume with external work directory (design change-work-dir)', () => {

@@ -243,6 +243,7 @@
       "persistentPlanner": "规划者（持久、可恢复）：{planner}",
       "remaining": "剩余：{stages}",
       "invalidRunStateNote": "{path} 中的运行状态文件无效：{reason}",
+      "invalidPortfolioStateNote": "无法读取 {path} 中的组合运行状态文件：{reason}。该变更已拆分为子变更，因此不会按未拆分的变更恢复；请先修复该记录再恢复。",
       "noRunStateNote": "未找到运行状态（auto-run.json）；请运行分类以选择流水线。",
       "nextStage": "下一阶段：{stage}",
       "openFindings": "未解决问题：{count} 个（交付前请解决）",

@@ -42,7 +42,7 @@ import {
   latestStageHandoffs,
   sessionHandoffGeneration,
   normalizeWorker,
-  readPortfolioState,
+  readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
   runnableChildren,
   interruptedChildren,
@@ -576,8 +576,45 @@ export class PipelineCommand {
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
     // Sticky-legacy (design D4): workDir first, change dir fallback.
+    //
+    // Read DETAILED so a located-but-unreadable record is reported instead of
+    // being read as "this change was never split". That substitution is not
+    // cosmetic: it drops the parent to the stage-based branch below, where a
+    // decomposed parent's stage list can leave delivery as the only thing
+    // remaining — offering `ship` for work its children have not finished.
     const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
-    const portfolio = portfolioLocation ? readPortfolioState(portfolioLocation.dir) : null;
+    const portfolioRead = portfolioLocation
+      ? readPortfolioStateDetailed(portfolioLocation.dir)
+      : ({ kind: 'absent' } as const);
+    if (portfolioRead.kind === 'invalid' && portfolioLocation) {
+      const result = {
+        change: changeName,
+        isPortfolio: true as const,
+        hasRunState: false as const,
+        invalidPortfolioState: true as const,
+        portfolioStatePath: portfolioLocation.path,
+        complete: false as const,
+        next: null,
+        ready: [] as string[],
+        remaining: [] as string[],
+        note: getPipelineMessages('en').format('invalidPortfolioStateNote', {
+          path: portfolioLocation.path,
+          reason: portfolioRead.reason,
+        }),
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const messages = getPipelineMessages();
+      console.log(messages.format('changeLabel', { change: changeName }));
+      console.log(messages.format('invalidPortfolioStateNote', {
+        path: portfolioLocation.path,
+        reason: portfolioRead.reason,
+      }));
+      return;
+    }
+    const portfolio = portfolioRead.kind === 'ok' ? portfolioRead.state : null;
     if (portfolio && portfolioLocation) {
       const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
       const remainingPipelineNames = new Set(
@@ -624,6 +661,10 @@ export class PipelineCommand {
           pipeline: c.pipeline,
           dependsOn: c.dependsOn,
           status: c.status,
+          // Present only when the record used a word this reader does not
+          // know: the value AS WRITTEN, so the drift is visible here rather
+          // than only in the file. A clean record gains no new key.
+          ...(c.statusRaw !== undefined ? { statusRaw: c.statusRaw } : {}),
         })),
       };
       if (options.json) {

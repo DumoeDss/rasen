@@ -9,7 +9,7 @@ import {
   findRegisteredStoreAtRoot,
   resolveStoreBinding,
 } from '../store/identity.js';
-import { isValidStoreUid } from '../store/identity-types.js';
+import { isValidStoreUid, storeUidsMatch } from '../store/identity-types.js';
 import {
   listStoreRegistryEntries,
   readStoreRegistryState,
@@ -28,8 +28,11 @@ import {
   findQualifyingRootSync,
   inspectRegisteredStore,
 } from '../root-selection.js';
+import { resolveEvaluationCheckout } from './evaluation-root.js';
 import { resolveProjectStore } from './stores.js';
 import type {
+  DurableKnowledgeOwnerRef,
+  DurableKnowledgePlanningRootRef,
   FrozenExecutionRef,
   FrozenKnowledgeContext,
   KnowledgeOwnerRef,
@@ -47,7 +50,15 @@ export type KnowledgeContextDiagnosticCode =
   | 'knowledge_owner_stale'
   | 'knowledge_owner_scope_mismatch'
   | 'knowledge_selector_conflict'
-  | 'knowledge_store_scope_unavailable';
+  | 'knowledge_store_scope_unavailable'
+  /**
+   * A display name is being asked to do an identity's job — either a frozen
+   * record that carries only a name and no longer settles to exactly one
+   * Store, or a Store with no permanent identity to freeze. The same code the
+   * durable knowledge WRITE path already refuses under, so one problem has one
+   * name and one repair.
+   */
+  | 'learned_owner_legacy_alias';
 
 export interface KnowledgeContextDiagnostic {
   code: KnowledgeContextDiagnosticCode;
@@ -122,6 +133,14 @@ function pathExistsAsDirectory(target: string): boolean {
   }
 }
 
+/**
+ * The DISPLAY form of a resolved owner: what a diagnostic names, and what a
+ * selector is compared against. It is deliberately alias-keyed — a message that
+ * printed a Store's UID instead of its name would be worse, not better.
+ *
+ * It is NOT what a frozen run records: see {@link durableOwnerIdentity}, which
+ * keeps the permanent identity this narrowing used to drop.
+ */
 function ownerIdentity(owner: ResolvedKnowledgeOwnerRef): KnowledgeOwnerRef {
   return owner.type === 'global' ? { type: 'global' } : { type: owner.type, id: owner.id };
 }
@@ -130,6 +149,74 @@ function planningIdentity(
   planningRoot: ResolvedKnowledgePlanningRootRef
 ): KnowledgePlanningRootRef {
   return { type: planningRoot.type, id: planningRoot.id };
+}
+
+/**
+ * The DURABLE form of a resolved owner — permanent identity as the authority,
+ * display name carried alongside for readability only. This is what keeps the
+ * `uid` that {@link ownerIdentity} narrows away.
+ *
+ * `undefined` when the owner has no permanent identity to record: a Store whose
+ * metadata predates one. That is not an error here — refusing to freeze would
+ * stop runs that work today, and the fail-closed treatment this release adds is
+ * on the READ side, where an unsettleable name is the actual hazard. The caller
+ * falls back to the legacy record shape in that case, and the read path then
+ * refuses to guess between namesakes.
+ */
+function durableOwnerIdentity(
+  owner: ResolvedKnowledgeOwnerRef
+): DurableKnowledgeOwnerRef | undefined {
+  if (owner.type === 'global') return { type: 'global' };
+  if (owner.type === 'project') return { type: 'project', projectId: owner.id, id: owner.id };
+  if (owner.uid === undefined) return undefined;
+  return { type: 'store', uid: owner.uid, id: owner.id };
+}
+
+function durablePlanningIdentity(
+  planningRoot: ResolvedKnowledgePlanningRootRef
+): DurableKnowledgePlanningRootRef | undefined {
+  const durable = durableOwnerIdentity(planningRoot);
+  // A planning root is never global; the union just does not say so.
+  return durable === undefined || durable.type === 'global' ? undefined : durable;
+}
+
+/**
+ * A frozen owner, in whichever shape its record version wrote it. Version 3
+ * carries permanent identity; versions 1 and 2 carry a display name only.
+ */
+type FrozenOwnerRef = FrozenKnowledgeContext['owner'];
+type FrozenPlanningRootRef = FrozenKnowledgeContext['planningRoot'];
+
+/** True when a frozen ref names its subject by display alias only (v1/v2). */
+function isNameOnlyRef(ref: FrozenOwnerRef | FrozenPlanningRootRef): boolean {
+  if (ref.type === 'global') return false;
+  if (ref.type === 'store') return !('uid' in ref) || ref.uid === undefined;
+  return !('projectId' in ref) || ref.projectId === undefined;
+}
+
+/**
+ * The locator a frozen ref resolves through, and the display name a diagnostic
+ * about it should use. For a durable ref the permanent identity IS the
+ * locator — `resolveStoreOwner` reads a UID as a durable declaration — so
+ * a rename cannot retarget it and a namesake cannot claim it.
+ */
+function frozenRefLocator(
+  ref: Exclude<FrozenOwnerRef, { type: 'global' }> | FrozenPlanningRootRef
+): Exclude<KnowledgeOwnerRef, { type: 'global' }> {
+  if (ref.type === 'store') {
+    return { type: 'store', id: 'uid' in ref && ref.uid !== undefined ? ref.uid : (ref.id as string) };
+  }
+  return {
+    type: 'project',
+    id: 'projectId' in ref && ref.projectId !== undefined ? ref.projectId : (ref.id as string),
+  };
+}
+
+/** How a frozen ref should be NAMED in a message: the display alias when it has one. */
+function frozenRefDisplay(
+  ref: Exclude<FrozenOwnerRef, { type: 'global' }> | FrozenPlanningRootRef
+): Exclude<KnowledgeOwnerRef, { type: 'global' }> {
+  return { type: ref.type, id: ref.id ?? frozenRefLocator(ref).id };
 }
 
 function selectorIdentity(selector: KnowledgeSelector): KnowledgeOwnerRef | undefined {
@@ -550,16 +637,26 @@ function assertScopeAgreement(
   }
 }
 
+/**
+ * Does an explicitly supplied selector name the same owner the run was frozen
+ * against? Compared on IDENTITY where the frozen record has one: a version 3
+ * record settles on the Store's permanent identity, so a selector that names
+ * the Store by its (possibly since-changed) display name still agrees, and a
+ * namesake Store still does not.
+ */
 async function selectorAgreesWithFrozenOwner(
   explicitSelector: KnowledgeOwnerRef,
-  frozenOwner: KnowledgeOwnerRef,
+  frozenOwner: FrozenOwnerRef,
   globalDataDir: string | undefined
 ): Promise<boolean> {
-  if (sameOwner(explicitSelector, frozenOwner)) return true;
-  if (explicitSelector.type === 'global' || frozenOwner.type === 'global') return false;
+  if (explicitSelector.type === 'global' || frozenOwner.type === 'global') {
+    return explicitSelector.type === 'global' && frozenOwner.type === 'global';
+  }
+  if (sameOwner(explicitSelector, frozenRefDisplay(frozenOwner))) return true;
+  if (sameOwner(explicitSelector, frozenRefLocator(frozenOwner))) return true;
   try {
     const resolved = await resolveTypedOwner(explicitSelector, globalDataDir);
-    return sameOwner(ownerIdentity(resolved), frozenOwner);
+    return sameResolvedAsFrozen(resolved, frozenOwner);
   } catch {
     // A newly supplied unknown/stale selector is still selector drift. Frozen
     // identity remains authoritative and is revalidated independently below.
@@ -567,13 +664,49 @@ async function selectorAgreesWithFrozenOwner(
   }
 }
 
+/** Identity-first comparison of a resolved owner against a frozen ref. */
+function sameResolvedAsFrozen(
+  resolved: ResolvedKnowledgeOwnerRef,
+  frozen: FrozenOwnerRef
+): boolean {
+  if (frozen.type === 'global' || resolved.type === 'global') {
+    return frozen.type === 'global' && resolved.type === 'global';
+  }
+  if (frozen.type !== resolved.type) return false;
+  if (frozen.type === 'store' && resolved.type === 'store') {
+    if ('uid' in frozen && frozen.uid !== undefined) {
+      return storeUidsMatch(resolved.uid, frozen.uid);
+    }
+    return resolved.id === frozen.id;
+  }
+  return sameOwner(ownerIdentity(resolved), frozenRefLocator(frozen));
+}
+
+/**
+ * Resolves a frozen owner / planning root on THIS machine.
+ *
+ * A version 3 record names its subject by permanent identity, which resolves
+ * regardless of renames and cannot be claimed by a namesake. A version 1 or 2
+ * record carries only a display name, and resolving it is FAIL-CLOSED: exactly
+ * one match continues the run; none, or several, stops it and reports what
+ * could not be settled (the underlying resolver names every candidate). The one
+ * outcome not allowed is picking a namesake, which is the failure the durable
+ * shape exists to prevent.
+ *
+ * Nothing here writes: the record is left exactly as it was written.
+ */
 async function resolveFrozenOwner(
-  identity: Exclude<KnowledgeOwnerRef, { type: 'global' }>,
+  ref: Exclude<FrozenOwnerRef, { type: 'global' }> | FrozenPlanningRootRef,
   globalDataDir: string | undefined,
   subject: 'owner' | 'planning root'
 ): Promise<ResolvedNonGlobalOwner> {
+  const locator = frozenRefLocator(ref);
+  const display = frozenRefDisplay(ref);
+  if (ref.type === 'store' && isNameOnlyRef(ref)) {
+    await assertLegacyStoreNameSettles(display.id, globalDataDir, subject);
+  }
   try {
-    return await resolveTypedOwner(identity, globalDataDir);
+    return await resolveTypedOwner(locator, globalDataDir);
   } catch (error) {
     if (
       isKnowledgeContextError(error) &&
@@ -581,12 +714,45 @@ async function resolveFrozenOwner(
     ) {
       fail(
         'knowledge_owner_stale',
-        `Frozen knowledge ${subject} ${identity.type}:${identity.id} no longer resolves on this machine. Repair its registry/config identity before resuming.`,
-        { owner: identity, selectorGuidance }
+        `Frozen knowledge ${subject} ${display.type}:${display.id} no longer resolves on this machine. Repair its registry/config identity before resuming.`,
+        { owner: display, selectorGuidance }
       );
     }
     throw error;
   }
+}
+
+/**
+ * The fail-closed gate for a frozen record that names its Store by display
+ * name only. It checks ARITY and nothing else: no match, or more than one, and
+ * the run stops with the candidates named. Exactly one match falls through to
+ * ordinary resolution, which then reports a broken-but-unambiguous Store as the
+ * stale registration it is — a different problem with a different repair.
+ */
+async function assertLegacyStoreNameSettles(
+  id: string,
+  globalDataDir: string | undefined,
+  subject: 'owner' | 'planning root'
+): Promise<void> {
+  const binding = await resolveStoreBinding({
+    declaration: { form: 'alias', id },
+    ...pathOptions(globalDataDir),
+  });
+  const unsettled =
+    binding.kind === 'absent' ||
+    (binding.kind === 'unavailable' &&
+      (binding.reason === 'not-registered' || binding.reason === 'alias-ambiguous'));
+  if (!unsettled) return;
+  const detail =
+    binding.kind === 'unavailable'
+      ? describeUnavailableStore(binding)
+      : `No store named '${id}' is registered on this machine.`;
+  const repair = binding.kind === 'unavailable' ? [...binding.repair] : [];
+  fail(
+    'learned_owner_legacy_alias',
+    `This run was frozen against ${subject} store '${id}' by display name only, and that name does not identify exactly one store on this machine. ${detail}`,
+    { owner: { type: 'store', id }, selectorGuidance: [...repair, ...selectorGuidance] }
+  );
 }
 
 /**
@@ -639,11 +805,25 @@ export async function resolveLearnedSkillExecutionContext(
       input.globalDataDir,
       'planning root'
     );
-    planningRoot = {
-      type: input.frozen.planningRoot.type,
-      id: input.frozen.planningRoot.id,
-      root: resolvedFrozenPlanning.root!,
-    };
+    // Identity decides WHICH; the resolution decides where it is and what it
+    // is currently called. Taking the display name from the resolution rather
+    // than from the record is what lets a renamed Store keep owning the run
+    // and still be reported under its current name.
+    planningRoot =
+      resolvedFrozenPlanning.type === 'store'
+        ? {
+            type: 'store',
+            id: resolvedFrozenPlanning.id,
+            ...(resolvedFrozenPlanning.uid !== undefined
+              ? { uid: resolvedFrozenPlanning.uid }
+              : {}),
+            root: resolvedFrozenPlanning.root,
+          }
+        : {
+            type: 'project',
+            id: resolvedFrozenPlanning.id,
+            root: resolvedFrozenPlanning.root,
+          };
     if (
       explicitSelector &&
       !(await selectorAgreesWithFrozenOwner(
@@ -652,12 +832,16 @@ export async function resolveLearnedSkillExecutionContext(
         input.globalDataDir
       ))
     ) {
+      const frozenOwnerDisplay: KnowledgeOwnerRef =
+        input.frozen.owner.type === 'global'
+          ? { type: 'global' }
+          : frozenRefDisplay(input.frozen.owner);
       fail(
         'knowledge_selector_conflict',
-        `The supplied selector conflicts with frozen knowledge owner ${input.frozen.owner.type}${input.frozen.owner.type === 'global' ? '' : `:${input.frozen.owner.id}`}.`,
+        `The supplied selector conflicts with frozen knowledge owner ${frozenOwnerDisplay.type}${frozenOwnerDisplay.type === 'global' ? '' : `:${frozenOwnerDisplay.id}`}.`,
         {
-          owner: input.frozen.owner,
-          planningRoot: input.frozen.planningRoot,
+          owner: frozenOwnerDisplay,
+          planningRoot: frozenRefDisplay(input.frozen.planningRoot),
           selectorGuidance,
         }
       );
@@ -767,7 +951,12 @@ export interface LearnedSkillRoots {
 export async function resolveLearnedSkillRoots(
   execution: LearnedSkillExecutionContext
 ): Promise<{ ok: true; roots: LearnedSkillRoots } | { ok: false; code: string; message: string }> {
-  const evaluationRoot = execution.evaluationRoot ?? process.cwd();
+  // One stated order, shared with effective.ts so the two cannot drift apart
+  // again: session checkout → resolved project checkout → current directory.
+  // Reaching for the current directory here while a resolved checkout existed
+  // was the violation — it consults the last step after an earlier one has
+  // already answered.
+  const evaluationRoot = resolveEvaluationCheckout(execution);
   const resolution = await resolveProjectStore({ execution });
   if (!resolution.ok) {
     return { ok: false, code: resolution.code, message: resolution.message };
@@ -783,10 +972,20 @@ export async function resolveLearnedSkillRoots(
 }
 
 /**
- * Freezes the run's typed identity. When the session records an execution
- * binding, it is frozen alongside the planning root and owner under version 2;
- * with nothing to record the shape stays version 1, so a reader that predates
- * this field is never handed a version it does not know.
+ * Freezes the run's typed identity.
+ *
+ * Version 3 is what a run records whenever every ref has a permanent identity:
+ * that identity is the authority and the display name travels alongside for
+ * readability, so a Store renamed after this point still owns the run and a
+ * namesake never claims it. Its execution binding is recorded when the session
+ * has one and omitted when it does not — the same "nothing to record" case
+ * version 1 expressed, without giving up the durable identity.
+ *
+ * A Store whose metadata predates permanent identity has nothing durable to
+ * record, so the record keeps its previous shape (version 1, or version 2 with
+ * an execution binding) rather than the run being refused. Resolving such a
+ * record on resume is fail-closed: exactly one match continues, none or several
+ * stop the run with the candidates named.
  *
  * The frozen execution ref carries a `projectId` and NO root: the run-state
  * file is Git-tracked for a repo-local change, and a checkout root recorded
@@ -803,24 +1002,39 @@ export function freezeKnowledgeContext(
       { owner: ownerIdentity(context.owner), selectorGuidance }
     );
   }
+  const frozenExecution: FrozenExecutionRef | undefined =
+    execution === undefined
+      ? undefined
+      : execution.kind === 'planning-only'
+        ? { kind: 'planning-only' }
+        : { kind: 'project', projectId: execution.projectId };
+
+  const durableOwner = durableOwnerIdentity(context.owner);
+  const durablePlanning = durablePlanningIdentity(context.planningRoot);
+  if (durableOwner !== undefined && durablePlanning !== undefined) {
+    return {
+      version: 3,
+      planningRoot: durablePlanning,
+      owner: durableOwner,
+      ...(frozenExecution === undefined ? {} : { execution: frozenExecution }),
+    };
+  }
+
   const base = {
     planningRoot: planningIdentity(context.planningRoot),
     owner: ownerIdentity(context.owner),
   };
-  if (execution === undefined) return { version: 1, ...base };
-  return {
-    version: 2,
-    ...base,
-    execution:
-      execution.kind === 'planning-only'
-        ? { kind: 'planning-only' }
-        : { kind: 'project', projectId: execution.projectId },
-  };
+  if (frozenExecution === undefined) return { version: 1, ...base };
+  return { version: 2, ...base, execution: frozenExecution };
 }
 
-/** The execution binding a frozen record carries, or undefined for version 1. */
+/**
+ * The execution binding a frozen record carries, or undefined when it recorded
+ * none — a version 1 record (written before bindings existed) or a version 3
+ * record for a run that had nothing to bind.
+ */
 export function frozenExecutionRef(
   frozen: FrozenKnowledgeContext
 ): FrozenExecutionRef | undefined {
-  return frozen.version === 2 ? frozen.execution : undefined;
+  return frozen.version === 1 ? undefined : frozen.execution;
 }

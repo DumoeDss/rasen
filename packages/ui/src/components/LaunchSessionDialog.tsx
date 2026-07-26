@@ -192,9 +192,23 @@ export function LaunchSessionDialog({
                 )}
               </div>
             )}
+            {/*
+              Three situations, three answers. A Store with no members and a
+              Store whose members all lack a checkout here need different
+              fixes — register a project versus clone one — so one message
+              cannot serve both. `members_empty` stays reserved for the
+              genuinely memberless Store.
+            */}
             {effectiveInventoryStatus === 'loaded' && members.length === 0 && (
               <p class="launch-session-dialog__execution-empty">{t('dialog.launch.members_empty')}</p>
             )}
+            {effectiveInventoryStatus === 'loaded' &&
+              members.length > 0 &&
+              launchableMembers(members).length === 0 && (
+                <p class="launch-session-dialog__execution-empty">
+                  {t('dialog.launch.members_no_checkout')}
+                </p>
+              )}
             {members.map((member) => {
               // A member with no checkout here is listed (it IS a member) but
               // cannot be selected: the resulting `project:undefined` selector
@@ -207,6 +221,11 @@ export function LaunchSessionDialog({
                     <span>
                       <strong>{member.name}</strong>
                       <small>{member.projectId}</small>
+                      {/* Why it cannot be chosen, on the row itself — a disabled
+                          control with no wording reads as a bug, not a fact.
+                          Styled by the existing `> label small` rule; no new
+                          class, since an unstyled hook is just dead markup. */}
+                      <small>{t('dialog.launch.member_no_checkout')}</small>
                     </span>
                   </label>
                 );
@@ -239,6 +258,8 @@ export function LaunchSessionDialog({
               <span>
                 <strong>{t('dialog.launch.planning')}</strong>
                 <small>{t('dialog.launch.planning_hint')}</small>
+                {/* The limit of the grant, stated where the grant is chosen. */}
+                <small>{t('dialog.launch.planning_no_code')}</small>
               </span>
             </label>
           </fieldset>

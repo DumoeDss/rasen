@@ -372,5 +372,56 @@ describe('LaunchSessionDialog Store execution selection', () => {
         (container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled
       ).toBe(true);
     });
+
+    // Three situations, three answers. A disabled row with no wording reads as
+    // a bug; and "no member has a checkout here" is a different problem, with a
+    // different fix, from "this Store has no members".
+    it('says on the row itself why a member with no checkout cannot be chosen', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      const disabledRow = container.querySelector('label[aria-disabled="true"]');
+      expect(disabledRow).not.toBeNull();
+      expect(disabledRow!.textContent).toContain('Member C');
+      expect(disabledRow!.textContent).toContain('No checkout of this project exists on this machine');
+      expect(
+        (disabledRow!.querySelector('input[name="execution"]') as HTMLInputElement).disabled
+      ).toBe(true);
+    });
+
+    it('states that no member has a checkout here, without claiming the Store has no members', () => {
+      mount([ROOTLESS]);
+      const text = container.textContent ?? '';
+      expect(text).toContain('have no checkout on this machine');
+      expect(text).not.toContain('has no current member projects');
+    });
+
+    it('keeps the no-members message reserved for a Store with genuinely no members', () => {
+      mount([]);
+      const text = container.textContent ?? '';
+      expect(text).toContain('has no current member projects');
+      expect(text).not.toContain('have no checkout on this machine');
+    });
+
+    it('leaves a member that has a checkout selectable (no regression)', async () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      const selectable = container.querySelector(
+        'input[name="execution"][value="project:/projects/a"]'
+      ) as HTMLInputElement;
+      expect(selectable.disabled).toBe(false);
+      await act(async () => {
+        selectable.click();
+        await flushMicrotasks();
+      });
+      expect(selectable.checked).toBe(true);
+      expect(
+        (container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled
+      ).toBe(false);
+    });
+  });
+
+  it('states the limit of a planning-only grant where the grant is chosen', () => {
+    mount(MEMBERS);
+    const planningRow = container.querySelector('.launch-session-dialog__planning-only');
+    expect(planningRow).not.toBeNull();
+    expect(planningRow!.textContent).toContain('may write no code');
   });
 });

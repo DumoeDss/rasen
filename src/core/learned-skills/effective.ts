@@ -35,6 +35,7 @@ import { storeUidsMatch } from '../store/identity-types.js';
 import { matchesApplicability } from './applicability.js';
 import { loadStoreCatalog } from './catalog.js';
 import { LEARNED_SKILL_ACTIVE_DESCRIPTION_BUDGET, STORE_LEARNED_SKILLS_SEGMENTS } from './constants.js';
+import { resolveEvaluationCheckout } from './evaluation-root.js';
 import {
   compareDurableOwners,
   describeDurableOwner,
@@ -484,7 +485,10 @@ export async function resolveEffectiveLearnedSkillPlan(
     );
   }
 
-  const evaluationRoot = execution.evaluationRoot ?? project.root;
+  // Same stated order as context.ts, from the same helper (see
+  // evaluation-root.ts) — a project owner's root IS step 2, so this keeps the
+  // behavior it already had while making the agreement structural.
+  const evaluationRoot = resolveEvaluationCheckout(execution);
   const projectRecords = loadStoreCatalog(projectResolution.store, 'project');
   const globalRecords = loadStoreCatalog(resolveGlobalStore(context), 'global')
     .filter((record) => record.manifest.status === 'active')
