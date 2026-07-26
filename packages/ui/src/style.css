@@ -322,8 +322,18 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   width: 100%; max-width: var(--container-max); margin-inline: auto;
   display: flex; align-items: center; gap: var(--space-5);
 }
+.app-brand {
+  display: flex; align-items: center; gap: var(--space-2);
+  flex: 0 0 auto; margin-right: var(--space-2);
+}
+.app-brand__mark {
+  display: block; width: 18px; height: 30px; flex: none;
+  color: var(--fg);
+}
+.app-brand__mark-cap { fill: #e4312d; }
+.app-brand__mark-body { fill: currentColor; }
 .app-header h1 {
-  font-size: var(--text-xl); letter-spacing: 0.005em; margin-right: var(--space-2);
+  font-size: var(--text-xl); letter-spacing: 0.005em;
 }
 
 .app-header nav { display: flex; gap: var(--space-1); margin-right: auto; }

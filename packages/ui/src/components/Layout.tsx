@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
 import { RunningSessionsMenu } from './RunningSessionsMenu.js';
+import { RasenLogo } from './RasenLogo.js';
 import { isPipelineCanvasPath, parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces } from '../store/recent-spaces.js';
 import { useT } from '../i18n/store.js';
@@ -55,7 +56,10 @@ export function Layout({ children }: { children: ComponentChildren }) {
     <div class={`app-shell${onCanvas ? ' app-shell--canvas' : ''}`}>
       <header class="app-header">
         <div class="app-header__inner">
-          <h1>Rasen</h1>
+          <div class="app-brand">
+            <RasenLogo />
+            <h1>Rasen</h1>
+          </div>
           <nav>
             {space && (
               <>
