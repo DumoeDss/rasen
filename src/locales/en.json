@@ -291,6 +291,10 @@
           "name": "Find help",
           "description": "Find the right Rasen command, skill, or workflow for your situation"
         },
+        "direction": {
+          "name": "Govern direction",
+          "description": "Maintain long-lived direction, select one Roadmap slice, and reconcile observable evidence"
+        },
         "office-hours-command": {
           "name": "Office hours",
           "description": "Pressure-test product demand and direction before building"

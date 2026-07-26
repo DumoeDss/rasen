@@ -32,6 +32,11 @@ A starting situation that generates work, then merges onto the main flow.
 - **Something's broken** → **\`rasen-investigate\`**. Systematic root-cause debugging. It **refuses to hypothesise until it has a red-capable feedback loop** — one command that already goes red on *this* bug — then fixes with a regression test. Reach for it on the hard ones: the bug that resists a first glance, the intermittent flake, the regression that crept in between two known-good states.
 - **Is this worth building** → **\`rasen-office-hours-command\`**. YC-style demand validation before you write code. Reach for it when the idea's *value*, not its design, is the open question.
 
+## Optional long-horizon governance
+
+- **\`rasen-direction\`** — establish or calibrate durable direction, select one evidence-bearing Roadmap Slice, project that Slice into \`rasen-propose\` or \`auto-decompose\`, and reconcile results afterward. Reach for it only when work spans multiple Changes, versions, horizons, projects, or recurring principle-level choices. It sits above the normal Change flow but is never a required numbered step: everyday bugs and features still move directly from exploration/office-hours to propose.
+- Direction's \`target-state.md\` describes cross-Change workstream state. **\`rasen-goal\`** is different: it runs a bounded iteration toward one measure, evaluation rubric, or research gate using \`goal-plan.md\` and \`goal-run.json\`.
+
 ## Vocabulary underneath
 
 One reference that runs *beneath* the other skills — the single source of truth for its vocabulary. Reach for it directly when the **words**, not the process, are the problem; the skills above also pull it in.
