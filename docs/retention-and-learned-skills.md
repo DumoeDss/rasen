@@ -75,9 +75,9 @@ The three knowledge locations travel in three different ways:
   content and needs no project bundle.
 - **A project's own knowledge is machine-local by default.** Cloning the
   project on a second machine does not copy its canonical knowledge home.
-- **Project knowledge leaves a machine only through an explicit bundle
-  export.** No ordinary command, update, diagnosis, retention run, or machine
-  preparation creates or transmits a bundle.
+- **Project knowledge crosses machines only through an explicit bundle export
+  and an explicit import.** No ordinary command, update, diagnosis, retention
+  run, or machine preparation creates, transmits, or consumes a bundle.
 
 To prepare a migration artifact, choose a new destination and export:
 
@@ -102,9 +102,19 @@ appears as untracked Store state. If Store placement fails after `--to` was
 published, the error explicitly preserves and reports that user-held file.
 
 Treat the bundle as a deliberate handoff artifact, not as a reason to
-synchronize `~/.rasen`. Bundle import is a **later child and is not available
-in this change**, so this release does not yet consume the carried file on the
-new machine.
+synchronize `~/.rasen`. On the receiving machine, first preview and then import:
+
+```bash
+rasen knowledge bundle import <bundle> --project <projectId-or-registered-root> --dry-run
+rasen knowledge bundle import <bundle> --project <projectId-or-registered-root>
+```
+
+Preview validates and compares the complete bundle and changes nothing. Import
+adds all new records or adds none: any differing, lifecycle-mismatched,
+occupied, or unreadable identifier stops the whole import. Identical and
+unrelated local records remain byte-identical. What lands is owned by the
+project's permanent identity, even when the file travelled through a Store;
+transport creates no Store source, publication, membership, or new evidence.
 
 The bundle carries the permanent project identity, capture time,
 `baseProjectCommit`, and the project's strict canonical records and content. It
@@ -119,8 +129,9 @@ Windows drive-letter path, Windows network-share path, or POSIX absolute path.
 On success it creates exactly the named `--to` file and, only when requested,
 one derived Store transport file; it changes no source or Store-owned state.
 An occupied `--to` path is refused on every command path. See the
-[CLI bundle export reference](cli.md#project-knowledge-bundle-export) for the
-closed field list, JSON contract, and repairs.
+[CLI bundle export reference](cli.md#project-knowledge-bundle-export) and
+[bundle import reference](cli.md#project-knowledge-bundle-import) for the
+closed field list, complete preview, JSON contract, conflicts, and repairs.
 
 ## A Store's knowledge catalog
 

@@ -12,6 +12,13 @@ import {
   exportKnowledgeBundle,
   type KnowledgeBundleExportWarning,
 } from '../core/knowledge-bundle/export.js';
+import {
+  KnowledgeBundleImportError,
+  importKnowledgeBundle,
+  type KnowledgeBundleImportConflict,
+  type KnowledgeBundleImportPlan,
+  type KnowledgeBundleImportWarning,
+} from '../core/knowledge-bundle/import.js';
 import { KnowledgeBundleMachinePathError } from '../core/knowledge-bundle/schema.js';
 import {
   KnowledgeContextError,
@@ -983,6 +990,13 @@ export interface BundleExportOptions {
   json?: boolean;
 }
 
+export interface BundleImportOptions {
+  bundle: string;
+  project: string;
+  dryRun?: boolean;
+  json?: boolean;
+}
+
 interface BundleFailure {
   code: string;
   message: string;
@@ -1203,6 +1217,321 @@ export async function bundleExportCommand(
   }
 }
 
+function bundleImportWarningMessage(
+  warning: KnowledgeBundleImportWarning,
+  messages: KnowledgeMessages
+): string {
+  switch (warning.code) {
+    case 'base_project_commit_provenance':
+      return messages.bundleImportWarningProvenance(warning.baseProjectCommit ?? '<unavailable>');
+    case 'base_project_commit_unavailable':
+      return messages.bundleImportWarningBaseUnavailable;
+    case 'staging_cleanup_deferred':
+      return messages.bundleImportWarningStagingCleanup;
+  }
+}
+
+function bundleImportConflictFacts(
+  conflict: KnowledgeBundleImportConflict,
+  messages: KnowledgeMessages
+): {
+  id: string;
+  knowledgeKey: string;
+  reason: string;
+  bundle: KnowledgeBundleImportConflict['bundle'];
+  local: KnowledgeBundleImportConflict['local'];
+  message: string;
+} {
+  const status = (value: 'active' | 'retired'): string =>
+    value === 'active'
+      ? messages.bundleImportStatusActive
+      : messages.bundleImportStatusRetired;
+  const reason =
+    conflict.reason === 'content-differs'
+      ? messages.bundleImportConflictReasonContent
+      : conflict.reason === 'lifecycle-differs'
+        ? messages.bundleImportConflictReasonLifecycle
+        : messages.bundleImportConflictReasonOccupied;
+  const bundle = messages.bundleImportBundleSide(
+    conflict.bundle.contentDigest,
+    status(conflict.bundle.status)
+  );
+  const local =
+    conflict.local.kind === 'managed'
+      ? messages.bundleImportLocalManaged(
+          conflict.local.contentDigest,
+          status(conflict.local.status)
+        )
+      : messages.bundleImportLocalOccupied;
+  return {
+    ...conflict,
+    message: messages.bundleImportConflict(conflict.id, reason, bundle, local),
+  };
+}
+
+function bundleImportPlanFacts(
+  plan: KnowledgeBundleImportPlan,
+  messages: KnowledgeMessages
+): Record<string, unknown> {
+  return {
+    project: plan.projectId,
+    bundle: {
+      id: plan.bundleId,
+      path: plan.bundlePath,
+      baseProjectCommit: plan.baseProjectCommit,
+    },
+    added: plan.added,
+    alreadyPresent: plan.alreadyPresent,
+    conflicts: plan.conflicts.map((conflict) =>
+      bundleImportConflictFacts(conflict, messages)
+    ),
+    warnings: plan.warnings.map((warning) => ({
+      ...warning,
+      message: bundleImportWarningMessage(warning, messages),
+    })),
+  };
+}
+
+function bundleImportCatalogReasonMessage(
+  reason: string | undefined,
+  messages: KnowledgeMessages
+): string {
+  switch (reason) {
+    case 'unregistered_project':
+      return messages.bundleImportCatalogReasonUnregisteredProject;
+    case 'typed_owner_mismatch':
+      return messages.bundleImportCatalogReasonTypedOwnerMismatch;
+    case 'knowledge_owner_scope_mismatch':
+      return messages.bundleImportCatalogReasonOwnerScopeMismatch;
+    case 'resolver_threw':
+      return messages.bundleImportCatalogReasonResolverThrew;
+    default:
+      return messages.bundleImportCatalogReasonUnknown;
+  }
+}
+
+function bundleImportProjectReasonMessage(
+  reason: string | undefined,
+  messages: KnowledgeMessages
+): string {
+  return reason === 'project_resolver_threw'
+    ? messages.bundleImportProjectReasonResolverThrew
+    : messages.bundleImportProjectReasonUnknown;
+}
+
+function bundleImportLockReasonMessage(
+  reason: string | undefined,
+  messages: KnowledgeMessages
+): string {
+  switch (reason) {
+    case 'timeout':
+      return messages.bundleImportLockReasonTimeout;
+    case 'create-failed':
+      return messages.bundleImportLockReasonCreateFailed;
+    default:
+      return messages.bundleImportLockReasonUnknown;
+  }
+}
+
+function describeBundleImportFailure(
+  error: unknown,
+  options: BundleImportOptions,
+  messages: KnowledgeMessages
+): BundleFailure {
+  if (!(error instanceof KnowledgeBundleImportError)) {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    return {
+      code: 'knowledge_bundle_import_failed',
+      message: [
+        messages.bundleImportUnknownFailed(diagnostic),
+        messages.bundleImportUnknownChange,
+      ].join('\n'),
+      repair: messages.bundleImportUnknownRepair,
+      details: {
+        bundle: path.resolve(options.bundle),
+        project: options.project,
+        changed: 'unknown',
+        reason: 'unclassified_failure',
+        diagnostic,
+      },
+    };
+  }
+  const reason =
+    error.issues
+      .map((issue) =>
+        [issue.recordId, issue.field, issue.reason].filter(Boolean).join(': ')
+      )
+      .join('; ') ||
+    error.details.reason ||
+    error.message;
+  let message: string;
+  let repair: string;
+  switch (error.code) {
+    case 'knowledge_bundle_import_bundle_invalid':
+      message = messages.bundleImportInvalid(reason);
+      repair = messages.bundleImportInvalidRepair;
+      break;
+    case 'knowledge_bundle_import_project_not_found':
+      message = messages.bundleProjectNotFound(error.details.selector ?? options.project);
+      repair = messages.bundleProjectRepair;
+      break;
+    case 'knowledge_bundle_import_project_unavailable':
+      message = messages.bundleImportProjectUnavailable(
+        bundleImportProjectReasonMessage(error.details.reason, messages)
+      );
+      repair = messages.bundleImportProjectUnavailableRepair;
+      break;
+    case 'knowledge_bundle_import_project_mismatch':
+      message = messages.bundleImportProjectMismatch(
+        error.details.bundleProjectId ?? '<unknown>',
+        error.details.targetProjectId ?? options.project
+      );
+      repair = messages.bundleImportProjectMismatchRepair;
+      break;
+    case 'knowledge_bundle_import_record_id_invalid':
+    case 'knowledge_bundle_import_record_id_collision':
+      message = messages.bundleImportIdentifierInvalid(reason);
+      repair = messages.bundleImportIdentifierRepair;
+      break;
+    case 'knowledge_bundle_import_catalog_unavailable':
+      message = messages.bundleImportCatalogUnavailable(
+        bundleImportCatalogReasonMessage(error.details.reason, messages)
+      );
+      repair = messages.bundleImportCatalogRepair;
+      break;
+    case 'knowledge_bundle_import_catalog_drift':
+      message = messages.bundleImportCatalogDrift;
+      repair = messages.bundleImportCatalogRepair;
+      break;
+    case 'knowledge_bundle_import_conflict':
+      message = messages.bundleImportConflictsRefused(
+        error.details.conflictCount ?? String(error.plan?.conflicts.length ?? 0)
+      );
+      repair = messages.bundleImportConflictRepair;
+      break;
+    case 'knowledge_bundle_import_lock_failed':
+      message = [
+        messages.bundleImportLockFailed(
+          bundleImportLockReasonMessage(error.details.reason, messages)
+        ),
+        ...(error.details.lockPath === undefined
+          ? []
+          : [messages.bundleImportLockPath(error.details.lockPath)]),
+      ].join('\n');
+      repair =
+        error.details.reason === 'create-failed'
+          ? messages.bundleImportLockCreateRepair
+          : messages.bundleImportLockRepair;
+      break;
+    case 'knowledge_bundle_import_transaction_failed':
+      message = messages.bundleImportTransactionFailed(reason);
+      repair = messages.bundleImportTransactionRepair;
+      break;
+    case 'knowledge_bundle_import_rollback_failed':
+      message = [
+        messages.bundleImportRollbackFailed(reason),
+        messages.bundleImportChangeUnknown,
+        ...error.retainedPaths.map((retainedPath) =>
+          messages.bundleImportRetainedPath(retainedPath)
+        ),
+      ].join('\n');
+      repair = messages.bundleImportRollbackRepair;
+      break;
+  }
+  return {
+    code: error.code,
+    message,
+    repair,
+    details: {
+      bundle: path.resolve(options.bundle),
+      project: options.project,
+      changed: error.changed,
+      issues: error.issues,
+      reason,
+      ...(error.details.diagnostic === undefined
+        ? {}
+        : { diagnostic: error.details.diagnostic }),
+      ...(error.retainedPaths.length === 0
+        ? {}
+        : { retainedPaths: error.retainedPaths }),
+      ...(error.details.lockPath === undefined
+        ? {}
+        : { lockPath: error.details.lockPath }),
+      ...(error.plan === undefined
+        ? {}
+        : { plan: bundleImportPlanFacts(error.plan, messages) }),
+    },
+  };
+}
+
+export async function bundleImportCommand(
+  options: BundleImportOptions,
+  importer: typeof importKnowledgeBundle = importKnowledgeBundle
+): Promise<void> {
+  const messages = getKnowledgeMessages();
+  try {
+    const result = await importer({
+      bundle: options.bundle,
+      project: options.project,
+      ...(options.dryRun === true ? { dryRun: true } : {}),
+    });
+    const facts = bundleImportPlanFacts(result, messages);
+    if (options.json) {
+      printJson({
+        ok: true,
+        state: result.state,
+        refused: result.refused,
+        changed: result.changed,
+        ...facts,
+      });
+      return;
+    }
+    console.log(
+      result.state === 'previewed'
+        ? messages.bundleImportPreviewed(
+            result.projectId,
+            result.bundleId,
+            result.bundlePath,
+            result.added.length,
+            result.alreadyPresent.length,
+            result.conflicts.length
+          )
+        : messages.bundleImportSucceeded(
+            result.projectId,
+            result.bundleId,
+            result.bundlePath,
+            result.added.length,
+            result.alreadyPresent.length
+          )
+    );
+    for (const record of result.added) console.log(messages.bundleImportAdded(record.id));
+    for (const record of result.alreadyPresent) {
+      console.log(messages.bundleImportAlreadyPresent(record.id));
+    }
+    for (const conflict of result.conflicts) {
+      console.log(bundleImportConflictFacts(conflict, messages).message);
+    }
+    for (const warning of result.warnings) {
+      console.log(bundleImportWarningMessage(warning, messages));
+    }
+  } catch (error) {
+    if (
+      !options.json &&
+      error instanceof KnowledgeBundleImportError &&
+      error.plan !== undefined
+    ) {
+      for (const conflict of error.plan.conflicts) {
+        console.error(bundleImportConflictFacts(conflict, messages).message);
+      }
+    }
+    reportBundleFailure(
+      describeBundleImportFailure(error, options, messages),
+      options.json,
+      messages
+    );
+  }
+}
+
 function addOwnerSelectorOptions(
   command: Command,
   messages: KnowledgeMessages
@@ -1226,9 +1555,11 @@ export function registerKnowledgeCommand(program: Command): void {
   const messages = getKnowledgeMessages();
   const knowledge = program.command('knowledge').description(messages.commandDescription);
 
-  knowledge
+  const bundle = knowledge
     .command('bundle')
-    .description(messages.bundleDescription)
+    .description(messages.bundleDescription);
+
+  bundle
     .command('export')
     .description(messages.bundleExportDescription)
     .requiredOption('--project <id-or-root>', messages.projectSelectorDescription)
@@ -1237,6 +1568,17 @@ export function registerKnowledgeCommand(program: Command): void {
     .option('--json', messages.bundleJsonDescription)
     .action(async (options: BundleExportOptions) => {
       await bundleExportCommand(options);
+    });
+
+  bundle
+    .command('import')
+    .description(messages.bundleImportDescription)
+    .argument('<bundle>', messages.bundleImportPathDescription)
+    .requiredOption('--project <id-or-root>', messages.projectSelectorDescription)
+    .option('--dry-run', messages.bundleImportDryRunDescription)
+    .option('--json', messages.bundleJsonDescription)
+    .action(async (bundlePath: string, options: Omit<BundleImportOptions, 'bundle'>) => {
+      await bundleImportCommand({ ...options, bundle: bundlePath });
     });
 
   addOwnerSelectorOptions(knowledge

@@ -330,9 +330,10 @@ describe('command completion registry', () => {
     walk(program, '');
 
     // Every owner/root selector command stays paired except the deliberate
-    // export-only portable-bundle seam: a project bundle can contain only the
-    // project's own records, and this child registers no Store transport.
-    const projectOnly = ['knowledge bundle export'];
+    // portable-bundle seams: a project bundle can contain only the project's
+    // own records, while Store transport is selected by export's separate
+    // --to-store route rather than by an owner/root selector.
+    const projectOnly = ['knowledge bundle export', 'knowledge bundle import'];
     expect(
       projectCommands.filter((commandPath) => !projectOnly.includes(commandPath)).sort()
     ).toEqual(storeCommands.sort());

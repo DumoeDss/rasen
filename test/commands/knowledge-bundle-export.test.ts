@@ -490,14 +490,19 @@ describe('rasen knowledge bundle export command', () => {
     expect(fs.existsSync(destination)).toBe(false);
   });
 
-  it('registers only export and its four flags in the completion surface', () => {
+  it('preserves export and registers import separately in the completion surface', () => {
     const knowledge = COMMAND_REGISTRY.find((entry) => entry.name === 'knowledge');
     const bundle = knowledge?.subcommands?.find((entry) => entry.name === 'bundle');
     const commands = bundle?.subcommands?.map((entry) => entry.name);
     const flags = bundle?.subcommands?.[0]?.flags.map((flag) => flag.name);
 
-    expect(commands).toEqual(['export']);
+    expect(commands).toEqual(['export', 'import']);
     expect(flags).toEqual(['project', 'to', 'to-store', 'json']);
-    expect(commands).not.toContain('import');
+    expect(bundle?.subcommands?.[1]).toMatchObject({
+      name: 'import',
+      acceptsPositional: true,
+      positionals: [{ name: 'bundle', type: 'path' }],
+      flags: [{ name: 'project' }, { name: 'dry-run' }, { name: 'json' }],
+    });
   });
 });

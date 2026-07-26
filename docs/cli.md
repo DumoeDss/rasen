@@ -1610,6 +1610,7 @@ rasen knowledge retire <id> [--scope project|store|global] [--project <id> | --s
 rasen knowledge effective [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
 rasen knowledge migrate [--dry-run] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
 rasen knowledge bundle export --project <projectId|root> --to <path> [--to-store <store>] [--json]
+rasen knowledge bundle import <bundle> --project <projectId|root> [--dry-run] [--json]
 ```
 
 **Subcommands:**
@@ -1623,6 +1624,7 @@ rasen knowledge bundle export --project <projectId|root> --to <path> [--to-store
 | `effective` | Show what this project actually receives — the resolved set, its sources by permanent identity, conflicts, unreachable Stores, and the three roots. Reads only; writes nothing. |
 | `migrate` | Move per-clone knowledge into the project's canonical home and re-key ownership records onto permanent identity. Both steps preview with `--dry-run`. |
 | `bundle export` | Export the named project's own canonical learned knowledge to one new portable file and optionally place the same file in a Store as transport. |
+| `bundle import <bundle>` | Validate and classify a complete portable bundle, then add every new record to the named project's canonical knowledge home or add nothing. |
 
 **Options:**
 
@@ -1636,7 +1638,7 @@ rasen knowledge bundle export --project <projectId|root> --to <path> [--to-store
 | `--approve-store <store>` | Consent to publishing into the named store in a non-interactive run (`apply`). The value must name the store the publication actually targets; an approval for one store never authorizes another. |
 | `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). Rejected for a project or store mutation so consent cannot be reused. |
 | `--yes` | Skip the retirement confirmation (`retire`). |
-| `--dry-run` | Preview both migrations and write nothing at all (`migrate`). |
+| `--dry-run` | Preview both migrations (`migrate`) or validate and classify a complete bundle import; writes nothing at all. |
 | `--to <path>` | New bundle file to create (`bundle export`). Any existing filesystem entry at this path is an occupied destination and is never replaced. |
 | `--to-store <store>` | Also place the same bundle in the registered Store's reserved `rasen/knowledge-bundles/` transport directory. This grants no ownership and changes no Store catalog or membership. |
 | `--json` | Emit a single JSON document on stdout (agent contract). |
@@ -1758,10 +1760,117 @@ Non-portable record refusal:
 }
 ```
 
-This release does **not** register a bundle import command, a
-machine-preparation bundle step, or portable run checkpoints. A Store can now
-carry the exported file, but consuming it on another machine waits for the
-later import child.
+#### Project-knowledge bundle import
+
+Import is explicit at the receiving end:
+
+```bash
+rasen knowledge bundle import ./web-project-knowledge.bundle.json \
+  --project 3f0b0a2c-… \
+  [--dry-run] \
+  [--json]
+```
+
+The positional `<bundle>` is the file to read. `--project` is required and
+accepts the same permanent project identity or registered root as export.
+`--dry-run` runs the complete reader, project-identity check, identifier
+validation, and target comparison, but creates no lock, directory, file, or
+cleanup debris.
+
+Every record is classified deterministically:
+
+- **added** — the canonical identifier is absent;
+- **already present** — canonical content and active/retired state agree; the
+  existing files remain byte-identical;
+- **conflicting** — content or lifecycle differs, or the target is occupied or
+  unreadable.
+
+Identity is the record identifier, not its knowledge key. A retired record
+against an active one conflicts. Import reports every conflict in one pass.
+Any conflict refuses the whole apply: no clean record from that bundle is
+written, no local record is overwritten, retired, or removed, and unrelated
+local knowledge is untouched. Apply rechecks the same plan under the existing
+per-project catalog lock, stages and verifies the complete new set, and
+publishes add-only. A write, verification, or publication failure rolls back
+only transaction-owned additions.
+
+Human success names the project, bundle identity and path, counts, each
+classification, and warnings. A clean JSON import has the same facts:
+
+```json
+{
+  "ok": true,
+  "state": "imported",
+  "refused": false,
+  "changed": true,
+  "project": "3f0b0a2c-…",
+  "bundle": {
+    "id": "7c18…",
+    "path": "/carry/web-project-knowledge.bundle.json",
+    "baseProjectCommit": "a17e…"
+  },
+  "added": [
+    {
+      "id": "portable-routing",
+      "knowledgeKey": "portable-routing-key",
+      "status": "active",
+      "contentDigest": "sha256:…"
+    }
+  ],
+  "alreadyPresent": [],
+  "conflicts": [],
+  "warnings": [
+    {
+      "code": "base_project_commit_provenance",
+      "baseProjectCommit": "a17e…",
+      "message": "Warning: baseProjectCommit a17e… is provenance only and did not gate this import."
+    }
+  ]
+}
+```
+
+A complete conflict preview is still a successful preview document, with
+`"state": "previewed"`, `"refused": true`, `"changed": false`, every conflict,
+and every record that would otherwise be added or was already present. Apply
+of that unchanged input returns a refusal carrying the same plan:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "knowledge_bundle_import_conflict",
+    "message": "1 conflict(s) stop the whole import; nothing was imported.",
+    "changed": false,
+    "plan": {
+      "project": "3f0b0a2c-…",
+      "added": [{ "id": "portable-clean-record" }],
+      "alreadyPresent": [],
+      "conflicts": [
+        {
+          "id": "portable-routing",
+          "reason": "content-differs",
+          "bundle": { "status": "active", "contentDigest": "sha256:…" },
+          "local": { "kind": "managed", "status": "active", "contentDigest": "sha256:…" }
+        }
+      ]
+    },
+    "repair": "Resolve every named local conflict, then preview or import the same bundle again."
+  }
+}
+```
+
+Malformed, newer-version, tampered, wrong-project, machine-path, and invalid-ID
+bundles are refused before catalog mutation. A wrong-project refusal names both
+identities. Records land as version-2 project-owned manifests naming the
+resolved permanent project identity, with no Store/publication source and no
+receiving-machine evidence. A bundle read from a cloned Store therefore remains
+project knowledge; the Store's catalog, metadata, membership, Git index, HEAD,
+and remote are outside the importer and unchanged.
+
+`baseProjectCommit` is provenance, not a gate. This release adds explicit
+portable project-knowledge import, but not machine-preparation integration,
+interactive conflict reconciliation, automatic synchronization, or portable
+run checkpoints.
 
 `effective` reports one of three states: `ready`, `degraded` (a relevant Store could not be reached, so removals were deferred), or `blocked` (Stores disagree and no project record settles it, so nothing was written). Each conflict names every participant by permanent identity, and each unreachable Store carries its own repair.
 
