@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { PipelineYamlSchema, type PipelineYaml, type Stage } from './types.js';
 
 export class PipelineValidationError extends Error {
@@ -51,6 +51,16 @@ export function parsePipeline(yamlContent: string): PipelineYaml {
   validateComposedPolicyFloor(pipeline);
 
   return pipeline;
+}
+
+/**
+ * Emits the canonical YAML projection of an already validated Pipeline
+ * definition. Re-running the schema normalizer is intentional: every public
+ * writer (scaffold, save, export) gets the same defaults and content-version
+ * stamp instead of maintaining its own serialization rules.
+ */
+export function serializePipelineYaml(pipeline: PipelineYaml): string {
+  return stringifyYaml(PipelineYamlSchema.parse(pipeline));
 }
 
 /**

@@ -1109,6 +1109,8 @@ export interface WirePipelineDefinitionStage {
  * (child 4) is meant to be lossless.
  */
 export interface WirePipelineDefinition {
+  /** Pipeline definition content format; legacy unversioned sources normalize to v1 at the server boundary. */
+  version: 1;
   name: string;
   description?: string;
   agents?: PipelineAgentRuntimeOverrides;

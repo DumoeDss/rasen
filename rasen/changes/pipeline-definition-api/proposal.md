@@ -1,8 +1,43 @@
+> **0.1.5 incremental amendment (2026-07-26).** The definition API, draft
+> validation, save bridge, catalog, and Canvas consumers described by the
+> original proposal below are already implemented in the `origin/dev/0.1.5`
+> baseline. This amendment preserves that delivery history and scopes the
+> remaining work to the Pipeline content-format v1 compatibility boundary.
+
 ## Why
 
 Child 1 (unify-pipeline-http-api) established the management-side home for the pipelines HTTP surface, but the surface is inventory-and-mutation only: a client can list pipelines and import/init/export/delete them, yet cannot read a single pipeline's editable definition, dry-run-validate a draft, save a definition it assembled, or discover the vocabulary (skills, roles, enums) needed to assemble one. The pipeline canvas (children 3-4) needs exactly these four contracts before any UI work can start.
 
+Those original API and Canvas contracts now exist, but their public
+round-trippable definition is still unversioned. Because 0.1.5 is the first
+release that exposes save/detail/export of Pipeline definitions, it needs a
+content-version boundary now: otherwise a future Composite compiler would have
+to infer which historical shape an unversioned definition meant.
+
 ## What Changes
+
+### 0.1.5 incremental compatibility slice
+
+- Add Pipeline content format `version: 1` to the normalized public definition.
+  Historical YAML with no version remains readable and normalizes to v1.
+- Make detail, save, show, and exported `.rasenpkg` Pipeline payloads preserve
+  and expose the normalized v1 value; newly scaffolded and built-in Pipeline
+  YAML declares v1 explicitly.
+- Reject unknown future Pipeline content versions on every loader, validation,
+  save, and export path with an actionable diagnostic that names the
+  unsupported and supported versions. The `.rasenpkg` package format version
+  remains a separate contract.
+- Preserve v1's existing flat stage DAG and
+  `stage.loop.kind: review-cycle|goal` as stable, readable inputs for a future
+  compiler. Existing users do not need to rewrite their Pipeline YAML.
+- Update Pipeline and Canvas documentation to state that loop declarations are
+  still interpreted by the LEAD orchestration playbook and Canvas edits
+  definitions; Canvas is not a programmatic Pipeline runner.
+- Keep the Composite/ReviewCycle runner, durable execution journal, nested
+  Composite Canvas, `rasen-auto`/`rasen-goal` runtime migration, and Issue-level
+  orchestration out of 0.1.5.
+
+### Delivered baseline (historical)
 
 - `GET /api/v1/pipelines/<name>`: pipeline detail — the resolved view (existing `WirePipeline` shape) PLUS a round-trippable declared definition (`WirePipelineDefinition`, JSON⇄YAML equivalence committed) and an `editable` flag (false for built-ins, which remain readable as save-as templates). Fills the one-segment path child 1 already reserved (currently 404).
 - `POST /api/v1/pipeline-validation`: in-process dry-run of a body-carried draft definition — runs the full chain (Zod schema → structural checks including duplicate ids, dangling requires, cycle detection, parallel-group independence, decompose constraints, quality floor → execution preflight skill known/enabled checks) and returns 200 with a structured issue list for both valid and invalid drafts; never writes a file, never spawns a subprocess. Own path so a pipeline named `validation` can't be shadowed.
@@ -19,9 +54,14 @@ Child 1 (unify-pipeline-http-api) established the management-side home for the p
 
 ### Modified Capabilities
 
-- `pipeline-http-api`: adds the detail, draft-validation, and catalog endpoints; the mutation-bridge requirement's operation set grows from four to five (`save`), with the temp-file scratch-write carve-out and the built-in refusal; commits the definition round-trip (save-then-get semantic identity).
-- `management-http-api`: the reserved one-segment pipeline path now serves the detail contract; `/api/v1/pipeline-validation` and `/api/v1/pipeline-catalog` become management paths (validation admits POST; catalog is GET-only).
-- `opsx-pipeline-registry`: the `origin` field admits `'ui'` alongside `'composed'` (pipeline file shape); the quality floor applies to any origin-stamped pipeline (`composed` or `ui`), with origin-free pipelines still entirely unaffected; the `rasen pipeline` CLI surface gains the `save <name> --from <file>` subcommand. (`autopilot-composed-pipelines` needs no delta: its floor requirement describes LEAD composition, which is unchanged.)
+- `pipeline-http-api`: preserves the delivered detail, validation, catalog, and
+  save contracts while making the normalized definition's v1 identity explicit
+  and making draft validation fail closed on unknown future content versions.
+- `opsx-pipeline-registry`: adds the Pipeline content-format v1 compatibility
+  contract across load/show/scaffold/save/export while keeping the flat DAG and
+  current loop declarations readable.
+- `management-http-api` (historical baseline only): the previously delivered
+  route and method contracts remain unchanged by the v1 amendment.
 
 ## Impact
 
@@ -29,3 +69,8 @@ Child 1 (unify-pipeline-http-api) established the management-side home for the p
 - Tests: management-api route tests (all four contracts incl. method matrix and shadowing guards), round-trip property test (definition ⇄ YAML), save temp-file lifecycle on Windows (lock-tolerant deletion), floor scope tests.
 - UI: none in this change (mirror + client consumption deferred to children 3-4, stated explicitly).
 - Dependencies: none new. Requires child 1's moved home (already in tree).
+
+Incremental 0.1.5 impact: the Pipeline registry schema/normalizer, canonical
+serialization used by scaffold/save/export, management and UI wire mirrors,
+Pipeline/API/Canvas fixtures, built-in Pipeline YAML, and English/Chinese
+Pipeline documentation. No new dependency and no execution-runtime change.

@@ -307,6 +307,7 @@ export class PipelineCommand {
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
 
     const result = {
+      version: pipeline.version,
       name: pipeline.name,
       description: pipeline.description ?? '',
       agents: pipeline.agents ?? {},
@@ -1060,6 +1061,7 @@ export class PipelineCommand {
 
   private printPipelineDetail(
     result: {
+      version: PipelineYaml['version'];
       name: string;
       description: string;
       agents?: PipelineYaml['agents'];
@@ -1074,6 +1076,7 @@ export class PipelineCommand {
   ): void {
     this.printThresholdDiagnostics(result);
     console.log(messages.format('pipelineLabel', { name: result.name }));
+    console.log(messages.format('definitionVersionLabel', { version: result.version }));
     const description = source
       ? messages.description(result.name, source, result.description)
       : result.description;

@@ -415,7 +415,28 @@ function coerceLegacyVetGates(raw: unknown): unknown {
 /**
  * Full pipeline YAML structure.
  */
+export const PIPELINE_DEFINITION_VERSION = 1 as const;
+
+/**
+ * The public Pipeline definition content version. A missing version is the
+ * sole legacy form and normalizes to v1; every explicit non-v1 value fails
+ * closed so a future definition is never interpreted with the wrong grammar.
+ */
+export const PipelineDefinitionVersionSchema = z
+  .literal(PIPELINE_DEFINITION_VERSION, {
+    error: (issue) => {
+      const received = JSON.stringify(issue.input) ?? String(issue.input);
+      return (
+        `Unsupported Pipeline content version at /version: received ${received}; ` +
+        `supported version is ${PIPELINE_DEFINITION_VERSION}. Upgrade to a compatible ` +
+        'Rasen version before using this definition.'
+      );
+    },
+  })
+  .default(PIPELINE_DEFINITION_VERSION);
+
 export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
+  version: PipelineDefinitionVersionSchema,
   name: z.string().min(1, { error: 'Pipeline name is required' }),
   description: z.string().optional(),
   agents: PipelineAgentRuntimeOverridesSchema.optional(),

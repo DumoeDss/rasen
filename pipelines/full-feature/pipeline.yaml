@@ -1,3 +1,4 @@
+version: 1
 name: full-feature
 description: >-
   Full feature delivery pipeline: office hours validation, proposal with lead

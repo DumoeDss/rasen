@@ -1,3 +1,4 @@
+version: 1
 name: goal-loop-research
 description: >-
   Goal-driven iteration for autoresearch-style research and writing. The

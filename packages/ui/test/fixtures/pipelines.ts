@@ -267,6 +267,7 @@ export const pipelineDetailFixture = {
     ],
   },
   definition: {
+    version: 1,
     name: 'small-feature',
     description: 'A small feature pipeline',
     stages: [

@@ -1143,15 +1143,16 @@ rasen pipeline agents <name> [--planner|--implementer|--reviewer|--fixer|--shipp
 rasen pipeline classify <task> [--json]
 rasen pipeline resume <change> [--json]
 rasen pipeline init <name> --output <path> [--json]
+rasen pipeline save <name> --from <file> [--force] [--json]
 rasen pipeline validate <name-or-path> [--json]
 rasen pipeline import <path> [--force] [--json]
 rasen pipeline export <name> <path> [--force] [--json]
 rasen pipeline delete <name> [--yes] [--force] [--json]
 ```
 
-All ten subcommands accept `--store <id>` / `--project <id>`, resolving their root exactly like `rasen validate`.
+All eleven subcommands accept `--store <id>` / `--project <id>`, resolving their root exactly like `rasen validate`.
 
-Pipeline help and Rasen-owned human output for all ten subcommands are available in English, Japanese, and Simplified Chinese. Localization changes presentation only: pipeline and stage IDs, role/runtime/source values, paths, JSON fields and raw descriptions, classifier keywords and results, and user-authored names and descriptions remain locale-neutral. Package-owned built-in descriptions are localized in human views while their JSON values remain raw.
+Pipeline help and Rasen-owned human output for all eleven subcommands are available in English, Japanese, and Simplified Chinese. Localization changes presentation only: pipeline and stage IDs, role/runtime/source values, paths, JSON fields and raw descriptions, classifier keywords and results, and user-authored names and descriptions remain locale-neutral. Package-owned built-in descriptions are localized in human views while their JSON values remain raw.
 
 | Subcommand | Description |
 |------------|-------------|
@@ -1161,10 +1162,15 @@ Pipeline help and Rasen-owned human output for all ten subcommands are available
 | `classify <task>` | Suggest a pipeline for a task string via an advisory keyword heuristic |
 | `resume <change>` | Show a change's (or portfolio's) next/remaining stages from its run-state |
 | `init <name>` | Create a minimal `pipeline.yaml` draft in the required empty `--output` directory without installing it |
+| `save <name>` | Validate a JSON or YAML definition from `--from`, then install canonical normalized YAML in the user layer; `--force` may replace an existing user pipeline, but never a built-in |
 | `validate <name-or-path>` | Structurally validate an installed pipeline name, a draft directory, or a `kind: pipeline` `.rasenpkg` — parse, duplicate/cycle/parallel-group/decompose-stage checks; does not require referenced skills to already be installed |
 | `import <path>` | Validate, stage, digest-reverify, and atomically install every pipeline in a `kind: pipeline` `.rasenpkg` into the user layer; `--force` allows overwriting an already-installed pipeline of the same name |
 | `export <name> <path>` | Package an installed **user** pipeline as a deterministic `.rasenpkg`; built-in and project-local pipelines cannot be exported |
 | `delete <name>` | Delete an unreferenced user pipeline after a refcount check; built-in pipelines cannot be deleted |
+
+**Pipeline definition content version.** The normalized public definition always carries the top-level integer `version: 1`. Historical definitions with no `version` remain readable and normalize to v1; any explicit unsupported or malformed value is refused with an actionable issue at `/version` so the user can upgrade to a compatible Rasen release. `show` and the management detail API expose the normalized v1 definition. `init` and `save` emit canonical v1 YAML. `export` canonicalizes only the packaged `pipeline.yaml`, preserves ancillary files, and does not rewrite the installed source merely because it was read or exported. The package manifest's `formatVersion` is a separate `.rasenpkg` container version.
+
+Pipeline v1 keeps the existing flat `requires` DAG and the current `stage.loop.kind: review-cycle` and `stage.loop.kind: goal` declarations. They remain readable today and are valid source inputs for a future compiled Composite run plan. For now, the LEAD orchestration playbook interprets both loop kinds. Canvas views and edits Pipeline definitions; it is not a programmatic Pipeline runner and does not introduce nested execution behavior.
 
 `.rasenpkg` files carry a `kind` discriminant — `workflow`, `profile`, or `pipeline` — sharing one package format. A `kind: pipeline` package's digest, transactional install (temp stage → atomic rename, all-or-nothing across every packaged pipeline), and file-limit rules mirror the `kind: workflow` contract in [Installable workflows and `.rasenpkg`](workflow-packages.md). Every package also carries an optional `minRasenVersion`, stamped from the packing CLI's own version: an older CLI importing a package that requires a newer one gets a clear upgrade message instead of an opaque schema error. This preflight only helps CLIs from this point forward — an already-shipped CLI predating this field still rejects an unrecognized package `kind` opaquely; there is no way to retrofit that.
 

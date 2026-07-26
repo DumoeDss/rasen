@@ -116,7 +116,7 @@ export function PipelineCanvasPage() {
     if (pending) {
       const seed: WirePipelineDefinition = pending.definition
         ? { ...pending.definition, name: pending.name, origin: 'ui' }
-        : { name: pending.name, origin: 'ui', stages: [] };
+        : { version: 1, name: pending.name, origin: 'ui', stages: [] };
       setDetail(null);
       setLoading(false);
       setNotFound(false);
@@ -535,7 +535,7 @@ export function PipelineCanvasPage() {
   function startAssembling() {
     if (!name) return;
     setPendingDraft({ name });
-    enterEditWith({ name, origin: 'ui', stages: [] });
+    enterEditWith({ version: 1, name, origin: 'ui', stages: [] });
   }
 
   const backHref = space ? spaceHref(space, 'pipelines') : '/';

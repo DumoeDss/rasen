@@ -559,6 +559,20 @@ describe('pipeline command', () => {
   });
 
   describe('show', () => {
+    it('exposes normalized Pipeline definition v1 in JSON and human output', async () => {
+      const jsonResult = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+      });
+      const humanResult = await runCLI(['pipeline', 'show', 'bug-fix'], {
+        cwd: testDir,
+      });
+
+      expect(jsonResult.exitCode).toBe(0);
+      expect(JSON.parse(jsonResult.stdout.trim()).version).toBe(1);
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('Definition version: 1');
+    });
+
     it('keeps the display JSON contract unchanged after a successful execution preflight', async () => {
       const displayOnly = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
         cwd: testDir,

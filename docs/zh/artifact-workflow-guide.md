@@ -102,6 +102,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
    - 用户级：`~/.rasen/pipelines/<名字>/pipeline.yaml`（或设置了 `$RASEN_HOME` 时为 `$RASEN_HOME/pipelines/<名字>/pipeline.yaml`）
 2. **写 stages，`skill` 从现有的挑**（这就是「从已有步骤选」）：
    ```yaml
+   version: 1
    name: hotfix
    description: Fast-track — propose, apply, review loop, ship.
    stages:
@@ -118,6 +119,8 @@ rasen pipeline list --json                     # 列出 package/user/project 的
    rasen pipeline show <名字>              # 看 buildOrder
    ```
    之后 `/rasen-auto` 会把它列进 `available`，你在分类后**覆盖**选它即可。
+
+`version: 1` 标识 Pipeline 定义的内容格式，与 `.rasenpkg` 包的 `formatVersion` 相互独立。没有该字段的旧定义仍可接受并归一化为 v1；显式的不支持版本或畸形版本会在 `/version` 被拒绝。脚手架、save、detail/show 与包导出会输出或展示规范化后的 v1 内容，但读取或导出不会改写源定义。v1 的扁平 `requires` DAG 与现有两种 loop 声明（`review-cycle` 和 `goal`）仍可读取，也是未来编译器的输入。目前 loop 由 LEAD playbook 解释执行；Canvas 是定义编辑器，不是程序化或嵌套的 Pipeline runner。
 
 > 两个真实约束：① **skill 名必须精确**——专家是 `openspec:xxx`（非 `openspec-xxx`）、apply 是 `openspec-apply-change`（非 `openspec-apply`），写错 `validate` 直接报 skill 不存在；② **classify 不会自动推荐自定义流水线**（它是内置关键词启发式，只在三个内置里建议）——自定义流水线一定在 `available` 里，但需你/用户在分类后**手动覆盖**选择。想让某关键词自动命中自定义流水线，目前要改 `src/commands/pipeline.ts` 的关键词表（可作后续增强）。
 

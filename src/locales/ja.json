@@ -141,6 +141,7 @@
       "pipelineTableEntry": "  {name}  [{source}]",
       "pipelineTableStages": "    ステージ: {stages}",
       "pipelineLabel": "パイプライン: {name}",
+      "definitionVersionLabel": "定義バージョン: {version}",
       "pipelineNotFound": "パイプライン'{name}'が見つかりません。利用可能なパイプライン:\n  {available}",
       "originLabel": "生成元: {origin}",
       "buildOrderHeading": "build順:",
