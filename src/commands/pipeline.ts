@@ -14,6 +14,18 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import {
+  resolveFrozenExecutionBinding,
+  type ExecutionBindingFailure,
+  type ExecutionBindingResult,
+} from '../core/pipeline-registry/execution-binding.js';
+import { frozenExecutionRef } from '../core/learned-skills/context.js';
+import type { FrozenKnowledgeContext } from '../core/learned-skills/types.js';
+import {
+  isSessionContextError,
+  requireSessionRuntimeContext,
+  type RuntimeContext,
+} from '../core/session-runtime-context.js';
+import {
   AgentRuntimeSchema,
   StageRoleSchema,
   loadPipelineByName,
@@ -448,6 +460,105 @@ export class PipelineCommand {
   }
 
   /**
+   * The frozen-resume rule (unified-session-runtime-context design D4).
+   * A broken session context is reported as such rather than silently
+   * dropping to cwd derivation, which is exactly how a resume lands in the
+   * wrong clone.
+   */
+  private async resolveResumeExecution(
+    frozen: FrozenKnowledgeContext | undefined,
+    projectRoot: string,
+    options: PipelineCommandOptions
+  ): Promise<ExecutionBindingResult | { ok: false; reported: true }> {
+    let sessionContext: RuntimeContext | undefined;
+    try {
+      sessionContext = requireSessionRuntimeContext();
+    } catch (error) {
+      if (!isSessionContextError(error)) throw error;
+      const messages = getPipelineMessages();
+      const detail = messages.format('sessionContextBroken', {
+        path: error.broken.path,
+        detail: error.broken.message,
+      });
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            { error: 'session_context_broken', reason: error.broken.reason, message: detail },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(detail);
+      }
+      return { ok: false, reported: true };
+    }
+
+    return resolveFrozenExecutionBinding({
+      frozen: frozen === undefined ? undefined : frozenExecutionRef(frozen),
+      ...(sessionContext ? { sessionContext } : {}),
+      cwd: projectRoot,
+      ...(options.project !== undefined ? { explicitProjectId: options.project } : {}),
+    });
+  }
+
+  private reportExecutionBindingFailure(
+    failure: ExecutionBindingFailure,
+    changeName: string,
+    options: PipelineCommandOptions
+  ): void {
+    const messages = getPipelineMessages();
+    let detail: string;
+    switch (failure.code) {
+      case 'project_binding_selector_conflict':
+        detail = messages.format('executionBindingSelectorConflict', {
+          frozen: failure.frozenProjectId,
+          selector: failure.foundProjectId ?? '',
+        });
+        break;
+      case 'project_binding_ambiguous':
+        detail = messages.format('executionBindingAmbiguous', {
+          frozen: failure.frozenProjectId,
+          candidates: (failure.candidates ?? []).join(', '),
+        });
+        break;
+      case 'project_binding_missing':
+        detail = messages.format('executionBindingMissing', {
+          frozen: failure.frozenProjectId,
+        });
+        break;
+      default:
+        detail = messages.format('executionBindingMismatch', {
+          frozen: failure.frozenProjectId,
+          found: failure.foundProjectId ?? '',
+          checkout: failure.checkout ?? '',
+        });
+        break;
+    }
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          {
+            change: changeName,
+            error: failure.code,
+            frozenProjectId: failure.frozenProjectId,
+            ...(failure.foundProjectId !== undefined
+              ? { foundProjectId: failure.foundProjectId }
+              : {}),
+            ...(failure.checkout !== undefined ? { checkout: failure.checkout } : {}),
+            ...(failure.candidates !== undefined ? { candidates: failure.candidates } : {}),
+            message: detail,
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+    console.error(detail);
+  }
+
+  /**
    * Resume a change: compute next/remaining stages from its run-state file.
    */
   async resume(change: string | undefined, options: PipelineCommandOptions = {}): Promise<void> {
@@ -688,6 +799,25 @@ export class PipelineCommand {
     // Computed before the result object so the --json and human surfaces see the
     // same set, and emitted ONLY when non-empty so clean runs gain no new keys.
     const workerHandleWarnings = stagesLackingDurableHandle(runState);
+
+    // Where does this run continue? The FROZEN identity says which project;
+    // the session context (or, failing that, this checkout) says where that
+    // project is on this machine; `--project` only cross-checks. A
+    // disagreement stops the resume instead of continuing in another clone —
+    // a resume into the wrong working tree produces a plausible-looking diff,
+    // which is far more expensive than an error.
+    const executionBinding = await this.resolveResumeExecution(
+      runState.knowledgeContext,
+      projectRoot,
+      options
+    );
+    if (!executionBinding.ok) {
+      if (!('reported' in executionBinding)) {
+        this.reportExecutionBindingFailure(executionBinding, changeName, options);
+      }
+      process.exitCode = 1;
+      return;
+    }
     let duplicateKeyWarnings: { path: string; key: string }[] = [];
     if (runStateLocation && fs.existsSync(runStateLocation.path)) {
       duplicateKeyWarnings = detectDuplicateKeys(fs.readFileSync(runStateLocation.path, 'utf-8'));
@@ -717,6 +847,9 @@ export class PipelineCommand {
       ...(runState.knowledgeContext
         ? { knowledgeContext: runState.knowledgeContext }
         : {}),
+      // Reported only when the run actually recorded an execution binding, so
+      // a pre-existing run's JSON gains no new key.
+      ...(executionBinding.kind === 'unrecorded' ? {} : { executionBinding }),
       // Handoff pointers are included only when present so existing callers see
       // no new keys unless a run actually recorded handoffs.
       ...(sessionHandoff ? { sessionHandoff } : {}),
@@ -740,6 +873,16 @@ export class PipelineCommand {
     console.log(messages.format('changeLabel', { change: changeName }));
     console.log(messages.format('pipelineLabel', { name: runState.pipeline }));
     console.log(messages.format('runStateReadFrom', { path: runStateLocation!.dir }));
+    if (executionBinding.kind === 'planning-only') {
+      console.log(messages.format('executionBindingPlanningOnly'));
+    } else if (executionBinding.kind === 'project') {
+      console.log(
+        messages.format('executionBinding', {
+          project: executionBinding.projectId,
+          path: executionBinding.root,
+        })
+      );
+    }
     console.log(messages.format('completed', {
       stages: completed.length > 0 ? completed.join(', ') : none,
     }));

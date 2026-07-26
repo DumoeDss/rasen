@@ -15,6 +15,10 @@ import {
   type PlanningHomeSummary,
 } from '../change-status-policy.js';
 import { readProjectConfig, validateConfigRules, type ProjectConfig } from '../project-config.js';
+import {
+  requireSessionRuntimeContext,
+  type RuntimeContext,
+} from '../session-runtime-context.js';
 import type { ReferenceIndexEntry } from '../references.js';
 import type { PlanningHome } from '../planning-home.js';
 import type { ChangeMetadata } from '../change-metadata/index.js';
@@ -457,8 +461,20 @@ export function formatChangeStatus(
      * getting the field populated.
      */
     computeNextWorkflows?: boolean;
+    /**
+     * The session runtime context this command runs under. Defaults to the
+     * one the supervisor handed this process
+     * (unified-session-runtime-context D3/D4); pass it explicitly only in
+     * tests. A BROKEN context throws rather than resolving from the working
+     * directory, which is the whole point of recording it.
+     */
+    sessionContext?: RuntimeContext | undefined;
   } = {}
 ): ChangeStatus {
+  const sessionContext =
+    options.sessionContext === undefined
+      ? requireSessionRuntimeContext()
+      : options.sessionContext;
   // Load schema to get apply phase configuration
   const schema = resolveSchema(context.schemaName, context.projectRoot);
   const applyRequires = schema.apply?.requires ?? schema.artifacts.map(a => a.id);
@@ -537,9 +553,20 @@ export function formatChangeStatus(
             resolveInstalledWorkflowIds(),
             getCliLocale()
           ),
+    // The capability the agent is told about comes from what the SESSION
+    // recorded, not from what the working directory suggests. Without a
+    // session context this is exactly the pre-existing repo-local answer.
     actionContext: buildActionContext({
       projectRoot: context.projectRoot,
       artifactIds,
+      ...(sessionContext
+        ? {
+            session: {
+              planning: sessionContext.planning,
+              execution: sessionContext.execution,
+            },
+          }
+        : {}),
     }),
     artifacts: artifactStatuses,
   };

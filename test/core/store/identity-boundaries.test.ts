@@ -59,6 +59,10 @@ const PHASE_A_FILES = [
   // its own reader, so the ban must cover it.
   'src/core/store/membership.ts',
   'src/core/store/project-records.ts',
+  // unified-session-runtime-context: the session launch resolver validates a
+  // Store session's project choice through `resolveStoreBinding` and child B's
+  // membership provider, so the by-id-lookup ban must cover it too.
+  'src/core/management-api/session-launch-context.ts',
   'src/core/agent-context.ts',
   'src/commands/doctor.ts',
   'src/commands/store.ts',
@@ -101,10 +105,12 @@ const POINTER_VALUE_ALLOWLIST: Record<string, string> = {
   'src/core/effective-config.ts': 'reads it inside the alias arm of the declaration bridge',
   'src/commands/doctor.ts': 'reports the declared display alias, as the declared alias',
   'src/core/store/upgrade-identity.ts': 'guarded by pointer.shape === alias on the same line',
-  'src/core/learned-skills/context.ts':
-    'deferred compat consumer — store-aware-learned-skills-integration',
-  'src/core/management-api/session-launch-context.ts':
-    'deferred compat consumer — unified-session-runtime-context',
+  // Both entries retired by unified-session-runtime-context: the launch
+  // resolver's member check and the knowledge resolver's "planning is
+  // externalized" check now go through `hasStoreDeclaration` +
+  // `resolveStoreBinding`, so neither file reads the display alias at all.
+  // Leaving a justification behind for a read that no longer exists is what
+  // the staleness assertion below exists to catch.
 };
 
 /**

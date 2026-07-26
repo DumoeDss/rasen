@@ -2,7 +2,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
-import { readProjectConfig, classifyOpenSpecDir } from '../project-config.js';
+import { readProjectConfig, classifyOpenSpecDir, hasStoreDeclaration } from '../project-config.js';
+import { storeBindingDeclarationFrom } from '../effective-config.js';
+import { resolveStoreBinding } from '../store/identity.js';
+import {
+  requireSessionRuntimeContext,
+  type RuntimeContext,
+  type RuntimeExecutionRef,
+} from '../session-runtime-context.js';
 import {
   findProjectRegistryEntry,
   readProjectRegistryState,
@@ -14,6 +21,7 @@ import {
 } from '../root-selection.js';
 import { listRegisteredStores, type RegisteredStoreEntry } from '../store/registry.js';
 import type {
+  FrozenExecutionRef,
   FrozenKnowledgeContext,
   KnowledgeOwnerRef,
   KnowledgePlanningRootRef,
@@ -60,6 +68,15 @@ export interface ResolveLearnedSkillExecutionContextInput {
   requestedScope?: LearnedSkillScope | 'mixed';
   frozen?: FrozenKnowledgeContext;
   globalDataDir?: string;
+  /**
+   * The session runtime context this command runs under
+   * (unified-session-runtime-context D4). Defaults to the one the supervisor
+   * handed this process; pass `null` to opt out explicitly, or a context to
+   * pin one in a test. It changes WHERE this resolver reads its planning root
+   * from — the session's recorded planning root instead of the working
+   * directory — and nothing about what it then decides.
+   */
+  sessionContext?: RuntimeContext | null;
 }
 
 type ResolvedNonGlobalOwner = Exclude<ResolvedKnowledgeOwnerRef, { type: 'global' }>;
@@ -254,17 +271,21 @@ async function resolvePlanningRoot(
   }
 
   const classification = classifyOpenSpecDir(canonicalRoot);
-  if (
-    !classification.hasPlanningShape &&
-    classification.pointer.value !== undefined &&
-    classification.pointer.malformed === undefined
-  ) {
-    const pointed = entries.find(
-      (entry) => entry.type === 'store' && entry.id === classification.pointer.value
-    );
-    if (pointed) {
-      const owner = await inspectTypedRegistryEntry(pointed, 'store');
-      return { type: 'store', id: owner.id!, root: owner.root! };
+  // "Does this repo declare a Store?" is `hasStoreDeclaration`, never
+  // `pointer.value !== undefined`: a durable declaration records only the
+  // permanent identity, leaving the display alias undefined, so the old test
+  // silently read a uid-only pointer as "no declaration" and fell through.
+  // Resolution then goes through the single identity resolver rather than an
+  // alias lookup in the registry, which cannot address two Stores that share
+  // a display name.
+  if (!classification.hasPlanningShape && hasStoreDeclaration(classification.pointer)) {
+    const binding = await resolveStoreBinding({
+      declaration: storeBindingDeclarationFrom(classification.pointer),
+      projectRoot: canonicalRoot,
+      ...pathOptions(globalDataDir),
+    });
+    if (binding.kind === 'resolved') {
+      return { type: 'store', id: binding.store.id, root: binding.store.root };
     }
   }
 
@@ -474,6 +495,31 @@ export async function resolveLearnedSkillExecutionContext(
   const launchDirectory = input.launchDirectory ?? process.cwd();
   const selector = input.selector ?? {};
   const explicitSelector = selectorIdentity(selector);
+  // Resolution order (design D4): an explicit selector wins; then the
+  // session's own recorded context; then, only when neither applies, the
+  // working directory. A BROKEN session context throws here rather than
+  // quietly dropping to the working directory — a silent fallback is exactly
+  // how a command ends up resolving the checkout's own Store instead of the
+  // one the session plans in.
+  const sessionContext =
+    input.sessionContext === undefined
+      ? requireSessionRuntimeContext()
+      : (input.sessionContext ?? undefined);
+  // The session's recorded roots replace the working directory as the place
+  // this resolver looks; the derivation applied to each is unchanged.
+  //
+  // They are two different questions and they take two different roots. WHERE
+  // planning lives is the session's planning root. WHOSE knowledge this is
+  // follows the project the session executes in — the same thing the working
+  // directory used to answer, since a Store session's cwd IS its checkout. A
+  // planning-only session executes in no project, so both fall to the
+  // planning root.
+  const planningDirectory = sessionContext ? sessionContext.planning.root : launchDirectory;
+  const ownerDirectory = sessionContext
+    ? sessionContext.execution.kind === 'project'
+      ? sessionContext.execution.root
+      : sessionContext.planning.root
+    : launchDirectory;
 
   let owner: ResolvedKnowledgeOwnerRef;
   let planningRoot: ResolvedKnowledgePlanningRootRef | undefined;
@@ -513,7 +559,7 @@ export async function resolveLearnedSkillExecutionContext(
     }
     source = 'run-state';
   } else {
-    planningRoot = await resolvePlanningRoot(launchDirectory, input.globalDataDir);
+    planningRoot = await resolvePlanningRoot(planningDirectory, input.globalDataDir);
     if (explicitSelector) {
       owner =
         explicitSelector.type === 'global'
@@ -522,12 +568,13 @@ export async function resolveLearnedSkillExecutionContext(
       source = explicitSelector.type === 'project' ? 'explicit-project' : 'explicit-store';
     } else {
       owner = await resolveLaunchOwner(
-        launchDirectory,
+        ownerDirectory,
         input.requestedScope,
         input.globalDataDir
       );
-      source =
-        owner.type === 'project'
+      source = sessionContext
+        ? 'session-context'
+        : owner.type === 'project'
           ? 'launch-project'
           : owner.type === 'store'
             ? 'direct-store'
@@ -544,8 +591,19 @@ export async function resolveLearnedSkillExecutionContext(
   };
 }
 
+/**
+ * Freezes the run's typed identity. When the session records an execution
+ * binding, it is frozen alongside the planning root and owner under version 2;
+ * with nothing to record the shape stays version 1, so a reader that predates
+ * this field is never handed a version it does not know.
+ *
+ * The frozen execution ref carries a `projectId` and NO root: the run-state
+ * file is Git-tracked for a repo-local change, and a checkout root recorded
+ * there would travel to another machine and misroute the resume.
+ */
 export function freezeKnowledgeContext(
-  context: LearnedSkillExecutionContext
+  context: LearnedSkillExecutionContext,
+  execution?: RuntimeExecutionRef
 ): FrozenKnowledgeContext {
   if (!context.planningRoot) {
     fail(
@@ -554,9 +612,24 @@ export function freezeKnowledgeContext(
       { owner: ownerIdentity(context.owner), selectorGuidance }
     );
   }
-  return {
-    version: 1,
+  const base = {
     planningRoot: planningIdentity(context.planningRoot),
     owner: ownerIdentity(context.owner),
   };
+  if (execution === undefined) return { version: 1, ...base };
+  return {
+    version: 2,
+    ...base,
+    execution:
+      execution.kind === 'planning-only'
+        ? { kind: 'planning-only' }
+        : { kind: 'project', projectId: execution.projectId },
+  };
+}
+
+/** The execution binding a frozen record carries, or undefined for version 1. */
+export function frozenExecutionRef(
+  frozen: FrozenKnowledgeContext
+): FrozenExecutionRef | undefined {
+  return frozen.version === 2 ? frozen.execution : undefined;
 }

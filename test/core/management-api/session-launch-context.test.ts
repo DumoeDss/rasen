@@ -7,6 +7,11 @@ import { execFileSync } from 'node:child_process';
 import { resolveSessionLaunchContext } from '../../../src/core/management-api/session-launch-context.js';
 import { registerProject } from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
+import {
+  getStoreProjectRecordPath,
+  writeStoreProjectRecord,
+} from '../../../src/core/store/project-records.js';
+import { upgradeStoreIdentity } from '../../../src/core/store/upgrade-identity.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
@@ -62,7 +67,8 @@ describe('resolveSessionLaunchContext', () => {
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         attachedRoots: [],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'project-a-id',
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
@@ -98,7 +104,8 @@ describe('resolveSessionLaunchContext', () => {
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(memberRoot),
         attachedRoots: [FileSystemUtils.canonicalizeExistingPath(storeRoot)],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'member-a-id',
           root: FileSystemUtils.canonicalizeExistingPath(memberRoot),
         },
@@ -134,7 +141,8 @@ describe('resolveSessionLaunchContext', () => {
       ok: true,
       context: {
         cwd: FileSystemUtils.canonicalizeExistingPath(cloneB),
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'shared-clone-id',
           root: FileSystemUtils.canonicalizeExistingPath(cloneB),
         },
@@ -181,6 +189,9 @@ describe('resolveSessionLaunchContext', () => {
         planningSpace: { type: 'store', id: 'planning-store', root: canonicalStoreRoot },
         cwd: canonicalStoreRoot,
         attachedRoots: [],
+        // Recorded as an explicit fact, not by omission: this session works on
+        // no project and therefore has no code write root at all.
+        execution: { kind: 'planning-only' },
       },
     });
   });
@@ -257,7 +268,13 @@ describe('resolveSessionLaunchContext', () => {
     });
   });
 
-  it('rejects a live registered project whose registry mode is not Store membership', async () => {
+  // Registry `mode` is no longer consulted (unified-session-runtime-context
+  // D6): membership is decided by the Store's own record, with the project's
+  // durable Store declaration as the second authority. An ordinary in-repo
+  // project that neither vouches for is still rejected — but now the failure
+  // names the missing membership and the command that adds it, instead of a
+  // registry flag the user cannot see.
+  it('rejects a project neither the Store record nor its own declaration vouches for', async () => {
     const storeRoot = path.join(tempDir, 'non-member-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'non-member-store', localPath: storeRoot, globalDataDir: dataDir });
@@ -278,12 +295,12 @@ describe('resolveSessionLaunchContext', () => {
     expect(result).toMatchObject({
       ok: false,
       status: 409,
-      code: 'execution_unavailable',
-      message: expect.stringContaining('not a current live member'),
+      code: 'execution_not_member',
+      message: expect.stringContaining('rasen store add-project'),
     });
   });
 
-  it('rejects a Store registry member whose current pointer names a different Store', async () => {
+  it('rejects a project whose declaration names an unusable Store and which has no membership record', async () => {
     const storeRoot = path.join(tempDir, 'selected-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'selected-store', localPath: storeRoot, globalDataDir: dataDir });
@@ -304,9 +321,186 @@ describe('resolveSessionLaunchContext', () => {
     expect(result).toMatchObject({
       ok: false,
       status: 409,
-      code: 'execution_unavailable',
-      message: expect.stringContaining('not a current live member'),
+      code: 'execution_not_member',
+      message: expect.stringContaining('stale-member-id'),
     });
+  });
+
+  // The union's ACCEPTING arm, on the `space:` + `execution:` path that
+  // `storePermitsProject` actually gates. The omitted-space fallback below
+  // exercises a pointer project too, but it never reaches this seam — so
+  // without these two, the arm the spec used to leave unstated was also the
+  // arm no test on this path would have caught being "simplified away".
+  it('accepts a project with no membership record whose own declaration names this Store', async () => {
+    const storeRoot = path.join(tempDir, 'declared-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'declared-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'declared-member');
+    createPointerProject(projectRoot, 'declared-member-id', 'declared-store');
+    await registerProject(
+      { projectRoot, projectId: 'declared-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    // No record is written: this is the linkage that predates membership
+    // records, and it is the shape of every install that has not migrated.
+    expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, 'declared-member-id'))).toBe(false);
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:declared-store',
+      execution: 'project:declared-member-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      context: {
+        planningSpace: {
+          type: 'store',
+          id: 'declared-store',
+          root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
+        },
+        execution: {
+          kind: 'project',
+          projectId: 'declared-member-id',
+          root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
+        },
+      },
+    });
+    // Accepting must not have written one either — this seam is read-only.
+    expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, 'declared-member-id'))).toBe(false);
+  });
+
+  it('accepts a uid-only durable declaration, which a display-name comparison would have missed', async () => {
+    const storeRoot = path.join(tempDir, 'durable-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'durable-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'durable-member');
+    createPointerProject(projectRoot, 'durable-member-id', 'durable-store');
+    await registerProject(
+      { projectRoot, projectId: 'durable-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    // Mints the Store's permanent identity and rewrites the declaration into
+    // the durable form, whose display alias is dropped — so `pointer.value` is
+    // undefined and only a RESOLVED-ROOT comparison can still match. This is
+    // the third live instance of that trap in this portfolio.
+    await upgradeStoreIdentity({
+      id: 'durable-store',
+      apply: true,
+      projectRoot,
+      globalDataDir: dataDir,
+    });
+    expect(fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8')).toContain(
+      'uid:'
+    );
+    expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, 'durable-member-id'))).toBe(false);
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:durable-store',
+      execution: 'project:durable-member-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      context: {
+        execution: {
+          kind: 'project',
+          projectId: 'durable-member-id',
+          root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
+        },
+      },
+    });
+  });
+
+  it('accepts a project whose own planning Store is a DIFFERENT Store when the Store records it', async () => {
+    // The scenario the whole planning/membership split exists for: the session
+    // pins planning explicitly, so the project's own default planning Store is
+    // irrelevant to whether it may be worked on here.
+    const planningStoreRoot = path.join(tempDir, 'session-store');
+    createOpenSpecRoot(planningStoreRoot);
+    await registerStore({ id: 'session-store', localPath: planningStoreRoot, globalDataDir: dataDir });
+
+    const otherStoreRoot = path.join(tempDir, 'home-store');
+    createOpenSpecRoot(otherStoreRoot);
+    await registerStore({ id: 'home-store', localPath: otherStoreRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'plans-elsewhere');
+    createPointerProject(projectRoot, 'plans-elsewhere-id', 'home-store');
+    await registerProject(
+      { projectRoot, projectId: 'plans-elsewhere-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    await writeStoreProjectRecord(planningStoreRoot, {
+      version: 1,
+      projectId: 'plans-elsewhere-id',
+      roles: { planning: false, knowledge: true },
+    });
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:session-store',
+      execution: 'project:plans-elsewhere-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      context: {
+        planningSpace: {
+          type: 'store',
+          id: 'session-store',
+          root: FileSystemUtils.canonicalizeExistingPath(planningStoreRoot),
+        },
+        execution: {
+          kind: 'project',
+          projectId: 'plans-elsewhere-id',
+          root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
+        },
+      },
+    });
+  });
+
+  it('rejects a checkout whose own recorded identity is a different project', async () => {
+    const storeRoot = path.join(tempDir, 'identity-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'identity-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'wrong-identity');
+    createPointerProject(projectRoot, 'registered-id', 'identity-store');
+    await registerProject(
+      { projectRoot, projectId: 'registered-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    // The checkout is re-pointed at a different project AFTER registration —
+    // exactly the "this is not the clone you think it is" case.
+    createPointerProject(projectRoot, 'someone-elses-id', 'identity-store');
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:identity-store',
+      execution: 'project:registered-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 409,
+      code: 'execution_identity_mismatch',
+      message: expect.stringContaining('someone-elses-id'),
+    });
+  });
+
+  it('stops the launch when the planning Store cannot be resolved on this machine', async () => {
+    const result = await resolveSessionLaunchContext({
+      space: 'store:never-registered-store',
+      execution: 'project:whatever',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({ ok: false, status: 404, code: 'space_not_found' });
   });
 
   it('rejects a registered member whose root is no longer live', async () => {
@@ -332,7 +526,7 @@ describe('resolveSessionLaunchContext', () => {
       ok: false,
       status: 409,
       code: 'execution_unavailable',
-      message: expect.stringContaining('not a current live member'),
+      message: expect.stringContaining('not available at its registered root'),
     });
   });
 
@@ -388,7 +582,8 @@ describe('resolveSessionLaunchContext', () => {
       context: {
         cwd: FileSystemUtils.canonicalizeExistingPath(worktreeRoot),
         attachedRoots: [FileSystemUtils.canonicalizeExistingPath(storeRoot)],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'member-worktree-id',
           root: FileSystemUtils.canonicalizeExistingPath(worktreeRoot),
         },
@@ -429,7 +624,8 @@ describe('resolveSessionLaunchContext', () => {
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         attachedRoots: [FileSystemUtils.canonicalizeExistingPath(storeRoot)],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'fallback-member-id',
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
@@ -454,7 +650,8 @@ describe('resolveSessionLaunchContext', () => {
       context: {
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         attachedRoots: [],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: '',
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
@@ -487,7 +684,8 @@ describe('resolveSessionLaunchContext', () => {
         ok: true,
         context: {
           cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
-          executionProject: {
+          execution: {
+            kind: 'project',
             projectId: 'windows-member-id',
             root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
           },

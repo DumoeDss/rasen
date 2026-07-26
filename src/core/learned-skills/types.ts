@@ -20,12 +20,37 @@ export type KnowledgePlanningRootRef =
   | { type: 'project'; id: string }
   | { type: 'store'; id: string };
 
-/** Versioned run-state payload. Absolute machine paths are deliberately absent. */
-export interface FrozenKnowledgeContext {
-  version: 1;
-  planningRoot: KnowledgePlanningRootRef;
-  owner: KnowledgeOwnerRef;
-}
+/**
+ * The project a frozen run belongs to. Durable and path-free BY DESIGN: a
+ * frozen run-state file lives in the change directory, which for a repo-local
+ * change is Git-tracked — a checkout root recorded here would travel to every
+ * other machine and misroute a resume. The local address for this identity
+ * comes from the session context or the current checkout, never from here.
+ */
+export type FrozenExecutionRef =
+  | { kind: 'planning-only' }
+  | { kind: 'project'; projectId: string };
+
+/**
+ * Versioned run-state payload. Absolute machine paths are deliberately absent.
+ *
+ * Version 1 records planning root and owner only. Version 2 adds the execution
+ * binding; a version 1 record reads as "no execution binding recorded", never
+ * as an error, and a run with nothing to record still writes version 1 so no
+ * existing reader is handed a shape it does not know.
+ */
+export type FrozenKnowledgeContext =
+  | {
+      version: 1;
+      planningRoot: KnowledgePlanningRootRef;
+      owner: KnowledgeOwnerRef;
+    }
+  | {
+      version: 2;
+      planningRoot: KnowledgePlanningRootRef;
+      owner: KnowledgeOwnerRef;
+      execution: FrozenExecutionRef;
+    };
 
 export type ResolvedKnowledgeOwnerRef =
   | { type: 'global' }
@@ -46,6 +71,8 @@ export interface LearnedSkillExecutionContext {
   owner: ResolvedKnowledgeOwnerRef;
   source:
     | 'run-state'
+    /** The session's own recorded runtime context (design D4's second step). */
+    | 'session-context'
     | 'explicit-project'
     | 'explicit-store'
     | 'launch-project'

@@ -10,9 +10,28 @@ type ExecutionSelection = {
   source: 'auto' | 'user';
 };
 
+/** A member with a checkout on this machine — the only kind that can be executed in. */
+type LaunchableMember = SpaceMember & { root: string };
+
+/**
+ * A store may record a member whose checkout does not exist on this machine
+ * (`store-project-membership`): it is listed with identity and name and NO
+ * root. Such a member cannot be an execution target — `project:${undefined}`
+ * is a selector the server rejects as `invalid_space` — so it is offered as a
+ * disabled option rather than as a choice that always fails.
+ */
+function isLaunchable(member: SpaceMember): member is LaunchableMember {
+  return typeof member.root === 'string' && member.root.length > 0;
+}
+
+function launchableMembers(members: readonly SpaceMember[]): LaunchableMember[] {
+  return members.filter(isLaunchable);
+}
+
 function automaticExecutionSelection(members: readonly SpaceMember[]): ExecutionSelection {
+  const launchable = launchableMembers(members);
   return {
-    value: members.length === 1 ? `project:${members[0]!.root}` : '',
+    value: launchable.length === 1 ? `project:${launchable[0]!.root}` : '',
     source: 'auto',
   };
 }
@@ -25,7 +44,7 @@ function reconcileExecutionSelection(
   if (
     current.source === 'user' &&
     current.value !== '' &&
-    members.some((member) => current.value === `project:${member.root}`)
+    launchableMembers(members).some((member) => current.value === `project:${member.root}`)
   ) {
     return current;
   }
@@ -177,6 +196,21 @@ export function LaunchSessionDialog({
               <p class="launch-session-dialog__execution-empty">{t('dialog.launch.members_empty')}</p>
             )}
             {members.map((member) => {
+              // A member with no checkout here is listed (it IS a member) but
+              // cannot be selected: the resulting `project:undefined` selector
+              // is rejected by the server, so offering it would be offering a
+              // choice that can only fail.
+              if (!isLaunchable(member)) {
+                return (
+                  <label key={member.projectId} aria-disabled="true">
+                    <input type="radio" name="execution" value="" disabled checked={false} />
+                    <span>
+                      <strong>{member.name}</strong>
+                      <small>{member.projectId}</small>
+                    </span>
+                  </label>
+                );
+              }
               const value = `project:${member.root}` as const;
               return (
                 <label key={member.root}>

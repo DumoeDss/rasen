@@ -759,6 +759,85 @@ The JSON brief is agent-consumable (each available referenced store carries its 
 
 "Working context" is the assembled set; the `context:` field in `rasen/config.yaml` is project background injected into instructions — two different things. `rasen doctor` answers whether the set is healthy; `rasen context` answers what the set is.
 
+## Session runtime context
+
+A supervised session (`rasen ui` → Launch, or the sessions API) already asks the
+right question — plan in this Store, implement in that project checkout — and
+now it keeps the answer. The session records its planning space, the project it
+works on, and the exact checkout of that project on this machine, and hands its
+agent process the location of a machine-local context file describing all three.
+
+Everything here is machine-local. The file lives under the global data dir at
+`sessions/<sessionId>/context.json`, is written before the agent starts,
+removed when the session ends, and never enters Git. It is the one place
+absolute roots are allowed, precisely because it is never shared.
+
+```json
+{
+  "version": 1,
+  "sessionId": "0f2a…",
+  "planning": { "type": "store", "id": "team-store", "root": "/stores/team" },
+  "execution": { "kind": "project", "projectId": "app-7f3c…", "root": "/projects/app" }
+}
+```
+
+A session that plans in a Store without working on any project records
+`"execution": { "kind": "planning-only" }` — an explicit fact, not a missing
+field.
+
+The child process receives `RASEN_SESSION_CONTEXT` carrying that file's **path**,
+never its contents: the document would otherwise land in the process table,
+every `ps` listing, and any log that dumps the environment.
+
+### How a command resolves its context
+
+For the first command in a session, in this order and no other:
+
+1. an explicit selector given on the command (`--store`, `--project`);
+2. the session's own recorded context;
+3. only when neither applies, the working directory and the pointer nearest to it.
+
+A later step is not consulted once an earlier one has answered. A context file
+that is missing, unparseable, or names a different session is **reported**, not
+worked around — a silent fallback to the working directory is exactly how a
+command ends up resolving the checkout's own Store instead of the one the
+session plans in.
+
+### Resuming a frozen run
+
+`rasen pipeline resume` follows a different rule, because a frozen run already
+knows which project it belongs to:
+
+- the **frozen identity is the authority** — it says *which* project;
+- the session context, or failing that the current checkout, is the **local
+  locator** — it says *where* that project is on this machine;
+- an explicit selector **only cross-checks**; it cannot retarget the run.
+
+When the frozen project does not match the project the session executes in, the
+command **fails**, naming both identities and the checkout. It never continues
+in another clone of the same project: a resume into the wrong working tree
+produces a plausible-looking diff, which is far more expensive to discover than
+an error.
+
+With no session context, the current directory is used only if its own recorded
+identity matches the frozen project; failing that, a single registered checkout
+of that project is used; and when several match, the command reports
+`project_binding_ambiguous` and lists every candidate rather than choosing one.
+
+Checkout comparison is canonical, so a checkout differing only by drive-letter
+case or path-separator form is recognized as the same checkout on every
+platform.
+
+### What a planning-only session cannot do
+
+A planning-only Store session runs at the Store root and has an **empty** set of
+code write roots. It may write planning artifacts in its Store exactly as any
+Store session does; it performs no project-scoped materialization and changes
+no project's code. The restriction is stated where the session is launched and
+in the action context the agent reads (see [`rasen status`](#rasen-status)).
+
+---
+
 ## Personal worksets
 
 > **Beta.** Worksets are part of the new beta surface; commands, flags, and file formats may change shape between releases. For the walkthrough, see the [stores guide](stores-beta/user-guide.md#worksets-reopen-the-folders-you-work-on-together).
@@ -1156,9 +1235,53 @@ Progress: 2/4 artifacts complete
     {"id": "design", "outputPath": "design.md", "status": "ready"},
     {"id": "specs", "outputPath": "specs/**/*.md", "status": "done"},
     {"id": "tasks", "outputPath": "tasks.md", "status": "blocked", "missingDeps": ["design"]}
-  ]
+  ],
+  "actionContext": {
+    "mode": "repo-local",
+    "sourceOfTruth": "repo",
+    "version": 1,
+    "planningWriteRoots": ["/repo/rasen/specs", "/repo/rasen/changes"],
+    "codeWriteRoots": ["/repo"],
+    "readRoots": ["/repo"],
+    "allowedEditRoots": ["/repo"],
+    "requiresAffectedAreaSelection": false,
+    "constraints": ["Repo-local change artifacts and implementation edits are scoped to this project.", "..."]
+  }
 }
 ```
+
+`actionContext` states separately where planning artifacts may be written,
+where code may be written, and what may only be read. `version` says which
+contract you are reading:
+
+- **`version: 1`** also carries `allowedEditRoots`, the compatibility view for
+  consumers that know only the older single-list form. It is present only when
+  the newer capability projects into it *without granting anything the older
+  form would not have granted* — the projection can narrow, never widen.
+- **`version: 2`** is reported when that projection is impossible — a session
+  that plans in a Store while working on a project checkout needs two roots,
+  which the older form cannot express. `allowedEditRoots` is then **absent**,
+  so a consumer expecting only the older form stops instead of inheriting a
+  root it never asked for.
+
+Inside a Store session that works on a project checkout:
+
+```json
+{
+  "actionContext": {
+    "version": 2,
+    "planningWriteRoots": ["/stores/team/rasen/specs", "/stores/team/rasen/changes"],
+    "codeWriteRoots": ["/projects/app"],
+    "readRoots": ["/stores/team", "/projects/app"],
+    "requiresAffectedAreaSelection": false,
+    "constraints": ["Planning artifacts are written in the planning root; code changes are confined to the selected checkout. ...", "..."]
+  }
+}
+```
+
+A planning-only Store session reports `"codeWriteRoots": []` — empty as a
+stated fact, not as a discouragement. Making a root visible to the agent
+process (`--add-dir`) never grants permission to write it.
 
 ---
 
@@ -1791,6 +1914,7 @@ rasen completion uninstall
 | `DO_NOT_TRACK` | Set to `1` to disable telemetry (standard DNT signal) |
 | `RASEN_CONCURRENCY` | Default concurrency for bulk validation (default: 6) |
 | `RASEN_LANG` | Temporarily override the saved CLI language (`en`, `ja`, or `zh-cn`) |
+| `RASEN_SESSION_CONTEXT` | Absolute path to the session context file the supervisor wrote (set for you inside a supervised session; see [Session runtime context](#session-runtime-context)) |
 | `EDITOR` or `VISUAL` | Editor for `rasen config edit` |
 | `NO_COLOR` | Disable color output when set |
 

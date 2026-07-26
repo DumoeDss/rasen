@@ -242,6 +242,16 @@ export interface SessionSpaceWire {
   root: string;
 }
 
+/**
+ * What a session works on (unified-session-runtime-context design D2/D7).
+ * Planning-only is an explicit arm so a client can state "this run will not
+ * modify any project's code" rather than inferring it from a missing field.
+ * `root` is a machine-local checkout path; it never enters Git.
+ */
+export type SessionExecutionWire =
+  | { kind: 'planning-only' }
+  | { kind: 'project'; projectId: string; root: string; home?: string };
+
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
 export interface SubmitChangeResponse {
   change: {
@@ -517,6 +527,11 @@ export interface SessionRecordWire {
   cwd: string;
   /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
   space?: SessionSpaceWire;
+  /**
+   * Execution identity and local checkout binding, frozen at launch. Absent
+   * only for a record created before this field existed.
+   */
+  execution?: SessionExecutionWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';

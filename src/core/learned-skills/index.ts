@@ -11,6 +11,7 @@ export * from './types.js';
 export {
   LearnedSkillCandidateSchema,
   LearnedSkillManifestSchema,
+  FrozenExecutionRefSchema,
   FrozenKnowledgeContextSchema,
   KnowledgeOwnerRefSchema,
   KnowledgePlanningRootRefSchema,
@@ -53,6 +54,7 @@ export { listCanonicalLearnedSkills, resolveLearnedSkills } from './resolve.js';
 export {
   KnowledgeContextError,
   freezeKnowledgeContext,
+  frozenExecutionRef,
   isKnowledgeContextError,
   resolveLearnedSkillExecutionContext,
   type KnowledgeContextDiagnostic,

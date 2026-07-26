@@ -573,6 +573,16 @@ export interface SessionSpaceWire {
   root: string;
 }
 
+/**
+ * What a session works on (unified-session-runtime-context design D2/D7).
+ * Mirrors `SessionExecutionWire` (management-api/wire-types.ts). Planning-only
+ * is an explicit arm, so a client states "this run will not modify any
+ * project's code" instead of inferring it from a missing field.
+ */
+export type SessionExecutionWire =
+  | { kind: 'planning-only' }
+  | { kind: 'project'; projectId: string; root: string; home?: string };
+
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
   id: string;
@@ -581,6 +591,8 @@ export interface SessionRecordWire {
   cwd: string;
   /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
   space?: SessionSpaceWire;
+  /** Execution identity and local checkout binding, frozen at launch; absent for a record created before this field existed. */
+  execution?: SessionExecutionWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';
@@ -652,11 +664,19 @@ export interface SessionActionResponse {
 // package (`GET /api/v1/spaces`). Same hand-maintained-mirror discipline as
 // the rest of this file.
 
-/** A store's member project (design D4): a pointer repo whose config `store:` currently names the store. */
+/** A store's member project (design D4): a project the store records as a member. */
 export interface SpaceMember {
   projectId: string;
   name: string;
-  root: string;
+  /**
+   * The member's live checkout on this machine. ABSENT when the store records
+   * the project as a member but no checkout of it exists here — the member is
+   * listed with its identity and display name rather than omitted or given a
+   * fabricated path (`store-project-membership`). Anything that builds a
+   * `project:<root>` selector must therefore handle the missing root; the
+   * server rejects `project:undefined` as `invalid_space`.
+   */
+  root?: string;
 }
 
 /** An in-repo project space (design D6). */

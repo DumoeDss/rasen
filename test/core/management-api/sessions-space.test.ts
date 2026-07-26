@@ -289,7 +289,12 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     });
 
     expect(res.status).toBe(409);
-    expect((res.json() as any).error.code).toBe('execution_unavailable');
+    // The stale pointer names a Store that is not this one and resolves to
+    // nothing, and the selected Store holds no membership record for the
+    // project — so neither authority vouches for it
+    // (unified-session-runtime-context D6). The failure now names the missing
+    // membership instead of a generic unavailability.
+    expect((res.json() as any).error.code).toBe('execution_not_member');
     const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
     expect((listRes.json() as any).sessions).toEqual([]);
   });

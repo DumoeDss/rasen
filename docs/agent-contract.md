@@ -54,7 +54,7 @@ Change: `{ "id", "title", "deltaCount", "deltas": [...], "root" }`. Spec: `{ "id
 `{ "items": [ { "id", "type": "change"|"spec", "valid", "issues": [ { "level", "path", "message", "line"?, "column"? } ], "durationMs" } ], "summary": { "totals": {items,passed,failed}, "byType": {...} }, "version": "1.0", "root" }`. Exit 1 when any item fails.
 
 ### 4.4 `status --json`
-`{ "changeName", "schemaName", "planningHome"?: { "kind", "root", "changesDir", "defaultSchema" }, "changeRoot", "artifactPaths": { "<id>": {outputPath, resolvedOutputPath, existingOutputPaths} }, "nextSteps": ["..."], "actionContext": { "mode": "repo-local", "sourceOfTruth": "repo", "planningArtifacts", "linkedContext", "allowedEditRoots", "requiresAffectedAreaSelection", "constraints" }, "isComplete", "applyRequires", "artifacts": [ {id, outputPath, status: "done"|"ready"|"blocked", missingDeps?} ], "root" }`. No active changes: `{ "changes": [], "message", "root" }`, exit 0.
+`{ "changeName", "schemaName", "planningHome"?: { "kind", "root", "changesDir", "defaultSchema" }, "changeRoot", "artifactPaths": { "<id>": {outputPath, resolvedOutputPath, existingOutputPaths} }, "nextSteps": ["..."], "actionContext": { "mode": "repo-local", "sourceOfTruth": "repo", "planningArtifacts", "linkedContext", "version": 1|2, "planningWriteRoots", "codeWriteRoots", "readRoots", "allowedEditRoots"?, "requiresAffectedAreaSelection", "constraints" }, "isComplete", "applyRequires", "artifacts": [ {id, outputPath, status: "done"|"ready"|"blocked", missingDeps?} ], "root" }`. No active changes: `{ "changes": [], "message", "root" }`, exit 0.
 
 ### 4.5 `instructions <artifact> --json`
 `{ "changeName", "artifactId", "schemaName", "changeDir", "planningHome"?, "outputPath", "resolvedOutputPath", "existingOutputPaths", "description", "instruction"?, "context"?, "rules"?, "references"?: ReferenceIndexEntry[], "template", "dependencies": [{id,done,path,description}], "unlocks", "root" }`.
@@ -110,6 +110,46 @@ two separate relations. `store migrate-membership --json` carries
 No membership command stages, commits, pushes, fetches, or pulls. Each renders a
 path-scoped commit suggestion per repository for the user to run.
 
+### 4.11b Session runtime context and the action context
+
+A supervised session records what it resolved — the planning space, the project
+it works on, and the exact checkout of that project on this machine — and hands
+its child process `RASEN_SESSION_CONTEXT`, the **absolute path** to a
+machine-local `sessions/<sessionId>/context.json` under the global data dir.
+The path, never the document. The file carries
+`{ version, sessionId, planning: {type:'project'|'store', …, root}, execution:
+{kind:'planning-only'} | {kind:'project', projectId, root, home?} }`.
+A file that is missing, unparseable, or names a different session is REPORTED;
+no reader falls back to deriving context from the working directory.
+
+Context resolution order for a first command: an explicit selector, then the
+session context, then the working directory and its nearest pointer. A resumed
+frozen run uses a different rule: the frozen identity is the authority for WHICH
+project, the session context (or the current checkout) is only the local
+locator, and an explicit selector only cross-checks. A frozen/checkout
+disagreement FAILS and never continues in another clone.
+
+**The action context is a capability, and agents consume it as one.** It states
+separately `planningWriteRoots` (the planning directories, never a repository
+root), `codeWriteRoots` (exactly the session's own checkout — never another
+member checkout of the same store), and `readRoots`, plus `constraints`.
+No user home directory appears in any of the three lists. Making a root visible
+to the agent process (`--add-dir`) is process visibility, NOT authorization: a
+root that is readable by the process is not writable by the work unless it
+appears in a write list.
+
+`version` identifies the contract. Version 1 additionally carries
+`allowedEditRoots`, the compatibility view for the older single-list form, and
+it appears only when the newer capability projects into it without granting
+anything the older form would not have granted — the projection can narrow,
+never widen. When it cannot (a store-planning session with a project checkout
+needs two roots), `version` is 2 and `allowedEditRoots` is ABSENT; a consumer
+that knows only the older form must stop rather than proceed.
+
+A planning-only session reports `"codeWriteRoots": []` — empty as a stated
+fact — and its constraints say that no code write root is available and that no
+project-scoped materialization occurs.
+
 ### 4.12 `schemas --json` / `templates --json`
 `schemas`: bare array `[ {name, description, artifacts, source} ]`. `templates`: keyed object `{ "<artifactId>": {path, source} }`. Both cwd-based, no root/status keys.
 
@@ -150,6 +190,18 @@ path-scoped commit suggestion per repository for the user to run.
 
 ### Archive (JSON mode)
 `archive_change_name_required`, `archive_change_not_found`, `archive_validation_failed`, `archive_confirmation_required`, `archive_tasks_incomplete`, `archive_spec_update_failed`, `archive_spec_validation_failed`, `archive_target_exists`, `archive_error`.
+
+### Session runtime context and frozen resume
+`project_binding_mismatch` (error; the frozen project is not the project the
+session executes in — fails closed, never falls back to another clone),
+`project_binding_ambiguous` (error; several registered checkouts carry the
+frozen project's identity, all listed), `project_binding_missing` (error; no
+checkout of the frozen project on this machine),
+`project_binding_selector_conflict` (error; an explicit selector named a
+different project than the frozen one — a selector cross-checks, it cannot
+retarget), `session_context_broken` (error; the file `RASEN_SESSION_CONTEXT`
+points at is missing, unparseable, of an unknown version, or names a different
+session).
 
 ### Context writes
 `context_file_exists`, `context_output_dir_missing`.

@@ -152,6 +152,11 @@ export async function handleLaunchSession(
     attachedRoots: resolved.attachedRoots,
     ...(changeName !== undefined ? { changeName } : {}),
     ...(resolved.planningSpace !== undefined ? { space: resolved.planningSpace } : {}),
+    // The resolver already worked out which project this session executes in
+    // and which checkout that is on this machine. Passing it on is the whole
+    // point of `session-runtime-context`: before this, the answer survived
+    // only as `cwd`, and every downstream consumer re-derived it.
+    execution: resolved.execution,
     timeoutMs,
     noOutputTimeoutMs,
   });

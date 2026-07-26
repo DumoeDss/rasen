@@ -346,6 +346,69 @@ error that lists what it found:
 rasen store eject <project-id> --from <store> --into <path>
 ```
 
+## Sessions
+
+### "The session context at … could not be used"
+
+A command running inside a supervised session was pointed at a session context
+file (`RASEN_SESSION_CONTEXT`) that is missing, unreadable, does not match the
+context schema, or records a different session. Rasen reports it rather than
+quietly resolving from the working directory: a silent fallback is how a
+command ends up planning in the checkout's own store instead of the one the
+session actually plans in.
+
+The file is machine-local and disposable — it lives under the global data dir
+at `sessions/<sessionId>/context.json` and is removed when its session ends.
+Nothing is lost by dropping it:
+
+```bash
+unset RASEN_SESSION_CONTEXT   # then re-run, or relaunch the session
+```
+
+A context file left behind by a crashed session has no effect on any later
+session: every reader checks the recorded session id.
+
+### "This run is frozen against project … but the session executes in …"
+
+`rasen pipeline resume` refuses to continue a run in a checkout that is not the
+project the run was frozen against. This is deliberate and not overridable: a
+resume into the wrong working tree produces a plausible-looking diff, which is
+far more expensive to discover than an error. Rasen never falls back to another
+clone of the frozen project.
+
+Resume from a checkout of the project named in the message, or launch a session
+whose execution target is that checkout:
+
+```bash
+cd <checkout of the frozen project>
+rasen pipeline resume <change>
+```
+
+An explicit `--project` selector only cross-checks a frozen run. Naming a
+different project reports the disagreement; it does not retarget the run.
+
+### "Several registered checkouts carry project …" (`project_binding_ambiguous`)
+
+The run was resumed with no session context, the current directory is not that
+project, and more than one registered checkout carries its identity. Rasen lists
+every candidate rather than choosing one. Resume from the checkout you meant, or
+launch the run inside a session, which pins the checkout for you:
+
+```bash
+cd <one of the listed checkouts>
+rasen pipeline resume <change>
+```
+
+### "No checkout of project … was found on this machine"
+
+The frozen project has no registered checkout here and the current directory is
+not it. Register the checkout you want the run to continue in:
+
+```bash
+cd <checkout>
+rasen init
+```
+
 ## Migration from the legacy workflow
 
 ### "Legacy files detected in non-interactive mode"

@@ -98,6 +98,13 @@ export interface PipelineMessageValues {
   resumeHandles: { stages: string };
   sessionHandoff: { generation: number; path: string };
   gatePolicy: { effective: string; source: string };
+  executionBinding: { project: string; path: string };
+  executionBindingPlanningOnly: undefined;
+  executionBindingMismatch: { frozen: string; found: string; checkout: string };
+  executionBindingSelectorConflict: { frozen: string; selector: string };
+  executionBindingAmbiguous: { frozen: string; candidates: string };
+  executionBindingMissing: { frozen: string };
+  sessionContextBroken: { path: string; detail: string };
   createdDraft: { path: string };
   pipelineValid: undefined;
   pipelineInvalid: undefined;
@@ -194,6 +201,13 @@ export const PIPELINE_MESSAGE_KEYS = [
   'resumeHandles',
   'sessionHandoff',
   'gatePolicy',
+  'executionBinding',
+  'executionBindingPlanningOnly',
+  'executionBindingMismatch',
+  'executionBindingSelectorConflict',
+  'executionBindingAmbiguous',
+  'executionBindingMissing',
+  'sessionContextBroken',
   'createdDraft',
   'pipelineValid',
   'pipelineInvalid',

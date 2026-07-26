@@ -332,4 +332,45 @@ describe('LaunchSessionDialog Store execution selection', () => {
       'Member A is no longer attached to team-store. Choose another execution target.'
     );
   });
+
+  describe('members with no checkout on this machine', () => {
+    // A Store may record a member whose checkout does not exist here
+    // (`store-project-membership`): it is listed with identity and name and
+    // NO root. `project:${undefined}` is a selector the server rejects, so
+    // such a member must never be offered as a choice.
+    const ROOTLESS: SpaceMember = { projectId: 'member-c', name: 'Member C' };
+
+    it('never renders a project:undefined selector for a rootless member', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      expect(container.innerHTML).not.toContain('project:undefined');
+      expect(
+        container.querySelector('input[name="execution"][value="project:undefined"]')
+      ).toBeNull();
+    });
+
+    it('lists the rootless member but leaves it unselectable', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      expect(container.textContent).toContain('Member C');
+      const disabled = Array.from(
+        container.querySelectorAll('input[name="execution"]')
+      ).filter((input) => (input as HTMLInputElement).disabled);
+      expect(disabled).toHaveLength(1);
+    });
+
+    it('auto-selects the sole LAUNCHABLE member when the other has no checkout', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      const checked = container.querySelector(
+        'input[name="execution"]:checked'
+      ) as HTMLInputElement | null;
+      expect(checked?.value).toBe('project:/projects/a');
+    });
+
+    it('gates the launch when every member is rootless', () => {
+      mount([ROOTLESS]);
+      expect(container.querySelector('input[name="execution"]:checked')).toBeNull();
+      expect(
+        (container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled
+      ).toBe(true);
+    });
+  });
 });

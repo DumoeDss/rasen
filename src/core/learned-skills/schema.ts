@@ -40,13 +40,33 @@ export const KnowledgePlanningRootRefSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('store'), id: z.string().min(1) }).strict(),
 ]);
 
-export const FrozenKnowledgeContextSchema = z
-  .object({
-    version: z.literal(1),
-    planningRoot: KnowledgePlanningRootRefSchema,
-    owner: KnowledgeOwnerRefSchema,
-  })
-  .strict();
+export const FrozenExecutionRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('planning-only') }).strict(),
+  z.object({ kind: z.literal('project'), projectId: z.string().min(1) }).strict(),
+]);
+
+/**
+ * Both versions parse. A version 1 record is a run frozen before execution
+ * bindings existed and reads as "no execution binding recorded" — never an
+ * error, which is what lets a resume of an older run keep working.
+ */
+export const FrozenKnowledgeContextSchema = z.discriminatedUnion('version', [
+  z
+    .object({
+      version: z.literal(1),
+      planningRoot: KnowledgePlanningRootRefSchema,
+      owner: KnowledgeOwnerRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(2),
+      planningRoot: KnowledgePlanningRootRefSchema,
+      owner: KnowledgeOwnerRefSchema,
+      execution: FrozenExecutionRefSchema,
+    })
+    .strict(),
+]);
 
 const CandidateContentFields = {
   version: z.literal(LEARNED_SKILL_CANDIDATE_VERSION),

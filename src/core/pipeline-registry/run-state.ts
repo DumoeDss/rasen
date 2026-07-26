@@ -16,6 +16,7 @@ import { RETENTION_MODES, type RetentionMode } from '../retention.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
 import {
   FrozenKnowledgeContextSchema,
+  type FrozenExecutionRef,
   type FrozenKnowledgeContext,
 } from '../learned-skills/index.js';
 
@@ -463,6 +464,20 @@ export function frozenKnowledgeContext(
   state: RunState
 ): FrozenKnowledgeContext | undefined {
   return state.knowledgeContext;
+}
+
+/**
+ * The execution binding this run was frozen against, or undefined when it
+ * recorded none (a version 1 record, written before this existed). Resolving
+ * that identity to a checkout on THIS machine is
+ * `resolveFrozenExecutionBinding` in `execution-binding.ts` — the frozen
+ * record is the authority for WHICH project and deliberately carries no root.
+ */
+export function frozenExecutionBinding(
+  state: RunState
+): FrozenExecutionRef | undefined {
+  const frozen = state.knowledgeContext;
+  return frozen !== undefined && frozen.version === 2 ? frozen.execution : undefined;
 }
 
 /**
