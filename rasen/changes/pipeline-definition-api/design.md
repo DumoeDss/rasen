@@ -54,3 +54,78 @@ Additive endpoints + one additive op + one additive enum value; no persisted for
 ## Open Questions
 
 (none — OQ-2/3/4/5 adjudicated in planning-context.md; origin/floor settled in Decision 6)
+
+## 0.1.5 Incremental Amendment: Pipeline Content Format v1
+
+### Context and boundary
+
+The API described above is already implemented in the 0.1.5 baseline. Live
+code now has a core `WirePipelineDefinition = PipelineYaml`, a hand-maintained
+UI mirror, canonical save YAML, raw-file `.rasenpkg` export, and built-in/
+scaffolded Pipeline YAML without a content version. Package `formatVersion`
+cannot identify the version of the contained `pipeline.yaml`.
+
+This amendment adds only the compatibility seam needed before that
+round-trippable contract ships. It does not add a Composite/ReviewCycle runner,
+execution journal, nested Canvas, auto/goal runtime migration, or Issue
+orchestration.
+
+### Incremental decisions
+
+8. **Use a top-level integer `version: 1` with one shared constant.** Add a
+   named `PIPELINE_DEFINITION_VERSION = 1` beside `PipelineYamlSchema`; the
+   normalized inferred type always carries that literal. The field identifies
+   Pipeline content, independently of `.rasenpkg` package metadata. A missing
+   field is the sole legacy form and normalizes to v1. Any present value other
+   than `1` fails closed at `/version` with a message naming the received value,
+   supported value, and upgrade action. The throwing parser and issue-collecting
+   draft validator use the same schema result, so they cannot disagree.
+
+9. **Normalize at the loader boundary and emit only normalized definitions.**
+   `loadPipeline`/`parsePipeline` remain the single read choke point. Detail and
+   show naturally expose v1 because they return the parsed value; save writes
+   that parsed value. `scaffoldPipeline` and all package built-ins declare
+   `version: 1` explicitly. Export is the one special case: it currently copies
+   the user directory byte-for-byte, so it must replace the packaged
+   `pipeline.yaml` entry with canonical YAML from the parsed definition while
+   preserving any other package files. The source library file need not be
+   rewritten merely because it was read or exported.
+
+10. **Keep one canonical serialization path.** Factor the normalized
+    Pipeline-to-YAML operation used by scaffold/save/export instead of teaching
+    each caller how to add a version. This prevents a legacy definition from
+    gaining v1 in detail but losing it in an exported package. Existing
+    path-safety and atomic package-write behavior stay unchanged.
+
+11. **Treat v1 as a compatibility input, not a new runtime.** The v1 grammar is
+    the current flat `requires` DAG plus existing
+    `stage.loop.kind: review-cycle|goal`. Those declarations remain readable
+    and are reserved as valid source inputs for a future Composite compiler;
+    no user rewrite is required. In 0.1.5 the LEAD orchestration playbook still
+    interprets both loop kinds, and Canvas remains a definition
+    viewer/editor—not a programmatic runner.
+
+12. **Update both public wire mirrors and their fixtures.** The core wire type
+    inherits `version: 1` from `PipelineYaml`; the existing
+    `packages/ui/src/api/types.ts` mirror must add the same required literal.
+    Management/API and Canvas fixtures must carry v1 so compile-time drift is
+    caught. This supersedes original Decision 7's now-historical statement that
+    no UI consumer existed.
+
+### Incremental risks and migration
+
+- [A permissive default could accidentally accept a future version] → default
+  only when the key is absent; never coerce an explicit value.
+- [Raw export could leak an unversioned legacy manifest] → normalize the
+  packaged `pipeline.yaml` and test export/decode/import over an unversioned
+  source.
+- [Adding a required normalized field breaks old YAML] → accept absence at the
+  input boundary, cover project/user/package fixtures, and keep runtime
+  semantics identical after normalization.
+- [Documentation implies Canvas executes loops] → state the LEAD/Canvas
+  boundary in the canonical English and Chinese Pipeline docs.
+
+Migration is read-compatible and lazy: old files remain valid on disk, while
+detail/show/save/export expose v1. Rollback can remove the new discriminator
+because no v1 structure differs from the prior flat schema; unknown-version
+files intentionally remain unsupported by 0.1.5.

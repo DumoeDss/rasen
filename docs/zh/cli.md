@@ -1061,15 +1061,16 @@ rasen pipeline agents <name> [--planner|--implementer|--reviewer|--fixer|--shipp
 rasen pipeline classify <task> [--json]
 rasen pipeline resume <change> [--json]
 rasen pipeline init <name> --output <path> [--json]
+rasen pipeline save <name> --from <file> [--force] [--json]
 rasen pipeline validate <name-or-path> [--json]
 rasen pipeline import <path> [--force] [--json]
 rasen pipeline export <name> <path> [--force] [--json]
 rasen pipeline delete <name> [--yes] [--force] [--json]
 ```
 
-全部十个子命令都接受 `--store <id>` / `--project <id>`，其根解析方式与 `rasen validate` 完全一致。
+全部十一个子命令都接受 `--store <id>` / `--project <id>`，其根解析方式与 `rasen validate` 完全一致。
 
-全部十个子命令的帮助和 Rasen 自有的人类可读输出都支持英语、日语和简体中文。本地化只改变呈现：pipeline 与 stage ID、role/runtime/source 值、路径、JSON 字段与原始描述，以及分类器的关键词、`suggested`、`matched` 和 `basis` 语义都保持不变。项目和用户编写的名称与描述保留原文；只有包内置流水线（pipeline）的描述会在人类视图中本地化，其 JSON 描述仍保留原始值。
+全部十一个子命令的帮助和 Rasen 自有的人类可读输出都支持英语、日语和简体中文。本地化只改变呈现：pipeline 与 stage ID、role/runtime/source 值、路径、JSON 字段与原始描述，以及分类器的关键词、`suggested`、`matched` 和 `basis` 语义都保持不变。项目和用户编写的名称与描述保留原文；只有包内置流水线（pipeline）的描述会在人类视图中本地化，其 JSON 描述仍保留原始值。
 
 | 子命令 | 说明 |
 |------------|-------------|
@@ -1079,10 +1080,15 @@ rasen pipeline delete <name> [--yes] [--force] [--json]
 | `classify <task>` | 用建议性的关键词启发式方法为任务字符串推荐一个 pipeline |
 | `resume <change>` | 根据 run-state 显示某 change（或 portfolio）的下一个/剩余 stage |
 | `init <name>` | 在必须为空的 `--output` 目录下创建最小 `pipeline.yaml` 草稿，不安装它 |
+| `save <name>` | 校验 `--from` 指定的 JSON 或 YAML 定义，然后把规范化后的标准 YAML 安装到 user 层；`--force` 可替换已有 user pipeline，但永远不能覆盖内置 pipeline |
 | `validate <name-or-path>` | 对已安装的 pipeline 名、草稿目录，或 `kind: pipeline` 的 `.rasenpkg` 做结构性校验（解析、重复/环/parallel-group/decompose stage 检查）；不要求所引用的 skill 已安装 |
 | `import <path>` | 校验、暂存、复校 digest，然后把 `kind: pipeline` 包中的每个 pipeline 原子化安装进 user 层；`--force` 允许覆盖同名的已安装 pipeline |
 | `export <name> <path>` | 将一个已安装的 **user** pipeline 打包为确定性的 `.rasenpkg`；内置与项目本地 pipeline 不可导出 |
 | `delete <name>` | 在引用计数检查后删除一个未被引用的 user pipeline；内置 pipeline 不可删除 |
+
+**Pipeline 定义内容版本。** 规范化后的公开定义始终带顶层整数 `version: 1`。历史上没有 `version` 的定义仍可读取，并会归一化为 v1；任何显式的不支持版本或畸形值都会被拒绝，并在 `/version` 给出可操作的诊断，提示用户升级到兼容的 Rasen 版本。`show` 与管理 API 的 detail 返回规范化后的 v1 定义；`init` 与 `save` 输出标准 v1 YAML；`export` 只规范化包内的 `pipeline.yaml`，保留其他附属文件，也不会仅因读取或导出就改写已安装的源文件。包清单里的 `formatVersion` 是独立的 `.rasenpkg` 容器版本。
+
+Pipeline v1 保留现有的扁平 `requires` DAG，以及当前的 `stage.loop.kind: review-cycle` 和 `stage.loop.kind: goal` 声明。它们现在仍可读取，也是未来编译 Composite run plan 的有效源输入。目前两种 loop 都由 LEAD 编排 playbook 解释执行。Canvas 负责查看和编辑 Pipeline 定义；它不是程序化 Pipeline runner，也不会引入嵌套执行行为。
 
 `.rasenpkg` 携带一个 `kind` 判别字段——`workflow`、`profile`、或 `pipeline`——共享同一套包格式。`kind: pipeline` 包的 digest、事务性安装（暂存到临时目录 → 原子重命名，包内全部 pipeline 要么全装要么全不装）与文件限额规则，均与[可安装工作流与 `.rasenpkg`](workflow-packages.md)中 `kind: workflow` 的约定一致。每个包还携带一个可选的 `minRasenVersion`，在打包时由打包 CLI 自身版本戳入：较旧的 CLI 导入一个要求更新版本的包时，会收到清晰的升级提示，而不是含糊的 schema 错误。这个预检只对本次改动之后的 CLI 生效——早于此字段存在的已发布 CLI，遇到无法识别的包 `kind` 时仍会含糊拒绝，无法回补。
 

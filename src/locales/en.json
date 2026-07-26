@@ -141,6 +141,7 @@
       "pipelineTableEntry": "  {name}  [{source}]",
       "pipelineTableStages": "    stages: {stages}",
       "pipelineLabel": "Pipeline: {name}",
+      "definitionVersionLabel": "Definition version: {version}",
       "pipelineNotFound": "Pipeline '{name}' not found. Available pipelines:\n  {available}",
       "originLabel": "Origin: {origin}",
       "buildOrderHeading": "Build order:",

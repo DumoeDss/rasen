@@ -22,6 +22,7 @@ import type { WirePipelineDefinition } from '../../src/api/types.js';
 
 function baseDef(): WirePipelineDefinition {
   return {
+    version: 1,
     name: 'demo',
     description: 'A demo pipeline',
     stages: [
@@ -94,7 +95,7 @@ describe('renameStage', () => {
 
 describe('stageIdFor', () => {
   it('derives an id from the skill and lowercases/collapses it', () => {
-    const def: WirePipelineDefinition = { name: 'demo', stages: [] };
+    const def: WirePipelineDefinition = { version: 1, name: 'demo', stages: [] };
     expect(stageIdFor('rasen-Review Cycle!', def)).toBe('rasen-review-cycle');
   });
 
@@ -105,7 +106,7 @@ describe('stageIdFor', () => {
   });
 
   it('falls back to "stage" when the skill collapses to nothing (all non-alphanumeric)', () => {
-    const def: WirePipelineDefinition = { name: 'demo', stages: [] };
+    const def: WirePipelineDefinition = { version: 1, name: 'demo', stages: [] };
     expect(stageIdFor('!!!', def)).toBe('stage');
     expect(stageIdFor('   ', def)).toBe('stage');
   });
@@ -114,6 +115,7 @@ describe('stageIdFor', () => {
 describe('updateStageFields — EVERY-loader-field preservation', () => {
   it('preserves every unrelated definition field, byte-identical, when only one field is edited', () => {
     const def: WirePipelineDefinition = {
+      version: 1,
       name: 'full-loader-coverage',
       description: 'Exercises every loader-accepted field',
       agents: {
@@ -221,6 +223,7 @@ describe('isDirty', () => {
   it('is false for a structurally identical draft regardless of key order', () => {
     const def = baseDef();
     const reordered: WirePipelineDefinition = {
+      version: def.version,
       stages: def.stages.map((s) => ({ ...s })),
       description: def.description,
       name: def.name,

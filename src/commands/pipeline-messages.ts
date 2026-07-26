@@ -38,6 +38,7 @@ export interface PipelineMessageValues {
   pipelineTableEntry: { name: string; source: string };
   pipelineTableStages: { stages: string };
   pipelineLabel: { name: string };
+  definitionVersionLabel: { version: number };
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
   buildOrderHeading: undefined;
@@ -129,6 +130,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'pipelineTableEntry',
   'pipelineTableStages',
   'pipelineLabel',
+  'definitionVersionLabel',
   'pipelineNotFound',
   'originLabel',
   'buildOrderHeading',

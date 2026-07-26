@@ -17,6 +17,8 @@ export {
   StageKindSchema,
   VerifyPolicySchema,
   PipelineYamlSchema,
+  PipelineDefinitionVersionSchema,
+  PIPELINE_DEFINITION_VERSION,
   HandoffConfigSchema,
   ReuseConfigSchema,
   ReuseModeSchema,
@@ -57,6 +59,7 @@ export {
 export {
   loadPipeline,
   parsePipeline,
+  serializePipelineYaml,
   validatePipelineSkills,
   validatePipelineDraft,
   PipelineValidationError,

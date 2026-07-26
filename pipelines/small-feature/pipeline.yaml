@@ -1,3 +1,4 @@
+version: 1
 name: small-feature
 description: >-
   Lightweight feature pipeline: propose, apply, a single standard verification

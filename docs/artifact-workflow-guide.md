@@ -103,6 +103,7 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
    - User level: `~/.rasen/pipelines/<name>/pipeline.yaml` (or `$RASEN_HOME/pipelines/<name>/pipeline.yaml` when set)
 2. **Write stages, picking `skill` from the existing ones** (this is "choosing from existing steps"):
    ```yaml
+   version: 1
    name: hotfix
    description: Fast-track — propose, apply, review loop, ship.
    stages:
@@ -119,6 +120,8 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
    rasen pipeline show <name>              # view the buildOrder
    ```
    After that, `/rasen-auto` lists it under `available`, and you can **override** and select it after classification.
+
+`version: 1` identifies the Pipeline definition content format, independently of any `.rasenpkg` package `formatVersion`. Legacy definitions without the field are accepted and normalize to v1; an explicit unsupported or malformed version is refused at `/version`. Scaffold, save, detail/show, and packaged export surfaces emit or expose normalized v1 content, while read/export never rewrites the source definition. The v1 flat `requires` DAG and both current loop declarations (`review-cycle` and `goal`) remain readable and are future-compiler inputs. Today the LEAD playbook owns loop interpretation; Canvas is a definition editor, not a programmatic or nested Pipeline runner.
 
 > Two real constraints: ① **skill names must be exact** — experts are `openspec:xxx` (not `openspec-xxx`), apply is `openspec-apply-change` (not `openspec-apply`); getting it wrong makes `validate` report the skill as not existing; ② **classify will not auto-recommend custom pipelines** (it's a built-in keyword heuristic that only suggests among the three built-ins) — custom pipelines are always in `available`, but you/the user must **manually override** the selection after classification. To make a keyword automatically hit a custom pipeline you currently have to edit the keyword table in `src/commands/pipeline.ts` (a possible follow-up enhancement).
 

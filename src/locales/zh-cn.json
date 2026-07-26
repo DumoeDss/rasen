@@ -141,6 +141,7 @@
       "pipelineTableEntry": "  {name}  [{source}]",
       "pipelineTableStages": "    阶段：{stages}",
       "pipelineLabel": "流水线：{name}",
+      "definitionVersionLabel": "定义版本：{version}",
       "pipelineNotFound": "未找到流水线 '{name}'。可用流水线：\n  {available}",
       "originLabel": "来源：{origin}",
       "buildOrderHeading": "构建顺序：",
