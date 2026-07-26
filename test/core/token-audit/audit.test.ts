@@ -4,11 +4,57 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runAudit } from '../../../src/core/token-audit/audit.js';
+import {
+  AUDIT_REPORT_BASENAME_MAX_BYTES,
+  auditReportBasename,
+  runAudit,
+} from '../../../src/core/token-audit/audit.js';
 import type { ClaudeAuditResult } from '../../../src/core/token-audit/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLAUDE_VALID_FIXTURE_DIR = path.join(__dirname, '..', '..', 'fixtures', 'token-audit', 'claude', 'valid');
+
+describe('auditReportBasename', () => {
+  it('keeps complete Codex UUIDv7 ids distinct when their first eight characters match', () => {
+    const first = '019f9cd1-4b08-7702-a1a0-673e11c69c6f';
+    const second = '019f9cd1-a18f-7063-91c4-913c6a9738fe';
+
+    expect(auditReportBasename('codex', first)).toBe(`session-audit-codex-${first}.json`);
+    expect(auditReportBasename('codex', second)).toBe(`session-audit-codex-${second}.json`);
+    expect(auditReportBasename('codex', first)).not.toBe(auditReportBasename('codex', second));
+  });
+
+  it('returns a stable name for the same canonical identity and separates runtimes', () => {
+    const sessionId = 'same-session-id';
+
+    expect(auditReportBasename('codex', sessionId)).toBe(auditReportBasename('codex', sessionId));
+    expect(auditReportBasename('codex', sessionId)).not.toBe(auditReportBasename('claude', sessionId));
+  });
+
+  it.each([
+    ['Windows-invalid', 'Session:One/Two?'],
+    ['overlong', 'a'.repeat(AUDIT_REPORT_BASENAME_MAX_BYTES)],
+  ])('uses a stable, bounded SHA-256 fallback for a %s session id', (_label, sessionId) => {
+    const basename = auditReportBasename('codex', sessionId);
+
+    expect(basename).toBe(auditReportBasename('codex', sessionId));
+    expect(basename).toMatch(/^session-audit-codex-sha256-[a-f0-9]{64}\.json$/);
+    expect(Buffer.byteLength(basename, 'utf8')).toBeLessThanOrEqual(AUDIT_REPORT_BASENAME_MAX_BYTES);
+    expect(basename).not.toMatch(/[<>:"/\\|?*]/);
+  });
+
+  it('keeps the readable and SHA-256 fallback namespaces disjoint', () => {
+    const unsafeBasename = auditReportBasename('codex', 'Session:One/Two?');
+    const reservedSessionId = unsafeBasename
+      .replace(/^session-audit-codex-/, '')
+      .replace(/\.json$/, '');
+    const reservedIdBasename = auditReportBasename('codex', reservedSessionId);
+
+    expect(reservedSessionId).toMatch(/^sha256-[a-f0-9]{64}$/);
+    expect(reservedIdBasename).not.toBe(unsafeBasename);
+    expect(reservedIdBasename).toMatch(/^session-audit-codex-sha256-[a-f0-9]{64}\.json$/);
+  });
+});
 
 describe('runAudit (Claude path)', () => {
   let dataDir: string;
@@ -88,10 +134,15 @@ describe('runAudit (Claude path)', () => {
     expect(fs.existsSync(explicitOut)).toBe(true);
   });
 
-  it('resolves the default output path under <globalDataDir>/analytics/session-audit-<sid8>.json', async () => {
+  it('resolves the default output path under <globalDataDir>/analytics using runtime and the complete session id', async () => {
     const mainPath = path.join(CLAUDE_VALID_FIXTURE_DIR, 'c4a16986-fixture.jsonl');
     const { outPath } = await runAudit(mainPath, { homedir: dataDir, env: {} });
-    const expected = path.join(dataDir, '.rasen', 'analytics', 'session-audit-c4a16986.json');
+    const expected = path.join(
+      dataDir,
+      '.rasen',
+      'analytics',
+      'session-audit-claude-c4a16986-fixture.json'
+    );
     expect(outPath).toBe(expected);
     expect(fs.existsSync(expected)).toBe(true);
   });
