@@ -38,6 +38,7 @@ describe('relationship health composition (3.6)', () => {
       references: [],
       membership: { stores: [], diagnostics: [] },
       machineHome: { registered: false, dangling: [], worktreeDuplicates: [], relocation: { lingering: [], pendingOrFailed: [] } },
+      bootstrapReadiness: { state: 'complete', findings: [] },
       status: [],
     });
   });
@@ -326,5 +327,149 @@ describe('relationship health composition (3.6)', () => {
   it('omits the skill-version-mismatch finding when versions match (absent input)', () => {
     const health = inspectRelationships(baseInput());
     expect(health.status.some((status) => status.code === 'skill_version_mismatch')).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------
+  // Bootstrap readiness (store-bootstrap-repair-text, design D4/D5)
+  // ---------------------------------------------------------------------
+
+  describe('bootstrap readiness composition', () => {
+    /** A readiness input with all three facts overridden. */
+    function readinessInput(overrides: {
+      resolved?: boolean;
+      reason?: 'not-registered' | 'uid-mismatch' | 'metadata-missing' | 'root-unhealthy' | 'alias-ambiguous' | 'pointer-malformed';
+      hasRemote?: boolean;
+      membershipConfirmed?: boolean;
+      machineHomeRegistered?: boolean;
+    }) {
+      return {
+        storeBinding: {
+          resolved: overrides.resolved ?? true,
+          ...(overrides.reason !== undefined ? { reason: overrides.reason } : {}),
+          ...(overrides.hasRemote ? { hasRemote: true } : {}),
+        },
+        membership: { confirmed: overrides.membershipConfirmed ?? true },
+        machineHomeRegistered: overrides.machineHomeRegistered ?? true,
+      };
+    }
+
+    it('reports complete when all three facts hold', () => {
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({}),
+      });
+      expect(health.bootstrapReadiness.state).toBe('complete');
+      expect(health.bootstrapReadiness.findings).toEqual([]);
+    });
+
+    it('reports degraded when the Store is not-registered with a remote', () => {
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({
+          resolved: false,
+          reason: 'not-registered',
+          hasRemote: true,
+        }),
+      });
+      expect(health.bootstrapReadiness.state).toBe('degraded');
+      const finding = health.bootstrapReadiness.findings[0];
+      expect(finding?.code).toBe('bootstrap_store_missing');
+      expect(finding?.repair).toBe('rasen bootstrap');
+    });
+
+    it('reports blocked when the Store is not-registered with no remote', () => {
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({
+          resolved: false,
+          reason: 'not-registered',
+          hasRemote: false,
+        }),
+      });
+      expect(health.bootstrapReadiness.state).toBe('blocked');
+      const finding = health.bootstrapReadiness.findings[0];
+      expect(finding?.code).toBe('bootstrap_store_missing_no_remote');
+      expect(finding?.repair).toBe('rasen bootstrap');
+    });
+
+    it('does NOT produce a bootstrap finding for an identity-level reason', () => {
+      // A uid-mismatch is NOT a gap bootstrap can close. The state is degraded
+      // (the Store is not resolved), but NO bootstrap finding is produced —
+      // doctor's existing Store-section finding covers it.
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({
+          resolved: false,
+          reason: 'uid-mismatch',
+        }),
+      });
+      expect(health.bootstrapReadiness.state).toBe('degraded');
+      expect(health.bootstrapReadiness.findings).toEqual([]);
+    });
+
+    it('reports degraded with a membership finding when membership is not confirmed', () => {
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({ membershipConfirmed: false }),
+      });
+      expect(health.bootstrapReadiness.state).toBe('degraded');
+      const finding = health.bootstrapReadiness.findings.find(
+        (f) => f.code === 'bootstrap_membership_not_confirmed'
+      );
+      expect(finding?.repair).toBe('rasen bootstrap');
+    });
+
+    it('reports degraded with a machine-home finding when not registered', () => {
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({ machineHomeRegistered: false }),
+      });
+      expect(health.bootstrapReadiness.state).toBe('degraded');
+      const finding = health.bootstrapReadiness.findings.find(
+        (f) => f.code === 'bootstrap_machine_home_not_registered'
+      );
+      expect(finding?.repair).toBe('rasen bootstrap');
+    });
+
+    it('every finding carries a pasteable repair', () => {
+      const health = inspectRelationships({
+        ...baseInput(),
+        bootstrapReadiness: readinessInput({
+          resolved: false,
+          reason: 'not-registered',
+          hasRemote: true,
+          membershipConfirmed: false,
+          machineHomeRegistered: false,
+        }),
+      });
+      expect(health.bootstrapReadiness.findings.length).toBeGreaterThan(0);
+      for (const finding of health.bootstrapReadiness.findings) {
+        expect(finding.repair).toMatch(/^rasen\s/u);
+        expect(finding.repair).not.toContain('<');
+        expect(finding.repair).not.toContain('>');
+      }
+    });
+
+    it('complete requires all three facts', () => {
+      // Any one missing degrades from complete.
+      for (const overrides of [
+        { membershipConfirmed: false },
+        { machineHomeRegistered: false },
+        { resolved: false, reason: 'not-registered' as const, hasRemote: true },
+      ]) {
+        const health = inspectRelationships({
+          ...baseInput(),
+          bootstrapReadiness: readinessInput(overrides),
+        });
+        expect(health.bootstrapReadiness.state, JSON.stringify(overrides)).not.toBe('complete');
+      }
+    });
+
+    it('defaults to complete when no readiness input is provided', () => {
+      // A Store-rooted run or a project with no declaration has no bootstrap
+      // gap to report.
+      const health = inspectRelationships(baseInput());
+      expect(health.bootstrapReadiness).toEqual({ state: 'complete', findings: [] });
+    });
   });
 });

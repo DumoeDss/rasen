@@ -525,23 +525,22 @@ export function rootSelectionErrorFor(
 
   switch (binding.reason) {
     case 'not-registered': {
+      // The rich human guidance (--id flag, config-edit instruction) stays in
+      // the MESSAGE body; the pasteable repair comes from `primaryRepair`,
+      // which inherits the resolver's `[bootstrapRepair, registerRepair,
+      // doctorRepair]` ordering — naming `rasen bootstrap` first (design D1).
       const registered = binding.registered ?? [];
-      if (registered.length === 0) {
-        return build(
-          `Unknown store '${named}'. No stores are registered.`,
-          'no_registered_stores',
-          origin
-            ? `Register the store (rasen store register <path> --id ${named}) or edit ${origin} to name a registered store.`
-            : `Run rasen store setup ${named} or rasen store register <path> first.`
-        );
-      }
-      return build(
-        `Unknown store '${named}'. Registered stores: ${renderRegisteredList(registered)}.`,
-        'unknown_store',
-        origin
-          ? `Register the store (rasen store register <path> --id ${named}) or edit ${origin} to name a registered store.`
-          : 'Pass a registered store id, or run rasen store list.'
-      );
+      const guidance = origin
+        ? ` Register the store (rasen store register <path> --id ${named}) or edit ${origin} to name a registered store.`
+        : registered.length === 0
+          ? ` Run rasen store setup ${named} or rasen store register <path> first.`
+          : ' Pass a registered store id, or run rasen store list.';
+      const message =
+        registered.length === 0
+          ? `Unknown store '${named}'. No stores are registered.${guidance}`
+          : `Unknown store '${named}'. Registered stores: ${renderRegisteredList(registered)}.${guidance}`;
+      const code = registered.length === 0 ? 'no_registered_stores' : 'unknown_store';
+      return build(message, code, primaryRepair(binding));
     }
     case 'alias-ambiguous':
       return build(

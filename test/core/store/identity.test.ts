@@ -481,7 +481,10 @@ describe('store identity', () => {
       if (resolution.kind !== 'unavailable') return;
       expect(resolution.reason).toBe('not-registered');
       expect(resolution.diagnostics[0]?.code).toBe('store_bootstrap_required');
-      expect(resolution.repair[0]).toContain('rasen store register');
+      // Bootstrap is the whole-gap repair, named first (design D1); the
+      // single-step register remains second for the user who wants one step.
+      expect(resolution.repair[0]).toBe('rasen bootstrap');
+      expect(resolution.repair.some((r) => r.includes('rasen store register'))).toBe(true);
     });
 
     it('names the declared remote in the repair when the store is not here', async () => {
@@ -498,7 +501,10 @@ describe('store identity', () => {
       expect(resolution.kind).toBe('unavailable');
       if (resolution.kind !== 'unavailable') return;
       expect(resolution.reason).toBe('not-registered');
-      expect(resolution.repair[0]).toContain('https://example.test/team.git');
+      // Bootstrap first; the register repair (which carries the remote when
+      // one is declared) is second.
+      expect(resolution.repair[0]).toBe('rasen bootstrap');
+      expect(resolution.repair.some((r) => r.includes('https://example.test/team.git'))).toBe(true);
     });
 
     it('reports several alias matches as ambiguous and picks none', async () => {

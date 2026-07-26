@@ -378,7 +378,11 @@ describe('resolveOpenSpecRoot', () => {
       );
       expect(error.message).toContain("Unknown store 'not-registered'");
       expect(error.message).toContain('no network access and no writes');
-      expect(error.diagnostic.fix).toContain('rasen store register');
+      // The fix field carries the pasteable whole-gap repair (design D1):
+      // `rasen bootstrap`, sourced from `primaryRepair(binding)`. The rich
+      // human guidance (--id, config-edit) stays in the message body.
+      expect(error.diagnostic.fix).toBe('rasen bootstrap');
+      expect(error.message).toContain('rasen store register');
     });
 
     it('reports rather than fails on the read-only diagnostic path', async () => {

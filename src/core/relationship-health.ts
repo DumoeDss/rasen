@@ -174,7 +174,68 @@ export interface RelationshipHealth {
   /** Store membership for this project; empty when it belongs to none. */
   membership: MembershipHealth;
   machineHome: MachineHomeHealth;
+  /**
+   * Bootstrap readiness: one read-only answer to "is this machine ready for
+   * this project, and if not, what does it need?" Composed from the same facts
+   * `rasen bootstrap --check` reports, so the two agree by construction
+   * (store-bootstrap-repair-text design D4/D5). F4 (knowledge-bundle-prepare)
+   * extends the INPUT with a `knowledgeBundlePrepared` field; the output shape
+   * does not change.
+   */
+  bootstrapReadiness: BootstrapReadiness;
   status: StoreDiagnostic[];
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap readiness (store-bootstrap-repair-text, design D4/D5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The per-check facts the readiness composer needs, gathered by the caller
+ * (doctor's `gatherHealth`) from inputs it already assembled. Pure data — this
+ * module performs no I/O, so the read-only guarantee lives with the caller.
+ *
+ * F4 (knowledge-bundle-prepare-integration) extends this input with one
+ * optional field:
+ *
+ *   knowledgeBundlePrepared?: boolean;
+ *
+ * The composer then adds one check to its derivation; the output shape does
+ * not change.
+ */
+export interface BootstrapReadinessInput {
+  /** The planning Store's resolution state. */
+  storeBinding: {
+    resolved: boolean;
+    /** Present when the Store did not resolve. */
+    reason?: StoreUnavailableReason;
+    /**
+     * True when the declaration or Store metadata carries a clone source.
+     * When the Store is `not-registered` and has no remote, bootstrap can
+     * register but cannot obtain — the state is `blocked`.
+     */
+    hasRemote?: boolean;
+  };
+  /** Whether the planning Store records this project as a member. */
+  membership: {
+    confirmed: boolean;
+  };
+  /** Whether the current checkout is registered in the machine home. */
+  machineHomeRegistered: boolean;
+}
+
+export interface BootstrapReadinessFinding {
+  /** A stable code for programmatic consumers and locale parity. */
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  /** A copy-pasteable repair command. */
+  repair: string;
+}
+
+export interface BootstrapReadiness {
+  state: 'complete' | 'degraded' | 'blocked';
+  findings: BootstrapReadinessFinding[];
 }
 
 export interface MachineHomeHealth {
@@ -288,6 +349,13 @@ export interface InspectRelationshipsInput {
    * warning already fired earlier in the same session.
    */
   skillVersionMismatch?: { stampVersion: string; cliVersion: string };
+  /**
+   * Bootstrap-readiness facts (store-bootstrap-repair-text design D4/D5).
+   * When absent, the readiness section defaults to `complete` — a caller that
+   * has no planning Store (a Store-rooted run, or a project that declares
+   * none) has no bootstrap gap to report.
+   */
+  bootstrapReadiness?: BootstrapReadinessInput;
 }
 
 function warning(code: string, message: string, fix: string): StoreDiagnostic {
@@ -447,6 +515,96 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     references: input.referenceEntries,
     membership: input.membership ?? { stores: [], diagnostics: [] },
     machineHome,
+    bootstrapReadiness: composeBootstrapReadiness(input.bootstrapReadiness),
     status,
   };
+}
+
+/**
+ * The bootstrap-readiness composer (design D4/D5). Pure composition over the
+ * per-check facts the caller gathered — no I/O. Derives a three-state result
+ * and a findings array, each finding carrying a stable code and a
+ * copy-pasteable repair.
+ *
+ * `complete` only when the Store resolves, membership is confirmed, and the
+ * checkout is registered. `blocked` when the Store is `not-registered` with no
+ * remote (bootstrap can register but cannot obtain). `degraded` otherwise —
+ * including identity-level failures, which produce NO bootstrap finding (the
+ * existing doctor findings cover them; bootstrap cannot repair them).
+ */
+function composeBootstrapReadiness(
+  input: BootstrapReadinessInput | undefined
+): BootstrapReadiness {
+  if (input === undefined) {
+    return { state: 'complete', findings: [] };
+  }
+
+  const findings: BootstrapReadinessFinding[] = [];
+
+  // 1. Store binding — only `not-registered` produces a bootstrap finding.
+  //    Identity-level reasons (uid-mismatch, root-unhealthy, etc.) are NOT
+  //    bootstrap gaps: bootstrap cannot repair them, and doctor's existing
+  //    Store-section findings already name them.
+  if (!input.storeBinding.resolved && input.storeBinding.reason === 'not-registered') {
+    if (!input.storeBinding.hasRemote) {
+      findings.push({
+        code: 'bootstrap_store_missing_no_remote',
+        severity: 'error',
+        message:
+          'A declared Store is not registered on this machine and has no recorded remote. Bootstrap can register it if the checkout is local, but cannot obtain it from nowhere.',
+        repair: 'rasen bootstrap',
+      });
+    } else {
+      findings.push({
+        code: 'bootstrap_store_missing',
+        severity: 'error',
+        message:
+          'A declared Store is not registered on this machine. Bootstrap can clone it from the recorded remote and register it.',
+        repair: 'rasen bootstrap',
+      });
+    }
+  }
+
+  // 2. Membership — only checked when the Store resolved. An unavailable
+  //    Store's membership is unverifiable, not "not recorded."
+  if (input.storeBinding.resolved && !input.membership.confirmed) {
+    findings.push({
+      code: 'bootstrap_membership_not_confirmed',
+      severity: 'warning',
+      message:
+        'The planning Store does not record this project as a member. Bootstrap records the membership when it runs.',
+      repair: 'rasen bootstrap',
+    });
+  }
+
+  // 3. Machine home registration.
+  if (!input.machineHomeRegistered) {
+    findings.push({
+      code: 'bootstrap_machine_home_not_registered',
+      severity: 'warning',
+      message:
+        'This project checkout is not registered in the machine home. Bootstrap registers it when it runs.',
+      repair: 'rasen bootstrap',
+    });
+  }
+
+  // State: the FACTS decide, not the findings count. An identity-level
+  // failure (no bootstrap finding, but Store not resolved) is `degraded`.
+  const allPresent =
+    input.storeBinding.resolved &&
+    input.membership.confirmed &&
+    input.machineHomeRegistered;
+
+  const storeBlocked =
+    !input.storeBinding.resolved &&
+    input.storeBinding.reason === 'not-registered' &&
+    !input.storeBinding.hasRemote;
+
+  const state: BootstrapReadiness['state'] = allPresent
+    ? 'complete'
+    : storeBlocked
+      ? 'blocked'
+      : 'degraded';
+
+  return { state, findings };
 }

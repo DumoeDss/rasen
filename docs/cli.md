@@ -1165,7 +1165,7 @@ the project had no store:
     "pointer": { "shape": "alias", "declared_id": "team-context" },
     "unavailable": {
       "reason": "not-registered",
-      "repair": ["git clone git@github.com:acme/team-context.git <path> && rasen store register <path>", "rasen doctor"]
+      "repair": ["rasen bootstrap", "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>", "rasen doctor"]
     },
     "status": [
       {
@@ -1173,12 +1173,45 @@ the project had no store:
         "code": "store_bootstrap_required",
         "message": "Store team-context is declared by this project but is not registered on this machine.",
         "target": "store.registry",
-        "fix": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>"
+        "fix": "rasen bootstrap"
       }
     ]
   }
 }
 ```
+
+When a declared store is not available, the failure names `rasen bootstrap` as
+the primary repair — the one command that registers, obtains, and prepares
+everything the project declares. The single-step `rasen store register` and
+`rasen doctor` remain in the repair array for the user who wants one step or
+diagnosis. A store with no recorded remote and no supplied path asks for a path
+or remote rather than suggesting bootstrap, because bootstrap cannot infer a
+location either. A checkout that carries a different identity is reported as a
+mismatch — bootstrap cannot repair it, and the failure does not name it.
+
+### Bootstrap readiness (doctor)
+
+Doctor reports a bootstrap-readiness section that composes the same facts
+`rasen bootstrap --check` reports into a single answer: **is this machine
+ready, and if not, what does it need?** The section is read-only — doctor
+reports the gap and changes nothing.
+
+The three states match bootstrap's own:
+
+| State | Meaning |
+| --- | --- |
+| `complete` | The planning store resolves, membership is confirmed, and the checkout is registered. |
+| `degraded` | Something is missing that bootstrap can close: a declared store not registered (with a remote), an unconfirmed membership, or an unregistered checkout. |
+| `blocked` | A declared store has no recorded remote and no supplied path — bootstrap can register a local checkout but cannot obtain one from nowhere. |
+
+Each finding carries a copy-pasteable repair (`rasen bootstrap`). A
+mismatched-identity store does NOT produce a bootstrap finding — it produces
+the existing doctor finding in the Store section above, because bootstrap
+cannot repair a mismatch.
+
+`rasen doctor` and `rasen bootstrap --check` name the same stores as missing
+and the same repairs for each, because both compose from the same resolved
+store binding.
 
 The identity diagnostic codes:
 

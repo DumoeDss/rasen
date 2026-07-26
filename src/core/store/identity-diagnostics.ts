@@ -57,6 +57,22 @@ export function registerRepair(label: StoreIdentityLabel): string {
     : 'rasen store register <path>';
 }
 
+/**
+ * The whole-gap repair: the one command that registers, obtains, and prepares
+ * everything the current project declares (design D2). It carries no Store
+ * selector because bootstrap resolves against the current project — it reads
+ * the project's own declarations — so the unambiguous-selector rule applies to
+ * the Stores bootstrap NAMES IN ITS OUTPUT, not to the `rasen bootstrap`
+ * command itself (which takes no Store argument).
+ *
+ * The `label` parameter is taken for API symmetry with `registerRepair` so a
+ * future caller that renders a description alongside the repair has the same
+ * identity context, even though the command string does not embed it.
+ */
+export function bootstrapRepair(_label: StoreIdentityLabel): string {
+  return 'rasen bootstrap';
+}
+
 /** The command that rewrites a project declaration to name the identity. */
 export function upgradePointerRepair(store: string, uid?: string): string {
   return uid
@@ -80,7 +96,11 @@ export function storeBootstrapRequired(label: StoreIdentityLabel): StoreDiagnost
     'error',
     'store_bootstrap_required',
     `Store ${describeStore(label)} is declared by this project but is not registered on this machine.`,
-    { target: 'store.registry', fix: registerRepair(label) }
+    // The diagnostic fires in exactly the state bootstrap was built to close
+    // (design D3): the one-line `fix` names the whole-gap repair, while the
+    // single-step `register` remains in the resolver's repair array for the
+    // user who wants exactly one step.
+    { target: 'store.registry', fix: bootstrapRepair(label) }
   );
 }
 

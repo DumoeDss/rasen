@@ -181,7 +181,7 @@ describe('config-api router (integration, via real http server)', () => {
       const error = (res.json() as any).error;
       expect(error.code).toBe('space_not_found');
       expect(error.message).toContain('not registered on this machine');
-      expect(error.message).toContain('rasen store register');
+      expect(error.message).toContain('rasen bootstrap');
     });
 
     it('maps an unreadable store declaration to 400, not a 500', async () => {

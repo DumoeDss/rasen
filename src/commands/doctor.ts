@@ -14,7 +14,7 @@ import {
   readOptionalStoreMetadataState,
   storeMetadataUid,
 } from '../core/store/foundation.js';
-import { resolveStoreBinding } from '../core/store/identity.js';
+import { resolveStoreBinding, type StoreUnavailableReason } from '../core/store/identity.js';
 import { storeBindingDeclarationFrom } from '../core/effective-config.js';
 import { gitOriginUrl, isGitRepositoryAtRoot } from '../core/store/git.js';
 import {
@@ -65,6 +65,12 @@ async function gatherHealth(
   } = data;
   const registryUnreadable = registrySnapshot.unreadable;
 
+  // Bootstrap-readiness facts (design D4): hoisted so the gather at the end of
+  // this function can compose them without re-reading the declaration.
+  let planningStoreResolved = false;
+  let planningStoreReason: StoreUnavailableReason | undefined;
+  let planningStoreHasRemote = false;
+
   const input: InspectRelationshipsInput = {
     root,
     rootHealthy: rootInspection.healthy,
@@ -110,6 +116,14 @@ async function gatherHealth(
       const declaration = storeBindingDeclarationFrom(pointer);
       if (declaration.form !== 'absent') {
         const binding = await resolveStoreBinding({ declaration, projectRoot: root.path });
+        // Record the facts the bootstrap-readiness composer needs (design D4).
+        planningStoreResolved = binding.kind === 'resolved';
+        if (binding.kind === 'unavailable') {
+          planningStoreReason = binding.reason;
+        }
+        if (declaration.form === 'durable' && declaration.remote !== undefined) {
+          planningStoreHasRemote = true;
+        }
         input.storeBinding = {
           shape: pointer.shape,
           filePath: pointer.filePath,
@@ -250,6 +264,25 @@ async function gatherHealth(
     }
   } catch {
     // Swallowed; the finding is simply omitted.
+  }
+
+  // Bootstrap readiness (design D4): composed from the facts gathered above —
+  // no new reads. The planning Store's resolution, the membership roster, and
+  // the machine-home entry are all present by now. Only populated when a
+  // planning Store was probed (root.source === 'nearest' with a declaration);
+  // otherwise the readiness defaults to `complete`.
+  if (root.source === 'nearest') {
+    const membershipConfirmed =
+      input.membership?.stores.some((store) => store.roles?.planning === true) ?? false;
+    input.bootstrapReadiness = {
+      storeBinding: {
+        resolved: planningStoreResolved,
+        ...(planningStoreReason !== undefined ? { reason: planningStoreReason } : {}),
+        ...(planningStoreHasRemote ? { hasRemote: true } : {}),
+      },
+      membership: { confirmed: membershipConfirmed },
+      machineHomeRegistered: input.machineHomeEntry !== undefined,
+    };
   }
 
   return {
@@ -430,6 +463,31 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
   for (const pending of health.machineHome.relocation.pendingOrFailed) {
     console.log(`  Relocation pending: ${pending.path} has not been adopted into ${pending.target}.`);
     console.log(`    Fix: run the CLI again to retry automatically, or copy manually: cp -r "${pending.path}" "${pending.target}"`);
+  }
+
+  // Bootstrap readiness (design D4): one read-only answer to "is this machine
+  // ready, and if not, what does it need?" Composed from the same facts
+  // `rasen bootstrap --check` reports, so the two agree by construction.
+  // Rendered after the sections it composes FROM (Store, membership, machine
+  // home) so a reader sees the underlying facts before the summary.
+  console.log('');
+  console.log('Bootstrap readiness');
+  const readiness = health.bootstrapReadiness;
+  console.log(`  State: ${readiness.state}`);
+  if (readiness.findings.length === 0) {
+    if (readiness.state === 'complete') {
+      console.log('  This machine is ready. No bootstrap action needed.');
+    } else {
+      // Degraded/blocked with zero bootstrap findings: the gap is not one
+      // bootstrap closes (e.g. an identity-level failure). The Store section
+      // above carries the detail.
+      console.log('  The gap is not one bootstrap can close; see the Store section above.');
+    }
+  } else {
+    for (const finding of readiness.findings) {
+      console.log(`  - [${finding.severity}] ${finding.message}`);
+      console.log(`    Repair: ${finding.repair}`);
+    }
   }
 
   for (const entry of health.status) {

@@ -107,6 +107,10 @@ describe('store identity CLI surface', () => {
         unavailable?: { reason: string; repair: string[] };
         status: Array<{ code: string; message: string; fix?: string }>;
       } | null;
+      bootstrapReadiness?: {
+        state: string;
+        findings: Array<{ code: string; severity: string; message: string; repair: string }>;
+      };
     };
 
     expect(payload.store).not.toBeNull();
@@ -114,7 +118,14 @@ describe('store identity CLI surface', () => {
     expect(payload.store?.status.map((entry) => entry.code)).toContain(
       'store_bootstrap_required'
     );
-    expect(payload.store?.unavailable?.repair[0]).toContain('rasen store register');
+    expect(payload.store?.unavailable?.repair[0]).toBe('rasen bootstrap');
+
+    // Bootstrap readiness (design D4): the section is composed from the same
+    // facts, so it names the same gap. The Store is not-registered with no
+    // remote → blocked, with a bootstrap finding carrying `rasen bootstrap`.
+    expect(payload.bootstrapReadiness?.state).toBe('blocked');
+    const finding = payload.bootstrapReadiness?.findings[0];
+    expect(finding?.repair).toBe('rasen bootstrap');
   }, 120_000);
 
   it('agrees between human and JSON output on codes and repair commands', async () => {
@@ -125,6 +136,10 @@ describe('store identity CLI surface', () => {
 
     const payload = JSON.parse(json.stdout) as {
       store: { status: Array<{ message: string; fix?: string }> } | null;
+      bootstrapReadiness?: {
+        state: string;
+        findings: Array<{ message: string; repair: string }>;
+      };
     };
     const findings = payload.store?.status ?? [];
     expect(findings.length).toBeGreaterThan(0);
@@ -135,6 +150,74 @@ describe('store identity CLI surface', () => {
         expect(human.stdout).toContain(finding.fix);
       }
     }
+
+    // The bootstrap readiness section appears in BOTH modes with the same
+    // repairs (design D4: human and JSON cannot drift).
+    expect(payload.bootstrapReadiness?.state).toBeTruthy();
+    expect(human.stdout).toContain('Bootstrap readiness');
+    expect(human.stdout).toContain(payload.bootstrapReadiness!.state);
+    for (const finding of payload.bootstrapReadiness!.findings) {
+      expect(human.stdout).toContain(finding.repair);
+    }
+  }, 120_000);
+
+  it('doctor and bootstrap --check agree on the same Stores and repairs', async () => {
+    // The structural guard against drift (design D4 risk, spec scenario
+    // "Diagnosis and bootstrap agree"): both surfaces compose from the same
+    // facts, so they must name the same gap and the same repair.
+    // A projectId is required so bootstrap does not report a separate
+    // project-identity-missing problem that would mask the Store gap.
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: test-project-id\nstore: nowhere\n'
+    );
+
+    const doctor = await runCLI(['doctor', '--json'], { cwd: projectRoot, env: env() });
+    const bootstrap = await runCLI(['bootstrap', '--check', '--json'], {
+      cwd: projectRoot,
+      env: env(),
+    });
+
+    expect(doctor.exitCode, doctor.stderr).toBe(1);
+
+    const doctorPayload = JSON.parse(doctor.stdout) as {
+      bootstrapReadiness?: { state: string; findings: Array<{ repair: string }> };
+    };
+    const bootstrapPayload = JSON.parse(bootstrap.stdout) as {
+      ok: boolean;
+      report: {
+        state: string;
+        stores: Array<{
+          id?: string;
+          class: string;
+          selector: string;
+          repair: Array<{ kind: string; command?: string }>;
+        }>;
+      };
+    };
+
+    // Bootstrap names the Store as missing (absent-without-remote for a
+    // bare-alias declaration with no remote).
+    const missingStore = bootstrapPayload.report.stores.find(
+      (entry) => entry.class !== 'verified'
+    );
+    expect(missingStore).toBeTruthy();
+
+    // Doctor's readiness section names the same gap with the whole-gap repair.
+    expect(doctorPayload.bootstrapReadiness?.state).not.toBe('complete');
+    const doctorRepair = doctorPayload.bootstrapReadiness?.findings[0]?.repair;
+    expect(doctorRepair).toBe('rasen bootstrap');
+
+    // Bootstrap's own repair for the missing Store names the SPECIFIC step
+    // (register/obtain), NOT `rasen bootstrap` — telling the user to run
+    // bootstrap while they are running bootstrap would be circular. Both
+    // surfaces agree the Store is missing; they differ on the command string
+    // by design (doctor gives the summary, bootstrap gives the steps).
+    const bootstrapCommands = missingStore!.repair
+      .filter((r) => r.kind === 'command')
+      .map((r) => r.command ?? '');
+    expect(bootstrapCommands.some((cmd) => cmd.includes('rasen store register'))).toBe(true);
+    expect(bootstrapCommands.some((cmd) => cmd === 'rasen bootstrap')).toBe(false);
   }, 120_000);
 
   it('stops a project-scoped config read whose declared store is unavailable', async () => {
@@ -147,7 +230,7 @@ describe('store identity CLI surface', () => {
     expect(scoped.exitCode).not.toBe(0);
     const output = `${scoped.stdout}${scoped.stderr}`;
     expect(output).toMatch(/not registered on this machine/i);
-    expect(output).toContain('rasen store register');
+    expect(output).toContain('rasen bootstrap');
 
     // The machine scope has no project layer, so no store layer applies: it
     // keeps working (design D4's carve-out).

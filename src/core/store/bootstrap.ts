@@ -2036,15 +2036,21 @@ function buildStoreRepairs(context: {
 
   const landed = (
     resolution.kind === 'unavailable' ? bootstrapRepairsFrom(resolution.repair) : []
-  ).map((repair) =>
-    repair.kind === 'command'
-      ? ({
-          kind: 'command',
-          command: withKnownLocation(repair.command, location),
-          mutates: repair.mutates,
-        } as const)
-      : repair
-  );
+  )
+    // Bootstrap is the command the user is ALREADY running — naming `rasen
+    // bootstrap` as a repair in its OWN output would be circular. The
+    // single-step `register` and `doctor` repairs remain, because they tell
+    // the user what specific step to take (store-bootstrap-repair-text D1).
+    .filter((repair) => !(repair.kind === 'command' && repair.command === 'rasen bootstrap'))
+    .map((repair) =>
+      repair.kind === 'command'
+        ? ({
+            kind: 'command',
+            command: withKnownLocation(repair.command, location),
+            mutates: repair.mutates,
+          } as const)
+        : repair
+    );
 
   if (classification === 'absent-without-remote') {
     return [{ kind: 'supply-path' }, ...disambiguateRepairs(landed, id, selector)];

@@ -636,7 +636,8 @@ describe('effective-config', () => {
       expect(resolution.kind).toBe('unavailable');
       if (resolution.kind !== 'unavailable') return;
       expect(resolution.binding.reason).toBe('not-registered');
-      expect(resolution.binding.repair[0]).toContain('rasen store register');
+      // Bootstrap is the whole-gap repair, named first (design D1).
+      expect(resolution.binding.repair[0]).toBe('rasen bootstrap');
     });
 
     it('reports a malformed pointer as unavailable, never as absent', async () => {

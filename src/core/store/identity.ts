@@ -31,6 +31,7 @@ import {
   type StoreRegistryEntry,
 } from './foundation.js';
 import {
+  bootstrapRepair,
   describeStore,
   registerRepair,
   storeAliasAmbiguous,
@@ -391,7 +392,10 @@ async function resolveByUid(
         expected,
         'not-registered',
         [storeBootstrapRequired(expected)],
-        [registerRepair(expected), doctorRepair()],
+        // Bootstrap first (the whole-gap repair that registers, obtains, and
+        // prepares), the single-step `register` second, `doctor` last for
+        // diagnosis (design D1).
+        [bootstrapRepair(expected), registerRepair(expected), doctorRepair()],
         { registered: registeredCandidates(entries) }
       );
     }
@@ -471,7 +475,8 @@ async function resolveByAlias(
       expected,
       'not-registered',
       [storeBootstrapRequired(expected)],
-      [registerRepair(expected), doctorRepair()],
+      // Same ordering as the uid path (design D1): bootstrap first.
+      [bootstrapRepair(expected), registerRepair(expected), doctorRepair()],
       { registered: registeredCandidates(entries) }
     );
   }
