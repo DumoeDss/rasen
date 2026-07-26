@@ -77,6 +77,11 @@ const PHASE_A_FILES = [
   // resolved to one of its namesakes.
   'src/core/learned-skills/effective.ts',
   'src/core/project-learned-skill-ledger.ts',
+  // knowledge-bundle-export: bundle project identity is resolved through the
+  // project namespace and the identity-keyed project knowledge home. Neither
+  // the closed schema nor its writer may regress to display-name Store lookup.
+  'src/core/knowledge-bundle/schema.ts',
+  'src/core/knowledge-bundle/export.ts',
   'src/core/agent-context.ts',
   'src/commands/doctor.ts',
   'src/commands/store.ts',
