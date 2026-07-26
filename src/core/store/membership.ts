@@ -400,7 +400,17 @@ export interface ProjectStoreCandidateListing {
   diagnostics: StoreDiagnostic[];
 }
 
-function candidateKey(candidate: {
+/**
+ * The identity key this listing de-duplicates on: the resolved root when the
+ * Store is here (two declarations naming one checkout are one Store), else the
+ * permanent identity, else the display alias.
+ *
+ * Exported for `store/bootstrap.ts`, which merges the project's own planning
+ * declaration — not part of this listing — into the same set. Merging on a
+ * second key rule would let a hint and the pointer naming one Store appear
+ * twice, so there is exactly one rule and both callers use it.
+ */
+export function projectStoreCandidateKey(candidate: {
   uid?: string;
   id?: string;
   store?: ResolvedStoreRef;
@@ -467,7 +477,7 @@ export async function listProjectStoreCandidates(
       candidate.diagnostics.push(...binding.diagnostics);
     }
 
-    byKey.set(candidateKey(candidate), candidate);
+    byKey.set(projectStoreCandidateKey(candidate), candidate);
   }
 
   if (projectId !== undefined) {
@@ -484,7 +494,7 @@ export async function listProjectStoreCandidates(
       const membership = await resolveProjectMembership(store, projectId, options);
       if (!membership) continue;
 
-      const key = candidateKey({ store });
+      const key = projectStoreCandidateKey({ store });
       const existing = byKey.get(key);
       if (existing) {
         if (!existing.sources.includes('record')) existing.sources.push('record');
@@ -902,9 +912,9 @@ export async function inspectProjectMembership(
 
   if (input.planningStore && listing.projectId !== undefined) {
     const entries = await readStoreEntries(pathOptions);
-    const planningRoot = candidateKey({ store: input.planningStore });
+    const planningRoot = projectStoreCandidateKey({ store: input.planningStore });
     const planningCandidate = listing.candidates.find(
-      (candidate) => candidate.store && candidateKey({ store: candidate.store }) === planningRoot
+      (candidate) => candidate.store && projectStoreCandidateKey({ store: candidate.store }) === planningRoot
     );
     if (!planningCandidate?.membership) {
       diagnostics.push(

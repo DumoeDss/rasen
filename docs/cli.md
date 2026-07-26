@@ -64,6 +64,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen store adopt [path] --to <store>` | Move a project's planning into a store | `--dry-run --json` for an inert preview |
 | `rasen store eject <project-id> --from <store>` | Restore a store-hosted project | `--into <path> --json`; the destination is resolved explicitly, never guessed |
 | `rasen store migrate-membership <store>` | Convert legacy membership data into records | `--apply --json`; previews by default |
+| `rasen bootstrap --check` | See what this machine still needs | `--json` for the whole gap in one report; reports only, writes nothing |
 | `rasen new change <id>` | Create repo-local change scaffolding | `--json`, plus `--store <id>` to use a registered store as the Rasen root |
 | `rasen workset create [name]` | Compose a personal working view | `--member <path> --json` for non-interactive composition |
 | `rasen workset list` | Browse saved worksets | `--json` for structured views |
@@ -660,6 +661,275 @@ store: team-context
 ```
 
 Normal commands then resolve to the declared store automatically; the root banner and JSON `root` block report `source: "declared"` with the store id, and printed hints still carry `--store <id>`. The declaration is a fallback, never an override: explicit `--store` always wins. Beside real planning folders the declaration does not move where work lands — planning stays local — but it does drive configuration inheritance, and the notice says whether the permanent identity or the display name resolved it. To convert a pointer repo into a local Rasen root, remove the `store:` line and run `rasen init` — init refuses to scaffold while the declaration is present.
+
+## Bootstrap (what this machine still needs)
+
+`rasen bootstrap` answers one question in one run: **what does this machine
+need before this project works?** It reads the project's identity, its planning
+store declaration, and its store membership hints, works out the state of every
+expected store, and reports the whole result — instead of telling you about one
+missing store per failed command.
+
+```bash
+rasen bootstrap --check   [--json] [--path <selector>=<dir>] [--into <dir>]
+rasen bootstrap --dry-run [--json] [--path <selector>=<dir>] [--into <dir>]
+```
+
+**This command reports; it does not repair.** It obtains nothing, registers
+nothing, and writes nothing — no directory, no registration, no minted
+identity, no declaration — on any path, in either mode. Every repair it prints
+is a command that exists today (`rasen store register`, `rasen store
+add-project`, `rasen store doctor`, `git clone`), and nothing it prints says
+"run bootstrap to fix this". The acting half — obtaining and registering a
+store, registering the current checkout, and writing durable declarations — is
+specified separately and is not part of this command yet. That is also why
+`rasen bootstrap` with no mode flag reports which modes exist and exits rather
+than doing something: the bare invocation is reserved for that later work.
+
+### The two modes are two different promises
+
+| | reads local declarations | resolves remotes and target paths | creates directories | runs git | writes registry or declaration |
+|---|---|---|---|---|---|
+| `--check` | yes | **no** | no | no | no |
+| `--dry-run` (preview) | yes | **yes** | no | no | no |
+
+- **`--check`** contacts **no network at all**. It is the mode to run when you
+  do not yet trust the tool with your network: everything it reports comes from
+  files already on this machine.
+- **`--dry-run`** additionally resolves which clone source would be used and
+  names **the exact path** each repository would be placed at. It still creates
+  no directory and runs no version-control operation.
+
+They are requested separately, never through one combined "safe mode" option,
+and passing both is rejected before any work happens.
+
+### Flags
+
+| Flag | Meaning |
+|---|---|
+| `--check` | Check mode: report from local information only, contacting no network. |
+| `--dry-run` | Preview mode: additionally resolve remotes and the exact location each repository would be placed at. |
+| `--json` | Emit the report as JSON. Human and JSON carry the same states, the same missing items, and the same repair commands. |
+| `--path <selector>=<dir>` | The location for one store or project. Repeatable. The selector is required because a location belongs to one repository — the store's display name, or its permanent identity when the name is ambiguous here. |
+| `--into <dir>` | A parent directory. Each repository that has no explicit `--path` is previewed at this parent plus a safe name derived from its clone source. |
+
+The report exits 0 whatever it finds; the outcome is the `state` field, not the
+exit code. Only an invalid invocation exits 1.
+
+### How each expected store is classified
+
+Every store the project expects is reported in exactly one state, together with
+what would resolve it:
+
+- **available and verified** — registered here, identity and root verify.
+- **present on this machine but not registered** — a location you supplied
+  holds this store's checkout; registering that location is the repair.
+- **not here, obtainable from its recorded remote** — the declaration records a
+  clone source.
+- **not here, and no location is recorded for it** — bootstrap reports that a
+  path is required. It never guesses one from a display name, a sibling
+  directory, or a path some other machine recorded.
+- **cannot be resolved on this machine** — an identity mismatch, an unhealthy
+  root, missing metadata, or a name matching two stores. This blocks the report.
+
+**Bootstrap never searches your disk.** "Present but not registered" is only
+reported for a location you name with `--path` or `--into`. An unregistered
+store you do not point at is reported as *absent* — with `git clone` as its
+repair, which would give you a second checkout. If you already have the store
+somewhere, name it: `rasen bootstrap --check --path <store>=<dir>`. Scanning the
+filesystem for unregistered stores is deliberately not done, and no landed
+surface offers it.
+
+A store's own record of the project is reported alongside: **confirmed**, **not
+recorded** (with the repair that would record it), or **cannot be verified from
+this machine**. "Cannot be verified" covers both causes — the store is not here,
+*or* the store is here and its record for this project will not parse. Neither
+is ever reported as a store that does not record the project: the answer is
+unknown, not "no". And bootstrap prints **no state-changing repair on an
+unknown** — on an unreadable record the repair is to make the record readable,
+never `rasen store add-project`, which would write over an answer that may
+already be correct.
+
+The whole run ends in exactly one of three states:
+
+- `complete` — nothing is missing.
+- `degraded` — something is missing, and every item names its repair.
+- `blocked` — something cannot be resolved or read at all.
+
+`blocked` is a **reported** result, not a crash. A store declaration that cannot
+be understood, a checkout that does not verify as the store it claims, and state
+this machine keeps that cannot be read — an unparseable store registry, a corrupt
+`store.yaml` — all come back as `blocked` naming the file and the repair, in
+human and JSON alike. A broken machine is precisely what this command exists to
+describe, so it describes it rather than failing on it.
+
+### Where a previewed location comes from
+
+Preview picks a location by stated priority, and never invents one:
+
+1. an explicit `--path <selector>=<dir>`;
+2. otherwise `--into <dir>` plus a safe name derived from the clone source —
+   with no separator, no traversal, and no name a filesystem reserves;
+3. otherwise it reports that a location must be supplied, and names no
+   candidate.
+
+A location that already has contents, or that already holds a checkout, is
+reported as **refused** rather than presented as one that would be used. Paths
+are compared canonically, so a drive-letter or separator difference is not a
+different location. A path recorded by another machine never influences the
+choice.
+
+### Starting from a store checkout
+
+Run inside a store checkout instead of a project, and bootstrap reports the
+store's identity and lists every project the store records — each as already
+present on this machine, as obtainable from a recorded remote, as neither, or as
+undetermined when a registered project's own identity cannot be read and so this
+machine cannot say whether it already holds it. A project the store records that
+nothing here can locate is said to be exactly that; it is never quietly called
+obtainable. A run that could not read one of the store's records is never
+reported as `complete`. It obtains no project and registers
+nothing, however many the store records. A checkout that does not verify as the
+store it claims to be is reported as blocked, naming the mismatch; so is one
+whose `store.yaml` exists but cannot be parsed, which is reported as unreadable
+state rather than as "not a store checkout".
+
+### JSON examples
+
+A **complete** result — this machine needs nothing:
+
+```json
+{
+  "ok": true,
+  "report": {
+    "mode": "check",
+    "origin": "project",
+    "state": "complete",
+    "project": {
+      "root": "/home/dev/acme-api",
+      "projectId": "3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11",
+      "declaresStore": true,
+      "declarationPath": "/home/dev/acme-api/rasen/config.yaml"
+    },
+    "stores": [
+      {
+        "key": "root:/home/dev/stores/team-context",
+        "sources": ["planning", "hint"],
+        "uid": "9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+        "id": "team-context",
+        "root": "/home/dev/stores/team-context",
+        "selector": "team-context",
+        "class": "verified",
+        "membership": { "state": "confirmed", "repair": [] },
+        "repair": [],
+        "diagnostics": []
+      }
+    ],
+    "projects": [],
+    "problems": [],
+    "diagnostics": []
+  }
+}
+```
+
+A **degraded** result — a store is missing, and the repair is named:
+
+```json
+{
+  "ok": true,
+  "report": {
+    "mode": "preview",
+    "origin": "project",
+    "state": "degraded",
+    "project": {
+      "root": "/home/dev/acme-api",
+      "projectId": "3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11",
+      "declaresStore": true,
+      "declarationPath": "/home/dev/acme-api/rasen/config.yaml"
+    },
+    "stores": [
+      {
+        "key": "uid:9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+        "sources": ["planning", "hint"],
+        "uid": "9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7",
+        "id": "team-context",
+        "remote": "git@github.com:acme/team-context.git",
+        "selector": "team-context",
+        "class": "absent-with-remote",
+        "reason": "not-registered",
+        "membership": {
+          "state": "unverifiable-here",
+          "repair": [
+            {
+              "kind": "command",
+              "command": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>"
+            },
+            { "kind": "command", "command": "rasen doctor" }
+          ]
+        },
+        "repair": [
+          {
+            "kind": "command",
+            "command": "git clone git@github.com:acme/team-context.git <path> && rasen store register <path>"
+          },
+          { "kind": "command", "command": "rasen doctor" }
+        ],
+        "location": {
+          "kind": "usable",
+          "path": "/home/dev/stores/team-context",
+          "source": "parent-and-derived-name"
+        },
+        "diagnostics": []
+      }
+    ],
+    "projects": [],
+    "problems": [],
+    "diagnostics": []
+  }
+}
+```
+
+A **blocked** result — the declaration itself cannot be understood:
+
+```json
+{
+  "ok": true,
+  "report": {
+    "mode": "check",
+    "origin": "project",
+    "state": "blocked",
+    "project": {
+      "root": "/home/dev/acme-api",
+      "projectId": "3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11",
+      "declaresStore": false,
+      "declarationPath": "/home/dev/acme-api/rasen/config.yaml"
+    },
+    "stores": [],
+    "projects": [],
+    "problems": [
+      {
+        "kind": "declaration-malformed",
+        "path": "/home/dev/acme-api/rasen/config.yaml",
+        "reason": "pointer-malformed",
+        "repair": [
+          { "kind": "manual", "instruction": "Edit /home/dev/acme-api/rasen/config.yaml" },
+          { "kind": "command", "command": "rasen doctor" }
+        ],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "invalid_store_pointer",
+            "message": "The store declaration in /home/dev/acme-api/rasen/config.yaml cannot be read (the store key must be a single store id string).",
+            "target": "store.pointer",
+            "fix": "Fix or remove the store: declaration in /home/dev/acme-api/rasen/config.yaml."
+          }
+        ]
+      }
+    ],
+    "diagnostics": []
+  }
+}
+```
 
 ## Doctor (relationship health)
 

@@ -546,6 +546,35 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    // store-bootstrap-diagnose: reporting only. No flag that would obtain,
+    // register, or write is defined here, because defining one would promise
+    // it — the acting half adds them, and every flag below keeps its meaning.
+    name: 'bootstrap',
+    description: 'Report what this machine still needs before this project works',
+    flags: [
+      {
+        name: 'check',
+        description: 'Check mode: report from local information only, contacting no network',
+      },
+      {
+        name: 'dry-run',
+        description:
+          'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
+      },
+      COMMON_FLAGS.json,
+      {
+        name: 'path',
+        description: 'Location for one store or project, as <selector>=<dir>; repeatable',
+        takesValue: true,
+      },
+      {
+        name: 'into',
+        description: 'Parent directory a derived name would be placed under',
+        takesValue: true,
+      },
+    ],
+  },
+  {
     name: 'doctor',
     description: 'Report relationship health for the resolved Rasen root',
     flags: [

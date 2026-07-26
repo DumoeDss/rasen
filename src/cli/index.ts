@@ -27,6 +27,7 @@ import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
+import { registerBootstrapCommand } from '../commands/bootstrap.js';
 import {
   registerArchiveRelocateSubcommand,
   registerHomeCommand,
@@ -381,6 +382,7 @@ registerSchemeCommand(program);
 registerKnowledgeCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);
+registerBootstrapCommand(program);
 registerDoctorCommand(program);
 registerContextCommand(program);
 registerWorksetCommand(program);

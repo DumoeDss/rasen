@@ -54,6 +54,13 @@ const PHASE_A_FILES = [
   'src/core/project-home.ts',
   'src/core/store/identity.ts',
   'src/core/store/migration-ops.ts',
+  // store-bootstrap-diagnose: the report resolves the project's planning
+  // declaration and every membership hint through `resolveStoreBinding`, and
+  // the command is the surface that prints the result — so both must stay off
+  // the compat reader, whose by-id lookup would let a namesake Store be
+  // reported as the declared one.
+  'src/core/store/bootstrap.ts',
+  'src/commands/bootstrap.ts',
   // project-keyed-store-membership: the membership provider reaches every
   // Store through `resolveStoreBinding` and enumerates the registry through
   // its own reader, so the ban must cover it.
@@ -118,6 +125,10 @@ const POINTER_VALUE_ALLOWLIST: Record<string, string> = {
   'src/core/effective-config.ts': 'reads it inside the alias arm of the declaration bridge',
   'src/commands/doctor.ts': 'reports the declared display alias, as the declared alias',
   'src/core/store/upgrade-identity.ts': 'guarded by pointer.shape === alias on the same line',
+  // store-bootstrap-diagnose: presence is tested with `hasStoreDeclaration`;
+  // the alias is read only to build the declaration's alias arm and to label
+  // the reported Store, both guarded by the shape on the same expression.
+  'src/core/store/bootstrap.ts': 'reads the declared display alias, as the declared alias',
   // Both entries retired by unified-session-runtime-context: the launch
   // resolver's member check and the knowledge resolver's "planning is
   // externalized" check now go through `hasStoreDeclaration` +
