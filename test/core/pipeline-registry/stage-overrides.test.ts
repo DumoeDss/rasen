@@ -6,6 +6,7 @@ import {
   resolveEffectiveStage,
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
+  resolvePipelineRoleRuntimes,
   parsePipeline,
   type PipelineStageOverrides,
 } from '../../../src/core/pipeline-registry/index.js';
@@ -155,7 +156,7 @@ describe('stage resolver top layer', () => {
   it('without a runtime override runtimeSource mirrors the bundle source', () => {
     const resolved = resolveStageRuntimeConfig(stage('propose'), PIPELINE, undefined, {});
     expect(resolved.runtime).toBe('claude');
-    expect(resolved.runtimeSource).toBe('default');
+    expect(resolved.runtimeSource).toBe('legacy-default');
   });
 
   it('a per-stage handoff instance tops the threshold chain', () => {
@@ -187,6 +188,7 @@ describe('resolveEffectiveStage', () => {
     const review = resolveEffectiveStage(stage('review-stage'), PIPELINE, { overrides, basePolicy: OFF_FLAG });
     expect(review.gate).toEqual({ effective: false, source: 'autopilot-flag' });
     expect(review.runtime).toEqual({ value: 'codex', source: 'stage-override-project' });
+    expect(review.dispatchMode).toBe('legacy-fallback');
   });
 
   it('with no overrides falls through cleanly (empty maps)', () => {
@@ -196,5 +198,42 @@ describe('resolveEffectiveStage', () => {
     });
     expect(propose.gate).toEqual({ effective: true, source: 'stage' });
     expect(propose.runtime.value).toBe('claude');
+    expect(propose.runtime.source).toBe('legacy-default');
+    expect(propose.dispatchMode).toBe('legacy-fallback');
+  });
+});
+
+describe('resolvePipelineRoleRuntimes', () => {
+  it('inherits a recognized host and labels the dispatch route', () => {
+    const resolved = resolvePipelineRoleRuntimes(PIPELINE, emptyOverrides, {
+      runtime: 'codex',
+      source: 'codex-thread-id',
+    });
+    expect(resolved.planner).toEqual({
+      runtime: 'codex',
+      source: 'host',
+      dispatchMode: 'native',
+    });
+  });
+
+  it('keeps explicit declarations above host inheritance', () => {
+    const pipeline = parsePipeline(`
+name: declared-role
+agents:
+  reviewer: claude
+stages:
+  - id: review
+    role: reviewer
+    skill: rasen-review
+`);
+    const resolved = resolvePipelineRoleRuntimes(pipeline, emptyOverrides, {
+      runtime: 'codex',
+      source: 'codex-thread-id',
+    });
+    expect(resolved.reviewer).toEqual({
+      runtime: 'claude',
+      source: 'declaration',
+      dispatchMode: 'unsupported',
+    });
   });
 });

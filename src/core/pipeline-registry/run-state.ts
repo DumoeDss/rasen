@@ -66,6 +66,7 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
  */
 export const RunStateWorkerSchema = z.object({
   runtime: AgentRuntimeSchema.optional(),
+  dispatchMode: z.enum(['native', 'exec-bridge', 'legacy-fallback']).optional(),
   role: z.string().optional(),
   agentId: z.string().optional(),
   transcript: z.string().optional(),
@@ -85,6 +86,41 @@ export const RunStateWorkerSchema = z.object({
   updatedAt: z.string().optional(),
 }).passthrough();
 export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;
+export type RunStateDispatchMode = NonNullable<RunStateWorker['dispatchMode']>;
+
+export interface WorkerDispatchInference {
+  dispatchMode?: RunStateDispatchMode;
+  inferred: boolean;
+  warning?: string;
+}
+
+/**
+ * Resolve lifecycle mechanics for archived worker records without inventing a
+ * handle. A Codex thread is the verified exec-bridge shape; agent handles are
+ * native. Transcript-only Codex records remain ambiguous and fall back to
+ * artifact/transcript reconstruction with a warning.
+ */
+export function inferWorkerDispatchMode(
+  worker: RunStateWorker
+): WorkerDispatchInference {
+  if (worker.dispatchMode) {
+    return { dispatchMode: worker.dispatchMode, inferred: false };
+  }
+  if (worker.runtime === 'codex' && worker.threadId) {
+    return { dispatchMode: 'exec-bridge', inferred: true };
+  }
+  if (worker.agentId) {
+    return { dispatchMode: 'native', inferred: true };
+  }
+  if (worker.runtime === 'claude' && worker.transcript) {
+    return { dispatchMode: 'native', inferred: true };
+  }
+  return {
+    inferred: true,
+    warning:
+      'Worker dispatch mode is ambiguous; use the recorded transcript/artifacts for conservative reconstruction.',
+  };
+}
 
 /**
  * A single mid-stage handoff: an exhausted worker distilled its state to a

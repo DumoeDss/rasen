@@ -33,12 +33,14 @@ export interface PipelineMessageValues {
   selectedStoreRoot: { store: string; path: string };
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
+  unknownHostRuntimeWarning: { override: string };
   noPipelinesFound: undefined;
   availablePipelinesHeading: undefined;
   pipelineTableEntry: { name: string; source: string };
   pipelineTableStages: { stages: string };
   pipelineLabel: { name: string };
   definitionVersionLabel: { version: number };
+  hostRuntimeLabel: { runtime: string; source: string };
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
   buildOrderHeading: undefined;
@@ -54,6 +56,7 @@ export interface PipelineMessageValues {
   stageMetaVerifyPolicy: { policy: string };
   stageMetaRuntime: { runtime: string };
   stageMetaRuntimeSource: { runtime: string; source: string };
+  stageMetaDispatch: { mode: string };
   stageMetaSessionReuse: { session: string };
   stageMetaSandbox: { sandbox: string };
   stageMetaHandoff: { threshold: string; source: string };
@@ -62,8 +65,14 @@ export interface PipelineMessageValues {
   projectOverrideLabel: { path: string };
   roleRuntimesHeading: undefined;
   stagesHeading: undefined;
-  agentRoleLine: { role: string; runtime: string };
-  agentStageLine: { id: string; role: string; runtime: string; source: string };
+  agentRoleLine: { role: string; runtime: string; source: string; dispatch: string };
+  agentStageLine: {
+    id: string;
+    role: string;
+    runtime: string;
+    source: string;
+    dispatch: string;
+  };
   invalidRuntime: { runtime: string; role: string };
   suggestedPipeline: { pipeline: string };
   matchedIndicators: { indicators: string };
@@ -125,12 +134,14 @@ export const PIPELINE_MESSAGE_KEYS = [
   'selectedStoreRoot',
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
+  'unknownHostRuntimeWarning',
   'noPipelinesFound',
   'availablePipelinesHeading',
   'pipelineTableEntry',
   'pipelineTableStages',
   'pipelineLabel',
   'definitionVersionLabel',
+  'hostRuntimeLabel',
   'pipelineNotFound',
   'originLabel',
   'buildOrderHeading',
@@ -146,6 +157,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'stageMetaVerifyPolicy',
   'stageMetaRuntime',
   'stageMetaRuntimeSource',
+  'stageMetaDispatch',
   'stageMetaSessionReuse',
   'stageMetaSandbox',
   'stageMetaHandoff',
@@ -313,7 +325,11 @@ export function formatPipelineExecutionNotice(
   notice: PipelineExecutionNotice,
   locale: CliLocale = getCliLocale()
 ): string {
-  return getPipelineMessages(locale).format('staleProfileWorkflowsWarning', {
+  const messages = getPipelineMessages(locale);
+  if (notice.kind === 'unknown-host-runtime') {
+    return messages.format('unknownHostRuntimeWarning', { override: notice.override });
+  }
+  return messages.format('staleProfileWorkflowsWarning', {
     workflows: notice.workflowIds.join(', '),
   });
 }

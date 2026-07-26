@@ -118,6 +118,57 @@ stages:
     });
   });
 
+  it('keeps an explicit stage runtime separate from role-wide reuse runtime', () => {
+    const conflicting = parsePipeline(`
+name: stage-vs-role
+agents:
+  planner: claude
+  reviewer: claude
+stages:
+  - id: plan
+    skill: rasen-propose
+    role: planner
+  - id: review
+    skill: rasen-review
+    role: reviewer
+    runtime: codex
+    requires: [plan]
+`);
+    const conflictingContext = {
+      bindings: {
+        project: {
+          claude: 'claude-policy',
+          codex: 'codex-policy',
+        },
+      },
+      schemes,
+      runtimes: { planner: 'claude' as const, reviewer: 'claude' as const },
+    };
+
+    expect(
+      resolveStageHandoffConfig(
+        conflicting.stages[1]!,
+        conflicting,
+        undefined,
+        undefined,
+        undefined,
+        conflictingContext
+      )
+    ).toMatchObject({
+      threshold: 0.61,
+      binding: { scope: 'project', row: 'codex', scheme: 'codex-policy' },
+    });
+    expect(resolvePipelineReuseConfig(conflicting, conflictingContext))
+      .toMatchObject({
+        roles: { planner: 0.22 },
+        bindings: {
+          roles: {
+            planner: { scope: 'project', row: 'claude', scheme: 'claude-policy' },
+          },
+        },
+      });
+  });
+
   it('reports dangling bindings and falls back without throwing', () => {
     const resolved = resolvePipelineReuseConfig(pipeline, {
       bindings: { project: { codex: 'missing' } },
@@ -138,4 +189,46 @@ stages:
       roles: { planner: 0.4, implementer: 0.4 },
     });
   });
+
+  it.each([
+    ['claude', 'claude-code', 'claude-policy', 0.52],
+    ['codex', 'codex-thread-id', 'codex-policy', 0.61],
+    ['unknown', 'unknown', 'claude-policy', 0.52],
+  ] as const)(
+    'uses the %s host-derived runtime row for implicit stages and reuse roles',
+    (runtime, source, scheme, threshold) => {
+      const implicit = parsePipeline(`
+name: host-bound
+stages:
+  - id: plan
+    skill: rasen-propose
+    role: planner
+`);
+      const hostContext = {
+        bindings: {
+          project: {
+            claude: 'claude-policy',
+            codex: 'codex-policy',
+          },
+        },
+        schemes,
+        host: { runtime, source },
+      };
+      expect(
+        resolveStageHandoffConfig(
+          implicit.stages[0]!,
+          implicit,
+          undefined,
+          undefined,
+          undefined,
+          hostContext
+        )
+      ).toMatchObject({
+        threshold,
+        binding: { row: runtime === 'unknown' ? 'claude' : runtime, scheme },
+      });
+      expect(resolvePipelineReuseConfig(implicit, hostContext).bindings?.roles?.planner)
+        .toMatchObject({ row: runtime === 'unknown' ? 'claude' : runtime, scheme });
+    }
+  );
 });
