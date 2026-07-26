@@ -211,6 +211,30 @@ describe('InitCommand', () => {
       expect(await fileExists(skillFile)).toBe(true);
     });
 
+    it('should install Codex skills at an externalized repository root without creating local planning directories', async () => {
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const openspecPath = path.join(testDir, 'rasen');
+      const configPath = path.join(openspecPath, 'config.yaml');
+      await fs.mkdir(openspecPath, { recursive: true });
+      await fs.writeFile(configPath, 'store: team-context\n');
+
+      const initCommand = new InitCommand({
+        tools: 'codex',
+        force: true,
+        profile: 'core',
+      });
+      await initCommand.execute(await fs.realpath(testDir));
+
+      const skillFile = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(skillFile)).toBe(true);
+      const configContent = await fs.readFile(configPath, 'utf-8');
+      expect(configContent).toContain('store: team-context');
+      expect(configContent).not.toContain('profile:');
+      expect(await directoryExists(path.join(openspecPath, 'specs'))).toBe(false);
+      expect(await directoryExists(path.join(openspecPath, 'changes'))).toBe(false);
+      expect(await directoryExists(path.join(openspecPath, 'changes', 'archive'))).toBe(false);
+    });
+
     it('should install Hermes skills to the resolved Hermes home, not project-local .hermes/', async () => {
       const hermesHome = path.join(testDir, '.hermes-home');
       process.env.HERMES_HOME = hermesHome;
