@@ -29,6 +29,7 @@ const ID = 'go-sql-transaction-locking';
 describe('retention codify end-to-end', () => {
   let home: string;
   let projectRoot: string;
+  let projectId: string;
   let originalEnv: NodeJS.ProcessEnv;
   let originalCwd: string;
   let originalTTY: boolean | undefined;
@@ -74,7 +75,9 @@ describe('retention codify end-to-end', () => {
     description: 'Lock rows in a transaction with SELECT ... FOR UPDATE.',
     instructions: '## When\nConcurrent updates.\n## Steps\nUse FOR UPDATE.\n## Done\nNo lost update.',
     applicability: { mode: 'all', markers: ['go.mod'] },
-    evidence: [{ projectId: 'project-a', change: 'add-locking', artifact: 'review', digest: DIGEST }],
+    // The owning project's real identity: a project record's provenance is
+    // checked against its authoritative owner rather than taken on trust.
+    evidence: [{ projectId, change: 'add-locking', artifact: 'review', digest: DIGEST }],
     ...overrides,
   });
 
@@ -97,7 +100,7 @@ describe('retention codify end-to-end', () => {
     fs.mkdirSync(path.join(projectRoot, 'rasen', 'changes'), { recursive: true });
     fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     fs.writeFileSync(path.join(projectRoot, 'go.mod'), 'module example\n');
-    await resolveProjectHome(projectRoot);
+    projectId = (await resolveProjectHome(projectRoot))!.projectId;
     // Active codify profile authorizes project-scoped mutations.
     saveGlobalConfig({ featureFlags: {}, profile: 'custom', workflows: ['apply'], retention: 'codify' });
 
@@ -158,7 +161,7 @@ describe('retention codify end-to-end', () => {
       writeCandidate(
         projectCandidate({
           evidence: [
-            { projectId: 'project-a', change: 'add-locking', artifact: injection, digest: DIGEST },
+            { projectId, change: 'add-locking', artifact: injection, digest: DIGEST },
           ],
         })
       ),

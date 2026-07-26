@@ -781,6 +781,12 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           {
+            name: 'approve-store',
+            description:
+              'Approve a store publication non-interactively, naming the store it applies to',
+            takesValue: true,
+          },
+          {
             name: 'approve-global',
             description: 'Approve a global create or promotion non-interactively',
           },
@@ -808,9 +814,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',
@@ -838,9 +844,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',
@@ -868,9 +874,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',

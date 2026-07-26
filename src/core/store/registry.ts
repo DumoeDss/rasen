@@ -692,13 +692,14 @@ export async function readRegistrySnapshot(
  * A file imports this. The remaining consumers are retired by their owning
  * sibling change:
  *
- * - `learned-skills/context.ts` — `store-aware-learned-skills-integration`
- * - `management-api/spaces.ts` — `unified-session-runtime-context`
- * - `management-api/session-launch-context.ts` — `unified-session-runtime-context`
+ * - `management-api/spaces.ts` — the enumeration is legitimate; a later change
+ *   decides whether to retire the import outright.
  * - `store/operations.ts` (`listStores`) — none; listing IS its job.
  *
- * Each of those children MUST add its file to the guard test's list when it
- * migrates, or the ban silently stops covering it.
+ * Retired so far: `learned-skills/context.ts` and
+ * `management-api/session-launch-context.ts`. Each remaining consumer MUST be
+ * added to the guard test's Phase A list when it migrates, or the ban silently
+ * stops covering it.
  */
 export async function listRegisteredStores(
   options: ListRegisteredStoresOptions = {}

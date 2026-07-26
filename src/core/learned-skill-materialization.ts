@@ -51,17 +51,26 @@ import {
 
 export const LEARNED_SKILL_CONTENT_FILE = 'SKILL.md';
 
+/**
+ * The scopes a record can be MATERIALIZED from. A Store's catalog is not one
+ * of them here: what a project receives from its Stores — precedence,
+ * applicability, conflicts — is the sibling change's resolution, and a Store
+ * record reaching a tool home before that lands would be materializing a
+ * decision nobody has made yet.
+ */
+type MaterializedLearnedSkillScope = Exclude<LearnedSkillScope, 'store'>;
+
 /** One materialized copy created, updated, or removed during reconciliation. */
 export interface LearnedMaterializationOutcome {
   id: string;
-  skillScope: LearnedSkillScope;
+  skillScope: MaterializedLearnedSkillScope;
   targetPath: string;
 }
 
 /** A learned skill deliberately left unmaterialized, with an actionable reason. */
 export interface LearnedMaterializationSkip {
   id: string;
-  skillScope: LearnedSkillScope;
+  skillScope: MaterializedLearnedSkillScope;
   targetPath?: string;
   reason: 'collision' | 'global-only-home';
   message: string;
@@ -141,7 +150,7 @@ export function renderMaterializedSkill(record: CanonicalLearnedSkill): string {
 /** A learned skill Rasen wants materialized into a skill home. */
 interface DesiredMaterialization {
   id: string;
-  skillScope: LearnedSkillScope;
+  skillScope: MaterializedLearnedSkillScope;
   contentDigest: string;
   content: string;
 }
@@ -149,7 +158,7 @@ interface DesiredMaterialization {
 /** A materialized copy the ledger currently tracks (absolute path). */
 interface TrackedMaterialization {
   id: string;
-  skillScope: LearnedSkillScope;
+  skillScope: MaterializedLearnedSkillScope;
   contentDigest: string;
   targetPath: string;
   sha256: string;

@@ -9,8 +9,12 @@
 export * from './constants.js';
 export * from './types.js';
 export {
+  DurableEvidenceOwnerRefSchema,
+  DurableKnowledgeOwnerRefSchema,
   LearnedSkillCandidateSchema,
   LearnedSkillManifestSchema,
+  LearnedSkillManifestV1Schema,
+  LearnedSkillManifestV2Schema,
   FrozenExecutionRefSchema,
   FrozenKnowledgeContextSchema,
   KnowledgeOwnerRefSchema,
@@ -18,6 +22,16 @@ export {
   type ParsedLearnedSkillCandidate,
   type ParsedLearnedSkillManifest,
 } from './schema.js';
+export {
+  compareDurableOwners,
+  describeDurableOwner,
+  durableOwnerFrom,
+  durableOwnerKey,
+  durableOwnerSelector,
+  isDurableEvidenceOwner,
+  sameDurableOwner,
+  storeOwnerFrom,
+} from './owner-identity.js';
 export {
   checkLearnedSkillId,
   isValidLearnedSkillId,
@@ -30,27 +44,52 @@ export {
   type ApplicabilityCheck,
 } from './applicability.js';
 export {
+  canonicalPathsEqual,
   learnedSkillDir,
   probeStoreWritable,
+  resolveCanonicalStore,
   resolveGlobalStore,
   resolveProjectStore,
+  resolveRegisteredKnowledgeStore,
   type ProjectStoreResolution,
   type ResolvedStore,
 } from './stores.js';
 export {
   buildCanonicalContent,
+  buildManifestV1,
+  buildManifestV2,
   dedupeEvidence,
+  dedupeTypedEvidence,
   digestContent,
   distinctProjectIds,
   evidenceTupleKey,
   loadStoreCatalog,
+  normalizeEvidence,
   readCanonicalRecord,
+  readStoreCatalog,
   serializeManifest,
   type CanonicalRecordRead,
   type DedupedEvidence,
+  type DedupedTypedEvidence,
+  type StoreCatalogRead,
+  type UnreadableCanonicalRecord,
 } from './catalog.js';
+export {
+  PromotionSourceError,
+  promotionSnapshotsEqual,
+  queryStoreMemberProjects,
+  resolvePromotionSources,
+  sourceProjectIds,
+  type ResolvedPromotionSources,
+  type StoreKnowledgeMember,
+  type StoreMemberQuery,
+} from './authority.js';
 export { commitLearnedSkillPlan, planLearnedSkillMutation } from './mutate.js';
-export { listCanonicalLearnedSkills, resolveLearnedSkills } from './resolve.js';
+export {
+  listCanonicalLearnedSkills,
+  readCanonicalLearnedSkillCatalog,
+  resolveLearnedSkills,
+} from './resolve.js';
 export {
   KnowledgeContextError,
   freezeKnowledgeContext,

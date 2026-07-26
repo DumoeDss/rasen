@@ -51,18 +51,44 @@ Learned skills are **registry records, not workflows.** They never appear in a p
 ```text
 <global data dir>/learned-skills/<id>/         # global scope
 <project machine home>/learned-skills/<id>/    # project scope
+<store repo>/rasen/learned-skills/<id>/        # store scope
 ```
 
 Each canonical directory holds a strict `learned-skill.yaml` manifest (identity, stable knowledge key, scope, status, generated-ownership marker, content digest, applicability, evidence references, timestamps) and a generated `SKILL.md`. A project-scoped write requires a registered project with a resolved machine home — there is no in-repository fallback; an unregistered project gets `rasen init` guidance instead.
+
+A **Store's** catalog is the one exception to "never in the repository", and deliberately so: a Store's knowledge exists to be shared, so it lives in the Store's own repo beside its planning content and travels with a clone. Nothing else Rasen writes for a Store goes there — the mutation lock lives under the machine data directory, so reading or writing knowledge never leaves an untracked file in the team's `git status`.
 
 Planning location is not knowledge ownership. A store-backed pointer project can
 plan in `store:team` while its private learned skills remain owned by
 `project:web`. `rasen knowledge --project <id>` and `--store <id>` select that
 typed owner only; they never relocate the change. The flags are mutually
 exclusive, same bare ids remain distinct across namespaces, and direct store
-launches refuse to guess a member project. Store-owned persistence is reserved
-for the store-scope follow-up and currently returns the stable
-`knowledge_store_scope_unavailable` diagnostic without creating a catalog.
+launches refuse to guess a member project.
+
+## A Store's knowledge catalog
+
+A Store can hold learned knowledge that its member projects draw on — the layer that was missing between "one project only" and "this machine, everywhere".
+
+**Everything durable names the Store permanently.** A record's ownership, its provenance, and every source it names key on the Store's permanent identity; the display name travels alongside for readability and is never what anything is keyed on. Two Stores that share a display name keep distinct, separately attributable catalogs, and **renaming a Store changes nothing already recorded**. A Store whose metadata predates permanent identities cannot own records at all — publication refuses and names `rasen store upgrade-identity`, rather than writing ownership keyed on a name that can move.
+
+**Records are versioned, and older ones keep working.** A version 1 record is read, normalized in memory, and used; its file is left byte-identical. The newer shape is written only by a mutation that needs it — a Store record always, a project or global record never just because a release happened. Reading a catalog never rewrites it, and never brings one into existence.
+
+**Publishing into a Store requires independent member-project evidence:**
+
+1. the publication names the **exact managed records** it draws on, and each is resolved, checked for the same stable knowledge key, and digested — a shared id is not shared knowledge;
+2. those records come from at least **two distinct projects** (the same project contributing repeatedly counts once);
+3. every contributing project is one the **Store's own membership records** name as a knowledge member — not merely a project that happens to plan in the Store; and
+4. approval is **explicit and names the Store** (`--approve-store <store>`, or the interactive prompt).
+
+Membership comes from `<store>/.rasen-store/projects/<projectId>.yaml`. A project the Store records for *planning only* is reported differently from one it has no record for at all, because the two need different repairs — the refusal names the missing membership and the `rasen store add-project` command that adds it.
+
+**Promotion beyond a Store** — making knowledge machine-wide — needs the same independence: exact source records from more than one project, homogeneous, carrying the knowledge key being promoted.
+
+**Approval is bound to what it approves.** An approval for one Store never authorizes another, never authorizes the global scope, and is never inferred — not from a previous approval, not from silence, and not from the knowledge already existing at a narrower scope.
+
+**A refusal writes nothing at all.** No record, no file, no ownership entry: reporting the evidence held and the evidence missing is the whole output.
+
+**Mutations are exact, atomic, and never touch the index.** A catalog mutation changes only records the catalog declares it owns; a file the user authored at a catalog path is left exactly as it was. Writes are staged and renamed into place, so an interruption leaves no partial record and the catalog reads exactly as it did before. Rasen stages, commits, and pushes nothing — it prints the files you need to commit yourself.
 
 Retain/codify freezes a versioned `{planningRoot, owner}` identity in
 `auto-run.json`. Only typed ids are persisted; canonical paths are re-resolved
@@ -74,12 +100,55 @@ readable and gains the context conservatively at its first knowledge operation.
 
 An accepted candidate defaults to **project scope** in the owning project's machine home. A **global** create or promotion is gated:
 
-1. equivalent accepted evidence carrying the same stable knowledge key,
+1. the **exact managed source records** it draws on, each resolved and verified to carry the same stable knowledge key,
 2. from at least **two distinct stable project ids** (multiple changes or clones sharing one id count once),
 3. applicability that carries no project-private path/name/domain/policy, and
 4. explicit user approval at the `rasen knowledge apply` seam (interactive prompt, or `--approve-global` in a non-interactive run).
 
-An active `codify` profile authorizes project-scope create/rewrite/retire without an extra prompt, but never authorizes a global operation.
+An active `codify` profile authorizes project-scope create/rewrite/retire without an extra prompt, but never authorizes a store or global operation.
+
+A **store** publication is gated the same way, with membership added and the approval bound to the named Store — see [A Store's knowledge catalog](#a-stores-knowledge-catalog) above.
+
+### A store candidate
+
+Store publication uses the version 2 candidate, which names its owner and its exact sources:
+
+```json
+{
+  "version": 2,
+  "operation": "upsert",
+  "scope": "store",
+  "owner": { "type": "store", "uid": "9f0c1e2a-...", "id": "team" },
+  "id": "go-sql-transaction-locking",
+  "knowledgeKey": "go-sql-tx-locking",
+  "description": "Lock rows in a transaction with SELECT ... FOR UPDATE.",
+  "instructions": "## When\nConcurrent updates.\n## Steps\nUse FOR UPDATE.\n## Done\nNo lost update.",
+  "applicability": { "mode": "all", "markers": ["go.mod"] },
+  "evidence": [],
+  "sources": [
+    { "owner": { "type": "project", "projectId": "1b8f…" }, "id": "go-sql-transaction-locking", "knowledgeKey": "go-sql-tx-locking" },
+    { "owner": { "type": "project", "projectId": "77ac…" }, "id": "go-sql-transaction-locking", "knowledgeKey": "go-sql-tx-locking" }
+  ]
+}
+```
+
+A refusal reports what it found and what is missing, and writes nothing:
+
+```json
+{
+  "ok": false,
+  "plan": {
+    "action": "blocked",
+    "identity": { "owner": { "type": "store", "uid": "9f0c1e2a-…", "id": "team" }, "id": "go-sql-transaction-locking" },
+    "scope": "store"
+  },
+  "block": {
+    "code": "store_membership_invalid",
+    "message": "store 'team' has no membership record for 77ac…. Evidence from a project the store does not record as a knowledge member does not count.",
+    "repair": ["rasen store add-project team --project 77ac…"]
+  }
+}
+```
 
 ## Applicability markers
 

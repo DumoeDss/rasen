@@ -4,7 +4,16 @@ import * as path from 'node:path';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { readProjectConfig, classifyOpenSpecDir, hasStoreDeclaration } from '../project-config.js';
 import { storeBindingDeclarationFrom } from '../effective-config.js';
-import { resolveStoreBinding } from '../store/identity.js';
+import {
+  describeUnavailableStore,
+  findRegisteredStoreAtRoot,
+  resolveStoreBinding,
+} from '../store/identity.js';
+import { isValidStoreUid } from '../store/identity-types.js';
+import {
+  listStoreRegistryEntries,
+  readStoreRegistryState,
+} from '../store/foundation.js';
 import {
   requireSessionRuntimeContext,
   type RuntimeContext,
@@ -19,7 +28,6 @@ import {
   findQualifyingRootSync,
   inspectRegisteredStore,
 } from '../root-selection.js';
-import { listRegisteredStores, type RegisteredStoreEntry } from '../store/registry.js';
 import type {
   FrozenExecutionRef,
   FrozenKnowledgeContext,
@@ -147,8 +155,38 @@ function pathOptions(globalDataDir: string | undefined): { globalDataDir?: strin
   return globalDataDir === undefined ? {} : { globalDataDir };
 }
 
+/** One registry entry, with the root it points at. */
+interface TypedRegistryEntry {
+  id: string;
+  type: 'project' | 'store';
+  uid?: string;
+  storeRoot: string;
+}
+
+/**
+ * ENUMERATES the registry through its own reader.
+ *
+ * Enumeration is legitimate; what the boundary bans is resolving ONE store by
+ * its display name, because that silently picks a winner between two Stores
+ * that share one. Every by-name Store lookup in this file now goes through
+ * `resolveStoreBinding` instead, which is why the file no longer imports the
+ * compat reader at all.
+ */
+async function listTypedRegistryEntries(
+  globalDataDir: string | undefined
+): Promise<TypedRegistryEntry[]> {
+  const registry = await readStoreRegistryState(pathOptions(globalDataDir));
+  if (!registry) return [];
+  return listStoreRegistryEntries(registry).map((entry) => ({
+    id: entry.id,
+    type: entry.type,
+    ...(entry.uid !== undefined ? { uid: entry.uid } : {}),
+    storeRoot: entry.backend.local_path,
+  }));
+}
+
 async function inspectTypedRegistryEntry(
-  entry: RegisteredStoreEntry,
+  entry: TypedRegistryEntry,
   expectedType: 'project' | 'store'
 ): Promise<ResolvedNonGlobalOwner> {
   const inspection = await inspectRegisteredStore(entry.id, entry.storeRoot);
@@ -168,7 +206,7 @@ async function inspectTypedRegistryEntry(
  * that stable projectId as the canonical knowledge owner.
  */
 async function canonicalizeProjectLocator(
-  entry: RegisteredStoreEntry,
+  entry: TypedRegistryEntry,
   globalDataDir: string | undefined
 ): Promise<Extract<ResolvedKnowledgeOwnerRef, { type: 'project' }>> {
   const located = await inspectTypedRegistryEntry(entry, 'project');
@@ -228,28 +266,68 @@ async function resolveMachineProjectById(
   return { type: 'project', id, root: canonicalizeOrResolve(root) };
 }
 
+/**
+ * Resolves a `--store <selector>` through the single Store resolver.
+ *
+ * The selector may be the Store's permanent identity or its display name, and
+ * the difference matters: a display name that matches two registered Stores
+ * comes back `unavailable` with both candidates named, instead of one of them
+ * being picked by registry order. That is exactly the situation a Store
+ * catalog must never guess at — the wrong guess publishes a team's knowledge
+ * into someone else's repository.
+ */
+async function resolveStoreOwner(
+  id: string,
+  globalDataDir: string | undefined
+): Promise<Extract<ResolvedKnowledgeOwnerRef, { type: 'store' }>> {
+  const binding = await resolveStoreBinding({
+    declaration: isValidStoreUid(id) ? { form: 'durable', uid: id } : { form: 'alias', id },
+    ...pathOptions(globalDataDir),
+  });
+
+  if (binding.kind === 'resolved') {
+    return {
+      type: 'store',
+      id: binding.store.id,
+      ...(binding.store.uid !== undefined ? { uid: binding.store.uid } : {}),
+      root: binding.store.root,
+    };
+  }
+  if (binding.kind === 'absent') {
+    fail(
+      'knowledge_owner_unknown',
+      `Unknown store knowledge owner '${id}'. Run \`rasen store list\` to inspect registered stores.`,
+      { owner: { type: 'store', id }, selectorGuidance }
+    );
+  }
+  // A store that is registered but unusable is a DIFFERENT problem from one
+  // that was never registered, and the repair differs too — so the reason and
+  // the repair travel with the failure rather than collapsing into "unknown".
+  fail(
+    binding.reason === 'not-registered' ? 'knowledge_owner_unknown' : 'knowledge_owner_stale',
+    describeUnavailableStore(binding),
+    { owner: { type: 'store', id }, selectorGuidance: [...binding.repair, ...selectorGuidance] }
+  );
+}
+
 async function resolveTypedOwner(
   identity: Exclude<KnowledgeOwnerRef, { type: 'global' }>,
   globalDataDir: string | undefined
 ): Promise<ResolvedNonGlobalOwner> {
-  const entries = await listRegisteredStores(pathOptions(globalDataDir));
-  const typed = entries.find(
-    (entry) => entry.type === identity.type && entry.id === identity.id
-  );
-  if (typed) {
-    return identity.type === 'project'
-      ? canonicalizeProjectLocator(typed, globalDataDir)
-      : inspectTypedRegistryEntry(typed, 'store');
+  if (identity.type === 'store') {
+    return resolveStoreOwner(identity.id, globalDataDir);
   }
 
-  if (identity.type === 'project') {
-    const machineProject = await resolveMachineProjectById(identity.id, globalDataDir);
-    if (machineProject) return machineProject;
-  }
+  const entries = await listTypedRegistryEntries(globalDataDir);
+  const typed = entries.find((entry) => entry.type === 'project' && entry.id === identity.id);
+  if (typed) return canonicalizeProjectLocator(typed, globalDataDir);
+
+  const machineProject = await resolveMachineProjectById(identity.id, globalDataDir);
+  if (machineProject) return machineProject;
 
   fail(
     'knowledge_owner_unknown',
-    `Unknown ${identity.type} knowledge owner '${identity.id}'. Run \`rasen store list\` to inspect registered typed ids.`,
+    `Unknown project knowledge owner '${identity.id}'. Run \`rasen store list\` to inspect registered typed ids.`,
     { owner: identity, selectorGuidance }
   );
 }
@@ -261,13 +339,26 @@ async function resolvePlanningRoot(
   const root = findQualifyingRootSync(launchDirectory);
   if (!root) return undefined;
   const canonicalRoot = canonicalizeOrResolve(root);
-  const entries = await listRegisteredStores(pathOptions(globalDataDir));
+  const entries = await listTypedRegistryEntries(globalDataDir);
   const exact = entries.filter((entry) => pathsEqual(entry.storeRoot, canonicalRoot));
 
-  const storeEntry = exact.find((entry) => entry.type === 'store');
-  if (storeEntry) {
-    const owner = await inspectTypedRegistryEntry(storeEntry, 'store');
-    return { type: 'store', id: owner.id!, root: owner.root! };
+  // "Is this planning root a Store's own root?" is answered by the resolver's
+  // read-only lookup, so no consumer has to enumerate the registry to ask.
+  // Health is still checked here, exactly as before: a Store whose metadata or
+  // root has gone stale is reported as stale rather than named as a planning
+  // root that would fail at the next step.
+  const storeAtRoot = await findRegisteredStoreAtRoot(canonicalRoot, pathOptions(globalDataDir));
+  if (storeAtRoot) {
+    const owner = await inspectTypedRegistryEntry(
+      { id: storeAtRoot.id, type: 'store', storeRoot: storeAtRoot.root },
+      'store'
+    );
+    return {
+      type: 'store',
+      id: owner.id,
+      ...(storeAtRoot.uid !== undefined ? { uid: storeAtRoot.uid } : {}),
+      root: owner.root,
+    };
   }
 
   const classification = classifyOpenSpecDir(canonicalRoot);
@@ -285,7 +376,12 @@ async function resolvePlanningRoot(
       ...pathOptions(globalDataDir),
     });
     if (binding.kind === 'resolved') {
-      return { type: 'store', id: binding.store.id, root: binding.store.root };
+      return {
+        type: 'store',
+        id: binding.store.id,
+        ...(binding.store.uid !== undefined ? { uid: binding.store.uid } : {}),
+        root: binding.store.root,
+      };
     }
   }
 
@@ -329,7 +425,7 @@ async function resolveLaunchOwner(
     );
   }
   const canonicalRoot = canonicalizeOrResolve(root);
-  const entries = await listRegisteredStores(pathOptions(globalDataDir));
+  const entries = await listTypedRegistryEntries(globalDataDir);
   const exact = entries.filter((entry) => pathsEqual(entry.storeRoot, canonicalRoot));
   const typedProjects = exact.filter((entry) => entry.type === 'project');
   const typedStores = exact.filter((entry) => entry.type === 'store');
@@ -407,26 +503,34 @@ function assertScopeAgreement(
       }
     );
   }
-  if (
-    (requestedScope === 'project' || requestedScope === 'mixed') &&
-    owner.type === 'global'
-  ) {
+  if (requestedScope === 'project' && owner.type !== 'project') {
     fail(
       'knowledge_owner_scope_mismatch',
       'Project learned-skill scope requires a project owner.',
       {
-        owner: { type: 'global' },
+        owner: ownerIdentity(owner),
         ...(planningRoot ? { planningRoot: planningIdentity(planningRoot) } : {}),
         selectorGuidance,
       }
     );
   }
-  if (owner.type === 'store') {
+  if (requestedScope === 'store' && owner.type !== 'store') {
     fail(
-      'knowledge_store_scope_unavailable',
-      `Store owner '${owner.id}' resolved successfully, but store-scoped learned-skill persistence is not available in this context slice.`,
+      'knowledge_owner_scope_mismatch',
+      'Store learned-skill scope requires a store owner. Pass --store <store>.',
       {
         owner: ownerIdentity(owner),
+        ...(planningRoot ? { planningRoot: planningIdentity(planningRoot) } : {}),
+        selectorGuidance,
+      }
+    );
+  }
+  if (requestedScope === 'mixed' && owner.type === 'global') {
+    fail(
+      'knowledge_owner_scope_mismatch',
+      'An owner-scoped learned-skill read requires a project or store owner.',
+      {
+        owner: { type: 'global' },
         ...(planningRoot ? { planningRoot: planningIdentity(planningRoot) } : {}),
         selectorGuidance,
       }

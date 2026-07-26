@@ -137,15 +137,18 @@ describe('learned-skill execution context', () => {
       root: projectRoot,
     });
 
-    await expect(
-      resolveLearnedSkillExecutionContext({
-        launchDirectory: projectRoot,
-        selector: { store: 'platform' },
-        requestedScope: 'project',
-        globalDataDir,
-      })
-    ).rejects.toMatchObject({
-      diagnostic: { code: 'knowledge_store_scope_unavailable' },
+    // The same bare id in the store namespace resolves to the STORE, and to
+    // its own root — the two namespaces never collapse into one another.
+    const selectedStore = await resolveLearnedSkillExecutionContext({
+      launchDirectory: projectRoot,
+      selector: { store: 'platform' },
+      requestedScope: 'store',
+      globalDataDir,
+    });
+    expect(selectedStore.owner).toMatchObject({
+      type: 'store',
+      id: 'platform',
+      root: storeRoot,
     });
   });
 
@@ -190,8 +193,11 @@ describe('learned-skill execution context', () => {
         globalDataDir,
       })
     ).rejects.toMatchObject({
+      // A store selector never satisfies a PROJECT-scoped operation: the store
+      // now resolves perfectly well, and refusing on the scope is exactly what
+      // keeps its knowledge out of a project's catalog.
       diagnostic: {
-        code: 'knowledge_store_scope_unavailable',
+        code: 'knowledge_owner_scope_mismatch',
         owner: { type: 'store', id: 'platform' },
       },
     });

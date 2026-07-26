@@ -24,13 +24,27 @@ export interface KnowledgeMessages {
   candidateTooLarge: (size: number, maximum: number) => string;
   candidateInvalid: (detail: string) => string;
   approveGlobalNotForProject: string;
+  consentScopeMismatch: string;
   codifyRequired: (retention: string) => string;
   projectRequired: string;
   plan: (summary: string) => string;
+  planTarget: (target: string) => string;
+  planKnowledgeKey: (knowledgeKey: string) => string;
+  planSources: (sources: string) => string;
+  planSourcesNone: string;
   blocked: (message: string) => string;
+  blockedNext: (command: string) => string;
   globalApprovalPrompt: (id: string) => string;
   globalApprovalRequiredNonInteractive: (id: string) => string;
   globalApprovalDeclined: string;
+  storeApprovalPrompt: (id: string, store: string) => string;
+  storeApprovalRequiredNonInteractive: (id: string, store: string) => string;
+  storeApprovalDeclined: string;
+  storeApprovalSelectorMismatch: (selector: string, store: string) => string;
+  storeRootNotice: (root: string) => string;
+  commitReminderHeading: string;
+  commitReminderFile: (path: string) => string;
+  commitReminderNothingStaged: string;
   created: (scope: string, id: string) => string;
   rewritten: (scope: string, id: string) => string;
   retired: (scope: string, id: string) => string;
@@ -40,6 +54,10 @@ export interface KnowledgeMessages {
   listEmpty: string;
   listRow: (marker: string, id: string, scope: string, status: string, description: string) => string;
   provenanceSummary: (count: number, projects: number) => string;
+  unreadableHeading: string;
+  unreadableRow: (id: string, scope: string, reason: string) => string;
+  unreadableNext: string;
+  showUnreadable: (id: string, scope: string, reason: string) => string;
   showNotFound: (id: string, scope: string) => string;
   showApplicability: (mode: string, markers: string) => string;
   retireConfirm: (scope: string, id: string) => string;
@@ -70,14 +88,30 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     candidateTooLarge: (size, maximum) => format(raw.candidateTooLarge, { size, maximum }),
     candidateInvalid: (detail) => format(raw.candidateInvalid, { detail }),
     approveGlobalNotForProject: raw.approveGlobalNotForProject,
+    consentScopeMismatch: raw.consentScopeMismatch,
     codifyRequired: (retention) => format(raw.codifyRequired, { retention }),
     projectRequired: raw.projectRequired,
     plan: (summary) => format(raw.plan, { summary }),
+    planTarget: (target) => format(raw.planTarget, { target }),
+    planKnowledgeKey: (knowledgeKey) => format(raw.planKnowledgeKey, { knowledgeKey }),
+    planSources: (sources) => format(raw.planSources, { sources }),
+    planSourcesNone: raw.planSourcesNone,
     blocked: (message) => format(raw.blocked, { message }),
+    blockedNext: (command) => format(raw.blockedNext, { command }),
     globalApprovalPrompt: (id) => format(raw.globalApprovalPrompt, { id }),
     globalApprovalRequiredNonInteractive: (id) =>
       format(raw.globalApprovalRequiredNonInteractive, { id }),
     globalApprovalDeclined: raw.globalApprovalDeclined,
+    storeApprovalPrompt: (id, store) => format(raw.storeApprovalPrompt, { id, store }),
+    storeApprovalRequiredNonInteractive: (id, store) =>
+      format(raw.storeApprovalRequiredNonInteractive, { id, store }),
+    storeApprovalDeclined: raw.storeApprovalDeclined,
+    storeApprovalSelectorMismatch: (selector, store) =>
+      format(raw.storeApprovalSelectorMismatch, { selector, store }),
+    storeRootNotice: (root) => format(raw.storeRootNotice, { root }),
+    commitReminderHeading: raw.commitReminderHeading,
+    commitReminderFile: (path) => format(raw.commitReminderFile, { path }),
+    commitReminderNothingStaged: raw.commitReminderNothingStaged,
     created: (scope, id) => format(raw.created, { scope, id }),
     rewritten: (scope, id) => format(raw.rewritten, { scope, id }),
     retired: (scope, id) => format(raw.retired, { scope, id }),
@@ -88,6 +122,10 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     listRow: (marker, id, scope, status, description) =>
       format(raw.listRow, { marker, id, scope, status, description }),
     provenanceSummary: (count, projects) => format(raw.provenanceSummary, { count, projects }),
+    unreadableHeading: raw.unreadableHeading,
+    unreadableRow: (id, scope, reason) => format(raw.unreadableRow, { id, scope, reason }),
+    unreadableNext: raw.unreadableNext,
+    showUnreadable: (id, scope, reason) => format(raw.showUnreadable, { id, scope, reason }),
     showNotFound: (id, scope) => format(raw.showNotFound, { id, scope }),
     showApplicability: (mode, markers) => format(raw.showApplicability, { mode, markers }),
     retireConfirm: (scope, id) => format(raw.retireConfirm, { scope, id }),

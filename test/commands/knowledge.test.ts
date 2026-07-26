@@ -3,11 +3,17 @@ import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { registerKnowledgeCommand } from '../../src/commands/knowledge.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
-import { getStoreMetadataPath } from '../../src/core/store/foundation.js';
+import {
+  getStoreMetadataPath,
+  writeStoreMetadataState,
+} from '../../src/core/store/foundation.js';
+import { mintStoreUid } from '../../src/core/store/identity-types.js';
+import { writeStoreProjectRecord } from '../../src/core/store/project-records.js';
 import {
   commitStoreRegistration,
   registerStore,
@@ -88,6 +94,35 @@ describe('rasen knowledge command', () => {
 
   function projectStoreDir(): string {
     return path.join(projectHomeDir, 'learned-skills');
+  }
+
+  /**
+   * Two projects that each own the record a global promotion names. Promotion
+   * resolves EXACT managed records, so a projectId in an evidence array is a
+   * claim the gate then goes and verifies.
+   */
+  async function createPromotionSources(): Promise<[string, string]> {
+    const ids: string[] = [];
+    for (const name of ['promotion-a', 'promotion-b']) {
+      const root = path.join(tempHome, name);
+      fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      fs.writeFileSync(path.join(root, 'go.mod'), `module ${name}\n`);
+      const home = (await resolveProjectHome(root, { globalDataDir: tempHome }))!;
+      ids.push(home.projectId);
+      await runKnowledge([
+        'apply',
+        '--from',
+        writeCandidate(projectCandidate({ evidence: [evidence(home.projectId)] })),
+        '--project',
+        home.projectId,
+        '--json',
+      ]);
+      process.exitCode = undefined;
+    }
+    logSpy.mockClear();
+    errSpy.mockClear();
+    return ids as [string, string];
   }
 
   async function createFrozenPointerFixture(name: string): Promise<{
@@ -250,10 +285,11 @@ describe('rasen knowledge command', () => {
 
   it('requires explicit consent for a global promotion outside a TTY', async () => {
     (process.stdout as unknown as { isTTY?: boolean }).isTTY = false;
+    const [first, second] = await createPromotionSources();
     const globalCandidate = projectCandidate({
       operation: 'promote',
       scope: 'global',
-      evidence: [evidence('project-a'), evidence('project-b')],
+      evidence: [evidence(first), evidence(second)],
     });
     await runKnowledge(['apply', '--from', writeCandidate(globalCandidate), '--json']);
     expect(process.exitCode).toBe(1);
@@ -273,10 +309,11 @@ describe('rasen knowledge command', () => {
 
   it('honors an interactive global approval prompt (accept and decline)', async () => {
     const { confirm } = await promptMocks();
+    const [first, second] = await createPromotionSources();
     const globalCandidate = projectCandidate({
       operation: 'promote',
       scope: 'global',
-      evidence: [evidence('project-a'), evidence('project-b')],
+      evidence: [evidence(first), evidence(second)],
     });
 
     confirm.mockResolvedValueOnce(false);
@@ -305,6 +342,156 @@ describe('rasen knowledge command', () => {
     logSpy.mockClear();
     await runKnowledge(['retire', ID, '--scope', 'project', '--yes', '--json']);
     expect(lastJson()).toMatchObject({ ok: true, outcome: 'retired', id: ID });
+  });
+
+  /**
+   * Content-digest verification on read is right, but a check that removes a
+   * record without saying so is indistinguishable from a deletion. These drive
+   * the reporting through the COMMAND, not the loader: the loader computed the
+   * reason correctly before this and the surface threw it away, which is the
+   * exact shape of the defect that shipped one child earlier.
+   */
+  describe('a record that fails verification is reported, not dropped', () => {
+    /** Hand-edits SKILL.md the way a user fixing a typo would. */
+    function handEditBody(): string {
+      const contentPath = path.join(projectStoreDir(), ID, 'SKILL.md');
+      fs.writeFileSync(contentPath, `${fs.readFileSync(contentPath, 'utf-8')}\nA typo fix.\n`);
+      return contentPath;
+    }
+
+    it('names the record, the failed check and the way back, in human and JSON alike', async () => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      const contentPath = handEditBody();
+      const before = fs.readFileSync(path.join(projectStoreDir(), ID, 'learned-skill.yaml'));
+      logSpy.mockClear();
+
+      await runKnowledge(['list', '--scope', 'project', '--json']);
+      const payload = lastJson() as {
+        learnedSkills: Array<{ id: string }>;
+        unreadable: Array<{ id: string; scope: string; directory: string; reason: string }>;
+      };
+      // Gone from the valid list — that part was already true and is correct.
+      expect(payload.learnedSkills.map((entry) => entry.id)).not.toContain(ID);
+      // …but no longer gone WITHOUT EXPLANATION.
+      expect(payload.unreadable).toHaveLength(1);
+      expect(payload.unreadable[0]).toMatchObject({ id: ID, scope: 'project' });
+      expect(payload.unreadable[0]!.reason).toContain('content digest');
+
+      logSpy.mockClear();
+      await runKnowledge(['list', '--scope', 'project']);
+      const human = logSpy.mock.calls.flat().join('\n');
+      expect(human).toContain(ID);
+      // Human and JSON name the same reason and the human carries the repair.
+      expect(human).toContain(payload.unreadable[0]!.reason);
+      expect(human).toContain('rasen knowledge apply');
+
+      // Diagnosis writes nothing.
+      expect(fs.readFileSync(path.join(projectStoreDir(), ID, 'learned-skill.yaml'))).toEqual(before);
+      expect(fs.readFileSync(contentPath, 'utf-8')).toContain('A typo fix.');
+    });
+
+    it('tells `show` the record exists and cannot be read, rather than that it does not exist', async () => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      handEditBody();
+      logSpy.mockClear();
+      errSpy.mockClear();
+
+      await runKnowledge(['show', ID, '--scope', 'project', '--json']);
+      expect(lastJson()).toMatchObject({
+        ok: false,
+        error: { code: 'unreadable_record' },
+      });
+      const error = (lastJson() as { error: { message: string; next: string } }).error;
+      expect(error.message).toContain(ID);
+      expect(error.message).toContain('content digest');
+      expect(error.next).toContain('rasen knowledge apply');
+      process.exitCode = undefined;
+    });
+
+    /**
+     * Direction A: a record whose manifest this version's strict schema will
+     * not accept, but whose Rasen marker is intact, is still Rasen's — the
+     * marker is readable at the schema-failure branch, where ownership used to
+     * be discarded. The version case needs no user error at all: it is a
+     * record written by a NEWER release, read back on this one, which is the
+     * cross-version Store sharing this catalog exists for.
+     */
+    it.each([
+      [
+        'a record written by a newer release',
+        (manifest: Record<string, unknown>) => ({ ...manifest, version: 3 }),
+      ],
+      [
+        'a key added to the manifest by hand',
+        (manifest: Record<string, unknown>) => ({ ...manifest, note: 'annotated by hand' }),
+      ],
+      [
+        'a field retyped by hand',
+        (manifest: Record<string, unknown>) => ({ ...manifest, description: 42 }),
+      ],
+    ])('reports %s rather than dropping it', async (_label, mutate) => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      const manifestPath = path.join(projectStoreDir(), ID, 'learned-skill.yaml');
+      const manifest = parseYaml(fs.readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
+      const rewritten = mutate(manifest);
+      // The marker survives every one of these — that is the whole point.
+      expect(rewritten.generatedBy).toBe(manifest.generatedBy);
+      fs.writeFileSync(manifestPath, stringifyYaml(rewritten), 'utf-8');
+      logSpy.mockClear();
+
+      await runKnowledge(['list', '--scope', 'project', '--json']);
+      const payload = lastJson() as {
+        learnedSkills: Array<{ id: string }>;
+        unreadable: Array<{ id: string; reason: string }>;
+      };
+      expect(payload.learnedSkills.map((entry) => entry.id)).not.toContain(ID);
+      expect(payload.unreadable).toHaveLength(1);
+      expect(payload.unreadable[0]).toMatchObject({ id: ID });
+      expect(payload.unreadable[0]!.reason).toContain("carries Rasen's marker");
+
+      logSpy.mockClear();
+      errSpy.mockClear();
+      await runKnowledge(['show', ID, '--scope', 'project', '--json']);
+      expect(lastJson()).toMatchObject({ ok: false, error: { code: 'unreadable_record' } });
+      process.exitCode = undefined;
+    });
+
+    it('still says nothing when the same manifest carries another tool s marker', async () => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      const manifestPath = path.join(projectStoreDir(), ID, 'learned-skill.yaml');
+      const manifest = parseYaml(fs.readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
+      // Schema-invalid AND not ours: ownership is somebody else's claim, so
+      // reporting it would be the false positive the marker line prevents.
+      fs.writeFileSync(
+        manifestPath,
+        stringifyYaml({ ...manifest, version: 3, generatedBy: 'some-other-tool' }),
+        'utf-8'
+      );
+      logSpy.mockClear();
+
+      await runKnowledge(['list', '--scope', 'project', '--json']);
+      expect(lastJson()).toMatchObject({ learnedSkills: [], unreadable: [] });
+    });
+
+    it('says nothing about occupants the catalog never owned', async () => {
+      await runKnowledge(['apply', '--from', writeCandidate(projectCandidate()), '--json']);
+      // A skill the user wrote by hand, living in the same catalog. The spec
+      // guarantees these are untouched; warning about each one would bury the
+      // record that actually went missing.
+      const authored = path.join(projectStoreDir(), 'my-own-notes');
+      fs.mkdirSync(authored, { recursive: true });
+      fs.writeFileSync(path.join(authored, 'SKILL.md'), '# Mine\n');
+      logSpy.mockClear();
+
+      await runKnowledge(['list', '--scope', 'project', '--json']);
+      const payload = lastJson() as {
+        learnedSkills: Array<{ id: string }>;
+        unreadable: unknown[];
+      };
+      expect(payload.learnedSkills.map((entry) => entry.id)).toEqual([ID]);
+      expect(payload.unreadable).toEqual([]);
+      expect(fs.readFileSync(path.join(authored, 'SKILL.md'), 'utf-8')).toBe('# Mine\n');
+    });
   });
 
   it('resolves an explicit project owner independently from the planning root', async () => {
@@ -523,22 +710,193 @@ describe('rasen knowledge command', () => {
     expect(fs.existsSync(path.join(tempHome, 'learned-skills', ID))).toBe(false);
   });
 
-  it('reports the temporary store-scope diagnostic without creating a store catalog', async () => {
+  it('reads an explicitly selected store without creating its catalog', async () => {
     const storeRoot = path.join(tempHome, 'team-store');
     fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
     fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes'), { recursive: true });
     fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     await registerStore({ id: 'team', localPath: storeRoot, globalDataDir: tempHome });
 
+    // A store selector on a PROJECT-scoped read is still refused: the two
+    // scopes never satisfy one another.
     await runKnowledge(['list', '--scope', 'project', '--store', 'team', '--json']);
     expect(lastJson()).toMatchObject({
       ok: false,
       error: {
-        code: 'knowledge_store_scope_unavailable',
+        code: 'knowledge_owner_scope_mismatch',
         owner: { type: 'store', id: 'team' },
       },
     });
-    expect(fs.existsSync(path.join(storeRoot, 'learned-skills'))).toBe(false);
+
+    logSpy.mockClear();
+    process.exitCode = undefined;
+    await runKnowledge(['list', '--scope', 'store', '--store', 'team', '--json']);
+    expect(lastJson()).toMatchObject({
+      context: { owner: { type: 'store', id: 'team' } },
+      learnedSkills: [],
+    });
+    // Reading a catalog never brings one into existence.
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'learned-skills'))).toBe(false);
+  });
+
+  /** A Store with a permanent identity and two knowledge members that codified the record. */
+  async function createStoreWithMembers(name: string): Promise<{
+    storeRoot: string;
+    storeUid: string;
+    members: string[];
+  }> {
+    const storeRoot = path.join(tempHome, name);
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes'), { recursive: true });
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    const storeUid = mintStoreUid();
+    await writeStoreMetadataState(storeRoot, { version: 2, uid: storeUid, id: name });
+    await registerStore({ id: name, localPath: storeRoot, globalDataDir: tempHome });
+
+    const members: string[] = [];
+    for (const memberName of [`${name}-member-a`, `${name}-member-b`]) {
+      const root = path.join(tempHome, memberName);
+      fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      fs.writeFileSync(path.join(root, 'go.mod'), `module ${memberName}\n`);
+      const home = (await resolveProjectHome(root, { globalDataDir: tempHome }))!;
+      members.push(home.projectId);
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: home.projectId,
+        roles: { planning: false, knowledge: true },
+      });
+      await runKnowledge([
+        'apply',
+        '--from',
+        writeCandidate(projectCandidate({ evidence: [evidence(home.projectId)] })),
+        '--project',
+        home.projectId,
+        '--json',
+      ]);
+      process.exitCode = undefined;
+    }
+    logSpy.mockClear();
+    errSpy.mockClear();
+    return { storeRoot, storeUid, members };
+  }
+
+  function storeCandidate(
+    storeUid: string,
+    storeId: string,
+    sourceProjectIds: string[]
+  ): Record<string, unknown> {
+    return {
+      version: 2,
+      operation: 'upsert',
+      scope: 'store',
+      owner: { type: 'store', uid: storeUid, id: storeId },
+      id: ID,
+      knowledgeKey: 'go-sql-tx-locking',
+      description: 'Lock rows in a transaction with SELECT ... FOR UPDATE.',
+      instructions: '## When\nConcurrent updates.\n## Steps\nUse FOR UPDATE.\n## Done\nNo lost update.',
+      applicability: { mode: 'all', markers: ['go.mod'] },
+      evidence: [],
+      sources: sourceProjectIds.map((id) => ({
+        owner: { type: 'project', projectId: id },
+        id: ID,
+        knowledgeKey: 'go-sql-tx-locking',
+      })),
+    };
+  }
+
+  it('publishes into a store on an approval that names it, and reports what to commit', async () => {
+    const { storeRoot, storeUid, members } = await createStoreWithMembers('team');
+    const candidate = writeCandidate(storeCandidate(storeUid, 'team', members));
+
+    await runKnowledge([
+      'apply',
+      '--from',
+      candidate,
+      '--store',
+      storeUid,
+      '--approve-store',
+      'team',
+      '--json',
+    ]);
+    expect(lastJson()).toMatchObject({
+      ok: true,
+      outcome: 'created',
+      scope: 'store',
+      identity: { owner: { type: 'store', uid: storeUid, id: 'team' }, id: ID },
+      storeRoot,
+      changedFiles: [
+        path.join(storeRoot, 'rasen', 'learned-skills', ID, 'learned-skill.yaml'),
+        path.join(storeRoot, 'rasen', 'learned-skills', ID, 'SKILL.md'),
+      ],
+    });
+    // The permanent identity is what landed on disk.
+    expect(
+      fs.readFileSync(path.join(storeRoot, 'rasen', 'learned-skills', ID, 'learned-skill.yaml'), 'utf-8')
+    ).toContain(`uid: ${storeUid}`);
+  });
+
+  it('refuses an approval that names a different store', async () => {
+    const { storeRoot, storeUid, members } = await createStoreWithMembers('team');
+    await runKnowledge([
+      'apply',
+      '--from',
+      writeCandidate(storeCandidate(storeUid, 'team', members)),
+      '--store',
+      storeUid,
+      '--approve-store',
+      'some-other-store',
+      '--json',
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(lastJson()).toMatchObject({
+      ok: false,
+      error: { code: 'store_approval_scope_mismatch' },
+    });
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'learned-skills'))).toBe(false);
+  });
+
+  it('reports the same refusal facts and the same next command in human and JSON output', async () => {
+    const { storeRoot, storeUid, members } = await createStoreWithMembers('team');
+    // A third project contributes evidence the store has no membership record for.
+    const outsiderRoot = path.join(tempHome, 'outsider');
+    fs.mkdirSync(path.join(outsiderRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(outsiderRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(path.join(outsiderRoot, 'go.mod'), 'module outsider\n');
+    const outsider = (await resolveProjectHome(outsiderRoot, { globalDataDir: tempHome }))!.projectId;
+    await runKnowledge([
+      'apply',
+      '--from',
+      writeCandidate(projectCandidate({ evidence: [evidence(outsider)] })),
+      '--project',
+      outsider,
+      '--json',
+    ]);
+    process.exitCode = undefined;
+    logSpy.mockClear();
+    errSpy.mockClear();
+
+    const candidate = writeCandidate(
+      storeCandidate(storeUid, 'team', [members[0], outsider])
+    );
+
+    await runKnowledge(['apply', '--from', candidate, '--store', storeUid, '--json']);
+    const wire = lastJson() as { block?: { code?: string; message?: string; repair?: string[] } };
+    expect(wire.block?.code).toBe('store_membership_invalid');
+    const repair = wire.block?.repair?.[0] as string;
+    expect(repair).toContain('rasen store add-project');
+
+    logSpy.mockClear();
+    errSpy.mockClear();
+    process.exitCode = undefined;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = false;
+    await runKnowledge(['apply', '--from', candidate, '--store', storeUid]);
+    const human = errSpy.mock.calls.flat().join('\n');
+    // Same facts, same copy-pasteable next command.
+    expect(human).toContain(wire.block!.message as string);
+    expect(human).toContain(repair);
+    expect(human).toContain(outsider);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'learned-skills'))).toBe(false);
   });
 
   it('prevents a known candidate project id from redirecting the selected owner', async () => {

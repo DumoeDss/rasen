@@ -220,9 +220,22 @@ describe('learned-skill core mutation and resolution', () => {
       evidence: [evidence(projectId)],
     };
 
+    // Promotion draws on EXACT managed records, so each contributing project
+    // must actually own one — a projectId in an array is a claim, not evidence.
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
+
     const oneProject = await planLearnedSkillMutation(globalBase, context);
     expect(oneProject.action).toBe('blocked');
     expect(oneProject.block?.code).toBe('global_evidence_insufficient');
+
+    const secondContext = { projectRoot: second.root, globalDataDir };
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(second.projectId), secondContext),
+      secondContext
+    );
 
     const twoProjects = {
       ...globalBase,
@@ -242,6 +255,106 @@ describe('learned-skill core mutation and resolution', () => {
     const set = await resolveLearnedSkills(context);
     expect(set.global.map((r) => r.manifest.id)).toContain(ID);
     fs.rmSync(second.root, { recursive: true, force: true });
+  });
+
+  /**
+   * The rename pair is not atomic against process DEATH — the restore path
+   * covers a thrown error only. These reconstruct the exact on-disk states a
+   * SIGKILL leaves and assert the next mutation recovers them, because a
+   * catalog inside the user's Store repository otherwise keeps the debris in
+   * `git status` forever and, in one window, keeps the record's only copy in it.
+   */
+  describe('debris a killed mutation left behind', () => {
+    /** The state a kill between `record -> backup` and `staging -> record` leaves. */
+    function simulateKillMidSwap(directory: string): { backup: string; staging: string } {
+      const parent = path.dirname(directory);
+      const base = path.basename(directory);
+      const backup = path.join(parent, `.rasen-learned-skill-backup-${base}-4242-abcdef`);
+      const staging = path.join(parent, `.rasen-learned-skill-staging-${base}-4242-abcdef`);
+      fs.renameSync(directory, backup);
+      fs.mkdirSync(staging, { recursive: true });
+      fs.writeFileSync(path.join(staging, 'SKILL.md'), 'half-written\n');
+      return { backup, staging };
+    }
+
+    it('restores the record the kill left under a backup name, and clears the staging debris', async () => {
+      const created = await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(upsertRequest(projectId), context),
+        context
+      );
+      const directory = created.directory!;
+      const before = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8');
+      const { backup, staging } = simulateKillMidSwap(directory);
+      // Precondition: the record is GONE and its only copy is the backup —
+      // which is why a blind sweep of backups would be data loss, not tidying.
+      expect(fs.existsSync(directory)).toBe(false);
+
+      const next = await planLearnedSkillMutation(
+        { ...upsertRequest(projectId), evidence: [evidence(projectId, 'later-change')] },
+        context
+      );
+      await commitLearnedSkillPlan(next, context);
+
+      expect(fs.existsSync(staging)).toBe(false);
+      expect(fs.existsSync(backup)).toBe(false);
+      expect(fs.existsSync(directory)).toBe(true);
+      expect(fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8')).toBe(before);
+      // Nothing named like debris survives to reach the user's `git status`.
+      expect(
+        fs.readdirSync(path.dirname(directory)).filter((name) => name.startsWith('.rasen-learned-skill-'))
+      ).toEqual([]);
+    });
+
+    it('removes a backup whose record is already back in place, keeping the record', async () => {
+      const created = await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(upsertRequest(projectId), context),
+        context
+      );
+      const directory = created.directory!;
+      const body = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8');
+      // The state a kill AFTER the swap leaves: record present, backup stale.
+      const backup = path.join(
+        path.dirname(directory),
+        `.rasen-learned-skill-backup-${path.basename(directory)}-4242-abcdef`
+      );
+      fs.cpSync(directory, backup, { recursive: true });
+
+      await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(
+          { ...upsertRequest(projectId), evidence: [evidence(projectId, 'later-change')] },
+          context
+        ),
+        context
+      );
+
+      expect(fs.existsSync(backup)).toBe(false);
+      expect(fs.existsSync(directory)).toBe(true);
+      expect(fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8')).toBe(body);
+    });
+
+    it('leaves a debris directory it cannot identify strictly alone', async () => {
+      const created = await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(upsertRequest(projectId), context),
+        context
+      );
+      const unidentifiable = path.join(
+        path.dirname(created.directory!),
+        '.rasen-learned-skill-backup-mystery-1-x'
+      );
+      fs.mkdirSync(unidentifiable, { recursive: true });
+      fs.writeFileSync(path.join(unidentifiable, 'SKILL.md'), 'no manifest here\n');
+
+      await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(
+          { ...upsertRequest(projectId), evidence: [evidence(projectId, 'later-change')] },
+          context
+        ),
+        context
+      );
+
+      // Nothing may delete a directory whose contents it cannot identify.
+      expect(fs.readFileSync(path.join(unidentifiable, 'SKILL.md'), 'utf-8')).toBe('no manifest here\n');
+    });
   });
 
   it('matches path-exists applicability with platform-native existence checks', () => {

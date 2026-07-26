@@ -63,6 +63,13 @@ const PHASE_A_FILES = [
   // Store session's project choice through `resolveStoreBinding` and child B's
   // membership provider, so the by-id-lookup ban must cover it too.
   'src/core/management-api/session-launch-context.ts',
+  // store-scoped-learned-knowledge: a `--store <selector>` now resolves through
+  // `resolveStoreBinding`, so two Stores sharing a display name refuse instead
+  // of one being picked by registry order — which for a catalog would mean
+  // publishing a team's knowledge into someone else's repository.
+  'src/core/learned-skills/context.ts',
+  'src/core/learned-skills/stores.ts',
+  'src/core/learned-skills/authority.ts',
   'src/core/agent-context.ts',
   'src/commands/doctor.ts',
   'src/commands/store.ts',
@@ -77,7 +84,6 @@ const PHASE_A_FILES = [
  * quietly starts using the compat reader cannot hide outside both lists.
  */
 const DEFERRED_COMPAT_CONSUMERS = [
-  'src/core/learned-skills/context.ts',
   // Deliberately kept (project-keyed-store-membership task 9.5): this handler
   // ENUMERATES every registered store, which the boundary permits — the ban
   // targets resolving one store by its display name. It no longer performs a

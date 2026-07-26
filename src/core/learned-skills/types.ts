@@ -6,19 +6,53 @@
  * (design D4).
  */
 
-/** Learned-skill scope. Project is the default; global requires promotion. */
-export type LearnedSkillScope = 'project' | 'global';
+import type {
+  GlobalIdentityRef,
+  ProjectIdentityRef,
+  StoreIdentityRef,
+} from '../store/identity-types.js';
 
-/** Closed, serializable owner identity. Namespace is part of identity. */
+/**
+ * Learned-skill scope. Project is the default; a Store holds knowledge its
+ * member projects draw on; global requires promotion beyond any one Store.
+ */
+export type LearnedSkillScope = 'project' | 'store' | 'global';
+
+/**
+ * Closed, serializable owner identity used by SELECTORS and by the frozen
+ * run-state record. `id` here is whatever the user or an earlier run named —
+ * a stable projectId, a project-namespace locator, or a Store's display alias.
+ *
+ * It is deliberately NOT what a catalog record is keyed on: see
+ * {@link DurableKnowledgeOwnerRef}, which is the form that still resolves when
+ * two Stores share a display name.
+ */
 export type KnowledgeOwnerRef =
   | { type: 'global' }
   | { type: 'project'; id: string }
   | { type: 'store'; id: string };
 
-/** Closed, serializable planning-root identity. */
+/** Closed, serializable planning-root identity. Same locator semantics. */
 export type KnowledgePlanningRootRef =
   | { type: 'project'; id: string }
   | { type: 'store'; id: string };
+
+/**
+ * The owner a durable catalog record is keyed on. The Store arm is child A's
+ * {@link StoreIdentityRef}: the permanent identity is the authority and the
+ * display alias travels alongside for readability only, so renaming a Store
+ * changes nothing already recorded and two namesake Stores stay distinct.
+ *
+ * Imported from `store/identity-types.ts` rather than redeclared — the release
+ * declares this vocabulary once.
+ */
+export type DurableKnowledgeOwnerRef =
+  | GlobalIdentityRef
+  | ProjectIdentityRef
+  | StoreIdentityRef;
+
+/** Who contributed evidence, or owns a promotion source. Never `global`. */
+export type DurableEvidenceOwnerRef = ProjectIdentityRef | StoreIdentityRef;
 
 /**
  * The project a frozen run belongs to. Durable and path-free BY DESIGN: a
@@ -52,14 +86,20 @@ export type FrozenKnowledgeContext =
       execution: FrozenExecutionRef;
     };
 
+/**
+ * A resolved owner: identity plus the machine-local root it lives at. `uid` is
+ * present whenever the Store carries a permanent identity, and absent only for
+ * a Store whose metadata predates one — which is why every DURABLE write
+ * refuses rather than recording a name (see `learned_owner_legacy_alias`).
+ */
 export type ResolvedKnowledgeOwnerRef =
   | { type: 'global' }
   | { type: 'project'; id: string; root: string }
-  | { type: 'store'; id: string; root: string };
+  | { type: 'store'; id: string; uid?: string; root: string };
 
 export type ResolvedKnowledgePlanningRootRef =
   | { type: 'project'; id: string; root: string }
-  | { type: 'store'; id: string; root: string };
+  | { type: 'store'; id: string; uid?: string; root: string };
 
 export interface KnowledgeSelector {
   project?: string;
@@ -108,13 +148,35 @@ export interface EvidenceReference {
   digest: string;
 }
 
-/** The strict managed manifest persisted as `learned-skill.yaml`. */
-export interface LearnedSkillManifest {
-  version: 1;
+/**
+ * The same evidence reference with its contributor named durably. Version 1
+ * records normalize into this on READ without their file being rewritten, so a
+ * caller never has to know which era a record comes from.
+ */
+export interface NormalizedEvidenceReference {
+  owner: DurableEvidenceOwnerRef;
+  change: string;
+  artifact: string;
+  digest: string;
+}
+
+/**
+ * A request for one EXACT managed source record. Publishing into a Store or
+ * promoting beyond one names its sources this way rather than asserting them:
+ * the record must exist, be active, and carry this knowledge key, so a shared
+ * id is never mistaken for shared knowledge.
+ */
+export interface PromotionSourceLocator {
+  owner: DurableEvidenceOwnerRef;
+  id: string;
+  knowledgeKey: string;
+}
+
+/** Fields both manifest versions carry, in their stable serialized order. */
+interface LearnedSkillManifestCommon {
   id: string;
   /** Stable knowledge key: identical guidance rewrites the same record even when wording changes. */
   knowledgeKey: string;
-  scope: LearnedSkillScope;
   status: LearnedSkillStatus;
   /** Ownership marker — must equal LEARNED_SKILL_GENERATED_BY to be rewritable. */
   generatedBy: string;
@@ -123,8 +185,6 @@ export interface LearnedSkillManifest {
   /** Always-loaded skill description (frontmatter). */
   description: string;
   applicability: Applicability;
-  /** Deduplicated evidence tuples, capped by LEARNED_SKILL_MAX_EVIDENCE_ENTRIES. */
-  evidence: EvidenceReference[];
   /**
    * When evidence overflowed the cap, a bounded summary of what was dropped
    * (count + a stable digest over the dropped tuples) — provenance without
@@ -137,14 +197,51 @@ export interface LearnedSkillManifest {
   retirementReason?: string;
 }
 
+/**
+ * The exact version 1 format. Still written for project and global records
+ * that have no store-typed provenance, so an older reader keeps working and a
+ * read never migrates a file behind the user's back.
+ */
+export interface LearnedSkillManifestV1 extends LearnedSkillManifestCommon {
+  version: 1;
+  scope: 'project' | 'global';
+  /** Deduplicated evidence tuples, capped by LEARNED_SKILL_MAX_EVIDENCE_ENTRIES. */
+  evidence: EvidenceReference[];
+}
+
+/**
+ * The store-capable format: an explicit durable owner and exact source
+ * locators. A Store record is always this version — version 1 has nowhere to
+ * put the Store's permanent identity, and recording a display name would be
+ * keying ownership on the one field this release makes renameable.
+ */
+export interface LearnedSkillManifestV2 extends LearnedSkillManifestCommon {
+  version: 2;
+  scope: LearnedSkillScope;
+  owner: DurableKnowledgeOwnerRef;
+  evidence: NormalizedEvidenceReference[];
+  sources: PromotionSourceLocator[];
+}
+
+export type LearnedSkillManifest = LearnedSkillManifestV1 | LearnedSkillManifestV2;
+
+/** What a record IS, independent of where this machine keeps it. */
+export interface CanonicalKnowledgeIdentity {
+  owner: DurableKnowledgeOwnerRef;
+  id: string;
+}
+
 /** A canonical record on disk: its manifest plus the resolved directory. */
 export interface CanonicalLearnedSkill {
+  identity: CanonicalKnowledgeIdentity;
   manifest: LearnedSkillManifest;
   scope: LearnedSkillScope;
-  /** Absolute canonical directory (<store>/learned-skills/<id>). */
+  /** Absolute canonical directory (<catalog>/<id>). */
   directory: string;
   /** The canonical SKILL.md content. */
   content: string;
+  /** Version 1 evidence normalized here, WITHOUT rewriting the manifest. */
+  evidence: NormalizedEvidenceReference[];
 }
 
 /**
@@ -152,10 +249,10 @@ export interface CanonicalLearnedSkill {
  * codify branch and submitted through the CLI; the core never trusts source
  * text as instruction.
  */
-export interface LearnedSkillCandidate {
+export interface LearnedSkillCandidateV1 {
   version: 1;
   operation: 'upsert' | 'promote' | 'retire';
-  scope: LearnedSkillScope;
+  scope: 'project' | 'global';
   id: string;
   knowledgeKey: string;
   description: string;
@@ -165,11 +262,58 @@ export interface LearnedSkillCandidate {
   retirementReason?: string;
 }
 
+/** The store-capable candidate: a durable owner plus exact source locators. */
+export type LearnedSkillCandidateV2 =
+  | {
+      version: 2;
+      operation: 'upsert' | 'promote';
+      scope: LearnedSkillScope;
+      owner: DurableKnowledgeOwnerRef;
+      id: string;
+      knowledgeKey: string;
+      description: string;
+      instructions: string;
+      applicability: Applicability;
+      evidence: NormalizedEvidenceReference[];
+      sources: PromotionSourceLocator[];
+    }
+  | {
+      version: 2;
+      operation: 'retire';
+      scope: LearnedSkillScope;
+      owner: DurableKnowledgeOwnerRef;
+      id: string;
+      retirementReason?: string;
+    };
+
+export type LearnedSkillCandidate = LearnedSkillCandidateV1 | LearnedSkillCandidateV2;
+
+/** Fields shared by the two write-shaped mutation requests. */
+interface WriteMutationFields {
+  /** Omitted means version 1 — the shape every existing caller already sends. */
+  version?: 1 | 2;
+  owner?: DurableKnowledgeOwnerRef;
+  id: string;
+  knowledgeKey: string;
+  description: string;
+  instructions: string;
+  applicability: Applicability;
+  evidence: EvidenceReference[] | NormalizedEvidenceReference[];
+  sources?: PromotionSourceLocator[];
+}
+
 /** The caller-facing mutation request (a candidate plus the optional rename op). */
 export type LearnedSkillMutationRequest =
-  | { operation: 'upsert'; scope: LearnedSkillScope; id: string; knowledgeKey: string; description: string; instructions: string; applicability: Applicability; evidence: EvidenceReference[] }
-  | { operation: 'promote'; id: string; knowledgeKey: string; description: string; instructions: string; applicability: Applicability; evidence: EvidenceReference[] }
-  | { operation: 'retire'; scope: LearnedSkillScope; id: string; retirementReason?: string }
+  | (WriteMutationFields & { operation: 'upsert'; scope: LearnedSkillScope })
+  | (WriteMutationFields & { operation: 'promote' })
+  | {
+      version?: 1 | 2;
+      operation: 'retire';
+      scope: LearnedSkillScope;
+      owner?: DurableKnowledgeOwnerRef;
+      id: string;
+      retirementReason?: string;
+    }
   | { operation: 'rename'; scope: LearnedSkillScope; fromId: string; toId: string };
 
 /** Context threading project identity and DI overrides through plan/commit/resolve. */
@@ -186,6 +330,26 @@ export interface LearnedSkillContext {
    * or the explicit `--approve-global` flag.
    */
   approveGlobal?: boolean;
+  /**
+   * Consent for a publication into ONE named Store. It carries the Store's
+   * permanent identity rather than being a bare boolean, so an approval can
+   * neither widen to the global scope nor drift onto a different Store that
+   * happens to share a display name.
+   */
+  approveStore?: StoreApprovalGrant;
+}
+
+/**
+ * An approval, bound to the exact scope it approves. Approval is never
+ * inferred — not from a previous approval, not from silence, and not from the
+ * knowledge already existing somewhere narrower.
+ */
+export interface StoreApprovalGrant {
+  scope: 'store';
+  /** The Store's permanent identity, as resolved when the approval was given. */
+  uid: string;
+  /** Display alias, carried for the message only. */
+  id?: string;
 }
 
 /** The concrete action a plan resolved to. */
@@ -206,11 +370,31 @@ export interface LearnedSkillBlock {
     | 'store_unwritable'
     | 'global_evidence_insufficient'
     | 'global_approval_required'
+    /** The Store has no membership record for a contributing project. */
+    | 'store_membership_invalid'
+    /** Fewer independent member projects than publication requires. */
+    | 'store_evidence_insufficient'
+    /** A named source record is missing, retired, or carries another key. */
+    | 'promotion_source_invalid'
+    /** Sources of different classes cannot be combined into one publication. */
+    | 'promotion_source_mixed'
+    /** A source or the target changed between planning and committing. */
+    | 'promotion_source_drift'
+    /** Explicit, Store-scoped approval was not given. */
+    | 'store_approval_required'
+    /** The approval names a different scope, or a different Store. */
+    | 'store_approval_scope_mismatch'
+    /** A Store whose metadata predates permanent identity cannot own records. */
+    | 'learned_owner_legacy_alias'
+    /** The authoritative owner is no longer the one the plan was made against. */
+    | 'typed_owner_mismatch'
     | 'knowledge_owner_scope_mismatch'
     | 'knowledge_store_scope_unavailable'
     | 'knowledge_candidate_owner_mismatch'
     | 'invalid_request';
   message: string;
+  /** An ordered, copy-pasteable command that would make this work. */
+  repair?: string[];
 }
 
 /**
@@ -222,13 +406,29 @@ export interface LearnedSkillPlan {
   action: LearnedSkillAction;
   scope: LearnedSkillScope;
   id: string;
+  /** What the record IS — the durable owner plus the id. */
+  identity: CanonicalKnowledgeIdentity;
+  /** The exact source records this publication draws on, resolved. */
+  sourceIdentities: CanonicalKnowledgeIdentity[];
   knowledgeKey?: string;
+  applicability?: Applicability;
   requiresGlobalApproval: boolean;
+  /** Set for a Store publication; satisfied only by an approval naming this Store. */
+  requiresStoreApproval: boolean;
   block?: LearnedSkillBlock;
   /** Human-readable one-line summary of the planned action. */
   summary: string;
   /** Internal commit payload (absent for no-op/blocked). */
   readonly commit?: LearnedSkillCommitPayload;
+}
+
+/** What one promotion source looked like when the plan was made. */
+export interface PromotionSourceSnapshot {
+  locator: PromotionSourceLocator;
+  identity: CanonicalKnowledgeIdentity;
+  contentDigest: string;
+  manifestDigest: string;
+  updatedAt: string;
 }
 
 /** Opaque-to-callers payload the plan hands to commit. */
@@ -243,10 +443,21 @@ export interface LearnedSkillCommitPayload {
   manifest?: LearnedSkillManifest;
   /** Serialized SKILL.md content to write. */
   content?: string;
-  /** Lock file path for the target registry (per-store serialization). */
+  /** Lock file path for the target catalog (per-owner serialization). */
   lockPath: string;
   /** Expected content digest to re-verify after staging (atomic-write guard). */
   expectedContentDigest?: string;
+  /** What the target looked like at plan time; a change aborts the commit. */
+  expectedTarget?:
+    | { kind: 'absent' }
+    | { kind: 'managed'; contentDigest: string; manifestDigest: string; updatedAt: string };
+  /** For rename: what the source looked like at plan time. */
+  expectedFrom?: { contentDigest: string; manifestDigest: string; updatedAt: string };
+  /** Re-verified under the lock, so a source cannot change mid-publication. */
+  sourceSnapshots?: PromotionSourceSnapshot[];
+  /** The Store this write lands in, by permanent identity, and its checkout. */
+  targetStoreUid?: string;
+  targetStoreRoot?: string;
 }
 
 /** The outcome of committing a plan. */
@@ -254,8 +465,13 @@ export interface LearnedSkillResult {
   outcome: 'created' | 'rewritten' | 'retired' | 'renamed' | 'no-op' | 'blocked';
   scope: LearnedSkillScope;
   id: string;
+  identity: CanonicalKnowledgeIdentity;
   status?: LearnedSkillStatus;
   directory?: string;
+  /** Present for a Store mutation: the repository the user must commit in. */
+  storeRoot?: string;
+  /** Absolute paths this mutation wrote. Rasen stages and commits nothing. */
+  changedFiles?: string[];
   block?: LearnedSkillBlock;
 }
 
@@ -263,6 +479,8 @@ export interface LearnedSkillResult {
 export interface ResolvedLearnedSkillSet {
   /** Active project-scoped skills owned by the resolved project. */
   project: CanonicalLearnedSkill[];
+  /** Active skills owned by the resolved Store. */
+  store: CanonicalLearnedSkill[];
   /** Active approved global skills (applicability filtering is the caller's job for project-local homes). */
   global: CanonicalLearnedSkill[];
 }
