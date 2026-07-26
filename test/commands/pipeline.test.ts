@@ -2011,6 +2011,117 @@ stages:
       expect(json.planner).toBeNull(); // no persistent planner recorded
     });
 
+    it('reports an invalid portfolio without falling back to parent auto-run.json', async () => {
+      const changeDir = path.join(changesDir, 'invalid-portfolio');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'invalid-portfolio',
+          children: [
+            {
+              id: 'invalid-portfolio-child',
+              pipeline: 'small-feature',
+              dependsOn: [],
+              status: 'propose-done',
+            },
+          ],
+        }),
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'auto-decompose',
+          stages: {
+            decompose: { status: 'done' },
+            ship: { status: 'pending' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'invalid-portfolio', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json).toMatchObject({
+        change: 'invalid-portfolio',
+        isPortfolio: true,
+        hasRunState: false,
+        invalidPortfolioState: true,
+        pipeline: null,
+        next: null,
+        remaining: [],
+      });
+      expect(json.portfolioStatePath).toContain('portfolio-run.json');
+      expect(json.note).toContain('propose-done');
+
+      const textResult = await runCLI(
+        ['pipeline', 'resume', 'invalid-portfolio'],
+        { cwd: testDir }
+      );
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Invalid portfolio run-state');
+      expect(textResult.stdout).toContain('propose-done');
+    });
+
+    it('resumes portfolio-level delivery after every child has completed', async () => {
+      const changeDir = path.join(changesDir, 'delivery-pending');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'delivery-pending',
+          children: [
+            { id: 'child-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'child-b', pipeline: 'small-feature', dependsOn: ['child-a'], status: 'skipped' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'delivery-pending', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout.trim())).toMatchObject({
+        isPortfolio: true,
+        childrenComplete: true,
+        delivery: { status: 'pending' },
+        complete: false,
+        next: 'portfolio-delivery',
+        remaining: ['portfolio-delivery'],
+      });
+
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'delivery-pending',
+          children: [
+            { id: 'child-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'child-b', pipeline: 'small-feature', dependsOn: ['child-a'], status: 'skipped' },
+          ],
+          delivery: { status: 'done', mode: 'local' },
+        }),
+        'utf-8'
+      );
+      const complete = await runCLI(
+        ['pipeline', 'resume', 'delivery-pending', '--json'],
+        { cwd: testDir }
+      );
+      expect(JSON.parse(complete.stdout.trim())).toMatchObject({
+        childrenComplete: true,
+        delivery: { status: 'done', mode: 'local' },
+        complete: true,
+        next: null,
+        remaining: [],
+      });
+    });
+
     it('surfaces interrupted and escalated children, not just the runnable frontier (P3)', async () => {
       const changeDir = path.join(changesDir, 'portfolio-mixed');
       await fs.mkdir(changeDir, { recursive: true });

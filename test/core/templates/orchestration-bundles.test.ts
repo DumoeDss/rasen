@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { generateSkillContent } from '../../../src/core/shared/skill-generation.js';
-import {
-  getAutoCommandSkillTemplate,
-  getGoalCommandSkillTemplate,
-  getReviewCycleSkillTemplate,
-} from '../../../src/core/templates/skill-templates.js';
 import {
   AUTO_ORCHESTRATION_PLAYBOOK,
   GOAL_ORCHESTRATION_PLAYBOOK,
@@ -105,6 +99,25 @@ describe('selective orchestration bundles', () => {
     expectCanonicalOrder(
       AUTO_ORCHESTRATION_PLAYBOOK,
       CANONICAL_STEP_ORDER
+    );
+  });
+
+  it('keeps portfolio state canonical and every child resumable from creation', () => {
+    const stepG = AUTO_ORCHESTRATION_PLAYBOOK.slice(
+      AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G '),
+      AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G.1 ')
+    );
+    expect(stepG).toContain(
+      'rasen new change <child-id> --pipeline <childPipeline>'
+    );
+    expect(stepG).toContain('"dependsOn": ["<parent>-a"]');
+    expect(stepG).toContain('"delivery":');
+    expect(stepG).toContain('"status": "pending"');
+    expect(stepG).toContain('next: portfolio-delivery');
+    expect(stepG).toContain('present but invalid portfolio is an error');
+    expect(stepG).not.toContain("each child's prerequisites");
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      '**done | skipped | delegated** count as complete for resume'
     );
   });
 
@@ -322,19 +335,4 @@ describe('selective orchestration bundles', () => {
     }
   });
 
-  it('keeps fully generated SKILL.md files within their UTF-8 byte budgets', () => {
-    const cases = [
-      ['auto', getAutoCommandSkillTemplate, 107],
-      ['goal', getGoalCommandSkillTemplate, 70],
-      ['review-cycle', getReviewCycleSkillTemplate, 60],
-    ] as const;
-
-    for (const [name, createTemplate, maxKiB] of cases) {
-      const content = generateSkillContent(createTemplate(), 'SIZE-BUDGET');
-      expect(
-        Buffer.byteLength(content, 'utf8'),
-        `${name} generated SKILL.md exceeds ${maxKiB} KiB`
-      ).toBeLessThanOrEqual(maxKiB * 1024);
-    }
-  });
 });

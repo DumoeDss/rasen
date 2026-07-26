@@ -78,7 +78,9 @@ export interface PipelineMessageValues {
   interrupted: { stages: string };
   escalated: { stages: string };
   persistentPlanner: { planner: string };
+  portfolioDelivery: { status: string };
   remaining: { stages: string };
+  invalidPortfolioStateNote: { path: string; reason: string };
   invalidRunStateNote: { path: string; reason: string };
   noRunStateNote: undefined;
   nextStage: { stage: string };
@@ -167,7 +169,9 @@ export const PIPELINE_MESSAGE_KEYS = [
   'interrupted',
   'escalated',
   'persistentPlanner',
+  'portfolioDelivery',
   'remaining',
+  'invalidPortfolioStateNote',
   'invalidRunStateNote',
   'noRunStateNote',
   'nextStage',

@@ -342,6 +342,45 @@ describe('artifact-workflow CLI commands', () => {
       expect(stat.isDirectory()).toBe(true);
     });
 
+    it('initializes resumable per-change run-state when --pipeline is provided', async () => {
+      const result = await runCLI(
+        ['new', 'change', 'portfolio-child', '--pipeline', 'small-feature', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.change.pipeline).toBe('small-feature');
+      expect(json.change.runStatePath).toMatch(/auto-run\.json$/);
+
+      const state = JSON.parse(await fs.readFile(json.change.runStatePath, 'utf-8'));
+      expect(state.pipeline).toBe('small-feature');
+      expect(state.stages.propose.status).toBe('pending');
+      const stages = state.stages as Record<string, { status: string }>;
+      expect(Object.values(stages).every(stage => stage.status === 'pending')).toBe(true);
+
+      const resumed = await runCLI(
+        ['pipeline', 'resume', 'portfolio-child', '--json'],
+        { cwd: tempDir }
+      );
+      expect(resumed.exitCode).toBe(0);
+      expect(JSON.parse(resumed.stdout.trim())).toMatchObject({
+        pipeline: 'small-feature',
+        next: 'propose',
+      });
+    });
+
+    it('rejects an unknown --pipeline before creating the change', async () => {
+      const result = await runCLI(
+        ['new', 'change', 'bad-child', '--pipeline', 'not-a-pipeline', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('not-a-pipeline');
+      await expect(fs.stat(path.join(changesDir, 'bad-child'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+
     it('rejects --initiative and writes no change', async () => {
       const result = await runCLI(
         ['new', 'change', 'linked-change', '--initiative', 'billing-launch'],

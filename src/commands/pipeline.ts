@@ -30,11 +30,12 @@ import {
   latestStageHandoffs,
   sessionHandoffGeneration,
   normalizeWorker,
-  readPortfolioState,
+  readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
   runnableChildren,
   interruptedChildren,
   escalatedChildren,
+  arePortfolioChildrenComplete,
   isPortfolioComplete,
   resolveChildPipelineName,
   mapLegacySkillId,
@@ -466,7 +467,37 @@ export class PipelineCommand {
     // the next runnable child(ren) from the dependency DAG rather than stages.
     // Sticky-legacy (design D4): workDir first, change dir fallback.
     const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
-    const portfolio = portfolioLocation ? readPortfolioState(portfolioLocation.dir) : null;
+    const portfolioRead = portfolioLocation
+      ? readPortfolioStateDetailed(portfolioLocation.dir)
+      : ({ kind: 'absent' } as const);
+    if (portfolioRead.kind === 'invalid' && portfolioLocation) {
+      const result = {
+        change: changeName,
+        isPortfolio: true as const,
+        hasRunState: false as const,
+        invalidPortfolioState: true as const,
+        portfolioStatePath: portfolioLocation.path,
+        pipeline: null,
+        next: null,
+        remaining: [] as string[],
+        note: getPipelineMessages('en').format('invalidPortfolioStateNote', {
+          path: portfolioLocation.path,
+          reason: portfolioRead.reason,
+        }),
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const messages = getPipelineMessages();
+      console.log(messages.format('changeLabel', { change: changeName }));
+      console.log(messages.format('invalidPortfolioStateNote', {
+        path: portfolioLocation.path,
+        reason: portfolioRead.reason,
+      }));
+      return;
+    }
+    const portfolio = portfolioRead.kind === 'ok' ? portfolioRead.state : null;
     if (portfolio && portfolioLocation) {
       const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
       const remainingPipelineNames = new Set(
@@ -496,12 +527,23 @@ export class PipelineCommand {
       const remainingChildren = portfolio.children
         .filter(c => !isSatisfied(c.status))
         .map(c => c.id);
+      const childrenComplete = arePortfolioChildrenComplete(portfolio);
+      const deliveryTerminal =
+        portfolio.delivery.status === 'done' || portfolio.delivery.status === 'skipped';
+      const deliveryRunnable =
+        childrenComplete
+        && (portfolio.delivery.status === 'pending'
+          || portfolio.delivery.status === 'in_progress');
       const result = {
         change: changeName,
         isPortfolio: true as const,
         hasRunState: true as const,
         runStateDir: portfolioLocation.dir,
         complete: isPortfolioComplete(portfolio),
+        childrenComplete,
+        delivery: portfolio.delivery,
+        next: deliveryRunnable ? 'portfolio-delivery' : null,
+        remaining: deliveryTerminal ? [] : ['portfolio-delivery'],
         completedChildren,
         runnableChildren: runnable,
         interruptedChildren: interrupted,
@@ -545,6 +587,12 @@ export class PipelineCommand {
           ?? planner.role
           ?? messages.format('recorded');
         console.log(messages.format('persistentPlanner', { planner: plannerId }));
+      }
+      console.log(messages.format('portfolioDelivery', {
+        status: portfolio.delivery.status,
+      }));
+      if (deliveryRunnable) {
+        console.log(messages.format('nextStage', { stage: 'portfolio-delivery' }));
       }
       console.log(messages.format('remaining', {
         stages: remainingChildren.length > 0 ? remainingChildren.join(', ') : none,

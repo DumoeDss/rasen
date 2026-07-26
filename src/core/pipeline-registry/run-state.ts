@@ -37,6 +37,7 @@ export const StageStatusSchema = z.enum([
   'done',
   'skipped',
   'escalated',
+  'delegated',
 ]);
 export type StageStatus = z.infer<typeof StageStatusSchema>;
 
@@ -507,14 +508,45 @@ export function writeRunState(changeDir: string, state: RunState): void {
   fs.writeFileSync(runStatePath(changeDir), `${JSON.stringify(validated, null, 2)}\n`, 'utf-8');
 }
 
+export interface RunStatePipelineSeed {
+  name: string;
+  stages: readonly { id: string }[];
+}
+
+/**
+ * Initialize the durable state for a newly-created change assigned to a
+ * pipeline. This is the single writer seam used by portfolio child creation,
+ * so every child is resumable before its first stage starts.
+ */
+export function initializeRunState(
+  changeDir: string,
+  pipeline: RunStatePipelineSeed
+): { path: string; state: RunState } {
+  const destination = runStatePath(changeDir);
+  if (fs.existsSync(destination)) {
+    throw new Error(`Run-state already exists at ${destination}`);
+  }
+  const state: RunState = {
+    pipeline: pipeline.name,
+    stages: Object.fromEntries(
+      pipeline.stages.map(stage => [stage.id, { status: 'pending' as const }])
+    ),
+  };
+  writeRunState(changeDir, state);
+  return { path: destination, state };
+}
+
 /**
  * Stages that count as completed for resume purposes: when `stages` is present,
- * those with status done|skipped; otherwise the `completed` convenience array.
+ * those with status done|skipped|delegated; otherwise the `completed`
+ * convenience array. `delegated` is terminal at the parent stage because the
+ * portfolio children own that work.
  */
 export function completedStages(state: RunState): string[] {
   if (state.stages) {
     return Object.entries(state.stages)
-      .filter(([, s]) => s.status === 'done' || s.status === 'skipped')
+      .filter(([, s]) =>
+        s.status === 'done' || s.status === 'skipped' || s.status === 'delegated')
       .map(([id]) => id);
   }
   return state.completed ?? [];

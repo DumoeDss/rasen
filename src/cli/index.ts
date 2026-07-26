@@ -605,6 +605,7 @@ newCmd
   .option('--proposal <text>', 'Seed proposal.md with this text, making the change active immediately')
   .option('--goal <text>', 'Optional goal metadata to store with the change')
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
+  .option('--pipeline <name>', 'Pipeline to initialize run-state for')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)

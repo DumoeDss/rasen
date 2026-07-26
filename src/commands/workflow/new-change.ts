@@ -11,6 +11,12 @@ import ora from 'ora';
 import path from 'path';
 import { createChange, validateChangeName } from '../../utils/change-utils.js';
 import { formatChangeLocation } from '../../core/planning-home.js';
+import { resolveChangeWorkDir } from '../../core/change-work.js';
+import {
+  initializeRunState,
+  loadPipelineByName,
+  type PipelineYaml,
+} from '../../core/pipeline-registry/index.js';
 import {
   resolveRootForCommand,
   RootSelectionError,
@@ -37,6 +43,7 @@ export interface NewChangeOptions {
   storePath?: string;
   initiative?: string;
   areas?: string;
+  pipeline?: string;
   json?: boolean;
 }
 
@@ -46,6 +53,8 @@ interface NewChangeOutput {
     path: string;
     metadataPath: string;
     schema: string;
+    pipeline?: string;
+    runStatePath?: string;
   };
   root: RootOutput;
 }
@@ -84,6 +93,10 @@ function printCreatedChangeHuman(
       : payload.change.path;
   console.log(`Created change '${payload.change.id}' at ${location}/`);
   console.log(`Schema: ${payload.change.schema}`);
+  if (payload.change.pipeline && payload.change.runStatePath) {
+    console.log(`Pipeline: ${payload.change.pipeline}`);
+    console.log(`Run-state: ${payload.change.runStatePath}`);
+  }
   console.log(`Next: ${withStoreFlag(root, `rasen status --change ${payload.change.id}`)}`);
 }
 
@@ -119,6 +132,11 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     }
 
     const projectRoot = root.path;
+    // Resolve before creating anything so an invalid assignment is atomic:
+    // no orphan child directory is left behind on an unknown pipeline.
+    const pipeline: PipelineYaml | null = options.pipeline
+      ? loadPipelineByName(options.pipeline, projectRoot)
+      : null;
 
     // Validate schema if provided
     if (options.schema) {
@@ -161,12 +179,22 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       );
     }
 
+    const initialized = pipeline
+      ? initializeRunState(
+          (await resolveChangeWorkDir(projectRoot, name, { ensure: true })) ?? result.changeDir,
+          pipeline
+        )
+      : null;
+
     const payload: NewChangeOutput = {
       change: {
         id: name,
         path: result.changeDir,
         metadataPath: path.join(result.changeDir, '.openspec.yaml'),
         schema: result.schema,
+        ...(pipeline && initialized
+          ? { pipeline: pipeline.name, runStatePath: initialized.path }
+          : {}),
       },
       root: toRootOutput(root),
     };
