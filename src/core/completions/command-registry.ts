@@ -837,6 +837,26 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
               COMMON_FLAGS.json,
             ],
           },
+          {
+            name: 'import',
+            description: "Import a portable bundle as this project's own knowledge",
+            acceptsPositional: true,
+            positionalType: 'path',
+            positionals: [{ name: 'bundle', type: 'path' }],
+            flags: [
+              {
+                name: 'project',
+                description: 'Select a project knowledge owner independently from the planning root',
+                takesValue: true,
+              },
+              {
+                name: 'dry-run',
+                description:
+                  'Validate and classify the complete bundle without writing anything',
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
         ],
       },
       {

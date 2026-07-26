@@ -832,9 +832,9 @@ from git history as described above.
 
 ---
 
-## Learned knowledge: four deliberate breaks
+## Learned knowledge: six deliberate breaks
 
-This release changes four things about learned knowledge on purpose. Each one is
+This release changes six things about learned knowledge on purpose. Each one is
 detected, previewable, and blocks rather than guesses; none of them happens
 during an ordinary command. Run `rasen knowledge effective` first to see what
 your project currently receives, and `rasen knowledge migrate --dry-run` to see
@@ -943,9 +943,45 @@ junctions are involved. Store staging stays outside the Store on the same
 filesystem. If the Store placement fails after the user bundle was written,
 Rasen reports the surviving user bundle path separately from the Store error.
 
-This child exports and transports only. It does **not** import the bundle on the
-receiving machine and does not resolve conflicts there. Keep the transported
-file intact for the later import workflow.
+Keep the transported file intact until the receiving project imports it. Merely
+cloning the Store carries the file; it does not import or publish its contents.
+
+### 6. Import a project's bundle on another machine
+
+**What changed.** A second machine can now validate, preview, and import the
+same project's explicit bundle without copying `~/.rasen`:
+
+```bash
+# Machine A
+rasen knowledge bundle export \
+  --project <projectId-or-root> \
+  --to ./project-knowledge.bundle.json
+
+# Machine B, after registering a checkout of that same project identity
+rasen knowledge bundle import ./project-knowledge.bundle.json \
+  --project <projectId-or-root> \
+  --dry-run
+rasen knowledge bundle import ./project-knowledge.bundle.json \
+  --project <projectId-or-root>
+```
+
+The preview reports every record that is new, already present, or conflicting
+and changes nothing. A conflict on one identifier prevents every record in the
+bundle from being written. Resolve the named local record deliberately, rerun
+the preview until it reports no conflicts, and then retry the same import. A
+second clean import is a byte-identical no-op.
+
+For Store transport, commit the file printed by export on machine A, clone or
+update that Store on machine B, and pass the cloned
+`rasen/knowledge-bundles/<projectId>/<bundleId>.bundle.json` path to the same
+import command. The route changes nothing about ownership: imported manifests
+name the project, contain no Store publication source, and create no Store
+catalog, membership, metadata, staging, commit, or push authority.
+
+`baseProjectCommit` is shown as provenance only. It does not gate import and
+does not make the bundle a portable run checkpoint. Machine-preparation
+integration, interactive reconciliation, and portable in-flight run state are
+not part of this step.
 
 ### Rolling back learned knowledge
 

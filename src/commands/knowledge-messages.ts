@@ -69,6 +69,9 @@ export interface KnowledgeMessages {
   dryRunDescription: string;
   bundleDescription: string;
   bundleExportDescription: string;
+  bundleImportDescription: string;
+  bundleImportPathDescription: string;
+  bundleImportDryRunDescription: string;
   bundleDestinationDescription: string;
   bundleStoreDestinationDescription: string;
   bundleJsonDescription: string;
@@ -102,6 +105,76 @@ export interface KnowledgeMessages {
   ) => string;
   bundleStoreWriteRepair: string;
   bundleStoreWritePartialRepair: string;
+  bundleImportSucceeded: (
+    project: string,
+    bundle: string,
+    path: string,
+    added: number,
+    present: number
+  ) => string;
+  bundleImportPreviewed: (
+    project: string,
+    bundle: string,
+    path: string,
+    added: number,
+    present: number,
+    conflicts: number
+  ) => string;
+  bundleImportAdded: (id: string) => string;
+  bundleImportAlreadyPresent: (id: string) => string;
+  bundleImportConflict: (
+    id: string,
+    reason: string,
+    bundle: string,
+    local: string
+  ) => string;
+  bundleImportConflictReasonContent: string;
+  bundleImportConflictReasonLifecycle: string;
+  bundleImportConflictReasonOccupied: string;
+  bundleImportStatusActive: string;
+  bundleImportStatusRetired: string;
+  bundleImportLocalOccupied: string;
+  bundleImportLocalManaged: (digest: string, status: string) => string;
+  bundleImportBundleSide: (digest: string, status: string) => string;
+  bundleImportWarningProvenance: (commit: string) => string;
+  bundleImportWarningBaseUnavailable: string;
+  bundleImportWarningStagingCleanup: string;
+  bundleImportInvalid: (reason: string) => string;
+  bundleImportProjectUnavailable: (reason: string) => string;
+  bundleImportProjectReasonResolverThrew: string;
+  bundleImportProjectReasonUnknown: string;
+  bundleImportProjectMismatch: (bundle: string, project: string) => string;
+  bundleImportIdentifierInvalid: (reason: string) => string;
+  bundleImportCatalogUnavailable: (reason: string) => string;
+  bundleImportCatalogReasonUnregisteredProject: string;
+  bundleImportCatalogReasonTypedOwnerMismatch: string;
+  bundleImportCatalogReasonOwnerScopeMismatch: string;
+  bundleImportCatalogReasonResolverThrew: string;
+  bundleImportCatalogReasonUnknown: string;
+  bundleImportCatalogDrift: string;
+  bundleImportConflictsRefused: (count: string) => string;
+  bundleImportLockFailed: (reason: string) => string;
+  bundleImportLockReasonTimeout: string;
+  bundleImportLockReasonCreateFailed: string;
+  bundleImportLockReasonUnknown: string;
+  bundleImportTransactionFailed: (reason: string) => string;
+  bundleImportUnknownFailed: (reason: string) => string;
+  bundleImportUnknownChange: string;
+  bundleImportRollbackFailed: (reason: string) => string;
+  bundleImportChangeUnknown: string;
+  bundleImportRetainedPath: (path: string) => string;
+  bundleImportLockPath: (path: string) => string;
+  bundleImportInvalidRepair: string;
+  bundleImportProjectUnavailableRepair: string;
+  bundleImportProjectMismatchRepair: string;
+  bundleImportIdentifierRepair: string;
+  bundleImportCatalogRepair: string;
+  bundleImportConflictRepair: string;
+  bundleImportLockRepair: string;
+  bundleImportLockCreateRepair: string;
+  bundleImportTransactionRepair: string;
+  bundleImportUnknownRepair: string;
+  bundleImportRollbackRepair: string;
   effectiveHeading: (project: string, status: string) => string;
   effectiveRoots: (canonical: string, evaluation: string) => string;
   effectiveEmpty: string;
@@ -194,6 +267,9 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     dryRunDescription: raw.dryRunDescription,
     bundleDescription: raw.bundleDescription,
     bundleExportDescription: raw.bundleExportDescription,
+    bundleImportDescription: raw.bundleImportDescription,
+    bundleImportPathDescription: raw.bundleImportPathDescription,
+    bundleImportDryRunDescription: raw.bundleImportDryRunDescription,
     bundleDestinationDescription: raw.bundleDestinationDescription,
     bundleStoreDestinationDescription: raw.bundleStoreDestinationDescription,
     bundleJsonDescription: raw.bundleJsonDescription,
@@ -237,6 +313,86 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
       }),
     bundleStoreWriteRepair: raw.bundleStoreWriteRepair,
     bundleStoreWritePartialRepair: raw.bundleStoreWritePartialRepair,
+    bundleImportSucceeded: (project, bundle, path, added, present) =>
+      format(raw.bundleImportSucceeded, { project, bundle, path, added, present }),
+    bundleImportPreviewed: (project, bundle, path, added, present, conflicts) =>
+      format(raw.bundleImportPreviewed, {
+        project,
+        bundle,
+        path,
+        added,
+        present,
+        conflicts,
+      }),
+    bundleImportAdded: (id) => format(raw.bundleImportAdded, { id }),
+    bundleImportAlreadyPresent: (id) => format(raw.bundleImportAlreadyPresent, { id }),
+    bundleImportConflict: (id, reason, bundle, local) =>
+      format(raw.bundleImportConflict, { id, reason, bundle, local }),
+    bundleImportConflictReasonContent: raw.bundleImportConflictReasonContent,
+    bundleImportConflictReasonLifecycle: raw.bundleImportConflictReasonLifecycle,
+    bundleImportConflictReasonOccupied: raw.bundleImportConflictReasonOccupied,
+    bundleImportStatusActive: raw.bundleImportStatusActive,
+    bundleImportStatusRetired: raw.bundleImportStatusRetired,
+    bundleImportLocalOccupied: raw.bundleImportLocalOccupied,
+    bundleImportLocalManaged: (digest, status) =>
+      format(raw.bundleImportLocalManaged, { digest, status }),
+    bundleImportBundleSide: (digest, status) =>
+      format(raw.bundleImportBundleSide, { digest, status }),
+    bundleImportWarningProvenance: (commit) =>
+      format(raw.bundleImportWarningProvenance, { commit }),
+    bundleImportWarningBaseUnavailable: raw.bundleImportWarningBaseUnavailable,
+    bundleImportWarningStagingCleanup: raw.bundleImportWarningStagingCleanup,
+    bundleImportInvalid: (reason) => format(raw.bundleImportInvalid, { reason }),
+    bundleImportProjectUnavailable: (reason) =>
+      format(raw.bundleImportProjectUnavailable, { reason }),
+    bundleImportProjectReasonResolverThrew:
+      raw.bundleImportProjectReasonResolverThrew,
+    bundleImportProjectReasonUnknown: raw.bundleImportProjectReasonUnknown,
+    bundleImportProjectMismatch: (bundle, project) =>
+      format(raw.bundleImportProjectMismatch, { bundle, project }),
+    bundleImportIdentifierInvalid: (reason) =>
+      format(raw.bundleImportIdentifierInvalid, { reason }),
+    bundleImportCatalogUnavailable: (reason) =>
+      format(raw.bundleImportCatalogUnavailable, { reason }),
+    bundleImportCatalogReasonUnregisteredProject:
+      raw.bundleImportCatalogReasonUnregisteredProject,
+    bundleImportCatalogReasonTypedOwnerMismatch:
+      raw.bundleImportCatalogReasonTypedOwnerMismatch,
+    bundleImportCatalogReasonOwnerScopeMismatch:
+      raw.bundleImportCatalogReasonOwnerScopeMismatch,
+    bundleImportCatalogReasonResolverThrew:
+      raw.bundleImportCatalogReasonResolverThrew,
+    bundleImportCatalogReasonUnknown: raw.bundleImportCatalogReasonUnknown,
+    bundleImportCatalogDrift: raw.bundleImportCatalogDrift,
+    bundleImportConflictsRefused: (count) =>
+      format(raw.bundleImportConflictsRefused, { count }),
+    bundleImportLockFailed: (reason) => format(raw.bundleImportLockFailed, { reason }),
+    bundleImportLockReasonTimeout: raw.bundleImportLockReasonTimeout,
+    bundleImportLockReasonCreateFailed: raw.bundleImportLockReasonCreateFailed,
+    bundleImportLockReasonUnknown: raw.bundleImportLockReasonUnknown,
+    bundleImportTransactionFailed: (reason) =>
+      format(raw.bundleImportTransactionFailed, { reason }),
+    bundleImportUnknownFailed: (reason) =>
+      format(raw.bundleImportUnknownFailed, { reason }),
+    bundleImportUnknownChange: raw.bundleImportUnknownChange,
+    bundleImportRollbackFailed: (reason) =>
+      format(raw.bundleImportRollbackFailed, { reason }),
+    bundleImportChangeUnknown: raw.bundleImportChangeUnknown,
+    bundleImportRetainedPath: (path) =>
+      format(raw.bundleImportRetainedPath, { path }),
+    bundleImportLockPath: (path) => format(raw.bundleImportLockPath, { path }),
+    bundleImportInvalidRepair: raw.bundleImportInvalidRepair,
+    bundleImportProjectUnavailableRepair:
+      raw.bundleImportProjectUnavailableRepair,
+    bundleImportProjectMismatchRepair: raw.bundleImportProjectMismatchRepair,
+    bundleImportIdentifierRepair: raw.bundleImportIdentifierRepair,
+    bundleImportCatalogRepair: raw.bundleImportCatalogRepair,
+    bundleImportConflictRepair: raw.bundleImportConflictRepair,
+    bundleImportLockRepair: raw.bundleImportLockRepair,
+    bundleImportLockCreateRepair: raw.bundleImportLockCreateRepair,
+    bundleImportTransactionRepair: raw.bundleImportTransactionRepair,
+    bundleImportUnknownRepair: raw.bundleImportUnknownRepair,
+    bundleImportRollbackRepair: raw.bundleImportRollbackRepair,
     effectiveHeading: (project, status) => format(raw.effectiveHeading, { project, status }),
     effectiveRoots: (canonical, evaluation) =>
       format(raw.effectiveRoots, { canonical, evaluation }),
