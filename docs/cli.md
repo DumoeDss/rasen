@@ -1576,6 +1576,7 @@ rasen knowledge show <id> [--scope project|store|global] [--project <id> | --sto
 rasen knowledge retire <id> [--scope project|store|global] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--yes] [--json]
 rasen knowledge effective [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
 rasen knowledge migrate [--dry-run] [--project <id> | --store <id>] [--run-state-dir <absolute-dir>] [--json]
+rasen knowledge bundle export --project <projectId|root> --to <path> [--to-store <store>] [--json]
 ```
 
 **Subcommands:**
@@ -1588,6 +1589,7 @@ rasen knowledge migrate [--dry-run] [--project <id> | --store <id>] [--run-state
 | `retire <id>` | Retire a managed learned skill (requires `--yes` outside a TTY). |
 | `effective` | Show what this project actually receives — the resolved set, its sources by permanent identity, conflicts, unreachable Stores, and the three roots. Reads only; writes nothing. |
 | `migrate` | Move per-clone knowledge into the project's canonical home and re-key ownership records onto permanent identity. Both steps preview with `--dry-run`. |
+| `bundle export` | Export the named project's own canonical learned knowledge to one new portable file and optionally place the same file in a Store as transport. |
 
 **Options:**
 
@@ -1602,7 +1604,131 @@ rasen knowledge migrate [--dry-run] [--project <id> | --store <id>] [--run-state
 | `--approve-global` | Consent to a global create/promotion in a non-interactive run (`apply`). Rejected for a project or store mutation so consent cannot be reused. |
 | `--yes` | Skip the retirement confirmation (`retire`). |
 | `--dry-run` | Preview both migrations and write nothing at all (`migrate`). |
+| `--to <path>` | New bundle file to create (`bundle export`). Any existing filesystem entry at this path is an occupied destination and is never replaced. |
+| `--to-store <store>` | Also place the same bundle in the registered Store's reserved `rasen/knowledge-bundles/` transport directory. This grants no ownership and changes no Store catalog or membership. |
 | `--json` | Emit a single JSON document on stdout (agent contract). |
+
+#### Project-knowledge bundle export
+
+`rasen knowledge bundle export` is an explicit, export-only route for carrying a
+project's own learned knowledge. `--project` is required and accepts either the
+permanent project identity or a registered project root. `--to` is required and
+names the one user-selected file the command may create:
+
+```bash
+rasen knowledge bundle export \
+  --project 3f0b0a2c-… \
+  --to ./web-project-knowledge.bundle.json
+```
+
+To carry that same validated bundle through a Store, add its permanent identity
+or unambiguous display alias:
+
+```bash
+rasen knowledge bundle export \
+  --project 3f0b0a2c-… \
+  --to ./web-project-knowledge.bundle.json \
+  --to-store 9f0c1e2a-…
+```
+
+The Store copy is written to
+`<store>/rasen/knowledge-bundles/<projectId>/<bundleId>.bundle.json`. The
+bundle identity makes every placement distinct; an existing entry is never
+replaced. Transport does not write `.rasen-store/store.yaml`, project
+membership records, the Store knowledge catalog, or any other Store-owned
+metadata. It does not stage, commit, or push. Human and JSON output name the
+transported file the user may commit.
+
+When `--to-store` is used, `--to` must resolve outside the selected Store,
+including through symlink or junction spellings. Transport staging is private
+and outside the Store on the same filesystem, so the Store gains only the one
+derived untracked bundle file. If Store placement fails after the independent
+user file was published, both human and JSON errors report that user file as
+successful and name the Store failure separately.
+
+The strict versioned file contains exactly these bundle fields:
+`version`, `bundleId`, `projectId`, `createdAt`, `baseProjectCommit`, and
+`records`. Each record contains exactly `id`, `knowledgeKey`, `contentDigest`,
+the strict managed `manifest`, and its canonical `content`. Retired records are
+included with their retired status.
+
+The exporter deliberately never reads or serializes Store-owned knowledge,
+machine-wide knowledge, generated-file ownership records, generated tool files,
+tokens, session handles, or run state. It validates the complete serialized
+bundle for Windows drive-letter paths, Windows network-share paths, and POSIX
+absolute paths on every platform before opening any destination-side temporary
+file. A non-portable record fails by record and field.
+
+Without `--to-store`, success creates exactly one new file at the resolved
+`--to` destination. With Store transport, it additionally creates exactly one
+derived file in the reserved Store path.
+An occupied file, directory, or link refuses before any temporary file is
+created. Schema, path, catalog-read, write, and publication failures leave the
+destination tree unchanged; the project catalog, checkout, and machine
+registrations are read-only throughout.
+
+Stable JSON success output (the `transport` object is present only with
+`--to-store`):
+
+```json
+{
+  "ok": true,
+  "state": "exported",
+  "project": "3f0b0a2c-…",
+  "recordCount": 4,
+  "destination": "/carry/web-project-knowledge.bundle.json",
+  "transport": {
+    "store": {
+      "id": "team",
+      "uid": "9f0c1e2a-…"
+    },
+    "destination": "/stores/team/rasen/knowledge-bundles/3f0b0a2c-…/7c18.bundle.json",
+    "filesToCommit": [
+      "rasen/knowledge-bundles/3f0b0a2c-…/7c18.bundle.json"
+    ]
+  },
+  "warnings": []
+}
+```
+
+When Git cannot determine a commit, export still succeeds and writes
+`"baseProjectCommit": null`; the output carries the
+`base_project_commit_unavailable` warning. `baseProjectCommit` is provenance
+for auditing the capture, never a gate and never a portable run checkpoint.
+
+Occupied destination refusal:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "knowledge_bundle_destination_occupied",
+    "message": "The export destination is already occupied: /carry/web-project-knowledge.bundle.json",
+    "destination": "/carry/web-project-knowledge.bundle.json",
+    "repair": "Choose a new --to path. Bundle export never replaces an existing filesystem entry."
+  }
+}
+```
+
+Non-portable record refusal:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "knowledge_bundle_non_portable_record",
+    "message": "Project record \"deploy-routing\" field \"records[0].manifest.applicability.markers[0]\" contains an absolute machine path and is not portable.",
+    "record": "deploy-routing",
+    "field": "records[0].manifest.applicability.markers[0]",
+    "repair": "Remove the absolute machine path from record \"deploy-routing\" and record portable, root-relative guidance before exporting again."
+  }
+}
+```
+
+This release does **not** register a bundle import command, a
+machine-preparation bundle step, or portable run checkpoints. A Store can now
+carry the exported file, but consuming it on another machine waits for the
+later import child.
 
 `effective` reports one of three states: `ready`, `degraded` (a relevant Store could not be reached, so removals were deferred), or `blocked` (Stores disagree and no project record settles it, so nothing was written). Each conflict names every participant by permanent identity, and each unreachable Store carries its own repair.
 

@@ -67,6 +67,61 @@ typed owner only; they never relocate the change. The flags are mutually
 exclusive, same bare ids remain distinct across namespaces, and direct store
 launches refuse to guess a member project.
 
+## Carrying a project's knowledge to another machine
+
+The three knowledge locations travel in three different ways:
+
+- **Store knowledge is shared by cloning the Store.** It is Git-owned team
+  content and needs no project bundle.
+- **A project's own knowledge is machine-local by default.** Cloning the
+  project on a second machine does not copy its canonical knowledge home.
+- **Project knowledge leaves a machine only through an explicit bundle
+  export.** No ordinary command, update, diagnosis, retention run, or machine
+  preparation creates or transmits a bundle.
+
+To prepare a migration artifact, choose a new destination and export:
+
+```bash
+rasen knowledge bundle export \
+  --project <projectId-or-registered-root> \
+  --to <new-bundle-file> \
+  --to-store <store-uid-or-unambiguous-alias> \
+  --json
+```
+
+`--to-store` is optional. Without it, carry the one user-selected file using
+the transport you choose. With it, Rasen places the same file under the Store's
+reserved `rasen/knowledge-bundles/<projectId>/` path and prints the file to
+commit. It changes no Store catalog, project record, membership, or metadata
+and performs no Git stage, commit, or push. Carriage never grants the Store
+ownership of the project knowledge.
+
+The `--to` path must be outside the selected Store. Rasen stages the Store
+placement outside the Store on the same filesystem, so only the derived bundle
+appears as untracked Store state. If Store placement fails after `--to` was
+published, the error explicitly preserves and reports that user-held file.
+
+Treat the bundle as a deliberate handoff artifact, not as a reason to
+synchronize `~/.rasen`. Bundle import is a **later child and is not available
+in this change**, so this release does not yet consume the carried file on the
+new machine.
+
+The bundle carries the permanent project identity, capture time,
+`baseProjectCommit`, and the project's strict canonical records and content. It
+does not carry Store or machine-wide records, generated-file ownership,
+materialized tool files, tokens, sessions, or run state. `baseProjectCommit`
+records provenance only; it never gates use of the bundle. An in-flight run
+cannot resume on another machine from this file — portable run checkpoints are
+not part of this release.
+
+Export refuses every occupied destination and every record containing a
+Windows drive-letter path, Windows network-share path, or POSIX absolute path.
+On success it creates exactly the named `--to` file and, only when requested,
+one derived Store transport file; it changes no source or Store-owned state.
+An occupied `--to` path is refused on every command path. See the
+[CLI bundle export reference](cli.md#project-knowledge-bundle-export) for the
+closed field list, JSON contract, and repairs.
+
 ## A Store's knowledge catalog
 
 A Store can hold learned knowledge that its member projects draw on — the layer that was missing between "one project only" and "this machine, everywhere".

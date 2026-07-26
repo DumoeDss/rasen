@@ -67,6 +67,41 @@ export interface KnowledgeMessages {
   effectiveDescription: string;
   migrateDescription: string;
   dryRunDescription: string;
+  bundleDescription: string;
+  bundleExportDescription: string;
+  bundleDestinationDescription: string;
+  bundleStoreDestinationDescription: string;
+  bundleJsonDescription: string;
+  bundleExportSucceeded: (project: string, records: number, destination: string) => string;
+  bundleStoreExportSucceeded: (store: string, destination: string) => string;
+  bundleStoreCommitFile: (file: string) => string;
+  bundleExportWarningBaseCommit: string;
+  bundleExportWarningStagingCleanup: string;
+  bundleError: (message: string) => string;
+  bundleRepair: (repair: string) => string;
+  bundleProjectNotFound: (selector: string) => string;
+  bundleProjectRepair: string;
+  bundleDestinationOccupied: (destination: string) => string;
+  bundleDestinationRepair: string;
+  bundleRecordUnreadable: (record: string, reason: string) => string;
+  bundleRecordRepair: (record: string, project: string) => string;
+  bundleMachinePath: (record: string, field: string) => string;
+  bundleMachinePathRepair: (record: string) => string;
+  bundleSchemaInvalid: (detail: string) => string;
+  bundleSchemaRepair: string;
+  bundleWriteFailed: (destination: string, reason: string) => string;
+  bundleWriteRepair: string;
+  bundleStoreUnavailable: (selector: string, reason: string) => string;
+  bundleStoreOverlap: (destination: string, store: string) => string;
+  bundleStoreOverlapRepair: string;
+  bundleStoreWriteFailed: (destination: string, reason: string) => string;
+  bundleStoreWriteFailedAfterExport: (
+    destination: string,
+    reason: string,
+    userDestination: string
+  ) => string;
+  bundleStoreWriteRepair: string;
+  bundleStoreWritePartialRepair: string;
   effectiveHeading: (project: string, status: string) => string;
   effectiveRoots: (canonical: string, evaluation: string) => string;
   effectiveEmpty: string;
@@ -157,6 +192,51 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     effectiveDescription: raw.effectiveDescription,
     migrateDescription: raw.migrateDescription,
     dryRunDescription: raw.dryRunDescription,
+    bundleDescription: raw.bundleDescription,
+    bundleExportDescription: raw.bundleExportDescription,
+    bundleDestinationDescription: raw.bundleDestinationDescription,
+    bundleStoreDestinationDescription: raw.bundleStoreDestinationDescription,
+    bundleJsonDescription: raw.bundleJsonDescription,
+    bundleExportSucceeded: (project, records, destination) =>
+      format(raw.bundleExportSucceeded, { project, records, destination }),
+    bundleStoreExportSucceeded: (store, destination) =>
+      format(raw.bundleStoreExportSucceeded, { store, destination }),
+    bundleStoreCommitFile: (file) => format(raw.bundleStoreCommitFile, { file }),
+    bundleExportWarningBaseCommit: raw.bundleExportWarningBaseCommit,
+    bundleExportWarningStagingCleanup: raw.bundleExportWarningStagingCleanup,
+    bundleError: (message) => format(raw.bundleError, { message }),
+    bundleRepair: (repair) => format(raw.bundleRepair, { repair }),
+    bundleProjectNotFound: (selector) => format(raw.bundleProjectNotFound, { selector }),
+    bundleProjectRepair: raw.bundleProjectRepair,
+    bundleDestinationOccupied: (destination) =>
+      format(raw.bundleDestinationOccupied, { destination }),
+    bundleDestinationRepair: raw.bundleDestinationRepair,
+    bundleRecordUnreadable: (record, reason) =>
+      format(raw.bundleRecordUnreadable, { record, reason }),
+    bundleRecordRepair: (record, project) =>
+      format(raw.bundleRecordRepair, { record, project }),
+    bundleMachinePath: (record, field) => format(raw.bundleMachinePath, { record, field }),
+    bundleMachinePathRepair: (record) => format(raw.bundleMachinePathRepair, { record }),
+    bundleSchemaInvalid: (detail) => format(raw.bundleSchemaInvalid, { detail }),
+    bundleSchemaRepair: raw.bundleSchemaRepair,
+    bundleWriteFailed: (destination, reason) =>
+      format(raw.bundleWriteFailed, { destination, reason }),
+    bundleWriteRepair: raw.bundleWriteRepair,
+    bundleStoreUnavailable: (selector, reason) =>
+      format(raw.bundleStoreUnavailable, { selector, reason }),
+    bundleStoreOverlap: (destination, store) =>
+      format(raw.bundleStoreOverlap, { destination, store }),
+    bundleStoreOverlapRepair: raw.bundleStoreOverlapRepair,
+    bundleStoreWriteFailed: (destination, reason) =>
+      format(raw.bundleStoreWriteFailed, { destination, reason }),
+    bundleStoreWriteFailedAfterExport: (destination, reason, userDestination) =>
+      format(raw.bundleStoreWriteFailedAfterExport, {
+        destination,
+        reason,
+        userDestination,
+      }),
+    bundleStoreWriteRepair: raw.bundleStoreWriteRepair,
+    bundleStoreWritePartialRepair: raw.bundleStoreWritePartialRepair,
     effectiveHeading: (project, status) => format(raw.effectiveHeading, { project, status }),
     effectiveRoots: (canonical, evaluation) =>
       format(raw.effectiveRoots, { canonical, evaluation }),

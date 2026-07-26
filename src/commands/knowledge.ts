@@ -2,9 +2,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { Command } from 'commander';
+import { ZodError } from 'zod';
 
 import { getGlobalConfig } from '../core/global-config.js';
 import { formatZodIssues } from '../core/zod-issues.js';
+import {
+  KNOWLEDGE_BUNDLE_EXPORT_STATE,
+  KnowledgeBundleExportError,
+  exportKnowledgeBundle,
+  type KnowledgeBundleExportWarning,
+} from '../core/knowledge-bundle/export.js';
+import { KnowledgeBundleMachinePathError } from '../core/knowledge-bundle/schema.js';
 import {
   KnowledgeContextError,
   LearnedSkillCandidateSchema,
@@ -968,6 +976,233 @@ async function runKnowledgeAction(
   }
 }
 
+export interface BundleExportOptions {
+  project: string;
+  to: string;
+  toStore?: string;
+  json?: boolean;
+}
+
+interface BundleFailure {
+  code: string;
+  message: string;
+  repair: string;
+  details?: Record<string, unknown>;
+}
+
+function describeBundleFailure(
+  error: unknown,
+  options: BundleExportOptions,
+  messages: KnowledgeMessages
+): BundleFailure {
+  if (error instanceof KnowledgeBundleMachinePathError) {
+    return {
+      code: 'knowledge_bundle_non_portable_record',
+      message: messages.bundleMachinePath(error.recordId, error.field),
+      repair: messages.bundleMachinePathRepair(error.recordId),
+      details: { record: error.recordId, field: error.field },
+    };
+  }
+  if (error instanceof KnowledgeBundleExportError) {
+    switch (error.code) {
+      case 'knowledge_bundle_project_not_found':
+        return {
+          code: error.code,
+          message: messages.bundleProjectNotFound(error.details.selector ?? options.project),
+          repair: messages.bundleProjectRepair,
+          details: { selector: error.details.selector ?? options.project },
+        };
+      case 'knowledge_bundle_destination_occupied':
+        return {
+          code: error.code,
+          message: messages.bundleDestinationOccupied(error.details.destination ?? options.to),
+          repair: messages.bundleDestinationRepair,
+          details: { destination: error.details.destination ?? options.to },
+        };
+      case 'knowledge_bundle_record_unreadable': {
+        const record = error.details.recordId ?? '';
+        return {
+          code: error.code,
+          message: messages.bundleRecordUnreadable(record, error.details.reason ?? error.message),
+          repair: messages.bundleRecordRepair(record, options.project),
+          details: { record, reason: error.details.reason ?? error.message },
+        };
+      }
+      case 'knowledge_bundle_store_unavailable':
+        return {
+          code: error.code,
+          message: messages.bundleStoreUnavailable(
+            error.details.selector ?? options.toStore ?? '',
+            error.details.diagnostic ?? error.message
+          ),
+          repair: error.details.repair ?? messages.bundleStoreWriteRepair,
+          details: {
+            selector: error.details.selector ?? options.toStore ?? '',
+            reason: error.details.reason ?? 'unavailable',
+            diagnostic: error.details.diagnostic ?? error.message,
+          },
+        };
+      case 'knowledge_bundle_store_overlap':
+        return {
+          code: error.code,
+          message: messages.bundleStoreOverlap(
+            error.details.destination ?? options.to,
+            error.details.selector ?? options.toStore ?? ''
+          ),
+          repair: messages.bundleStoreOverlapRepair,
+          details: {
+            selector: error.details.selector ?? options.toStore ?? '',
+            destination: error.details.destination ?? options.to,
+            storeRoot: error.details.storeRoot ?? '',
+          },
+        };
+      case 'knowledge_bundle_store_write_failed':
+        {
+          const userDestinationPublished =
+            error.details.userDestinationPublished === 'true';
+          const userDestination =
+            error.details.userDestination ?? options.to;
+        return {
+          code: error.code,
+          message: userDestinationPublished
+            ? messages.bundleStoreWriteFailedAfterExport(
+                error.details.destination ?? '',
+                error.details.reason ?? error.message,
+                userDestination
+              )
+            : messages.bundleStoreWriteFailed(
+                error.details.destination ?? '',
+                error.details.reason ?? error.message
+              ),
+          repair: userDestinationPublished
+            ? messages.bundleStoreWritePartialRepair
+            : messages.bundleStoreWriteRepair,
+          details: {
+            selector: error.details.selector ?? options.toStore ?? '',
+            destination: error.details.destination ?? '',
+            reason: error.details.reason ?? error.message,
+            userDestination,
+            userDestinationPublished,
+          },
+        };
+        }
+      case 'knowledge_bundle_write_failed':
+        return {
+          code: error.code,
+          message: messages.bundleWriteFailed(
+            error.details.destination ?? options.to,
+            error.details.reason ?? error.message
+          ),
+          repair: messages.bundleWriteRepair,
+          details: {
+            destination: error.details.destination ?? options.to,
+            reason: error.details.reason ?? error.message,
+          },
+        };
+    }
+  }
+  if (error instanceof ZodError) {
+    return {
+      code: 'knowledge_bundle_schema_invalid',
+      message: messages.bundleSchemaInvalid(formatZodIssues(error)),
+      repair: messages.bundleSchemaRepair,
+    };
+  }
+  return {
+    code: 'knowledge_bundle_export_failed',
+    message: messages.bundleWriteFailed(
+      options.to,
+      error instanceof Error ? error.message : String(error)
+    ),
+    repair: messages.bundleWriteRepair,
+  };
+}
+
+function reportBundleFailure(
+  failure: BundleFailure,
+  json: boolean | undefined,
+  messages: KnowledgeMessages
+): void {
+  if (json) {
+    printJson({
+      ok: false,
+      error: {
+        code: failure.code,
+        message: failure.message,
+        ...(failure.details ?? {}),
+        repair: failure.repair,
+      },
+    });
+  } else {
+    console.error(messages.bundleError(failure.message));
+    console.error(messages.bundleRepair(failure.repair));
+  }
+  process.exitCode = 1;
+}
+
+function bundleExportWarningMessage(
+  code: KnowledgeBundleExportWarning,
+  messages: KnowledgeMessages
+): string {
+  switch (code) {
+    case 'base_project_commit_unavailable':
+      return messages.bundleExportWarningBaseCommit;
+    case 'staging_cleanup_deferred':
+      return messages.bundleExportWarningStagingCleanup;
+  }
+}
+
+export async function bundleExportCommand(
+  options: BundleExportOptions,
+  exporter: typeof exportKnowledgeBundle = exportKnowledgeBundle
+): Promise<void> {
+  const messages = getKnowledgeMessages();
+  try {
+    const result = await exporter({
+      project: options.project,
+      to: options.to,
+      ...(options.toStore !== undefined ? { toStore: options.toStore } : {}),
+    });
+    const warnings = result.warnings.map((code) => ({
+      code,
+      message: bundleExportWarningMessage(code, messages),
+    }));
+    if (options.json) {
+      printJson({
+        ok: true,
+        state: KNOWLEDGE_BUNDLE_EXPORT_STATE,
+        project: result.projectId,
+        recordCount: result.recordCount,
+        destination: result.destination,
+        ...(result.transport !== undefined ? { transport: result.transport } : {}),
+        warnings,
+      });
+      return;
+    }
+    console.log(
+      messages.bundleExportSucceeded(
+        result.projectId,
+        result.recordCount,
+        result.destination
+      )
+    );
+    if (result.transport !== undefined) {
+      console.log(
+        messages.bundleStoreExportSucceeded(
+          result.transport.store.uid ?? result.transport.store.id,
+          result.transport.destination
+        )
+      );
+      for (const file of result.transport.filesToCommit) {
+        console.log(messages.bundleStoreCommitFile(file));
+      }
+    }
+    for (const warning of warnings) console.log(warning.message);
+  } catch (error) {
+    reportBundleFailure(describeBundleFailure(error, options, messages), options.json, messages);
+  }
+}
+
 function addOwnerSelectorOptions(
   command: Command,
   messages: KnowledgeMessages
@@ -990,6 +1225,19 @@ function addOwnerSelectorOptions(
 export function registerKnowledgeCommand(program: Command): void {
   const messages = getKnowledgeMessages();
   const knowledge = program.command('knowledge').description(messages.commandDescription);
+
+  knowledge
+    .command('bundle')
+    .description(messages.bundleDescription)
+    .command('export')
+    .description(messages.bundleExportDescription)
+    .requiredOption('--project <id-or-root>', messages.projectSelectorDescription)
+    .requiredOption('--to <path>', messages.bundleDestinationDescription)
+    .option('--to-store <store>', messages.bundleStoreDestinationDescription)
+    .option('--json', messages.bundleJsonDescription)
+    .action(async (options: BundleExportOptions) => {
+      await bundleExportCommand(options);
+    });
 
   addOwnerSelectorOptions(knowledge
     .command('apply')

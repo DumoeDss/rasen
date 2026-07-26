@@ -919,6 +919,34 @@ files whose identity scheme changed and reports that as a **migration** — it i
 not telling you the knowledge was edited, and nothing you wrote has changed.
 Subsequent runs report a no-op.
 
+### 5. A Store can carry a project-knowledge bundle without owning it
+
+**What changed.** Project knowledge remains machine-local by default, while
+Store knowledge still travels by cloning the Store. Bundle export can now add
+the same explicit file to a Store as transport:
+
+```bash
+rasen knowledge bundle export \
+  --project <projectId-or-root> \
+  --to <new-bundle-file> \
+  --to-store <store-uid-or-unambiguous-alias>
+```
+
+The Store copy lands at
+`rasen/knowledge-bundles/<projectId>/<bundleId>.bundle.json`. Rasen prints that
+file for you to commit but does not stage, commit, or push it. The Store's
+catalog, project records, membership, and metadata remain unchanged; carrying
+the bundle grants no ownership.
+
+Choose a `--to` path outside that Store, including when aliases, symlinks, or
+junctions are involved. Store staging stays outside the Store on the same
+filesystem. If the Store placement fails after the user bundle was written,
+Rasen reports the surviving user bundle path separately from the Store error.
+
+This child exports and transports only. It does **not** import the bundle on the
+receiving machine and does not resolve conflicts there. Keep the transported
+file intact for the later import workflow.
+
 ### Rolling back learned knowledge
 
 Reverting to an earlier version leaves version 2 ownership records an older

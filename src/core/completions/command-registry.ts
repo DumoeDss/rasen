@@ -810,6 +810,36 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     flags: [],
     subcommands: [
       {
+        name: 'bundle',
+        description: 'Manage portable project-knowledge bundles',
+        flags: [],
+        subcommands: [
+          {
+            name: 'export',
+            description: "Export a project's own learned knowledge to one portable file",
+            flags: [
+              {
+                name: 'project',
+                description: 'Select a project knowledge owner independently from the planning root',
+                takesValue: true,
+              },
+              {
+                name: 'to',
+                description: 'New destination file to create (never overwritten)',
+                takesValue: true,
+              },
+              {
+                name: 'to-store',
+                description:
+                  'Also place the bundle in a registered Store without granting ownership',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
         name: 'apply',
         description: 'Apply a learned-skill candidate from an absolute JSON file',
         flags: [
