@@ -6,7 +6,12 @@ import * as os from 'node:os';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
+import { handleWorkflowDependenciesRead } from '../../../src/core/management-api/workflows.js';
 import { scaffoldWorkflow, importWorkflow } from '../../../src/core/workflow-library.js';
+import {
+  loadWorkflowCatalog,
+  WorkflowCatalog,
+} from '../../../src/core/workflow-registry/index.js';
 
 const TOKEN = 'test-token-workflows-abc123';
 
@@ -184,6 +189,57 @@ describe('management-api workflow read endpoints (workflow-http-api design D3)',
       expect(Array.isArray(auto.enhances)).toBe(true);
       const cso = body.dependencies.find((e: any) => e.id === 'cso');
       expect(cso.enhances).toContain('auto-command');
+    });
+
+    it('uses one workflow catalog generation for both pipeline preparation and dependency ownership', async () => {
+      const base = loadWorkflowCatalog({ projectRoot });
+      const seed = base.definitions[0]!;
+      const catalogWithMarker = (marker: string) =>
+        new WorkflowCatalog([
+          ...base.definitions,
+          {
+            ...seed,
+            id: marker,
+            digest: `digest-${marker}`,
+            skill: {
+              ...seed.skill,
+              dirName: `rasen-${marker}`,
+              template: {
+                ...seed.skill.template,
+                name: `rasen-${marker}`,
+              },
+            },
+            requires: {
+              workflows: [],
+              skills: [],
+              pipelines: [],
+              schemas: [],
+            },
+            recommends: { workflows: [] },
+          },
+        ]);
+      const catalogA = catalogWithMarker('snapshot-a');
+      const catalogB = catalogWithMarker('snapshot-b');
+      let loads = 0;
+
+      const result = await handleWorkflowDependenciesRead({
+        projectRoot,
+        workflowCatalogLoader: () => {
+          loads += 1;
+          return loads === 1 ? catalogA : catalogB;
+        },
+      });
+
+      expect(loads).toBe(1);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(
+          result.response.dependencies.some((entry) => entry.id === 'snapshot-a')
+        ).toBe(true);
+        expect(
+          result.response.dependencies.some((entry) => entry.id === 'snapshot-b')
+        ).toBe(false);
+      }
     });
 
     it('401s without a token and 405s a non-GET', async () => {

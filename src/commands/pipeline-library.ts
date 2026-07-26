@@ -94,7 +94,9 @@ export class PipelineLibraryCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     try {
-      const validation = validatePipelineInput(nameOrPath, { projectRoot: root.path });
+      const validation = await validatePipelineInput(nameOrPath, {
+        projectRoot: root.path,
+      });
       if (options.json) {
         console.log(JSON.stringify({ validation, status: [] }, null, 2));
       } else {
@@ -158,7 +160,10 @@ export class PipelineLibraryCommand {
           throw pipelineMessageError('exportCancelled', undefined, 'cancelled');
         }
       }
-      const exportedPath = exportPipeline(name, destination, { projectRoot: root.path, overwrite });
+      const exportedPath = await exportPipeline(name, destination, {
+        projectRoot: root.path,
+        overwrite,
+      });
       if (options.json) {
         console.log(JSON.stringify({ pipeline: { name, path: exportedPath }, status: [] }, null, 2));
       } else {

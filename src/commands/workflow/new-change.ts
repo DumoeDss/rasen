@@ -13,8 +13,8 @@ import { createChange, validateChangeName } from '../../utils/change-utils.js';
 import { formatChangeLocation } from '../../core/planning-home.js';
 import { resolveChangeWorkDir } from '../../core/change-work.js';
 import {
+  freezeProductionPreparedPipelineRegistry,
   initializeRunState,
-  loadPipelineByName,
   type PipelineYaml,
 } from '../../core/pipeline-registry/index.js';
 import {
@@ -135,7 +135,15 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     // Resolve before creating anything so an invalid assignment is atomic:
     // no orphan child directory is left behind on an unknown pipeline.
     const pipeline: PipelineYaml | null = options.pipeline
-      ? loadPipelineByName(options.pipeline, projectRoot)
+      ? (
+          await (
+            await freezeProductionPreparedPipelineRegistry(projectRoot, {
+              reporter: options.json ? false : undefined,
+            })
+          ).selectForExecution(options.pipeline, {
+            reporter: options.json ? false : undefined,
+          })
+        ).pipeline
       : null;
 
     // Validate schema if provided

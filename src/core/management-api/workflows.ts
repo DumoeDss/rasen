@@ -22,7 +22,13 @@ import {
 import {
   computeWorkflowDependencyGraph,
   loadWorkflowCatalog,
+  type WorkflowCatalog,
+  type WorkflowRegistryOptions,
 } from '../workflow-registry/index.js';
+import {
+  freezeProductionPreparedPipelineRegistry,
+  type PipelineYaml,
+} from '../pipeline-registry/index.js';
 import type {
   WorkflowDependenciesResponse,
   WorkflowDetailResponse,
@@ -33,6 +39,14 @@ import type {
 export type WorkflowReadResult<T> =
   | { ok: true; response: T }
   | { ok: false; status: number; code: string; message: string };
+
+export interface WorkflowDependenciesReadOptions {
+  readonly projectRoot?: string;
+  /** Test/host seam; one dependency request freezes exactly one generation. */
+  readonly workflowCatalogLoader?: (
+    options?: WorkflowRegistryOptions
+  ) => WorkflowCatalog;
+}
 
 /**
  * `GET /api/v1/workflows` (design D3 / task 2.1). Fresh catalog read; every
@@ -76,8 +90,31 @@ export function handleWorkflowsList(): WorkflowReadResult<WorkflowListResponse> 
  * `computeWorkflowDependencyGraph`. Advisory and read-only — a broken user
  * pipeline degrades silently (the graph builder skips it) rather than erroring.
  */
-export function handleWorkflowDependenciesRead(): WorkflowReadResult<WorkflowDependenciesResponse> {
-  const graph = computeWorkflowDependencyGraph(loadWorkflowCatalog());
+export async function handleWorkflowDependenciesRead(
+  options: WorkflowDependenciesReadOptions = {}
+): Promise<
+  WorkflowReadResult<WorkflowDependenciesResponse>
+> {
+  const projectRoot = options.projectRoot ?? process.cwd();
+  const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+    reporter: false,
+    workflowCatalogLoader: options.workflowCatalogLoader,
+  });
+  const graph = computeWorkflowDependencyGraph(
+    registry.workflowCatalog,
+    projectRoot,
+    {
+      loadPipeline: (name) => {
+        const resolution = registry.load(name);
+        if (resolution.prepared.authoredVersion !== 1) {
+          throw new Error(
+            `Pipeline '${name}' is not a legacy stage graph dependency source.`
+          );
+        }
+        return resolution.prepared.authoredSource as PipelineYaml;
+      },
+    }
+  );
   return { ok: true, response: { dependencies: graph.entries } };
 }
 

@@ -11,21 +11,27 @@
 import type * as http from 'node:http';
 
 import {
-  listPipelinesWithInfo,
-  loadPipelineByName,
+  freezeProductionPreparedPipelineRegistry,
+  createProductionCapabilityCatalogSnapshot,
+  EcpDefinitionModule,
   resolvePipelineStageOverrides,
   resolveEffectiveStage,
   resolvePipelineReuseConfig,
   resolvePipelineRoleRuntimes,
   resolvePipelineExecutionSkillSets,
-  validatePipelineDraft,
+  collectLegacyPipelineSkillIssues,
+  PipelineYamlSchema,
   StageRoleSchema,
   AgentRuntimeSchema,
   VerifyPolicySchema,
   StageKindSchema,
   LOOP_KIND_VALUES,
   type AgentRuntime,
+  type CapabilityCatalogSnapshot,
+  type DefinitionDiagnostic,
   type EffectiveStageInputs,
+  type PipelineYaml,
+  type PreparedDefinition,
   type StageRole,
 } from '../pipeline-registry/index.js';
 import { isPortableWorkflowId, loadWorkflowCatalog } from '../workflow-registry/index.js';
@@ -40,9 +46,191 @@ import type { ConfigApiContext } from '../config-api/router.js';
 import type {
   PipelineCatalogResponse,
   PipelineDetailResponse,
+  PipelineValidationIssue,
   PipelineValidationResponse,
+  WireDefinitionPreparation,
   WirePipeline,
 } from './wire-types.js';
+
+function diagnosticForWire(
+  diagnostic: DefinitionDiagnostic
+): PipelineValidationIssue {
+  const { related, ...fields } = diagnostic;
+  return {
+    ...fields,
+    ...(related
+      ? { related: related.map((item) => ({ path: item.path, message: item.message })) }
+      : {}),
+  };
+}
+
+async function resolvePreparationCatalog(
+  projectRoot: string | undefined,
+  reporter:
+    | false
+    | ((notice: {
+        kind: 'unknown-profile-workflows';
+        workflowIds: string[];
+      }) => void) = false
+): Promise<{
+  catalog: CapabilityCatalogSnapshot;
+  knownSkillNames: Set<string>;
+  enabledSkillNames: Set<string>;
+}> {
+  const workflowCatalog = loadWorkflowCatalog({ projectRoot });
+  const skillSets = await resolvePipelineExecutionSkillSets(projectRoot, {
+    reporter,
+    workflowCatalog,
+  });
+  return {
+    ...skillSets,
+    catalog: createProductionCapabilityCatalogSnapshot(
+      workflowCatalog.definitions,
+      skillSets.enabledSkillNames
+    ),
+  };
+}
+
+function preparationForWire(
+  prepared: PreparedDefinition,
+  additionalDiagnostics: readonly DefinitionDiagnostic[] = []
+): WireDefinitionPreparation & { authoredVersion: 1 | 2 } {
+  return {
+    authoredVersion: prepared.authoredVersion,
+    normalizedVersion: prepared.normalizedVersion,
+    definitionValid: prepared.capability.definitionValid,
+    diagnostics: [...additionalDiagnostics, ...prepared.warnings].map(
+      diagnosticForWire
+    ),
+    digests: { ...prepared.digests },
+    planAvailable: prepared.capability.planAvailable,
+    executable: prepared.capability.executable,
+    executionMode: prepared.capability.executionMode,
+    ...(prepared.capability.unavailableReason
+      ? { unavailableReason: prepared.capability.unavailableReason }
+      : {}),
+  };
+}
+
+function preparationFields(
+  preparation: WireDefinitionPreparation
+): Pick<
+  WirePipeline,
+  | 'authoredVersion'
+  | 'normalizedVersion'
+  | 'definitionValid'
+  | 'planAvailable'
+  | 'executable'
+  | 'executionMode'
+  | 'unavailableReason'
+> {
+  return {
+    authoredVersion: preparation.authoredVersion,
+    normalizedVersion: preparation.normalizedVersion,
+    definitionValid: preparation.definitionValid,
+    planAvailable: preparation.planAvailable,
+    executable: preparation.executable,
+    executionMode: preparation.executionMode,
+    ...(preparation.unavailableReason
+      ? { unavailableReason: preparation.unavailableReason }
+      : {}),
+  };
+}
+
+export interface ManagementDefinitionPreparation {
+  readonly response: PipelineValidationResponse;
+  readonly prepared?: PreparedDefinition;
+}
+
+/**
+ * One management-side preparation seam shared by draft validation and save
+ * admission. The returned wire response is deliberately reusable verbatim so
+ * failed saves cannot drift from validation diagnostics.
+ */
+export async function preparePipelineDefinitionForManagement(
+  definition: unknown,
+  projectRoot?: string,
+  reporter:
+    | false
+    | ((notice: {
+        kind: 'unknown-profile-workflows';
+        workflowIds: string[];
+      }) => void) = false
+): Promise<ManagementDefinitionPreparation> {
+  const { catalog, knownSkillNames, enabledSkillNames } =
+    await resolvePreparationCatalog(projectRoot, reporter);
+  const result = EcpDefinitionModule.prepare(definition, catalog);
+  if (!result.ok) {
+    const submittedVersion =
+      typeof definition === 'object' &&
+      definition !== null &&
+      'version' in definition &&
+      typeof (definition as { version?: unknown }).version === 'number'
+        ? (definition as { version: number }).version
+        : 1;
+    const legacySkillIssues =
+      submittedVersion === 1
+        ? (() => {
+            const parsed = PipelineYamlSchema.safeParse(definition);
+            return parsed.success
+              ? collectLegacyPipelineSkillIssues(parsed.data, {
+                  knownSkillNames,
+                  enabledSkillNames,
+                })
+              : [];
+          })()
+        : [];
+    const diagnostics = [
+      ...result.error.diagnostics.map(diagnosticForWire),
+      ...legacySkillIssues,
+    ];
+    const preparation: WireDefinitionPreparation = {
+      authoredVersion: submittedVersion,
+      normalizedVersion: 2,
+      definitionValid: false,
+      diagnostics,
+      planAvailable: false,
+      executable: false,
+      executionMode: 'unavailable',
+    };
+    return {
+      response: {
+        valid: false,
+        issues: [...preparation.diagnostics],
+        preparation,
+      },
+    };
+  }
+
+  const preparation = preparationForWire(result.value);
+  const skillIssues =
+    result.value.authoredVersion === 1
+      ? collectLegacyPipelineSkillIssues(
+          result.value.authoredSource as PipelineYaml,
+          { knownSkillNames, enabledSkillNames }
+        )
+      : [];
+  const responsePreparation = {
+    ...preparation,
+    definitionValid: skillIssues.length === 0,
+    diagnostics: [...preparation.diagnostics, ...skillIssues],
+    ...(skillIssues.length > 0
+      ? {
+          planAvailable: false,
+          executable: false,
+          executionMode: 'unavailable' as const,
+        }
+      : {}),
+  };
+  return {
+    prepared: result.value,
+    response: {
+      valid: skillIssues.length === 0,
+      issues: [...responsePreparation.diagnostics],
+      preparation: responsePreparation,
+    },
+  };
+}
 
 /**
  * Pipelines inventory endpoint (pipeline-http-api): the pipelines available to
@@ -75,15 +263,45 @@ export async function handleListPipelines(
   }
 
   const bundle = pipelineResolutionBundle(ctx.context);
-  const infos = listPipelinesWithInfo(bundle.pipelineRoot);
+  const registry = await freezeProductionPreparedPipelineRegistry(
+    bundle.pipelineRoot,
+    { reporter: false }
+  );
+  const infos = registry.list();
   const pipelines: WirePipeline[] = [];
   for (const info of infos) {
-    let pipeline;
-    try {
-      pipeline = loadPipelineByName(info.name, bundle.pipelineRoot);
-    } catch {
+    const prepared = info.prepared;
+    if (!prepared) {
+      const diagnostics = (info.diagnostics ?? []).map(diagnosticForWire);
+      pipelines.push({
+        name: info.name,
+        description: info.description,
+        provenance: info.source === 'package' ? 'built-in' : 'user',
+        sourceLayer: info.source,
+        stages: [],
+        authoredVersion: info.authoredVersion ?? 1,
+        normalizedVersion: 2,
+        definitionValid: false,
+        planAvailable: false,
+        executable: false,
+        executionMode: 'unavailable',
+        diagnostics,
+      });
       continue;
     }
+    const preparation = preparationForWire(prepared);
+    if (prepared.authoredVersion === 2) {
+      pipelines.push({
+        name: prepared.authoredSource.name,
+        description: prepared.authoredSource.description ?? '',
+        provenance: info.source === 'package' ? 'built-in' : 'user',
+        sourceLayer: info.source,
+        stages: [],
+        ...preparationFields(preparation),
+      });
+      continue;
+    }
+    const pipeline = prepared.authoredSource as PipelineYaml;
     const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
     const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
     const effectiveStages = pipeline.stages.map((stage) =>
@@ -130,6 +348,7 @@ export async function handleListPipelines(
           effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
         };
       }),
+      ...preparationFields(preparation),
     });
   }
   sendJson(res, 200, {
@@ -170,49 +389,109 @@ export async function handlePipelineDetail(
   }
 
   const bundle = pipelineResolutionBundle(ctx.context);
-  const info = listPipelinesWithInfo(bundle.pipelineRoot).find((entry) => entry.name === name);
+  const registry = await freezeProductionPreparedPipelineRegistry(
+    bundle.pipelineRoot,
+    { reporter: false }
+  );
+  let directlyPrepared: PreparedDefinition | undefined;
+  try {
+    directlyPrepared = registry.load(name).prepared;
+  } catch {
+    // The direct winning-source read is authoritative. Invalid definitions are
+    // projected below from the reserved inventory entry; a genuinely absent
+    // name remains a 404.
+  }
+  const info = registry.list().find(
+    (entry) => entry.name === name
+  );
   if (!info) {
     sendError(res, 404, 'not_found', `No pipeline named "${name}".`);
     return;
   }
 
-  let pipeline;
-  try {
-    pipeline = loadPipelineByName(name, bundle.pipelineRoot);
-  } catch {
-    sendError(res, 404, 'not_found', `No pipeline named "${name}".`);
+  const prepared = directlyPrepared ?? info.prepared;
+  if (!prepared) {
+    if (!info.diagnostics) {
+      sendError(res, 404, 'not_found', `No pipeline named "${name}".`);
+      return;
+    }
+    const authoredDefinition = info.authoredDefinition ?? {};
+    const diagnostics = info.diagnostics.map(diagnosticForWire);
+    const preparation: WireDefinitionPreparation = {
+      authoredVersion: info.authoredVersion ?? 1,
+      normalizedVersion: 2,
+      definitionValid: false,
+      diagnostics,
+      planAvailable: false,
+      executable: false,
+      executionMode: 'unavailable',
+    };
+    const response = {
+      pipeline: {
+        name: info.name,
+        description: info.description,
+        provenance: info.source === 'package' ? 'built-in' : 'user',
+        sourceLayer: info.source,
+        stages: [],
+        ...preparationFields(preparation),
+        diagnostics,
+      },
+      definition: authoredDefinition,
+      preparation,
+      editable: info.source !== 'package',
+    } satisfies Omit<PipelineDetailResponse, 'definition'> & {
+      definition: unknown;
+    };
+    sendJson(res, 200, response);
     return;
   }
-
-  const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
-  const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
-  const effectiveStages = pipeline.stages.map((stage) =>
-    resolveEffectiveStage(stage, pipeline, inputs)
-  );
-  const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
-  const runtimes = Object.fromEntries(
-    Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
-      role,
-      resolved.runtime,
-    ])
-  ) as Record<StageRole, AgentRuntime>;
-  const resolvedView: WirePipeline = {
-    name: pipeline.name,
-    description: pipeline.description ?? '',
-    provenance: info.source === 'package' ? 'built-in' : 'user',
-    sourceLayer: info.source,
-    roleRuntimes: Object.fromEntries(
+  const preparation = preparationForWire(prepared);
+  let resolvedView: WirePipeline;
+  if (prepared.authoredVersion === 2) {
+    resolvedView = {
+      name: prepared.authoredSource.name,
+      description: prepared.authoredSource.description ?? '',
+      provenance: info.source === 'package' ? 'built-in' : 'user',
+      sourceLayer: info.source,
+      stages: [],
+      ...preparationFields(preparation),
+    };
+  } else {
+    const pipeline = prepared.authoredSource as PipelineYaml;
+    const overrides = resolvePipelineStageOverrides(
+      pipeline.name,
+      bundle.effOptions
+    );
+    const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+    const effectiveStages = pipeline.stages.map((stage) =>
+      resolveEffectiveStage(stage, pipeline, inputs)
+    );
+    const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
+      pipeline,
+      overrides
+    );
+    const runtimes = Object.fromEntries(
       Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
         role,
-        { value: resolved.runtime, source: resolved.source },
+        resolved.runtime,
       ])
-    ) as WirePipeline['roleRuntimes'],
-    effectiveReuse: resolvePipelineReuseConfig(pipeline, {
-      ...bundle.inputsBase.thresholdContext,
-      runtimes,
-    }),
-    stages: effectiveStages.map((eff) => {
-      return {
+    ) as Record<StageRole, AgentRuntime>;
+    resolvedView = {
+      name: pipeline.name,
+      description: pipeline.description ?? '',
+      provenance: info.source === 'package' ? 'built-in' : 'user',
+      sourceLayer: info.source,
+      roleRuntimes: Object.fromEntries(
+        Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
+          role,
+          { value: resolved.runtime, source: resolved.source },
+        ])
+      ) as WirePipeline['roleRuntimes'],
+      effectiveReuse: resolvePipelineReuseConfig(pipeline, {
+        ...bundle.inputsBase.thresholdContext,
+        runtimes,
+      }),
+      stages: effectiveStages.map((eff) => ({
         id: eff.id,
         role: eff.role,
         skill: eff.skill,
@@ -227,14 +506,19 @@ export async function handlePipelineDetail(
             ? { diagnostics: eff.handoff.diagnostics }
             : {}),
         },
-        effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
-      };
-    }),
-  };
+        effectiveRuntime: {
+          value: eff.runtime.value,
+          source: eff.runtime.source,
+        },
+      })),
+      ...preparationFields(preparation),
+    };
+  }
 
   const response: PipelineDetailResponse = {
     pipeline: resolvedView,
-    definition: pipeline,
+    definition: prepared.authoredSource,
+    preparation,
     editable: info.source !== 'package',
   };
   sendJson(res, 200, response);
@@ -273,22 +557,21 @@ export async function handlePipelineValidation(
   const bundle = pipelineResolutionBundle(ctx.context);
 
   const warnings: PipelineValidationResponse['issues'] = [];
-  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(
+  const prepared = await preparePipelineDefinitionForManagement(
+    definition,
     bundle.pipelineRoot,
-    {
-      reporter: (notice) => {
-        warnings.push({
-          severity: 'warning',
-          path: '/',
-          message: `Dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`,
-        });
-      },
+    (notice) => {
+      warnings.push({
+        severity: 'warning',
+        path: '/',
+        message: `Dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`,
+      });
     }
   );
-
-  const issues = [...warnings, ...validatePipelineDraft(definition, { knownSkillNames, enabledSkillNames })];
-  const valid = !issues.some((issue) => issue.severity === 'error');
-  const response: PipelineValidationResponse = { valid, issues };
+  const response: PipelineValidationResponse = {
+    ...prepared.response,
+    issues: [...warnings, ...prepared.response.issues],
+  };
   sendJson(res, 200, response);
 }
 
@@ -313,14 +596,39 @@ export async function handlePipelineCatalog(
   sendJson: (res: http.ServerResponse, status: number, body: unknown) => void
 ): Promise<void> {
   const projectRoot = context.launchProjectRoot ?? process.cwd();
-  const { enabledSkillNames } = await resolvePipelineExecutionSkillSets(projectRoot, { reporter: false });
-  const workflowCatalog = loadWorkflowCatalog();
+  const workflowCatalog = loadWorkflowCatalog({ projectRoot });
+  const { enabledSkillNames } = await resolvePipelineExecutionSkillSets(
+    projectRoot,
+    { reporter: false, workflowCatalog }
+  );
+  const capabilityCatalog = createProductionCapabilityCatalogSnapshot(
+    workflowCatalog.definitions,
+    enabledSkillNames
+  );
+  const capabilityById = new Map(
+    capabilityCatalog.descriptors.map((descriptor) => [descriptor.id, descriptor])
+  );
 
-  const skills = workflowCatalog.definitions.map((definition) => ({
-    id: definition.skill.template.name,
-    description: definition.skill.template.description,
-    enabled: enabledSkillNames.has(definition.skill.template.name),
-  }));
+  const skills = workflowCatalog.definitions.map((definition) => {
+    const id = definition.skill.template.name;
+    const capability = capabilityById.get(`skill:${id}`);
+    return {
+      id,
+      description: definition.skill.template.description,
+      enabled: enabledSkillNames.has(id),
+      ...(capability
+        ? {
+            capability: {
+              id: capability.id,
+              version: capability.version,
+              inputs: capability.inputs,
+              artifacts: capability.artifacts,
+              outcomes: capability.outcomes,
+            },
+          }
+        : {}),
+    };
+  });
 
   const response: PipelineCatalogResponse = {
     roles: [...StageRoleSchema.options],

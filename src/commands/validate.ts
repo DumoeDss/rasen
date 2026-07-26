@@ -12,9 +12,8 @@ import { getSpecIds } from '../utils/item-discovery.js';
 import { getAvailableChanges } from './workflow/shared.js';
 import { nearestMatches } from '../utils/match.js';
 import {
-  loadPipelineByName,
+  freezeProductionPreparedPipelineRegistry,
   listPipelines,
-  validatePipelineForExecution,
   PipelineValidationError,
 } from '../core/pipeline-registry/index.js';
 import { PipelineLoadError } from '../core/pipeline-registry/index.js';
@@ -42,8 +41,10 @@ async function validatePipelineByName(
   try {
     // parse + Zod + structural validators (duplicate ids, requires refs,
     // cycles, parallel-group independence, decompose single/first) all run here.
-    const pipeline = loadPipelineByName(id, projectRoot);
-    await validatePipelineForExecution(pipeline, projectRoot);
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: false,
+    });
+    await registry.selectForExecution(id, { reporter: false });
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause
@@ -55,7 +56,12 @@ async function validatePipelineByName(
       level: 'ERROR',
       path: 'pipeline',
       message,
-      ...(error instanceof PipelineValidationError ? { code: error.code } : {}),
+      ...(error instanceof PipelineValidationError
+        ? { code: error.code }
+        : error instanceof PipelineLoadError &&
+            error.cause instanceof PipelineValidationError
+          ? { code: error.cause.code }
+          : {}),
     });
   }
   return { valid: issues.length === 0, issues };

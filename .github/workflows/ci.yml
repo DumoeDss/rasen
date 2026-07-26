@@ -2,11 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'dev/**']
   merge_group:
-    branches: [main]
+    branches: [main, 'dev/**']
   push:
-    branches: [main]
+    branches: [main, 'dev/**']
   workflow_dispatch:
 
 permissions:
@@ -110,6 +110,11 @@ jobs:
           pnpm --dir packages/ui install --frozen-lockfile
           pnpm exec vitest run test/core/management-api/local-path-resolver.test.ts test/core/management-api/local-path-chooser.test.ts test/core/management-api/create-space.test.ts
           pnpm --dir packages/ui exec vitest run test/components/local-path-picker.test.tsx test/components/spaces-page.test.tsx test/components/workflows-page.test.tsx test/components/pipelines-page.test.tsx
+
+      - name: Run focused Definition save/export path parity tests
+        if: matrix.label == 'windows-pwsh' || matrix.label == 'linux-bash'
+        run: |
+          pnpm exec vitest run test/core/pipeline-library.test.ts test/core/management-api/pipelines-api.test.ts -t "v2|Definition|path"
 
       - name: Upload test coverage
         if: matrix.label == 'linux-bash'

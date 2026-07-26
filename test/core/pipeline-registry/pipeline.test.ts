@@ -99,7 +99,7 @@ stages:
       });
 
       it.each([
-        { label: 'unsupported numeric', version: 2 },
+        { label: 'unsupported numeric', version: 3 },
         { label: 'malformed string', version: '1' },
         { label: 'malformed object', version: { major: 1 } },
         { label: 'malformed null', version: null },
@@ -117,8 +117,10 @@ stages:
         const versionIssue = issues.find((issue) => issue.path === '/version');
         expect(versionIssue).toBeDefined();
         expect(versionIssue?.message).toContain('received');
-        expect(versionIssue?.message).toContain('supported version is 1');
-        expect(versionIssue?.message).toContain('Upgrade to a compatible Rasen version');
+        expect(versionIssue?.message).toContain('supported versions are 1 and 2');
+        expect(versionIssue?.message.toLowerCase()).toContain(
+          'upgrade to a compatible rasen version'
+        );
         expect(throwingMessage).toContain('/version');
         expect(throwingMessage).toContain(versionIssue!.message);
       });

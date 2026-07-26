@@ -1,12 +1,66 @@
 import * as fs from 'node:fs';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { PipelineYamlSchema, type PipelineYaml, type Stage } from './types.js';
+import { stringify as stringifyYaml } from 'yaml';
+import {
+  createCapabilityCatalogSnapshot,
+  DefinitionReadError,
+  EcpDefinitionModule,
+  type CapabilityCatalogSnapshot,
+} from './definition.js';
+import { validateLegacyPipelineDefinition } from './legacy-validation.js';
+import { parsePipelineSourceDocument } from './source-document.js';
+import { PipelineYamlSchema, type PipelineYaml } from './types.js';
+
+export { parsePipelineSourceDocument } from './source-document.js';
 
 export class PipelineValidationError extends Error {
-  constructor(message: string, readonly code = 'pipeline_invalid') {
+  readonly path?: string;
+  override readonly cause?: unknown;
+
+  constructor(
+    message: string,
+    readonly code = 'pipeline_invalid',
+    options: { readonly path?: string; readonly cause?: unknown } = {}
+  ) {
     super(message);
     this.name = 'PipelineValidationError';
+    this.path = options.path;
+    this.cause = options.cause;
   }
+}
+
+/**
+ * Converts authoritative preparation diagnostics into the stable execution
+ * admission error contract. Product entry points and recursive decompose
+ * selection share this conversion so code/path identity cannot diverge.
+ */
+export function pipelineValidationErrorFromDefinitionReadError(
+  error: DefinitionReadError,
+  options: {
+    readonly prefix?: string;
+    readonly cause?: unknown;
+    readonly fallbackPath?: string;
+  } = {}
+): PipelineValidationError {
+  const first = error.diagnostics[0];
+  const code = first?.code ?? 'pipeline_invalid';
+  const path = first?.path ?? options.fallbackPath;
+  const detail =
+    error.diagnostics.length > 0
+      ? error.diagnostics
+          .map(
+            (diagnostic) =>
+              `[${diagnostic.code}] ${diagnostic.path}: ${diagnostic.message}`
+          )
+          .join('; ')
+      : '[pipeline_invalid] Pipeline definition preparation failed.';
+  return new PipelineValidationError(
+    `${options.prefix ?? 'Pipeline definition preparation failed'}: ${detail}`,
+    code,
+    {
+      path,
+      cause: options.cause ?? error,
+    }
+  );
 }
 
 /**
@@ -20,35 +74,67 @@ export function loadPipeline(filePath: string): PipelineYaml {
 /**
  * Parses and validates a pipeline from YAML content.
  */
-export function parsePipeline(yamlContent: string): PipelineYaml {
-  const parsed = parseYaml(yamlContent);
-
-  // Validate with Zod
-  const result = PipelineYamlSchema.safeParse(parsed);
-  if (!result.success) {
-    const errors = result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-    throw new PipelineValidationError(`Invalid pipeline: ${errors}`);
+export function parsePipeline(
+  yamlContent: string,
+  catalog?: CapabilityCatalogSnapshot
+): PipelineYaml {
+  let source: unknown = yamlContent;
+  try {
+    source = parsePipelineSourceDocument(yamlContent);
+  } catch {
+    // Keep malformed syntax on the authoritative preparation path, which
+    // converts parser failures into DefinitionReadError diagnostics.
+  }
+  const explicitVersion =
+    source !== null && typeof source === 'object' && !Array.isArray(source)
+      ? (source as { version?: unknown }).version
+      : undefined;
+  if (explicitVersion === 2 && !catalog) {
+    throw new PipelineValidationError(
+      'Pipeline Definition version 2 requires an authoritative frozen capability catalog before legacy runtime selection.',
+      'pipeline_capability_catalog_required'
+    );
+  }
+  const prepared = EcpDefinitionModule.prepare(
+    source,
+    catalog ?? createCapabilityCatalogSnapshot([])
+  );
+  if (!prepared.ok) {
+    throw pipelineValidationErrorFromDefinitionReadError(prepared.error, {
+      prefix: 'Invalid pipeline definition',
+    });
+  }
+  if (prepared.value.authoredVersion !== 1) {
+    const reason =
+      prepared.value.capability.unavailableReason ??
+      'pipeline_runtime_unavailable';
+    throw new PipelineValidationError(
+      `Pipeline Definition version 2 has a valid plan, but no complete runtime owner is available (${reason}).`,
+      reason
+    );
   }
 
-  const pipeline = result.data;
+  // The legacy parser/runtime contract is selected only after authoritative
+  // preparation identified authored v1.
+  return validatePreparedLegacyPipeline(
+    prepared.value.authoredSource as PipelineYaml
+  );
+}
 
-  // Check for duplicate stage IDs
-  validateNoDuplicateIds(pipeline.stages);
-
-  // Check that all requires references are valid
-  validateRequiresReferences(pipeline.stages);
-
-  // Check for cycles
-  validateNoCycles(pipeline.stages);
-
-  // Check parallelGroup members are mutually independent
-  validateParallelGroups(pipeline.stages);
-
-  // Check decompose stage constraints (at most one, must be the entry point)
-  validateDecomposeStages(pipeline.stages);
-
-  // Enforce the composed-pipeline quality floor (autonomy-ladder rung 2)
-  validateComposedPolicyFloor(pipeline);
+/**
+ * Runs the legacy-only structural/runtime policy checks after the authoritative
+ * Definition preparation seam has already selected authored v1.
+ *
+ * Callers that already hold a PreparedDefinition use this entry point to avoid
+ * parsing and preparing the same source a second time.
+ */
+export function validatePreparedLegacyPipeline(
+  pipeline: PipelineYaml
+): PipelineYaml {
+  const [firstIssue] = validateLegacyPipelineDefinition(pipeline);
+  if (firstIssue) {
+    throw new PipelineValidationError(firstIssue.message, firstIssue.code);
+  }
 
   return pipeline;
 }
@@ -61,173 +147,6 @@ export function parsePipeline(yamlContent: string): PipelineYaml {
  */
 export function serializePipelineYaml(pipeline: PipelineYaml): string {
   return stringifyYaml(PipelineYamlSchema.parse(pipeline));
-}
-
-/**
- * Enforces the autopilot-composed quality floor (autonomy-ladder rung 2):
- * `origin: 'composed'` pipelines MUST contain at least one stage with
- * `role: 'reviewer'` (verification) and at least one stage with
- * `loop.kind: 'review-cycle'` (review loop). `origin: 'ui'` records Canvas
- * provenance only, so interactive authors can intentionally build lighter
- * pipelines. Origin-free definitions are likewise unaffected.
- */
-function validateComposedPolicyFloor(pipeline: PipelineYaml): void {
-  if (pipeline.origin !== 'composed') return;
-
-  const hasReviewerStage = pipeline.stages.some(s => s.role === 'reviewer');
-  if (!hasReviewerStage) {
-    throw new PipelineValidationError(
-      `Pipeline '${pipeline.name}' (origin: ${pipeline.origin}) is missing the quality-floor verification stage: at least one stage must declare role: 'reviewer'`
-    );
-  }
-
-  const hasReviewCycleLoop = pipeline.stages.some(s => s.loop?.kind === 'review-cycle');
-  if (!hasReviewCycleLoop) {
-    throw new PipelineValidationError(
-      `Pipeline '${pipeline.name}' (origin: ${pipeline.origin}) is missing the quality-floor review loop: at least one stage must declare loop.kind: 'review-cycle'`
-    );
-  }
-}
-
-/**
- * Validates the structural constraints on `decompose` stages (the registry-free
- * subset; childPipeline resolution + the recursion guard need the registry and
- * live in resolver.ts):
- *  - at most ONE decompose stage per pipeline, and
- *  - when present, it must be the pipeline's sole entry point — i.e. build-order
- *    index 0. Since the build order (Kahn's algorithm) starts from the roots,
- *    a stage is index 0 iff it is the UNIQUE root (the only stage with no
- *    `requires`). This is checked here without building the graph to avoid a
- *    circular import.
- */
-function validateDecomposeStages(stages: Stage[]): void {
-  const decomposeStages = stages.filter(s => s.kind === 'decompose');
-  if (decomposeStages.length > 1) {
-    const names = decomposeStages.map(s => `'${s.id}'`).join(', ');
-    throw new PipelineValidationError(
-      `At most one decompose stage is allowed per pipeline; found ${decomposeStages.length} (${names})`
-    );
-  }
-  if (decomposeStages.length === 0) return;
-
-  const decompose = decomposeStages[0];
-  const roots = stages.filter(s => s.requires.length === 0);
-  const isUniqueRoot = roots.length === 1 && roots[0].id === decompose.id;
-  if (!isUniqueRoot) {
-    throw new PipelineValidationError(
-      `Decompose stage '${decompose.id}' must be the first stage (build-order index 0): ` +
-        `it must be the pipeline's sole entry point with no \`requires\`, and every other ` +
-        `stage must depend (directly or transitively) on it`
-    );
-  }
-}
-
-/**
- * Validates that there are no duplicate stage IDs.
- */
-function validateNoDuplicateIds(stages: Stage[]): void {
-  const seen = new Set<string>();
-  for (const stage of stages) {
-    if (seen.has(stage.id)) {
-      throw new PipelineValidationError(`Duplicate stage ID: ${stage.id}`);
-    }
-    seen.add(stage.id);
-  }
-}
-
-/**
- * Validates that all `requires` references point to valid stage IDs.
- */
-function validateRequiresReferences(stages: Stage[]): void {
-  const validIds = new Set(stages.map(s => s.id));
-
-  for (const stage of stages) {
-    for (const req of stage.requires) {
-      if (!validIds.has(req)) {
-        throw new PipelineValidationError(
-          `Invalid dependency reference in stage '${stage.id}': '${req}' does not exist`
-        );
-      }
-    }
-  }
-}
-
-/**
- * Validates that there are no cyclic dependencies.
- * Uses DFS to detect cycles and reports the full cycle path.
- */
-function validateNoCycles(stages: Stage[]): void {
-  const stageMap = new Map(stages.map(s => [s.id, s]));
-  const visited = new Set<string>();
-  const inStack = new Set<string>();
-  const parent = new Map<string, string>();
-
-  function dfs(id: string): string | null {
-    visited.add(id);
-    inStack.add(id);
-
-    const stage = stageMap.get(id);
-    if (!stage) return null;
-
-    for (const dep of stage.requires) {
-      if (!visited.has(dep)) {
-        parent.set(dep, id);
-        const cycle = dfs(dep);
-        if (cycle) return cycle;
-      } else if (inStack.has(dep)) {
-        // Found a cycle - reconstruct the path
-        const cyclePath = [dep];
-        let current = id;
-        while (current !== dep) {
-          cyclePath.unshift(current);
-          current = parent.get(current)!;
-        }
-        cyclePath.unshift(dep);
-        return cyclePath.join(' → ');
-      }
-    }
-
-    inStack.delete(id);
-    return null;
-  }
-
-  for (const stage of stages) {
-    if (!visited.has(stage.id)) {
-      const cycle = dfs(stage.id);
-      if (cycle) {
-        throw new PipelineValidationError(`Cyclic dependency detected: ${cycle}`);
-      }
-    }
-  }
-}
-
-/**
- * Validates that no stage in a parallelGroup requires another stage in the
- * SAME parallelGroup. Members of a parallel group must be mutually independent
- * so they can run concurrently.
- */
-function validateParallelGroups(stages: Stage[]): void {
-  // Map each stage id to its parallelGroup (if any)
-  const groupOf = new Map<string, string>();
-  for (const stage of stages) {
-    if (stage.parallelGroup) {
-      groupOf.set(stage.id, stage.parallelGroup);
-    }
-  }
-
-  for (const stage of stages) {
-    const group = stage.parallelGroup;
-    if (!group) continue;
-
-    for (const req of stage.requires) {
-      if (groupOf.get(req) === group) {
-        throw new PipelineValidationError(
-          `Stages in parallelGroup '${group}' must be mutually independent: ` +
-            `stage '${stage.id}' requires '${req}' in the same group`
-        );
-      }
-    }
-  }
 }
 
 /**
@@ -287,6 +206,28 @@ export function validatePipelineDraft(
   skillSets: { knownSkillNames: Set<string>; enabledSkillNames: Set<string> }
 ): PipelineValidationIssue[] {
   const issues: PipelineValidationIssue[] = [];
+  const explicitVersion =
+    definition !== null &&
+    typeof definition === 'object' &&
+    !Array.isArray(definition)
+      ? (definition as { version?: unknown }).version
+      : undefined;
+  if (explicitVersion !== undefined && explicitVersion !== 1) {
+    const prepared = EcpDefinitionModule.prepare(
+      definition,
+      createCapabilityCatalogSnapshot([])
+    );
+    if (!prepared.ok) {
+      return prepared.error.diagnostics.map((item) => ({
+        severity: item.severity,
+        path: item.path,
+        message: item.message,
+      }));
+    }
+    // A valid v2 Definition belongs to the shared preparation validator, not
+    // the legacy flat-DAG collector.
+    return [];
+  }
 
   const result = PipelineYamlSchema.safeParse(definition);
   if (!result.success) {
@@ -301,24 +242,34 @@ export function validatePipelineDraft(
   }
 
   const pipeline = result.data;
+  return validatePreparedLegacyPipelineDraft(pipeline, skillSets);
+}
 
-  const structuralChecks: (() => void)[] = [
-    () => validateNoDuplicateIds(pipeline.stages),
-    () => validateRequiresReferences(pipeline.stages),
-    () => validateNoCycles(pipeline.stages),
-    () => validateParallelGroups(pipeline.stages),
-    () => validateDecomposeStages(pipeline.stages),
-    () => validateComposedPolicyFloor(pipeline),
-  ];
-  for (const check of structuralChecks) {
-    try {
-      check();
-    } catch (error) {
-      if (!(error instanceof PipelineValidationError)) throw error;
-      issues.push({ severity: 'error', path: '/stages', message: error.message });
-    }
+/**
+ * Collects legacy-only structural and skill issues after Definition
+ * preparation has already normalized and admitted authored v1.
+ */
+export function validatePreparedLegacyPipelineDraft(
+  pipeline: PipelineYaml,
+  skillSets: { knownSkillNames: Set<string>; enabledSkillNames: Set<string> }
+): PipelineValidationIssue[] {
+  const issues: PipelineValidationIssue[] = [];
+  for (const diagnostic of validateLegacyPipelineDefinition(pipeline)) {
+    issues.push({
+      severity: 'error',
+      path: diagnostic.path,
+      message: diagnostic.message,
+    });
   }
+  issues.push(...collectLegacyPipelineSkillIssues(pipeline, skillSets));
+  return issues;
+}
 
+export function collectLegacyPipelineSkillIssues(
+  pipeline: PipelineYaml,
+  skillSets: { knownSkillNames: Set<string>; enabledSkillNames: Set<string> }
+): PipelineValidationIssue[] {
+  const issues: PipelineValidationIssue[] = [];
   for (const [index, stage] of pipeline.stages.entries()) {
     // decompose stages carry no `skill` to validate (see validatePipelineSkills).
     if (stage.kind === 'decompose') continue;
@@ -338,6 +289,5 @@ export function validatePipelineDraft(
       });
     }
   }
-
   return issues;
 }

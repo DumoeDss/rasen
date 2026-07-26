@@ -7,6 +7,7 @@ import {
   encodePackage,
   type PipelinePackageInput,
 } from '../../src/core/workflow-package/index.js';
+import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 import { runCLI } from '../helpers/run-cli.js';
 
 const BUILTIN_NAMES = [
@@ -559,6 +560,406 @@ describe('pipeline command', () => {
   });
 
   describe('show', () => {
+    it(
+      'keeps exact-capability v2 visible in list/detail and stops execution at the stable runtime boundary',
+      async () => {
+        const workflow = loadWorkflowCatalog().definitions.find(
+          (definition) =>
+            definition.skill.template.name === 'rasen-apply-change'
+        );
+        expect(workflow).toBeDefined();
+        const name = 'exact-capability-v2';
+        const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          JSON.stringify({
+            version: 2,
+            id: name,
+            sourceId: `fixture:${name}`,
+            name,
+            inputs: [],
+            artifacts: [],
+            outcomes: ['done'],
+            declarations: [],
+            root: {
+              nodes: [
+                {
+                  id: 'implement',
+                  kind: 'AtomicStage',
+                  capability: {
+                    id: 'skill:rasen-apply-change',
+                    version: workflow!.digest,
+                  },
+                },
+              ],
+              connections: [],
+            },
+          }),
+          'utf-8'
+        );
+
+        const list = await runCLI(['pipeline', 'list', '--json'], {
+          cwd: testDir,
+        });
+        expect(list.exitCode).toBe(0);
+        const listed = JSON.parse(list.stdout).pipelines.find(
+          (pipeline: any) => pipeline.name === name
+        );
+        expect(listed).toMatchObject({
+          authoredVersion: 2,
+          definitionValid: true,
+          planAvailable: true,
+          executable: false,
+          unavailableReason: 'ecp_v2_runtime_unavailable',
+        });
+        expect(listed).not.toHaveProperty('prepared');
+
+        const detail = await runCLI(['pipeline', 'show', name, '--json'], {
+          cwd: testDir,
+        });
+        expect(detail.exitCode).toBe(0);
+        expect(JSON.parse(detail.stdout)).toMatchObject({
+          version: 2,
+          name,
+          definition: { version: 2, name },
+          preparation: {
+            definitionValid: true,
+            planAvailable: true,
+            executable: false,
+            unavailableReason: 'ecp_v2_runtime_unavailable',
+          },
+        });
+
+        const execution = await runCLI(
+          ['pipeline', 'show', name, '--for-execution', '--json'],
+          { cwd: testDir }
+        );
+        expect(execution.exitCode).toBe(1);
+        expect(execution.stderr).toContain('ecp_v2_runtime_unavailable');
+        expect(execution.stderr).not.toContain('pipeline_not_found');
+        expect(execution.stderr).not.toContain(
+          'pipeline_capability_catalog_required'
+        );
+      },
+      60_000
+    );
+
+    it('shows the same invalid v2 winner in CLI inventory and detail', async () => {
+      const name = 'invalid-v2-detail';
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        JSON.stringify({
+          version: 2,
+          id: name,
+          sourceId: `fixture:${name}`,
+          name,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'choice', kind: 'Choice' }],
+            connections: [],
+          },
+        }),
+        'utf-8'
+      );
+
+      const list = await runCLI(['pipeline', 'list', '--json'], {
+        cwd: testDir,
+      });
+      const listed = JSON.parse(list.stdout).pipelines.find(
+        (pipeline: any) => pipeline.name === name
+      );
+      expect(listed).toMatchObject({
+        definitionValid: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: 'INVALID_SOURCE',
+            path: '/root/nodes/0/outcomes',
+          }),
+        ],
+      });
+
+      const detail = await runCLI(['pipeline', 'show', name, '--json'], {
+        cwd: testDir,
+      });
+      expect(detail.exitCode).toBe(0);
+      expect(JSON.parse(detail.stdout)).toMatchObject({
+        name,
+        preparation: {
+          definitionValid: false,
+          diagnostics: [
+            expect.objectContaining({
+              code: 'INVALID_SOURCE',
+              path: '/root/nodes/0/outcomes',
+            }),
+          ],
+        },
+      });
+
+      const execution = await runCLI(
+        ['pipeline', 'show', name, '--for-execution', '--json'],
+        { cwd: testDir }
+      );
+      expect(execution.exitCode).toBe(1);
+      expect(execution.stderr).toContain('INVALID_SOURCE');
+      expect(execution.stderr).toContain('/root/nodes/0/outcomes');
+    });
+
+    it('preserves invalid-v2 preparation identity and context for direct and decompose execution admission', async () => {
+      const childName = 'invalid-execution-child';
+      const childDir = path.join(testDir, 'rasen', 'pipelines', childName);
+      await fs.mkdir(childDir, { recursive: true });
+      await fs.writeFile(
+        path.join(childDir, 'pipeline.yaml'),
+        JSON.stringify({
+          version: 2,
+          id: childName,
+          sourceId: `fixture:${childName}`,
+          name: childName,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'choice', kind: 'Choice' }],
+            connections: [],
+          },
+        }),
+        'utf-8'
+      );
+      const parentName = 'invalid-execution-parent';
+      const parentDir = path.join(testDir, 'rasen', 'pipelines', parentName);
+      await fs.mkdir(parentDir, { recursive: true });
+      await fs.writeFile(
+        path.join(parentDir, 'pipeline.yaml'),
+        [
+          'version: 1',
+          `name: ${parentName}`,
+          'stages:',
+          '  - id: children',
+          '    kind: decompose',
+          `    childPipeline: ${childName}`,
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+
+      const direct = await runCLI(
+        ['pipeline', 'show', childName, '--for-execution', '--json'],
+        { cwd: testDir }
+      );
+      const recursive = await runCLI(
+        ['pipeline', 'show', parentName, '--for-execution', '--json'],
+        { cwd: testDir }
+      );
+
+      expect(direct.exitCode).toBe(1);
+      expect(recursive.exitCode).toBe(1);
+      for (const result of [direct, recursive]) {
+        expect(result.stderr).toContain('INVALID_SOURCE');
+        expect(result.stderr).toContain('/root/nodes/0/outcomes');
+        expect(result.stderr).toContain('Choice outcomes');
+      }
+      expect(recursive.stderr).toContain(
+        `Decompose stage 'children' references childPipeline '${childName}'`
+      );
+    });
+
+    it.each([
+      {
+        label: 'malformed YAML',
+        name: 'invalid-detail-yaml',
+        source: 'version: 2\nname: invalid-detail-yaml\nroot: [\n',
+        expectedCode: 'INVALID_SOURCE',
+        expectedPath: '/',
+        expectedDefinition: {},
+      },
+      {
+        label: 'malformed JSON',
+        name: 'invalid-detail-json',
+        source: '{"version":2,"name":"invalid-detail-json","root":',
+        expectedCode: 'INVALID_SOURCE',
+        expectedPath: '/',
+        expectedDefinition: {},
+      },
+      {
+        label: 'unsupported version',
+        name: 'invalid-detail-version',
+        source: 'version: 99\nname: invalid-detail-version\n',
+        expectedCode: 'UNSUPPORTED_VERSION',
+        expectedPath: '/version',
+        expectedDefinition: {
+          version: 99,
+          name: 'invalid-detail-version',
+        },
+      },
+      {
+        label: 'malformed nested v2 value',
+        name: 'invalid-detail-nested',
+        source: JSON.stringify({
+          version: 2,
+          id: 'invalid-detail-nested',
+          sourceId: 'fixture:invalid-detail-nested',
+          name: 'invalid-detail-nested',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'choice', kind: 'Choice' }],
+            connections: [],
+          },
+        }),
+        expectedCode: 'INVALID_SOURCE',
+        expectedPath: '/root/nodes/0/outcomes',
+        expectedDefinition: {
+          version: 2,
+          id: 'invalid-detail-nested',
+          sourceId: 'fixture:invalid-detail-nested',
+          name: 'invalid-detail-nested',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'choice', kind: 'Choice' }],
+            connections: [],
+          },
+        },
+      },
+      {
+        label: 'parseable semantic-invalid v2 value',
+        name: 'invalid-detail-semantic',
+        source: JSON.stringify({
+          version: 2,
+          id: 'invalid-detail-semantic',
+          sourceId: 'fixture:invalid-detail-semantic',
+          name: 'invalid-detail-semantic',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [
+              { id: 'duplicate', kind: 'Finish', outcome: 'done' },
+              { id: 'duplicate', kind: 'Finish', outcome: 'done' },
+            ],
+            connections: [],
+          },
+        }),
+        expectedCode: 'DUPLICATE_ID',
+        expectedPath: '/root/nodes/1/id',
+        expectedDefinition: {
+          version: 2,
+          id: 'invalid-detail-semantic',
+          sourceId: 'fixture:invalid-detail-semantic',
+          name: 'invalid-detail-semantic',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [
+              { id: 'duplicate', kind: 'Finish', outcome: 'done' },
+              { id: 'duplicate', kind: 'Finish', outcome: 'done' },
+            ],
+            connections: [],
+          },
+        },
+      },
+      {
+        label: 'duplicate authored-contract v2 value',
+        name: 'invalid-detail-duplicate-contract',
+        source: JSON.stringify({
+          version: 2,
+          id: 'invalid-detail-duplicate-contract',
+          sourceId: 'fixture:invalid-detail-duplicate-contract',
+          name: 'invalid-detail-duplicate-contract',
+          inputs: [
+            { name: 'payload', type: 'text/plain' },
+            { name: 'payload', type: 'application/json' },
+          ],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+            connections: [],
+          },
+        }),
+        expectedCode: 'DUPLICATE_ID',
+        expectedPath: '/inputs/1/name',
+        expectedDefinition: {
+          version: 2,
+          id: 'invalid-detail-duplicate-contract',
+          sourceId: 'fixture:invalid-detail-duplicate-contract',
+          name: 'invalid-detail-duplicate-contract',
+          inputs: [
+            { name: 'payload', type: 'text/plain' },
+            { name: 'payload', type: 'application/json' },
+          ],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+            connections: [],
+          },
+        },
+      },
+    ])(
+      'keeps $label inventory/detail preparation diagnostics identical without parser leakage',
+      async ({ name, source, expectedCode, expectedPath, expectedDefinition }) => {
+        const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          source,
+          'utf-8'
+        );
+
+        const list = await runCLI(['pipeline', 'list', '--json'], {
+          cwd: testDir,
+        });
+        expect(list.exitCode).toBe(0);
+        const listed = JSON.parse(list.stdout).pipelines.find(
+          (pipeline: any) => pipeline.name === name
+        );
+        expect(listed.definitionValid).toBe(false);
+        expect(listed).not.toHaveProperty('authoredText');
+        expect(listed).not.toHaveProperty('authoredDefinition');
+        expect(listed.diagnostics).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ code: expectedCode }),
+          ])
+        );
+
+        const detail = await runCLI(['pipeline', 'show', name, '--json'], {
+          cwd: testDir,
+        });
+        expect(detail.exitCode).toBe(0);
+        expect(detail.stderr).not.toMatch(/BAD_INDENT|YAMLParseError/);
+        const shown = JSON.parse(detail.stdout);
+        expect(shown.definition).toEqual(expectedDefinition);
+        expect(shown.preparation.diagnostics).toEqual(listed.diagnostics);
+
+        const execution = await runCLI(
+          ['pipeline', 'show', name, '--for-execution', '--json'],
+          { cwd: testDir }
+        );
+        expect(execution.exitCode).toBe(1);
+        expect(execution.stderr).not.toMatch(/BAD_INDENT|YAMLParseError/);
+        expect(execution.stderr).toContain(expectedCode);
+        expect(execution.stderr).toContain(expectedPath);
+      },
+      60_000
+    );
+
     it('exposes normalized Pipeline definition v1 in JSON and human output', async () => {
       const jsonResult = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
         cwd: testDir,

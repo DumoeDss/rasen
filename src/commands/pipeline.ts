@@ -16,9 +16,9 @@ import * as fs from 'node:fs';
 import {
   AgentRuntimeSchema,
   StageRoleSchema,
-  loadPipelineByName,
+  freezeProductionPreparedPipelineRegistry,
+  preflightPreparedDefinitionExecution,
   listPipelines,
-  listPipelinesWithInfo,
   PipelineGraph,
   readRunStateDetailed,
   resolveRunStateLocation,
@@ -230,7 +230,10 @@ export class PipelineCommand {
   async list(options: PipelineCommandOptions = {}): Promise<void> {
     const root = await this.resolveRoot(options);
     if (!root) return;
-    const pipelines = listPipelinesWithInfo(root.path);
+    const registry = await freezeProductionPreparedPipelineRegistry(root.path, {
+      reporter: this.executionOptions(options).reporter,
+    });
+    const pipelines = registry.list().map((info) => this.publicPipelineInfo(info));
 
     if (options.json) {
       console.log(JSON.stringify({ pipelines }, null, 2));
@@ -254,11 +257,9 @@ export class PipelineCommand {
     if (!root) return;
     const projectRoot = root.path;
 
-    let pipeline;
-    try {
-      pipeline = loadPipelineByName(name, projectRoot);
-    } catch {
-      const available = listPipelines(projectRoot);
+    const available = listPipelines(projectRoot);
+    const normalizedName = name.replace(/\.ya?ml$/, '');
+    if (!available.includes(normalizedName)) {
       const messages = getPipelineMessages();
       throw pipelineMessageError(
         'pipelineNotFound',
@@ -269,14 +270,74 @@ export class PipelineCommand {
         'pipeline_not_found'
       );
     }
-    if (options.forExecution) {
-      await validatePipelineForExecution(
-        pipeline,
-        projectRoot,
-        this.executionOptions(options)
-      );
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: this.executionOptions(options).reporter,
+    });
+    const info = registry.list().find((entry) => entry.name === normalizedName);
+    if (info && info.definitionValid === false && !options.forExecution) {
+      const result = {
+        version: info.authoredVersion,
+        name: info.name,
+        description: info.description,
+        definition: info.authoredDefinition ?? {},
+        source: info.source,
+        preparation: {
+          authoredVersion: info.authoredVersion,
+          normalizedVersion: 2,
+          definitionValid: false,
+          diagnostics: info.diagnostics ?? [],
+          planAvailable: false,
+          executable: false,
+          executionMode: 'unavailable',
+        },
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(JSON.stringify(result, null, 2));
+      return;
     }
 
+    const executionSelection = options.forExecution
+      ? await registry.selectForExecution(
+          normalizedName,
+          this.executionOptions(options)
+        )
+      : undefined;
+    const resolution =
+      executionSelection?.resolution ?? registry.load(normalizedName);
+    if (resolution.prepared.authoredVersion === 2 && !options.forExecution) {
+      const prepared = resolution.prepared;
+      const result = {
+        version: 2,
+        name: prepared.authoredSource.name,
+        description: prepared.authoredSource.description ?? '',
+        definition: prepared.authoredSource,
+        source: resolution.source,
+        preparation: {
+          authoredVersion: prepared.authoredVersion,
+          normalizedVersion: prepared.normalizedVersion,
+          definitionValid: prepared.capability.definitionValid,
+          diagnostics: prepared.warnings,
+          digests: prepared.digests,
+          planAvailable: prepared.capability.planAvailable,
+          executable: prepared.capability.executable,
+          executionMode: prepared.capability.executionMode,
+          unavailableReason: prepared.capability.unavailableReason,
+        },
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const pipeline =
+      executionSelection?.pipeline ??
+      (resolution.prepared.authoredSource as PipelineYaml);
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const storeLayer = await resolveConfigStoreLayer(projectRoot);
@@ -325,9 +386,7 @@ export class PipelineCommand {
       return;
     }
 
-    const source = listPipelinesWithInfo(projectRoot).find(
-      (info) => info.name === pipeline.name
-    )?.source;
+    const source = registry.list().find((entry) => entry.name === pipeline.name)?.source;
     this.printPipelineDetail(result, graph, source, getPipelineMessages());
   }
 
@@ -345,7 +404,11 @@ export class PipelineCommand {
     if (!root) return;
     const projectRoot = root.path;
     const normalizedName = name.replace(/\.ya?ml$/, '');
-    const pipeline = this.loadPipelineOrExplain(normalizedName, projectRoot);
+    const pipeline = await this.loadPipelineOrExplain(
+      normalizedName,
+      projectRoot,
+      options
+    );
     const updates = this.runtimeUpdatesFromOptions(options);
 
     let configPath: string | null = null;
@@ -456,6 +519,9 @@ export class PipelineCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: this.executionOptions(options).reporter,
+    });
     const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
 
     const changeDir = path.join(root.changesDir, changeName);
@@ -507,9 +573,8 @@ export class PipelineCommand {
           .map((child) => child.pipeline)
       );
       for (const pipelineName of remainingPipelineNames) {
-        await validatePipelineForExecution(
-          loadPipelineByName(pipelineName, projectRoot),
-          projectRoot,
+        await registry.selectForExecution(
+          pipelineName,
           this.executionOptions(options)
         );
       }
@@ -658,7 +723,9 @@ export class PipelineCommand {
       return;
     }
 
-    const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
+    const pipeline = preflightPreparedDefinitionExecution(
+      registry.load(runState.pipeline).prepared
+    ).pipeline;
     // A project-local or user-override pipeline authored before the rebrand can
     // still name legacy `openspec-*`/`openspec:*` or retired colon-form skill IDs
     // that no installed skill answers to. Surface each stale stage skill with its
@@ -690,7 +757,11 @@ export class PipelineCommand {
     await validatePipelineForExecution(
       preflightPipeline,
       projectRoot,
-      this.executionOptions(options)
+      {
+        ...this.executionOptions(options),
+        skillSets: registry.skillSets,
+        loadPrepared: registry.load,
+      }
     );
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
@@ -849,11 +920,13 @@ export class PipelineCommand {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private loadPipelineOrExplain(name: string, projectRoot: string): PipelineYaml {
-    try {
-      return loadPipelineByName(name, projectRoot);
-    } catch {
-      const available = listPipelines(projectRoot);
+  private async loadPipelineOrExplain(
+    name: string,
+    projectRoot: string,
+    options: PipelineCommandOptions
+  ): Promise<PipelineYaml> {
+    const available = listPipelines(projectRoot);
+    if (!available.includes(name)) {
       const messages = getPipelineMessages();
       throw pipelineMessageError(
         'pipelineNotFound',
@@ -864,6 +937,23 @@ export class PipelineCommand {
         'pipeline_not_found'
       );
     }
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: this.executionOptions(options).reporter,
+    });
+    return (
+      await registry.selectForExecution(name, this.executionOptions(options))
+    ).pipeline;
+  }
+
+  private publicPipelineInfo(info: PipelineInfo): PipelineInfo {
+    const {
+      prepared: _prepared,
+      authoredText: _authoredText,
+      authoredDefinition: _authoredDefinition,
+      pipelinePath: _pipelinePath,
+      ...publicInfo
+    } = info;
+    return publicInfo;
   }
 
   private runtimeUpdatesFromOptions(options: PipelineAgentsOptions): Partial<Record<StageRole, AgentRuntime>> {

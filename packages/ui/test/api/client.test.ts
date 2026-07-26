@@ -7,6 +7,7 @@ import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
+import type { PipelineDetailResponse } from '../../src/api/types.js';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -23,6 +24,71 @@ describe('api client', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('preserves the full discriminated v2 Definition and preparation capability contract', async () => {
+    const detail: PipelineDetailResponse = {
+      pipeline: {
+        name: 'v2-client-contract',
+        description: 'v2',
+        provenance: 'user',
+        sourceLayer: 'project',
+        stages: [],
+        authoredVersion: 2,
+        normalizedVersion: 2,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable',
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition: {
+        version: 2,
+        id: 'definition:v2-client-contract',
+        sourceId: 'fixture:v2-client-contract',
+        name: 'v2-client-contract',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+          connections: [],
+        },
+        unexposed: { preserve: true },
+      },
+      preparation: {
+        authoredVersion: 2,
+        normalizedVersion: 2,
+        definitionValid: true,
+        diagnostics: [],
+        digests: {
+          source: 'source-digest',
+          capability: 'capability-digest',
+          plan: 'plan-digest',
+        },
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable',
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      editable: true,
+    };
+    (fetch as any).mockResolvedValueOnce(jsonResponse(200, detail));
+
+    const result = await client.getPipelineDetail(
+      'v2-client-contract',
+      'project:proj_abc123'
+    );
+
+    expect(result).toEqual(detail);
+    expect(result.definition.version).toBe(2);
+    expect(result.preparation).toMatchObject({
+      planAvailable: true,
+      executable: false,
+      unavailableReason: 'ecp_v2_runtime_unavailable',
+    });
+    expect(JSON.stringify(result)).not.toContain('"payload"');
   });
 
   it('injects no Authorization header when no token is set', async () => {

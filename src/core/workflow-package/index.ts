@@ -6,6 +6,7 @@ export {
   decodePackage,
   encodePackage,
   WorkflowPackageError,
+  type PackageCodecOptions,
   type PipelinePackageInput,
 } from './codec.js';
 export {

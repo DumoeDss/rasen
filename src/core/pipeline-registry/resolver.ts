@@ -3,7 +3,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getGlobalDataDir } from '../global-config.js';
-import { parsePipeline, PipelineValidationError } from './pipeline.js';
+import {
+  parsePipeline,
+  PipelineValidationError,
+  pipelineValidationErrorFromDefinitionReadError,
+} from './pipeline.js';
+import {
+  DefinitionReadError,
+  EcpDefinitionModule,
+  type CapabilityCatalogSnapshot,
+  type DefinitionDiagnostic,
+  type DefinitionPreparationResult,
+  type PreparedDefinition,
+} from './definition.js';
 import { DEFAULT_CHILD_PIPELINE, type PipelineYaml, type Stage } from './types.js';
 
 /**
@@ -13,7 +25,8 @@ export class PipelineLoadError extends Error {
   constructor(
     message: string,
     public readonly pipelinePath: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
+    public readonly authoredText?: string
   ) {
     super(message);
     this.name = 'PipelineLoadError';
@@ -119,7 +132,11 @@ export function resolvePipelinePath(name: string, projectRoot?: string): string 
  * @returns The resolved pipeline object
  * @throws Error if pipeline is not found in any location
  */
-export function loadPipelineByName(name: string, projectRoot?: string): PipelineYaml {
+export function loadPipelineByName(
+  name: string,
+  projectRoot?: string,
+  options?: PipelinePreparationOptions
+): PipelineYaml {
   // Normalize name (remove .yaml extension if provided)
   const normalizedName = name.replace(/\.ya?ml$/, '');
 
@@ -145,7 +162,12 @@ export function loadPipelineByName(name: string, projectRoot?: string): Pipeline
   }
 
   try {
-    return parsePipeline(content);
+    // This public contract returns only the prompt-owned legacy PipelineYaml
+    // runtime value. A caller that may encounter authored v2 must supply the
+    // authoritative frozen catalog so preparation can complete before the
+    // explicit unavailable-runtime selection. Omitting it is an explicit
+    // legacy-only path; parsePipeline never gives v2 an empty-catalog meaning.
+    return parsePipeline(content, options?.catalog);
   } catch (err) {
     if (err instanceof PipelineValidationError) {
       throw new PipelineLoadError(
@@ -161,6 +183,119 @@ export function loadPipelineByName(name: string, projectRoot?: string): Pipeline
       parseError
     );
   }
+}
+
+export type PipelineSourceLayer = 'project' | 'user' | 'package';
+
+export interface PipelinePreparationOptions {
+  readonly catalog: CapabilityCatalogSnapshot;
+  readonly prepare?: (
+    source: unknown,
+    catalog: CapabilityCatalogSnapshot
+  ) => DefinitionPreparationResult;
+}
+
+export interface PreparedPipelineResolution {
+  /** Normalized registry key used for resolution. */
+  readonly name: string;
+  readonly pipelinePath: string;
+  readonly source: PipelineSourceLayer;
+  /** Exact winning file content retained for source-compatible read/export. */
+  readonly authoredText: string;
+  /** Exact prepared result shared by registry detail/list consumers. */
+  readonly prepared: PreparedDefinition;
+}
+
+function sourceLayerForPath(
+  pipelinePath: string,
+  normalizedName: string,
+  projectRoot?: string
+): PipelineSourceLayer {
+  const resolved = path.resolve(pipelinePath);
+  if (
+    projectRoot &&
+    resolved ===
+      path.resolve(getProjectPipelinesDir(projectRoot), normalizedName, 'pipeline.yaml')
+  ) {
+    return 'project';
+  }
+  if (
+    resolved ===
+    path.resolve(getUserPipelinesDir(), normalizedName, 'pipeline.yaml')
+  ) {
+    return 'user';
+  }
+  return 'package';
+}
+
+function preparePipelineAtPath(
+  normalizedName: string,
+  pipelinePath: string,
+  source: PipelineSourceLayer,
+  options: PipelinePreparationOptions
+): PreparedPipelineResolution {
+  let authoredText: string;
+  try {
+    authoredText = fs.readFileSync(pipelinePath, 'utf-8');
+  } catch (error) {
+    const ioError = error instanceof Error ? error : new Error(String(error));
+    throw new PipelineLoadError(
+      `Failed to read pipeline at '${pipelinePath}': ${ioError.message}`,
+      pipelinePath,
+      ioError
+    );
+  }
+
+  const result = (options.prepare ?? EcpDefinitionModule.prepare)(
+    authoredText,
+    options.catalog
+  );
+  if (!result.ok) {
+    throw new PipelineLoadError(
+      `Invalid pipeline definition at '${pipelinePath}': ${result.error.message}`,
+      pipelinePath,
+      result.error,
+      authoredText
+    );
+  }
+
+  return {
+    name: normalizedName,
+    pipelinePath,
+    source,
+    authoredText,
+    prepared: result.value,
+  };
+}
+
+/**
+ * Resolves and prepares the winning authored Pipeline Definition without
+ * widening the legacy `loadPipelineByName(): PipelineYaml` contract.
+ *
+ * The winning path is selected before preparation, so an unsupported or
+ * invalid higher-precedence definition fails closed rather than falling
+ * through to a lower layer.
+ */
+export function loadPreparedPipelineByName(
+  name: string,
+  projectRoot: string | undefined,
+  options: PipelinePreparationOptions
+): PreparedPipelineResolution {
+  const normalizedName = name.replace(/\.ya?ml$/, '');
+  const pipelinePath = resolvePipelinePath(normalizedName, projectRoot);
+  if (!pipelinePath) {
+    const available = listPipelines(projectRoot);
+    throw new Error(
+      `Pipeline '${normalizedName}' not found. Available pipelines: ${available.join(', ')}`
+    );
+  }
+
+  return preparePipelineAtPath(
+    normalizedName,
+    pipelinePath,
+    sourceLayerForPath(pipelinePath, normalizedName, projectRoot),
+    options
+  );
 }
 
 /**
@@ -211,7 +346,19 @@ export interface PipelineInfo {
   name: string;
   description: string;
   stages: string[];
-  source: 'project' | 'user' | 'package';
+  source: PipelineSourceLayer;
+  authoredVersion?: number;
+  definitionValid?: boolean;
+  planAvailable?: boolean;
+  executable?: boolean;
+  executionMode?: 'legacy' | 'unavailable';
+  unavailableReason?: string;
+  prepared?: PreparedDefinition;
+  diagnostics?: readonly DefinitionDiagnostic[];
+  pipelinePath?: string;
+  authoredText?: string;
+  /** Total projection captured by authoritative preparation; never reparsed. */
+  authoredDefinition?: unknown;
 }
 
 /**
@@ -222,7 +369,9 @@ function collectPipelineInfo(
   baseDir: string,
   source: PipelineInfo['source'],
   seenNames: Set<string>,
-  into: PipelineInfo[]
+  into: PipelineInfo[],
+  preparation?: PipelinePreparationOptions,
+  loadPrepared?: (name: string) => PreparedPipelineResolution
 ): void {
   if (!fs.existsSync(baseDir)) {
     return;
@@ -235,7 +384,47 @@ function collectPipelineInfo(
     if (!fs.existsSync(pipelinePath)) {
       continue;
     }
+    // Reserve precedence as soon as this manifest wins. Preparation failure
+    // must never reveal a lower layer with the same registry key.
+    seenNames.add(entry.name);
     try {
+      if (preparation) {
+        const resolution = loadPrepared
+          ? loadPrepared(entry.name)
+          : preparePipelineAtPath(
+              entry.name,
+              pipelinePath,
+              source,
+              preparation
+            );
+        const authored = resolution.prepared.authoredSource;
+        into.push({
+          name: entry.name,
+          description: authored.description || '',
+          stages:
+            resolution.prepared.authoredVersion === 1
+              ? (authored as PipelineYaml).stages.map((stage) => stage.id)
+              : resolution.prepared.definition.root.nodes.map((node) => node.id),
+          source,
+          authoredVersion: resolution.prepared.authoredVersion,
+          definitionValid: resolution.prepared.capability.definitionValid,
+          planAvailable: resolution.prepared.capability.planAvailable,
+          executable: resolution.prepared.capability.executable,
+          executionMode: resolution.prepared.capability.executionMode,
+          ...(resolution.prepared.capability.unavailableReason
+            ? {
+                unavailableReason:
+                  resolution.prepared.capability.unavailableReason,
+              }
+            : {}),
+          prepared: resolution.prepared,
+          pipelinePath: resolution.pipelinePath,
+          authoredText: resolution.authoredText,
+          authoredDefinition: resolution.prepared.authoredSource,
+        });
+        continue;
+      }
+
       const pipeline = parsePipeline(fs.readFileSync(pipelinePath, 'utf-8'));
       into.push({
         name: entry.name,
@@ -243,9 +432,42 @@ function collectPipelineInfo(
         stages: pipeline.stages.map(s => s.id),
         source,
       });
-      seenNames.add(entry.name);
-    } catch {
-      // Skip invalid pipelines
+    } catch (error) {
+      if (
+        preparation &&
+        error instanceof PipelineLoadError &&
+        error.cause instanceof DefinitionReadError
+      ) {
+        const authoredText = error.authoredText ?? '';
+        const authoredValue = error.cause.authoredSource;
+        const authoredRecord =
+          authoredValue !== null &&
+          typeof authoredValue === 'object' &&
+          !Array.isArray(authoredValue)
+            ? (authoredValue as Record<string, unknown>)
+            : undefined;
+        const explicitVersion = authoredRecord?.version;
+        into.push({
+          name: entry.name,
+          description:
+            typeof authoredRecord?.description === 'string'
+              ? authoredRecord.description
+              : '',
+          stages: [],
+          source,
+          authoredVersion:
+            typeof explicitVersion === 'number' ? explicitVersion : 1,
+          definitionValid: false,
+          planAvailable: false,
+          executable: false,
+          executionMode: 'unavailable',
+          diagnostics: error.cause.diagnostics,
+          pipelinePath,
+          authoredText,
+          authoredDefinition: authoredValue,
+        });
+      }
+      // Without a preparation contract, preserve the legacy success-only list.
     }
   }
 }
@@ -272,25 +494,64 @@ export function resolveChildPipelineName(stage: Stage): string {
  */
 export function validateDecomposeChildPipelines(
   pipeline: PipelineYaml,
-  projectRoot?: string
+  projectRoot?: string,
+  loadChild: (name: string) => PipelineYaml = (name) =>
+    loadPipelineByName(name, projectRoot)
 ): void {
-  for (const stage of pipeline.stages) {
+  for (const [stageIndex, stage] of pipeline.stages.entries()) {
     if (stage.kind !== 'decompose') continue;
     const childName = resolveChildPipelineName(stage);
+    const stagePath = `/stages/${stageIndex}/childPipeline`;
 
     let child: PipelineYaml;
     try {
-      child = loadPipelineByName(childName, projectRoot);
-    } catch {
+      child = loadChild(childName);
+    } catch (error) {
+      const contextualize = (
+        cause: PipelineValidationError
+      ): PipelineValidationError =>
+        new PipelineValidationError(
+          `Decompose stage '${stage.id}' references childPipeline '${childName}': ${cause.message}`,
+          cause.code,
+          {
+            path: cause.path ?? stagePath,
+            cause,
+          }
+        );
+      if (error instanceof PipelineValidationError) {
+        throw contextualize(error);
+      }
+      if (error instanceof PipelineLoadError) {
+        if (error.cause instanceof PipelineValidationError) {
+          throw contextualize(error.cause);
+        }
+        if (error.cause instanceof DefinitionReadError) {
+          throw contextualize(
+            pipelineValidationErrorFromDefinitionReadError(error.cause, {
+              cause: error,
+              fallbackPath: stagePath,
+            })
+          );
+        }
+        throw new PipelineValidationError(
+          `Decompose stage '${stage.id}' references childPipeline '${childName}', but the resolved source could not be loaded: ${error.message}`,
+          'pipeline_invalid',
+          { path: stagePath, cause: error }
+        );
+      }
       throw new PipelineValidationError(
-        `Decompose stage '${stage.id}' references childPipeline '${childName}' which cannot be resolved`
+        `Decompose stage '${stage.id}' references childPipeline '${childName}' which cannot be resolved`,
+        'pipeline_invalid',
+        { path: stagePath, cause: error }
       );
     }
 
     if (child.stages.some(s => s.kind === 'decompose')) {
       throw new PipelineValidationError(
         `Recursion guard: childPipeline '${childName}' (used by decompose stage '${stage.id}') ` +
-          `itself contains a decompose stage; child pipelines must be decompose-free`
+          `itself contains a decompose stage; child pipelines must be decompose-free`,
+        'pipeline_invalid',
+        { path: stagePath }
       );
     }
   }
@@ -302,20 +563,45 @@ export function validateDecomposeChildPipelines(
  *
  * @param projectRoot - Optional project root directory for project-local resolution
  */
-export function listPipelinesWithInfo(projectRoot?: string): PipelineInfo[] {
+export function listPipelinesWithInfo(
+  projectRoot?: string,
+  preparation?: PipelinePreparationOptions,
+  loadPrepared?: (name: string) => PreparedPipelineResolution
+): PipelineInfo[] {
   const pipelines: PipelineInfo[] = [];
   const seenNames = new Set<string>();
 
   // Project-local first (highest priority, if projectRoot provided)
   if (projectRoot) {
-    collectPipelineInfo(getProjectPipelinesDir(projectRoot), 'project', seenNames, pipelines);
+    collectPipelineInfo(
+      getProjectPipelinesDir(projectRoot),
+      'project',
+      seenNames,
+      pipelines,
+      preparation,
+      loadPrepared
+    );
   }
 
   // User overrides (if not overridden by project)
-  collectPipelineInfo(getUserPipelinesDir(), 'user', seenNames, pipelines);
+  collectPipelineInfo(
+    getUserPipelinesDir(),
+    'user',
+    seenNames,
+    pipelines,
+    preparation,
+    loadPrepared
+  );
 
   // Package built-ins (if not overridden by project or user)
-  collectPipelineInfo(getPackagePipelinesDir(), 'package', seenNames, pipelines);
+  collectPipelineInfo(
+    getPackagePipelinesDir(),
+    'package',
+    seenNames,
+    pipelines,
+    preparation,
+    loadPrepared
+  );
 
-  return pipelines.sort((a, b) => a.name.localeCompare(b.name));
+  return pipelines.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

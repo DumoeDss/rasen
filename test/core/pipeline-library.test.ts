@@ -24,6 +24,9 @@ import {
 } from '../../src/core/workflow-package/index.js';
 import {
   getUserPipelinesDir,
+  createCapabilityCatalogSnapshot,
+  createProductionCapabilityCatalogSnapshot,
+  EcpDefinitionModule,
   listPipelines,
   loadPipelineByName,
   parsePipeline,
@@ -91,9 +94,9 @@ describe('pipeline library lifecycle', () => {
     expect(fs.existsSync(path.join(getUserPipelinesDir(), 'solo', 'pipeline.yaml'))).toBe(true);
 
     const dest = path.join(home, 'solo-export.rasenpkg');
-    const exportedPath = exportPipeline('solo', dest);
+    const exportedPath = await exportPipeline('solo', dest);
     expect(exportedPath).toBe(path.resolve(dest));
-    expect(validatePipelineInput(exportedPath)).toMatchObject({ valid: true, kind: 'package', packageKind: 'pipeline' });
+    expect(await validatePipelineInput(exportedPath)).toMatchObject({ valid: true, kind: 'package', packageKind: 'pipeline' });
   });
 
   it('refuses to overwrite an already-installed pipeline without --force, and allows it with --force', async () => {
@@ -162,15 +165,15 @@ describe('pipeline library lifecycle', () => {
     expect(listPipelines()).not.toContain('multi-b');
   });
 
-  it('validates a pipeline draft directory and a package without requiring installation', () => {
+  it('validates a pipeline draft directory and a package without requiring installation', async () => {
     const draftParent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipeline-draft-'));
     cleanup.push(draftParent);
     const draft = scaffoldPipeline('draft-pipe', path.join(draftParent, 'draft-pipe'));
 
-    expect(validatePipelineInput(draft)).toMatchObject({ valid: true, kind: 'directory', name: 'draft-pipe' });
+    expect(await validatePipelineInput(draft)).toMatchObject({ valid: true, kind: 'directory', name: 'draft-pipe' });
 
     const source = packagePath(home, 'validate-only');
-    expect(validatePipelineInput(source)).toMatchObject({ valid: true, kind: 'package', packageKind: 'pipeline' });
+    expect(await validatePipelineInput(source)).toMatchObject({ valid: true, kind: 'package', packageKind: 'pipeline' });
     expect(listPipelines()).not.toContain('validate-only');
   });
 
@@ -184,13 +187,13 @@ describe('pipeline library lifecycle', () => {
     expect(parsePipeline(manifest).version).toBe(PIPELINE_DEFINITION_VERSION);
   });
 
-  it('refuses to export a pipeline that is not in the user layer', () => {
-    expect(() => exportPipeline('small-feature', path.join(home, 'small-feature.rasenpkg'))).toThrow(
+  it('refuses to export a pipeline that is not in the user layer', async () => {
+    await expect(exportPipeline('small-feature', path.join(home, 'small-feature.rasenpkg'))).rejects.toEqual(
       expect.objectContaining<Partial<PipelineLibraryError>>({ code: 'pipeline_not_found' })
     );
   });
 
-  it('rejects a path-traversal name before ever touching the filesystem for it', () => {
+  it('rejects a path-traversal name before ever touching the filesystem for it', async () => {
     // A secret file living OUTSIDE the user pipelines directory, at a
     // location a `../`-laden name could reach if `exportPipeline` ever
     // built a path from `name` before validating it.
@@ -200,7 +203,7 @@ describe('pipeline library lifecycle', () => {
     fs.writeFileSync(path.join(secretDir, 'do-not-read-me.txt'), 'top secret contents');
 
     const traversalName = path.relative(getUserPipelinesDir(), secretDir);
-    expect(() => exportPipeline(traversalName, path.join(home, 'traversal.rasenpkg'))).toThrow(
+    await expect(exportPipeline(traversalName, path.join(home, 'traversal.rasenpkg'))).rejects.toEqual(
       expect.objectContaining<Partial<PipelineLibraryError>>({ code: 'pipeline_not_found' })
     );
     // Nothing should have been written from that directory's content.
@@ -368,6 +371,51 @@ describe('pipeline library lifecycle', () => {
       expect(result.created).toBe(false);
     });
 
+    it('atomically admits exactly one concurrent direct no-force save and retains that winner', async () => {
+      const definitionA = writeDefinitionFile(
+        home,
+        'race-a.json',
+        JSON.stringify({
+          name: 'race-save',
+          description: 'winner-a',
+          stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+        })
+      );
+      const definitionB = writeDefinitionFile(
+        home,
+        'race-b.json',
+        JSON.stringify({
+          name: 'race-save',
+          description: 'winner-b',
+          stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+        })
+      );
+
+      const results = await Promise.allSettled([
+        savePipeline('race-save', definitionA, { force: false }),
+        savePipeline('race-save', definitionB, { force: false }),
+      ]);
+
+      const fulfilled = results.filter(
+        (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof savePipeline>>> =>
+          result.status === 'fulfilled'
+      );
+      const rejected = results.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected'
+      );
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]!.reason).toMatchObject({
+        code: 'pipeline_already_exists',
+      });
+
+      const stored = loadPipelineByName('race-save');
+      const winner =
+        results[0]!.status === 'fulfilled' ? 'winner-a' : 'winner-b';
+      expect(stored.description).toBe(winner);
+      expect(fulfilled[0]!.value.created).toBe(true);
+    });
+
     it('refuses a built-in pipeline name regardless of force', async () => {
       const definitionPath = writeDefinitionFile(
         home,
@@ -394,8 +442,43 @@ describe('pipeline library lifecycle', () => {
           ],
         })
       );
-      await expect(savePipeline('saved-invalid', definitionPath)).rejects.toThrow(/[Cc]yclic/);
+      await expect(savePipeline('saved-invalid', definitionPath)).rejects.toMatchObject({
+        code: 'GRAPH_CYCLE',
+        message: expect.stringContaining(
+          '/stages/1/requires/0: Cyclic dependency detected: a → b → a'
+        ),
+      });
       expect(listPipelines()).not.toContain('saved-invalid');
+    });
+
+    it('rejects the same cyclic-v1 diagnostic during export without writing a destination', async () => {
+      const name = 'cyclic-export';
+      const pipelineDir = path.join(getUserPipelinesDir(), name);
+      fs.mkdirSync(pipelineDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        [
+          'version: 1',
+          `name: ${name}`,
+          'stages:',
+          '  - id: a',
+          '    skill: rasen-apply-change',
+          '    requires: [b]',
+          '  - id: b',
+          '    skill: rasen-review',
+          '    requires: [a]',
+          '',
+        ].join('\n')
+      );
+      const destination = path.join(home, 'cyclic-export.rasenpkg');
+
+      await expect(exportPipeline(name, destination)).rejects.toMatchObject({
+        code: 'GRAPH_CYCLE',
+        message: expect.stringContaining(
+          '/stages/1/requires/0: Cyclic dependency detected: a → b → a'
+        ),
+      });
+      expect(fs.existsSync(destination)).toBe(false);
     });
 
     it('never installs a definition referencing an unknown skill', async () => {
@@ -409,6 +492,85 @@ describe('pipeline library lifecycle', () => {
       );
       await expect(savePipeline('saved-unknown-skill', definitionPath)).rejects.toThrow(/unknown skill/);
       expect(listPipelines()).not.toContain('saved-unknown-skill');
+    });
+
+    it('round-trips a complete v2 definition through save, detail source, and package export', async () => {
+      const definition = {
+        version: 2 as const,
+        id: 'definition:v2-roundtrip',
+        sourceId: 'fixture:v2-roundtrip',
+        name: 'v2-roundtrip',
+        description: 'Preserve every authored field',
+        inputs: [{ name: 'request', type: 'text/plain', required: true }],
+        artifacts: [{ name: 'report', type: 'artifact/report' }],
+        outcomes: ['done'],
+        declarations: [
+          {
+            id: 'body',
+            kind: 'Composite' as const,
+            provenance: 'custom' as const,
+            inputs: [],
+            artifacts: [],
+            outcomes: ['done'],
+            graph: {
+              nodes: [{ id: 'body-finish', kind: 'Finish' as const, outcome: 'done' }],
+              connections: [],
+            },
+            unexposed: { preserved: true },
+          },
+        ],
+        root: {
+          nodes: [{ id: 'finish', kind: 'Finish' as const, outcome: 'done' }],
+          connections: [],
+        },
+        limits: { maxActions: 5, budget: 5 },
+        unexposed: { preserved: 'yes' },
+      };
+      const definitionPath = writeDefinitionFile(
+        home,
+        'v2-roundtrip.json',
+        JSON.stringify(definition)
+      );
+      const expected = EcpDefinitionModule.prepare(
+        definition,
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(expected.ok).toBe(true);
+
+      await savePipeline('v2-roundtrip', definitionPath);
+      const storedPath = path.join(
+        getUserPipelinesDir(),
+        'v2-roundtrip',
+        'pipeline.yaml'
+      );
+      const stored = EcpDefinitionModule.prepare(
+        fs.readFileSync(storedPath, 'utf8'),
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(stored.ok).toBe(true);
+      if (!expected.ok || !stored.ok) return;
+      expect(stored.value.authoredSource).toEqual(definition);
+      expect(stored.value.digests.plan).toBe(expected.value.digests.plan);
+
+      const destination = path.join(home, 'nested', 'v2-roundtrip.rasenpkg');
+      await exportPipeline('v2-roundtrip', destination);
+      const packageValue = decodePackage(
+        fs.readFileSync(destination),
+        'pipeline'
+      ) as PipelinePackage;
+      const manifest = packageValue.pipelines[0]!.files.find(
+        (file) => file.path === 'pipeline.yaml'
+      )!;
+      const exported = EcpDefinitionModule.prepare(
+        manifest.content,
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(exported.ok).toBe(true);
+      if (exported.ok) {
+        expect(exported.value.authoredSource).toEqual(definition);
+        expect(exported.value.digests.plan).toBe(expected.value.digests.plan);
+      }
+      expect(path.resolve(destination)).toBe(destination);
     });
   });
 
@@ -435,7 +597,7 @@ describe('pipeline library lifecycle', () => {
       const sourceDir = writeUserPipeline('legacy-export', legacyManifest, ancillary);
       const destination = path.join(home, 'legacy-export.rasenpkg');
 
-      exportPipeline('legacy-export', destination);
+      await exportPipeline('legacy-export', destination);
       expect(fs.readFileSync(path.join(sourceDir, 'pipeline.yaml'), 'utf8')).toBe(legacyManifest);
 
       const packageValue = decodePackage(
@@ -458,11 +620,11 @@ describe('pipeline library lifecycle', () => {
       ).toBe(ancillary);
     });
 
-    it('fails closed without writing a package when the source declares an unknown content version', () => {
+    it('fails closed without writing a package when the source declares an unknown content version', async () => {
       writeUserPipeline(
         'future-export',
         [
-          'version: 2',
+          'version: 3',
           'name: future-export',
           'stages:',
           '  - id: implement',
@@ -472,11 +634,363 @@ describe('pipeline library lifecycle', () => {
       );
       const destination = path.join(home, 'future-export.rasenpkg');
 
-      expect(() => exportPipeline('future-export', destination)).toThrow(/\/version/);
+      await expect(exportPipeline('future-export', destination)).rejects.toThrow(/\/version/);
       expect(fs.existsSync(destination)).toBe(false);
     });
 
-    it('refuses to export through a pipeline-root symlink or Windows junction', () => {
+    it('prepares invalid v2 before export and leaves the destination absent', async () => {
+      writeUserPipeline(
+        'invalid-v2-export',
+        JSON.stringify({
+          version: 2,
+          id: 'definition:invalid-v2-export',
+          sourceId: 'fixture:invalid-v2-export',
+          name: 'invalid-v2-export',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [{ id: 'future', kind: 'FutureNode' }],
+            connections: [],
+          },
+        })
+      );
+      const destination = path.join(home, 'nested', 'invalid-v2.rasenpkg');
+
+      await expect(exportPipeline('invalid-v2-export', destination)).rejects.toThrow(
+        /\/root\/nodes\/0\/kind/
+      );
+      expect(fs.existsSync(destination)).toBe(false);
+    });
+
+    it('uses the active frozen capability availability for export and writes nothing when disabled', async () => {
+      const workflowCatalog = loadWorkflowCatalog();
+      const propose = workflowCatalog.definitions.find(
+        (definition) => definition.skill.template.name === 'rasen-propose'
+      )!;
+      fs.writeFileSync(
+        path.join(home, 'config.json'),
+        JSON.stringify({
+          profile: 'custom',
+          workflows: ['review'],
+          expertSelectionExplicit: true,
+        })
+      );
+      const definition = {
+        version: 2 as const,
+        id: 'definition:disabled-export',
+        sourceId: 'fixture:disabled-export',
+        name: 'disabled-export',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [
+            {
+              id: 'propose',
+              kind: 'AtomicStage' as const,
+              capability: {
+                id: 'skill:rasen-propose',
+                version: propose.digest,
+              },
+            },
+          ],
+          connections: [],
+        },
+      };
+      writeUserPipeline('disabled-export', JSON.stringify(definition));
+      const expected = EcpDefinitionModule.prepare(
+        definition,
+        createProductionCapabilityCatalogSnapshot(
+          workflowCatalog.definitions,
+          new Set(['rasen-review'])
+        )
+      );
+      expect(expected.ok).toBe(false);
+      if (!expected.ok) {
+        expect(expected.error.diagnostics).toContainEqual(
+          expect.objectContaining({
+            code: 'CAPABILITY_DISABLED',
+            path: '/root/nodes/0/capability',
+          })
+        );
+      }
+      const destination = path.join(home, 'disabled-export.rasenpkg');
+
+      try {
+        await exportPipeline('disabled-export', destination);
+        expect.fail('expected disabled capability export to fail');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PipelineLibraryError);
+        expect(error).toMatchObject({ code: 'CAPABILITY_DISABLED' });
+        expect((error as Error).message).toContain(
+          '/root/nodes/0/capability'
+        );
+      }
+      expect(fs.existsSync(destination)).toBe(false);
+    });
+
+    it('uses the same legacy-project acknowledgement profile for v2 save and export', async () => {
+      const workflowCatalog = loadWorkflowCatalog();
+      const tdd = workflowCatalog.definitions.find(
+        (definition) => definition.skill.template.name === 'rasen-tdd'
+      )!;
+      fs.writeFileSync(
+        path.join(home, 'config.json'),
+        JSON.stringify({
+          profile: 'core',
+          expertSelectionExplicit: true,
+        })
+      );
+      const projectRoot = path.join(home, 'legacy-unacknowledged-project');
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const definition = {
+        version: 2 as const,
+        id: 'definition:legacy-project-parity',
+        sourceId: 'fixture:legacy-project-parity',
+        name: 'legacy-project-parity',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [
+            {
+              id: 'tdd',
+              kind: 'AtomicStage' as const,
+              capability: {
+                id: 'skill:rasen-tdd',
+                version: tdd.digest,
+              },
+            },
+          ],
+          connections: [],
+        },
+      };
+      const definitionPath = path.join(
+        home,
+        'legacy-project-parity.json'
+      );
+      fs.writeFileSync(definitionPath, JSON.stringify(definition));
+
+      await expect(
+        savePipeline('legacy-project-parity', definitionPath, {
+          projectRoot,
+        })
+      ).resolves.toMatchObject({ created: true });
+
+      const destination = path.join(
+        home,
+        'legacy-project-parity.rasenpkg'
+      );
+      await expect(
+        exportPipeline('legacy-project-parity', destination, {
+          projectRoot,
+        })
+      ).resolves.toBe(path.resolve(destination));
+      expect(fs.existsSync(destination)).toBe(true);
+    });
+
+    it('uses one alternate workflowsDir catalog meaning for v2 save and export', async () => {
+      const projectRoot = path.join(home, 'alternate-catalog-project');
+      const workflowsDir = path.join(home, 'alternate-catalog-workflows');
+      const workflowDir = path.join(workflowsDir, 'alternate');
+      fs.mkdirSync(workflowDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(workflowDir, 'workflow.yaml'),
+        [
+          'version: 1',
+          'id: alternate',
+          'files:',
+          '  sidecars: []',
+          '  scripts: []',
+          'requires:',
+          '  workflows: []',
+          '  skills: []',
+          '  pipelines: []',
+          '  schemas: []',
+          'recommends:',
+          '  workflows: []',
+          '',
+        ].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(workflowDir, 'SKILL.md'),
+        [
+          '---',
+          'name: rasen-alternate',
+          'description: Alternate catalog fixture.',
+          'license: MIT',
+          'compatibility: Requires rasen CLI.',
+          'metadata:',
+          '  author: test',
+          '  version: "1.0"',
+          '---',
+          '',
+          'Fixture.',
+          '',
+        ].join('\n')
+      );
+      fs.mkdirSync(projectRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(home, 'config.json'),
+        JSON.stringify({
+          profile: 'custom',
+          workflows: ['alternate'],
+          expertSelectionExplicit: true,
+        })
+      );
+      const alternate = loadWorkflowCatalog({
+        workflowsDir,
+        projectRoot,
+      }).get('alternate')!;
+      const definition = {
+        version: 2 as const,
+        id: 'definition:alternate-catalog',
+        sourceId: 'fixture:alternate-catalog',
+        name: 'alternate-catalog',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [
+            {
+              id: 'alternate',
+              kind: 'AtomicStage' as const,
+              capability: {
+                id: 'skill:rasen-alternate',
+                version: alternate.digest,
+              },
+            },
+          ],
+          connections: [],
+        },
+      };
+      const definitionPath = path.join(home, 'alternate-catalog.json');
+      fs.writeFileSync(definitionPath, JSON.stringify(definition));
+
+      await expect(
+        savePipeline('alternate-catalog', definitionPath, {
+          projectRoot,
+          workflowsDir,
+        })
+      ).resolves.toMatchObject({ created: true });
+      const destination = path.join(home, 'alternate-catalog.rasenpkg');
+      await expect(
+        exportPipeline('alternate-catalog', destination, {
+          projectRoot,
+          workflowsDir,
+        })
+      ).resolves.toBe(path.resolve(destination));
+      expect(fs.existsSync(destination)).toBe(true);
+    });
+
+    it.each([
+      {
+        name: 'missing',
+        capabilityId: 'skill:no-such-capability',
+        capabilityVersion: '1',
+        code: 'CAPABILITY_MISSING',
+      },
+      {
+        name: 'revision-mismatch',
+        capabilityId: 'skill:rasen-review',
+        capabilityVersion: 'stale-revision',
+        code: 'CAPABILITY_VERSION_MISMATCH',
+      },
+      {
+        name: 'forbidden',
+        capabilityId: 'skill:rasen-review',
+        capabilityVersion: 'installed',
+        code: 'CAPABILITY_FORBIDDEN',
+      },
+    ])(
+      'keeps $name catalog diagnostics at export parity and writes nothing',
+      async ({ name, capabilityId, capabilityVersion, code }) => {
+        const workflowCatalog = loadWorkflowCatalog();
+        const review = workflowCatalog.definitions.find(
+          (definition) => definition.skill.template.name === 'rasen-review'
+        )!;
+        fs.writeFileSync(
+          path.join(home, 'config.json'),
+          JSON.stringify({
+            profile: 'custom',
+            workflows: ['review'],
+            expertSelectionExplicit: true,
+          })
+        );
+        const resolvedVersion =
+          capabilityVersion === 'installed'
+            ? review.digest
+            : capabilityVersion;
+        const pipelineName = `catalog-${name}`;
+        const definition = {
+          version: 2 as const,
+          id: `definition:${pipelineName}`,
+          sourceId: `fixture:${pipelineName}`,
+          name: pipelineName,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [
+              {
+                id: 'subject',
+                kind: 'AtomicStage' as const,
+                capability: {
+                  id: capabilityId,
+                  version: resolvedVersion,
+                },
+              },
+            ],
+            connections: [],
+          },
+        };
+        writeUserPipeline(pipelineName, JSON.stringify(definition));
+        const forbidden =
+          name === 'forbidden'
+            ? new Set(['rasen-review'])
+            : new Set<string>();
+        const expected = EcpDefinitionModule.prepare(
+          definition,
+          createProductionCapabilityCatalogSnapshot(
+            workflowCatalog.definitions,
+            new Set(['rasen-review']),
+            forbidden
+          )
+        );
+        expect(expected.ok).toBe(false);
+        if (!expected.ok) {
+          expect(expected.error.diagnostics).toContainEqual(
+            expect.objectContaining({
+              code,
+              path: '/root/nodes/0/capability',
+            })
+          );
+        }
+        const destination = path.join(home, `${pipelineName}.rasenpkg`);
+
+        try {
+          await exportPipeline(pipelineName, destination, {
+            forbiddenSkillNames: forbidden,
+          });
+          expect.fail(`expected ${name} capability export to fail`);
+        } catch (error) {
+          expect(error).toBeInstanceOf(PipelineLibraryError);
+          expect(error).toMatchObject({ code });
+          expect((error as Error).message).toContain(
+            '/root/nodes/0/capability'
+          );
+        }
+        expect(fs.existsSync(destination)).toBe(false);
+      }
+    );
+
+    it('refuses to export through a pipeline-root symlink or Windows junction', async () => {
       const externalDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-external-pipeline-'));
       cleanup.push(externalDirectory);
       fs.writeFileSync(
@@ -517,7 +1031,7 @@ describe('pipeline library lifecycle', () => {
       const readFileSpy = vi.spyOn(fsDefault, 'readFileSync');
       syncBuiltinESMExports();
       try {
-        expect(() => exportPipeline('linked-export', destination)).toThrow(
+        await expect(exportPipeline('linked-export', destination)).rejects.toEqual(
           expect.objectContaining({ code: 'pipeline_export_source_unsafe' })
         );
         expect(
@@ -534,7 +1048,7 @@ describe('pipeline library lifecycle', () => {
       }
     });
 
-    it('refuses to export when pipeline.yaml is a symlink where supported', () => {
+    it('refuses to export when pipeline.yaml is a symlink where supported', async () => {
       const externalDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-external-manifest-'));
       cleanup.push(externalDirectory);
       const externalManifest = path.join(externalDirectory, 'pipeline.yaml');
@@ -571,7 +1085,7 @@ describe('pipeline library lifecycle', () => {
       const readFileSpy = vi.spyOn(fsDefault, 'readFileSync');
       syncBuiltinESMExports();
       try {
-        expect(() => exportPipeline('linked-manifest', destination)).toThrow(
+        await expect(exportPipeline('linked-manifest', destination)).rejects.toEqual(
           expect.objectContaining({ code: 'pipeline_export_source_unsafe' })
         );
         expect(

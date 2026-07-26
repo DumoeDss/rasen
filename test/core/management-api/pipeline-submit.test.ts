@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -140,8 +141,61 @@ describe('createPipelineSubmitter (pipeline-http-api design D6)', () => {
       if (result.ok) expect(result.status).toBe(200);
     });
 
+    it('rejects a known no-force user conflict without spawning the CLI', async () => {
+      const originalEnv = { ...process.env };
+      const isolatedHome = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'rasen-pipeline-submit-conflict-')
+      );
+      const name = 'already-saved';
+      try {
+        delete process.env.RASEN_HOME;
+        process.env.XDG_CONFIG_HOME = isolatedHome;
+        process.env.XDG_DATA_HOME = isolatedHome;
+        const pipelineDirectory = path.join(
+          isolatedHome,
+          'rasen',
+          'pipelines',
+          name
+        );
+        fs.mkdirSync(pipelineDirectory, { recursive: true });
+        fs.writeFileSync(
+          path.join(pipelineDirectory, 'pipeline.yaml'),
+          `name: ${name}\nstages:\n  - id: apply\n    skill: rasen-apply-change\n`
+        );
+
+        const submit = createPipelineSubmitter(
+          { launchProjectRoot: os.tmpdir() },
+          { cliEntryOverride: path.join(isolatedHome, 'must-not-spawn.mjs') }
+        );
+        const result = await submit({
+          op: 'save',
+          name,
+          definition: {
+            name,
+            stages: [{ id: 'apply', skill: 'rasen-apply-change' }],
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.status).toBe(422);
+          expect(result.code).toBe('pipeline_already_exists');
+        }
+      } finally {
+        process.env = originalEnv;
+        fs.rmSync(isolatedHome, { recursive: true, force: true });
+      }
+    });
+
     it('passes the CLI built-in refusal through verbatim as 422', async () => {
-      const result = await submitter()({ op: 'save', name: 'fail-me', definition: { name: 'fail-me', stages: [] } });
+      const result = await submitter()({
+        op: 'save',
+        name: 'fail-me',
+        definition: {
+          name: 'fail-me',
+          stages: [{ id: 'apply', skill: 'rasen-apply-change' }],
+        },
+      });
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.status).toBe(422);

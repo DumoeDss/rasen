@@ -914,7 +914,7 @@ export function createManagementRouter(
     }
 
     if (pathname === '/api/v1/workflow-dependencies' && req.method === 'GET') {
-      const result = handleWorkflowDependenciesRead();
+      const result = await handleWorkflowDependenciesRead();
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -973,6 +973,12 @@ export function createManagementRouter(
               message: result.message,
               ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
               ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              ...(result.diagnostics !== undefined
+                ? { diagnostics: result.diagnostics }
+                : {}),
+              ...(result.preparation !== undefined
+                ? { preparation: result.preparation }
+                : {}),
             },
           })
         );

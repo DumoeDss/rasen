@@ -239,12 +239,20 @@ export interface WirePipeline {
   description: string;
   provenance: 'built-in' | 'user';
   sourceLayer: 'project' | 'user' | 'package';
-  roleRuntimes: Record<
+  roleRuntimes?: Record<
     ThresholdRole,
     WireEffectiveValue<'claude' | 'codex'>
   >;
-  effectiveReuse: WireEffectiveReuse;
+  effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  authoredVersion?: number;
+  normalizedVersion?: 2;
+  definitionValid?: boolean;
+  planAvailable?: boolean;
+  executable?: boolean;
+  executionMode?: 'legacy' | 'unavailable';
+  unavailableReason?: string;
+  diagnostics?: PipelineValidationIssue[];
 }
 
 export interface ThresholdPresetSeed {
@@ -311,6 +319,7 @@ export interface PipelineDeleteResponse {
 export interface PipelineSaveResponse {
   pipeline: { name: string; path: string };
   created: boolean;
+  preparation?: WireDefinitionPreparation;
 }
 
 /** `POST /api/v1/pipelines` success response — one of the five op payloads. */
@@ -1108,7 +1117,7 @@ export interface WirePipelineDefinitionStage {
  * Round-tripping this value through a future `save` and back through `detail`
  * (child 4) is meant to be lossless.
  */
-export interface WirePipelineDefinition {
+export interface WirePipelineDefinitionV1 {
   /** Pipeline definition content format; legacy unversioned sources normalize to v1 at the server boundary. */
   version: 1;
   name: string;
@@ -1121,10 +1130,147 @@ export interface WirePipelineDefinition {
   stages: WirePipelineDefinitionStage[];
 }
 
+export interface WireDefinitionPort {
+  name: string;
+  type: string;
+  required?: boolean;
+}
+
+export interface WireDefinitionArtifact {
+  name: string;
+  type: string;
+}
+
+export interface WireDefinitionNodeBase {
+  id: string;
+  kind:
+    | 'AtomicStage'
+    | 'CompositeRef'
+    | 'BoundedLoop'
+    | 'Choice'
+    | 'FanOut'
+    | 'Join'
+    | 'Gate'
+    | 'Finish';
+  [key: string]: unknown;
+}
+
+export interface WireAtomicStageNode extends WireDefinitionNodeBase {
+  kind: 'AtomicStage';
+  capability: { id: string; version: string };
+}
+
+export interface WireCompositeRefNode extends WireDefinitionNodeBase {
+  kind: 'CompositeRef';
+  declarationId: string;
+}
+
+export interface WireBoundedLoopNode extends WireDefinitionNodeBase {
+  kind: 'BoundedLoop';
+  body: string;
+  limits: { maxIterations: number; maxActions?: number; budget?: number };
+  exits: Record<
+    string,
+    { action: 'continue' } | { action: 'exit'; outcome: string }
+  >;
+}
+
+export interface WireChoiceNode extends WireDefinitionNodeBase {
+  kind: 'Choice';
+  outcomes: string[];
+}
+
+export interface WireFanOutNode extends WireDefinitionNodeBase {
+  kind: 'FanOut';
+  branches: string[];
+}
+
+export interface WireJoinNode extends WireDefinitionNodeBase {
+  kind: 'Join';
+  inputs: string[];
+}
+
+export interface WireGateNode extends WireDefinitionNodeBase {
+  kind: 'Gate';
+  outcomes: string[];
+}
+
+export interface WireFinishNode extends WireDefinitionNodeBase {
+  kind: 'Finish';
+  outcome: string;
+}
+
+export type WireDefinitionNode =
+  | WireAtomicStageNode
+  | WireCompositeRefNode
+  | WireBoundedLoopNode
+  | WireChoiceNode
+  | WireFanOutNode
+  | WireJoinNode
+  | WireGateNode
+  | WireFinishNode;
+
+export interface WireDefinitionConnection {
+  id: string;
+  from: { node: string; port: string };
+  to: { node: string; port: string };
+  [key: string]: unknown;
+}
+
+export interface WireDefinitionGraph {
+  nodes: WireDefinitionNode[];
+  connections: WireDefinitionConnection[];
+  [key: string]: unknown;
+}
+
+export interface WireCompositeDeclaration {
+  id: string;
+  kind: 'Composite';
+  provenance: 'built-in' | 'custom';
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+  graph: WireDefinitionGraph;
+  [key: string]: unknown;
+}
+
+export interface WirePipelineDefinitionV2 {
+  version: 2;
+  id: string;
+  sourceId: string;
+  name: string;
+  description?: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+  declarations: WireCompositeDeclaration[];
+  root: WireDefinitionGraph;
+  limits?: { maxActions?: number; budget?: number };
+  /** Authored extension fields are retained losslessly even when unexposed. */
+  [key: string]: any;
+}
+
+export type WirePipelineDefinition =
+  | WirePipelineDefinitionV1
+  | WirePipelineDefinitionV2;
+
+export interface WireDefinitionPreparation {
+  authoredVersion: number;
+  normalizedVersion: 2;
+  definitionValid: boolean;
+  diagnostics: PipelineValidationIssue[];
+  digests?: { source: string; capability: string; plan: string };
+  planAvailable: boolean;
+  executable: boolean;
+  executionMode: 'legacy' | 'unavailable';
+  unavailableReason?: string;
+}
+
 /** `GET /api/v1/pipelines/<name>` response (pipeline-definition-api). */
 export interface PipelineDetailResponse {
   pipeline: WirePipeline;
   definition: WirePipelineDefinition;
+  preparation?: WireDefinitionPreparation;
   /** `false` for built-in (package-provenance) pipelines, returned read-only as save-as templates. */
   editable: boolean;
 }
@@ -1141,15 +1287,18 @@ export interface PipelineValidationRequest {
 /** One issue reported by draft validation — `severity: 'error'` makes the draft invalid; `'warning'` does not. */
 export interface PipelineValidationIssue {
   severity: 'error' | 'warning';
+  code?: string;
   /** A JSON-pointer-ish locator into the definition, e.g. `/stages/2/skill`. */
   path: string;
   message: string;
+  related?: { path: string; message: string }[];
 }
 
 /** `POST /api/v1/pipeline-validation` response — 200 for both a valid and an invalid draft. */
 export interface PipelineValidationResponse {
   valid: boolean;
   issues: PipelineValidationIssue[];
+  preparation?: WireDefinitionPreparation;
 }
 
 /** One skill in the pipeline-catalog vocabulary. */
@@ -1158,6 +1307,14 @@ export interface PipelineCatalogSkill {
   description: string;
   /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
   enabled: boolean;
+  /** Exact trusted Definition capability revision; absent on older servers. */
+  capability?: {
+    id: string;
+    version: string;
+    inputs: WireDefinitionPort[];
+    artifacts: WireDefinitionArtifact[];
+    outcomes: string[];
+  };
 }
 
 /** `GET /api/v1/pipeline-catalog` response: the assembly vocabulary for the pipeline canvas. */

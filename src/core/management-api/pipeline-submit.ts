@@ -36,10 +36,19 @@ import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import {
+  assertPipelineSaveTargetAvailable,
+  PipelineLibraryError,
+} from '../pipeline-library.js';
 import { isPortableWorkflowId } from '../workflow-registry/index.js';
 import type { ManagementApiContext } from './router.js';
 import { getBoundedCliEntry } from './whitelist.js';
-import type { PipelineMutationRequest } from './wire-types.js';
+import { preparePipelineDefinitionForManagement } from './pipelines.js';
+import type {
+  PipelineMutationRequest,
+  PipelineValidationIssue,
+  WireDefinitionPreparation,
+} from './wire-types.js';
 
 const require = createRequire(import.meta.url);
 
@@ -63,7 +72,16 @@ const SAVE_SCRATCH_PLACEHOLDER = '\0save-scratch-path\0';
 
 export type PipelineSubmitResult =
   | { ok: true; status: 200 | 201; response: Record<string, unknown> }
-  | { ok: false; status: number; code: string; message: string; cliExitCode?: number; stderr?: string };
+  | {
+      ok: false;
+      status: number;
+      code: string;
+      message: string;
+      cliExitCode?: number;
+      stderr?: string;
+      diagnostics?: PipelineValidationIssue[];
+      preparation?: WireDefinitionPreparation;
+    };
 
 /** Resolves the CLI entry belonging to THIS server process's own installation (mirrors workflow-submit.ts), never whatever `rasen` is on PATH. */
 function resolveCliEntry(): string {
@@ -236,6 +254,32 @@ export function createPipelineSubmitter(
       };
     }
 
+    let savePreparation: WireDefinitionPreparation | undefined;
+    if ((request as PipelineMutationRequest).op === 'save') {
+      const saveRequest = request as Extract<
+        PipelineMutationRequest,
+        { op: 'save' }
+      >;
+      const prepared = await preparePipelineDefinitionForManagement(
+        saveRequest.definition,
+        context.launchProjectRoot ?? undefined
+      );
+      if (!prepared.response.valid) {
+        const firstError = prepared.response.issues.find(
+          (issue) => issue.severity === 'error'
+        );
+        return {
+          ok: false,
+          status: 422,
+          code: 'pipeline_invalid',
+          message: firstError?.message ?? 'Pipeline definition is invalid.',
+          diagnostics: [...prepared.response.preparation.diagnostics],
+          preparation: prepared.response.preparation,
+        };
+      }
+      savePreparation = prepared.response.preparation;
+    }
+
     if (inFlight) {
       return { ok: false, status: 409, code: 'busy', message: 'Another pipeline mutation is already in flight.' };
     }
@@ -243,6 +287,27 @@ export function createPipelineSubmitter(
     // cwd = launch project root, falling back to the server cwd outside a
     // project. Never client free text.
     const cwd = context.launchProjectRoot ?? process.cwd();
+    if ((request as PipelineMutationRequest).op === 'save') {
+      const saveRequest = request as Extract<
+        PipelineMutationRequest,
+        { op: 'save' }
+      >;
+      try {
+        assertPipelineSaveTargetAvailable(
+          saveRequest.name,
+          cwd,
+          saveRequest.force === true
+        );
+      } catch (error) {
+        if (!(error instanceof PipelineLibraryError)) throw error;
+        return {
+          ok: false,
+          status: 422,
+          code: error.code,
+          message: error.message,
+        };
+      }
+    }
 
     // `save` is the sole scratch-write exception (design D6): the posted
     // definition is written to a server-owned temp file, closed before spawn,
@@ -273,7 +338,7 @@ export function createPipelineSubmitter(
     // The slot is released by `runMutation` from the child's own 'close' (or
     // spawn 'error') event, NOT at response time — on the timeout path the
     // promise resolves early while the child may still be alive.
-    return runMutation(
+    const result = await runMutation(
       cliEntry,
       cwd,
       argvSuffix,
@@ -286,6 +351,16 @@ export function createPipelineSubmitter(
       scratchPath,
       built.successStatusFromPayload
     );
+    if (result.ok && savePreparation) {
+      return {
+        ...result,
+        response: {
+          ...result.response,
+          preparation: savePreparation,
+        },
+      };
+    }
+    return result;
   };
 }
 
