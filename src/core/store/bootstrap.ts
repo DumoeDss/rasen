@@ -38,7 +38,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { reportConfigDiagnostic } from '../config-diagnostics.js';
@@ -46,6 +46,7 @@ import { folderStyleNameProblem, toKebabCase } from '../id.js';
 import {
   hasStoreDeclaration,
   readProjectConfig,
+  readProjectConfigWithDiagnostics,
   readStorePointer,
   resolveConfigFilePath,
   storePointerProblem,
@@ -1176,9 +1177,10 @@ async function confirmAction(
 function readProjectConfigForBundle(projectRoot: string): {
   config: ReturnType<typeof readProjectConfig>;
   invalidKnowledgeBundle: boolean;
+  unreadable: boolean;
 } {
   let invalidKnowledgeBundle = false;
-  const config = readProjectConfig(projectRoot, {
+  const result = readProjectConfigWithDiagnostics(projectRoot, {
     reporter: (diagnostic) => {
       if (diagnostic.key === 'invalidKnowledgeBundle') {
         invalidKnowledgeBundle = true;
@@ -1187,7 +1189,11 @@ function readProjectConfigForBundle(projectRoot: string): {
       reportConfigDiagnostic(diagnostic);
     },
   });
-  return { config, invalidKnowledgeBundle };
+  return {
+    config: result.status === 'ok' ? result.config : null,
+    invalidKnowledgeBundle,
+    unreadable: result.status === 'unreadable',
+  };
 }
 
 function projectConfigBundleDeclaration(
@@ -1452,6 +1458,27 @@ async function prepareDeclaredBundleImports(
       continue;
     }
 
+    // M1 — Bind the bundle file identity at dry-read time. After consent is
+    // received, re-verify the file hasn't been swapped. A swap during the
+    // consent window means the user consented to content A but the apply
+    // would read content B. Two layers of binding:
+    //   1. File stat (dev/ino/size/mtimeMs): fast pre-filter. On POSIX,
+    //      dev/ino catches symlink retargets; on NTFS where ino === 0n,
+    //      size + mtimeMs catches most content swaps.
+    //   2. SHA-256 content digest: authoritative. Catches ANY content change
+    //      regardless of size/mtime manipulation (e.g. same-size swap with
+    //      preserved mtimeMs via touch -r).
+    const bundleStat = fs.statSync(action.resolvedPath, { bigint: true });
+    const bundleIdentity = {
+      dev: bundleStat.dev,
+      ino: bundleStat.ino,
+      size: bundleStat.size,
+      mtimeMs: bundleStat.mtimeMs,
+    };
+    const bundleDigest = createHash('sha256')
+      .update(fs.readFileSync(action.resolvedPath))
+      .digest('hex');
+
     const request: BootstrapConsentRequest = {
       action: 'import-bundle',
       selector: action.projectId,
@@ -1469,6 +1496,32 @@ async function prepareDeclaredBundleImports(
       confirmed = consent?.confirm ? await consent.confirm(request) : false;
     }
     if (!confirmed) continue;
+
+    // M1 — Re-verify the bundle file identity after consent. The stat is a
+    // fast pre-filter; the SHA-256 digest is authoritative and catches
+    // same-size/same-mtime swaps that would bypass stat alone.
+    if (action.resolvedPath !== undefined) {
+      const currentStat = fs.statSync(action.resolvedPath, { bigint: true });
+      const statChanged =
+        currentStat.dev !== bundleIdentity.dev ||
+        currentStat.ino !== bundleIdentity.ino ||
+        currentStat.size !== bundleIdentity.size ||
+        currentStat.mtimeMs !== bundleIdentity.mtimeMs;
+      const currentDigest = createHash('sha256')
+        .update(fs.readFileSync(action.resolvedPath))
+        .digest('hex');
+      if (statChanged || currentDigest !== bundleDigest) {
+        action.outcome = 'refused';
+        action.refusal = {
+          code: 'knowledge_bundle_import_consent_swap',
+          message: `The bundle file at ${action.resolvedPath} changed during consent. Preview the bundle again before importing.`,
+          details: {},
+          issues: [],
+        };
+        appendImportRepair(action, action.refusal.code);
+        continue;
+      }
+    }
 
     try {
       const result = await bundleImporter({
@@ -1774,44 +1827,53 @@ async function obtainAbsentStore(
     return 'obtain-failed';
   }
 
-  // B4 — Identity verification (canonical spec: "A mismatched checkout writes
-  // nothing"). Re-read the clone's Store metadata from the staging dir and
-  // compare its permanent UID against what the project declared. Missing,
-  // unreadable, or mismatched identity fails closed: the registry is never
-  // written, the staging dir is LEFT IN PLACE for inspection, and the target
-  // is never created (no publish). The rare alias-only path
-  // (`entry.uid === undefined`) skips this check and proceeds; register's own
-  // identity-confirmation gate still applies.
-  if (entry.uid !== undefined) {
-    const probe = await probeStoreMetadataState(result.stagingPath);
-    if (
-      probe.kind === 'absent' ||
-      probe.kind === 'unreadable' ||
-      !storeUidsMatch(storeMetadataUid(probe.metadata), entry.uid)
-    ) {
-      entry.action = 'obtain-failed';
-      const reason =
-        probe.kind === 'absent'
-          ? 'carries no Store metadata file'
-          : probe.kind === 'unreadable'
-            ? `has unreadable Store metadata at ${probe.path}`
-            : `identifies as '${storeMetadataUid(probe.metadata) ?? '(none)'}'`;
-      entry.diagnostics.push({
-        severity: 'error',
-        code: 'bootstrap_obtain_identity_mismatch',
-        message:
-          `The cloned Store at ${result.stagingPath} ${reason}, but the project declared '${entry.uid}'. The checkout was left in place for inspection.`,
-        target: 'store.uid',
-      });
-      entry.diagnostics.push({
-        severity: 'warning',
-        code: 'bootstrap_obtain_clone_identity_unverified',
-        message:
-          `The staging directory ${result.stagingPath} was not published. Inspect it, then remove it: rm -rf ${pasteablePath(result.stagingPath)}`,
-        target: 'store.root',
-      });
-      return 'obtain-failed';
+  // B7 + B4 — Identity verification (canonical spec: "A mismatched checkout
+  // writes nothing"). Always probe the staging metadata and verify identity
+  // against what the project declared. When a UID is declared, compare the
+  // permanent UID. When the declaration is alias-only (`entry.uid ===
+  // undefined` but `entry.id !== undefined`), compare the metadata's `id`
+  // against the declared alias — the same comparison `probeStoreAtLocation`
+  // uses (line 1005). When neither is declared, fail closed. A mismatch
+  // writes nothing: the registry is never written, the staging dir is LEFT
+  // IN PLACE for inspection, and the target is never created (no publish).
+  const probe = await probeStoreMetadataState(result.stagingPath);
+  let mismatchReason: string | null = null;
+  if (probe.kind === 'absent') {
+    mismatchReason = 'carries no Store metadata file';
+  } else if (probe.kind === 'unreadable') {
+    mismatchReason = `has unreadable Store metadata at ${probe.path}`;
+  } else if (entry.uid !== undefined) {
+    if (!storeUidsMatch(storeMetadataUid(probe.metadata), entry.uid)) {
+      mismatchReason =
+        `identifies as '${storeMetadataUid(probe.metadata) ?? '(none)'}', but the project declared UID '${entry.uid}'`;
     }
+  } else if (entry.id !== undefined) {
+    if (probe.metadata.id !== entry.id) {
+      mismatchReason =
+        `identifies as '${probe.metadata.id}', but the project declared alias '${entry.id}'`;
+    }
+  } else {
+    mismatchReason =
+      'cannot be verified: the project declaration carries no UID or alias identity';
+  }
+
+  if (mismatchReason !== null) {
+    entry.action = 'obtain-failed';
+    entry.diagnostics.push({
+      severity: 'error',
+      code: 'bootstrap_obtain_identity_mismatch',
+      message:
+        `The cloned Store at ${result.stagingPath} ${mismatchReason}. The checkout was left in place for inspection.`,
+      target: 'store.uid',
+    });
+    entry.diagnostics.push({
+      severity: 'warning',
+      code: 'bootstrap_obtain_clone_identity_unverified',
+      message:
+        `The staging directory ${result.stagingPath} was not published. Inspect it, then remove it: rm -rf ${pasteablePath(result.stagingPath)}`,
+      target: 'store.root',
+    });
+    return 'obtain-failed';
   }
 
   // B3 — Publish: atomically rename the staging dir into place as the target.
@@ -3141,18 +3203,18 @@ function findLocalProject(
   for (const entry of entries) {
     if (entry.type !== 'project') continue;
     const root = entry.backend.local_path;
-    const config = readProjectConfigForBundle(root).config;
-    if (config === null && fs.existsSync(root)) {
+    const read = readProjectConfigForBundle(root);
+    if (read.unreadable) {
       unreadable.push({
         severity: 'error',
         code: 'bootstrap_project_identity_unreadable',
-        message: `The registered project at ${root} does not declare a readable project identity, so whether it is project ${projectId} cannot be determined here.`,
+        message: `The registered project at ${root} has a Rasen config file that cannot be parsed, so whether it is project ${projectId} cannot be determined here.`,
         target: 'project.projectId',
         fix: `Repair the Rasen config in ${root}, or unregister it with rasen store unregister --project ${entry.id}.`,
       });
       continue;
     }
-    const identity = config?.projectId;
+    const identity = read.config?.projectId;
     if (identity !== undefined && normalizeProjectIdentity(identity) === wanted) {
       return { kind: 'found', root: canonicalLocation(root) };
     }

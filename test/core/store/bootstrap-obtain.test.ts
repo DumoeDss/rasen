@@ -915,10 +915,58 @@ describe('B4 — Store obtain identity verification', () => {
     ).toBe(true);
   });
 
+  it('B7: fails closed when the alias-only cloned Store ID does not match the declared alias', async () => {
+    // The project declares alias 'expected-store' (no UID), but the cloned
+    // remote's metadata identifies as 'other-store'. Pre-fix this skips the
+    // identity check entirely (entry.uid === undefined) and publishes the
+    // wrong Store.
+    const remoteRoot = path.join(tempDir, 'alias-mismatch-remote');
+    createOpenSpecRoot(remoteRoot);
+    await writeStoreMetadataState(remoteRoot, { version: 1, id: 'other-store' });
+    await execFileAsync('git', ['init'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: remoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: remoteRoot });
+
+    const project = makeProject('project');
+    await appendStoreMembershipHint(project, {
+      id: 'expected-store',
+      remote: `file:///${remoteRoot.replace(/\\/g, '/')}`,
+    });
+
+    const target = path.join(tempDir, 'obtained');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['expected-store', target]]),
+      consent: { blanket: false, confirm: async () => true },
+    });
+
+    const entry = entryFor(report, 'expected-store');
+    expect(entry.action).toBe('obtain-failed');
+    // Registry zero-write: no entry was committed.
+    const registryPath = getStoreRegistryPath({ globalDataDir });
+    const registryContent = fs.existsSync(registryPath)
+      ? fs.readFileSync(registryPath, 'utf-8')
+      : '';
+    expect(registryContent).not.toContain('other-store');
+    expect(registryContent).not.toContain('expected-store');
+    // Target was never created (no publish).
+    expect(fs.existsSync(target)).toBe(false);
+    // Diagnostic names both the expected and found identities.
+    const mismatch = entry.diagnostics.find(
+      (d) => d.code === 'bootstrap_obtain_identity_mismatch'
+    );
+    expect(mismatch).toBeDefined();
+    expect(mismatch!.message).toContain('expected-store');
+    expect(mismatch!.message).toContain('other-store');
+  });
+
   it('succeeds when no expected UID is declared (alias-only bootstrap path)', async () => {
     // The alias-only path: a store hint provides a remote but no UID. The
-    // identity check is skipped (entry.uid === undefined) and the clone
-    // proceeds through register's own allowCreateIdentity gate.
+    // identity check verifies metadata.id against the declared alias.
     const remoteRoot = path.join(tempDir, 'alias-remote');
     createOpenSpecRoot(remoteRoot);
     await writeStoreMetadataState(remoteRoot, { version: 1, id: 'alias-store' });

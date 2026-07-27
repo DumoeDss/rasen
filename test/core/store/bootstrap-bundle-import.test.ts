@@ -739,4 +739,75 @@ describe('bootstrap declared bundle integration', () => {
     });
     expect(divergent.bundleImports).toHaveLength(2);
   });
+
+  it('M1: refuses a bundle import when the file is swapped during consent', async () => {
+    const project = makeProject('swap-during-consent');
+    const bundlePath = path.join(project, 'carry.bundle.json');
+    writeBundle(bundlePath);
+    updateProjectConfigKey(project, 'knowledgeBundle', 'carry.bundle.json');
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: {
+        blanket: false,
+        confirm: async () => {
+          // Swap the bundle file with different content during the consent
+          // window — the user consented to the preview but the apply would
+          // read different bytes. Pre-fix this imports the swapped content.
+          writeBundle(bundlePath, [bundleRecord('swapped-routing')]);
+          return true;
+        },
+      },
+    });
+
+    expect(report.bundleImports?.[0]).toMatchObject({
+      outcome: 'refused',
+      refusal: { code: 'knowledge_bundle_import_consent_swap' },
+    });
+    // Neither the original nor the swapped content was imported.
+    expect(importedRecord('declared-portable-routing').kind).toBe('absent');
+    expect(importedRecord('swapped-routing').kind).toBe('absent');
+  });
+
+  it('M1: refuses a same-size same-mtime swap that bypasses stat alone (SHA-256 digest)', async () => {
+    const project = makeProject('digest-swap');
+    const bundlePath = path.join(project, 'carry.bundle.json');
+    writeBundle(bundlePath);
+    updateProjectConfigKey(project, 'knowledgeBundle', 'carry.bundle.json');
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      consent: {
+        blanket: false,
+        confirm: async () => {
+          // Craft a swap with identical size + restored mtimeMs so the stat
+          // pre-filter alone would pass. Only the SHA-256 content digest
+          // catches this attack. Pre-fix (stat-only) the stat passes and
+          // the importer reads garbage → refused with a different code;
+          // post-fix (stat + digest) the digest mismatch fires first.
+          const original = fs.readFileSync(bundlePath);
+          const originalStat = fs.statSync(bundlePath, { bigint: true });
+          // Same-length buffer with every byte flipped.
+          const swapped = Buffer.allocUnsafe(original.length);
+          for (let i = 0; i < original.length; i++) {
+            swapped[i] = original[i] ^ 0x01;
+          }
+          fs.writeFileSync(bundlePath, swapped);
+          // Restore mtime so the 4-field stat comparison passes.
+          fs.utimesSync(bundlePath, originalStat.atime, originalStat.mtime);
+          return true;
+        },
+      },
+    });
+
+    expect(report.bundleImports?.[0]).toMatchObject({
+      outcome: 'refused',
+      refusal: { code: 'knowledge_bundle_import_consent_swap' },
+    });
+    expect(importedRecord('declared-portable-routing').kind).toBe('absent');
+  });
 });
