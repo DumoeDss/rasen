@@ -14,7 +14,7 @@ SHALL no longer select the product theme.
 #### Scenario: Global General tab offers themes
 
 - **WHEN** the user opens Config in Global mode and selects General
-- **THEN** Appearance contains the Editorial and CRT options plus each valid
+- **THEN** Appearance contains the Editorial and Official options plus each valid
   installed user theme
 - **AND** the selector reflects the configured theme or marks it unavailable
 
@@ -48,22 +48,28 @@ SHALL no longer select the product theme.
 
 ### Requirement: The editor presents a coherent warm-editorial visual identity
 
-The configuration editor SHALL present the built-in Editorial theme as its
-default considered, coherent visual identity across every surface it renders,
+The configuration editor SHALL present the built-in Editorial theme as a
+considered, coherent compatibility identity across every surface it renders,
 including the app shell, configuration page and entries, and full-screen
 notices. Editorial SHALL retain its parchment canvas, warm neutrals, restrained
 terracotta accent, serif headlines, sans UI text, editorial spacing, and
-ring-based depth. When another installed theme is active, those same surfaces
-SHALL derive their presentation from that theme's validated stable design
-tokens and application-owned effects rather than ad-hoc values or
-theme-authored CSS.
+ring-based depth. The configured default SHALL be the built-in Official theme.
+Whichever installed theme is active, those same surfaces SHALL derive their
+presentation from that theme's validated stable design tokens and
+application-owned effects rather than ad-hoc values or theme-authored CSS.
 
-#### Scenario: Editorial remains the compatibility default
+#### Scenario: Editorial remains the compatibility fallback
 
-- **WHEN** no valid non-default theme is configured
+- **WHEN** the configured theme is unavailable or the theme service fails
 - **THEN** the editor renders the existing Editorial identity with its warm
   parchment canvas, ivory surfaces, warm neutrals, serif headlines, sans UI,
   and restrained terracotta accent
+
+#### Scenario: Official is the configured default
+
+- **WHEN** global configuration has no explicit `ui.theme`
+- **THEN** the editor selects the built-in Official theme through the `crt`
+  identifier
 
 #### Scenario: Installed theme is coherent across surfaces
 
@@ -93,13 +99,13 @@ environment or active theme SHALL preserve behavior, contrast, and legibility.
 - **THEN** the editor uses the corresponding validated token set without
   changing layout or behavior
 
-#### Scenario: Fixed dark theme remains dark
+#### Scenario: Official remains dark
 
-- **WHEN** CRT or another dark-only theme is active while the environment
+- **WHEN** Official or another dark-only theme is active while the environment
   requests light
 - **THEN** the editor keeps the theme's dark presentation and remains legible
 
-#### Scenario: Light presentation remains the Editorial default
+#### Scenario: Editorial light presentation remains available
 
 - **WHEN** Editorial is active and the viewer expresses no preference or
   requests light

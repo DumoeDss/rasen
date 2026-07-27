@@ -1,18 +1,25 @@
-## ADDED Requirements
+# UI Theme Library Specification
+
+## Purpose
+
+Define Rasen's safe, manifest-driven UI theme catalog, installation, and
+activation contract.
+
+## Requirements
 
 ### Requirement: Themes use a versioned declarative manifest
 
 Every selectable UI theme SHALL be represented by a versioned JSON manifest
 with a stable identifier, user-facing metadata, a color-mode declaration,
 recognized design-token values, and an optional set of recognized declarative
-effects. Editorial and CRT SHALL be delivered through this same manifest
-contract. A manifest SHALL NOT provide raw CSS, selectors, declarations,
-scripts, imports, remote URLs, or arbitrary resource references.
+effects. Editorial and Official (identifier `crt`) SHALL be delivered through
+this same manifest contract. A manifest SHALL NOT provide raw CSS, selectors,
+declarations, scripts, imports, remote URLs, or arbitrary resource references.
 
 #### Scenario: Built-in themes use the public manifest model
 
 - **WHEN** the theme catalog is loaded on a clean installation
-- **THEN** Editorial and CRT are available as valid version-1 manifests
+- **THEN** Editorial and Official are available as valid version-1 manifests
 - **AND** they use the same token and effect fields accepted from an imported
   theme
 
@@ -61,7 +68,7 @@ imports SHALL leave both the installed library and active preference unchanged.
 
 #### Scenario: Existing or built-in identifier is protected
 
-- **WHEN** an import uses an identifier matching Editorial, CRT, or an installed
+- **WHEN** an import uses an identifier matching Editorial, Official (`crt`), or an installed
   user theme, including a case-only variation
 - **THEN** the import is rejected with an identifier-conflict error
 - **AND** the existing theme is unchanged
