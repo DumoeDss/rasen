@@ -454,7 +454,7 @@ describe('owner-aware file lock', () => {
         }
       }
 
-      const [a, b] = await Promise.all([stealAndHold('A', 100), stealAndHold('B', 10)]);
+      const [a, b] = await Promise.all([stealAndHold('A', 60), stealAndHold('B', 60)]);
       expect(new Set([a, b])).toEqual(new Set(['A', 'B']));
 
       // Verify serialized access: the second enter must come after the
