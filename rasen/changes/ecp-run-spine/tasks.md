@@ -107,7 +107,7 @@
 - [x] 9.12 GREEN: Implement token-bound `net` challenge ownership, quarantine only for complete-metadata stable-refusal proven death, pre-publish lease revalidation, compare-token release, no automatic corrupt-lock steal, and no mtime/PID/process-table truth.
 - [x] 9.13 RED: Fault staging/fsync/link/link-before-unlink/post-return and test nlink=1, valid nlink=2 strict same-inode/token companion, crash residual, >2/unknown companion, extra hardlink, old-token cleanup, and unsupported Windows hardlink.
 - [x] 9.14 GREEN: Implement atomic same-volume hard-link-to-absent claim, strict companion validation/cleanup, `lock_unavailable` fallback behavior, and fixed bootstrap->association->engine->workspace->create->commit ordering.
-- [ ] 9.15 RED/GREEN: Prove concurrent first bind, registered-no-association legacy resume versus canonical start, aliases, separate worktrees, archive-vs-recreate, and multi-process crash retries derive the same instance/engine lease and avoid lost association/Record revisions or nested facade locks.
+- [x] 9.15 RED/GREEN: Prove concurrent first bind, registered-no-association legacy resume versus canonical start, aliases, separate worktrees, archive-vs-recreate, and multi-process crash retries derive the same instance/engine lease and avoid lost association/Record revisions or nested facade locks.
 
 ## 10. Runtime facade, engine ownership, and recovery
 

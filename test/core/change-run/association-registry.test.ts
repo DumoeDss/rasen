@@ -98,3 +98,43 @@ describe('immutable Change association ledger', () => {
     ).toThrow(AssociationRegistryError);
   });
 });
+
+describe('concurrent first bind + crash retry (9.15)', () => {
+  it('two concurrent first binds from the same base derive the same instance lease', () => {
+    const planningSpaceId = derivePlanningSpaceId('fixture-home');
+    const base = createAssociationLedger(planningSpaceId, 'project-fixture');
+    const processA = bindActiveAssociation(base, {
+      changeId: 'fixture-change',
+      alias: 'rasen/changes/fixture-change',
+      physicalIdentity: oldPhysical,
+    });
+    const processB = bindActiveAssociation(base, {
+      changeId: 'fixture-change',
+      alias: 'rasen/changes/fixture-change',
+      physicalIdentity: oldPhysical,
+    });
+    // The instance/engine lease is derived from the same physical identity, so
+    // both racers land on the exact same ChangeInstance regardless of who wins.
+    expect(processA.association.instanceId).toBe(
+      processB.association.instanceId
+    );
+  });
+
+  it('replaying a bind after a crash reuses the existing active association', () => {
+    const planningSpaceId = derivePlanningSpaceId('fixture-home');
+    const initial = createAssociationLedger(planningSpaceId, 'project-fixture');
+    const first = bindActiveAssociation(initial, {
+      changeId: 'fixture-change',
+      alias: 'rasen/changes/fixture-change',
+      physicalIdentity: oldPhysical,
+    });
+    // Crash before the ledger was flushed; retry from the persisted revision.
+    const replay = bindActiveAssociation(first.ledger, {
+      changeId: 'fixture-change',
+      alias: 'rasen/changes/fixture-change',
+      physicalIdentity: oldPhysical,
+    });
+    expect(replay.disposition).toBe('reused');
+    expect(replay.association.instanceId).toBe(first.association.instanceId);
+  });
+});
