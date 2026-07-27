@@ -8,10 +8,26 @@ review-heavy capabilities that share an ordered contract. The parent
 implementation is delegated to seven child Changes.
 
 All children use the decompose-free `small-feature` Pipeline and run strictly
-serially. This is both a Tier-B requirement and a code-ownership decision:
-the slices intentionally deepen the same Pipeline definition, compiler,
-run-state, management API, Canvas, and Operations seams. There is no honest
-non-overlapping parallel cohort.
+serially. The current Codex host supports native collaboration and therefore
+executes at Tier A, but the slices intentionally deepen the same Pipeline
+definition, compiler, run-state, management API, Canvas, and Operations seams.
+There is still no honest non-overlapping parallel cohort.
+
+## Current Codex-native execution contract
+
+- Host/runtime/dispatch are Tier A / `codex` / `native`.
+- A new worker is dispatched with `spawn_agent`; an idle worker receives its
+  next turn through `followup_task`; `send_message` is only for intermediate
+  guidance while that worker is still running.
+- A Codex-native worker's final response is delivered to the LEAD
+  automatically and is not duplicated with a completion message.
+- `wait_agent` is reserved for a real dependency barrier and, when needed, is
+  used as one event-driven wait rather than a 30/60-second polling loop.
+- Native `agentId` values are session handles and are never resurrected after
+  a host-session restart. Resume uses the latest handoff first, a real
+  transcript second, and planning artifacts plus run-state as an explicitly
+  recorded cold-reconstruction fallback. No `threadId`, `turnId`, transcript,
+  or replacement identity is invented.
 
 ## Dependency DAG
 
