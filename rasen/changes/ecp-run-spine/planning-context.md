@@ -274,3 +274,12 @@ settle path in `facade-runtime.ts`.
   pre-admit). Single-Run dogfood unaffected; multi-Run workspace contention is a follow-up.
 - `observeAdmittedEffects` in-process helper remains legitimate: effect observation has no
   facade/CLI surface (the real system uses an Adapter for host execution).
+- **KNOWN LIMITATION C — production store lacks fsync/atomic-rename.** `run-store-fs.ts`
+  publishes Records with plain `writeFileSync({flag:'wx'})` (line ~45) — it does NOT use the
+  proven `publishAtomic` contract (staging → fsync → rename, tested in 9.5/9.6). `wx` gives
+  immutability (O_EXCL, no overwrite) but NOT crash-durability: a crash mid-write can leave a
+  partial/corrupt record file that blocks retry. The `publishAtomic` abstraction exists but is
+  not wired into the production store. **Follow-up**: wire `publishAtomic` (real-fs plumbing)
+  into `run-store-fs.ts` so the design §9.6 staging+fsync+rename durability is actually deployed.
+  (The 15.6 fault journeys prove the `publishAtomic` CONTRACT on real fs; they don't prove the
+  production store uses it.)
