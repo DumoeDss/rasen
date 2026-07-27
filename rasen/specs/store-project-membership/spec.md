@@ -6,7 +6,7 @@ Make Store membership a first-class relation with its own authority: one record 
 ## Requirements
 ### Requirement: A Store records each member project in its own file, keyed by project identity
 
-A Store SHALL record membership as one file per member project, named by that project's permanent identity, under the Store's metadata directory. The record SHALL be the single authority for whether a project belongs to the Store. The project identity inside the record SHALL be the authority for which project it describes, and the file's name SHALL agree with it — a disagreement SHALL be reported as an error rather than resolved by preferring either one. The display id in the record SHALL be for reading only, and a recorded remote SHALL be credential-free. Two people adding two different projects to the same Store SHALL write two different files.
+A Store SHALL record membership as one file per member project, named by that project's permanent identity, under the Store's metadata directory. The record SHALL be the single authority for whether a project belongs to the Store, and no other source — including the project's own durable Store declaration — SHALL confer membership or grant Store-scoped Session eligibility. A project whose declaration names a Store but for which no Store record exists SHALL be rejected from Store-scoped sessions with a diagnostic that names the missing record and the copy-pasteable repair command (`rasen store add-project <projectId> --store <storeId>`); the declaration MAY shape that diagnostic but SHALL NOT itself decide eligibility. The project identity inside the record SHALL be the authority for which project it describes, and the file's name SHALL agree with it — a disagreement SHALL be reported as an error rather than resolved by preferring either one. The display id in the record SHALL be for reading only, and a recorded remote SHALL be credential-free. Two people adding two different projects to the same Store SHALL write two different files.
 
 #### Scenario: Membership is recorded per project
 
@@ -36,6 +36,13 @@ A Store SHALL record membership as one file per member project, named by that pr
 - **WHEN** membership records are written and read back on Windows
 - **THEN** every record file resolves under the Store's metadata directory using platform path resolution
 - **AND** no accepted project identity can produce a filename Windows rejects
+
+#### Scenario: A declaration alone does not establish Session eligibility
+
+- **WHEN** a project's own durable Store declaration resolves to this Store but the Store has no membership record for that project
+- **THEN** Store-scoped session eligibility for that project is denied
+- **AND** the rejection diagnostic names the missing record and prints the `rasen store add-project` command that establishes it
+- **AND** the project's declaration is not used to grant eligibility, only to shape the diagnostic
 
 ### Requirement: Membership states what it is for, and never states where work is executed
 
