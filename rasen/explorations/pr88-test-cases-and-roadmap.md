@@ -4,10 +4,10 @@
 >
 > 日期：2026-07-27
 >
-> 适用：`feat/store-context-portable-knowledge`（PR #88 → `dev/0.1.5`，head `c4e54285`）
+> 适用：`feat/pr88-review-fixes`（PR #88 → `dev/0.1.5`，round-2 reviewed head `728688ba`）
 >
-> 配套：审查报告见 `rasen/explorations/global-store-project-unification-development-plan.md`
-> §36；测试策略见同文件 §28；验收 Gate 见 §29；发布顺序见 §36.8。
+> 配套：round-2 验收审查见 `docs/audits/pr-88-acceptance-review-2026-07-28.md`；
+> round-2 证据对账见 `docs/audits/pr88-round2-evidence-reconciliation.md`。
 
 本文是 PR #88 的**测试覆盖盘点**与**剩余验收/发布路线**，给 reviewers 和最终人工验收
 者一个单一入口：哪些行为被自动化测试覆盖了、哪些没有、当前结果是什么、还差什么才能
@@ -21,7 +21,7 @@
 |---|---|---|
 | `pnpm run lint` | PASS | `pnpm lint` |
 | TypeScript build | PASS | `pnpm build` |
-| `git diff --check origin/dev/0.1.5...HEAD` | clean | `git diff --check origin/dev/0.1.5...HEAD` |
+| `git diff --check origin/dev/0.1.5...HEAD` | clean（round-2 修复 EOF blank line 后） | `git diff --check origin/dev/0.1.5...HEAD` |
 | `pnpm test`（全量） | **5441 pass / 0 逻辑失败 / 32 skip** | `pnpm test` |
 | 残留失败 | 仅 `store-membership-cli` 的 **Windows 间歇性 flake**（全量跑 0–4 个、子集每次不同、隔离跑全过） | `pnpm vitest run test/commands/store-membership-cli.test.ts`（隔离绿） |
 | §28.2 双机场景证据 | green | 见下表 |
@@ -158,7 +158,7 @@ test/core/templates        7   (skill 模板 parity)
 [已完成] implemented → automated-verified → integrated-candidate
    • §36 全部 automatable findings 修复（5B + 14M + Minor/Trivial）
    • 0 逻辑测试失败；§28.2 双机 fixture green；canonical specs 同步归档
-   • PR #88 = OPEN / MERGEABLE(CLEAN) / 15 commit 在 head
+   • PR #88 = OPEN / CHANGES REQUESTED（round-2 acceptance review：8B + 7M + 5 Minor；round-2 fix portfolio `pr88-af-*` 修复中）
 
 [当前] integrated-candidate
 
@@ -214,7 +214,7 @@ test/core/templates        7   (skill 模板 parity)
 
 ```powershell
 git fetch origin
-git switch feat/store-context-portable-knowledge   # head = c4e54285
+git switch feat/pr88-review-fixes   # round-2 reviewed head = 728688ba
 pnpm install --frozen-lockfile
 pnpm lint
 pnpm build
@@ -225,4 +225,4 @@ pnpm vitest run test/cli-e2e/store-lifecycle.test.ts
 pnpm vitest run test/core/store/bootstrap-obtain.test.ts
 ```
 
-机器：`Sayo` / Windows 11 / Node 5.9.3 toolchain。
+机器：`Sayo` / Windows 11 / Node ≥20.19.0 / TypeScript 5.9.3 / pnpm 9.15.9。

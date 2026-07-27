@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import {
   appendStoreReference,
   readProjectConfig,
+  readProjectConfigWithDiagnostics,
   validateConfigRules,
   suggestSchemas,
   ensureProjectIdInConfig,
@@ -636,6 +637,44 @@ rules:
           'Follow {variable} naming',
         ]);
       });
+    });
+  });
+
+  describe('readProjectConfigWithDiagnostics', () => {
+    it('returns absent when no config file exists', () => {
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result).toEqual({ status: 'absent' });
+    });
+
+    it('returns ok with parsed config for a valid file', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: abc123\n',
+        'utf-8'
+      );
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result.status).toBe('ok');
+      if (result.status === 'ok') {
+        expect(result.config?.projectId).toBe('abc123');
+      }
+    });
+
+    it('returns unreadable with a diagnostic when YAML is malformed', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: [unclosed bracket\n',
+        'utf-8'
+      );
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result.status).toBe('unreadable');
+      if (result.status === 'unreadable') {
+        expect(result.path).toContain('config.yaml');
+        expect(result.error).toBeTruthy();
+      }
     });
   });
 

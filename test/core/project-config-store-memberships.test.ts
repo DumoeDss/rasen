@@ -186,7 +186,18 @@ describe('project-side store membership hints', () => {
     });
 
     it('refuses to write a filesystem path, on any platform', async () => {
-      for (const machinePath of ['/home/me/store', 'C:\\Users\\me\\store', '\\\\server\\share']) {
+      const machinePaths = [
+        '/home/me/store',
+        'C:\\Users\\me\\store',
+        '\\\\server\\share',
+        // Single-backslash root-relative (resolves to current-drive root on Windows)
+        '\\Users\\team\\repo',
+        // NT-namespace path
+        '\\??\\C:\\Users\\team\\repo',
+        // Win32 device namespace
+        '\\\\?\\C:\\Users\\team\\repo',
+      ];
+      for (const machinePath of machinePaths) {
         await expect(
           appendStoreMembershipHint(projectRoot, { uid: UID_A, remote: machinePath })
         ).rejects.toThrow(/filesystem path/i);

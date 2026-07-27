@@ -216,10 +216,10 @@ Before a Store session begins working on a project, the system SHALL confirm tha
 - **WHEN** a user chooses a project that the Store's membership record permits, whose checkout exists and carries that project's identity
 - **THEN** the session starts with that project as its execution target
 
-#### Scenario: A project the Store records only by its own declaration is a valid choice
+#### Scenario: A project the Store records only by its own declaration is rejected
 
 - **WHEN** the chosen project's own durable Store declaration resolves to this Store but the Store has no membership record for it
-- **THEN** the session does NOT start — the declaration alone no longer vouches for the project (this scenario formerly asserted the session would start; the membership-authority change inverts it)
+- **THEN** the session does NOT start — the declaration alone does not vouch for the project
 - **AND** the failure carries the legacy-migration marker, names the missing membership record, and prints the `rasen store add-project` command that establishes it
 - **AND** the declaration is not used to vouch for the project
 

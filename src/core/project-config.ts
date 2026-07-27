@@ -676,31 +676,52 @@ export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the r
  * @param projectRoot - The root directory of the project (where `openspec/` lives)
  * @returns Parsed config or null if file doesn't exist
  */
-export function readProjectConfig(
+/**
+ * Discriminated result of reading a project config file, so callers can
+ * distinguish "no config file present" from "config file exists but is
+ * unparseable." The absent state is the ordinary "no config" signal; the
+ * unreadable state carries a diagnostic so a caller never silently treats a
+ * corrupt config as a project with no identity.
+ */
+export type ProjectConfigReadResult =
+  | { status: 'absent' }
+  | { status: 'ok'; config: ProjectConfig | null }
+  | { status: 'unreadable'; path: string; error: string };
+
+export function readProjectConfigWithDiagnostics(
   projectRoot: string,
   options: { reporter?: ConfigDiagnosticReporter } = {}
-): ProjectConfig | null {
+): ProjectConfigReadResult {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
-    return null; // No config is OK
+    return { status: 'absent' };
   }
 
   try {
     const content = readFileSync(configPath, 'utf-8');
-    return parseProjectConfigContent(content, projectRoot, options.reporter);
+    const config = parseProjectConfigContent(content, projectRoot, options.reporter);
+    return { status: 'ok', config };
   } catch (error) {
-    const configPath = configPathForWarnings(projectRoot);
+    const warnPath = configPathForWarnings(projectRoot);
     const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
     warnConfig(
       {
         key: 'projectParseFailed',
-        values: { path: configPath, detail },
-        fallback: `Warning: could not parse ${configPath} (${detail}); ignoring it.`,
+        values: { path: warnPath, detail },
+        fallback: `Warning: could not parse ${warnPath} (${detail}); ignoring it.`,
       },
       options.reporter
     );
-    return null;
+    return { status: 'unreadable', path: configPath, error: detail };
   }
+}
+
+export function readProjectConfig(
+  projectRoot: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfig | null {
+  const result = readProjectConfigWithDiagnostics(projectRoot, options);
+  return result.status === 'ok' ? result.config : null;
 }
 
 /**
@@ -2039,9 +2060,18 @@ function membershipHintToRaw(hint: StoreMembershipHint): Record<string, unknown>
  * which is not the platform the file will be read on.
  */
 function assertPortableHintValue(field: string, value: string): void {
-  const windowsDrive = /^[A-Za-z]:[\\/]/u.test(value);
-  const uncPath = value.startsWith('\\\\');
-  if (path.isAbsolute(value) || windowsDrive || uncPath || value.startsWith('/')) {
+  // path.isAbsolute catches the CURRENT platform's absolute forms;
+  // path.win32.isAbsolute catches Windows forms regardless of platform
+  // (drive-letter paths, UNC, POSIX-style root). A leading backslash covers
+  // single-backslash root-relative (\Users\...), UNC (\\server\share),
+  // device namespace (\\?\C:\...), and NT-namespace (\??\C:\...) forms.
+  // /??/ is the POSIX-slash NT-namespace variant. All are machine-specific.
+  if (
+    path.isAbsolute(value) ||
+    path.win32.isAbsolute(value) ||
+    value.startsWith('\\') ||
+    value.startsWith('/??/')
+  ) {
     throw new Error(
       `Refusing to write a filesystem path into a store membership hint (${field}: ${value}). Membership hints are shared through git and carry only a permanent identity, a display name, and a credential-free remote.`
     );

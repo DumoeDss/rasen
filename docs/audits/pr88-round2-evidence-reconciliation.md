@@ -1,12 +1,66 @@
 # PR #88 Round-2 Evidence Reconciliation
 
-Shared evidence artifact for the `pr88-af-*` round-2 fix children. Each child appends its findings.
+Shared evidence artifact for the `pr88-af-*` round-2 fix children. This is the
+single portfolio-level evidence artifact the acceptance review (M5) requires:
+each round-2 child is listed with its finding IDs, commit SHA, review verdict,
+test count, and review-report path so a reviewer can independently verify every
+claim without trusting self-reported PASS/CLEAN.
+
+**Old `pr88-rf-*` ledgers are NOT re-audited.** The round-1 `pr88-rf-*` archived
+task ledgers had unchecked items and were declared PASS/CLEAN; the acceptance
+review explicitly forbids retroactively faking historical checkmarks
+("不要事后伪造历史勾选"). Those ledgers stand as historical artifacts of an
+insufficient round. This artifact establishes the round-2 baseline instead.
+
+---
+
+## Round-2 Portfolio Evidence Table
+
+| # | Child | Findings | Commit(s) | Review verdict | Tests (isolated) | Review-report |
+|---|---|---|---|---|---|---|
+| 1 | `pr88-af-lock-atomicity` | B1, B2 | `2f0d834b`, `1e62007c` | r1: 0B/1M/3m/1t → r2: CLEAN (0B/0M) | 35 pass / 2 POSIX-skip | [review-report](../../rasen/changes/pr88-af-lock-atomicity/work/review-report.md) |
+| 2 | `pr88-af-catalog-backup` | B3 | `c618e6ae` | r1: 0B/0M/2m/1t → r2: CLEAN | 57 pass (18 mutate + 39 knowledge) | [review-report](../../rasen/changes/pr88-af-catalog-backup/work/review-report.md) |
+| 3 | `pr88-af-remote-credentials` | B4 | `34987ed0` | CLEAN (0B/0M/0m/0t) | 21 pass / 0 fail | [review-report](../../rasen/changes/pr88-af-remote-credentials/work/review-report.md) |
+| 4 | `pr88-af-store-identity-concurrency` | B5, B6, M3, M4 | `ce303361`, `0baaa5b3` | 0B/0M/1m (M3-1 sameOwner → fixed in `0baaa5b3`) | 102 pass / 1 POSIX-skip | [review-report](../../rasen/changes/pr88-af-store-identity-concurrency/work/review-report.md) |
+| 5 | `pr88-af-bootstrap-obtain` | B7, M1 | `af9ae2b3` | r1: 0B/0M/2m → r2: CLEAN (m1 SHA-256 content-digest resolved) | 57 pass (44 obtain + 13 bundle-import) | [review-report](../../rasen/changes/pr88-af-bootstrap-obtain/work/review-report.md) |
+| 6 | `pr88-af-bundle-transactions` | B8, M2 | `010c0947` | r1: 0B/1M/5m/1t → r2: CLEAN | 66 pass / 1 skip | [review-report](../../rasen/changes/pr88-af-bundle-transactions/work/review-report.md) |
+| 7 | `pr88-af-evidence-chain` | M5, Minor 1–5 | (this child) | — | — | — |
+| 8 | `pr88-af-ci-required-gate` | M7, M6 | `9caabf5f` | CLEAN (0B/0M/0m/0t) | 42 pass (25 basic + 17 validate) | [review-report](../../rasen/changes/pr88-af-ci-required-gate/work/review-report.md) |
+
+### How each claim is verified
+
+- **Commit SHA:** `git log --oneline <sha> -1` on `feat/pr88-review-fixes` — each
+  commit is a narrow-pathspec commit containing exactly that child's files.
+- **Review verdict:** open the review-report path; each was produced by a
+  dispatched reviewer (author ≠ verifier) — reviewer-1, reviewer-3, or reviewer-6.
+- **Test count:** each ship-log records the isolated test run (full suite skipped
+  per M6). Tests were empirically confirmed red-on-pre-fix (`728688ba`) and green
+  after the fix, independently re-verified by the reviewer.
+- **Review-report path:** review-report files live under
+  `C:\Users\Sayo\.rasen\projects\autonomy-ladder-1e42477e\changes\pr88-af-<child>\work\`.
+  The relative links above resolve from the repo root.
+
+### Child #5 (bootstrap-obtain) status
+
+Shipped as `af9ae2b3`. Round 1 returned 0 Blocker / 0 Major / 2 Minor; the
+meaningful Minor (m1 — stat-only M1 binding defeatable by a same-size +
+mtime-matching swap on NTFS) was resolved in round 2 by adding a SHA-256
+content digest as the authoritative binding alongside the stat. Re-review:
+CLEAN. 57 pass. Review-report from reviewer-1 at
+`...pr88-af-bootstrap-obtain/work/review-report.md`.
+
+### Round-2 reviewed head
+
+The round-2 acceptance review examined head `728688ba` on `feat/pr88-review-fixes`.
+The round-2 fix portfolio (`pr88-af-*`) builds on top of that head. The original
+PR head was `c4e54285` (round-1 fixes); the roadmap previously mis-recorded this
+as the current head — corrected.
 
 ---
 
 ## M6 — Test Stability Investigation (pr88-af-ci-required-gate)
 
-**Scope:** partial investigation of the root test suite instability reported in the PR #88 acceptance review (M6). The review named three symptoms: CLI subprocess non-exit, Windows EPERM teardown cascade, and 10s test timeouts, observed at scale (4-worker ~95 failures).
+**Scope:** partial investigation of the root test suite instability reported in the PR #88 acceptance review (M6). Our review named three symptoms: CLI subprocess non-exit, Windows EPERM teardown cascade, and 10s test timeouts, observed at scale (4-worker ~95 failures).
 
 ### What was fixed (determinable, locally verifiable)
 
