@@ -12,13 +12,13 @@
 
 - [x] 2.1 RED: Add domain-separated SHA-256 golden vectors for PlanningSpaceId, ChangeInstanceId, WorkspaceInstanceId, RunId, NodeId, InvocationId, AttemptId, EffectId, ActionId, and WaitId.
 - [x] 2.2 GREEN: Implement identity allocation from persisted registry-home, versioned physical-identity bytes, Change name/incarnation, committed ordinals, sorted effect descriptors, and exact wait context; exclude clocks, randomness, paths, PIDs, mtimes, Record version, and runOrdinal.
-- [ ] 2.3 RED: Add POSIX device/inode/birth and Windows volume/file-index/creation codec tests for aliases, same-volume rename, reuse/conflicting history, missing precision, cross-volume copy, linked worktrees, independent clones with equal projectId, project move, and RASEN_HOME relocation.
-- [ ] 2.4 GREEN: Implement fail-closed physical identity codecs and deterministic PlanningSpace/ChangeInstance/WorkspaceInstance derivation; keep projectId lineage/display-only.
-- [ ] 2.5 RED: Add immutable association-registry contract tests for first bind, concurrent registered first starts, active/archive/missing aliases, runtime archive migration, manual unprovable move, same-name recreation, and crash-safe revision replay.
-- [ ] 2.6 GREEN: Implement the bounded SafeRunPath-protected machine-home association ledger under the stable `(PlanningSpaceId, changeId)` association lease.
-- [ ] 2.7 RED: Add launch-intent tests for normalized key-order-independent inputs, exact Pipeline/engine binding within `(PlanningSpaceId, ChangeInstanceId, launchRequestId)`, conflict, cross-scope reuse, and display-only runOrdinal.
+- [x] 2.3 RED: Add POSIX device/inode/birth and Windows volume/file-index/creation codec tests for aliases, same-volume rename, reuse/conflicting history, missing precision, cross-volume copy, linked worktrees, independent clones with equal projectId, project move, and RASEN_HOME relocation.
+- [x] 2.4 GREEN: Implement fail-closed physical identity codecs and deterministic PlanningSpace/ChangeInstance/WorkspaceInstance derivation; keep projectId lineage/display-only.
+- [x] 2.5 RED: Add immutable association-registry contract tests for first bind, concurrent registered first starts, active/archive/missing aliases, runtime archive migration, manual unprovable move, same-name recreation, and crash-safe revision replay.
+- [x] 2.6 GREEN: Implement the bounded SafeRunPath-protected machine-home association ledger under the stable `(PlanningSpaceId, changeId)` association lease.
+- [x] 2.7 RED: Add launch-intent tests for normalized key-order-independent inputs, exact Pipeline/engine binding within `(PlanningSpaceId, ChangeInstanceId, launchRequestId)`, conflict, cross-scope reuse, and display-only runOrdinal.
 - [x] 2.8 GREEN: Implement `RunId = H("run", PlanningSpaceId, ChangeInstanceId, changeId, launchRequestId)` and launch digesting with no global mutable key index.
-- [ ] 2.9 RED/GREEN: Cover active-instance lookup, unique historical same-key retry without source, multiple-history `launch_instance_ambiguous`, archived same-name recreation, and old Run inability to target the new directory.
+- [x] 2.9 RED/GREEN: Cover active-instance lookup, unique historical same-key retry without source, multiple-history `launch_instance_ambiguous`, archived same-name recreation, and old Run inability to target the new directory.
 
 ## 3. Frozen executable plan and support analysis
 
