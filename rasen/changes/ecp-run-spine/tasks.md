@@ -23,7 +23,7 @@
 ## 3. Frozen executable plan and support analysis
 
 - [x] 3.1 RED: Extend Definition/plan-reader tests for exact envelope/payload digest, closed version, deep immutability, tampering, and stored-plan open without current source.
-- [ ] 3.2 GREEN: Extract the shared non-barrel plan codec and private opener/lowerer while keeping the public phase-1 payload opaque.
+- [x] 3.2 GREEN: Extract the shared non-barrel plan codec and private opener/lowerer while keeping the public phase-1 payload opaque.
 - [x] 3.3 RED: Add RuntimeExecutionProfile/1 fixtures freezing path-independent SourceRevision layer/source/content/semantic identity, exact capability/result/evidence/recovery/Adapter artifact, and every action-shaping effective policy value with provenance.
 - [ ] 3.4 GREEN: Implement private launch-time execution sealing and bind plan/profile/source/capability/policy digests into launch and Record; reject unsupported effective values.
 - [ ] 3.5 RED: Add drift tests for project/user/package shadowing, same-semantic raw edits, skill/artifact/config changes, removal, and unavailable current state while stored Actions remain byte-stable.
