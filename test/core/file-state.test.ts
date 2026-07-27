@@ -395,6 +395,249 @@ describe('owner-aware file lock', () => {
     expect(log).toEqual(['A-start', 'A-end', 'B-start', 'B-end']);
   });
 
+  // --- B1 regression: rename-based atomic steal ---
+
+  it('two concurrent stealers of a dead-owner lock: exactly one claims, the other waits', async () => {
+    const lockPath = path.join(tempDir, 'dual-steal.lock');
+    // Spawn a child just to obtain a PID that immediately exits.
+    const child = spawn(process.execPath, ['--eval', 'process.exit(0)'], {
+      stdio: 'ignore',
+    });
+    const deadPid = child.pid;
+    if (deadPid === undefined) throw new Error('child did not start');
+    await new Promise<void>((resolve) => child.on('exit', () => resolve()));
+
+    const deadToken = [
+      `pid: ${deadPid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: dead-process',
+      'nonce: deadbeefdeadbeefdeadbeefdeadbeef',
+      '',
+    ].join('\n');
+    fs.writeFileSync(lockPath, deadToken, 'utf-8');
+
+    // Monkey-patch unlink to delay the FIRST call targeting lockPath by
+    // 20ms. On pre-fix code (which uses unlink in the steal path), this
+    // creates a deterministic race: the stealer whose unlink fires first
+    // (undelayed, 2nd call) deletes the dead lock and creates its own
+    // LIVE lock; then the delayed 1st call fires and deletes that LIVE
+    // lock — both stealers enter the critical section. On post-fix code
+    // the steal path uses rename, so unlink(lockPath) is never called in
+    // the steal path and this patch is inert.
+    const origUnlink = fs.promises.unlink;
+    let firstLockPathUnlink = true;
+    fs.promises.unlink = (async (p: string) => {
+      if (firstLockPathUnlink && p === lockPath) {
+        firstLockPathUnlink = false;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return origUnlink(p);
+    }) as typeof fs.promises.unlink;
+
+    try {
+      const log: string[] = [];
+      async function stealAndHold(label: string, holdMs: number): Promise<string> {
+        const handle = await acquireOwnerAwareFileLock({
+          lockPath,
+          errorFor,
+          pollMs: 0,
+          deadlineMs: 5000,
+          holder: label,
+        });
+        log.push(`${label}:enter`);
+        try {
+          await new Promise((r) => setTimeout(r, holdMs));
+          return label;
+        } finally {
+          await releaseOwnerAwareFileLock(handle);
+          log.push(`${label}:exit`);
+        }
+      }
+
+      const [a, b] = await Promise.all([stealAndHold('A', 100), stealAndHold('B', 10)]);
+      expect(new Set([a, b])).toEqual(new Set(['A', 'B']));
+
+      // Verify serialized access: the second enter must come after the
+      // first exit — no two simultaneous holders.
+      expect(log.filter((e) => e.endsWith(':enter'))).toHaveLength(2);
+      expect(log.filter((e) => e.endsWith(':exit'))).toHaveLength(2);
+      const exits = log.map((e, i) => ({ e, i })).filter((x) => x.e.endsWith(':exit'));
+      const enters = log.map((e, i) => ({ e, i })).filter((x) => x.e.endsWith(':enter'));
+      expect(enters[1].i).toBeGreaterThan(exits[0].i);
+    } finally {
+      fs.promises.unlink = origUnlink;
+    }
+  }, 10_000);
+
+  it('does NOT busy-loop when the rename claim consistently fails (respects deadline)', async () => {
+    const lockPath = path.join(tempDir, 'eperm-steal.lock');
+    const child = spawn(process.execPath, ['--eval', 'process.exit(0)'], {
+      stdio: 'ignore',
+    });
+    const deadPid = child.pid;
+    if (deadPid === undefined) throw new Error('child did not start');
+    await new Promise<void>((resolve) => child.on('exit', () => resolve()));
+
+    const deadToken = [
+      `pid: ${deadPid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: dead-process',
+      'nonce: deadbeefdeadbeefdeadbeefdeadbeef',
+      '',
+    ].join('\n');
+    fs.writeFileSync(lockPath, deadToken, 'utf-8');
+
+    // Monkey-patch rename to always reject with EPERM, simulating a
+    // filesystem that refuses the atomic claim. On the pre-fix code
+    // (which uses unlink, not rename), the steal succeeds and the acquire
+    // resolves — making this test deterministically red on 728688ba.
+    const origRename = fs.promises.rename;
+    let renameAttempts = 0;
+    fs.promises.rename = async () => {
+      renameAttempts++;
+      const err = new Error('synthetic EPERM') as NodeJS.ErrnoException;
+      err.code = 'EPERM';
+      throw err;
+    };
+    try {
+      const started = Date.now();
+      await expect(
+        acquireOwnerAwareFileLock({
+          lockPath,
+          errorFor,
+          deadlineMs: 300,
+          pollMs: 50,
+        })
+      ).rejects.toThrow('timeout');
+      const elapsed = Date.now() - started;
+      // Must have respected the deadline + sleep, not spun instantly.
+      expect(elapsed).toBeGreaterThanOrEqual(250);
+      // Must have attempted multiple times (looped with sleeps, not exited).
+      expect(renameAttempts).toBeGreaterThan(1);
+    } finally {
+      fs.promises.rename = origRename;
+    }
+  });
+
+  it('stealer that renames a replaced lock restores it and waits', async () => {
+    const lockPath = path.join(tempDir, 'mismatch-restore.lock');
+    const child = spawn(process.execPath, ['--eval', 'process.exit(0)'], {
+      stdio: 'ignore',
+    });
+    const deadPid = child.pid;
+    if (deadPid === undefined) throw new Error('child did not start');
+    await new Promise<void>((resolve) => child.on('exit', () => resolve()));
+
+    const deadToken = [
+      `pid: ${deadPid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: dead-process',
+      'nonce: deadbeefdeadbeefdeadbeefdeadbeef',
+      '',
+    ].join('\n');
+    fs.writeFileSync(lockPath, deadToken, 'utf-8');
+
+    // Intercept the first rename of lockPath: replace the lock content
+    // just before the rename happens, simulating another stealer that won
+    // the race between our read and our rename.
+    const origRename = fs.promises.rename;
+    let intercepted = false;
+    fs.promises.rename = (async (src: string, dest: string) => {
+      if (!intercepted && src === lockPath) {
+        intercepted = true;
+        const replacementToken = [
+          `pid: ${process.pid}`,
+          `bornAt: ${new Date().toISOString()}`,
+          'holder: other-stealer',
+          'nonce: cccccccccccccccccccccccccccccccc',
+          '',
+        ].join('\n');
+        fs.writeFileSync(lockPath, replacementToken, 'utf-8');
+      }
+      return origRename(src, dest);
+    }) as typeof fs.promises.rename;
+    try {
+      // The stealer detects the content mismatch after rename, restores
+      // the moved file, and does NOT steal. Since the restored lock has a
+      // live PID (ours), the stealer times out.
+      const started = Date.now();
+      await expect(
+        acquireOwnerAwareFileLock({
+          lockPath,
+          errorFor,
+          deadlineMs: 300,
+          pollMs: 50,
+          holder: 'test-stealer',
+        })
+      ).rejects.toThrow('timeout');
+      expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+
+      // The lock file survives with the replacement content (restored,
+      // not deleted by the mismatched stealer).
+      expect(fs.readFileSync(lockPath, 'utf-8')).toMatch(
+        /^holder: other-stealer$/m
+      );
+    } finally {
+      fs.promises.rename = origRename;
+    }
+  });
+
+  it('restores the moved file when temp re-read fails after rename (m2)', async () => {
+    const lockPath = path.join(tempDir, 'readfail-steal.lock');
+    const child = spawn(process.execPath, ['--eval', 'process.exit(0)'], {
+      stdio: 'ignore',
+    });
+    const deadPid = child.pid;
+    if (deadPid === undefined) throw new Error('child did not start');
+    await new Promise<void>((resolve) => child.on('exit', () => resolve()));
+
+    const deadToken = [
+      `pid: ${deadPid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: dead-process',
+      'nonce: deadbeefdeadbeefdeadbeefdeadbeef',
+      '',
+    ].join('\n');
+    fs.writeFileSync(lockPath, deadToken, 'utf-8');
+
+    // Monkey-patch readFile to fail on any .steal-tmp path (the temp file
+    // the rename-based claim moves the lock to). Without the m2 fix, the
+    // readFile error is caught by the outer catch, lockPath is left empty
+    // (the moved file is never restored), and the next loop iteration
+    // succeeds at open(lockPath, 'wx') — creating a new lock on top of
+    // the empty path. With the fix, the moved file is restored and the
+    // caller times out.
+    const origReadFile = fs.promises.readFile;
+    fs.promises.readFile = (async (p: unknown, ...args: unknown[]) => {
+      if (typeof p === 'string' && p.includes('.steal-tmp')) {
+        const err = new Error('synthetic EIO') as NodeJS.ErrnoException;
+        err.code = 'EIO';
+        throw err;
+      }
+      return (origReadFile as (...a: unknown[]) => unknown)(p, ...args);
+    }) as typeof fs.promises.readFile;
+
+    try {
+      const started = Date.now();
+      await expect(
+        acquireOwnerAwareFileLock({
+          lockPath,
+          errorFor,
+          deadlineMs: 300,
+          pollMs: 50,
+        })
+      ).rejects.toThrow('timeout');
+      expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+
+      // The moved file was restored — lockPath is not empty, and still
+      // holds the dead-owner token (not a new lock created by this caller).
+      const surviving = fs.readFileSync(lockPath, 'utf-8');
+      expect(surviving).toBe(deadToken);
+    } finally {
+      fs.promises.readFile = origReadFile;
+    }
+  });
+
   it('machineLockPath returns a deterministic path under os.tmpdir()', () => {
     const abs = path.resolve(tempDir, 'some-file.yaml');
     const lockPath = machineLockPath(abs);

@@ -296,11 +296,53 @@ export async function acquireOwnerAwareFileLock(
         const content = await fs.readFile(lockPath, 'utf-8');
         const ownerPid = parsePidFromLockContent(content);
         if (ownerPid !== undefined && !pidIsAlive(ownerPid)) {
-          // Provable owner death. Removing the file is safe: even if the
-          // original owner later resumes, its release() will detect the token
-          // mismatch (we re-create with a new token) and refuse to unlink.
-          await fs.unlink(lockPath).catch(() => undefined);
-          stolen = true;
+          // Provable owner death (ESRCH). Claim the dead lock atomically
+          // via rename: only one stealer can succeed (others get ENOENT),
+          // and after the move we verify the content in private — no
+          // further race on lockPath. (design D1)
+          const tempPath = path.join(
+            path.dirname(lockPath),
+            `.${path.basename(lockPath)}.${process.pid}.${Date.now()}.${randomBytes(8).toString('hex')}.steal-tmp`
+          );
+          try {
+            await fs.rename(lockPath, tempPath);
+            // Rename succeeded — the file at lockPath is now gone (moved
+            // to tempPath). We must either verify+claim it or restore it.
+            let movedContent: string | undefined;
+            try {
+              movedContent = await fs.readFile(tempPath, 'utf-8');
+            } catch {
+              // Could not re-read the moved file. Treat identically to
+              // a content mismatch: cannot prove this was the dead lock,
+              // so restore the moved file and wait. (m2)
+            }
+            if (movedContent === content) {
+              // Verified: this was the dead lock at claim time. Clean up
+              // the temp; the next loop iteration will try to create our
+              // own lock (or retry if contended).
+              await fs.unlink(tempPath).catch(() => undefined);
+              stolen = true;
+            } else {
+              // The file at lockPath was replaced between our content
+              // read and the rename (another stealer won and created a
+              // new live lock, which we just moved), OR we could not
+              // re-read the moved file to verify it. Either way, restore
+              // the moved file so a live owner is not orphaned.
+              try {
+                await fs.link(tempPath, lockPath);
+              } catch {
+                // EEXIST: a new lock already appeared at lockPath —
+                // nothing to restore. Any other error is also handled
+                // by cleanup below; stolen stays false.
+              }
+              await fs.unlink(tempPath).catch(() => undefined);
+              // stolen stays false — wait and retry.
+            }
+          } catch {
+            // ENOENT: another stealer claimed the dead lock first.
+            // Any other rename error: cannot claim. Either way, stolen
+            // stays false — fall through to deadline + sleep. (design D2)
+          }
         }
         // Empty/unparseable lock, or owner alive → fall through to wait.
       } catch {

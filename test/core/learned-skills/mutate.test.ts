@@ -371,4 +371,41 @@ describe('learned-skill core mutation and resolution', () => {
     expect(matchesApplicability({ mode: 'any', markers: ['go.mod', 'missing'] }, projectRoot)).toBe(true);
     expect(matchesApplicability({ mode: 'any', markers: ['nope', 'missing'] }, projectRoot)).toBe(false);
   });
+
+  // --- B2 regression: mixed-protocol contention ---
+
+  it('does NOT evict a live owner-aware lock held for >30s (B2 mixed-protocol)', async () => {
+    // Plan a mutation to discover the lockPath.
+    const plan = await planLearnedSkillMutation(upsertRequest(projectId), context);
+    expect(plan.commit).toBeDefined();
+    const lockPath = plan.commit!.lockPath;
+
+    // Pre-populate the lock with a LIVE PID (this process) and set its
+    // mtime 31 seconds in the past — simulating a >30s hold by a slow
+    // knowledge-bundle import. Pre-fix (legacy acquireFileLock with 30s
+    // mtime threshold), this lock would be evicted and the mutation would
+    // succeed. Post-fix (acquireOwnerAwareFileLock), the live PID
+    // prevents eviction and the mutation times out.
+    const liveToken = [
+      `pid: ${process.pid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: knowledge-bundle-import',
+      'nonce: dddddddddddddddddddddddddddddddd',
+      '',
+    ].join('\n');
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, liveToken, 'utf-8');
+    const oldTime = new Date(Date.now() - 31_000);
+    fs.utimesSync(lockPath, oldTime, oldTime);
+
+    // The mutation must NOT evict the live lock — it must wait and time out.
+    // Use a 1s deadline (via context.lockDeadlineMs) so the test proves
+    // non-eviction quickly instead of waiting the full 5s default.
+    await expect(
+      commitLearnedSkillPlan(plan, { ...context, lockDeadlineMs: 1000 })
+    ).rejects.toThrow('busy or unwritable');
+
+    // The live lock is untouched — not evicted.
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe(liveToken);
+  }, 10_000);
 });

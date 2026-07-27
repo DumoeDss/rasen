@@ -23,7 +23,7 @@ import * as path from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 
-import { acquireFileLock, releaseFileLock } from '../file-state.js';
+import { acquireOwnerAwareFileLock, releaseOwnerAwareFileLock } from '../file-state.js';
 import { storeUidsMatch } from '../store/identity-types.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
@@ -1148,10 +1148,14 @@ export async function commitLearnedSkillPlan(
   if (approvalBlock) return { outcome: 'blocked', ...base, block: approvalBlock };
 
   const payload = plan.commit;
-  const lock = await acquireFileLock({
+  const lock = await acquireOwnerAwareFileLock({
     lockPath: payload.lockPath,
     errorFor: (_kind, info) =>
       new Error(`learned-skill catalog is busy or unwritable (${info.lockPath})`),
+    holder: 'learned-skill-catalog',
+    ...(context.lockDeadlineMs !== undefined
+      ? { deadlineMs: context.lockDeadlineMs }
+      : {}),
   });
   try {
     // Before anything reads the catalog: recover whatever a previously killed
@@ -1202,7 +1206,7 @@ export async function commitLearnedSkillPlan(
       changedFiles: changedFiles(payload),
     };
   } finally {
-    await releaseFileLock(lock, payload.lockPath);
+    await releaseOwnerAwareFileLock(lock);
   }
 }
 

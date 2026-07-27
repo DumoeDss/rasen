@@ -383,6 +383,12 @@ export interface LearnedSkillContext {
    * happens to share a display name.
    */
   approveStore?: StoreApprovalGrant;
+  /**
+   * Override for the catalog lock acquisition deadline (milliseconds).
+   * Defaults to the owner-aware lock's built-in default (5 s). Lowering
+   * this is primarily useful in tests to prove non-eviction quickly.
+   */
+  lockDeadlineMs?: number;
 }
 
 /**
