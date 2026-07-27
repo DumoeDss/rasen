@@ -121,10 +121,10 @@
 
 ## 11. Projector and simple bug-fix dogfood
 
-- [ ] 11.1 RED: Add projector goldens for full Change identity, workspace identity/scope, status/sourceState/drift, frontier/invocations/actions/effects, stable waits/WaitIds, terminal, diagnostics, and controls.
-- [ ] 11.2 GREEN: Implement one read-only ChangeRunProjector reused by receipts, CLI, management, and UI; isolate invalid Runs without fallback.
-- [ ] 11.3 RED: Add complete v1 decoder compatibility tests: unknown additive section tolerated/preserved, unknown top major rejected, exact root-dag closure and stable ordering.
-- [ ] 11.4 GREEN: Implement shared wire decode/project helpers with no plane-local state derivation.
+- [x] 11.1 RED: Add projector goldens for full Change identity, workspace identity/scope, status/sourceState/drift, frontier/invocations/actions/effects, stable waits/WaitIds, terminal, diagnostics, and controls.
+- [x] 11.2 GREEN: Implement one read-only ChangeRunProjector reused by receipts, CLI, management, and UI; isolate invalid Runs without fallback.
+- [x] 11.3 RED: Add complete v1 decoder compatibility tests: unknown additive section tolerated/preserved, unknown top major rejected, exact root-dag closure and stable ordering.
+- [x] 11.4 GREEN: Implement shared wire decode/project helpers with no plane-local state derivation.
 - [ ] 11.5 RED: Add in-memory simple bug-fix fixture through Gate, implement/verify simple, independently reconciled ship/archive effects, and finish, interrupted at every quiescent point.
 - [ ] 11.6 GREEN: Add only the exact trusted bug-fix capability/action/profile table and v1 lowering needed by the fixture.
 - [ ] 11.7 RED/GREEN: Prove complex route suspends `review_cycle_capability_unavailable` before ship and later-child semantics reject before launch.
