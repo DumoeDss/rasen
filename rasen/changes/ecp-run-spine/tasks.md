@@ -33,13 +33,13 @@
 
 ## 4. Canonical Record, reducer, waits, and limits
 
-- [ ] 4.1 RED: Add closed Record tests for PlanningSpace/ChangeInstance/WorkspaceInstance, frozen digests/revisions, predecessor chain, transitions/actions/effects/waits, counters, and terminal invariants.
-- [ ] 4.2 GREEN: Implement deeply readonly canonical Record and strict transition/action/wait/terminal/stimulus codecs with no separately writable event/projection truth.
-- [ ] 4.3 RED: Add reducer tests for RunStarted, ActionAdmitted, result/effect/infrastructure observations, GateAwaiting/Decided, workspace acceptance, suspension/resume/escalate/cancel/finish, and illegal ordering.
-- [ ] 4.4 GREEN: Implement pure validated reduction returning new values or typed failures with no input mutation or I/O.
-- [ ] 4.5 RED: Add WaitId tests for two Gates with equal decisionId, repeated occurrence, blocked/infrastructure/uncertain/capability/workspace variants, workspace-reservation stable-sorted multi-intent tuple identity, wrong/closed/stale WaitId, and exact required/forbidden fields.
-- [ ] 4.6 GREEN: Implement stable contextual WaitId allocation, exact variant codecs, and WaitId-bound resume/decision/workspace controls.
-- [ ] 4.7 RED/GREEN: Prove every Attempt/Action/Record path obeys sealed maxAttempts, maxActions, revisions, transitions, evidence refs, and execution budgets and commits a bounded terminal/escalated outcome at limit.
+- [x] 4.1 RED: Add closed Record tests for PlanningSpace/ChangeInstance/WorkspaceInstance, frozen digests/revisions, predecessor chain, transitions/actions/effects/waits, counters, and terminal invariants.
+- [x] 4.2 GREEN: Implement deeply readonly canonical Record and strict transition/action/wait/terminal/stimulus codecs with no separately writable event/projection truth.
+- [x] 4.3 RED: Add reducer tests for RunStarted, ActionAdmitted, result/effect/infrastructure observations, GateAwaiting/Decided, workspace acceptance, suspension/resume/escalate/cancel/finish, and illegal ordering.
+- [x] 4.4 GREEN: Implement pure validated reduction returning new values or typed failures with no input mutation or I/O.
+- [x] 4.5 RED: Add WaitId tests for two Gates with equal decisionId, repeated occurrence, blocked/infrastructure/uncertain/capability/workspace variants, workspace-reservation stable-sorted multi-intent tuple identity, wrong/closed/stale WaitId, and exact required/forbidden fields.
+- [x] 4.6 GREEN: Implement stable contextual WaitId allocation, exact variant codecs, and WaitId-bound resume/decision/workspace controls.
+- [x] 4.7 RED/GREEN: Prove every Attempt/Action/Record path obeys sealed maxAttempts, maxActions, revisions, transitions, evidence refs, and execution budgets and commits a bounded terminal/escalated outcome at limit.
 
 ## 5. Pure root-DAG reconciliation and settling
 
