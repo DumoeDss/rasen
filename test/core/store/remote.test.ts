@@ -1,16 +1,16 @@
 /**
  * M9 credential-parser regression tests. The parser lives in
  * `src/core/store/remote.ts` (`remoteCarriesCredentials` +
- * `assertCredentialFreeRemote`); it gates every clone path through
- * `cloneWithCleanupGuard`. These tests pin the intended behavior of the URL
- * parser so a future change to `remoteCarriesCredentials` cannot silently
- * start accepting credential-bearing remotes (false negative) or rejecting
- * legitimate credential-free forms (false positive).
+ * `assertCredentialFreeRemote` + `redactRemote`); it gates every clone path
+ * through `cloneWithCleanupGuard`. These tests pin the intended behavior of
+ * the URL parser so a future change to `remoteCarriesCredentials` cannot
+ * silently start accepting credential-bearing remotes (false negative) or
+ * rejecting legitimate credential-free forms (false positive).
  *
- * The `?token=abc` case in particular is a known false-positive trap: a
- * query-string parameter named `token` is NOT URL userinfo, so the URL
- * carries no embedded credential and must NOT be rejected. tasks.md item 1.4
- * asked for this regression-protection test.
+ * Credentials are detected in three positions: userinfo (password or
+ * token-shaped username), query string, and fragment. Git clone URLs never
+ * legitimately carry query strings or fragments, so any non-empty search/hash
+ * is treated as credential-bearing (default-deny, B4).
  */
 import { describe, expect, it } from 'vitest';
 
@@ -48,35 +48,42 @@ describe('M9 credential parser — remoteCarriesCredentials', () => {
     });
   });
 
-  describe('?token=abc query-string is NOT a credential (tasks.md 1.4 regression)', () => {
-    // A `?token=...` query parameter is NOT URL userinfo. new URL(...) parses
-    // it into url.search, leaving url.username and url.password empty, so the
-    // parser MUST return false. A future change that, e.g., regex-scans for
-    // "token" substrings would falsely reject this remote and break legitimate
-    // deployments that pass deploy tokens as query parameters.
+  describe('query-string and fragment credentials ARE detected (B4 regression)', () => {
+    // Git clone URLs never legitimately carry query strings or fragments. The
+    // only real-world query-bearing git URLs are deploy tokens, signed URLs,
+    // and cloud-provider auth — all credentials. Default-deny on any non-empty
+    // search/hash cannot be bypassed by renaming a parameter.
     it.each([
-      ['https with ?token=abc query', 'https://host.example.com/repo.git?token=abc'],
-      ['https with ?token= and nothing else', 'https://host.example.com/repo.git?token='],
-      ['https with ?access_token= query', 'https://host.example.com/repo.git?access_token=xyz'],
-      ['https with userinfo-absent and ?token= plus path', 'https://host.example.com/sub/repo.git?token=abc&other=1'],
-    ])('does NOT reject %s', (_label, remote) => {
-      expect(remoteCarriesCredentials(remote)).toBe(false);
-      // The guard also must not throw — the remote is credential-free.
-      expect(() => assertCredentialFreeRemote(remote, 'store.pointer')).not.toThrow();
+      ['?token=abc query', 'https://host.example.com/repo.git?token=abc', 'abc'],
+      ['?access_token=xyz query', 'https://host.example.com/repo.git?access_token=xyz', 'xyz'],
+      ['?private_token= query', 'https://host.example.com/repo.git?private_token=', 'private_token'],
+      ['signed-URL ?Signature=&Expires=', 'https://storage.example.com/repo.git?Signature=abc123&Expires=9999999999', 'abc123'],
+      ['#token=secret fragment', 'https://host.example.com/repo.git#token=secret', 'secret'],
+      ['?token= with path prefix and extra params', 'https://host.example.com/sub/repo.git?token=abc&other=1', 'abc'],
+    ])('rejects %s', (_label, remote, secret) => {
+      expect(remoteCarriesCredentials(remote)).toBe(true);
+      expect(() => assertCredentialFreeRemote(remote, 'store.pointer')).toThrow(StoreError);
+      expect(redactRemote(remote)).not.toContain(secret);
     });
 
-    it('a query-string token does NOT change the redacted form (redactRemote is a no-op)', () => {
-      const remote = 'https://host.example.com/repo.git?token=abc';
-      // No credentials → redactRemote returns the input unchanged. The query
-      // string survives because the parser never classified it as a secret.
-      expect(redactRemote(remote)).toBe(remote);
+    it('redactRemote drops the query and shows ?<redacted> (no secret echo)', () => {
+      const remote = 'https://host.example.com/repo.git?access_token=secret';
+      expect(redactRemote(remote)).toBe('https://host.example.com/repo.git?<redacted>');
+      expect(redactRemote(remote)).not.toContain('secret');
+      expect(redactRemote(remote)).not.toContain('access_token');
+    });
+
+    it('redactRemote redacts both userinfo and query when both carry secrets', () => {
+      const remote = 'https://token@host.example.com/repo.git?private_token=xyz';
+      expect(redactRemote(remote)).toBe('https://<redacted>@host.example.com/repo.git?<redacted>');
+      expect(redactRemote(remote)).not.toContain('xyz');
+      expect(redactRemote(remote)).not.toContain('private_token');
     });
 
     it('contrast: a real userinfo token IS rejected and redacted (parser sanity)', () => {
       // Same host and token, but now in userinfo position. The parser MUST
-      // catch this. This is the contrast case that makes the query-string
-      // test meaningful: the parser's discrimination is positional, not
-      // substring-based.
+      // catch this. This is the contrast case that confirms the parser's
+      // discrimination is positional, not substring-based.
       const remote = 'https://abc@host.example.com/repo.git';
       expect(remoteCarriesCredentials(remote)).toBe(true);
       expect(redactRemote(remote)).toBe('https://<redacted>@host.example.com/repo.git');

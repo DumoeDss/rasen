@@ -25,23 +25,36 @@ function parseRemoteUrl(remote: string): URL | null {
   }
 }
 
-/** True when the remote embeds a password or a token-shaped username. */
+/** True when the remote embeds a secret in userinfo, query string, or fragment. */
 export function remoteCarriesCredentials(remote: string): boolean {
   const url = parseRemoteUrl(remote);
   if (!url) return false;
   if (url.password.length > 0) return true;
-  return url.username.length > 0 && !SSH_LIKE_PROTOCOLS.has(url.protocol);
+  if (url.username.length > 0 && !SSH_LIKE_PROTOCOLS.has(url.protocol)) return true;
+  // Git clone URLs never legitimately carry query strings or fragments — the
+  // only real-world uses are deploy tokens, signed URLs, and cloud-provider
+  // auth parameters. Default-deny: any non-empty search/hash is credential-bearing.
+  if (url.search !== '' || url.hash !== '') return true;
+  return false;
 }
 
 /**
- * `<scheme>://<redacted>@<host><path>` for a credential-bearing remote; every
- * other value is returned verbatim so an ordinary SSH remote renders unchanged.
+ * Renders a credential-bearing remote with every secret position replaced by a
+ * redaction marker. `<redacted>@` covers userinfo secrets; `?<redacted>` covers
+ * query/fragment secrets. A credential-free value is returned verbatim so an
+ * ordinary SSH or HTTPS remote renders unchanged.
  */
 export function redactRemote(remote: string): string {
   if (!remoteCarriesCredentials(remote)) return remote;
   const url = parseRemoteUrl(remote);
   if (!url) return remote;
-  return `${url.protocol}//<redacted>@${url.host}${url.pathname}${url.search}${url.hash}`;
+  const hasUserinfoSecret =
+    url.password.length > 0 ||
+    (url.username.length > 0 && !SSH_LIKE_PROTOCOLS.has(url.protocol));
+  const hasSearchOrHash = url.search !== '' || url.hash !== '';
+  const auth = hasUserinfoSecret ? '<redacted>@' : '';
+  const query = hasSearchOrHash ? '?<redacted>' : '';
+  return `${url.protocol}//${auth}${url.host}${url.pathname}${query}`;
 }
 
 /** Optional-friendly wrapper, for the many places a remote may be absent. */
