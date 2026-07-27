@@ -23,7 +23,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
-import { pathIsFile, writeFileAtomically } from '../file-state.js';
+import { isNodeErrorCode, pathIsFile, writeFileAtomically } from '../file-state.js';
 import { isKebabId } from '../id.js';
 import { formatZodIssues } from '../zod-issues.js';
 import { StoreError, type StoreDiagnostic } from './errors.js';
@@ -96,6 +96,23 @@ const PROJECT_UUID_PATTERN =
  */
 export function normalizeProjectIdentity(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/**
+ * Whether two project-identity strings refer to the same project, using the
+ * normalized (trim + lowercase) form so a hand-edited uppercase UUID never
+ * reads as a second project. Two `undefined` values are equal; a defined value
+ * and `undefined` are not — so a missing config identity is never silently
+ * treated as matching a registered one (M3).
+ */
+export function sameProjectIdentity(
+  left: string | undefined,
+  right: string | undefined
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+  return normalizeProjectIdentity(left) === normalizeProjectIdentity(right);
 }
 
 /**
@@ -352,8 +369,26 @@ function keyMismatchDiagnostic(
 }
 
 async function readRecordFile(filePath: string): Promise<StoreProjectRecord | null> {
-  if (!(await pathIsFile(filePath))) return null;
-  return parseStoreProjectRecord(await fs.readFile(filePath, 'utf-8'), filePath);
+  // M4: only ENOENT is the ordinary "no record yet" state. Any other stat/read
+  // failure (EACCES, EIO, EBUSY, Windows delete-pending, network drive blip)
+  // means a real member is unreadable — report it, never silently treat it as
+  // absent. The caller wraps StoreError in a diagnostic.
+  try {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) return null;
+    return parseStoreProjectRecord(await fs.readFile(filePath, 'utf-8'), filePath);
+  } catch (error) {
+    if (isNodeErrorCode(error, 'ENOENT')) return null;
+    if (error instanceof StoreError) throw error;
+    throw new StoreError(
+      `Cannot read project record ${filePath} (${(error as NodeJS.ErrnoException).code ?? error}).`,
+      'store_project_record_unreadable',
+      {
+        target: 'store.membership',
+        fix: `Check permissions on ${filePath} and retry.`,
+      }
+    );
+  }
 }
 
 /**
@@ -413,10 +448,23 @@ export async function listStoreProjectRecords(
   let entries: nodeFs.Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    // No records directory is the ordinary state of a Store nobody has added a
-    // project to; it is not an error and never created on read.
-    return { records: [], diagnostics: [] };
+  } catch (error) {
+    if (isNodeErrorCode(error, 'ENOENT')) {
+      // No records directory is the ordinary state of a Store nobody has added
+      // a project to; it is not an error and never created on read.
+      return { records: [], diagnostics: [] };
+    }
+    // M4: a directory that exists but cannot be enumerated (EACCES, EIO,
+    // EBUSY, network drive blip) is NOT empty — report it, never silently hide
+    // a real roster behind an absent-looking result.
+    throw new StoreError(
+      `Cannot enumerate project records in ${dir} (${(error as NodeJS.ErrnoException).code ?? error}).`,
+      'store_project_records_unreadable',
+      {
+        target: 'store.membership',
+        fix: `Check permissions on ${dir} and retry.`,
+      }
+    );
   }
 
   const records: StoreProjectRecord[] = [];

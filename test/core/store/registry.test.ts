@@ -23,6 +23,12 @@ import {
   type StoreGitBackendConfig,
   type StoreRegistryState,
 } from '../../../src/core/index.js';
+import { commitStoreRegistration } from '../../../src/core/store/registry.js';
+import {
+  acquireOwnerAwareFileLock,
+  machineLockPath,
+  releaseOwnerAwareFileLock,
+} from '../../../src/core/file-state.js';
 
 describe('store registry facade', () => {
   let tempDir: string;
@@ -641,6 +647,93 @@ describe('store registry facade', () => {
       expect(() =>
         assertNoRegisteredStoreConflict(registry, 'project', 'elftia', backendAt(sharedPath))
       ).not.toThrow();
+    });
+  });
+
+  describe('concurrent registration serialization (B5)', () => {
+    function cleanRootLock(storeRoot: string): void {
+      const lockPath = machineLockPath(path.resolve(storeRoot));
+      fs.rmSync(lockPath, { force: true });
+    }
+
+    afterEach(() => {
+      // Clean any lock files left by tests in this block.
+      for (const dir of fs.readdirSync(tempDir, { withFileTypes: true })) {
+        if (dir.isDirectory()) {
+          const candidate = path.join(tempDir, dir.name);
+          // Walk one level for store roots.
+          for (const inner of fs.readdirSync(candidate, { withFileTypes: true })) {
+            if (inner.isDirectory()) cleanRootLock(path.join(candidate, inner.name));
+          }
+        }
+      }
+    });
+
+    it('serializes same-root registrations via a per-root lock', async () => {
+      const storeRoot = mkdir('stores/acme-b5');
+
+      // Pre-acquire the per-root registration lock so the registration queues
+      // deterministically. Pre-fix (no lock), the registration resolves
+      // immediately; post-fix it blocks until the lock is released.
+      const lockPath = machineLockPath(path.resolve(storeRoot));
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      let resolved = false;
+      const promise = commitStoreRegistration({
+        id: 'acme-b5',
+        backend: { type: 'git', local_path: storeRoot },
+        writeMetadataIfMissing: true,
+        globalDataDir: tempDir,
+      }).then(() => {
+        resolved = true;
+      });
+
+      // Give the registration a moment to hit the lock.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Post-fix: the registration is blocked by the pre-acquired lock.
+      // Pre-fix: no lock exists, so it already resolved.
+      expect(resolved).toBe(false);
+
+      await releaseOwnerAwareFileLock(block);
+      await promise;
+      expect(resolved).toBe(true);
+
+      // Metadata was written successfully.
+      expect(fs.existsSync(getStoreMetadataPath(storeRoot))).toBe(true);
+
+      cleanRootLock(storeRoot);
+    });
+
+    it('both concurrent same-root registrations succeed and metadata survives', async () => {
+      const storeRoot = mkdir('stores/acme-b5-concurrent');
+
+      const results = await Promise.allSettled([
+        commitStoreRegistration({
+          id: 'acme-b5-concurrent',
+          backend: { type: 'git', local_path: storeRoot },
+          writeMetadataIfMissing: true,
+          globalDataDir: tempDir,
+        }),
+        commitStoreRegistration({
+          id: 'acme-b5-concurrent',
+          backend: { type: 'git', local_path: storeRoot },
+          writeMetadataIfMissing: true,
+          globalDataDir: tempDir,
+        }),
+      ]);
+
+      // Both succeed (serialized rerun of the same alias/root).
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+
+      // Metadata file is intact.
+      const metadata = await readStoreMetadataState(storeRoot);
+      expect(metadata.id).toBe('acme-b5-concurrent');
+
+      cleanRootLock(storeRoot);
     });
   });
 });

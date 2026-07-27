@@ -14,6 +14,7 @@ import {
   listStoreRegistryEntries,
   readStoreRegistryState,
 } from '../store/foundation.js';
+import { sameProjectIdentity } from '../store/project-records.js';
 import {
   requireSessionRuntimeContext,
   type RuntimeContext,
@@ -303,7 +304,7 @@ async function canonicalizeProjectLocator(
   const registered = await findProjectRegistryEntry(root, pathOptions(globalDataDir));
 
   if (registered) {
-    if (configuredId !== registered.entry.projectId) {
+    if (!sameProjectIdentity(configuredId, registered.entry.projectId)) {
       fail(
         'knowledge_owner_stale',
         `Project locator '${entry.id}' resolves to ${root}, but its project registry and config identities do not match. Run \`rasen init\` in that project or repair its registry entry.`,
@@ -334,7 +335,9 @@ async function resolveMachineProjectById(
 ): Promise<Extract<ResolvedKnowledgeOwnerRef, { type: 'project' }> | null> {
   const state = await readProjectRegistryState(pathOptions(globalDataDir));
   if (!state) return null;
-  const matches = Object.entries(state.projects).filter(([, entry]) => entry.projectId === id);
+  const matches = Object.entries(state.projects).filter(([, entry]) =>
+    sameProjectIdentity(entry.projectId, id)
+  );
   if (matches.length > 1) {
     fail(
       'knowledge_owner_ambiguous',
@@ -344,7 +347,10 @@ async function resolveMachineProjectById(
   }
   if (matches.length === 0) return null;
   const [root, entry] = matches[0] as [string, ProjectRegistryEntryState];
-  if (!pathExistsAsDirectory(root) || readProjectConfig(root)?.projectId !== entry.projectId) {
+  if (
+    !pathExistsAsDirectory(root) ||
+    !sameProjectIdentity(readProjectConfig(root)?.projectId, entry.projectId)
+  ) {
     fail(
       'knowledge_owner_stale',
       `Project owner '${id}' no longer resolves to matching project registry and config identity facts. Run \`rasen init\` in that project or repair its registry entry.`,
@@ -550,7 +556,7 @@ async function resolveLaunchOwner(
   );
   if (registered) {
     const configuredId = readProjectConfig(canonicalRoot)?.projectId;
-    if (configuredId !== registered.entry.projectId) {
+    if (!sameProjectIdentity(configuredId, registered.entry.projectId)) {
       fail(
         'knowledge_owner_stale',
         `The registered project at ${canonicalRoot} no longer matches its projectId metadata. Run \`rasen init\` to repair it.`,
@@ -905,14 +911,14 @@ function resolveEvaluationRoot(
   if (owner.type !== 'project') return canonicalizeOrResolve(ownerDirectory);
   if (
     sessionContext?.execution.kind === 'project' &&
-    sessionContext.execution.projectId === owner.id
+    sameProjectIdentity(sessionContext.execution.projectId, owner.id)
   ) {
     return canonicalizeOrResolve(sessionContext.execution.root);
   }
   const launchedRoot = findQualifyingRootSync(ownerDirectory);
   if (launchedRoot) {
     const canonical = canonicalizeOrResolve(launchedRoot);
-    if (readProjectConfig(canonical)?.projectId === owner.id) return canonical;
+    if (sameProjectIdentity(readProjectConfig(canonical)?.projectId, owner.id)) return canonical;
   }
   return owner.root;
 }

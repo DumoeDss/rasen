@@ -732,7 +732,7 @@ function recordsEqual(left: StoreProjectRecord, right: StoreProjectRecord): bool
  * problem with a "check permissions" fix; a timeout reports a busy peer with
  * a "retry / inspect the lock" fix.
  */
-const membershipRecordLockError = makeLockErrorFactory({
+export const membershipRecordLockError = makeLockErrorFactory({
   createSubject: 'the Store membership record lock file',
   busyMessage: 'The Store membership record is busy.',
   code: 'store_membership_record_busy',

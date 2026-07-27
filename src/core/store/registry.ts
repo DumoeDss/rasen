@@ -36,6 +36,11 @@ import {
 import type { StoreDiagnostic } from './errors.js';
 import * as path from 'node:path';
 import { FileSystemUtils } from '../../utils/file-system.js';
+import {
+  makeLockErrorFactory,
+  machineLockPath,
+  withOwnerAwareFileLock,
+} from '../file-state.js';
 
 export interface RegisterStoreInput extends StorePathOptions {
   id: string;
@@ -505,6 +510,18 @@ async function verifyStoreIdentity(
   return { metadata, ...(uid !== undefined ? { uid } : {}) };
 }
 
+/**
+ * Lock-error factory for the per-root registration lock. Same shape as the
+ * registry / membership lock factories: a create-failure reports a filesystem
+ * problem; a timeout reports a busy peer.
+ */
+const storeRegistrationLockError = makeLockErrorFactory({
+  createSubject: 'the store registration lock file',
+  busyMessage: 'Store registration is busy for this checkout.',
+  code: 'store_registration_busy',
+  target: 'store.registry',
+});
+
 export async function commitStoreRegistration(
   input: CommitStoreRegistrationInput
 ): Promise<StoreRegistrationCommit> {
@@ -512,6 +529,28 @@ export async function commitStoreRegistration(
   const type = input.type ?? 'store';
   const backend = input.backend;
   const storeRoot = getStoreRootForBackend(backend);
+
+  // B5: serialize same-root registrations so two registrations of the same
+  // checkout (even under different aliases) cannot interleave their
+  // verify→write→register sequence. The lock is machine-local, keyed by the
+  // canonical root path; different roots proceed in parallel.
+  return withOwnerAwareFileLock(
+    {
+      lockPath: machineLockPath(path.resolve(storeRoot)),
+      errorFor: storeRegistrationLockError,
+      holder: 'store-registration',
+    },
+    () => commitStoreRegistrationLocked(input, id, type, backend, storeRoot)
+  );
+}
+
+async function commitStoreRegistrationLocked(
+  input: CommitStoreRegistrationInput,
+  id: string,
+  type: RegistryEntryType,
+  backend: StoreBackendConfig,
+  storeRoot: string
+): Promise<StoreRegistrationCommit> {
   const diagnostics: StoreDiagnostic[] = [];
 
   // Verification first, writes second (design D6). Nothing below this line
@@ -598,9 +637,24 @@ export async function commitStoreRegistration(
     }
   } catch (error) {
     if (metadataCreated) {
-      // A concurrent registration may have read our metadata as
-      // pre-existing and committed against it - never delete metadata a
-      // committed registry entry depends on.
+      // B5: defense-in-depth. The per-root lock serializes registrations, but
+      // a stolen stale lock (SIGKILL) could still let two interleave. Verify
+      // the metadata still belongs to THIS transaction before deleting: if
+      // another registration overwrote it (different id, or upgraded to a
+      // uid-bearing v2 form), this transaction no longer owns it.
+      const currentMetadata = await readOptionalStoreMetadataState(storeRoot).catch(
+        () => null
+      );
+      const currentUid = storeMetadataUid(currentMetadata);
+      const metadataStillOurs =
+        currentMetadata !== null &&
+        currentMetadata.id === id &&
+        // This transaction created v1 metadata (verified.uid was undefined).
+        // If the current state carries a uid (v2 upgrade), someone else owns it.
+        (verified.uid === undefined ? currentUid === undefined : storeUidsMatch(verified.uid, currentUid));
+
+      // The registry lookup stays as a secondary guard: a committed entry
+      // that references this identity by uid/alias/key blocks deletion too.
       const current = await readStoreRegistryState({
         globalDataDir: input.globalDataDir,
       }).catch(() => null);
@@ -608,7 +662,8 @@ export async function commitStoreRegistration(
         (uid !== undefined && findRegistryEntryByUid(current, uid) !== null) ||
         findRegistryEntryKeys(current, type, id).length > 0 ||
         (registryKey !== undefined && current?.stores[registryKey] !== undefined);
-      if (!stillReferenced) {
+
+      if (metadataStillOurs && !stillReferenced) {
         await fs.rm(getStoreMetadataPath(storeRoot), { force: true });
         await fs.rmdir(getStoreMetadataDir(storeRoot)).catch(() => undefined);
       }

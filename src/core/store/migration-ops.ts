@@ -11,7 +11,7 @@ import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
-import { pathIsDirectory } from '../file-state.js';
+import { machineLockPath, pathIsDirectory, withOwnerAwareFileLock } from '../file-state.js';
 import {
   classifyOpenSpecDir,
   describeStoreDeclaration,
@@ -57,6 +57,7 @@ import type { ResolvedStoreRef } from './identity-types.js';
 import {
   listStoreMembers,
   membershipHintFor,
+  membershipRecordLockError,
   membershipStoreLabel,
   writeMembershipLocator,
   writeMembershipRecord,
@@ -66,6 +67,7 @@ import {
   getStoreProjectRecordPath,
   isRecordableProjectIdentity,
   listStoreProjectRecords,
+  mergeStoreProjectRoles,
   projectIdentityDiagnostic,
   readStoreProjectRecord,
   writeStoreProjectRecord,
@@ -211,17 +213,33 @@ export async function clearProjectOwnership(
   projectId: string
 ): Promise<void> {
   if (isRecordableProjectIdentity(projectId)) {
-    const read = await readStoreProjectRecord(storeRoot, projectId);
-    if (read.record) {
-      const roles = { planning: false, knowledge: read.record.roles.knowledge };
-      if (!roles.knowledge) {
-        await deleteStoreProjectRecord(storeRoot, projectId);
-      } else {
-        const { adoption: _dropped, ...rest } = read.record;
-        void _dropped;
-        await writeStoreProjectRecord(storeRoot, { ...rest, roles });
+    // B6: acquire the same per-record lock writeMembershipRecord uses, and
+    // re-read inside it. Without this, a concurrent add-project that writes a
+    // new role between the read above and the overwrite here would be silently
+    // dropped.
+    const lockPath = machineLockPath(
+      path.resolve(getStoreProjectRecordPath(storeRoot, projectId))
+    );
+    await withOwnerAwareFileLock(
+      {
+        lockPath,
+        errorFor: membershipRecordLockError,
+        holder: 'store-membership-record',
+      },
+      async () => {
+        const read = await readStoreProjectRecord(storeRoot, projectId);
+        if (read.record) {
+          const roles = { planning: false, knowledge: read.record.roles.knowledge };
+          if (!roles.knowledge) {
+            await deleteStoreProjectRecord(storeRoot, projectId);
+          } else {
+            const { adoption: _dropped, ...rest } = read.record;
+            void _dropped;
+            await writeStoreProjectRecord(storeRoot, { ...rest, roles });
+          }
+        }
       }
-    }
+    );
   }
   await removeAdoptionEntry(storeRoot, projectId);
 }
@@ -1319,28 +1337,58 @@ export async function migrateStoreMembership(
     };
 
     if (input.apply) {
-      const record: StoreProjectRecord = {
-        version: 1,
-        projectId: member.projectId,
-        ...(member.id !== undefined ? { id: member.id } : {}),
-        ...(member.remote !== undefined ? { remote: member.remote } : {}),
-        roles: member.roles,
-        ...(member.adoption !== undefined ? { adoption: member.adoption } : {}),
-      };
-      const written = await writeStoreProjectRecord(storeRoot, record);
-      // Read back before this record counts as converted: the legacy data is
-      // only allowed to go once every record it produced is provably on disk.
-      const verified = await readStoreProjectRecord(storeRoot, member.projectId);
-      if (!verified.record) {
-        throw new StoreError(
-          `The membership record for project ${member.projectId} did not read back after being written (${written}); the legacy data was left untouched.`,
-          'migrate_membership_verify_failed',
-          {
-            target: 'store.membership',
-            fix: `Inspect ${written} and rerun 'rasen store migrate-membership ${label.selector} --apply'.`,
+      // B6: acquire the same per-record lock writeMembershipRecord uses, and
+      // re-read inside it. A concurrent add-project may have already written a
+      // role to this record; merge rather than blindly overwrite so the
+      // concurrent role survives. Each record has its own lock path — acquire
+      // and release per record, never hold all simultaneously (deadlock).
+      const recordLockPath = machineLockPath(
+        path.resolve(getStoreProjectRecordPath(storeRoot, member.projectId))
+      );
+      const written = await withOwnerAwareFileLock(
+        {
+          lockPath: recordLockPath,
+          errorFor: membershipRecordLockError,
+          holder: 'store-membership-record',
+        },
+        async () => {
+          const current = await readStoreProjectRecord(storeRoot, member.projectId);
+          const currentRecord = current.record;
+          // Merge: prefer the live record's id/remote/knowledgeBundle (set by
+          // a more recent add-project), widen roles from both sources, carry
+          // the legacy adoption forward when not already set.
+          const mergedId = currentRecord?.id ?? member.id;
+          const mergedRemote = currentRecord?.remote ?? member.remote;
+          const mergedAdoption = member.adoption ?? currentRecord?.adoption;
+          const record: StoreProjectRecord = {
+            version: 1,
+            projectId: member.projectId,
+            ...(mergedId !== undefined ? { id: mergedId } : {}),
+            ...(mergedRemote !== undefined ? { remote: mergedRemote } : {}),
+            ...(currentRecord?.knowledgeBundle !== undefined
+              ? { knowledgeBundle: currentRecord.knowledgeBundle }
+              : {}),
+            roles: mergeStoreProjectRoles(currentRecord?.roles, member.roles),
+            ...(mergedAdoption !== undefined ? { adoption: mergedAdoption } : {}),
+          };
+          const writePath = await writeStoreProjectRecord(storeRoot, record);
+          // Read back before this record counts as converted: the legacy data
+          // is only allowed to go once every record it produced is provably on
+          // disk.
+          const verified = await readStoreProjectRecord(storeRoot, member.projectId);
+          if (!verified.record) {
+            throw new StoreError(
+              `The membership record for project ${member.projectId} did not read back after being written (${writePath}); the legacy data was left untouched.`,
+              'migrate_membership_verify_failed',
+              {
+                target: 'store.membership',
+                fix: `Inspect ${writePath} and rerun 'rasen store migrate-membership ${label.selector} --apply'.`,
+              }
+            );
           }
-        );
-      }
+          return writePath;
+        }
+      );
       entry.recordPath = written;
     }
 

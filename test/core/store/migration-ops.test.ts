@@ -10,8 +10,21 @@ import {
   relocateArchive,
   homePrune,
   diagnoseMigrationDrift,
+  clearProjectOwnership,
+  migrateStoreMembership,
   UNASSIGNED_PROJECT_ID,
 } from '../../../src/core/store/migration-ops.js';
+import {
+  acquireOwnerAwareFileLock,
+  machineLockPath,
+  releaseOwnerAwareFileLock,
+} from '../../../src/core/file-state.js';
+import {
+  getStoreProjectRecordPath,
+  readStoreProjectRecord,
+  writeStoreProjectRecord,
+} from '../../../src/core/store/project-records.js';
+import { writeMembershipRecord } from '../../../src/core/store/membership.js';
 import {
   ensureProjectIdInConfig,
   readStorePointer,
@@ -461,4 +474,128 @@ describe('store migration ops', () => {
     fs.mkdirSync(home!.archiveDir, { recursive: true });
     return home!.archiveDir;
   }
+
+  describe('membership record mutation safety (B6)', () => {
+    const EJECT_PROJECT = 'd5d5d5d5-d5d5-4d5d-8d5d-d5d5d5d5d5d5';
+
+    function cleanRecordLock(projectId: string): void {
+      const lockPath = machineLockPath(
+        path.resolve(getStoreProjectRecordPath(storeRoot, projectId))
+      );
+      fs.rmSync(lockPath, { force: true });
+    }
+
+    afterEach(() => {
+      cleanRecordLock(EJECT_PROJECT);
+    });
+
+    it('clearProjectOwnership acquires the shared membership lock', async () => {
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: EJECT_PROJECT,
+        roles: { planning: true, knowledge: true },
+      });
+
+      // Pre-acquire the per-record lock so clearProjectOwnership queues
+      // deterministically. Pre-fix (no lock), it completes immediately;
+      // post-fix it blocks until the lock is released.
+      const lockPath = machineLockPath(
+        path.resolve(getStoreProjectRecordPath(storeRoot, EJECT_PROJECT))
+      );
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      let resolved = false;
+      const promise = clearProjectOwnership(storeRoot, EJECT_PROJECT).then(() => {
+        resolved = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(resolved).toBe(false);
+
+      await releaseOwnerAwareFileLock(block);
+      await promise;
+      expect(resolved).toBe(true);
+
+      const after = await readStoreProjectRecord(storeRoot, EJECT_PROJECT);
+      expect(after.record?.roles).toEqual({ planning: false, knowledge: true });
+    });
+
+    it('preserves a concurrent add-project role when eject runs concurrently', async () => {
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: EJECT_PROJECT,
+        roles: { planning: true, knowledge: false },
+      });
+
+      const store = { type: 'store' as const, id: 'team-store', root: storeRoot };
+
+      const lockPath = machineLockPath(
+        path.resolve(getStoreProjectRecordPath(storeRoot, EJECT_PROJECT))
+      );
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      const promise = Promise.all([
+        clearProjectOwnership(storeRoot, EJECT_PROJECT),
+        writeMembershipRecord({
+          projectRoot: tempDir,
+          projectId: EJECT_PROJECT,
+          store,
+          roles: { planning: false, knowledge: true },
+          globalDataDir,
+        }),
+      ]);
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await releaseOwnerAwareFileLock(block);
+      await promise;
+
+      const final = await readStoreProjectRecord(storeRoot, EJECT_PROJECT);
+      expect(final.record?.roles).toEqual({ planning: false, knowledge: true });
+    });
+
+    it('migrateStoreMembership apply acquires the per-record lock', async () => {
+      const projectRoot = path.join(tempDir, 'legacy-project');
+      createOpenSpecRoot(projectRoot);
+      ensureProjectIdInConfig(projectRoot, EJECT_PROJECT);
+      upsertAdoptionEntry(storeRoot, EJECT_PROJECT, {
+        specs: ['billing'],
+        changes: [],
+        timestamp: '2026-07-27T00:00:00Z',
+      });
+
+      const lockPath = machineLockPath(
+        path.resolve(getStoreProjectRecordPath(storeRoot, EJECT_PROJECT))
+      );
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      let resolved = false;
+      const promise = migrateStoreMembership({
+        storeId: 'team-store',
+        apply: true,
+        globalDataDir,
+      }).then(() => {
+        resolved = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(resolved).toBe(false);
+
+      await releaseOwnerAwareFileLock(block);
+      await promise;
+      expect(resolved).toBe(true);
+
+      const record = await readStoreProjectRecord(storeRoot, EJECT_PROJECT);
+      expect(record.record).not.toBeNull();
+      expect(record.record?.roles.planning).toBe(true);
+    });
+  });
 });

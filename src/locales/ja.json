@@ -204,6 +204,7 @@
     "retired": "{scope} 学習スキル「{id}」を廃止しました。",
     "renamed": "学習スキルを「{id}」に改名しました。",
     "noop": "変更なし: 「{id}」はすでにこの証跡を反映しています。",
+    "mutationDegraded": "縮退: {detail}",
     "listHeading": "学習スキル",
     "listEmpty": "学習スキルが見つかりません。",
     "listRow": "{marker} {id} [{scope}/{status}] {description}",

@@ -19,6 +19,7 @@ import * as path from 'node:path';
 
 import { readProjectConfig } from '../project-config.js';
 import { readProjectRegistryState } from '../project-registry.js';
+import { sameProjectIdentity } from '../store/project-records.js';
 import type { RuntimeContext } from '../session-runtime-context.js';
 import type { FrozenExecutionRef } from '../learned-skills/types.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
@@ -91,7 +92,7 @@ async function registeredCheckoutsFor(
   );
   if (!state) return [];
   const roots = Object.entries(state.projects)
-    .filter(([, entry]) => entry.projectId === projectId)
+    .filter(([, entry]) => sameProjectIdentity(entry.projectId, projectId))
     .map(([root]) => root)
     .sort();
   // Canonical dedupe (task 6.5): two registry keys that differ only by
@@ -120,7 +121,7 @@ export async function resolveFrozenExecutionBinding(
   // frozen identity is reported; it never retargets the run.
   if (
     input.explicitProjectId !== undefined &&
-    input.explicitProjectId !== frozenProjectId
+    !sameProjectIdentity(input.explicitProjectId, frozenProjectId)
   ) {
     return {
       ok: false,
@@ -135,7 +136,7 @@ export async function resolveFrozenExecutionBinding(
   // which linked worktree.
   const sessionExecution = input.sessionContext?.execution;
   if (sessionExecution && sessionExecution.kind === 'project') {
-    if (sessionExecution.projectId !== frozenProjectId) {
+    if (!sameProjectIdentity(sessionExecution.projectId, frozenProjectId)) {
       return {
         ok: false,
         code: 'project_binding_mismatch',
@@ -169,7 +170,7 @@ export async function resolveFrozenExecutionBinding(
   // recorded identity is the frozen project — never merely because it is
   // where the command was typed.
   const cwdIdentity = checkoutIdentity(input.cwd);
-  if (cwdIdentity === frozenProjectId) {
+  if (sameProjectIdentity(cwdIdentity, frozenProjectId)) {
     return {
       ok: true,
       kind: 'project',

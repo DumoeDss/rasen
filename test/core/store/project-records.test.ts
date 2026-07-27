@@ -16,6 +16,7 @@ import {
   projectIdentityDiagnostic,
   projectIdentityRecordProblem,
   readStoreProjectRecord,
+  sameProjectIdentity,
   serializeStoreProjectRecord,
   writeStoreProjectRecord,
   type StoreProjectRecord,
@@ -238,6 +239,49 @@ describe('store project membership records', () => {
       expect(fs.existsSync(getStoreProjectRecordsDir(storeRoot))).toBe(false);
     });
 
+    it('returns null cleanly for a genuinely missing record (M4 ENOENT)', async () => {
+      const read = await readStoreProjectRecord(storeRoot, UUID);
+      expect(read.record).toBeNull();
+      expect(read.diagnostics).toEqual([]);
+    });
+
+    it.skipIf(process.platform === 'win32')(
+      'reports a diagnostic when a record file is unreadable (M4 EACCES)',
+      async () => {
+        // POSIX-only: chmod the record file to 000 so readFile fails with
+        // EACCES. Pre-fix, the catch-all pathIsFile swallowed this as
+        // "absent"; post-fix it surfaces a diagnostic. (On Windows, stat of
+        // a path inside a non-directory yields ENOENT — the readdir test
+        // below covers the same ENOENT-discrimination cross-platform.)
+        const recordsDir = getStoreProjectRecordsDir(storeRoot);
+        fs.mkdirSync(recordsDir, { recursive: true });
+        const recordPath = getStoreProjectRecordPath(storeRoot, UUID);
+        fs.writeFileSync(recordPath, 'not: valid\n', 'utf-8');
+        fs.chmodSync(recordPath, 0o000);
+
+        try {
+          const read = await readStoreProjectRecord(storeRoot, UUID);
+          expect(read.record).toBeNull();
+          expect(read.diagnostics.length).toBeGreaterThan(0);
+          expect(read.diagnostics[0]?.code).toBe('store_project_record_unreadable');
+        } finally {
+          fs.chmodSync(recordPath, 0o644);
+        }
+      }
+    );
+
+    it('listStoreProjectRecords throws for an unreadable records directory (M4)', async () => {
+      // A file where a directory is expected → readdir throws ENOTDIR, not
+      // ENOENT. Pre-fix: silently returns empty. Post-fix: throws StoreError.
+      const recordsDir = getStoreProjectRecordsDir(storeRoot);
+      fs.mkdirSync(path.dirname(recordsDir), { recursive: true });
+      fs.writeFileSync(recordsDir, 'not a directory\n', 'utf-8');
+
+      await expect(listStoreProjectRecords(storeRoot)).rejects.toThrow(
+        /Cannot enumerate/u
+      );
+    });
+
     it('deletes a record, and reports the no-op when there is none', async () => {
       expect(await deleteStoreProjectRecord(storeRoot, UUID)).toBe(false);
       await writeStoreProjectRecord(storeRoot, record());
@@ -261,6 +305,22 @@ describe('store project membership records', () => {
         planning: false,
         knowledge: true,
       });
+    });
+  });
+
+  describe('sameProjectIdentity (M3 canonical comparison)', () => {
+    it('recognizes the same UUID ignoring case', () => {
+      const lower = '3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11';
+      const upper = '3C0F0A3E-9E2B-4A0E-8C2F-6D5B1F0A7E11';
+      expect(sameProjectIdentity(lower, upper)).toBe(true);
+    });
+
+    it('recognizes the same identity ignoring surrounding whitespace', () => {
+      expect(sameProjectIdentity('  elftia  ', 'elftia')).toBe(true);
+    });
+
+    it('does not match a defined value against undefined', () => {
+      expect(sameProjectIdentity('elftia', undefined)).toBe(false);
     });
   });
 });

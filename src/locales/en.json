@@ -204,6 +204,7 @@
     "retired": "Retired {scope} learned skill \"{id}\".",
     "renamed": "Renamed learned skill to \"{id}\".",
     "noop": "No change: \"{id}\" already reflects this evidence.",
+    "mutationDegraded": "Degraded: {detail}",
     "listHeading": "Learned skills",
     "listEmpty": "No learned skills found.",
     "listRow": "{marker} {id} [{scope}/{status}] {description}",

@@ -506,4 +506,24 @@ describe('learned-skill execution context', () => {
       )
     ).toBe(project.root);
   });
+
+  it('recognizes a case-differing project identity across config and registry (M3)', async () => {
+    const project = await createProject('case-project');
+    // Sabotage: write the config with an UPPERCASE UUID (a hand-edit in the
+    // wild). The registry keeps the lowercase form from resolveProjectHome.
+    // Pre-fix, the raw !== comparison at context.ts saw case ≠ case and
+    // reported knowledge_owner_stale. Post-fix, sameProjectIdentity normalizes.
+    const configPath = path.join(project.root, 'rasen', 'config.yaml');
+    fs.writeFileSync(
+      configPath,
+      `schema: spec-driven\nprojectId: ${project.id.toUpperCase()}\n`
+    );
+
+    const context = await resolveLearnedSkillExecutionContext({
+      launchDirectory: project.root,
+      requestedScope: 'project',
+      globalDataDir,
+    });
+    expect(context.owner).toMatchObject({ type: 'project', root: project.root });
+  });
 });

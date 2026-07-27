@@ -269,4 +269,44 @@ describe('frozen-resume execution binding', () => {
       }
     );
   });
+
+  describe('project identity canonical comparison (M3)', () => {
+    const UUID_LOWER = '3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11';
+    const UUID_UPPER = '3C0F0A3E-9E2B-4A0E-8C2F-6D5B1F0A7E11';
+
+    it('recognizes a case-differing UUID in the session context as the same project', async () => {
+      const checkout = makeCheckout('checkout-case', UUID_LOWER);
+      // Frozen as uppercase, session carries lowercase — pre-fix, the raw ===
+      // comparison reported a mismatch.
+      const result = await resolveFrozenExecutionBinding({
+        frozen: { kind: 'project', projectId: UUID_UPPER },
+        sessionContext: sessionContextFor(UUID_LOWER, checkout),
+        cwd: tempDir,
+        globalDataDir: dataDir,
+      });
+      expect(result).toEqual({
+        ok: true,
+        kind: 'project',
+        projectId: UUID_UPPER,
+        root: checkout,
+        source: 'session-context',
+      });
+    });
+
+    it('recognizes a case-differing UUID in the cwd checkout as the same project', async () => {
+      const checkout = makeCheckout('cwd-case', UUID_LOWER);
+      const result = await resolveFrozenExecutionBinding({
+        frozen: { kind: 'project', projectId: UUID_UPPER },
+        cwd: checkout,
+        globalDataDir: dataDir,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        kind: 'project',
+        projectId: UUID_UPPER,
+        root: checkout,
+        source: 'cwd',
+      });
+    });
+  });
 });
