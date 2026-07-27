@@ -57,8 +57,8 @@
 - [x] 6.2 RED: Add closed Command Action tests for exact Adapter/executable artifacts, argv/env allowlist, WorkspaceInstance/workdir, timeout, `shell:false`, injection strings, ambient env/PATH drift, and bounds.
 - [x] 6.3 RED: Add closed Host Action tests for supported operation/effects/input and Definition inability to inject executable code, argv, Adapter paths, or validators.
 - [x] 6.4 GREEN: Implement exact versioned Agent/Command/Host constructors/codecs from trusted frozen capability bindings only.
-- [ ] 6.5 RED: Add ActorRef tests for agent role/provider/runtime/principal/session/Adapter, command Adapter/executable, host Adapter/principal, canonical identity digest, privacy, attestation, spoof, and unknown-major rejection.
-- [ ] 6.6 GREEN: Implement trusted Adapter-attested ActorRef validation; forbid raw principal/token/path/env data and retain principal-vs-session semantics.
+- [x] 6.5 RED: Add ActorRef tests for agent role/provider/runtime/principal/session/Adapter, command Adapter/executable, host Adapter/principal, canonical identity digest, privacy, attestation, spoof, and unknown-major rejection.
+- [x] 6.6 GREEN: Implement trusted Adapter-attested ActorRef validation; forbid raw principal/token/path/env data and retain principal-vs-session semantics.
 - [ ] 6.7 RED: Add completion discriminated-union matrix tests for domain result, required per-effect observation, infrastructure failure, required/forbidden fields, bounded contract-owned JSON, actor/evidence/action binding, and canonical receipt bytes.
 - [ ] 6.8 GREEN: Implement exact completion decoding and validation before mutation; never treat caller-supplied digest, actor, result, observation, or evidence as trusted.
 - [ ] 6.9 RED: Add completion-slot idempotency tests for `(ActionId, kind, EffectId-or-domain)`: same canonical bytes idempotent, same slot conflict, different EffectIds mixed-order independent, and domain closure after all required effects.
