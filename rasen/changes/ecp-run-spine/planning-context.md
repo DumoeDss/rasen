@@ -244,3 +244,33 @@ does NOT narrow it. **Any consumer that needs the root-dag section's typed field
   `packages/ui/test/components/cross-plane-parity.test.tsx::canonicalView()`.
 - `PipelineCommand.status()` gained the `runtimeForRunOverride` test-injection (same
   pattern as complete/control); production behavior unchanged.
+
+### Wave 4 facade-settle fix (SHIP BLOCKER RESOLVED) + known limitations
+The facade's `start`/`resume` previously called `grantAdmits` (admits only), DROPPING
+`await-gate`/`suspend` candidates — so the real CLI could not progress a Run through a
+gate (the gate-wait never committed). FIXED: `settleCandidates` is now the canonical
+settle path in `facade-runtime.ts`.
+- **`settleCandidates`** maps every reconciler candidate (admit / await-gate /
+  suspend-unsupported / finish / escalate / cancel) to its stimulus and commits them
+  atomically via `reduceCandidateBatch` in one Record revision. `start` + `resume` use it.
+  Receipts carry ONLY grant-mode admit actions (waits commit, but return no executable
+  action). `grant` returns granted admits; `defer` commits admits as admitted_undelivered
+  + returns `actions: []`. Both modes commit all durable waits + terminals.
+- **Reducer**: a `capability-unavailable` `suspend` may now commit on an already-CLOSED
+  action (the complex-route case — verify closed, next step's capability unavailable);
+  it does not re-close. Other action-bound waits still require `active`.
+- 15.3 now drives the gate through the REAL CLI (`pipeline control` decide → `resume-run`
+  grant) with no in-process gate helper. 15.4 asserts the durable capability-unavailable
+  wait is committed + the reconciler is stable.
+- **KNOWN LIMITATION A — `complete` does not settle.** The facade `complete` commits only
+  `commit-action-result`; it does NOT reconcile+settle downstream candidates. After a
+  complete, the next settle happens on the next `resume`/`resume-run`. Design §5.6 intends
+  complete to settle too. Tests work around it with `resume-run` after `complete`. NOT a
+  dogfood blocker (the autopilot calls resume-run anyway). **Follow-up**: extend
+  `settleCandidates` to `complete`.
+- **KNOWN LIMITATION B — `await-workspace` candidates dropped.** The reconciler emits
+  `await-workspace` on workspace-lease contention, but the facade cannot build the
+  workspace-reservation wait (blocked intents need `attemptId`/`actionId` that don't exist
+  pre-admit). Single-Run dogfood unaffected; multi-Run workspace contention is a follow-up.
+- `observeAdmittedEffects` in-process helper remains legitimate: effect observation has no
+  facade/CLI surface (the real system uses an Adapter for host execution).

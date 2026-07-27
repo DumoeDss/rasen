@@ -866,17 +866,31 @@ export function reduceCanonicalRunRecord(
       let actions = record.actions;
       if ('actionId' in stimulus.wait) {
         const committed = record.actions[stimulus.wait.actionId];
-        if (committed === undefined || committed.state !== 'active') {
+        if (committed === undefined) {
+          return failure(
+            'action_not_active',
+            'An action-bound suspension requires an existing Action.'
+          );
+        }
+        // A capability-unavailable wait may bind to an already-closed action.
+        // The complex adaptive route case: verify completed with a complex
+        // route (action is closed), and the next step's required capability
+        // is not available. The wait records the capability gap without
+        // re-closing the action.
+        const allowClosed = stimulus.wait.kind === 'capability-unavailable';
+        if (committed.state !== 'active' && !allowClosed) {
           return failure(
             'action_not_active',
             'An action-bound suspension requires an active Action.'
           );
         }
-        actions = replaceAction(
-          record,
-          stimulus.wait.actionId,
-          closeActionForWait(committed, stimulus.wait)
-        );
+        if (committed.state === 'active') {
+          actions = replaceAction(
+            record,
+            stimulus.wait.actionId,
+            closeActionForWait(committed, stimulus.wait)
+          );
+        }
       }
       return {
         ok: true,

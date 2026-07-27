@@ -170,6 +170,9 @@ describe('prepareRuntimeContext (launch wiring, real fs + git)', () => {
     expect(receipt.disposition).toBe('created');
     expect(ctx.store.has(runId)).toBe(true);
     // The Run persists on the real filesystem store.
-    expect(ctx.store.load(runId).status).toBe('running');
+    // The Run persists on the real filesystem store. With the gate wait
+    // committed by the facade's settle and no active actions, the status is
+    // 'waiting' (design §5.6: settle to quiescence commits durable waits).
+    expect(ctx.store.load(runId).status).toBe('waiting');
   });
 });

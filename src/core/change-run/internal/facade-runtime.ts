@@ -18,6 +18,8 @@ import {
 import { reconcile, type ReconcilerNextAction } from './reconciler.js';
 import { projectRunView } from './projector.js';
 import { verifyCompletion } from './completion.js';
+import { createCanonicalWait, type CanonicalWait } from './waits.js';
+import { deriveInvocationId } from './identity.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -52,6 +54,42 @@ function receipt(
 }
 
 /**
+ * Build a `capability-unavailable` CanonicalWait for a `suspend-unsupported`
+ * candidate. The wait is bound to the verify action that completed with a
+ * complex adaptive route — the action is already closed (its result was
+ * committed), and the wait records that the next step's required capability
+ * (e.g. ReviewCycle) is not available in the installed runtime subset.
+ *
+ * Returns null if no committed action with a result exists for the node
+ * (should not happen in normal flow — the reconciler only emits
+ * suspend-unsupported after a complex-route verify result).
+ */
+function capabilityUnavailableWait(
+  record: CanonicalRunRecord,
+  nodeId: string,
+  code: string
+): CanonicalWait | null {
+  const committed = Object.values(record.actions).find(
+    (entry) =>
+      entry.action.nodeId === nodeId && entry.result !== undefined
+  );
+  if (committed === undefined) {
+    return null;
+  }
+  return createCanonicalWait(record.runId, {
+    kind: 'capability-unavailable',
+    nodeId: committed.action.nodeId,
+    invocationId: committed.action.invocationId,
+    occurrence: 0,
+    attemptId: committed.action.attemptId,
+    actionId: committed.action.actionId,
+    effectIds: committed.action.effects.map((effect) => effect.effectId),
+    code,
+    capabilityDigest: record.capabilityDigest,
+  });
+}
+
+/**
  * The runtime facade factory (task 10.2). Wires the lowerer's RuntimePlan, the
  * pure reconciler, the reducer + candidate-commit seam, the immutable RunStore,
  * and the read-only projector behind the public {@link ChangePipelineRuntime}.
@@ -59,29 +97,123 @@ function receipt(
  * through the canonical commit path.
  */
 export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRuntime {
-  const grantAdmits = (
+  /**
+   * Settle the FULL reconciler candidate batch into one Record revision.
+   *
+   * Per design §5.6: "start, resume, complete, and control settle the
+   * candidate Record to its next quiescent point and commit once." The
+   * previous implementation (grantAdmits) filtered for 'admit' candidates
+   * only, dropping await-gate / suspend / finish / escalate / cancel — so a
+   * Run reaching a gate or a capability-unavailable suspension could never
+   * commit the durable wait, leaving the Run stuck without a WaitId for the
+   * control path to target.
+   *
+   * This settle maps every reconciler candidate to its stimulus and commits
+   * them atomically via reduceCandidateBatch. The returned `granted` list
+   * carries ONLY grant-mode admit actions (await-gate / suspend commit waits,
+   * they do not grant executable actions) so HTTP/CLI receipts never carry
+   * non-admit actions.
+   *
+   * deliveryMode semantics (§5.6): `grant` commits admits as `granted` and
+   * returns them; `defer` commits admits as `admitted_undelivered` (the
+   * management/browser path) and returns `actions: []`. Both modes commit
+   * all durable waits and terminal transitions.
+   */
+  const settleCandidates = (
     record: CanonicalRunRecord,
-    candidates: readonly ReconcilerNextAction[]
+    candidates: readonly ReconcilerNextAction[],
+    deliveryMode: 'grant' | 'defer'
   ): { record: CanonicalRunRecord; granted: readonly RunAction[] } => {
-    const admits = candidates.filter(
-      (action): action is Extract<ReconcilerNextAction, { kind: 'admit' }> =>
-        action.kind === 'admit'
-    );
-    if (admits.length === 0) {
+    const stimuli: RunStimulus[] = [];
+    const grantedActions: RunAction[] = [];
+
+    for (const candidate of candidates) {
+      switch (candidate.kind) {
+        case 'admit': {
+          const action = deps.buildAction({
+            nodeId: candidate.nodeId,
+            occurrence: candidate.occurrence,
+            admissionKind: candidate.admissionKind,
+          });
+          stimuli.push({
+            kind: 'admit-action',
+            action,
+            attemptOrdinal: 0,
+            deliveryMode,
+          });
+          if (deliveryMode === 'grant') {
+            grantedActions.push(action);
+          }
+          break;
+        }
+        case 'await-gate': {
+          const wait = createCanonicalWait(deps.plan.runId, {
+            kind: 'gate',
+            nodeId: candidate.nodeId,
+            invocationId: deriveInvocationId(
+              deps.plan.runId,
+              candidate.nodeId,
+              0
+            ),
+            occurrence: 0,
+            gateId: candidate.gateId,
+            decisionIds: [...candidate.decisionIds],
+          });
+          // createCanonicalWait returns the CanonicalWait union; narrow to
+          // the gate variant the await-gate stimulus requires.
+          if (wait.kind === 'gate') {
+            stimuli.push({ kind: 'await-gate', wait });
+          }
+          break;
+        }
+        case 'suspend-unsupported': {
+          const wait = capabilityUnavailableWait(
+            record,
+            candidate.nodeId,
+            candidate.code
+          );
+          if (wait !== null) {
+            stimuli.push({ kind: 'suspend', wait });
+          }
+          break;
+        }
+        case 'finish':
+          stimuli.push({ kind: 'finish', outcome: candidate.outcome });
+          break;
+        case 'escalate':
+          stimuli.push({
+            kind: 'escalate',
+            code: candidate.code,
+            ...(candidate.reason !== undefined
+              ? { reason: candidate.reason }
+              : {}),
+          });
+          break;
+        case 'cancel':
+          stimuli.push({
+            kind: 'cancel',
+            ...(candidate.reason !== undefined
+              ? { reason: candidate.reason }
+              : {}),
+          });
+          break;
+        case 'await-workspace':
+          // Workspace-reservation waits require attemptId/actionId for each
+          // blocked intent, which don't exist until the action is admitted.
+          // The blocked admits are simply not emitted; the Run stays running
+          // until the contention resolves. This is a known remaining gap.
+          break;
+      }
+    }
+
+    if (stimuli.length === 0) {
       return { record, granted: [] };
     }
-    const actions = admits.map((candidate) => deps.buildAction(candidate));
-    const stimuli: RunStimulus[] = actions.map((action) => ({
-      kind: 'admit-action',
-      action,
-      attemptOrdinal: 0,
-      deliveryMode: 'grant',
-    }));
     const result = reduceCandidateBatch(record, stimuli);
     if (!result.ok) {
-      throw new Error(`facade grant failed: ${result.failure.message}`);
+      throw new Error(`facade settle failed: ${result.failure.message}`);
     }
-    return { record: result.record, granted: actions };
+    return { record: result.record, granted: grantedActions };
   };
 
   return {
@@ -90,45 +222,43 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         const record = deps.store.load(deps.plan.runId);
         return asPromise(receipt(record, 'reused', []));
       }
-      let record = deps.initialRecord;
-      const reconciled = reconcile(deps.plan, record);
+      const reconciled = reconcile(deps.plan, deps.initialRecord);
       if (!reconciled.ok) {
         throw new Error(`facade reconcile failed: ${reconciled.failure.message}`);
       }
-      const candidates = reconciled.actions;
-      // Only auto-grant when the caller asked for grant mode; defer leaves
-      // actions undelivered (the management/browser path).
-      if (context.deliveryMode === 'grant') {
-        const settled = grantAdmits(record, candidates);
-        record = settled.record;
-        deps.store.create(deps.plan.runId, record);
-        return asPromise(receipt(record, 'created', settled.granted));
-      }
-      deps.store.create(deps.plan.runId, record);
-      return asPromise(receipt(record, 'created', []));
+      const settled = settleCandidates(
+        deps.initialRecord,
+        reconciled.actions,
+        context.deliveryMode
+      );
+      deps.store.create(deps.plan.runId, settled.record);
+      return asPromise(receipt(settled.record, 'created', settled.granted));
     },
     resume(_request, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
-      if (context.deliveryMode !== 'grant') {
-        return asPromise(receipt(record, 'advanced', []));
-      }
       const reconciled = reconcile(deps.plan, record);
       if (!reconciled.ok) {
         throw new Error(`facade reconcile failed: ${reconciled.failure.message}`);
       }
-      const candidates = reconciled.actions;
-      const admits = candidates.filter(
-        (candidate): candidate is Extract<ReconcilerNextAction, { kind: 'admit' }> =>
-          candidate.kind === 'admit'
+      const settled = settleCandidates(
+        record,
+        reconciled.actions,
+        context.deliveryMode
       );
-      if (admits.length === 0) {
-        const disposition: ChangeRunReceipt['disposition'] =
-          record.terminal !== undefined ? 'terminal' : 'waiting';
-        return asPromise(receipt(record, disposition, []));
+      if (settled.record !== record) {
+        deps.store.commit(deps.plan.runId, settled.record);
       }
-      const settled = grantAdmits(record, candidates);
-      deps.store.commit(deps.plan.runId, settled.record);
-      return asPromise(receipt(settled.record, 'advanced', settled.granted));
+      const disposition: ChangeRunReceipt['disposition'] =
+        settled.record.terminal !== undefined
+          ? 'terminal'
+          : settled.granted.length > 0
+            ? 'advanced'
+            : settled.record.waits.length > 0
+              ? 'waiting'
+              : 'advanced';
+      return asPromise(
+        receipt(settled.record, disposition, settled.granted)
+      );
     },
     complete(request: CompleteRunAction, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);

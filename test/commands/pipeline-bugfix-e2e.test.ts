@@ -358,7 +358,11 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(typeof runId).toBe('string');
     expect(runId).toMatch(/^run:[0-9a-f]{64}$/);
 
-    // ---- 2. QUIESCENT POINT #1: pipeline status (initial state) ----
+    // ---- 2. QUIESCENT POINT: pipeline status (gate committed by facade) ----
+    // The facade's start settles the full candidate batch: the propose Gate
+    // wait is committed as a durable part of the Record (design §5.6). No
+    // in-process helper is needed — the gate wait enters the Record through
+    // the real CLI facade path.
     const status1 = await runCLI(
       ['pipeline', 'status', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
@@ -366,40 +370,23 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(status1.exitCode).toBe(0);
     const status1Json = JSON.parse(status1.stdout.trim());
     expect(status1Json.runId).toBe(runId);
-    expect(status1Json.view.status).toBe('running');
+    // Gate wait committed, no active actions -> status is 'waiting'.
+    expect(status1Json.view.status).toBe('waiting');
     const root1 = status1Json.view.sections[0];
     expect(root1.kind).toBe('root-dag');
     expect(root1.actions).toEqual([]);
-    // No committed waits yet — the facade does not commit gate waits.
-    expect(root1.waits).toEqual([]);
-
-    // ---- 3. KERNEL-INTERNAL: commit the propose gate wait ----
-    // The reconciler identifies the propose Gate as an await-gate candidate,
-    // but the facade's grantAdmits only processes admit candidates. Gate-wait
-    // commitment goes through the reducer (kernel-internal, no CLI command).
-    const plan = await buildBugFixPlan(testDir, runId);
-    commitGateWaits(storeRoot, plan, runId);
-
-    // ---- 4. QUIESCENT POINT #2: pipeline status (gate awaiting) ----
-    const status2 = await runCLI(
-      ['pipeline', 'status', changeId, 'bug-fix', '--json'],
-      { cwd: testDir, env, timeoutMs: 60_000 }
-    );
-    expect(status2.exitCode).toBe(0);
-    const status2Json = JSON.parse(status2.stdout.trim());
-    expect(status2Json.view.status).toBe('waiting');
-    const root2 = status2Json.view.sections[0];
-    expect(root2.waits.length).toBe(1);
-    expect(root2.waits[0].kind).toBe('gate');
+    // The gate wait IS committed by the facade's settle.
+    expect(root1.waits.length).toBe(1);
+    expect(root1.waits[0].kind).toBe('gate');
     // Gate wait produces decision controls + escalate + cancel.
-    const controlKinds = root2.allowedControls.map((c: { kind: string }) => c.kind);
+    const controlKinds = root1.allowedControls.map((c: { kind: string }) => c.kind);
     expect(controlKinds).toContain('decision');
     expect(controlKinds).toContain('escalate');
     expect(controlKinds).toContain('cancel');
 
-    // ---- 5. GATE DECISION: pipeline control (approve) ----
-    const waitId = root2.waits[0].waitId;
-    const expectedVersion = status2Json.view.recordVersion;
+    // ---- 3. GATE DECISION: pipeline control (approve) ----
+    const waitId = root1.waits[0].waitId;
+    const expectedVersion = status1Json.view.recordVersion;
     const controlBody = {
       control: {
         format: 'change-run-control/1',
@@ -426,7 +413,7 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     const controlJson = JSON.parse(controlResult.stdout.trim());
     expect(controlJson.disposition).toBe('advanced');
 
-    // ---- 6. GRANT: pipeline resume-run ----
+    // ---- 4. GRANT: pipeline resume-run ----
     // After the gate is decided, the propose node becomes admissible. resume-run
     // reconciles and grants the action.
     const resumeResult = await runCLI(
@@ -439,7 +426,7 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(resumeJson.actions.length).toBe(1);
     expect(resumeJson.actions[0].kind).toBe('agent');
 
-    // ---- 7. QUIESCENT POINT #3: pipeline status (action granted) ----
+    // ---- 5. QUIESCENT POINT #2: pipeline status (action granted) ----
     const status3 = await runCLI(
       ['pipeline', 'status', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
@@ -452,13 +439,18 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     const actionId = root3.actions[0].actionId;
     const invocationId = root3.actions[0].invocationId;
 
-    // ---- 8. KERNEL-INTERNAL: observe the workspace effect ----
+    // ---- 6. KERNEL-INTERNAL: observe the workspace effect ----
     // The reducer requires all effects observed before a successful
     // commit-action-result (illegal_transition otherwise). Effect observation
-    // goes through the reducer (kernel-internal, no CLI command).
+    // is genuinely kernel-internal: the facade has no observe-effect surface
+    // and there is no CLI command for it. The real system uses an Adapter that
+    // observes effects as part of the host execution lifecycle; this test
+    // simulates that by applying the observe-effect stimulus directly to the
+    // store. This is NOT a workaround for a facade gap — it is the legitimate
+    // path for effect observation in this harness.
     observeAdmittedEffects(storeRoot, runId);
 
-    // ---- 9. ACTION COMPLETION: pipeline complete ----
+    // ---- 7. ACTION COMPLETION: pipeline complete ----
     const recordBeforeComplete = loadHeadRecord(storeRoot, runId);
     const { completion, uploads } = buildCompletionBody(
       recordBeforeComplete,
@@ -478,7 +470,7 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     const completeJson = JSON.parse(completeResult.stdout.trim());
     expect(completeJson.disposition).toBe('advanced');
 
-    // ---- 10. QUIESCENT POINT #4: pipeline status (action completed, Run progressed) ----
+    // ---- 8. QUIESCENT POINT #3: pipeline status (action completed, Run progressed) ----
     const status4 = await runCLI(
       ['pipeline', 'status', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
@@ -530,11 +522,13 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     // The initial record version is set by createCanonicalRunRecord.
     expect(statusJson.view.recordVersion).toBeGreaterThanOrEqual(0);
 
-    // The store has exactly one record file at this point.
+    // The store has exactly one record file at this point. The facade's start
+    // settles the gate wait (one revision from the initial v0), so the file
+    // is record-v1.json.
     const dirName = runId.replace(/[^a-z0-9]/gi, '_');
     const runDir = path.join(storeRoot, dirName);
     const recordFiles = readdirSync(runDir).filter((f) => /^record-v\d+\.json$/.test(f));
     expect(recordFiles.length).toBe(1);
-    expect(recordFiles[0]).toBe('record-v0.json');
+    expect(recordFiles[0]).toBe('record-v1.json');
   }, 120_000);
 });

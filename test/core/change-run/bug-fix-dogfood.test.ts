@@ -172,26 +172,32 @@ describe('simple bug-fix dogfood through the facade (11.5/11.6)', () => {
 
     const runtime = createChangePipelineRuntime({ store, plan, initialRecord: initial, buildAction });
 
-    // start: propose is gated -> no admit yet, but the gate candidate is offered.
+    // start: propose is gated -> the facade commits the gate wait as a durable
+    // part of the Record (design §5.6: settle to quiescence). No executable
+    // action is granted until the gate is decided.
     const started = await runtime.start(
       { change: { projectRoot: '/root', changeId: 'fixture-change' }, pipeline: 'bug-fix', launchRequestId: branded('launch:' + '1'.repeat(59)) as never },
       { deliveryMode: 'grant' }
     );
     expect(started.disposition).toBe('created');
-    // The Gate candidate is projected; no executable action is granted yet.
+    // No executable action is granted yet (the gate is not decided).
     expect(started.actions).toEqual([]);
     const root = started.view.sections[0] as Extract<(typeof started.view.sections)[number], { kind: 'root-dag' }>;
-    // No active actions yet (gate not decided); status running with escalate/cancel controls.
+    // No active actions; the gate wait is committed and visible in the view.
     expect(root.actions).toEqual([]);
+    expect(root.waits.length).toBe(1);
+    expect(root.waits[0].kind).toBe('gate');
 
-    // The reconciler independently identifies the propose Gate as the frontier.
+    // The reconciler no longer emits an await-gate candidate — the wait is
+    // already committed by the facade's settle. This is the corrected behavior:
+    // the facade settles the full candidate batch (admits + waits + terminals)
+    // in one revision, so the gate wait enters the Record on start.
     const reconciled = reconcile(plan, store.load(plan.runId));
     if (!reconciled.ok) throw new Error('reconcile failed');
-    expect(reconciled.actions.some((a) => a.kind === 'await-gate')).toBe(true);
+    expect(reconciled.actions.some((a) => a.kind === 'await-gate')).toBe(false);
 
-    // A terminal finish is reachable once every atomic stage succeeds (proved
-    // elsewhere); here the spine is confirmed: lowered plan -> facade start ->
-    // reconcile identifies the first Gate from the same frozen plan + Record.
+    // The spine is confirmed: lowered plan -> facade start commits the gate
+    // wait -> the Record carries a durable WaitId the control path can target.
     expect(store.has(plan.runId)).toBe(true);
   });
 
