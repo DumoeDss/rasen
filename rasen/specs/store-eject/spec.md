@@ -74,4 +74,3 @@ Eject SHALL determine which repository to restore into by an explicit, ordered r
 
 - **WHEN** the registered checkout path and the current directory name the same location but differ in drive-letter case or separator form
 - **THEN** they are recognized as the same checkout and eject does not report an ambiguous or missing destination on that basis
-

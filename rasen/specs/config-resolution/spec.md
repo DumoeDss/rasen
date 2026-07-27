@@ -54,4 +54,3 @@ The resolution function SHALL be a pure in-process module in `src/core/` accepti
 #### Scenario: Command layer renders, does not compute
 - **WHEN** the interactive config editor or the effective-config listing displays values and sources
 - **THEN** the displayed data comes from `resolveEffectiveConfig()` output rather than a separate merge implementation
-

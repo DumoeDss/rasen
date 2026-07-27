@@ -253,4 +253,3 @@ authority for a run already in flight.
 
 - **WHEN** a legacy frozen record is read to resume a run
 - **THEN** the record SHALL be left exactly as it was written
-

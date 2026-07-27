@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Give a machine one command that answers "what is still missing before I can work on this project?" — reading what the project and its Stores declare, computing the whole gap at once, and reporting it. Covers what bootstrap reads, how it classifies each expected Store, the report's three end states, the separation between checking and previewing, the project-first and Store-first reporting flows, how a previewed location is chosen, and the rule that every command bootstrap prints resolves unambiguously. Closing the gap — obtaining, registering, and writing declarations — is specified separately and is not part of this capability yet.
+Give a machine one command that answers "what is still missing before I can work on this project?" — reading what the project and its Stores declare, computing the whole gap at once, and reporting it. Covers what bootstrap reads, how it classifies each expected Store, the report's three end states, the separation between checking and previewing, the project-first and Store-first reporting flows, how a previewed location is chosen, and the rule that every command bootstrap prints resolves unambiguously. Closing the gap — obtaining a missing Store or Project, registering it on this machine, and writing the declarations that record the binding — is part of this capability and is gated behind an explicit `--apply` mutation mode; `--check` (the default) and `--dry-run` stay read-only, and a bare `rasen bootstrap` lists the mode the machine is in without changing anything.
 ## Requirements
 ### Requirement: One command reports everything a machine still needs for a project
 
@@ -414,4 +414,3 @@ A command that fails because a declared Store is not available on this machine S
 
 - **WHEN** the same project is reported by `rasen doctor` and by `rasen bootstrap --check`
 - **THEN** both name the same Stores as missing and the same repairs for each
-

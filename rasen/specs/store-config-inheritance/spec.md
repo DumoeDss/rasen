@@ -104,4 +104,3 @@ When a project declares a Store for configuration inheritance and that Store can
 - **WHEN** a project's declared Store is unavailable and the user reads configuration at machine scope, or lists the Stores registered on this machine
 - **THEN** both commands succeed, because neither resolves a project layer and so no Store layer applies
 - **AND** the same configuration read at project scope still stops with the reason and the repair command
-

@@ -286,4 +286,3 @@ Preparing a machine for a project SHALL NOT import a bundle on its own. When the
 - **WHEN** a bundle imported during preparation conflicts with the project's stored knowledge
 - **THEN** nothing is imported
 - **AND** the conflict is reported as part of the preparation result
-

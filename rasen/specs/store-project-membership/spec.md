@@ -290,4 +290,3 @@ Converting a Store's legacy membership data into per-project records SHALL happe
 
 - **WHEN** the same project is diagnosed once in human mode and once with `--json`
 - **THEN** both report the same diagnostic codes and the same repair commands
-

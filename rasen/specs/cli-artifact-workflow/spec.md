@@ -421,4 +421,3 @@ constraint in case a later change adds a runnable command to the hint.
 - **WHEN** resolution finds no installed downstream workflow
 - **THEN** `nextWorkflows` SHALL be an empty array
 - **AND** no `Next:` line SHALL be printed
-

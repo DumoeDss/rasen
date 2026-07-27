@@ -221,4 +221,3 @@ The knowledge a project receives SHALL be written into the checkout being worked
 - **WHEN** materialization runs on Windows
 - **THEN** every written path is composed with platform path resolution
 - **AND** a checkout differing only by drive-letter case or separator form is recognized as the same checkout
-

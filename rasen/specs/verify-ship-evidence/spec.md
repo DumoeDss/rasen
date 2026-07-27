@@ -120,4 +120,3 @@ satisfying a gate while it contains a failure it did not account for.
 
 - **WHEN** a verification result contains a failure it did not account for
 - **THEN** that result SHALL NOT be reported as satisfying any gate
-

@@ -260,4 +260,3 @@ The machine's Store registry SHALL identify Store entries by permanent identity,
 
 - **WHEN** a command reports a resolved or unavailable Store
 - **THEN** the message states whether a permanent identity or an alias was resolved, which Store is the planning Store, and that the command performed no network access and no write
-

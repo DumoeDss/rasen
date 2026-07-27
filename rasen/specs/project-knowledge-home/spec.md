@@ -86,4 +86,3 @@ When several clones hold catalogs that differ for the same knowledge, the migrat
 
 - **WHEN** the migration is interrupted part-way
 - **THEN** re-running it completes the remaining work without duplicating what already moved
-
