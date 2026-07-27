@@ -266,8 +266,9 @@ describe('OperationsSection (14.3/14.4)', () => {
     expect(actions).toHaveLength(1);
     expect(actions[0]!.getAttribute('data-delivery')).toBe('granted');
 
-    // Allowed controls rendered as read-only badges (no submit — 14.5/14.6 is later).
-    const controls = container.querySelectorAll('[data-testid="ops-control-badge"]');
+    // Allowed controls rendered as interactive submittable controls (14.5/14.6).
+    // The fixture has decision/escalate/cancel — all three are submittable kinds.
+    const controls = container.querySelectorAll('[data-testid="ops-control"]');
     expect(controls).toHaveLength(3);
     expect(controls[0]!.getAttribute('data-control-kind')).toBe('decision');
     expect(controls[1]!.getAttribute('data-control-kind')).toBe('escalate');

@@ -475,5 +475,86 @@ describe('api client', () => {
       const [url] = (fetch as any).mock.calls[0];
       expect(url).toBe('/api/v1/runs/c/run%3Aabc');
     });
+
+    it('postRunControl POSTs the control body with auth + json + space selector (14.5/14.6)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, {
+          view: {
+            format: 'change-run-view/1',
+            engine: 'reconciler',
+            runId: 'run:abc',
+            change: { planningSpaceId: 'ps:1', projectId: 'p', changeId: 'my-change', instanceId: 'ci:1' },
+            recordVersion: 2,
+            status: 'running',
+            sourceState: 'active',
+            workspace: { instanceId: 'wi:1', scope: 'current' },
+            drift: {
+              definition: 'unchanged',
+              sourceRevision: { provenance: 'unchanged', content: 'unchanged', semantic: 'unchanged' },
+              capability: 'unchanged',
+              policy: 'unchanged',
+              workspace: 'unchanged',
+            },
+            sections: [],
+          },
+          disposition: 'advanced',
+          actions: [],
+        })
+      );
+      const result = await client.postRunControl(
+        'my-change',
+        'run:abc',
+        {
+          control: {
+            format: 'change-run-control/1',
+            ref: {
+              change: { projectRoot: 'project:test', changeId: 'my-change' },
+              runId: 'run:abc',
+            },
+            expectedRecordVersion: 1,
+            command: { kind: 'resume', waitId: 'wait:def' },
+          },
+        },
+        'project:test'
+      );
+
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs/my-change/run%3Aabc?space=project%3Atest');
+      expect(init.method).toBe('POST');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      const parsed = JSON.parse(init.body);
+      expect(parsed.control.format).toBe('change-run-control/1');
+      expect(parsed.control.expectedRecordVersion).toBe(1);
+      expect(parsed.control.command).toEqual({ kind: 'resume', waitId: 'wait:def' });
+      // The sealed response carries the committed view + empty actions.
+      expect(result.disposition).toBe('advanced');
+      expect(result.actions).toEqual([]);
+      expect(result.view.recordVersion).toBe(2);
+    });
+
+    it('postRunControl surfaces a 409 record_version_conflict as an ApiError (caller refetches)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(409, {
+          error: {
+            code: 'record_version_conflict',
+            message: 'expectedRecordVersion 1 does not match the current Record version 3.',
+          },
+        })
+      );
+      await expect(
+        client.postRunControl(
+          'c',
+          'run:abc',
+          {
+            control: {
+              format: 'change-run-control/1',
+              ref: { change: { projectRoot: 'c', changeId: 'c' }, runId: 'run:abc' },
+              expectedRecordVersion: 1,
+              command: { kind: 'cancel' },
+            },
+          }
+        )
+      ).rejects.toMatchObject({ code: 'record_version_conflict', status: 409 });
+    });
   });
 });

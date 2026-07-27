@@ -34,6 +34,8 @@ import type {
   ProfileListResponse,
   ProfileMutationRequest,
   ProfileMutationResponse,
+  RunControlRequestBody,
+  RunControlResponseBody,
   RunsResponse,
   ResolveLocalPathResponse,
   SessionActionResponse,
@@ -357,6 +359,36 @@ export function getRunDetail(
 ): Promise<ChangeRunView> {
   const encoded = `/api/v1/runs/${encodeURIComponent(changeId)}/${encodeURIComponent(runId)}`;
   return request<ChangeRunView>(space ? `${encoded}${spaceQuery(space)}` : encoded);
+}
+
+/**
+ * Submit a Run control decision: `POST /api/v1/runs/<changeId>/<runId>` (task
+ * 14.5/14.6, design §13/§14). The server's pre-spawn admission validates the
+ * body, workspace scope, terminal/engine state, and `expectedRecordVersion`;
+ * spawns the CLI subprocess to apply the decision atomically; and returns the
+ * sealed response — the committed view + an EMPTY action list (defer-sealed:
+ * the first atomic grant happens on a later trusted CLI `resume-run`, never
+ * over HTTP). Browser response loss/replay therefore cannot turn an
+ * unconsumed admission into an uncertain already-delivered effect.
+ *
+ * The caller builds the body from projected `allowedControls` + the displayed
+ * `recordVersion` and replaces its local view from `response.view` on success
+ * — it NEVER optimistically mutates. On a 409 `record_version_conflict` the
+ * caller MUST refetch committed truth via {@link getRunDetail} and re-render
+ * from the server projection; other non-2xx statuses surface as {@link ApiError}.
+ */
+export function postRunControl(
+  changeId: string,
+  runId: string,
+  body: RunControlRequestBody,
+  space?: string
+): Promise<RunControlResponseBody> {
+  const encoded = `/api/v1/runs/${encodeURIComponent(changeId)}/${encodeURIComponent(runId)}`;
+  return request<RunControlResponseBody>(space ? `${encoded}${spaceQuery(space)}` : encoded, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 /** The archived changes for the current planning space (ui-space-redesign-archive-page design D1/D6); no selector = launch-project fallback. */

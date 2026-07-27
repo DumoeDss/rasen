@@ -204,3 +204,21 @@ does NOT narrow it. **Any consumer that needs the root-dag section's typed field
 (`actions`, `waits`, `allowedControls`, …) must use a type guard**, e.g.
 `function isRootDagSection(s): s is RootDagViewSection { return s.kind === 'root-dag'; }`
 (see `src/core/management-api/runs.ts`). Do NOT rely on kind-checks or blind casts.
+
+### Wave 3 UI controls (14.5/14.6)
+- `client.postRunControl(changeId, runId, body, space?)` → `{ view, disposition, actions }`
+  is the submit seam. Controls submit the displayed `recordVersion` + exact `waitId`;
+  on 409 `record_version_conflict` it REFETCHES `getRunDetail` (never optimistic mutation);
+  in-flight disables all controls; 403/other errors render inline.
+- **`accept-workspace-revision` stays read-only by design** — it needs `EvidenceRef[]`
+  (content-addressed staging digests) the browser cannot produce. Submittable kinds are
+  gated by `SUBMITTABLE_CONTROL_KINDS` (decision/resume/escalate/cancel); an exhaustive
+  switch + default branch handles future kinds deliberately.
+- **`ref.change.projectRoot` in the control body is structural-only**: the codec requires
+  it but the bridge's `admitControlRequest` compares only changeId/runId, and the CLI
+  subprocess gets the router-resolved root as cwd (never the body's projectRoot). The UI
+  sends its space selector verbatim there. **Wave 4/E2E**: if the bridge ever tightens to
+  validate projectRoot, the UI path breaks — worth an assertion.
+- **Vitest gotcha**: `vi.clearAllMocks()` does NOT clear the one-shot queue
+  (`mockResolvedValueOnce`/`mockRejectedValueOnce` persist if unconsumed). Use
+  `mockReset()` on specific mocked fns in `afterEach` to avoid cross-test leakage.

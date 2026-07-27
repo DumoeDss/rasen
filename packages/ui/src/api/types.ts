@@ -1444,6 +1444,77 @@ export type AllowedControl =
   | { kind: 'escalate' }
   | { kind: 'cancel' };
 
+// --- Run control request/response (task 14.5/14.6) ---
+//
+// Mirror of the server's `ChangeRunControlRequest` (change-run-control/1) and
+// the POST bridge's sealed response. Source of truth:
+// `src/core/change-run/contracts.ts` (ChangeRunControlRequest, ControlCommand)
+// and `src/core/management-api/run-control.ts` (RunControlResponse).
+//
+// The UI builds the body from projected `allowedControls` + the displayed
+// `recordVersion`, posts it, and replaces its local view from the response —
+// it NEVER optimistically mutates. On a 409 `record_version_conflict` it
+// refetches committed truth via `getRunDetail` and re-renders from server
+// projection.
+
+/**
+ * A control command the UI may submit. Mirrors the server's `ControlCommand`
+ * MINUS `accept-workspace-revision` — that variant requires `EvidenceRef[]`
+ * the browser cannot produce (no access to the bounded content-addressed
+ * staging store), so it stays a read-only badge even when the server projects
+ * it as allowed. `escalate` requires a non-empty `reason` (the server's
+ * `ControlCommandSchema` enforces `z.string().min(1)`); `cancel` carries an
+ * optional reason.
+ */
+export type UiControlCommand =
+  | { kind: 'resume'; waitId: string }
+  | { kind: 'decision'; waitId: string; decisionId: string; outcome: string }
+  | { kind: 'escalate'; reason: string }
+  | { kind: 'cancel'; reason?: string };
+
+/**
+ * The control request the UI posts, mirroring `ChangeRunControlRequest`
+ * (change-run-control/1). `ref.change.projectRoot` is a STRUCTURAL schema
+ * requirement only — the server resolves the authoritative project root from
+ * the space selector via the management router, never from this field (the
+ * bridge's `admitControlRequest` compares only `changeId`/`runId` against the
+ * URL path; the CLI subprocess receives the router-resolved root as its
+ * `cwd`, not the body's projectRoot). The UI sends its space selector (or the
+ * changeId fallback) verbatim — the honest identifier it has for the scope.
+ */
+export interface UiChangeRunControlRequest {
+  format: 'change-run-control/1';
+  ref: {
+    change: { projectRoot: string; changeId: string };
+    runId: string;
+  };
+  expectedRecordVersion: number;
+  command: UiControlCommand;
+}
+
+/**
+ * The POST body envelope: `{ control }`. The bridge's strict schema rejects
+ * any extra field (e.g., a smuggled `deliveryMode`) — the UI posts only the
+ * control request. The browser never carries evidence uploads for the
+ * submittable control kinds.
+ */
+export interface RunControlRequestBody {
+  control: UiChangeRunControlRequest;
+}
+
+/**
+ * The sealed POST response (mirrors `RunControlResponse`): the committed view
+ * + disposition + ALWAYS-empty action list. The bridge seals `deliveryMode:
+ * 'defer'`: no executable Agent/Command/Host payload ever leaves via HTTP —
+ * the first atomic grant happens on a later trusted CLI `resume-run`. The UI
+ * replaces its local view from `view` and never expects executable actions.
+ */
+export interface RunControlResponseBody {
+  view: ChangeRunView;
+  disposition: string;
+  actions: readonly never[];
+}
+
 /** An active invocation projected from the root-DAG frontier. */
 export interface ActiveInvocationView {
   invocationId: string;

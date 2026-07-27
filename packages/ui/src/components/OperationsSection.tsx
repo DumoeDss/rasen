@@ -5,8 +5,10 @@ import type {
   AllowedControl,
   ChangeRunView,
   ReconcilerRunSummary,
+  RunControlRequestBody,
   RunsResponse,
   TerminalView,
+  UiControlCommand,
   WaitView,
 } from '../api/types.js';
 import { getRootDagSection } from '../api/types.js';
@@ -27,9 +29,17 @@ import { getRootDagSection } from '../api/types.js';
  * `granted` → `admitted_undelivered` for those; the UI must not offer
  * controls or optimistic mutation for them.
  *
- * This component does NOT implement control submit (14.5/14.6) — that depends
- * on the POST control route built in a later wave. Controls are rendered as
- * a read-only list of what the server projects.
+ * Control submit (14.5/14.6): the controls the server projects
+ * (`allowedControls`) are rendered as INTERACTIVE elements. Gate decision
+ * (per-wait, with the wait's decisionId + outcome options), resume,
+ * escalate (with a required reason), and cancel (with confirmation) submit
+ * the displayed `recordVersion` and exact `WaitId` via `postRunControl`.
+ * On a 409 `record_version_conflict` the UI REFETCHES committed truth
+ * (`getRunDetail`) and re-renders from the server projection — it NEVER
+ * optimistically patches. `accept-workspace-revision` stays a read-only
+ * badge (it requires EvidenceRefs the browser cannot produce). Agent/
+ * command/host `complete` is a trusted CLI/host seam and is never offered
+ * as a browser form.
  */
 
 /** Shortens an ID for display while preserving the full ID in a title attribute. */
@@ -114,24 +124,24 @@ function TerminalReason({ terminal }: { terminal: TerminalView }) {
   );
 }
 
-/** Renders one allowed control as a read-only badge (submit UI is 14.5/14.6). */
+/**
+ * Renders one allowed control that the browser CANNOT submit as a read-only
+ * badge. Only `accept-workspace-revision` qualifies: it requires `EvidenceRef[]`
+ * the browser cannot produce (no access to the bounded content-addressed
+ * evidence staging store), so even when the server projects it as allowed it
+ * stays non-interactive. A trusted CLI/host caller can still action it.
+ */
 function ControlBadge({ control }: { control: AllowedControl }) {
   let label: string;
   switch (control.kind) {
-    case 'resume':
-      label = `resume (${shortId(control.waitId).label})`;
-      break;
-    case 'decision':
-      label = `decision ${control.decisionId} (${shortId(control.waitId).label})`;
-      break;
     case 'accept-workspace-revision':
       label = `accept-workspace-revision (${shortId(control.waitId).label})`;
       break;
-    case 'escalate':
-      label = 'escalate';
-      break;
-    case 'cancel':
-      label = 'cancel';
+    default:
+      // Defensive: any other kind that ControlsSection does not handle lands
+      // here rather than vanishing. This never runs for the four submittable
+      // kinds (decision/resume/escalate/cancel) — ControlsSection owns those.
+      label = `${control.kind}`;
       break;
   }
   return (
@@ -141,8 +151,299 @@ function ControlBadge({ control }: { control: AllowedControl }) {
   );
 }
 
+/**
+ * The four control kinds the UI submits over HTTP. Listed once so the render
+ * path can partition `allowedControls` into interactive vs read-only without
+ * duplicating the kind set. `accept-workspace-revision` is intentionally
+ * absent — it stays a {@link ControlBadge}.
+ */
+const SUBMITTABLE_CONTROL_KINDS = new Set<AllowedControl['kind']>([
+  'decision',
+  'resume',
+  'escalate',
+  'cancel',
+]);
+
+function isSubmittable(control: AllowedControl): boolean {
+  return SUBMITTABLE_CONTROL_KINDS.has(control.kind);
+}
+
+/**
+ * Renders the server-projected `allowedControls` as interactive submit
+ * elements plus read-only badges for the non-submittable variants. The
+ * component builds the control request body from the displayed `recordVersion`
+ * and the exact `waitId`/`decisionId` carried by each projected control — it
+ * never derives or guesses values client-side.
+ *
+ * Submit contract (design §14):
+ * - On success, replaces the local view from `response.view` (committed truth).
+ * - On a 409 `record_version_conflict`, refetches via `getRunDetail` and
+ *   replaces the view from the refetch — NEVER optimistically patches.
+ * - On 403/other errors, surfaces the server's error inline and leaves the
+ *   view unchanged.
+ * - While a submit is in flight, EVERY submit target is disabled (duplicate
+ *   suppression — concurrent control writes would conflict anyway).
+ *
+ * The `key` prop (runId) ensures local UI state (cancel confirm, escalate
+ * reason, in-flight flag) resets when the selected Run changes.
+ */
+function ControlsSection({
+  view,
+  changeId,
+  runId,
+  selector,
+  onViewReplaced,
+}: {
+  view: ChangeRunView;
+  changeId: string;
+  runId: string;
+  selector?: string;
+  onViewReplaced: (view: ChangeRunView) => void;
+}) {
+  const root = getRootDagSection(view);
+  // Local UI state — keyed off runId by the parent so it resets on Run switch.
+  const [inFlight, setInFlight] = useState(false);
+  const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const [pendingCancel, setPendingCancel] = useState(false);
+  const [escalateReason, setEscalateReason] = useState('');
+
+  if (!root || root.allowedControls.length === 0) return null;
+
+  const submittable = root.allowedControls.filter(isSubmittable);
+  const readOnly = root.allowedControls.filter((c) => !isSubmittable(c));
+
+  async function submit(command: UiControlCommand): Promise<void> {
+    if (inFlight) return; // duplicate suppression
+    setInFlight(true);
+    setError(null);
+    setPendingCancel(false);
+    // Build the body from the DISPLAYED recordVersion + the projected control
+    // fields. projectRoot is a structural schema requirement — the server
+    // resolves the authoritative root from the space selector (the bridge
+    // compares only changeId/runId; the CLI subprocess receives the
+    // router-resolved root as its cwd). The UI sends its selector verbatim.
+    const body: RunControlRequestBody = {
+      control: {
+        format: 'change-run-control/1',
+        ref: {
+          change: { projectRoot: selector ?? changeId, changeId },
+          runId,
+        },
+        expectedRecordVersion: view.recordVersion,
+        command,
+      },
+    };
+    try {
+      const response = await client.postRunControl(changeId, runId, body, selector);
+      // Replace local view from committed truth — never optimistically mutate.
+      onViewReplaced(response.view);
+      setEscalateReason('');
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'record_version_conflict') {
+        // The server says our expectedRecordVersion is stale. Refetch the
+        // committed view and re-render from server projection. This is the
+        // ONLY error path that replaces the view — every other error leaves
+        // the displayed view unchanged.
+        try {
+          const fresh = await client.getRunDetail(changeId, runId, selector);
+          onViewReplaced(fresh);
+          setError(null);
+          setEscalateReason('');
+        } catch {
+          setError({
+            code: 'refetch_failed',
+            message: 'The Run was modified by another caller and the refresh failed.',
+          });
+        }
+      } else if (err instanceof ApiError) {
+        setError({ code: err.code, message: err.message });
+      } else {
+        setError({ code: 'unknown', message: 'Failed to submit control.' });
+      }
+    } finally {
+      setInFlight(false);
+    }
+  }
+
+  return (
+    <div class="ops-run__controls-list" data-inflight={inFlight ? 'true' : 'false'}>
+      {submittable.map((control) => {
+        switch (control.kind) {
+          case 'decision':
+            return (
+              <div
+                key={`decision-${control.waitId}-${control.decisionId}`}
+                class="ops-control ops-control--decision"
+                data-testid="ops-control"
+                data-control-kind="decision"
+                title={`waitId: ${control.waitId}\ndecisionId: ${control.decisionId}`}
+              >
+                <span class="ops-control__label">
+                  decision {control.decisionId} ({shortId(control.waitId).label})
+                </span>
+                <span class="ops-control__outcomes">
+                  {control.outcomes.map((outcome) => (
+                    <button
+                      key={outcome}
+                      type="button"
+                      class="ops-control__outcome"
+                      data-testid="ops-control-decision-outcome"
+                      data-outcome={outcome}
+                      disabled={inFlight}
+                      onClick={() =>
+                        submit({
+                          kind: 'decision',
+                          waitId: control.waitId,
+                          decisionId: control.decisionId,
+                          outcome,
+                        })
+                      }
+                    >
+                      {outcome}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            );
+          case 'resume':
+            return (
+              <div
+                key={`resume-${control.waitId}`}
+                class="ops-control ops-control--resume"
+                data-testid="ops-control"
+                data-control-kind="resume"
+                title={`waitId: ${control.waitId}`}
+              >
+                <span class="ops-control__label">resume ({shortId(control.waitId).label})</span>
+                <button
+                  type="button"
+                  class="ops-control__submit"
+                  data-testid="ops-control-resume-submit"
+                  disabled={inFlight}
+                  onClick={() => submit({ kind: 'resume', waitId: control.waitId })}
+                >
+                  Resume
+                </button>
+              </div>
+            );
+          case 'escalate':
+            return (
+              <div
+                key="escalate"
+                class="ops-control ops-control--escalate"
+                data-testid="ops-control"
+                data-control-kind="escalate"
+              >
+                <span class="ops-control__label">escalate</span>
+                <input
+                  type="text"
+                  class="ops-control__reason"
+                  data-testid="ops-control-escalate-reason"
+                  placeholder="reason (required)"
+                  value={escalateReason}
+                  disabled={inFlight}
+                  onInput={(e) => setEscalateReason((e.target as HTMLInputElement).value)}
+                />
+                <button
+                  type="button"
+                  class="ops-control__submit"
+                  data-testid="ops-control-escalate-submit"
+                  // Schema requires reason: min(1). Client-side guard matches
+                  // the server's own validation — never bypasses it.
+                  disabled={inFlight || escalateReason.trim().length === 0}
+                  onClick={() => submit({ kind: 'escalate', reason: escalateReason.trim() })}
+                >
+                  Escalate
+                </button>
+              </div>
+            );
+          case 'cancel': {
+            // Two-step confirm: the first click reveals Confirm/Dismiss;
+            // only Confirm actually submits. This guards against an
+            // accidental irreversible cancel.
+            return (
+              <div
+                key="cancel"
+                class="ops-control ops-control--cancel"
+                data-testid="ops-control"
+                data-control-kind="cancel"
+              >
+                <span class="ops-control__label">cancel</span>
+                {!pendingCancel ? (
+                  <button
+                    type="button"
+                    class="ops-control__submit ops-control__submit--danger"
+                    data-testid="ops-control-cancel-submit"
+                    disabled={inFlight}
+                    onClick={() => setPendingCancel(true)}
+                  >
+                    Cancel Run
+                  </button>
+                ) : (
+                  <span class="ops-control__confirm">
+                    <button
+                      type="button"
+                      class="ops-control__submit ops-control__submit--danger"
+                      data-testid="ops-control-cancel-confirm"
+                      disabled={inFlight}
+                      onClick={() => submit({ kind: 'cancel' })}
+                    >
+                      Confirm cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="ops-control__dismiss"
+                      data-testid="ops-control-cancel-dismiss"
+                      disabled={inFlight}
+                      onClick={() => setPendingCancel(false)}
+                    >
+                      Dismiss
+                    </button>
+                  </span>
+                )}
+              </div>
+            );
+          }
+          // accept-workspace-revision is filtered into `readOnly` below —
+          // it never reaches this switch. The exhaustiveness check ensures
+          // a future allowed kind is handled deliberately, not silently.
+          default:
+            return null;
+        }
+      })}
+
+      {readOnly.map((control) => (
+        <ControlBadge key={`badge-${control.kind}-${'waitId' in control ? control.waitId : control.kind}`} control={control} />
+      ))}
+
+      {error && (
+        <p
+          class="ops-control__error"
+          role="alert"
+          data-testid="ops-control-error"
+          data-error-code={error.code}
+        >
+          {error.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Renders the projected root-DAG detail: frontier, invocations, actions, waits, drift. */
-function RunDetailBody({ view }: { view: ChangeRunView }) {
+function RunDetailBody({
+  view,
+  changeId,
+  runId,
+  selector,
+  onViewReplaced,
+}: {
+  view: ChangeRunView;
+  changeId: string;
+  runId: string;
+  selector?: string;
+  onViewReplaced: (view: ChangeRunView) => void;
+}) {
   const root = getRootDagSection(view);
   const isOther = view.workspace.scope === 'other';
   const runIdShort = shortId(view.runId);
@@ -285,15 +586,23 @@ function RunDetailBody({ view }: { view: ChangeRunView }) {
         </div>
       </div>
 
-      {/* Allowed controls — read-only projection (submit UI is 14.5/14.6, out of scope here). */}
+      {/* Allowed controls — rendered from server projection only. Submittable
+          kinds (decision/resume/escalate/cancel) become interactive controls;
+          accept-workspace-revision renders as a read-only badge (needs evidence
+          the browser cannot produce). Other-workspace and terminal Runs have
+          an empty allowedControls array server-side, so this section is absent
+          for them (same conditional as actions/waits above). */}
       {root.allowedControls.length > 0 && (
         <div class="ops-run__controls" data-testid="ops-run-controls">
           <span class="ops-run__section-label">Allowed controls</span>
-          <div class="ops-run__control-badges">
-            {root.allowedControls.map((control, i) => (
-              <ControlBadge key={i} control={control} />
-            ))}
-          </div>
+          <ControlsSection
+            key={runId}
+            view={view}
+            changeId={changeId}
+            runId={runId}
+            selector={selector}
+            onViewReplaced={onViewReplaced}
+          />
         </div>
       )}
     </div>
@@ -402,7 +711,15 @@ function RunDetailPanel({
           {error}
         </p>
       )}
-      {view && <RunDetailBody view={view} />}
+      {view && (
+        <RunDetailBody
+          view={view}
+          changeId={changeId}
+          runId={runId}
+          selector={selector}
+          onViewReplaced={setView}
+        />
+      )}
     </div>
   );
 }
