@@ -95,8 +95,8 @@
 
 - [x] 9.1 RED: Add reusable in-memory/filesystem RunStore contracts for create/load/commit/list, immutable plan/launch/full Records, no-gap full-chain validation, exact temp namespace, and no earlier-revision fallback.
 - [x] 9.2 GREEN: Implement private in-memory and filesystem stores in registered machine-home with `{ensure:true}` only for validated new Run and `{ensure:false}` for exact existing Run operations.
-- [ ] 9.3 RED: Add SafeRunPath tests at every directory/file component for symlink/junction/reparse/nonregular/hardlink/containment/parent replacement/no-follow identity and outside sentinels.
-- [ ] 9.4 GREEN: Implement bounded SafeRunPath checks, same-parent exclusive create/publish, and the documented pure-Node same-user race boundary.
+- [x] 9.3 RED: Add SafeRunPath tests at every directory/file component for symlink/junction/reparse/nonregular/hardlink/containment/parent replacement/no-follow identity and outside sentinels.
+- [x] 9.4 GREEN: Implement bounded SafeRunPath checks, same-parent exclusive create/publish, and the documented pure-Node same-user race boundary.
 - [ ] 9.5 RED: Add immutable launch/commit fault tests before/after stage/fsync/publish/return, concurrent same/different keys, CAS conflicts, abnormal/overwidth/variant entries, plan mismatch, and Windows rename behavior.
 - [ ] 9.6 GREEN: Implement staging-directory launch and `wx` immutable Record publication with named fault injector, fsync/close, predecessor/digest validation, and one successful publish.
 - [ ] 9.7 RED: Add aggregate-budget tests for large/sparse/many Records/evidence, cumulative ledger limit, healthy plus malicious Runs, 100-summary/512-candidate/256-MiB list page, stable opaque cursor, and ordering.
