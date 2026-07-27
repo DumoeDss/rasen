@@ -648,17 +648,22 @@ export class PipelineCommand {
 
   /**
    * Print a Run's current view (task 12.3/12.4 inspect).
+   *
+   * Supports the same test-injection override as `complete`/`control`
+   * (task 15.1): when `runtimeForRunOverride` is set (tests only — production
+   * never passes it), the heavy root-selection + registry-freeze chain is
+   * bypassed so cross-plane parity can be asserted against an in-memory fixture
+   * without spawning a process. The view itself still flows through the same
+   * `facade.inspect` → `projectRunView(record)` path either way.
    */
   async status(
     changeId: string,
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
-    const { ctx, runId, projectRoot } = await this.resolveRuntime(
-      changeId,
-      pipelineName,
-      options
-    );
+    const { ctx, runId, projectRoot } = this.runtimeForRunOverride
+      ? await this.runtimeForRunOverride(changeId, pipelineName as never, options)
+      : await this.resolveRuntime(changeId, pipelineName, options);
     if (!ctx.store.has(runId as never)) {
       throw pipelineMessageError(
         'pipelineNotFound',

@@ -222,3 +222,25 @@ does NOT narrow it. **Any consumer that needs the root-dag section's typed field
 - **Vitest gotcha**: `vi.clearAllMocks()` does NOT clear the one-shot queue
   (`mockResolvedValueOnce`/`mockRejectedValueOnce` persist if unconsumed). Use
   `mockReset()` on specific mocked fns in `afterEach` to avoid cross-test leakage.
+
+### Wave 4a parity + simple E2E (15.1–15.3)
+- **`test/helpers/run-cli.ts`**: `runCLI(args, {cwd, env, timeoutMs})` spawns
+  `node dist/cli/index.js`; `ensureCliBuilt()` rebuilds dist if missing. Env isolation:
+  set `XDG_DATA_HOME` to a temp dir + `RASEN_HOME:''` (blanked so XDG wins); store root
+  resolves to `<XDG_DATA_HOME>/rasen/runs/`. **Stale-dist gotcha**: after adding CLI
+  subcommands, manually `pnpm run build` before spawn tests.
+- **Two kernel-internal operations have NO CLI command** — must be done in-process
+  against the filesystem store (documented gap, NOT a bypass):
+  1. **Gate-wait commitment** (`await-gate` stimulus): `reconcile()` identifies gate-wait
+     candidates but the facade's `grantAdmits` only processes `admit` candidates, never
+     `await-gate`. Helper: `commitGateWaits(storeRoot, plan, runId)`.
+  2. **Effect observation** (`observe-effect` stimulus): required before a successful
+     `commit-action-result`; the reducer rejects otherwise with `illegal_transition`.
+     Helper: `observeAdmittedEffects(storeRoot, runId)`.
+- **`buildBugFixPlan(projectRoot, runId)`** (in `test/commands/pipeline-bugfix-e2e.test.ts`)
+  mirrors the CLI's `resolveRuntime` (freeze production registry -> select bug-fix ->
+  profile -> lower). Reuse for any test reconciling against a production-plan Run.
+- Canonical fixture: node side `reconciler-fixture.ts`; UI side
+  `packages/ui/test/components/cross-plane-parity.test.tsx::canonicalView()`.
+- `PipelineCommand.status()` gained the `runtimeForRunOverride` test-injection (same
+  pattern as complete/control); production behavior unchanged.

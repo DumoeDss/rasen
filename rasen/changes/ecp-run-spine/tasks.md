@@ -166,9 +166,9 @@
 
 ## 15. Cross-plane parity and failure journeys
 
-- [ ] 15.1 RED: Create one canonical fixture matrix across projector, CLI status, management detail, and Task-detail for all closed core/root-dag fields including actions+waits, workspace scope, and allowed controls.
-- [ ] 15.2 GREEN: Remove plane-local derivations until only documented transport wrappers differ.
-- [ ] 15.3 RED/GREEN: Add fresh-process simple bug-fix E2E from launch through Gate, typed Action/Actor completions, evidence, workspace reservations, simple verify, independently owned ship/archive effects, and terminal inspect.
+- [x] 15.1 RED: Create one canonical fixture matrix across projector, CLI status, management detail, and Task-detail for all closed core/root-dag fields including actions+waits, workspace scope, and allowed controls.
+- [x] 15.2 GREEN: Remove plane-local derivations until only documented transport wrappers differ.
+- [x] 15.3 RED/GREEN: Add fresh-process simple bug-fix E2E from launch through Gate, typed Action/Actor completions, evidence, workspace reservations, simple verify, independently owned ship/archive effects, and terminal inspect.
 - [ ] 15.4 RED/GREEN: Add complex-result E2E proving durable unsupported ReviewCycle wait, no ship, no human uncertain resume, and safe escalate/cancel.
 - [ ] 15.5 RED/GREEN: Add launch/completion/downstream-admission ACK-loss journeys for deferred-undelivered, granted-executed, and granted-never-executed safe/non-idempotent Actions; verify browser replay grants empty, trusted first claim is atomic, and only post-grant loss invokes recovery.
 - [ ] 15.6 RED/GREEN: Add every store/evidence/lock/reservation fault journey and prove no duplicate external effect, earlier-Record fallback, lost reservation, dual engine progression, or unsafe path escape.
